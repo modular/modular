@@ -1,0 +1,112 @@
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test", "requirement")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+
+package(default_visibility = ["//max:consumers"])
+
+_FILECHECK_TESTS = [
+    "test_element.mojo",
+    "test_layout.mojo",
+    "test_swizzle.mojo",
+    "test_tensor.mojo",
+    "test_tensor_masked.mojo",
+    "test_tensor_math.mojo",
+    "test_tensor_runtime_layout.mojo",
+    "test_tiled_matmul.mojo",
+    "test_vectorized_matmul.mojo",
+]
+
+_LIT_TESTS = [
+    "test_tile_tensor_copy_from_mismatched_total_elements_fail.mojo",
+    "test_tile_tensor_split_static_non_divisible_fail.mojo",
+]
+
+_EXTRA_DEPS = {
+    "test_tiled_matmul.mojo": ["//max:max_mojo"],
+}
+
+_EXTRA_CONSTRAINTS = {
+    "test_tensor_masked.mojo": select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+}
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        target_compatible_with = _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "//max:layout",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ] + _EXTRA_DEPS.get(src, []),
+    )
+    for src in _FILECHECK_TESTS
+]
+
+mojo_filecheck_test(
+    name = "test_negative_index_int_tuple.mojo.test",
+    srcs = ["test_negative_index_int_tuple.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    expect_crash = True,
+    deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)
+
+mojo_filecheck_test(
+    name = "test_tile_tensor_split_dynamic_negative_idx.mojo.test",
+    srcs = ["test_tile_tensor_split_dynamic_negative_idx.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    expect_crash = True,
+    deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        deps = [
+            "//max:layout",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _FILECHECK_TESTS + _LIT_TESTS + [
+            "test_negative_index_int_tuple.mojo",
+            "test_tile_tensor_numpy.mojo",
+            "test_tile_tensor_split_dynamic_negative_idx.mojo",
+        ],
+    )
+]
+
+mojo_test(
+    name = "test_tile_tensor_numpy.mojo.test",
+    srcs = ["test_tile_tensor_numpy.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    deps = [
+        "//max:layout",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+        requirement("numpy"),
+    ],
+)
+
+lit_tests(
+    name = "lit",
+    size = "small",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)

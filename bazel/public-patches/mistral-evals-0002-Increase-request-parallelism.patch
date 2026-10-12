@@ -1,0 +1,25 @@
+From 871522932058be0193bd41b4cf84a799eb6a4582 Mon Sep 17 00:00:00 2001
+From: Brendan Hansknecht <bhansconnect@modular.com>
+Date: Wed, 1 Oct 2025 16:41:11 -0700
+Subject: [PATCH 2/2] Increase request parallelism
+
+Even if running at a low batch size, it is fine to send many requests in parallel.
+On top of that, this enables us to run at higher batch sizes.
+Overall, this leads to faster dataset evals.
+
+diff --git a/eval/task.py b/eval/task.py
+index 15e74e6..d352bc5 100644
+--- a/eval/task.py
++++ b/eval/task.py
+@@ -57,7 +57,7 @@ class Eval(ABC):
+         """Queries model to get responses for each interaction."""
+ 
+         futures: dict[Future, Interaction] = {}
+-        with ThreadPoolExecutor(max_workers=8) as executor:
++        with ThreadPoolExecutor(max_workers=512) as executor:
+             for interaction in self.interactions:
+                 request = copy.deepcopy(interaction.request)
+                 futures[executor.submit(model, request)] = interaction
+-- 
+2.51.0
+

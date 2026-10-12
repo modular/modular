@@ -1,0 +1,263 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Input batching for Llama 3 pipeline models."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+import numpy as np
+from max.driver import Buffer
+from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.comm.ep import EPCommInitializer
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.pipelines.context import TextContext
+from max.pipelines.lib.interfaces.arch_config import ArchConfig
+from max.pipelines.lib.interfaces.batch_processor import (
+    RAGGED_INPUT_ROW_OFFSETS,
+    RAGGED_INPUT_TOKENS,
+    BatchProcessorRuntime,
+    InputsT,
+    RaggedBatchProcessor,
+    process_ragged_kv_outputs,
+    ragged_kv_symbolic_inputs,
+)
+from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
+from max.pipelines.lib.utils import compute_data_parallel_splits
+from max.support.algorithm import flatten2d
+
+if TYPE_CHECKING:
+    from .model import Llama3Inputs
+
+
+class Llama3BatchProcessorBase(RaggedBatchProcessor[TextContext, InputsT]):
+    """Ragged batching with pinned host buffers and optional DP / LoRA.
+
+    Generic in the ``*Inputs`` type so a model whose inputs are a sibling of
+    :class:`Llama3Inputs` rather than a subclass -- the whole DeepSeek V3
+    family -- can reuse this batching without claiming to produce
+    :class:`Llama3Inputs`. Subclasses bind ``InputsT`` and implement
+    :meth:`_make_inputs`; :class:`Llama3BatchProcessor` is the binding for
+    models that do produce :class:`Llama3Inputs`.
+    """
+
+    def _stage_ragged_token_inputs(
+        self, context_batch: Sequence[TextContext]
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        """Stages this batch's ragged tokens and row offsets.
+
+        Returns:
+            ``(device_tokens, device_row_offsets, host_row_offsets)``; the host
+            offsets are also used by DP/LoRA callers.
+        """
+        batch_size = len(context_batch)
+        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
+
+        with self._stager.stage() as staging:
+            host_tokens, (device_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
+            )
+            host_row_offsets, (device_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (batch_size + 1,)
+            )
+            np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
+                out=host_row_offsets.to_numpy(),
+            )
+            if context_batch:
+                np.concatenate(
+                    [ctx.tokens.active for ctx in context_batch],
+                    out=host_tokens.to_numpy(),
+                )
+        return device_tokens, device_row_offsets, host_row_offsets
+
+    def get_symbolic_inputs(
+        self,
+        *,
+        kv_params: KVCacheParamInterface,
+        device_refs: list[DeviceRef],
+    ) -> list[TensorType | BufferType]:
+        return ragged_kv_symbolic_inputs(
+            kv_params=kv_params,
+            device_refs=device_refs,
+            include_signal_buffers=len(device_refs) > 1,
+        )
+
+    def prepare_initial_token_inputs(
+        self,
+        replica_batches: Sequence[Sequence[TextContext]],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        return_n_logits: int = 1,
+    ) -> InputsT:
+
+        dp = self.runtime.pipeline_config.model.data_parallel_degree
+        if len(replica_batches) != dp:
+            raise ValueError(
+                "Number of replica batches must match data parallel degree"
+            )
+
+        context_batch = flatten2d(replica_batches)
+
+        device_tokens, device_row_offsets, _ = self._stage_ragged_token_inputs(
+            context_batch
+        )
+
+        return_n_logits_tensor = Buffer.from_numpy(
+            np.array([return_n_logits], dtype=np.int64)
+        )
+
+        if dp > 1:
+            data_parallel_splits = Buffer.from_numpy(
+                compute_data_parallel_splits(replica_batches)
+            )
+        else:
+            data_parallel_splits = None
+
+        return self._make_inputs(
+            tokens=device_tokens,
+            input_row_offsets=device_row_offsets,
+            return_n_logits=return_n_logits_tensor,
+            signal_buffers=list(self.runtime.signal_buffers),
+            kv_cache_inputs=kv_cache_inputs,
+            data_parallel_splits=data_parallel_splits,
+        )
+
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        data_parallel_splits: Buffer | None,
+    ) -> InputsT:
+        """Constructs this processor's ``*Inputs`` from the batched fields."""
+        raise NotImplementedError(
+            f"{type(self).__qualname__} must implement _make_inputs"
+        )
+
+    def process_outputs(
+        self, outputs: Sequence[Buffer | object]
+    ) -> ModelOutputs:
+        return process_ragged_kv_outputs(
+            outputs,
+            return_logits=self.runtime.return_logits,
+            return_hidden_states=self.runtime.return_hidden_states,
+        )
+
+
+class Llama3BatchProcessor(Llama3BatchProcessorBase["Llama3Inputs"]):
+    """Ragged batching for models whose inputs are :class:`Llama3Inputs`."""
+
+    def _make_inputs(
+        self,
+        *,
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        return_n_logits: Buffer,
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
+        data_parallel_splits: Buffer | None,
+    ) -> Llama3Inputs:
+        from .model import Llama3Inputs
+
+        return Llama3Inputs(
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            return_n_logits=return_n_logits,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
+            data_parallel_splits=data_parallel_splits,
+        )
+
+
+class Llama3EpBatchProcessorBase(Llama3BatchProcessorBase[InputsT]):
+    """Llama3 batching extended with EP MoE communication buffers."""
+
+    def __init__(
+        self,
+        config: ArchConfig,
+        runtime: BatchProcessorRuntime,
+    ) -> None:
+        super().__init__(config, runtime)
+        self._ep_comm_initializer: EPCommInitializer | None = None
+
+    def bind_ep_comm_initializer(
+        self, initializer: EPCommInitializer | None
+    ) -> None:
+        """Wires EP buffers created during model ``load_model``."""
+        self._ep_comm_initializer = initializer
+
+    def _ep_inputs(self) -> tuple[Buffer, ...]:
+        if self._ep_comm_initializer is None:
+            return ()
+        return tuple(self._ep_comm_initializer.model_inputs())
+
+    def _host_input_row_offsets_for_dp(
+        self, host_row_offsets: Buffer, dp: int
+    ) -> Buffer | None:
+        return host_row_offsets if dp > 1 else None
+
+    def _prepare_ep_moe_token_inputs(
+        self,
+        replica_batches: Sequence[Sequence[TextContext]],
+        return_n_logits: int,
+    ) -> tuple[
+        Buffer,
+        Buffer,
+        Buffer,
+        Buffer | None,
+        tuple[Buffer, ...],
+        Buffer | None,
+    ]:
+        dp = self.runtime.pipeline_config.model.data_parallel_degree
+        if len(replica_batches) != dp:
+            raise ValueError(
+                "Number of replica batches must match data parallel degree"
+            )
+
+        context_batch = flatten2d(replica_batches)
+
+        device_tokens, device_row_offsets, host_row_offsets = (
+            self._stage_ragged_token_inputs(context_batch)
+        )
+
+        return_n_logits_tensor = Buffer.from_numpy(
+            np.array([return_n_logits], dtype=np.int64)
+        )
+
+        if dp > 1:
+            data_parallel_splits = Buffer.from_numpy(
+                compute_data_parallel_splits(replica_batches)
+            )
+        else:
+            data_parallel_splits = None
+
+        return (
+            device_tokens,
+            device_row_offsets,
+            return_n_logits_tensor,
+            data_parallel_splits,
+            self._ep_inputs(),
+            self._host_input_row_offsets_for_dp(host_row_offsets, dp),
+        )
+
+
+class Llama3EpBatchProcessor(
+    Llama3EpBatchProcessorBase["Llama3Inputs"], Llama3BatchProcessor
+):
+    """EP MoE batching for models whose inputs are :class:`Llama3Inputs`."""

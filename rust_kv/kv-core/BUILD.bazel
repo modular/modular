@@ -1,0 +1,35 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//rust_kv:consumers"])
+
+# Pure host code with no crate dependencies, so unlike kv-tier-connector this is
+# neither gated to a GPU platform nor wired to all_crate_deps.
+rust_library(
+    name = "kv-core",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+)
+
+rust_test(
+    name = "kv-core-test",
+    crate = ":kv-core",
+    edition = "2024",
+    # A macOS binary links on the Linux remote executor, which has neither
+    # `dsymutil` (split debuginfo) nor `rust-objcopy` (the opt-mode strip pass).
+    rustc_flags = select({
+        "@platforms//os:macos": [
+            "-C",
+            "split-debuginfo=off",
+            "-C",
+            "strip=none",
+        ],
+        "//conditions:default": [],
+    }),
+    # The sanitizer runners cannot load the ASAN runtime for Rust test binaries;
+    # kv-core is safe Rust (`unsafe_code = "deny"`), so there is nothing to sanitize.
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,192 @@
+load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "modular_pyo3_extension", "requirement")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+
+package(default_visibility = ["//max:consumers"])
+
+# Type stub files for the _core C extension. These .pyi files define the
+# Python nanobind-generated symbols whose source lives in C++. The Sphinx docs
+# build uses them at runtime to resolve "source" links for C-extension APIs
+# (see _find_pyi_stub in conf.py.in). They are kept in this separate filegroup
+# so that only the docs build — not every binary — carries them in its runfiles.
+filegroup(
+    name = "_core_pyi_stubs",
+    srcs = glob(["_core/**/*.pyi"]),
+    visibility = [
+        "//bazel/internal:__pkg__",
+        "//oss/modular/bazel/internal:__pkg__",
+    ],
+)
+
+modular_nanobind_extension(
+    name = "_core.bindings",
+    srcs = ["//max/python/max/_core/mcl:_core.cpp"],
+    module_name = "_core",
+    new_link_root = "../modular/lib",
+    deps = [
+        "//Support:BazelRunfiles",
+        "//Support:NanobindUtils",
+        "//Support:NixlPluginDir",
+        "//max/python/max/_core/mcl:AsyncRTPython",
+        "//max/python/max/_core/mcl/modules",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_generate_stubfiles(
+    name = "_core",
+    additional_update_targets = select({
+        # nixl.pyi is diff-tested separately (linux-x86_64 only, see below); keep
+        # it in the one-shot `./utils/sync-stubfiles.sh` update flow.
+        "//:linux_x86_64": [":_core.sync-stubfiles.nixl"],
+        "//conditions:default": [],
+    }),
+    # nixl.pyi is platform-specific: the upstream NIXL library ships prebuilt
+    # binaries for linux-x86_64 only, so the _core.nixl binding -- and its
+    # generated stub -- is empty elsewhere. Exclude it from the cross-platform
+    # diff test here; it gets its own linux-x86_64-gated diff test below.
+    diff_test_exclude = ["_core/nixl.pyi"],
+    diff_test_failure_message = """
+A stubfile is out of sync with its generated counterpart.
+If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
+When you modify a .cpp file in the _core/src directory, you can run
+'./utils/sync-stubfiles.sh' and commit the results.
+""",
+    extension = ":_core.bindings",
+    full_name = "max._core",
+    generated_pyi_srcs = [
+        "_core/dialects/builtin/__init__.pyi",
+        "_core/dialects/builtin/passes.pyi",
+        "_core/dialects/mo/__init__.pyi",
+        "_core/dialects/mo/passes.pyi",
+        "_core/dialects/rmo/__init__.pyi",
+        "_core/dialects/rmo/passes.pyi",
+        "_core/dialects/__init__.pyi",
+        "_core/dialects/mosh.pyi",
+        "_core/dialects/m.pyi",
+        "_core/dialects/kgen.pyi",
+    ],
+    header = """
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+# GENERATED FILE, DO NOT EDIT MANUALLY!
+# ===----------------------------------------------------------------------=== #
+""",
+    include_private = True,
+    pattern_file = ":_core/patterns.nb",
+    pyi_srcs = glob(
+        ["**/*.pyi"],
+        exclude = ["_kv_core.pyi"],
+    ),
+    deps = [
+        "//max/python/max/_core_types",
+        "//max/python/max/_mlir",
+        "//max/python/max/mlir",
+        requirement("numpy"),
+    ],
+)
+
+# nixl.pyi carries the full linux-x86_64 _core.nixl API and stays the committed
+# source of truth (downstream type-checking reads it on every platform). The
+# binding is empty off linux-x86_64, so only diff-test the generated stub where
+# the binding is real; elsewhere this target is incompatible (skipped), and
+# `./utils/sync-stubfiles.sh` leaves the committed stub untouched.
+write_source_files(
+    name = "_core.sync-stubfiles.nixl",
+    testonly = True,
+    diff_test_failure_message = "max/python/max/_core/nixl.pyi is out of sync. Run './utils/sync-stubfiles.sh' on a linux-x86_64 host and commit the result.",
+    files = {"_core/nixl.pyi": ":stubfiles/_core/nixl.pyi"},
+    tags = [
+        TOP_LEVEL_TAG,
+        "skip-external-ci",  # Generated file does not exist externally
+        "stubfiles",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [
+            "@platforms//os:linux",
+            "@platforms//cpu:x86_64",
+        ],
+    }),
+)
+
+# kv-core, the KV cache bookkeeping shared with Mach, built from closed Rust
+# sources like _core is from closed C++. Its stub is written by hand.
+modular_pyo3_extension(
+    name = "_kv_core.bindings",
+    srcs = ["//rust_kv/kv-core-pyo3:srcs"],
+    crate_name = "kv_core_pyo3",
+    module_name = "_kv_core",
+    deps = ["//rust_kv/kv-core"],
+)
+
+modular_py_library(
+    name = "_kv_core",
+    data = [":_kv_core.bindings"],
+    pyi_srcs = ["_kv_core.pyi"],
+    deps = [requirement("numpy")],
+)
+
+modular_py_library(
+    name = "interpreter",
+    srcs = [
+        "_interpreter.py",
+    ],
+    # _interpreter_ops is optional - Mojo kernels may not be available
+    ignore_unresolved_imports = [
+        "._interpreter_ops.handlers._resolve_spec",
+        "._interpreter_ops.lookup_handler",
+    ],
+    deps = [
+        ":_core",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_library(
+    name = "_mlir_context",
+    srcs = ["_mlir_context.py"],
+    deps = [
+        "//max/python/max/mlir",
+    ],
+)
+
+modular_py_library(
+    name = "_eager_policy",
+    srcs = ["_eager_policy.py"],
+)
+
+modular_py_library(
+    name = "tree",
+    srcs = ["tree.py"],
+    deps = [
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_library(
+    name = "_validation_hooks",
+    srcs = ["_validation_hooks.py"],
+    ignore_unresolved_imports = [
+        "max.driver.Device",
+        "max.engine.Model",
+        "max.experimental.tensor.Tensor",
+        "max.experimental.validation.EagerUsageValidator",
+    ],
+)
+
+alias(
+    name = "tensor",
+    actual = "//max/python/max/experimental",
+)

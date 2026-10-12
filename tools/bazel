@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ "$BAZEL_REAL" != *bazelisk* && "$BAZEL_REAL" != *bazel-bin* ]]; then
+  echo "error: bazel should be run through the ./bazelw script at the root of the repo" >&2
+  exit 1
+fi
+
+script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+is_build_test_or_run=false
+for arg in "$@"; do
+  case "$arg" in
+    # Any config flag: skip
+    --*) ;;
+    build) is_build_test_or_run=true; break ;;
+    test) is_build_test_or_run=true; break ;;
+    run) is_build_test_or_run=true; break ;;
+  esac
+done
+
+# If doing bazel build/test/run, require a config
+if [[ "$is_build_test_or_run" == "true" ]]; then
+  has_mojo_or_max_config=false
+  for arg in "$@"; do
+    case "$arg" in
+      --config=prebuilt-mojo) has_mojo_or_max_config="true" ;;
+      --config=build-mojo) has_mojo_or_max_config="true" ;;
+    esac
+  done
+
+  if [[ -f "$script_root/../local.bazelrc" ]]; then
+    if grep -E 'config\=prebuilt-mojo|config\=build-mojo' < "$script_root/../local.bazelrc" > /dev/null; then
+      has_mojo_or_max_config="true"
+    fi
+  fi
+
+  if [[ $has_mojo_or_max_config == "false" ]]; then
+    echo "Please add either \`--config=prebuilt-mojo\` or \`--config=build-mojo\` to your command line."
+    echo "Use \`--config=build-mojo\` if you are modifying the Mojo compiler."
+    echo "Otherwise, use \`--config=prebuilt-mojo\`."
+    echo "You can add \`build --config=<your choice>\` to a \`local.bazelrc\` file to have it apply to all Bazel calls."
+    exit 1
+  fi
+fi
+
+bazelrc_lines=("# Generated from tools/bazel, do not edit.")
+bazelrc_lines+=("build --build_metadata=USER=${GITHUB_ACTOR:-${USER:-unknown}}")
+
+if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
+  bazelrc_lines+=("build --config=disk-cache")
+fi
+
+if [[ $OSTYPE == darwin* ]]; then
+  if (( EUID == 0 )); then
+    echo "error: bazel should not be run as with sudo." >&2
+    exit 1
+  fi
+
+  xcode_path=$(xcode-select -p)
+  if [[ "$xcode_path" == /Library/* ]]; then
+    echo "error: a fully Xcode install must be selected globally, run 'sudo xcode-select -s /path/to/Xcode.app" >&2
+    exit 1
+  elif [[ "$xcode_path" != /Applications/* ]]; then
+    echo "error: Xcode must be installed in /Applications/, not '$xcode_path'" >&2
+    exit 1
+  fi
+
+  bazelrc_lines+=("startup --host_jvm_args=-Xdock:name=$xcode_path")
+  xcode_build_number=$(/usr/bin/xcodebuild -version 2>/dev/null | tail -1 | cut -d " " -f3)
+  bazelrc_lines+=("build --xcode_version=$xcode_build_number")
+  # This invalidates the crosstool if the Xcode version changes but the path to
+  # it does not (when it is updated in place). Related:
+  # https://github.com/bazelbuild/bazel/issues/8902
+  bazelrc_lines+=("common --repo_env=XCODE_VERSION=$xcode_build_number")
+fi
+
+if [[ -z "${GITHUB_REPOSITORY:-}" && $OSTYPE != darwin* && -d /dev/shm && ! -e /.dockerenv && -z "${KUBERNETES_SERVICE_HOST:-}" ]]; then
+  bazelrc_lines+=("common --sandbox_base=/dev/shm")
+fi
+
+readonly bazelrc_root="$script_root/../build"
+readonly logs_dir="$bazelrc_root/logs"
+mkdir -p "$logs_dir"
+
+# Cache resource results
+if [[ ! -f "$bazelrc_root/local-resources.bazelrc" ]]; then
+  "$script_root/../bazel/internal/detect_local_resources.sh" > "$bazelrc_root/local-resources.bazelrc"
+fi
+
+bazelrc_lines+=("import %workspace%/build/local-resources.bazelrc")
+
+printf "%s\n" "${bazelrc_lines[@]}" > "$bazelrc_root/wrapper.bazelrc"
+
+if [[ -f "$logs_dir/execution.log" ]]; then
+  mv -f "$logs_dir/execution.log" "$logs_dir/execution-previous.log"
+fi
+
+# Pass a select group of environment variables to the `bazel` binary and to `bazel run`:
+passthrough_env=(
+  # Required for emojis to work in filenames
+  "LANG=en_US.UTF-8"
+)
+
+exit_code=0
+env \
+  "${passthrough_env[@]}" \
+  "$BAZEL_REAL" \
+  "$@" || exit_code=$?
+
+exit $exit_code

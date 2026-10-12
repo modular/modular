@@ -1,0 +1,51 @@
+load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+
+package(default_visibility = ["//max:consumers"])
+
+_NO_MAIN = [
+    "fig5_1.mojo",
+]
+
+# dynamic_smem.mojo uses external_memory (dynamic shared memory) which is not
+# supported on Apple GPU.
+_USES_EXTERNAL_MEMORY = [
+    "dynamic_smem.mojo",
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "//max:max_mojo",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _NO_MAIN + _USES_EXTERNAL_MEMORY,
+    )
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "medium",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "//max:max_mojo",
+            "@mojo//:std",
+        ],
+    )
+    for src in _USES_EXTERNAL_MEMORY
+]

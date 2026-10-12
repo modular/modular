@@ -1,0 +1,81 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_precompiled_mefs",
+    size = "large",
+    srcs = ["test_precompiled_mefs.py"],
+    # The eager Tensor ops the ModuleV3 cases use load this at runtime, so it
+    # has to be in the runfiles even though nothing imports it statically.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    deps = [
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+# Virtual-device mode latches process-wide at the first device creation, so the
+# stand-in a load hands back there cannot be tested alongside tests that expect
+# a real one.
+modular_py_test(
+    name = "test_compile_only_model",
+    size = "large",
+    srcs = ["test_compile_only_model.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+# Same virtual-device latching as above, so also its own target.
+modular_py_test(
+    name = "test_grouped_collectives_compile",
+    size = "large",
+    srcs = ["test_grouped_collectives_compile.py"],
+    # The virtual CUDA (sm_100a) graphs below need the NVPTX compiler to
+    # elaborate kernels, which is Linux-only (CUDACompilationDevice).
+    # TODO(GEX-4362): re-enable on asan once KGEN stops leaking the
+    # _populate_captures stubs from evaluateCompileOffloadClosureAttr.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)
+
+# The quantizing variants ride the CDNA4 path, so this one targets virtual AMD.
+modular_py_test(
+    name = "test_grouped_quant_collectives_compile",
+    size = "large",
+    srcs = ["test_grouped_quant_collectives_compile.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)

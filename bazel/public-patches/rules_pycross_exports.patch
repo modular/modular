@@ -1,0 +1,12 @@
+diff --git a/pycross/private/toolchain_helpers.bzl b/pycross/private/toolchain_helpers.bzl
+index 21ead25..c14ff18 100644
+--- a/pycross/private/toolchain_helpers.bzl
++++ b/pycross/private/toolchain_helpers.bzl
+@@ -432,6 +432,7 @@ def _pycross_environment_repo_impl(rctx):
+         root_build_sections.append("        {},".format(repr(env["output"])))
+     root_build_sections.append("    ]")
+     root_build_sections.append(")")
++    root_build_sections.append("exports_files(glob([\"*.json\"]))")
+ 
+     rctx.file(rctx.path("BUILD.bazel"), "\n".join(root_build_sections))
+ 

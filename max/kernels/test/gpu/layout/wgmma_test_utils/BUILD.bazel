@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "mojo_library")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "wgmma_test_utils",
+    testonly = True,
+    srcs = ["__init__.mojo"],
+    ignore_deprecated = IGNORED_POINTER_DEPRECATIONS,
+    validate_missing_docs = False,
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)

@@ -1,0 +1,73 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_tile_io_copy
+file: $KERNEL_BENCHMARKS_ROOT/gpu/layout/bench_tile_io_copy.mojo
+
+params:
+# fp32 keeps the 64x64 smoke point and adds rectangular/square tiles up to
+# 64 KiB of shared storage.
+- dtype: DType.float32
+  M: 64
+  N: 64
+  num_threads: 128
+- dtype: DType.float32
+  M: [32, 64, 128]
+  N: 128
+  num_threads: 128
+- dtype: DType.float32
+  M: 64
+  N: 256
+  num_threads: 256
+- dtype: DType.float32
+  M: 32
+  N: 512
+  num_threads: 512
+- dtype: DType.float32
+  M: 16
+  N: 1024
+  num_threads: 1024
+
+# 16-bit element types exercise wider 128-bit vector paths (width 8) and allow
+# larger tiles while staying within the same shared-memory footprint.
+- dtype: [DType.float16, DType.bfloat16]
+  M: [64, 128]
+  N: 128
+  num_threads: 128
+- dtype: [DType.float16, DType.bfloat16]
+  M: [64, 128]
+  N: 256
+  num_threads: 256
+- dtype: [DType.float16, DType.bfloat16]
+  M: 64
+  N: 512
+  num_threads: 512
+- dtype: [DType.float16, DType.bfloat16]
+  M: 32
+  N: 1024
+  num_threads: 512
+
+# FP8 uses width 16 on 128-bit GPU targets, covering the widest vectorized copy
+# path in this benchmark.
+- dtype: DType.float8_e4m3fn
+  M: [64, 128, 256]
+  N: 256
+  num_threads: 128
+- dtype: DType.float8_e4m3fn
+  M: [64, 128]
+  N: 512
+  num_threads: 256
+- dtype: DType.float8_e4m3fn
+  M: 64
+  N: 1024
+  num_threads: 256

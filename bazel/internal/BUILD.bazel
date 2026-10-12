@@ -1,0 +1,333 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
+load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
+load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_rust_pyo3//:defs.bzl", "rust_pyo3_toolchain")
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
+load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
+load(":jemalloc.bzl", "jemalloc_with_lg_page")
+load(":mojo_toolchain.bzl", "mojo_toolchain")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "create_venv.py",
+    "load_bazel_tools.py",
+    "lsan-suppressions.txt",
+])
+
+mypy_cli(
+    name = "mypy_cli",
+    mypy_requirement = requirement("mypy"),
+    tags = ["no-mypy"],
+    deps = [
+        requirement("pydantic"),
+    ],
+)
+
+filegroup(
+    name = "mojo-filecheck-test",
+    testonly = True,
+    srcs = ["mojo-filecheck-test.sh"],
+)
+
+filegroup(
+    name = "create_venv",
+    testonly = True,
+    srcs = ["create_venv.py"],
+)
+
+filegroup(
+    name = "pytest_runner",
+    testonly = True,
+    srcs = ["pytest_runner.py"],
+)
+
+alias(
+    name = "uv",
+    actual = select({
+        "//:linux_aarch64": "@uv_linux_aarch64//:uv",
+        "//:linux_x86_64": "@uv_linux_x86_64//:uv",
+        "@platforms//os:macos": "@uv_darwin_aarch64//:uv",
+    }),
+)
+
+modular_py_library(
+    name = "mojodoc_api_href_lib",
+    srcs = ["mojodoc_api_href.py"],
+    imports = ["."],
+)
+
+modular_py_binary(
+    name = "mojodoc_json_to_markdown",
+    srcs = ["mojodoc_json_to_markdown.py"],
+    data = glob(["mojodoc-templates/**"]),
+    deps = [
+        ":mojodoc_api_href_lib",
+        requirement("jinja2"),
+    ],
+)
+
+modular_py_test(
+    name = "mojodoc_api_href_test",
+    srcs = ["test_mojodoc_api_href.py"],
+    deps = [
+        ":mojodoc_api_href_lib",
+    ],
+)
+
+modular_py_library(
+    name = "bazel_sitecustomize",
+    srcs = [
+        "sitecustomize.py",
+    ],
+    imports = ["."],
+)
+
+gpu_toolchain_alias(
+    name = "current_gpu_toolchain",
+)
+
+modular_cc_library(
+    name = "gtest_main_objc_pool_check",
+    testonly = True,
+    srcs = ["GTestMainObjcPoolCheck.cpp"],
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//third-party/unittest:gmock",
+        "@llvm-project//third-party/unittest:gtest",
+    ],
+)
+
+modular_cc_library(
+    name = "debugging_test_lib",
+    srcs = ["debugging_test_lib.cpp"],
+    hdrs = ["debugging_test_lib.h"],
+    includes = ["."],
+    tags = ["manual"],
+)
+
+modular_cc_binary(
+    name = "debugging_test_bin",
+    srcs = ["debugging_test_bin.cpp"],
+    tags = ["manual"],
+    deps = [":debugging_test_lib"],
+)
+
+modular_py_binary(
+    name = "sphinx",
+    srcs = ["sphinx.py"],
+    # .pyi stubs for the _core C extension so that linkcode_resolve() in
+    # conf.py can map nanobind symbols to their stub definitions on GitHub.
+    data = ["//max/python/max:_core_pyi_stubs"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        # Each invocation has different deps depending on what you are doing.
+        # TODO: Handle this at each call site instead of here.
+        "@breathe",
+        "@sphinx-click",
+        "@sphinx-markdown-builder",
+        requirement("pyyaml"),
+        requirement("sphinx"),
+        requirement("munch"),
+        requirement("torch"),
+    ] + ALL_MAX_PYTHON_DEPS,
+)
+
+modular_py_binary(
+    name = "apply_mojo_fixits",
+    srcs = ["apply_mojo_fixits.py"],
+    data = [
+        "@llvm-project//clang-tools-extra/clang-apply-replacements:clang-apply-replacements",
+    ],
+    env = {
+        "TOOL_RLOCATION": "$(rlocationpath @llvm-project//clang-tools-extra/clang-apply-replacements:clang-apply-replacements)",
+    },
+    deps = [
+        "@rules_python//python/runfiles",
+        requirement("pyyaml"),
+    ],
+)
+
+mojo_copts_toolchain(
+    name = "_mojo_copts_toolchain",
+    copts = select({
+        "//:linux_x86_64": [
+            "-target-triple=x86_64-unknown-linux-gnu",
+            "--target-cpu=x86-64-v3",
+        ],
+        "//:linux_aarch64": [
+            "-target-triple=aarch64-unknown-linux-gnu",
+            "--target-cpu=neoverse-n1",
+        ],
+        "@platforms//os:macos": [
+            "--target-cpu=apple-m1",
+        ],
+    }) + select({
+        "//:asan": ["--sanitize=address"],
+        "//:tsan": ["--sanitize=thread"],
+        "//conditions:default": [],
+    }) + select({
+        "//:modular_config_ci_build": ["-Werror"],
+        "//conditions:default": [],
+    }),
+    precompile_copts = select({
+        "//:modular_config_ci_build": ["-Werror"],
+        "//conditions:default": [],
+    }),
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+)
+
+mojo_toolchain(
+    name = "mojo_toolchain_target",
+    implicit_deps = [],
+    lld = "@llvm-project//lld:lld",
+    mojo = "//Mojo/tools/mojo",
+    tags = [
+        # Manual so that even in --config=prebuilt-mojo this
+        # doesn't build, since we build this folder in the OSS CI.
+        "manual",
+        TOP_LEVEL_TAG,  # Used in oss.MODULE.bazel
+    ],
+)
+
+# Don't split toolchains on OS, we don't care about cross compilation here.
+toolchain(
+    name = "mojo_toolchain",
+    tags = [TOP_LEVEL_TAG],  # Used in oss.MODULE.bazel
+    target_settings = ["//:use_prebuilt_mojo_toolchain_disabled"],
+    toolchain = ":mojo_toolchain_target",
+    toolchain_type = "@rules_mojo//:toolchain_type",
+)
+
+toolchain(
+    name = "mojo_copts_toolchain",
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+    toolchain = ":_mojo_copts_toolchain",
+    toolchain_type = "@rules_mojo//:copts_toolchain_type",
+)
+
+modular_py_library(
+    name = "pytest-shard",
+    testonly = True,
+    srcs = ["pytest-shard.py"],
+    imports = ["."],
+    deps = [requirement("pytest")],
+)
+
+# Loaded with `-p precompile_mefs_plugin` by `modular_py_test`, in the record
+# build action and in the test, so `imports` lets it load by bare module name.
+modular_py_library(
+    name = "precompile_mefs_plugin",
+    testonly = True,
+    srcs = ["precompile_mefs_plugin.py"],
+    imports = ["."],
+    deps = [
+        requirement("pytest"),
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Records a miniature GPU suite and replays it, each run in its own process:
+# virtual-device mode latches process-wide at the first device creation.
+modular_py_test(
+    name = "test_precompile_mefs_plugin",
+    size = "large",
+    srcs = ["test_precompile_mefs_plugin.py"],
+    # Every dep below is for the recorded suite, which this test writes out as
+    # a file and runs in subprocesses -- so nothing here imports any of them,
+    # and they have to be in the runfiles all the same.
+    ignore_extra_deps = [
+        ":precompile_mefs_plugin",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+    deps = [
+        ":precompile_mefs_plugin",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Avoid default dependencies on mojo
+# gazelle:ignore
+py_binary(
+    name = "gen_dialect_checksum",
+    srcs = ["gen_dialect_checksum.py"],
+)
+
+cc_library(name = "empty_lib")
+
+# jemalloc as a process-wide malloc replacement, built for 64 KiB pages on
+# aarch64 so one binary covers every page size those hosts come with.
+jemalloc_with_lg_page(
+    name = "jemalloc_global",
+    src = "@jemalloc",
+    lg_page = select({
+        "@platforms//cpu:aarch64": "16",
+        "//conditions:default": "__auto__",
+    }),
+)
+
+# TCMalloc compiled with NUMA partition support (kNumaPartitions=2).
+alias(
+    name = "tcmalloc_numa_aware",
+    actual = select({
+        "@platforms//os:macos": "@gperftools-macos//:tcmalloc",
+        # NOTE: This library doesn't override new/free globally, which the default library does
+        "@platforms//os:linux": "@tcmalloc//tcmalloc:tcmalloc_internal_methods_only_numa_aware",
+    }),
+)
+
+# Links in want_numa_aware.cc, overriding the weak default_want_numa_aware()
+# symbol so that TCMalloc enables NUMA awareness by default at runtime.
+# No-op on macOS (gperftools has no NUMA partition support).
+alias(
+    name = "tcmalloc_want_numa_aware",
+    actual = select({
+        "@platforms//os:macos": ":empty_lib",
+        "@platforms//os:linux": "@tcmalloc//tcmalloc:want_numa_aware",
+    }),
+)
+
+modular_cc_library(
+    name = "runtool",
+    srcs = ["runtool-shim.cpp"],
+    # fix_bazel_paths() is intentionally a constructor — it must run before
+    # main() to set MODULAR_HOME and current_path for bazel-run targets.
+    copts = ["-Wno-global-constructors"],
+    alwayslink = True,
+)
+
+# pyo3 for the max._kv_core extension (//max/python/max:_kv_core.bindings).
+# Bound to the kv-core crate universe (//rust_kv/kv-core-pyo3).
+rust_pyo3_toolchain(
+    name = "pyo3_toolchain_target",
+    pyo3 = "@kv_core_crates//:pyo3",
+    pyo3_introspection = "@kv_core_crates//:pyo3-introspection",
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+)
+
+toolchain(
+    name = "pyo3_toolchain",
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+    toolchain = ":pyo3_toolchain_target",
+    toolchain_type = "@rules_rust_pyo3//:rust_toolchain_type",
+)
+
+# Applied by both MODULE.bazel files' rules_rust archive_override.
+exports_files(["rules_rust_extra_exec_triple.patch"])

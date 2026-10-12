@@ -1,0 +1,1317 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+# mypy: disable-error-code="import-not-found"
+"""Implementations of provided tokenizers."""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import logging
+from collections import Counter
+from collections.abc import Awaitable, Callable, Sequence
+from functools import cached_property, partial
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+
+import numpy as np
+import numpy.typing as npt
+from max.pipelines.context import (
+    EOSTracker,
+    GrammarEnforcementState,
+    ImageMetadata,
+    TextAndVisionContext,
+    TextContext,
+    TokenBuffer,
+)
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
+from max.pipelines.lib._chat_encoder import ChatEncoder, load_chat_encoder
+from max.pipelines.modeling.types import (
+    PipelineTokenizer,
+    TextGenerationRequest,
+    TextGenerationRequestMessage,
+    TextGenerationRequestTool,
+    TokenIds,
+)
+from max.support.image import find_contiguous_ranges, hash_image
+from PIL import Image, UnidentifiedImageError
+from transformers import (
+    AutoProcessor,
+    AutoTokenizer,
+    PreTrainedTokenizerBase,
+)
+from typing_extensions import ParamSpec
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.config import PipelineConfig
+
+
+# Formats we are willing to decode. Passing this to ``Image.open`` means the
+# decoder is chosen from this set rather than from every registered PIL plugin
+# by magic bytes, which shrinks the native-decoder attack surface. Most
+# importantly it keeps attacker-controlled bytes away from PIL's EPS plugin,
+# which shells out to Ghostscript (``subprocess.check_call`` with no timeout) --
+# a repeat CVE target and an unbounded-runtime DoS vector reachable from an
+# unauthenticated-shaped request. "JPEG" also covers MPO (multi-picture JPEG),
+# which PIL opens through the JPEG factory.
+#
+# The set is the common web formats a vision client sends plus a few
+# semi-popular ones. HEIC/HEIF are deliberately absent: base Pillow cannot
+# decode them without the optional ``pillow-heif`` plugin (not a dependency),
+# and JPEG2000/EPS-style exotic decoders are left out to keep the surface small.
+_DESIRED_IMAGE_FORMATS = (
+    "PNG",
+    "JPEG",
+    "WEBP",
+    "GIF",
+    "BMP",
+    "PPM",
+    "TIFF",
+    "TGA",
+    "AVIF",
+)
+
+# Register every PIL plugin now, then keep only the formats this build actually
+# provides. Intersecting is what makes it safe to list an *optional* codec such
+# as AVIF: on a platform whose Pillow wheel ships without libavif the name is
+# simply dropped here, instead of turning every non-first-format image into an
+# uncaught ``KeyError`` inside ``Image.open`` (which looks up ``OPEN[name]``
+# after a one-shot ``init()``). ``init()`` is idempotent and runs once at import.
+Image.init()
+ALLOWED_IMAGE_FORMATS = tuple(
+    fmt for fmt in _DESIRED_IMAGE_FORMATS if fmt in Image.OPEN
+)
+"""Image formats ``Image.open`` may select a decoder from.
+
+Defined here, beside :func:`open_image`, because both places that open
+client-supplied image bytes must apply it: the API server's admission decode
+and this module's per-image fallback. ``max.serve.router._image_resolution``
+imports it from here -- the serve router already depends on this package, and
+the reverse direction is not available.
+"""
+
+
+def open_image(image: bytes | Image.Image) -> Image.Image:
+    """Decode raw image ``bytes`` into a ``PIL.Image``, or pass one through.
+
+    Vision tokenizers receive each image either as raw ``bytes`` (offline and
+    test callers) or as a ``PIL.Image`` that the API server already decoded and
+    validated once at admission (see
+    :attr:`~max.pipelines.modeling.types.TextGenerationRequest.decoded_images`).
+    Routing both through this helper lets a tokenizer reuse the pre-decoded
+    image instead of decoding the same bytes a second time.
+
+    Bytes are opened against :data:`ALLOWED_IMAGE_FORMATS`, decoded eagerly
+    (``load()`` rather than PIL's lazy header parse), and any failure becomes
+    an :class:`InputError` -- a clean 400. Both matter because this is the
+    second place client bytes can be opened: the API server skips its own
+    admission decode for an image whose preprocessed tensor is already cached,
+    and offline callers never had one.
+
+    Args:
+        image: Raw encoded image bytes, or an already-decoded ``PIL.Image``.
+
+    Returns:
+        The decoded ``PIL.Image``.
+
+    Raises:
+        InputError: If ``image`` is bytes that do not decode to an image.
+    """
+    if isinstance(image, Image.Image):
+        return image
+    try:
+        decoded = Image.open(io.BytesIO(image), formats=ALLOWED_IMAGE_FORMATS)
+        decoded.load()
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        SyntaxError,
+        Image.DecompressionBombError,
+    ) as e:
+        raise InputError("invalid or unreadable image content") from e
+    return decoded
+
+
+async def convert_token_to_id(
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+    token: str,
+) -> int | None:
+    """Convert a token string to its token ID, or None if not a single token."""
+    # Workaround: PipelineTokenizer does not expose convert_tokens_to_ids(),
+    # so we encode the string and verify it maps to exactly one token ID.
+    encoded = await tokenizer.encode(token, add_special_tokens=False)
+    if len(encoded) != 1:
+        return None
+    return int(encoded[0])
+
+
+def resolve_single_special_token(delegate: Any, token: str) -> int:
+    """Resolve a single special-token string to its id via an HF delegate.
+
+    Suitable for use in tokenizer ``__init__`` where the architecture
+    knows ``token`` is registered as a single special token in the
+    underlying vocab (for example, reasoning delimiters like ``<think>``
+    on Kimi K2.5 or ``<|channel>`` on Gemma 4).
+
+    Raises:
+        ValueError: If ``token`` is missing from the vocab (resolves to
+            ``unk_token_id``) or maps to more than one id.
+    """
+    token_id = delegate.convert_tokens_to_ids(token)
+    if isinstance(token_id, list):
+        raise ValueError(
+            f"Special token {token!r} resolved to multiple ids "
+            f"({token_id!r}); expected a single id."
+        )
+    if token_id == delegate.unk_token_id:
+        raise ValueError(
+            f"Special token {token!r} not found in tokenizer vocabulary "
+            f"(resolved to unk_token_id)."
+        )
+    return int(token_id)
+
+
+class ReasoningDelimitersMixin:
+    """Resolves and exposes a tokenizer's reasoning-delimiter token ids.
+
+    Mixing this into a tokenizer satisfies
+    :class:`~max.pipelines.modeling.types.ReasoningPipelineTokenizer`.
+    Subclasses override :attr:`reasoning_delimiters` when their model does not
+    use ``<think>``/``</think>``, and call
+    :meth:`_resolve_reasoning_delimiters` from ``__init__`` once the delegate
+    is loaded. :class:`ReasoningTextTokenizer` does the call itself.
+    """
+
+    reasoning_delimiters: ClassVar[tuple[str, str]] = ("<think>", "</think>")
+    """The special tokens that open and close a reasoning span."""
+
+    _reasoning_start_token_id: int
+    _reasoning_end_token_id: int
+
+    def _resolve_reasoning_delimiters(self, delegate: Any) -> None:
+        """Resolves :attr:`reasoning_delimiters` to ids via ``delegate``.
+
+        Raises:
+            ValueError: If either delimiter is not a single special token in
+                the vocab.
+        """
+        start, end = self.reasoning_delimiters
+        self._reasoning_start_token_id = resolve_single_special_token(
+            delegate, start
+        )
+        self._reasoning_end_token_id = resolve_single_special_token(
+            delegate, end
+        )
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """The token id that opens a reasoning span."""
+        return self._reasoning_start_token_id
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """The token id that closes a reasoning span."""
+        return self._reasoning_end_token_id
+
+
+logger = logging.getLogger("max.pipelines")
+
+
+def encode_dkv_cache_hint(hint: dict[str, Any] | None) -> bytes | None:
+    """Re-serializes a request's ``dkv_cache_hint`` to the bytes dKV parses.
+
+    The hint arrives as a decoded JSON object and the dKV connector parses it
+    in Rust, so MAX only has to hand back its wire form. Nothing here reads the
+    contents: the version gate, the instance table, and every routing decision
+    live in ``dkv-connector`` (see ``dkv/docs/cache-hint.md``), which is what
+    lets the Orchestrator adopt a new hint schema without redeploying MAX.
+
+    Returns ``None`` when the field is absent, empty, or not encodable, all of
+    which the connector serves as an unhinted load. A hint never fails a
+    request: an HTTP caller cannot reach the unencodable case, because the
+    field is typed ``dict[str, Any]`` and filled from a parsed JSON body, but
+    a caller building a request in Python can, and a cache is not worth a
+    failed request.
+    """
+    if not hint:
+        return None
+    try:
+        return json.dumps(hint, separators=(",", ":")).encode()
+    except (TypeError, ValueError):
+        logger.warning(
+            "Dropping an unencodable dkv_cache_hint; serving as though the "
+            "cache missed."
+        )
+        return None
+
+
+TokenGeneratorContext = TypeVar("TokenGeneratorContext")
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _handle_decode_overflow(
+    encoded: npt.NDArray[np.integer[Any]],
+    vocab_size: int,
+) -> str:
+    """Diagnose and raise a helpful OverflowError for token decoding issues.
+
+    Args:
+        encoded: The token array that caused the overflow.
+        vocab_size: The tokenizer's vocabulary size.
+        original_error: The original OverflowError that was caught.
+
+    """
+    issues = []
+
+    if (encoded >= vocab_size).any():
+        invalid_mask = encoded >= vocab_size
+        invalid_indices = np.where(invalid_mask)[0]
+        invalid_values = encoded[invalid_mask]
+        issues.append(
+            f"Token IDs exceeding vocab size ({vocab_size}) at indices "
+            f"{invalid_indices.tolist()}: {invalid_values.tolist()}"
+        )
+
+    if (encoded < 0).any():
+        negative_mask = encoded < 0
+        negative_indices = np.where(negative_mask)[0]
+        negative_values = encoded[negative_mask]
+        issues.append(
+            f"Negative token IDs at indices {negative_indices.tolist()}: "
+            f"{negative_values.tolist()}"
+        )
+
+    if issues:
+        error_msg = (
+            f"OverflowError during token decoding. Invalid token IDs detected:\n"
+            f"  {'; '.join(issues)}\n"
+            f"  Vocab size: {vocab_size}, Array shape: {encoded.shape}, "
+            f"dtype: {encoded.dtype}"
+        )
+    else:
+        error_msg = (
+            f"OverflowError during token decoding (no obvious invalid values). "
+            f"Vocab size: {vocab_size}, Array shape: {encoded.shape}, "
+            f"dtype: {encoded.dtype}, Token IDs: {encoded.tolist()}"
+        )
+
+    logger.error(error_msg)
+    return error_msg
+
+
+class IdentityPipelineTokenizer(
+    PipelineTokenizer[TokenGeneratorContext, str, TextGenerationRequest],
+):
+    """A pass-through tokenizer that returns prompts unchanged."""
+
+    @property
+    def eos_token_ids(self) -> set[int]:
+        """Returns the end-of-sequence token IDs (empty for identity)."""
+        return set()
+
+    @property
+    def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
+        return False
+
+    async def encode(
+        self, prompt: str, add_special_tokens: bool = False
+    ) -> str:
+        """Returns the prompt unchanged (identity encoding)."""
+        return prompt
+
+    async def decode(
+        self,
+        encoded: TokenIds | str,
+        **kwargs,
+    ) -> str:
+        """Returns the encoded string unchanged (identity decoding)."""
+        if isinstance(encoded, str):
+            return encoded
+        return ""
+
+
+def max_tokens_to_generate(
+    prompt_size: int,
+    max_length: int | None,
+    max_new_tokens: int | None = None,
+) -> int | None:
+    """Returns the max number of new tokens to generate."""
+    if max_length is None:
+        return max_new_tokens
+    _difference_between_max_and_prompt = max(max_length - prompt_size, 0)
+    if max_new_tokens is None:
+        return _difference_between_max_and_prompt
+    return min(max_new_tokens, _difference_between_max_and_prompt)
+
+
+async def run_with_default_executor(
+    fn: Callable[_P, _R], *args: _P.args, **kwargs: _P.kwargs
+) -> _R:
+    """Runs a callable in the default thread pool executor.
+
+    Args:
+        fn: Callable to run.
+        *args: Positional arguments for ``fn``.
+        **kwargs: Keyword arguments for ``fn``.
+
+    Returns:
+        The result of ``fn(*args, **kwargs)``.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, partial(fn, *args, **kwargs))
+
+
+def replace_unpaired_surrogates(prompt: str) -> str:
+    """Returns ``prompt`` with each unpaired UTF-16 surrogate replaced by U+FFFD.
+
+    A JSON request may legally carry lone surrogate escapes -- for example an
+    emoji whose surrogate pair was split by client-side truncation. The parsed
+    value is a valid Python :class:`str` but is not encodable as UTF-8, so
+    handing it to a HuggingFace fast (Rust) tokenizer raises an opaque
+    ``TypeError`` inside ``encode_batch``. Every surrogate code point
+    (U+D800--U+DFFF) is mapped to the Unicode replacement character (U+FFFD);
+    in JSON-decoded input these are exactly the unpaired surrogates, since the
+    parser reconstitutes a valid pair into a single non-surrogate code point.
+    Well-formed text is left unchanged. An ASCII fast path returns immediately;
+    otherwise the string is probed once with ``encode("utf-8")`` and the
+    per-character replacement runs only when that probe fails.
+    """
+    if prompt.isascii():
+        return prompt
+    try:
+        prompt.encode("utf-8")
+    except UnicodeEncodeError:
+        return "".join(
+            "\ufffd" if "\ud800" <= char <= "\udfff" else char
+            for char in prompt
+        )
+    return prompt
+
+
+def _encode_with(encoder: ChatEncoder, prompt: str) -> npt.NDArray[np.int64]:
+    """Encodes ``prompt`` with ``encoder``, as :meth:`TextTokenizer.encode` would."""
+    ids = encoder.encode(replace_unpaired_surrogates(prompt))
+    return np.frombuffer(ids, dtype="<u4").astype(np.int64)
+
+
+def _as_token_id_set(eos_token_id: object) -> set[int]:
+    if isinstance(eos_token_id, int):
+        return {eos_token_id}
+    if isinstance(eos_token_id, list):
+        return {
+            token_id for token_id in eos_token_id if isinstance(token_id, int)
+        }
+    return set()
+
+
+def resolve_eos_token_ids(
+    tokenizer_eos_token_id: int | None,
+    pipeline_config: PipelineConfig | None,
+) -> set[int]:
+    """Returns every token id that ends generation for the model.
+
+    Unions the tokenizer's EOS token with the ``eos_token_id`` of the target
+    model's ``config.json``, the draft model's ``config.json`` and the target
+    model's ``generation_config.json``. Each ``eos_token_id`` may be one id, a
+    list of ids or unset. Hugging Face ``generate`` stops on the
+    ``generation_config.json`` list, which often names more tokens than
+    ``config.json`` (for example a chat turn terminator).
+
+    Args:
+        tokenizer_eos_token_id: The tokenizer's ``eos_token_id``, if any.
+        pipeline_config: The pipeline configuration to read model configs
+            from, or ``None`` to use only the tokenizer's EOS token.
+
+    Returns:
+        The set of EOS token ids.
+    """
+    eos_token_ids = _as_token_id_set(tokenizer_eos_token_id)
+    if pipeline_config is None:
+        return eos_token_ids
+    model = pipeline_config.model
+    draft_hf_config = getattr(
+        pipeline_config.draft_model, "huggingface_config", None
+    )
+    for eos in (
+        getattr(model.huggingface_config, "eos_token_id", None),
+        getattr(draft_hf_config, "eos_token_id", None),
+        model.generation_config.eos_token_id,
+    ):
+        eos_token_ids.update(_as_token_id_set(eos))
+    return eos_token_ids
+
+
+async def build_eos_tracker_for_request(
+    eos_token_ids: set[int],
+    request: TextGenerationRequest,
+    encode_fn: Callable[[str, bool], Awaitable[npt.NDArray[np.integer[Any]]]],
+) -> EOSTracker:
+    """Builds an :class:`~max.pipelines.modeling.types.EOSTracker` from request sampling params.
+
+    Args:
+        eos_token_ids: The model's EOS token IDs from tokenizer/model config.
+        request: Generation request; uses ``request.sampling_params`` for stops.
+        encode_fn: Async encode callable ``(text, add_special_tokens) -> token ids``.
+
+    Returns:
+        Configured :class:`~max.pipelines.modeling.types.EOSTracker` for this request.
+    """
+    params = request.sampling_params
+    resolved_eos_token_ids = set(eos_token_ids)
+    eos_sequences: list[list[int]] = []
+    if params.ignore_eos:
+        resolved_eos_token_ids = set()
+    else:
+        if params.stop_token_ids:
+            resolved_eos_token_ids.update(params.stop_token_ids)
+        if params.stop:
+            for stop_string in params.stop:
+                tokenized = (await encode_fn(stop_string, False)).tolist()
+                if tokenized:
+                    eos_sequences.append(tokenized)
+    return EOSTracker(
+        eos_token_ids=resolved_eos_token_ids,
+        eos_sequences=eos_sequences,
+        eos_stop_strings=params.stop or [],
+    )
+
+
+class TextTokenizer(
+    PipelineTokenizer[
+        TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
+    ]
+):
+    """Encapsulates creation of :class:`TextContext` and specific token encode/decode logic.
+
+    Args:
+        model_path: Path to the model/tokenizer
+        revision: Git revision/branch to use
+        max_length: Maximum sequence length
+        trust_remote_code: Whether to trust remote code from the model
+        enable_llama_whitespace_fix: Enable whitespace fix for Llama tokenizers
+        pipeline_config: Optional pipeline configuration
+        chat_template: Optional custom chat template string to override the one
+                        shipped with the Hugging Face model config. This allows
+                        customizing the prompt formatting for different use cases.
+    """
+
+    _chat_encoder: ChatEncoder | None = None
+
+    def __init__(
+        self,
+        model_path: str,
+        pipeline_config: PipelineConfig,
+        *,
+        revision: str | None = None,
+        max_length: int | None = None,
+        trust_remote_code: bool = False,
+        enable_llama_whitespace_fix: bool = False,
+        chat_template: str | None = None,
+        **unused_kwargs,
+    ) -> None:
+        self.model_path = model_path
+
+        try:
+            self.delegate = AutoTokenizer.from_pretrained(
+                model_path,
+                revision=revision,
+                trust_remote_code=trust_remote_code,
+                # If `max_length` is None, the max length will be taken
+                # from the HuggingFace tokenizer_config.
+                model_max_length=max_length,
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Failed to load tokenizer from {model_path}. "
+                "This can happen if:\n"
+                "- The model is not fully supported by the transformers python package\n"
+                "- Required configuration files are missing\n"
+                "- The model path is incorrect\n"
+                "- '--trust-remote-code' is needed but not set\n"
+            ) from e
+
+        # Override chat template if provided
+        # This will be used by the delegate's apply_chat_template method automatically
+        self._custom_template_provided = chat_template is not None
+        self._chat_template = chat_template
+        if chat_template is not None:
+            self.delegate.chat_template = chat_template
+            logger.info(
+                f"Set custom chat template on tokenizer for {model_path}"
+            )
+
+        self.max_length = max_length or self.delegate.model_max_length
+
+        self._chat_encoder = load_chat_encoder(
+            pipeline_config.tokenizer_impl
+            if pipeline_config is not None
+            else None,
+            self.delegate,
+            model_path,
+            revision,
+        )
+        self._chat_encoder_outcomes: Counter[str] = Counter()
+        self._chat_encoder_failed = False
+
+        # configure Llama whitespace fix if needed
+        self._enable_llama_whitespace_fix = (
+            enable_llama_whitespace_fix and self._strips_leading_whitespace
+        )
+        (
+            self._llama_whitespace_fix_dummy_token_id,
+            self._llama_whitespace_fix_dummy_token_len,
+        ) = self._llama_whitespace_fix_dummy_token
+
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
+        )
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Pickles without the chat encoder, which may not be picklable.
+
+        The pipeline factory carries this tokenizer into the spawned model
+        worker (see ``PIPELINE_REGISTRY.retrieve_factory``), which builds no
+        contexts from chats; should it encode one, HuggingFace serves it.
+        """
+        state = self.__dict__.copy()
+        state["_chat_encoder"] = None
+        return state
+
+    @property
+    def eos_token_ids(self) -> set[int]:
+        """The full set of token ids that end generation for this model."""
+        return set(self._eos_token_ids)
+
+    @cached_property
+    def tokenizer_vocab_size(self) -> int:
+        """Vocabulary size of the HuggingFace tokenizer delegate."""
+        return len(self.delegate)
+
+    def apply_chat_template(
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None,
+        **chat_template_options: Any,
+    ) -> str:
+        """Applies the delegate chat template to messages (and optional tools)."""
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
+
+        flattened = [message.flatten_content() for message in messages]
+
+        try:
+            if self._custom_template_provided:
+                # A ``trust_remote_code`` tokenizer may override
+                # ``apply_chat_template`` to render a format hardcoded in
+                # Python, never reading the ``chat_template`` attribute -- which
+                # silently discards an explicit ``--chat-template``. Render the
+                # requested template through the base implementation so the
+                # override is the format that actually reaches the model.
+                templated_message = PreTrainedTokenizerBase.apply_chat_template(
+                    self.delegate,
+                    flattened,
+                    chat_template=self._chat_template,
+                    tokenize=False,
+                    tools=tools,
+                    **chat_template_options,
+                )
+            else:
+                templated_message = self.delegate.apply_chat_template(
+                    flattened,
+                    tokenize=False,
+                    tools=tools,
+                    **chat_template_options,
+                )
+        except Exception as e:
+            if self._custom_template_provided:
+                # Provide additional context when a custom template is used
+                error_msg = (
+                    f"Failed to apply custom chat template. This may indicate an issue "
+                    f"with your custom prompt template. Please check your template syntax "
+                    f"and ensure it properly handles the provided messages and tools.\n\n"
+                    f"Template variables available:\n"
+                    f"- messages: List of conversation messages with 'role' and 'content' fields\n"
+                    f"- tools: List of available tools (if provided)\n"
+                    f"- add_generation_prompt: Boolean for adding generation prompt\n\n"
+                    f"Original error: {type(e).__name__}: {str(e)}"
+                )
+                raise ValueError(error_msg) from e
+            else:
+                # Re-raise the original error for default templates
+                raise
+
+        assert isinstance(templated_message, str)
+        return templated_message
+
+    @property
+    def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
+        return False
+
+    async def encode(
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Transforms the provided prompt into a token array."""
+        encoded_prompt: npt.NDArray[np.integer[Any]]
+        if isinstance(prompt, str):
+
+            def _encode_fn(
+                prompt: str, add_special_tokens: bool
+            ) -> npt.NDArray[np.integer[Any]]:
+                return self.delegate.encode(
+                    replace_unpaired_surrogates(prompt),
+                    add_special_tokens=add_special_tokens,
+                )
+
+            # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
+            # Add a standard (non-async) lock in the executor thread if needed.
+            encoded_prompt = await run_with_default_executor(
+                _encode_fn,
+                prompt,
+                add_special_tokens,
+            )
+
+            encoded_prompt = np.array(encoded_prompt)
+        else:
+            encoded_prompt = np.array(list(prompt))
+
+        if self.max_length and len(encoded_prompt) > self.max_length:
+            raise PromptTooLongError(len(encoded_prompt), self.max_length)
+
+        return encoded_prompt
+
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
+        """Transforms a provided encoded token array back into readable text."""
+        encoded = np.asarray(encoded)
+
+        # There is an issue where Llama tokenizer strips leading spaces
+        # if a single token is decoded at a time. This is a temporary
+        # fix until the issue resolved on the Tokenizers side.
+        # More information:
+        # https://github.com/huggingface/transformers/issues/31643
+        # https://github.com/Lightning-AI/litgpt/pull/1559
+        if self._enable_llama_whitespace_fix and encoded.size == 1:
+            return self._decode_with_llama_whitespace_fix(encoded, **kwargs)
+
+        try:
+            return self.delegate.decode(encoded.tolist(), **kwargs)
+        except OverflowError as e:
+            error_msg = _handle_decode_overflow(encoded, len(self.delegate))
+            raise OverflowError(error_msg) from e
+
+    async def _generate_prompt_and_token_ids(
+        self,
+        prompt: Sequence[int] | str | None,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
+    ) -> tuple[str | list[int], npt.NDArray[np.integer[Any]]]:
+        if isinstance(prompt, str | list):
+            return prompt, await self.encode(prompt, add_special_tokens=True)
+        elif isinstance(messages, list):
+            # Rendering is pure-Python Jinja over the whole conversation;
+            # inline it and a long multi-turn history blocks the API server's
+            # event loop for the full render, serializing request intake.
+            prompt = await run_with_default_executor(
+                self.apply_chat_template,
+                messages,
+                tools,
+                **chat_template_options,
+            )
+            return prompt, await self._encode_chat_prompt(prompt)
+        else:
+            raise ValueError(
+                "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TextGenerationRequestMessage]"
+            )
+
+    async def _encode_chat_prompt(
+        self, prompt: str
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Encodes a rendered chat prompt, with the chat encoder if one is set.
+
+        An encoder error sends the prompt to HuggingFace instead.
+        """
+        encoder = self._chat_encoder
+        if encoder is None:
+            return await self.encode(prompt, add_special_tokens=False)
+        try:
+            ids = await run_with_default_executor(_encode_with, encoder, prompt)
+        except Exception:
+            self._chat_encoder_outcomes["fallback"] += 1
+            # Every request may hit the same error, so only the first warns.
+            first = not self._chat_encoder_failed
+            self._chat_encoder_failed = True
+            logger.log(
+                logging.WARNING if first else logging.DEBUG,
+                "%s failed to encode a chat prompt, so HuggingFace encodes "
+                "it%s",
+                type(encoder).__name__,
+                "; later failures log at DEBUG." if first else ".",
+                exc_info=True,
+            )
+            return await self.encode(prompt, add_special_tokens=False)
+        self._chat_encoder_outcomes["custom"] += 1
+        if self.max_length and len(ids) > self.max_length:
+            raise PromptTooLongError(len(ids), self.max_length)
+        return ids
+
+    def take_chat_encoder_outcomes(self) -> dict[str, int]:
+        """Returns the chats encoded since the last call, and forgets them.
+
+        ``custom`` counts the chats the ``--tokenizer-impl`` encoder served,
+        and ``fallback`` the ones it failed on, which HuggingFace encoded.
+        Chats are not counted when no encoder is in use.
+        """
+        if self._chat_encoder is None:
+            return {}
+        outcomes = dict(self._chat_encoder_outcomes)
+        self._chat_encoder_outcomes.clear()
+        return outcomes
+
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes ``stop`` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+        return stop_tokenized
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = set(self._eos_token_ids)
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
+
+    async def create_eos_tracker(
+        self, request: TextGenerationRequest
+    ) -> EOSTracker:
+        """Builds an :class:`EOSTracker` from the request sampling params and tokenizer default EOS token IDs."""
+        return await build_eos_tracker_for_request(
+            self._eos_token_ids,
+            request,
+            self.encode,
+        )
+
+    async def new_context(self, request: TextGenerationRequest) -> TextContext:
+        """Create a new TextContext object, leveraging necessary information from TextGenerationRequest."""
+        # Encode Prompt / Messages
+        _prompt, token_ids = await self._generate_prompt_and_token_ids(
+            prompt=request.prompt,
+            messages=request.messages,
+            tools=request.tools,
+            **(request.chat_template_options or {}),
+        )
+
+        json_schema = (
+            json.dumps(request.response_format.json_schema)
+            if request.response_format
+            and request.response_format.json_schema is not None
+            else None
+        )
+
+        grammar = (
+            request.response_format.grammar if request.response_format else None
+        )
+
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
+        )
+
+        # Calculate Max Length
+        max_new_tokens = None
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
+
+        max_gen_tokens = max_tokens_to_generate(
+            len(token_ids), self.max_length, max_new_tokens
+        )
+
+        token_buffer = TokenBuffer(
+            array=token_ids.astype(np.int64, copy=False),
+        )
+
+        context = TextContext(
+            request_id=request.request_id,
+            eos_tracker=await self.create_eos_tracker(request),
+            max_length=len(token_ids) + max_gen_tokens
+            if max_gen_tokens is not None
+            else self.max_length,
+            tokens=token_buffer,
+            vocab_size=self.tokenizer_vocab_size,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
+            json_schema=json_schema,
+            grammar=grammar,
+            grammar_state=grammar_state,
+            sampling_params=request.sampling_params,
+            model_name=request.model_name,
+            target_endpoint=request.target_endpoint,
+            dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
+            cache_salt=request.cache_salt,
+        )
+
+        return context
+
+    @property
+    def _strips_leading_whitespace(self) -> bool:
+        """Detect if this tokenizer strips leading whitespace on single-token decode.
+
+        SentencePiece tokenizers encode word boundaries as a ``▁`` prefix
+        which gets stripped when a single token is decoded in isolation.
+        Instead of checking for specific tokenizer class names (which change
+        across ``transformers`` versions), we test the behavior directly.
+        """
+        enc = self.delegate.encode("A B", add_special_tokens=False)
+        enc_a = self.delegate.encode("A", add_special_tokens=False)
+        b_tokens = enc[len(enc_a) :]
+        if not b_tokens:
+            return False
+        decoded = self.delegate.decode([b_tokens[0]])
+        return not decoded.startswith(" ")
+
+    @property
+    def _llama_whitespace_fix_dummy_token(self) -> tuple[int, int]:
+        dummy_token_id = 33  # \x1e
+        dummy_token_decoded = self.delegate.decode([dummy_token_id])
+        return dummy_token_id, len(dummy_token_decoded)
+
+    def _decode_with_llama_whitespace_fix(
+        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
+    ) -> str:
+        if encoded.shape == ():
+            # The np.insert below will replace the token instead of prepend it
+            # if the array is actually a scalar.  Reshape to a 1-length rank-1
+            # array in this case.  See MODELS-467 for symptom.
+            encoded = encoded.reshape((1,))
+
+        decoded = self.delegate.decode(
+            np.insert(
+                encoded, 0, self._llama_whitespace_fix_dummy_token_id
+            ).tolist(),
+            **kwargs,
+        )
+        return decoded[self._llama_whitespace_fix_dummy_token_len :]
+
+
+class ReasoningTextTokenizer(ReasoningDelimitersMixin, TextTokenizer):
+    """A :class:`TextTokenizer` that resolves its reasoning-delimiter ids.
+
+    Resolves :attr:`~ReasoningDelimitersMixin.reasoning_delimiters` at
+    construction, so an architecture whose reasoning parser needs them can
+    use this class directly or subclass it.
+    """
+
+    def __init__(
+        self, model_path: str, pipeline_config: PipelineConfig, **kwargs: Any
+    ) -> None:
+        super().__init__(model_path, pipeline_config, **kwargs)
+        self._resolve_reasoning_delimiters(self.delegate)
+
+
+class TextAndVisionTokenizer(
+    PipelineTokenizer[
+        TextAndVisionContext,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ],
+):
+    """Encapsulates creation of TextAndVisionContext and specific token encode/decode logic."""
+
+    def __init__(
+        self,
+        model_path: str,
+        pipeline_config: PipelineConfig,
+        *,
+        revision: str | None = None,
+        max_length: int | None = None,
+        trust_remote_code: bool = False,
+        **unused_kwargs,
+    ) -> None:
+        self.model_path = model_path
+
+        self.delegate = AutoTokenizer.from_pretrained(
+            model_path,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+            # If `max_length` is None, the max length will be taken
+            # from the HuggingFace tokenizer_config.
+            model_max_length=max_length,
+        )
+        self.max_length = max_length or self.delegate.model_max_length
+
+        # Use the pre-loaded HuggingFace config from pipeline_config
+        config = pipeline_config.model.huggingface_config
+
+        self.processor = AutoProcessor.from_pretrained(
+            model_path, revision=revision, trust_remote_code=trust_remote_code
+        )
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
+        )
+
+        self.enable_prefix_caching = (
+            pipeline_config.model.kv_cache.enable_prefix_caching
+        )
+
+        # Qwen2.5VL uses image_token_id
+        # Pixtral uses image_token_index
+        vision_token_ids: list[int] = []
+        for vision_token_id_name in [
+            "image_token_id",
+            "image_token_index",
+        ]:
+            if vision_token_id := getattr(config, vision_token_id_name, None):
+                vision_token_ids.append(vision_token_id)
+        if not vision_token_ids:
+            raise ValueError("vision_token_id not found in model_config config")
+        self.vision_token_ids = vision_token_ids
+
+        # This is pixtral specific hack as it also has a image_break_token_id
+        if image_break_token_id := getattr(
+            self.processor, "image_break_token_id", None
+        ):
+            self.vision_token_ids.append(image_break_token_id)
+
+    @property
+    def eos_token_ids(self) -> set[int]:
+        """The full set of token ids that end generation for this model."""
+        return set(self._eos_token_ids)
+
+    @cached_property
+    def tokenizer_vocab_size(self) -> int:
+        """Vocabulary size of the HuggingFace tokenizer delegate."""
+        return len(self.delegate)
+
+    def apply_chat_template(
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
+        **chat_template_options: Any,
+    ) -> str:
+        """Applies the processor's chat template to the messages.
+
+        Args:
+            messages: List of messages for the chat template.
+            tools: Optional tools available for the model to invoke.
+            **chat_template_options: Template options to forward to the Jinja
+                template. Merged with ``add_generation_prompt=True`` default.
+
+        Returns:
+            The templated chat message as a string.
+        """
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **chat_template_options,
+        }
+        templated_message = self.processor.apply_chat_template(
+            [msg.model_dump(exclude_none=True) for msg in messages],
+            tokenize=False,
+            tools=tools,
+            **chat_template_options,
+        )
+        assert isinstance(templated_message, str)
+        return templated_message
+
+    @property
+    def expects_content_wrapping(self) -> bool:
+        """Returns whether this tokenizer expects content wrapping."""
+        return True
+
+    async def encode(
+        self, prompt: str | Sequence[int], add_special_tokens: bool = True
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Transforms the provided prompt into a token array."""
+        encoded_prompt: npt.NDArray[np.integer[Any]]
+        if isinstance(prompt, str):
+
+            def _encode_fn(
+                prompt: str, add_special_tokens: bool
+            ) -> npt.NDArray[np.integer[Any]]:
+                return self.delegate.encode(
+                    replace_unpaired_surrogates(prompt),
+                    add_special_tokens=add_special_tokens,
+                )
+
+            # Note: the underlying tokenizer may not be thread safe in some cases, see https://github.com/huggingface/tokenizers/issues/537
+            # Add a standard (non-async) lock in the executor thread if needed.
+            encoded_prompt = await run_with_default_executor(
+                _encode_fn,
+                prompt,
+                add_special_tokens,
+            )
+
+            max_length = self.max_length or self.delegate.model_max_length
+            if max_length and len(encoded_prompt) > max_length:
+                raise PromptTooLongError(len(encoded_prompt), max_length)
+
+            encoded_prompt = np.array(encoded_prompt)
+        else:
+            encoded_prompt = np.array(list(prompt))
+
+        return encoded_prompt
+
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
+        """Transforms a provided encoded token array back into readable text."""
+        encoded = np.asarray(encoded)
+        try:
+            return self.delegate.decode(encoded.tolist(), **kwargs)
+        except OverflowError as e:
+            error_msg = _handle_decode_overflow(encoded, len(self.delegate))
+            raise OverflowError(error_msg) from e
+
+    async def create_eos_tracker(
+        self, request: TextGenerationRequest
+    ) -> EOSTracker:
+        """Builds an :class:`EOSTracker` from the request sampling params and tokenizer default EOS token IDs."""
+        return await build_eos_tracker_for_request(
+            self._eos_token_ids,
+            request,
+            self.encode,
+        )
+
+    async def new_context(
+        self, request: TextGenerationRequest
+    ) -> TextAndVisionContext:
+        """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
+        prompt: str | Sequence[int]
+        add_special_tokens = True
+        if request.prompt is not None:
+            prompt = request.prompt
+        elif request.messages:
+            # Same off-loop treatment as encode(): rendering the chat template
+            # is pure-Python Jinja over the whole conversation and otherwise
+            # blocks the event loop for its full duration.
+            prompt = await run_with_default_executor(
+                self.apply_chat_template,
+                request.messages,
+                request.tools,
+                **(request.chat_template_options or {}),
+            )
+            add_special_tokens = False
+        else:
+            raise ValueError(f"{request} does not provide messages or prompt.")
+
+        # open_image reuses the API server's decode-once result, or decodes
+        # raw bytes on the offline/test fallback path.
+        images = (
+            [
+                _convert_image_mode(open_image(image), "RGB")
+                for image in request.images_for_processing()
+            ]
+            if request.images
+            else None
+        )
+
+        # InternVL returns a python list. The processor call is CPU-bound
+        # tokenization, kept off the event loop for the same reason as
+        # encode() below and the template render above.
+        processed_inputs = await run_with_default_executor(
+            self.processor,
+            text=(
+                replace_unpaired_surrogates(prompt)
+                if isinstance(prompt, str)
+                else prompt
+            ),
+            images=images,
+            add_special_tokens=add_special_tokens,
+            return_tensors="np",
+        )
+
+        if "input_ids" not in processed_inputs:
+            raise ValueError(
+                "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+            )
+
+        # TODO: This is a hack to support both Pixtral and InternVL.
+        if isinstance(processed_inputs["input_ids"][0], int):
+            encoded_prompt = np.array(
+                processed_inputs["input_ids"], dtype=np.int64
+            )
+        else:
+            encoded_prompt = np.array(
+                processed_inputs["input_ids"][0], dtype=np.int64
+            )
+
+        # TODO(zheng): We should probably just make max_new_tokens an optional
+        # instead of -1.
+        max_new_tokens = None
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
+
+        max_gen_tokens = max_tokens_to_generate(
+            encoded_prompt.shape[0], self.max_length, max_new_tokens
+        )
+
+        extra_model_args = dict()
+
+        if images is not None:
+            if "pixel_values" not in processed_inputs:
+                raise ValueError(
+                    "pixel_values not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
+                )
+            pixel_values = processed_inputs["pixel_values"][0]
+            if isinstance(pixel_values, list):
+                pixel_values = tuple(pixel_values)
+            elif isinstance(pixel_values, np.ndarray):
+                pixel_values = (pixel_values,)
+            else:
+                raise ValueError(
+                    f"pixel_values is not a numpy array but it is {type(pixel_values)}"
+                )
+
+            if "aspect_ratio_ids" in processed_inputs:
+                extra_model_args["aspect_ratio_ids"] = (
+                    processed_inputs.aspect_ratio_ids
+                )
+            if "aspect_ratio_mask" in processed_inputs:
+                extra_model_args["aspect_ratio_mask"] = (
+                    processed_inputs.aspect_ratio_mask
+                )
+        else:
+            pixel_values = tuple()
+
+        # Pass through image token indices if present
+        if "image_token_indices" in processed_inputs:
+            extra_model_args["image_token_indices"] = processed_inputs[
+                "image_token_indices"
+            ]
+
+        json_schema = (
+            json.dumps(request.response_format.json_schema)
+            if request.response_format
+            and request.response_format.json_schema is not None
+            else None
+        )
+
+        grammar = (
+            request.response_format.grammar if request.response_format else None
+        )
+
+        grammar_state = GrammarEnforcementState.from_response_format(
+            request.response_format
+        )
+
+        if self.max_length and encoded_prompt.shape[0] > self.max_length:
+            raise PromptTooLongError(encoded_prompt.shape[0], self.max_length)
+
+        start_and_end_idxs = find_contiguous_ranges(
+            encoded_prompt, self.vision_token_ids
+        )
+
+        token_buffer = TokenBuffer(
+            array=encoded_prompt.astype(np.int64, copy=False),
+        )
+
+        context = TextAndVisionContext(
+            request_id=request.request_id,
+            eos_tracker=await self.create_eos_tracker(request),
+            extra_model_args=extra_model_args,
+            tokens=token_buffer,
+            vocab_size=self.tokenizer_vocab_size,
+            max_length=encoded_prompt.shape[0] + max_gen_tokens
+            if max_gen_tokens is not None
+            else self.max_length,
+            log_probabilities=request.logprobs,
+            log_probabilities_echo=request.echo,
+            json_schema=json_schema,
+            grammar=grammar,
+            grammar_state=grammar_state,
+            sampling_params=request.sampling_params,
+            dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
+            images=[
+                ImageMetadata(
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                    pixel_values=pixels,
+                    image_hash=hash_image(pixels)
+                    if self.enable_prefix_caching
+                    else None,
+                )
+                for (start_idx, end_idx), pixels in zip(
+                    start_and_end_idxs, pixel_values, strict=True
+                )
+            ],
+            vision_token_ids=self.vision_token_ids,
+            cache_salt=request.cache_salt,
+        )
+
+        return context
+
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes `stop` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+
+        return stop_tokenized
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: list[int] | None,
+        stop: list[str] | None,
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = set(self._eos_token_ids)
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
+
+
+def _rgba_to_rgb(
+    image: Image.Image,
+    background_color: tuple[int, int, int] = (255, 255, 255),
+) -> Image.Image:
+    """Convert an RGBA image to RGB with filled background color."""
+    assert image.mode == "RGBA"
+    converted = Image.new("RGB", image.size, background_color)
+    converted.paste(image, mask=image.split()[3])  # 3 is the alpha channel
+    return converted
+
+
+def _convert_image_mode(image: Image.Image, to_mode: str):  # noqa: ANN202
+    if image.mode == to_mode:
+        return image
+    elif image.mode == "RGBA" and to_mode == "RGB":
+        return _rgba_to_rgb(image)
+    else:
+        return image.convert(to_mode)

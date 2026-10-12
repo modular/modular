@@ -1,0 +1,69 @@
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+
+package(default_visibility = ["//visibility:private"])
+
+_FILECHECK_TESTS = [
+    "test_quick_bench.mojo",
+]
+
+_PLATFORM_CONSTRAINTS = {
+}
+
+_TEST_RUNTIME_ARGS = {
+    "test_quick_bench.mojo": [
+        "--format",
+        "tabular",
+        "--no-progress",
+    ],
+}
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        args = _TEST_RUNTIME_ARGS.get(src, []),
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _FILECHECK_TESTS + ["test_mojobench.mojo"],
+    )
+]
+
+lit_tests(
+    name = "lit_tests",
+    size = "large",
+    srcs = ["test_mojobench.mojo"],
+    mojo_deps = [
+        "@mojo//:std",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

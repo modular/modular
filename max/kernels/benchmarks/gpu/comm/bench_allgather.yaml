@@ -1,0 +1,37 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_allgather
+file: $KERNEL_BENCHMARKS_ROOT/gpu/comm/bench_allgather.mojo
+
+# length_mode controls per-GPU input sizes:
+#   uniform:       all GPUs get num_bytes
+#   halved_last:   last GPU gets half
+#   doubled_first: first GPU gets 2x
+#   staircase:     linear ramp from num_bytes/ngpus to num_bytes
+#   uneven:        first ceil(n/2) GPUs get base, rest get base-1
+
+params:
+  # Uniform lengths (baseline).
+  - dtype: [DType.bfloat16, DType.float32]
+    num_gpus: [2, 4, 8]
+    length_mode: [uniform]
+    $num_bytes: "[2**i for i in range(12, 28, 2)]"
+    TUNE_MAX_NUM_BLOCKS: [0]
+
+  # Non-uniform length distributions.
+  - dtype: [DType.bfloat16]
+    num_gpus: [2, 4, 8]
+    length_mode: [halved_last, doubled_first, staircase, uneven]
+    $num_bytes: "[2**i for i in range(14, 28, 3)]"
+    TUNE_MAX_NUM_BLOCKS: [0]

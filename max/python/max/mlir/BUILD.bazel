@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "mlir",
+    srcs = glob(["**/*.py"]),
+    tags = ["no-pydeps"],  # Circular import with _core, _mlir, and mlir
+    deps = [
+        "//max/python/max/_mlir",
+    ],
+)

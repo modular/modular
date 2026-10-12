@@ -1,0 +1,198 @@
+load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+
+package(default_visibility = ["//max:consumers"])
+
+# Special configuration for multimem allreduce test - only runs on SM90+ hardware
+mojo_test(
+    name = "test_multimem_allreduce.mojo.test",
+    size = "large",
+    srcs = [
+        "test_allreduce.mojo",
+        "test_multimem_allreduce.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "test_multimem_allreduce.mojo",
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
+
+# Special configuration for multimem reducescatter test - only runs on SM90+ hardware
+mojo_test(
+    name = "test_multimem_reducescatter.mojo.test",
+    size = "large",
+    srcs = [
+        "test_multimem_reducescatter.mojo",
+        "test_reducescatter.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    main = "test_multimem_reducescatter.mojo",
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
+
+_GPU_MEMORY = {
+    "test_p2p_ep_combine.mojo": "3",
+    "test_p2p_ep_dispatch.mojo": "3",
+    "test_allreduce_residual_rmsnorm_fp8.mojo": "9",
+    "test_p2p_copy.mojo": "2",
+    "test_allreduce.mojo": "4",
+    "test_allgather_rmsnorm_mxfp8.mojo": "6",
+    "test_allgather.mojo": "3",
+    "test_allgather_rmsnorm.mojo": "3",
+    "test_broadcast.mojo": "3",
+    "test_kernel_load_gate_nested.mojo": "2",
+    "test_lamport_allreduce.mojo": "3",
+    "test_lamport_pingpong.mojo": "2",
+    "test_p2p_ep_skip_a2a.mojo": "2",
+    "test_reducescatter.mojo": "3",
+    "test_reducescatter_rmsnorm.mojo": "3",
+    "test_scatter.mojo": "3",
+    "test_broadcast_subgroup.mojo": "2",
+    "test_ep_ord_r_completion.mojo": "2",
+    "test_kernel_load_gate.mojo": "2",
+}
+
+# Tests where assertions push register usage past hardware limits,
+# causing CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES on NVIDIA GPUs.
+DISABLE_ASSERTIONS_TESTS = []
+
+# Standalone multi-GPU test: allreduce + RMSNorm + FP8 quantization.
+# Needs multi-GPU constraints, disabled assertions, special env vars,
+# 4GB GPU memory, and extra deps that the standard comm glob doesn't provide.
+mojo_test(
+    name = "test_allreduce_residual_rmsnorm.mojo.test",
+    size = "large",
+    srcs = ["test_allreduce_residual_rmsnorm.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,  # MSTDL-2301: register pressure
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+    ],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+)
+
+# Standalone multi-GPU test: the bundled allreduce kernel's `build_graph` entry
+# point over stable address slots. Needs the graph-compiler kernel package.
+mojo_test(
+    name = "test_bundled_allreduce_build_graph.mojo.test",
+    size = "large",
+    srcs = ["test_bundled_allreduce_build_graph.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+    ],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:comm",
+        "//max:extensibility",
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# Regular tests for all other files
+[
+    mojo_test(
+        name = src + ".test",
+        size = "medium",  # MI355s only need small
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        enable_assertions = src not in DISABLE_ASSERTIONS_TESTS,
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "3"),
+        },
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:has_multi_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:max_mojo",
+            "//max:nn",
+            "//max:quantization",
+            "//max:shmem",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = [
+            "test_multimem_allreduce.mojo",
+            "test_multimem_reducescatter.mojo",
+            "test_allreduce_residual_rmsnorm.mojo",  # Has its own standalone rule above
+            "test_enum_like_conformance.mojo",  # Has its own standalone rule below
+            "test_bundled_allreduce_build_graph.mojo",  # Has its own standalone rule above
+        ],
+    )
+]
+
+# CPU-runnable: exercises the `EnumLike` conformances added across the
+# kernels' enum-behaving structs (runtime `match`, discriminants,
+# non-exhaustive `-1` fallback) without launching any GPU work.
+mojo_test(
+    name = "test_enum_like_conformance.mojo.test",
+    srcs = ["test_enum_like_conformance.mojo"],
+    deps = [
+        "//max:comm",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:pipeline",
+        "@mojo//:std",
+    ],
+)

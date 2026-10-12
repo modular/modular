@@ -1,0 +1,120 @@
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+
+package(default_visibility = ["//max:consumers"])
+
+_FILECHECK_TESTS = [
+    "test_naive_matmul.mojo",
+    "test_partial_load_store.mojo",
+    "test_strsv.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "//max:extensibility",
+            "//max:internal_utils",
+            "//max:linalg",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+# Fusion tests need additional dependencies, and GPU tests need accelerator
+# constraints. Keep those requirements out of the shared glob below.
+_EXPLICIT_DEP_TESTS = [
+    "test_tile_codegen_elementwise_fusion.mojo",
+    "test_foreach_fusion_tile_gpu.mojo",
+    "test_managed_tensor_slice_device_encoding.mojo",
+]
+
+mojo_test(
+    name = "test_managed_tensor_slice_device_encoding.mojo.test",
+    srcs = ["test_managed_tensor_slice_device_encoding.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "--debug-level",
+        "full",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:extensibility",
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+mojo_test(
+    name = "test_tile_codegen_elementwise_fusion.mojo.test",
+    srcs = ["test_tile_codegen_elementwise_fusion.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "--debug-level",
+        "full",
+    ],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:extensibility",
+        "//max:layout",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+# GPU integration test for the `foreach_fusion_tile` driver: needs
+# builtin_primitives (the driver), builtin_kernels (the `Add` op the fusion
+# struct uses), and a GPU.
+mojo_test(
+    name = "test_foreach_fusion_tile_gpu.mojo.test",
+    srcs = ["test_foreach_fusion_tile_gpu.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "--debug-level",
+        "full",
+    ],
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        # TODO(KERN-3171): Metal enqueue of the fusion-tile adapter fails
+        # with 'Null argument at index 0'.
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max:builtin_kernels",
+        "//max:builtin_primitives",
+        "//max:extensibility",
+        "//max:layout",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "--debug-level",
+            "full",
+        ],
+        deps = [
+            "//max:extensibility",
+            "//max:internal_utils",
+            "//max:linalg",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _FILECHECK_TESTS + _EXPLICIT_DEP_TESTS,
+    )
+]

@@ -1,0 +1,44 @@
+# Idefics3 integration tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_tokenizer",
+    size = "large",
+    srcs = ["test_tokenizer.py"],
+    env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Runtime-only deps of transformers, not imported directly by the test:
+        # jinja2 (chat templates) and torchvision (the Idefics3 image-processor
+        # backend that AutoProcessor needs to load under transformers 5.12).
+        requirement("jinja2"),
+        requirement("torchvision"),
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures/idefics3",
+        "//max/python/max/pipelines/modeling",
+        "//max/tests/integration/test_common:mocks",
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("pillow"),
+        # transformers 5.12 gates the Idefics3 PIL image processor behind the
+        # torchvision backend, so AutoProcessor fails to load without it.
+        requirement("torchvision"),
+    ],
+)

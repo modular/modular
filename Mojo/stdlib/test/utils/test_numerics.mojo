@@ -1,0 +1,591 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from std.ffi import _external_call_const
+from std.sys.info import is_64bit
+
+from std.testing import (
+    TestSuite,
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_true,
+)
+
+from std.utils.numerics import (
+    FPUtils,
+    get_accum_type,
+    inf,
+    isfinite,
+    isinf,
+    isnan,
+    max_finite,
+    max_or_inf,
+    min_finite,
+    min_or_neg_inf,
+    nan,
+    neg_inf,
+    nextafter,
+)
+
+
+# TODO: improve coverage and organization of these tests
+def test_FPUtils() raises:
+    assert_equal(FPUtils[.float32].mantissa_width(), 23)
+    assert_equal(FPUtils[.float32].exponent_bias(), 127)
+
+    comptime FPU64 = FPUtils[.float64]
+
+    assert_equal(FPU64.mantissa_width(), 52)
+    assert_equal(FPU64.exponent_bias(), 1023)
+
+    assert_equal(FPU64.get_exponent(FPU64.set_exponent(1, 2)), 2)
+    assert_equal(FPU64.get_mantissa(FPU64.set_mantissa(1, 3)), 3)
+    assert_equal(FPU64.get_exponent(FPU64.set_exponent(-1, 4)), 4)
+    assert_equal(FPU64.get_mantissa(FPU64.set_mantissa(-1, 5)), 5)
+    assert_true(FPU64.get_sign(FPU64.set_sign(0, True)))
+    assert_false(FPU64.get_sign(FPU64.set_sign(0, False)))
+    assert_true(FPU64.get_sign(FPU64.set_sign(-0, True)))
+    assert_false(FPU64.get_sign(FPU64.set_sign(-0, False)))
+    assert_false(FPU64.get_sign(1))
+    assert_true(FPU64.get_sign(-1))
+    assert_false(FPU64.get_sign(FPU64.pack(False, 6, 12)))
+    assert_equal(FPU64.get_exponent(FPU64.pack(False, 6, 12)), 6)
+    assert_equal(FPU64.get_mantissa(FPU64.pack(False, 6, 12)), 12)
+    assert_true(FPU64.get_sign(FPU64.pack(True, 6, 12)))
+    assert_equal(FPU64.get_exponent(FPU64.pack(True, 6, 12)), 6)
+    assert_equal(FPU64.get_mantissa(FPU64.pack(True, 6, 12)), 12)
+
+
+def test_get_accum_type() raises:
+    assert_equal(get_accum_type[.float32](), DType.float32)
+    assert_equal(get_accum_type[.float64](), DType.float64)
+    assert_equal(get_accum_type[.bfloat16](), DType.float32)
+    assert_equal(get_accum_type[.int8](), DType.int8)
+    assert_equal(get_accum_type[.int16](), DType.int16)
+    assert_equal(get_accum_type[.int32](), DType.int32)
+    assert_equal(get_accum_type[.int64](), DType.int64)
+    assert_equal(get_accum_type[.uint8](), DType.uint8)
+    assert_equal(get_accum_type[.uint16](), DType.uint16)
+    assert_equal(get_accum_type[.uint32](), DType.uint32)
+    assert_equal(get_accum_type[.uint64](), DType.uint64)
+
+
+def test_isfinite() raises:
+    assert_true(isfinite(Float32(33)))
+
+    assert_false(isfinite(inf[.bfloat16]()))
+    assert_false(isfinite(neg_inf[.bfloat16]()))
+    assert_false(isfinite(nan[.bfloat16]()))
+
+    assert_false(isfinite(inf[.float16]()))
+    assert_false(isfinite(inf[.float32]()))
+    assert_false(isfinite(inf[.float64]()))
+    assert_false(isfinite(neg_inf[.float16]()))
+    assert_false(isfinite(neg_inf[.float32]()))
+    assert_false(isfinite(neg_inf[.float64]()))
+    assert_false(isfinite(nan[.float16]()))
+    assert_false(isfinite(nan[.float32]()))
+    assert_false(isfinite(nan[.float64]()))
+
+
+def test_isinf() raises:
+    assert_false(isinf(Float32(33)))
+
+    assert_true(isinf(inf[.bfloat16]()))
+    assert_true(isinf(neg_inf[.bfloat16]()))
+    assert_false(isinf(nan[.bfloat16]()))
+
+    assert_true(isinf(inf[.float16]()))
+    assert_true(isinf(inf[.float32]()))
+    assert_true(isinf(inf[.float64]()))
+    assert_true(isinf(neg_inf[.float16]()))
+    assert_true(isinf(neg_inf[.float32]()))
+    assert_true(isinf(neg_inf[.float64]()))
+    assert_false(isinf(nan[.float16]()))
+    assert_false(isinf(nan[.float32]()))
+    assert_false(isinf(nan[.float64]()))
+
+
+def test_isnan() raises:
+    assert_false(isnan(Float32(33)))
+
+    assert_false(isnan(inf[.bfloat16]()))
+    assert_false(isnan(neg_inf[.bfloat16]()))
+    assert_true(isnan(nan[.bfloat16]()))
+
+    assert_false(isnan(inf[.float16]()))
+    assert_false(isnan(inf[.float32]()))
+    assert_false(isnan(inf[.float64]()))
+    assert_false(isnan(neg_inf[.float16]()))
+    assert_false(isnan(neg_inf[.float32]()))
+    assert_false(isnan(neg_inf[.float64]()))
+    assert_true(isnan(nan[.float16]()))
+    assert_true(isnan(nan[.float32]()))
+    assert_true(isnan(nan[.float64]()))
+
+
+# ===-------------------------------------------------------------------=== #
+# Float8 / Float4 isnan / isinf / isfinite coverage
+#
+# These are regression tests for some floating point dtypes, where compiling `isnan` /
+# `isinf` / `isfinite` on `float8_e3m4` and `float4_e2m1fn` failed because
+# `llvm.is.fpclass` has no overload for those types. Constructing values
+# via `from_bits` lets us cover NaN / Inf / finite encodings without
+# relying on `nan[T]()` (which is undefined for several of these dtypes).
+# ===-------------------------------------------------------------------=== #
+
+
+def test_isnan_float8_e4m3fn() raises:
+    # E4M3FN: the only NaN encodings are 0x7F (+NaN) and 0xFF (-NaN); no Inf.
+    assert_true(isnan(Float8_e4m3fn(from_bits=UInt8(0x7F))))
+    assert_true(isnan(Float8_e4m3fn(from_bits=UInt8(0xFF))))
+    assert_false(isnan(Float8_e4m3fn(from_bits=UInt8(0x00))))
+    assert_false(isnan(Float8_e4m3fn(from_bits=UInt8(0x7E))))
+    assert_false(isnan(Float8_e4m3fn(from_bits=UInt8(0x80))))
+
+
+def test_isnan_float8_e5m2() raises:
+    # E5M2: NaN at exp=11111 + mantissa nonzero, i.e. 0x7D / 0x7E / 0x7F
+    # and their negative counterparts; 0x7C / 0xFC are +/-Inf.
+    assert_true(isnan(Float8_e5m2(from_bits=UInt8(0x7D))))
+    assert_true(isnan(Float8_e5m2(from_bits=UInt8(0x7E))))
+    assert_true(isnan(Float8_e5m2(from_bits=UInt8(0x7F))))
+    assert_true(isnan(Float8_e5m2(from_bits=UInt8(0xFD))))
+    assert_true(isnan(Float8_e5m2(from_bits=UInt8(0xFF))))
+    assert_false(isnan(Float8_e5m2(from_bits=UInt8(0x7C))))
+    assert_false(isnan(Float8_e5m2(from_bits=UInt8(0xFC))))
+    assert_false(isnan(Float8_e5m2(from_bits=UInt8(0x00))))
+    assert_false(isnan(Float8_e5m2(from_bits=UInt8(0x3C))))
+
+
+def test_isnan_float8_e8m0fnu() raises:
+    # E8M0FNU: only NaN encoding is 0xFF.
+    assert_true(isnan(Float8_e8m0fnu(from_bits=UInt8(0xFF))))
+    assert_false(isnan(Float8_e8m0fnu(from_bits=UInt8(0x00))))
+    assert_false(isnan(Float8_e8m0fnu(from_bits=UInt8(0x7F))))
+    assert_false(isnan(Float8_e8m0fnu(from_bits=UInt8(0xFE))))
+
+
+def test_isnan_float8_e3m4() raises:
+    # E3M4 follows IEEE-style semantics: NaN is exp=111 with mantissa nonzero,
+    # Inf is exp=111 with mantissa zero. Multiple bit patterns are NaN.
+    # 0x70 = 0_111_0000 = +Inf, 0xF0 = -Inf — must NOT be NaN.
+    assert_false(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0x70))))
+    assert_false(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0xF0))))
+    # Several distinct NaN bit patterns must all be detected.
+    assert_true(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0x71))))
+    assert_true(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0x78))))
+    assert_true(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0x7F))))
+    assert_true(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0xF1))))
+    assert_true(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0xF8))))
+    assert_true(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0xFF))))
+    # Zero and finite values are not NaN.
+    assert_false(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0x00))))
+    assert_false(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0x80))))
+    assert_false(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0x6F))))
+    assert_false(isnan(Scalar[.float8_e3m4](from_bits=UInt8(0xEF))))
+
+
+def test_isnan_float4_e2m1fn() raises:
+    # E2M1FN has no NaN encoding; cover all 16 representable magnitudes
+    # (+/-{0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0}) via Float32 casts.
+    assert_false(isnan(Float4_e2m1fn(Float32(0.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(0.5))))
+    assert_false(isnan(Float4_e2m1fn(Float32(1.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(1.5))))
+    assert_false(isnan(Float4_e2m1fn(Float32(2.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(3.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(4.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(6.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(-0.5))))
+    assert_false(isnan(Float4_e2m1fn(Float32(-1.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(-1.5))))
+    assert_false(isnan(Float4_e2m1fn(Float32(-2.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(-3.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(-4.0))))
+    assert_false(isnan(Float4_e2m1fn(Float32(-6.0))))
+
+
+def test_isinf_float8_e5m2() raises:
+    # E5M2 has both +Inf (0x7C) and -Inf (0xFC).
+    assert_true(isinf(Float8_e5m2(from_bits=UInt8(0x7C))))
+    assert_true(isinf(Float8_e5m2(from_bits=UInt8(0xFC))))
+    # NaN bit patterns are not Inf.
+    assert_false(isinf(Float8_e5m2(from_bits=UInt8(0x7D))))
+    assert_false(isinf(Float8_e5m2(from_bits=UInt8(0xFF))))
+    # Finite values are not Inf.
+    assert_false(isinf(Float8_e5m2(from_bits=UInt8(0x00))))
+    assert_false(isinf(Float8_e5m2(from_bits=UInt8(0x3C))))
+
+
+def test_isinf_float8_e3m4() raises:
+    # E3M4 has +Inf at 0x70 and -Inf at 0xF0.
+    assert_true(isinf(Scalar[.float8_e3m4](from_bits=UInt8(0x70))))
+    assert_true(isinf(Scalar[.float8_e3m4](from_bits=UInt8(0xF0))))
+    # NaN bit patterns are not Inf.
+    assert_false(isinf(Scalar[.float8_e3m4](from_bits=UInt8(0x71))))
+    assert_false(isinf(Scalar[.float8_e3m4](from_bits=UInt8(0x7F))))
+    assert_false(isinf(Scalar[.float8_e3m4](from_bits=UInt8(0xFF))))
+    # Finite values are not Inf.
+    assert_false(isinf(Scalar[.float8_e3m4](from_bits=UInt8(0x00))))
+    assert_false(isinf(Scalar[.float8_e3m4](from_bits=UInt8(0x6F))))
+
+
+def test_isinf_float4_e2m1fn() raises:
+    # E2M1FN has no Inf encoding; spot-check several representable values.
+    assert_false(isinf(Float4_e2m1fn(Float32(0.0))))
+    assert_false(isinf(Float4_e2m1fn(Float32(1.0))))
+    assert_false(isinf(Float4_e2m1fn(Float32(6.0))))
+    assert_false(isinf(Float4_e2m1fn(Float32(-1.0))))
+    assert_false(isinf(Float4_e2m1fn(Float32(-6.0))))
+
+
+def test_isinf_float8_e4m3fn() raises:
+    # E4M3FN has no Inf encoding (0x7F / 0xFF are NaN, not Inf).
+    assert_false(isinf(Float8_e4m3fn(from_bits=UInt8(0x00))))
+    assert_false(isinf(Float8_e4m3fn(from_bits=UInt8(0x7E))))
+    assert_false(isinf(Float8_e4m3fn(from_bits=UInt8(0x7F))))
+    assert_false(isinf(Float8_e4m3fn(from_bits=UInt8(0x80))))
+    assert_false(isinf(Float8_e4m3fn(from_bits=UInt8(0xFF))))
+
+
+def test_isinf_float8_e8m0fnu() raises:
+    # E8M0FNU has no Inf encoding (0xFF is NaN, all others are finite).
+    assert_false(isinf(Float8_e8m0fnu(from_bits=UInt8(0x00))))
+    assert_false(isinf(Float8_e8m0fnu(from_bits=UInt8(0x7F))))
+    assert_false(isinf(Float8_e8m0fnu(from_bits=UInt8(0xFE))))
+    assert_false(isinf(Float8_e8m0fnu(from_bits=UInt8(0xFF))))
+
+
+def test_isfinite_float8_e3m4() raises:
+    # Zero and other finite encodings.
+    assert_true(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0x00))))
+    assert_true(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0x80))))
+    assert_true(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0x6F))))
+    assert_true(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0xEF))))
+    # Inf encodings.
+    assert_false(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0x70))))
+    assert_false(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0xF0))))
+    # NaN encodings.
+    assert_false(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0x71))))
+    assert_false(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0x7F))))
+    assert_false(isfinite(Scalar[.float8_e3m4](from_bits=UInt8(0xFF))))
+
+
+def test_isfinite_float4_e2m1fn() raises:
+    # E2M1FN: every representable value is finite.
+    assert_true(isfinite(Float4_e2m1fn(Float32(0.0))))
+    assert_true(isfinite(Float4_e2m1fn(Float32(1.0))))
+    assert_true(isfinite(Float4_e2m1fn(Float32(6.0))))
+    assert_true(isfinite(Float4_e2m1fn(Float32(-1.0))))
+    assert_true(isfinite(Float4_e2m1fn(Float32(-6.0))))
+
+
+def overflow_int[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_integral()
+    ), "comparison only valid on integral types"
+    return max_finite[dtype]() + 1 < max_finite[dtype]()
+
+
+def overflow_fp[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_floating_point()
+    ), "comparison only valid on floating point types"
+    return max_finite[dtype]() + 1 == max_finite[dtype]()
+
+
+def test_max_finite() raises:
+    assert_almost_equal(max_finite[.float32](), 3.4028235e38)
+    assert_almost_equal(max_finite[.float64](), 1.7976931348623157e308)
+
+    assert_true(max_finite[.bool]())
+
+    assert_true(overflow_int[.int8]())
+    assert_true(overflow_int[.uint8]())
+    assert_true(overflow_int[.int16]())
+    assert_true(overflow_int[.uint16]())
+    assert_true(overflow_int[.int32]())
+    assert_true(overflow_int[.uint32]())
+    assert_true(overflow_int[.int64]())
+    assert_true(overflow_int[.uint64]())
+    assert_true(overflow_int[.int]())
+    assert_true(overflow_int[.uint]())
+
+    assert_true(overflow_fp[.float32]())
+    assert_true(overflow_fp[.float64]())
+
+    assert_equal(max_finite[.int8](), 127)
+    assert_equal(max_finite[.uint8](), 255)
+    assert_equal(max_finite[.int16](), 32767)
+    assert_equal(max_finite[.uint16](), 65535)
+    assert_equal(max_finite[.int32](), 2147483647)
+    assert_equal(max_finite[.uint32](), 4294967295)
+    assert_equal(max_finite[.int64](), 9223372036854775807)
+    assert_equal(max_finite[.uint64](), 18446744073709551615)
+    # FIXME(#5214): uncomment once it is closed
+    # assert_equal(
+    #     max_finite[DType.int128](), 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+    # )
+    # assert_equal(
+    #     max_finite[DType.uint128](), 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+    # )
+    # assert_equal(
+    #     max_finite[DType.int256](),
+    #     0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
+    # )
+    # assert_equal(
+    #     max_finite[DType.uint256](),
+    #     0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
+    # )
+
+    comptime if is_64bit():
+        assert_equal(max_finite[.int](), 9223372036854775807)
+        assert_equal(max_finite[.uint](), 18446744073709551615)
+    else:
+        assert_equal(max_finite[.int](), 2147483647)
+        assert_equal(max_finite[.uint](), 4294967295)
+
+
+def underflow_int[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_integral()
+    ), "comparison only valid on integral types"
+    return min_finite[dtype]() - 1 > min_finite[dtype]()
+
+
+def underflow_fp[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_floating_point()
+    ), "comparison only valid on floating point types"
+    return min_finite[dtype]() - 1 == min_finite[dtype]()
+
+
+def test_min_finite() raises:
+    assert_almost_equal(min_finite[.float32](), -3.4028235e38)
+    assert_almost_equal(min_finite[.float64](), -1.7976931348623157e308)
+
+    assert_false(min_finite[.bool]())
+
+    assert_true(underflow_int[.int8]())
+    assert_true(underflow_int[.uint8]())
+    assert_true(underflow_int[.int16]())
+    assert_true(underflow_int[.uint16]())
+    assert_true(underflow_int[.int32]())
+    assert_true(underflow_int[.uint32]())
+    assert_true(underflow_int[.int64]())
+    assert_true(underflow_int[.uint64]())
+    assert_true(underflow_int[.int]())
+    assert_true(underflow_int[.uint]())
+
+    assert_true(underflow_fp[.float32]())
+    assert_true(underflow_fp[.float64]())
+
+    assert_equal(min_finite[.int8](), -128)
+    assert_equal(min_finite[.int16](), -32768)
+    assert_equal(min_finite[.int32](), -2147483648)
+    assert_equal(min_finite[.int64](), -9223372036854775808)
+    # FIXME(#5214): uncomment once it is closed
+    # assert_equal(
+    #     min_finite[DType.int128](), -0x8000_0000_0000_0000_0000_0000_0000_0000
+    # )
+    # assert_equal(
+    #     min_finite[DType.int256](),
+    #     -0x8000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+    # )
+
+    comptime if is_64bit():
+        assert_equal(min_finite[.int](), -9223372036854775808)
+        assert_equal(min_finite[.uint](), 0)
+    else:
+        assert_equal(min_finite[.int](), -2147483648)
+        assert_equal(min_finite[.uint](), 0)
+
+
+def test_max_or_inf() raises:
+    assert_almost_equal(max_or_inf[.float32](), inf[.float32]())
+    assert_almost_equal(max_or_inf[.float64](), inf[.float64]())
+    assert_true(max_or_inf[.bool]())
+
+
+def test_min_or_neg_inf() raises:
+    assert_almost_equal(min_or_neg_inf[.float32](), neg_inf[.float32]())
+    assert_almost_equal(min_or_neg_inf[.float64](), neg_inf[.float64]())
+    assert_false(min_or_neg_inf[.bool]())
+
+
+def test_neg_inf() raises:
+    assert_false(isfinite(neg_inf[.float32]()))
+    assert_false(isfinite(neg_inf[.float64]()))
+    assert_true(isinf(neg_inf[.float32]()))
+    assert_true(isinf(neg_inf[.float64]()))
+    assert_false(isnan(neg_inf[.float32]()))
+    assert_false(isnan(neg_inf[.float64]()))
+    assert_equal(-inf[.float32](), neg_inf[.float32]())
+    assert_equal(-inf[.float64](), neg_inf[.float64]())
+
+
+def test_nextafter() raises:
+    assert_true(isnan(nextafter(nan[.float32](), nan[.float32]())))
+    assert_true(isinf(nextafter(inf[.float32](), inf[.float32]())))
+    assert_true(isinf(nextafter(-inf[.float32](), -inf[.float32]())))
+    assert_almost_equal(nextafter(Float64(0), Float64(0)), 0)
+    assert_almost_equal(nextafter(Float64(0), Float64(1)), 5e-324)
+    assert_almost_equal(nextafter(Float64(0), Float64(-1)), -5e-324)
+    assert_almost_equal(nextafter(Float64(1), Float64(0)), 0.99999999999999988)
+    assert_almost_equal(
+        nextafter(Float64(-1), Float64(0)), -0.99999999999999988
+    )
+    assert_almost_equal(
+        nextafter(SIMD[.float64, 2](0, 1), SIMD[.float64, 2](0, 1)),
+        SIMD[.float64, 2](0, 1),
+    )
+    assert_almost_equal(
+        nextafter(SIMD[.float64, 2](0, 1), SIMD[.float64, 2](1, 1)),
+        SIMD[.float64, 2](5e-324, 1),
+    )
+    assert_almost_equal(
+        nextafter(SIMD[.float64, 2](0, 1), SIMD[.float64, 2](-1, 1)),
+        SIMD[.float64, 2](-5e-324, 1),
+    )
+    assert_almost_equal(
+        nextafter(SIMD[.float64, 2](1, 1), SIMD[.float64, 2](0, 0)),
+        SIMD[.float64, 2](0.99999999999999988, 0.99999999999999988),
+    )
+    assert_almost_equal(
+        nextafter(SIMD[.float64, 2](-1, -1), SIMD[.float64, 2](0, 0)),
+        SIMD[.float64, 2](-0.99999999999999988, -0.99999999999999988),
+    )
+
+
+def _nextafter_libm_ref[
+    dt: DType
+](x: Scalar[dt], toward: Scalar[dt]) -> Scalar[dt]:
+    comptime name = "nextafter" + ("f" if dt == .float32 else "")
+    return _external_call_const[name, Scalar[dt]](x, toward)
+
+
+def _assert_nextafter_matches_libm[
+    dt: DType
+](x: Scalar[dt], toward: Scalar[dt]) raises:
+    var got = Scalar[dt](nextafter(SIMD[dt, 1](x), SIMD[dt, 1](toward))[0])
+    var want = _nextafter_libm_ref[dt](x, toward)
+    assert_equal(
+        got.to_bits(),
+        want.to_bits(),
+        String(t"nextafter({x}, {toward}) = {got}, expected {want}"),
+    )
+
+
+def test_nextafter_matches_libm() raises:
+    # The pure-Mojo bit walk must agree with the system libm bit for bit on
+    # every input class: normals, subnormals, both zero signs, signed
+    # infinities, sign-boundary neighbours, and equal-input cases.
+    comptime f32_bits: List[UInt32] = [
+        0x00000000,  # +0
+        0x80000000,  # -0
+        0x00000001,  # smallest subnormal
+        0x80000001,  # -smallest subnormal
+        0x007FFFFF,  # largest subnormal
+        0x807FFFFF,  # -largest subnormal
+        0x00800000,  # smallest normal
+        0x80800000,  # -smallest normal
+        0x3F800000,  # 1.0
+        0xBF800000,  # -1.0
+        0x3F7FFFFF,  # value just below 1.0
+        0xBF7FFFFF,  # value just above -1.0
+        0x7F7FFFFF,  # largest finite
+        0xFF7FFFFF,  # -largest finite
+        0x7F800000,  # +inf
+        0xFF800000,  # -inf
+        0x40490FDB,  # pi
+        0xC0490FDB,  # -pi
+    ]
+    comptime f64_bits: List[UInt64] = [
+        0x0000000000000000,
+        0x8000000000000000,
+        0x0000000000000001,
+        0x8000000000000001,
+        0x000FFFFFFFFFFFFF,
+        0x800FFFFFFFFFFFFF,
+        0x0010000000000000,
+        0x8010000000000000,
+        0x3FF0000000000000,
+        0xBFF0000000000000,
+        0x3FEFFFFFFFFFFFFF,
+        0xBFEFFFFFFFFFFFFF,
+        0x7FEFFFFFFFFFFFFF,
+        0xFFEFFFFFFFFFFFFF,
+        0x7FF0000000000000,
+        0xFFF0000000000000,
+        0x400921FB54442D18,
+        0xC00921FB54442D18,
+    ]
+
+    comptime for xi in range(len(f32_bits)):
+        comptime x = Float32(from_bits=f32_bits[xi])
+        comptime for yi in range(len(f32_bits)):
+            comptime y = Float32(from_bits=f32_bits[yi])
+            comptime if not (isnan(x) or isnan(y)):
+                _assert_nextafter_matches_libm[.float32](x, y)
+    comptime for xi in range(len(f64_bits)):
+        comptime x = Float64(from_bits=f64_bits[xi])
+        comptime for yi in range(len(f64_bits)):
+            comptime y = Float64(from_bits=f64_bits[yi])
+            comptime if not (isnan(x) or isnan(y)):
+                _assert_nextafter_matches_libm[.float64](x, y)
+
+    # A runtime pseudo-random sweep over arbitrary bit patterns reaches every
+    # input class by construction; NaN pairs are skipped, which the reference
+    # cannot order.
+    var s = UInt64(0x9E3779B97F4A7C15)
+    for _ in range(2048):
+        s = s * 6364136223846793005 + 1442695040888963407
+        var x = Float64(from_bits=s)
+        s = s * 6364136223846793005 + 1442695040888963407
+        var y = Float64(from_bits=s)
+        if not (isnan(x) or isnan(y)):
+            _assert_nextafter_matches_libm[.float64](x, y)
+        var x32 = Float32(from_bits=UInt32(s & 0xFFFFFFFF))
+        var y32 = Float32(from_bits=UInt32(s >> 32))
+        if not (isnan(x32) or isnan(y32)):
+            _assert_nextafter_matches_libm[.float32](x32, y32)
+
+
+def test_nextafter_at_comptime() raises:
+    # `nextafter` used to dispatch to libc through an `external_call`, which the
+    # comptime interpreter cannot execute; these evaluate the branches at
+    # compile time to guard the pure-Mojo fallback.
+    comptime up = nextafter(Float64(1), Float64(2))
+    assert_equal(up, 1.0000000000000002)
+    comptime down = nextafter(Float64(1), Float64(0))
+    assert_equal(down, 0.99999999999999988)
+    comptime neg = nextafter(Float64(-1), Float64(0))
+    assert_equal(neg, -0.99999999999999988)
+    comptime equal = nextafter(Float64(1), Float64(1))
+    assert_equal(equal, 1)
+    comptime from_zero = nextafter(Float64(0), Float64(1))
+    assert_equal(from_zero, 5e-324)
+    comptime from_zero_neg = nextafter(Float64(0), Float64(-1))
+    assert_equal(from_zero_neg, -5e-324)
+    comptime vec = nextafter(
+        SIMD[DType.float64, 2](0, 1), SIMD[DType.float64, 2](1, 1)
+    )
+    assert_equal(vec, SIMD[DType.float64, 2](5e-324, 1))
+    comptime is_nan = nextafter(nan[DType.float32](), Float32(1))
+    assert_true(isnan(is_nan))
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

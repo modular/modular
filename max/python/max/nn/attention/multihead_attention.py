@@ -1,0 +1,321 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from __future__ import annotations
+
+import math
+from collections.abc import Sequence
+from typing import overload
+
+from max.dtype import DType
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    ops,
+)
+from max.nn.kernels import flash_attention_gpu
+
+from ..comm import Allreduce
+from ..layer import Module
+from ..linear import Linear
+from ..stacked_linear import StackedLinear
+from .mask_config import MHAMaskVariant
+
+
+def num_heads_for_device(
+    *, num_heads: int, device_idx: int, num_devices: int
+) -> int:
+    """Computes the number of attention heads assigned to a specific device.
+
+    Distributes heads across devices, handling cases where the total is not
+    evenly divisible by the number of devices. Earlier devices receive one
+    extra head when there is a remainder.
+
+    Args:
+        num_heads: Total number of attention heads.
+        device_idx: The index of the current device (0-based).
+        num_devices: Total number of devices.
+
+    Returns:
+        Number of heads assigned to the specified device.
+    """
+    base_heads, remainder = divmod(num_heads, num_devices)
+    if device_idx < remainder:
+        return base_heads + 1
+    return base_heads
+
+
+class MultiheadAttention(Module):
+    """Multihead attention that handles both single and distributed computation.
+
+    Args:
+        num_attention_heads: The number of attention heads.
+        hidden_size: The dimension of the hidden states (embed_dim).
+        devices: Device(s) to place the weights and run the computation.
+            If multiple devices provided, uses distributed computation.
+        dtype: DType of the QKV and output projection weights.
+        scale: Value used to scale the results of the attention output.
+        qkv_has_bias: Whether to use an attention bias.
+        o_proj_has_bias: Whether to use a bias on the output projection.
+        stacked_qkv: Whether to use a single stacked QKV weight matrix.
+    """
+
+    def __init__(
+        self,
+        num_attention_heads: int,
+        hidden_size: int,
+        devices: Sequence[DeviceRef] | None = None,
+        dtype: DType = DType.float32,
+        scale: float | None = None,
+        qkv_has_bias: bool = False,
+        o_proj_has_bias: bool = False,
+        stacked_qkv: bool = False,
+    ) -> None:
+        super().__init__()
+
+        if hidden_size % num_attention_heads != 0:
+            raise ValueError(
+                f"hidden_size ({hidden_size}) must be divisible by "
+                f"num_attention_heads ({num_attention_heads})"
+            )
+
+        if devices is not None and len(devices) == 0:
+            raise ValueError("Devices cannot be empty")
+
+        self.num_heads = num_attention_heads
+        self.head_dim = hidden_size // num_attention_heads
+        self.embed_dim = hidden_size
+        self.devices = devices if devices is not None else [DeviceRef.CPU()]
+        self.is_distributed = len(self.devices) > 1
+        self.scale = (
+            scale if scale is not None else 1.0 / math.sqrt(self.head_dim)
+        )
+        self.qkv_has_bias = qkv_has_bias
+        self.o_proj_has_bias = o_proj_has_bias
+        self.stacked_qkv = stacked_qkv
+
+        # Initialize weights
+        self._init_weights(dtype)
+
+        # Initialize distributed components if needed
+        if self.is_distributed:
+            self._init_distributed()
+
+    def _init_weights(self, dtype: DType) -> None:
+        """Initializes the attention weights."""
+        self.qkv_proj = StackedLinear(
+            in_dim=self.embed_dim,
+            out_dims=[self.embed_dim, self.embed_dim, self.embed_dim],
+            names=["q_proj", "k_proj", "v_proj"],
+            dtype=dtype,
+            device=self.devices[0],
+            stacked=self.stacked_qkv,
+            has_bias=self.qkv_has_bias,
+        )
+
+        self.o_proj = Linear(
+            in_dim=self.embed_dim,
+            out_dim=self.embed_dim,
+            has_bias=self.o_proj_has_bias,
+            dtype=dtype,
+            device=self.devices[0],
+        )
+
+    def _init_distributed(self) -> None:
+        """Initializes distributed components."""
+        if len(self.devices) < 2:
+            raise ValueError(
+                f"Must provide at least 2 devices for distributed attention, got {self.devices}"
+            )
+
+        num_devices = len(self.devices)
+        self.allreduce = Allreduce(num_devices)
+
+        # Set up sharding strategies
+        self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+
+        self.o_proj.sharding_strategy = ShardingStrategy.columnwise(num_devices)
+
+        # Create sharded attention modules for each device
+        self._create_device_modules()
+
+    def _create_device_modules(self) -> None:
+        """Creates per-device attention modules for distributed computation."""
+        self.device_modules = []
+        sharded_num_heads = self.num_heads // len(self.devices)
+
+        # Shard weights once for all devices
+        qkv_proj_shards = self.qkv_proj.shard(self.devices)
+        o_proj_shards = self.o_proj.shard(self.devices)
+
+        for n, device in enumerate(self.devices):
+            # Create a module instance for this device
+            module = self._create_device_module(
+                num_attention_heads=sharded_num_heads,
+                hidden_size=self.embed_dim,
+                device=device,
+                dtype=self.qkv_proj.stacked_weight.dtype
+                if self.stacked_qkv
+                else self.qkv_proj._child(self.qkv_proj._names[0]).weight.dtype,
+                scale=self.scale,
+                has_bias=self.qkv_has_bias,
+                stacked_qkv=self.stacked_qkv,
+            )
+
+            # Assign sharded weights to this device
+            module.qkv_proj = qkv_proj_shards[n]
+            module.o_proj = o_proj_shards[n]
+            self.device_modules.append(module)
+
+    def _create_device_module(self, **kwargs) -> MultiheadAttention:
+        """Creates a single-device module instance.
+
+        Override this method in subclasses to use a different module type
+        for per-device computation.
+        """
+        # Create instance of the same class for consistency
+        return type(self)(devices=[kwargs.pop("device")], **kwargs)
+
+    def _compute_qkv(
+        self, x: TensorValue
+    ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Computes Q, K, V projections.
+
+        Override this method to customize QKV computation (for example, for quantization).
+        """
+        # Fused in-projection for Q, K, V via StackedLinear.
+        qkv = self.qkv_proj(x)
+
+        q, k, v = ops.split(
+            qkv, [self.embed_dim, self.embed_dim, self.embed_dim], axis=-1
+        )
+
+        # Reshape for multihead attention
+        batch_size = x.shape[0]
+        seq_len = x.shape[1]
+
+        q = q.reshape((batch_size, seq_len, self.num_heads, self.head_dim))
+        k = k.reshape((batch_size, seq_len, self.num_heads, self.head_dim))
+        v = v.reshape((batch_size, seq_len, self.num_heads, self.head_dim))
+
+        return q, k, v
+
+    def _apply_attention(
+        self, q: TensorValue, k: TensorValue, v: TensorValue, **kwargs
+    ) -> TensorValue:
+        """Applies attention mechanism to Q, K, V.
+
+        Override this method to customize attention computation (for example, add RoPE).
+        """
+        mask_variant = kwargs.get("mask_variant", MHAMaskVariant.NULL_MASK)
+
+        attn_out = flash_attention_gpu(
+            q, k, v, mask_variant=mask_variant, scale=self.scale
+        )
+
+        # Reshape back
+        batch_size = q.shape[0]
+        seq_len = q.shape[1]
+        attn_out = attn_out.reshape(
+            (batch_size, seq_len, self.num_heads * self.head_dim)
+        )
+
+        return attn_out
+
+    def _forward_single(self, x: TensorValue, **kwargs) -> TensorValue:
+        """Single-device forward pass.
+
+        Override this method to customize the single-device forward logic.
+        """
+        # Compute QKV
+        q, k, v = self._compute_qkv(x)
+
+        # Apply attention
+        attn_out = self._apply_attention(q, k, v, **kwargs)
+
+        # Output projection
+        return self.o_proj(attn_out)
+
+    def _forward_distributed(
+        self, x: list[TensorValue], signal_buffers: list[BufferValue], **kwargs
+    ) -> list[TensorValue]:
+        """Distributed forward pass.
+
+        Override this method to customize the distributed forward logic.
+        """
+        if len(x) != len(self.devices):
+            raise ValueError(
+                f"Expected {len(self.devices)} inputs, got {len(x)}"
+            )
+
+        if len(signal_buffers) != len(self.devices):
+            raise ValueError(
+                f"Expected {len(self.devices)} signal buffers, got {len(signal_buffers)}"
+            )
+
+        # Compute attention on each device
+        outputs = [
+            self.device_modules[i]._forward_single(x[i], **kwargs)
+            for i in range(len(self.devices))
+        ]
+
+        # Allreduce across devices
+        return self.allreduce(inputs=outputs, signal_buffers=signal_buffers)
+
+    @overload
+    def __call__(
+        self, x: TensorValue, signal_buffers: None = None, **kwargs
+    ) -> TensorValue: ...
+
+    @overload
+    def __call__(
+        self, x: list[TensorValue], signal_buffers: list[BufferValue], **kwargs
+    ) -> list[TensorValue]: ...
+
+    def __call__(
+        self,
+        x: TensorValue | list[TensorValue],
+        signal_buffers: list[BufferValue] | None = None,
+        **kwargs,
+    ) -> TensorValue | list[TensorValue]:
+        """Forward pass for attention computation.
+
+        Args:
+            x: Input tensor(s). Single tensor for single-device, list for distributed.
+            signal_buffers: Required for distributed mode.
+            **kwargs: Additional arguments passed to attention computation.
+
+        Returns:
+            Output tensor(s). Type matches input type.
+        """
+        if self.is_distributed:
+            if not isinstance(x, list):
+                raise ValueError(
+                    "Distributed attention requires list of input tensors, "
+                    f"got {type(x)}"
+                )
+            if signal_buffers is None:
+                raise ValueError(
+                    "Distributed attention requires signal_buffers to be provided."
+                )
+            return self._forward_distributed(x, signal_buffers, **kwargs)
+        else:
+            if isinstance(x, list):
+                if len(x) != 1:
+                    raise ValueError(
+                        f"Single-device attention expects one input tensor, got {len(x)}"
+                    )
+                x = x[0]
+            return self._forward_single(x, **kwargs)

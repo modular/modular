@@ -1,0 +1,181 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""OLMo2 Attention Layer."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Callable
+
+from max.dtype import DType
+from max.graph import DeviceRef, TensorValue, ops
+from max.nn.kernels import (
+    MHAMaskVariant,
+    flash_attention_ragged,
+    rope_split_store_ragged,
+)
+from max.nn.kv_cache import (
+    KVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.layer import Module
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.stacked_linear import StackedLinear
+
+
+class Olmo2Attention(Module):
+    """Implementation of the attention layer for the OLMo2 text model.
+    Key differences of Olmo2 vs. Llama3:
+    - Keys and queries are normalized after the QKV projection
+    - RMSNorm is applied on full projection dimension (num_heads * head_dim)
+    - No QKV clipping
+    """
+
+    def __init__(
+        self,
+        *,
+        rope: RotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        layer_idx: int,
+        dtype: DType = DType.bfloat16,
+        devices: list[DeviceRef],
+        linear_cls: Callable[..., Linear] = Linear,
+        scale: float | None = None,
+        has_bias: bool = False,
+        rms_norm_eps: float = 1e-6,
+    ) -> None:
+        """Initializes the attention layer.
+        Args:
+            rope: The rope layer to borrow the freq_cis value from.
+            num_attention_heads: The number of attention heads.
+            num_key_value_heads: Number of key/value heads.
+            hidden_size: The dimension of the hidden states.
+            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            layer_idx: The layer number associated with this Attention block.
+            dtype: DType of the attention inputs and weights.
+            devices: Device to place the weights and run the computation.
+            linear_cls: Linear class to use for the outputs dense layer.
+            scale: Value used to scale the results of the attention output.
+            has_bias: Whether to use an attention bias.
+            rms_norm_eps: Value to use for numerical stability in RMSNorm.
+        """
+
+        super().__init__()
+        self.rope = rope
+        self.n_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
+        self.layer_idx = layer_idx
+        self.kv_params = kv_params
+        self.has_bias = has_bias
+        self.devices = devices
+        self.scale = (
+            scale
+            if scale is not None
+            else 1.0 / math.sqrt(self.kv_params.head_dim)
+        )
+
+        self.qk_norm_eps = rms_norm_eps
+
+        # OLMo2: RMSNorm on full projection dimension
+        self.q_norm = RMSNorm(
+            num_attention_heads * self.kv_params.head_dim,
+            dtype=dtype,
+            eps=rms_norm_eps,
+        )
+        self.k_norm = RMSNorm(
+            num_key_value_heads * self.kv_params.head_dim,
+            dtype=dtype,
+            eps=rms_norm_eps,
+        )
+
+        self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
+        self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
+
+        self.qkv_proj = StackedLinear(
+            in_dim=hidden_size,
+            out_dims=[
+                self.q_weight_dim,
+                self.kv_weight_dim,
+                self.kv_weight_dim,
+            ],
+            names=["q_proj", "k_proj", "v_proj"],
+            dtype=dtype,
+            device=devices[0],
+            stacked=False,
+            has_bias=has_bias,
+        )
+
+        self.o_proj = linear_cls(
+            in_dim=self.q_weight_dim,
+            out_dim=hidden_size,
+            dtype=dtype,
+            device=devices[0],
+        )
+
+    def __call__(
+        self,
+        layer_idx: TensorValue,
+        x: TensorValue,
+        kv_collection: PagedCacheValues,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
+    ) -> TensorValue:
+        total_seq_len = x.shape[0]
+
+        # QKV matmul.
+        qkv = self.qkv_proj(x)
+
+        # Apply full-dimension QK norm before rope.
+        head_dim = self.kv_params.head_dim
+        q_dim = self.n_heads * head_dim
+        kv_dim = self.kv_weight_dim
+        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+        x_q = self.q_norm(x_q)
+        x_k = self.k_norm(x_k)
+        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
+
+        # Fused rope + split + KV store.
+        rope = self.rope
+        freqs_cis = ops.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
+            input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            n_heads=self.n_heads,
+            interleaved=rope.interleaved,
+        )
+        xq = xq.reshape((-1, self.n_heads, head_dim))
+
+        attn_out = flash_attention_ragged(
+            self.kv_params,
+            input=xq,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            input_row_offsets=input_row_offsets,
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=self.scale,
+        )
+
+        # Project output
+        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+
+        return self.o_proj(attn_out)

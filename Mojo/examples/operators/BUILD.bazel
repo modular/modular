@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "mojo_binary", "mojo_test")
+
+package(default_visibility = ["//visibility:private"])
+
+mojo_binary(
+    name = "operators",
+    srcs = [
+        "main.mojo",
+        "my_complex.mojo",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "operators_test",
+    size = "small",
+    srcs = [
+        "my_complex.mojo",
+        "test_my_complex.mojo",
+    ],
+    main = "test_my_complex.mojo",
+    deps = [
+        "@mojo//:std",
+    ],
+)

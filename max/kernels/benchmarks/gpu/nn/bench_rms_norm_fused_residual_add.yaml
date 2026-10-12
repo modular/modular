@@ -1,0 +1,32 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_rms_norm_fused_residual_add
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_rms_norm_fused_residual_add.mojo
+
+params:
+
+# Warp tiling path (cols <= WARP_SIZE * simd_width * max_warps_per_block)
+- shape: 1x5376
+- shape: 1x512x4096
+- shape: 1x1024x4096
+- shape: 1x512x8192
+- shape: 1x1024x8192
+
+# Block path (cols > WARP_SIZE * simd_width * max_warps_per_block)
+- shape: 1x512x16384
+- shape: 1x1024x16384
+
+# Float32 uses block path at lower dims (simd_width=4)
+- dtype: float32
+  shape: 1x512x8192

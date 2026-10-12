@@ -1,0 +1,64 @@
+diff --git a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+index b683f86ca386..adee37eb4ce6 100644
+--- a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+@@ -509,11 +509,6 @@ cc_library(
+             "-ldl",
+             "-lm",
+         ],
+-    }) + select({
+-        # musl's 128 KiB default worker stack is insufficient for recursive
+-        # LLVM passes such as DSE's dominator-tree traversal.
+-        "@rules_cc//cc/libc:musl": ["-Wl,-z,stack-size=8388608"],
+-        "//conditions:default": [],
+     }),
+     textual_hdrs = glob([
+         "include/llvm/Support/*.def",
+diff --git a/utils/bazel/llvm-project-overlay/llvm/config.bzl b/utils/bazel/llvm-project-overlay/llvm/config.bzl
+index c6fe876f4b5e..57003c2f62e0 100644
+--- a/utils/bazel/llvm-project-overlay/llvm/config.bzl
++++ b/utils/bazel/llvm-project-overlay/llvm/config.bzl
+@@ -28,6 +28,8 @@ def native_arch_defines(arch, triple):
+ 
+ posix_defines = [
+     "LLVM_ON_UNIX=1",
++    "HAVE_BACKTRACE=1",
++    "BACKTRACE_HEADER=<execinfo.h>",
+     "LLVM_ENABLE_LLVM_EXPORT_ANNOTATIONS=1",
+     "LLVM_ENABLE_PLUGINS=1",
+     "LLVM_ENABLE_THREADS=1",
+@@ -64,24 +66,10 @@ emscripten_defines = [
+     "HAVE_UNISTD_H=1",
+ ]
+ 
+-backtrace_defines = select({
+-    "@platforms//os:emscripten": [],
+-    "@platforms//os:windows": [],
+-    "@rules_cc//cc/libc:musl": [],
+-    "//conditions:default": [
+-        "HAVE_BACKTRACE=1",
+-        "BACKTRACE_HEADER=<execinfo.h>",
+-    ],
+-})
+-
+-mallinfo_defines = select({
+-    "@rules_cc//cc/libc:glibc": ["HAVE_MALLINFO=1"],
+-    "//conditions:default": [],
+-})
+-
+ linux_defines = posix_so_defines + [
+     "_GNU_SOURCE",
+     "HAVE_GETAUXVAL=1",
++    "HAVE_MALLINFO=1",
+     "HAVE_SBRK=1",
+     "HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC=1",
+ ]
+@@ -130,7 +118,7 @@ os_defines = select({
+     "@platforms//os:macos": macos_defines,
+     "@platforms//os:windows": win32_defines,
+     "//conditions:default": linux_defines,
+-}) + arc4random_defines + backtrace_defines + mallinfo_defines
++}) + arc4random_defines
+ 
+ # HAVE_BUILTIN_THREAD_POINTER is true for on Linux (outside of ppc64) for
+ # all recent toolchains. Add it here by default on Linux as we can't perform a

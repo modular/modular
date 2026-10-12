@@ -1,0 +1,3 @@
+package(default_visibility = ["//max:consumers"])
+
+# fig4_4.mojo has no main function and cannot be run as a test.

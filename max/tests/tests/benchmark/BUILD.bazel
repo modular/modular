@@ -1,0 +1,73 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "tests",
+    size = "large",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "test_benchmark_datasets_functional.py",
+        ],
+    ),
+    env = {
+        # Cap the tokenizer spawn pool so unit tests don't fan out across
+        # cpu_count workers.
+        "MAX_BENCHMARK_MAX_TOKENIZER_THREADS": "2",
+    },
+    # TODO(MXTOOLS-443): This glob fans out into 20 py_test targets, each
+    # paying a full `transformers` import. Scheduled together on a contended
+    # macOS worker they starve each other and time out at the 1200s cap, still
+    # inside pytest collection.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/benchmark:benchmark_serving_lib",
+        "//max/python/max/benchmark/benchmark_shared",
+        "//max/python/max/benchmark/benchmark_shared:model_csv",
+        "//max/python/max/benchmark/benchmark_shared:percentile_metrics",
+        "//max/python/max/profiler",
+        requirement("aiohttp"),
+        requirement("huggingface-hub"),
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("openai"),
+        requirement("pillow"),
+        requirement("pydantic"),
+        requirement("pytest-asyncio"),
+        requirement("pytest-mock"),
+        requirement("pyyaml"),
+        requirement("requests"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_benchmark_datasets_functional",
+    srcs = ["test_benchmark_datasets_functional.py"],
+    env = {
+        # Cap the tokenizer spawn pool so the functional tests don't fan
+        # out across cpu_count workers.
+        "MAX_BENCHMARK_MAX_TOKENIZER_THREADS": "2",
+    },
+    tags = [
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: PERF-2442
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/benchmark/benchmark_shared",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)

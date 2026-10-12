@@ -1,0 +1,36 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "architectures",
+    srcs = glob(["*.py"]),
+    ignore_extra_deps = [
+        # Hooks added for convenience for when we want to print the model layers
+        "//max/python/max/nn/hooks",
+    ],
+    ignore_unresolved_imports = [
+        # Private tool parsers are imported at runtime, not directly
+        "tool_parsers",
+        # Private Kimi K3 arch is imported at runtime, not directly
+        "kimi_k3",
+        # Private unified Kimi K3 + DSpark arch is imported at runtime
+        "unified_dspark_kimi_k3",
+        # Private MiniMax-M3 arch is imported at runtime, not directly
+        "minimax_m3",
+        # Private unified MiniMax-M3 + MTP arch is imported at runtime
+        "minimax_m3_mtp",
+        # Private unified MiniMax-M3 + DSpark arch is imported at runtime
+        "minimax_m3_dspark",
+        # Private Qwen4-Exp arch is imported at runtime, not directly
+        "qwen4_exp",
+        # Private unified Qwen4-Exp + MTP arch is imported at runtime
+        "unified_mtp_qwen4_exp",
+    ],
+    deps = [
+        requirement("transformers"),  # Used in hf_config_shims.py
+        "//max/python/max/pipelines/lib",
+        # Hooks added for convenience for when we want to print the model layers
+        "//max/python/max/nn/hooks",
+    ],
+)

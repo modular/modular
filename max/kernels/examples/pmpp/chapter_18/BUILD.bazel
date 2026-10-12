@@ -1,0 +1,37 @@
+load("//bazel:api.bzl", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
+
+package(default_visibility = ["//max:consumers"])
+
+_UTILS = ["graph_utils.mojo"]
+
+filegroup(
+    name = "utils",
+    srcs = _UTILS,
+)
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "medium",
+        srcs = [
+            src,
+            ":utils",
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "//max:max_mojo",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _UTILS,
+    )
+]

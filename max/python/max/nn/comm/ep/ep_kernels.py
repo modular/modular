@@ -1,0 +1,1667 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Expert Parallelism (EP) Communication Kernels.
+
+This file contains the kernels for Expert Parallelism (EP) communication.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Final
+
+from max.driver import accelerator_api
+from max.dtype import DType
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Dim,
+    Shape,
+    StaticDim,
+    TensorType,
+    TensorValue,
+    Value,
+    ops,
+)
+
+from ...activation import GatedActivation
+from ...quant_config import QuantConfig
+from .ep_config import NUM_GROUPS, EPConfig
+
+# With NVFP4 format, each expert's scales need to be padded to the nearest
+# multiple of NVFP4_MN_GROUP_SIZE.
+NVFP4_MN_GROUP_SIZE = 128
+
+
+def _reject_dyn_global_scales(config: EPConfig, caller: str) -> None:
+    """Raises if the config asks a non-fused dispatch for per-token global
+    scales, which only the fused kernels implement."""
+    if config.nvfp4_dyn_global_scales:
+        raise ValueError(
+            f"{caller} does not support nvfp4_dyn_global_scales; use the fused"
+            " dispatch (call_ep_dispatch or call_distributed_ep_dispatch)"
+        )
+
+
+def _uses_block_scaled_nv_ep_layout(config: EPConfig) -> bool:
+    quant_config = config.dispatch_quant_config
+    return (
+        quant_config is not None
+        and accelerator_api() == "cuda"
+        and (quant_config.is_nvfp4 or quant_config.is_mxfp8)
+    )
+
+
+def _is_legacy_float8_dispatch(config: EPConfig) -> bool:
+    quant_config = config.dispatch_quant_config
+    return (
+        quant_config is not None
+        and config.dispatch_dtype.is_float8()
+        # MXFP8 is block-scaled, never legacy per-tensor float8. Without this it
+        # would silently take the legacy path on AMD, where
+        # `_uses_block_scaled_nv_ep_layout` is cuda-only.
+        and not quant_config.is_mxfp8
+        and not _uses_block_scaled_nv_ep_layout(config)
+    )
+
+
+def uses_mx_ep_token_format(
+    config: EPConfig, quant_config: QuantConfig | None = None
+) -> bool:
+    """Whether dispatch goes through ``MXTokenFormat``, which serves both MX
+    formats: it takes its element packing from the dispatch dtype (two FP4
+    nibbles per byte, or one E4M3 byte) and the E8M0 scale path is identical.
+
+    On cuda, MXFP8 uses the NVIDIA block-scaled layout instead, so that case is
+    excluded here rather than left to call-site ordering.
+
+    Args:
+        config: Supplies the accelerator layout term, and the format term when
+            ``quant_config`` is omitted.
+        quant_config: Takes the format term from here instead, so a caller whose
+            consumer gate reads its own :obj:`QuantConfig` cannot disagree with
+            the producer about the format.
+    """
+    if quant_config is None:
+        quant_config = config.dispatch_quant_config
+    if quant_config is None:
+        return False
+    return (
+        quant_config.is_mxfp4 or quant_config.is_mxfp6 or quant_config.is_mxfp8
+    ) and not _uses_block_scaled_nv_ep_layout(config)
+
+
+_MX_FORMAT_NAME: Final[dict[DType, str]] = {
+    DType.float8_e4m3fn: "mxfp8",
+    DType.float8_e5m2: "mxfp8_e5m2",
+    DType.float6_e2m3fn: "mxfp6",
+    DType.float6_e3m2fn: "mxfp6_e3m2",
+    DType.float4_e2m1fn: "mxfp4",
+}
+_MX_FORMAT_AUTO: Final[str] = "auto"
+
+
+def _mx_format_name(quant_config: QuantConfig | None) -> str:
+    """Returns the ``MXFormat`` name for this config's element encoding.
+
+    Falls back to ``auto`` when the quantized dtype already identifies the
+    format, which keeps the kernel on its dtype inference.
+    """
+    if quant_config is None or not quant_config.is_mx:
+        return _MX_FORMAT_AUTO
+    return _MX_FORMAT_NAME.get(quant_config.mx_element_dtype, _MX_FORMAT_AUTO)
+
+
+def _add_mx_format_parameter(
+    parameters: dict[str, Any], config: EPConfig
+) -> None:
+    """Names the MX operand format when the packed dtype cannot.
+
+    MXFP4 and MXFP8 are told apart by their quantized dtype, so they leave this
+    unset and the kernel infers as before. MXFP6 travels as ``uint8`` with E8M0
+    scales -- byte for byte the same as MXFP4 -- so it has to be named.
+    """
+    quant_config = config.dispatch_quant_config
+    if quant_config is not None and quant_config.is_mxfp6:
+        parameters["MX_FORMAT"] = _mx_format_name(quant_config)
+
+
+def _ep_dispatch_output_types(
+    config: EPConfig,
+    device_ref: DeviceRef,
+) -> list[TensorType]:
+    """Returns the output types for the EP dispatch kernel."""
+    n_ranks = config.n_gpus_per_node * config.n_nodes
+    n_local_experts = config.n_experts // n_ranks
+
+    max_recv_tokens = config.get_max_recv_tokens()
+
+    if config.fused_shared_expert:
+        max_recv_tokens += config.max_tokens_per_rank
+        n_local_experts += 1
+
+    token_last_dim = config.hidden_size
+    if config.dispatch_quant_config is not None:
+        if config.dispatch_quant_config.is_fp4:
+            token_last_dim //= 2
+        elif config.dispatch_quant_config.is_mxfp6:
+            token_last_dim = token_last_dim * 3 // 4
+
+    output_tokens_type = TensorType(
+        dtype=config.dispatch_dtype,
+        shape=[max_recv_tokens, token_last_dim],
+        device=device_ref,
+    )
+    expert_start_indices_type = TensorType(
+        dtype=DType.uint32,
+        shape=[n_local_experts + 1],
+        device=device_ref,
+    )
+    expert_ids_type = TensorType(
+        dtype=DType.int32,
+        shape=[n_local_experts],
+        device=device_ref,
+    )
+    src_info_type = TensorType(
+        dtype=DType.int32,
+        shape=[max_recv_tokens, 2],
+        device=device_ref,
+    )
+
+    if config.dispatch_quant_config is not None:
+        quant_config = config.dispatch_quant_config
+
+        if _uses_block_scaled_nv_ep_layout(config):
+            # NVIDIA block-scaled formats produce padded 5D scale tiles plus
+            # offsets mapping each expert's token rows to those padded tiles.
+            scales_offsets_type = TensorType(
+                dtype=DType.uint32,
+                shape=[n_local_experts],
+                device=device_ref,
+            )
+            padded_scales_tokens = (
+                max_recv_tokens + n_local_experts * NVFP4_MN_GROUP_SIZE
+            )
+            padded_scales_type = quant_config.quantized_scales_type(
+                Shape([padded_scales_tokens, config.hidden_size]), device_ref
+            )
+            scales_types = [padded_scales_type]
+            if config.nvfp4_dyn_global_scales:
+                scales_types.append(
+                    TensorType(
+                        dtype=DType.bfloat16,
+                        shape=[max_recv_tokens],
+                        device=device_ref,
+                    )
+                )
+            return [
+                output_tokens_type,
+                *scales_types,
+                expert_start_indices_type,
+                scales_offsets_type,
+                expert_ids_type,
+                src_info_type,
+            ]
+        elif _is_legacy_float8_dispatch(config):
+            out_scales_type = quant_config.quantized_scales_type(
+                Shape([max_recv_tokens, config.hidden_size]), device_ref
+            )
+            return [
+                output_tokens_type,
+                out_scales_type,
+                expert_start_indices_type,
+                expert_ids_type,
+                src_info_type,
+            ]
+        elif uses_mx_ep_token_format(config):
+            # The dispatch-wait kernel writes the activation scale directly
+            # into the matmul's per-expert fixed-stride `scale_4d` slots, so the
+            # scales output is slot-sized (`n_local_experts` already includes
+            # the fused shared expert if present).
+            scales_rows = n_local_experts * config._max_recv_tokens_per_expert()
+            out_scales_type = quant_config.quantized_scales_type(
+                Shape([scales_rows, config.hidden_size]), device_ref
+            )
+            return [
+                output_tokens_type,
+                out_scales_type,
+                expert_start_indices_type,
+                expert_ids_type,
+                src_info_type,
+            ]
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
+
+    return [
+        output_tokens_type,
+        expert_start_indices_type,
+        expert_ids_type,
+        src_info_type,
+    ]
+
+
+def _ep_common_parameters(
+    config: EPConfig,
+) -> dict[str, bool | int | str | DType]:
+    """Returns the common parameters for the EP kernels."""
+    if config.use_allreduce:
+        # When using allreduce as communication backend, the EP kernels are only
+        # used to route token within the current device. Hence, It will only see
+        # the local experts.
+        return {
+            "hidden_size": config.hidden_size,
+            "top_k": config.top_k,
+            "n_experts": config.n_experts // config.n_gpus_per_node,
+            "max_token_per_rank": config.max_tokens_per_rank,
+            "n_gpus_per_node": 1,
+            "n_nodes": 1,
+        }
+    return {
+        "hidden_size": config.hidden_size,
+        "top_k": config.top_k,
+        "n_experts": config.n_experts,
+        "max_token_per_rank": config.max_tokens_per_rank,
+        "n_gpus_per_node": config.n_gpus_per_node,
+        "n_nodes": config.n_nodes,
+    }
+
+
+def _block_scaled_nv_format_parameters(
+    nvfp4: bool,
+) -> dict[str, bool | int | str | DType]:
+    """Returns the ``BLOCK_SCALED_NV`` dispatch format parameters: NVFP4
+    (packed E2M1, E4M3 scales) or MXFP8 (E4M3, E8M0 scales)."""
+    return {
+        "dispatch_dtype": DType.uint8 if nvfp4 else DType.float8_e4m3fn,
+        "dispatch_fmt_str": "BLOCK_SCALED_NV",
+        "dispatch_scale_dtype": (
+            DType.float8_e4m3fn if nvfp4 else DType.float8_e8m0fnu
+        ),
+    }
+
+
+def _ep_dispatch_format_parameters(
+    config: EPConfig,
+) -> dict[str, bool | int | str | DType]:
+    """Returns the dispatch token format parameters ``ep.init`` sizes for."""
+    parameters: dict[str, bool | int | str | DType] = {
+        "dispatch_dtype": config.dispatch_dtype
+    }
+    if config.dispatch_quant_config is not None:
+        if _uses_block_scaled_nv_ep_layout(config):
+            parameters.update(
+                _block_scaled_nv_format_parameters(
+                    config.dispatch_quant_config.is_nvfp4
+                )
+            )
+            # The per-token global scale enlarges every message, so the
+            # buffers allocated here must know about it.
+            if config.nvfp4_dyn_global_scales:
+                parameters["nvfp4_dyn_global_scales"] = True
+        elif uses_mx_ep_token_format(config):
+            parameters["dispatch_fmt_str"] = (
+                "MXFP6" if config.dispatch_quant_config.is_mxfp6 else "MXFP4"
+            )
+            parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
+        elif _is_legacy_float8_dispatch(config):
+            parameters["dispatch_fmt_str"] = "BlockwiseFP8"
+            parameters["dispatch_scale_dtype"] = DType.float32
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
+    else:
+        # fill in dummy values for non-quantized cases
+        parameters["dispatch_fmt_str"] = "BF16"
+        parameters["dispatch_scale_dtype"] = DType.float32
+    return parameters
+
+
+def call_ep_init(
+    atomic_counter_group_0: BufferValue,
+    atomic_counter_group_1: BufferValue,
+    config: EPConfig,
+) -> tuple[TensorValue, TensorValue]:
+    """Initialize Expert Parallelism communication infrastructure by creating
+    a custom operation that initializes SHMEM context and allocates symmetric
+    memory buffers for EP communication.
+
+    This operation only initializes the vendor library and allocates the
+    symmetric memory buffers for current GPU. To prevent deadlocks, it needs to
+    be called for each GPU separately through different threads.
+
+    Args:
+        atomic_counter_group_0: Atomic counters for buffer group 0.
+        atomic_counter_group_1: Atomic counters for buffer group 1.
+        config: EP configuration.
+
+    Returns:
+        A tuple containing:
+        - device_ptrs: TensorValue containing device pointers to allocated SHMEM buffers.
+            The tensor has shape [NUM_GROUPS, 3] where each group contains pointers to:
+            [send_buffer, recv_buffer, recv_count_buffer].
+        - my_rank: TensorValue containing the rank of the current GPU. The
+            tensor has shape [1,].
+    """
+    parameters = _ep_common_parameters(config)
+    parameters.update(_ep_dispatch_format_parameters(config))
+    parameters["combine_dtype"] = config.combine_dtype
+
+    results = ops.inplace_custom(
+        "ep.init",
+        device=atomic_counter_group_0.device,
+        values=[atomic_counter_group_0, atomic_counter_group_1],
+        out_types=[
+            TensorType(DType.uint64, [NUM_GROUPS, 3], device=DeviceRef.CPU()),
+            TensorType(DType.int32, [1], DeviceRef.CPU()),
+        ],
+        parameters=parameters,
+    )
+
+    return results[0].tensor, results[1].tensor
+
+
+def call_ep_dispatch_async(
+    input_tokens: TensorValue,
+    topk_ids: TensorValue,
+    atomic_counter: BufferValue,
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    input_scales: TensorValue | None = None,
+) -> None:
+    """Initiate Expert Parallelism token dispatch phase (async).
+
+    This function launches the EP async dispatch kernel that distributes input
+    tokens to expert devices based on top-k routing decisions. The kernel uses
+    non-blocking SHMEM communication in multi-node scenarios and returns
+    immediately after initiating transfers.
+
+    Args:
+        input_tokens: Input tokens to be dispatched to experts.
+            Shape: (num_tokens, hidden_size)
+        topk_ids: Expert IDs selected for each token by the router.
+            Shape: (num_tokens, top_k)
+            Values: Expert indices in range [0, n_experts)
+        atomic_counter: Buffer for synchronization between thread blocks.
+        send_buf_ptrs: Device pointers to the send buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (max_tokens_per_rank, msg_bytes)
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
+        recv_count_ptrs: Device pointers to the receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks)
+        config: EP configuration.
+        input_scales: Optional input scales tensor. Required for NVFP4
+            dispatch. Shape: (1,) or (n_experts,).
+
+    Raises:
+        ValueError: If ``config.nvfp4_dyn_global_scales`` is set, which only
+            the fused dispatch supports.
+
+    Note:
+        This is a non-blocking operation. Call call_ep_dispatch_wait() to wait
+        for completion and collect the dispatched tokens.
+    """
+    _reject_dyn_global_scales(config, "call_ep_dispatch_async")
+    parameters = _ep_common_parameters(config)
+    parameters["dispatch_dtype"] = config.dispatch_dtype
+
+    op_name = "ep.dispatch_async"
+    input_vals: list[Value[Any]] = [
+        atomic_counter,
+        input_tokens,
+        topk_ids,
+        send_buf_ptrs,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+    ]
+
+    if config.dispatch_quant_config is not None:
+        quant_config = config.dispatch_quant_config
+        if _uses_block_scaled_nv_ep_layout(config):
+            if quant_config.is_nvfp4 and input_scales is None:
+                raise ValueError(
+                    "input_scales must be provided when using NVFP4 dispatch"
+                )
+            op_name += ".block.scaled.nv"
+            parameters["dispatch_scale_dtype"] = (
+                DType.float8_e4m3fn
+                if quant_config.is_nvfp4
+                else DType.float8_e8m0fnu
+            )
+            if input_scales is not None:
+                input_vals.append(1.0 / input_scales.to(input_tokens.device))
+            else:
+                input_vals.append(
+                    ops.constant(
+                        [1.0], DType.float32, device=input_tokens.device
+                    )
+                )
+        elif uses_mx_ep_token_format(config):
+            op_name += ".mxfp4"
+            # No output tensor for MOGG to deduce the scale dtype from.
+            parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
+            _add_mx_format_parameter(parameters, config)
+        elif _is_legacy_float8_dispatch(config):
+            parameters["dispatch_fmt_str"] = "BlockwiseFP8"
+            parameters["dispatch_scale_dtype"] = DType.float32
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
+
+    elif config.dispatch_dtype == DType.bfloat16:
+        parameters["dispatch_fmt_str"] = "BF16"
+        parameters["dispatch_scale_dtype"] = DType.float32
+    else:
+        raise ValueError(f"Unsupported dispatch dtype: {config.dispatch_dtype}")
+
+    ops.inplace_custom(
+        op_name,
+        device=input_tokens.device,
+        values=input_vals,
+        out_types=[],
+        parameters=parameters,
+    )
+
+
+def call_ep_dispatch_wait(
+    atomic_counter: BufferValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    num_tokens: Dim | None = None,
+) -> tuple[TensorValue, ...]:
+    """Wait for Expert Parallelism token dispatch and prepare for expert
+    computation.
+
+    This function launches the EP dispatch wait kernel that waits for all
+    inter-device communication to complete, then organizes the received tokens
+    into a format suitable for grouped matmul computation.
+
+    Args:
+        atomic_counter: Buffer for synchronization between thread blocks.
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
+        recv_count_ptrs: Device pointers to the receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks)
+        config: EP configuration.
+
+    Returns:
+        A tuple containing:
+        - output_tokens: Aggregated tokens ready for grouped matmul computation.
+            Shape: (max_recv_tokens, hidden_size)
+        - expert_start_indices: Row offsets for grouped matmul operation.
+            Shape: (n_local_experts + 1,)
+        - expert_ids: Local expert IDs for the grouped operation.
+            Shape: (n_local_experts,)
+            Maps position in row_offsets to actual expert ID
+        - src_info: Source routing information for combine phase.
+            Shape: (max_recv_tokens, 2)
+            [original_token_index, topk_index] for each received token
+
+    Raises:
+        ValueError: If ``config.nvfp4_dyn_global_scales`` is set, which only
+            the fused dispatch supports.
+
+    Note:
+        This function blocks until all expected tokens have been received from
+        remote devices. For Quantized dispatch format, the output will also
+        include the aggregated scales as the second element of the tuple.
+    """
+    _reject_dyn_global_scales(config, "call_ep_dispatch_wait")
+    parameters = _ep_common_parameters(config)
+    device_ref = atomic_counter.device
+
+    # Enable the decode-fast-path grid sizing when num_tokens is known at
+    # graph build time. Falls back to the full sm_count grid otherwise.
+    if isinstance(num_tokens, StaticDim):
+        parameters["num_input_tokens"] = int(num_tokens)
+
+    op_name = "ep.dispatch_wait"
+    input_vals: list[Value[Any]] = [
+        atomic_counter,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+    ]
+    assert not config.fused_shared_expert, (
+        "Fused shared expert is not supported when using dispatch_wait."
+    )
+
+    output_vals = _ep_dispatch_output_types(config, device_ref)
+
+    if config.dispatch_quant_config is not None:
+        quant_config = config.dispatch_quant_config
+
+        if _uses_block_scaled_nv_ep_layout(config):
+            op_name += ".block.scaled.nv"
+            parameters["dispatch_scale_dtype"] = (
+                DType.float8_e4m3fn
+                if quant_config.is_nvfp4
+                else DType.float8_e8m0fnu
+            )
+            if config.fused_shared_expert and quant_config.is_nvfp4:
+                raise ValueError(
+                    "NVFP4 dispatch with fused shared expert is not supported"
+                )
+        elif _is_legacy_float8_dispatch(config):
+            op_name += ".fp8"
+            parameters["dispatch_scale_granularity"] = str(
+                quant_config.input_scale.granularity
+            )
+        elif uses_mx_ep_token_format(config):
+            op_name += ".mxfp4"
+            _add_mx_format_parameter(parameters, config)
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
+
+    results = ops.inplace_custom(
+        op_name,
+        device=device_ref,
+        values=input_vals,
+        out_types=output_vals,
+        parameters=parameters,
+    )
+
+    return tuple([v.tensor for v in results])
+
+
+def call_ep_combine_async(
+    input_tokens: TensorValue,
+    src_info: TensorValue,
+    atomic_counter: BufferValue,
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+) -> None:
+    """Initiate Expert Parallelism token combine phase (async).
+
+    This function launches the EP async combine kernel that sends expert outputs
+    back to their original devices based on source routing information. The
+    kernel uses non-blocking SHMEM communication in multi-node scenarios and
+    returns immediately after initiating transfers.
+
+    Args:
+        input_tokens: Expert output tokens to send back to original devices.
+            Shape: (max_tokens_per_rank, hidden_size)
+            Results from expert computation that need to be routed back
+        src_info: Source routing information from dispatch phase.
+            Shape: (max_tokens_per_rank, 2)
+            [original_token_index, topk_index] for each token
+        atomic_counter: Buffer for synchronization between thread blocks.
+        send_buf_ptrs: Device pointers to the send buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes).
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (max_tokens_per_rank, top_k, msg_bytes).
+        recv_count_ptrs: Device pointers to the receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_experts,)
+        config: EP configuration.
+
+    Note:
+        This is a non-blocking operation. Call call_ep_combine_wait() to wait
+        for completion and collect the final outputs.
+    """
+    parameters = _ep_common_parameters(config)
+    parameters["combine_dtype"] = config.combine_dtype
+
+    op_name = "ep.combine_async"
+    out_types: list[TensorType] = []
+
+    assert not config.fused_shared_expert, (
+        "Fused shared expert is not supported when using combine_async."
+    )
+
+    result = ops.inplace_custom(
+        op_name,
+        device=input_tokens.device,
+        values=[
+            atomic_counter,
+            input_tokens,
+            src_info,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+        ],
+        out_types=out_types,
+        parameters=parameters,
+    )
+
+    if config.fused_shared_expert:
+        return result[0].tensor
+    else:
+        return None
+
+
+def _validate_ffn_combine_send_config(config: EPConfig) -> None:
+    """Rejects EP configurations the fused combine send cannot serve.
+
+    Kept separate from the op emission so it can be exercised without a graph:
+    an unenforced guard and an untested one fail the same way.
+
+    Args:
+        config: EP configuration to check.
+
+    Raises:
+        ValueError: If the configuration cannot support the fused send.
+    """
+    if config.use_allreduce:
+        raise ValueError(
+            "the fused MegaFFN combine send writes peer receive buffers"
+            " directly, which the allreduce backend does not use"
+        )
+    if config.fused_shared_expert:
+        raise ValueError(
+            "the fused MegaFFN combine send elides the FFN's local output, but"
+            " fused_shared_expert keeps the shared expert's rows in it for the"
+            " reduce to read"
+        )
+
+
+def _call_mega_ffn_ep_combine_send(
+    arrival_count: BufferValue,
+    atomic_counter: BufferValue,
+    hidden_states: TensorValue,
+    gate_up_weight: TensorValue,
+    gate_up_a_scales: TensorValue,
+    gate_up_b_scales: TensorValue,
+    down_weight: TensorValue,
+    down_b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    a_scale_offsets: TensorValue,
+    gate_up_expert_scales: TensorValue,
+    down_expert_scales: TensorValue,
+    c_input_scales: TensorValue,
+    src_info: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    estimated_total_m: TensorValue,
+    num_active_experts: TensorValue,
+    config: EPConfig,
+    activation: GatedActivation | None = None,
+) -> None:
+    """Runs the MoE FFN with the EP combine send fused into its epilogue.
+
+    Replaces the FFN's two grouped matmuls *and* :func:`call_ep_combine_async`
+    with one launch. The kernel's down-projection epilogue scatters each
+    finished row straight into the owning rank's receive buffer and releases
+    the arrival signal itself, so the FFN's output never lands in a local
+    tensor: the ``(max_recv_tokens, hidden_size)`` staging buffer that the
+    unfused chain has to materialize is not allocated at all.
+
+    This op has no result. The caller still runs :func:`call_ep_combine_wait`
+    to drain the peer buffers and reduce; that op reads only the symmetric
+    receive buffers and never took the FFN's output, which is what makes
+    dropping the staging tensor possible.
+
+    Args:
+        arrival_count: Persistent cross-CTA pool-slot buffer, zeroed once at
+            init and never per launch. Also carries the send's own per-expert
+            state, so this op needs no per-launch-zeroed operand.
+        atomic_counter: EP sync counters for this device.
+        hidden_states: Dispatched tokens.
+        gate_up_weight: Pre-permuted gate/up weights.
+        gate_up_a_scales: Token A-scale tile for the gate/up matmul.
+        gate_up_b_scales: Pre-permuted gate/up weight scale tile.
+        down_weight: Down-projection weights.
+        down_b_scales: Down-projection weight scale tile.
+        expert_start_indices: Per-expert prefix-sum token offsets.
+        expert_ids: Active local expert IDs.
+        a_scale_offsets: Per-expert scale-block offsets.
+        gate_up_expert_scales: Per-expert output scaling for the gate/up leg.
+        down_expert_scales: Per-expert output scaling for the down leg.
+        c_input_scales: Per-expert input scale for the intermediate re-quant.
+        src_info: Per-row dispatch metadata the send resolves destinations
+            from.
+        recv_buf_ptrs: Peer combine receive-buffer addresses, one per GPU.
+        recv_count_ptrs: Peer receive-count addresses the arrival signal
+            releases, one per GPU.
+        estimated_total_m: Estimated total non-padded tokens; the tile-regime
+            gate's numerator.
+        num_active_experts: Active expert slots.
+        config: EP configuration.
+        activation: The gated activation applied to each ``(gate, up)``
+            pair: :class:`~max.nn.activation.GatedActivation`'s
+            ``fused_activation`` with its ``alpha`` and ``limit``. Defaults to
+            plain SiLU. It must not set ``gated_activation_fn``, which no
+            kernel fuses.
+    """
+    _validate_ffn_combine_send_config(config)
+
+    parameters = _ep_common_parameters(config)
+    parameters["combine_dtype"] = config.combine_dtype
+    parameters.update((activation or GatedActivation()).kernel_parameters())
+
+    ops.inplace_custom(
+        "mega_ffn.ep_combine_send",
+        device=hidden_states.device,
+        values=[
+            arrival_count,
+            atomic_counter,
+            hidden_states,
+            gate_up_weight,
+            gate_up_a_scales,
+            gate_up_b_scales,
+            down_weight,
+            down_b_scales,
+            expert_start_indices,
+            expert_ids,
+            a_scale_offsets,
+            gate_up_expert_scales,
+            down_expert_scales,
+            c_input_scales,
+            src_info,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            estimated_total_m,
+            num_active_experts,
+        ],
+        out_types=[],
+        parameters=parameters,
+    )
+
+
+_FUSED_EP_REFUSAL_BYTES = 256
+"""Bytes of the refusal text the fused MoE init and plan ops return."""
+
+
+def _fused_moe_answer_types() -> list[TensorType]:
+    """The fused MoE init and plan ops' answer: the workspace bytes and token
+    block (CPU ``uint64[2]``, zeros when refused), then why the backend
+    refuses (CPU ``uint8`` text, all zero when it does not)."""
+    return [
+        TensorType(DType.uint64, [2], device=DeviceRef.CPU()),
+        TensorType(
+            DType.uint8, [_FUSED_EP_REFUSAL_BYTES], device=DeviceRef.CPU()
+        ),
+    ]
+
+
+def _fused_moe_parameters(
+    config: EPConfig,
+) -> dict[str, bool | int | str | DType]:
+    """Returns the parameters of the fused MoE init and plan ops: what
+    ``ep.init`` gets, the experts' FFN width, and the EP features the backend
+    checks."""
+    parameters = _ep_common_parameters(config)
+    parameters.update(_ep_dispatch_format_parameters(config))
+    parameters["moe_dim"] = config.moe_dim
+    parameters["fused_shared_expert"] = config.fused_shared_expert
+    parameters["eplb"] = config.eplb_enabled
+    return parameters
+
+
+def _fused_moe_bound_parameters(
+    config: EPConfig, dispatch_dtype: DType
+) -> dict[str, bool | int | str | DType]:
+    """Returns the plan op's parameters for an upper bound: ``config``'s EP
+    geometry and the dispatch element type alone. The backend then ignores
+    the format fields and answers for the one format it serves with that
+    element type, which bounds every variant it refuses."""
+    parameters = _fused_moe_parameters(config)
+    parameters["dispatch_dtype"] = dispatch_dtype
+    parameters["exact"] = False
+    return parameters
+
+
+def _call_mega_ffn_ep_fused_plan(
+    parameters: dict[str, bool | int | str | DType],
+) -> tuple[TensorValue, TensorValue]:
+    """Asks the backend, without allocating, what the fused MoE init does for
+    ``parameters`` (:func:`_fused_moe_parameters`).
+
+    Returns:
+        The workspace bytes and token block (CPU ``uint64[2]``, zeros when
+        refused) and why the backend refuses (CPU ``uint8`` text, all zero
+        when it does not).
+    """
+    results = ops.custom(
+        "mega_ffn.ep_fused_plan",
+        device=DeviceRef.CPU(),
+        values=[],
+        out_types=_fused_moe_answer_types(),
+        parameters=parameters,
+    )
+    return results[0].tensor, results[1].tensor
+
+
+def _call_mega_ffn_ep_fused_init(
+    atomic_counters: BufferValue,
+    ep_dev_ptrs: TensorValue,
+    config: EPConfig,
+) -> tuple[TensorValue, TensorValue]:
+    """Sets up one device's one-launch fused EP MoE workspace, if it can.
+
+    Runs in the EP init graph after :func:`call_ep_init` on the same device,
+    with that device's group-0 counters and the pointers ``ep.init``
+    returned. The backend decides whether it serves ``config``: it either
+    returns why not, or allocates the device's workspace, initializes it and
+    records it for :func:`_call_mega_ffn_ep_fused`.
+
+    Args:
+        atomic_counters: This device's group-0 EP sync counters; their
+            reserved words hold the fused counters.
+        ep_dev_ptrs: This device's ``ep.init`` pointers (CPU ``[2, 3]``).
+        config: EP configuration.
+
+    Returns:
+        The workspace bytes and token block (CPU ``uint64[2]``, zeros when
+        refused) and why the backend refused (CPU ``uint8`` text, all zero
+        when it did not).
+    """
+    results = ops.inplace_custom(
+        "mega_ffn.ep_fused_init",
+        device=atomic_counters.device,
+        values=[atomic_counters, ep_dev_ptrs],
+        out_types=_fused_moe_answer_types(),
+        parameters=_fused_moe_parameters(config),
+    )
+    return results[0].tensor, results[1].tensor
+
+
+def _call_mega_ffn_ep_fused(
+    atomic_counters: BufferValue,
+    input_tokens: TensorValue,
+    topk_ids: TensorValue,
+    router_weights: TensorValue,
+    input_scales: TensorValue,
+    gate_up_weight: TensorValue,
+    gate_up_b_scales: TensorValue,
+    down_weight: TensorValue,
+    down_b_scales: TensorValue,
+    gate_up_expert_scales: TensorValue,
+    down_expert_scales: TensorValue,
+    c_input_scales: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    activation: GatedActivation | None = None,
+) -> TensorValue:
+    """Runs dispatch -> MegaFFN (L1 + L2) -> weighted combine in ONE launch.
+
+    Replaces ``ep_dispatch_async``/``ep_dispatch_wait``, the local FFN and
+    ``ep_combine_async``/``ep_combine_wait`` for one MoE layer on one device.
+    Every rank must launch it for every layer (a rank with zero tokens still
+    participates: its peers wait for its early counts and flags).
+
+    Args:
+        atomic_counters: This device's group-0 EP sync counters (in-place);
+            their reserved words hold the fused counters.
+        input_tokens: Pre-dispatch BF16 tokens ``(T, hidden)``.
+        topk_ids: Routed global expert ids ``(T, top_k)`` int32.
+        router_weights: Router weights ``(T, top_k)`` f32, applied once in the
+            fused reduce (normalized and scaled by the router already).
+        input_scales: The dispatch's NVFP4 global input scale, already
+            inverted (``1 / gate_up_input``; 1.0 at MXFP8); element 0 is read.
+        gate_up_weight: Sigma-permuted NVFP4 or MXFP8 gate/up weights.
+        gate_up_b_scales: Gate/up weight scales (6D tcgen05 layout).
+        down_weight: NVFP4 or MXFP8 down weights.
+        down_b_scales: Down weight scales (6D).
+        gate_up_expert_scales: Per-local-expert L1 alpha.
+        down_expert_scales: Per-local-expert L2 alpha.
+        c_input_scales: Per-local-expert L1->L2 requant scale
+            (``1 / down_input``).
+        recv_count_ptrs: The EP group-0 receive-count table (CPU ``uint64``,
+            one address per device), which names every rank's workspace.
+        config: EP configuration.
+        activation: The gated activation applied to each ``(gate, up)``
+            pair: :class:`~max.nn.activation.GatedActivation`'s
+            ``fused_activation`` with its ``alpha`` and ``limit``. Defaults to
+            plain SiLU. It must not set ``gated_activation_fn``, which no
+            kernel fuses.
+
+    Returns:
+        The token-indexed MoE output ``(T, hidden)`` BF16 (routed experts
+        only; the caller adds the shared expert).
+    """
+    if not config.fused_moe_ready:
+        raise ValueError(
+            "EP init did not set up the one-launch fused MoE for this"
+            " configuration"
+        )
+    results = ops.inplace_custom(
+        "mega_ffn.ep_fused",
+        device=input_tokens.device,
+        values=[
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            router_weights,
+            input_scales,
+            gate_up_weight,
+            gate_up_b_scales,
+            down_weight,
+            down_b_scales,
+            gate_up_expert_scales,
+            down_expert_scales,
+            c_input_scales,
+            recv_count_ptrs,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[input_tokens.shape[0], config.hidden_size],
+                device=input_tokens.device,
+            )
+        ],
+        parameters={
+            **_ep_common_parameters(config),
+            **(activation or GatedActivation()).kernel_parameters(),
+        },
+    )
+    return results[0].tensor
+
+
+def call_ep_combine_wait(
+    atomic_counter: BufferValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    num_tokens: Dim,
+    router_weights: TensorValue,
+) -> TensorValue:
+    """Wait for Expert Parallelism token combine and return final outputs.
+
+    This function launches the EP combine wait kernel, which waits for all
+    inter-device communication to complete, then computes the weighted sum of
+    routed expert outputs for each token.
+
+    Args:
+        atomic_counter: Buffer for synchronization between thread blocks.
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (max_tokens_per_rank, top_k, msg_bytes)
+        recv_count_ptrs: Device pointers to the receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_experts,)
+        config: EP configuration.
+        num_tokens: Number of original input tokens before expert processing.
+        router_weights: Router weights for the current device. Once all tokens
+            are received, all routed experts' outputs for each token will be
+            weighted and summed to produce the final output for the token.
+            Shape: (num_tokens, top_k)
+
+    Returns:
+        output_tokens: Final output tensor with expert results.
+            Shape: (num_tokens, hidden_size)
+            Expert outputs arranged back in original token order.
+
+    Note:
+        This function blocks until all expected expert outputs have been
+        received from remote devices.
+    """
+    parameters = _ep_common_parameters(config)
+    parameters["combine_dtype"] = config.combine_dtype
+
+    device_ref = atomic_counter.device
+
+    result = ops.inplace_custom(
+        "ep.combine_wait",
+        device=device_ref,
+        values=[atomic_counter, recv_buf_ptrs, recv_count_ptrs, router_weights],
+        out_types=[
+            TensorType(
+                dtype=config.combine_dtype,
+                shape=[num_tokens, config.hidden_size],
+                device=device_ref,
+            ),  # output_tokens
+        ],
+        parameters=parameters,
+    )
+
+    return result[0].tensor
+
+
+# ===-----------------------------------------------------------------------===#
+# Expert Parallelism Fused Kernels
+# ===-----------------------------------------------------------------------===#
+
+
+def call_ep_dispatch(
+    input_tokens: TensorValue,
+    topk_ids: TensorValue,
+    atomic_counter: BufferValue,
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    input_scales: TensorValue | None = None,
+) -> tuple[TensorValue, ...]:
+    """Execute fused Expert Parallelism token dispatch (async + wait).
+
+    This function launches the fused EP dispatch kernel that combines both
+    dispatch_async and dispatch_wait functionality in a single kernel launch.
+    It distributes input tokens to expert devices based on top-k routing
+    decisions, waits for all tokens to arrive, and organizes received tokens
+    into a format suitable for grouped matmul computation.
+
+    Args:
+        input_tokens: Input tokens to be dispatched to experts.
+            Shape: (num_tokens, hidden_size)
+        topk_ids: Expert IDs selected for each token by the router.
+            Shape: (num_tokens, top_k)
+            Values: Expert indices in range [0, n_experts)
+        atomic_counter: Buffer for synchronization between thread blocks.
+        send_buf_ptrs: Device pointers to the send buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (max_tokens_per_rank, msg_bytes)
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks, max_tokens_per_rank, msg_bytes)
+        recv_count_ptrs: Device pointers to the receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts, n_ranks)
+        config: EP configuration.
+        input_scales: Optional input scales tensor. Needed for NVFP4 dispatch,
+            unless ``config.nvfp4_dyn_global_scales`` is set, in which case it
+            is ignored. Shape: (1,)
+
+    Returns:
+        A tuple containing:
+        - output_tokens: Aggregated tokens ready for grouped matmul computation.
+            Shape: (max_recv_tokens, hidden_size)
+        - expert_start_indices: Row offsets for grouped matmul operation.
+            Shape: (n_local_experts + 1,)
+        - expert_ids: Local expert IDs for the grouped operation.
+            Shape: (n_local_experts,)
+        - src_info: Source routing information for combine phase.
+            Shape: (max_recv_tokens, 2)
+            [original_token_index, topk_index] for each received token
+
+    Note:
+        For Quantized dispatch format, the output will also include the
+        aggregated scales as the second element of the tuple. With
+        ``config.nvfp4_dyn_global_scales``, the per-row inverse global scales
+        follow as the third, shape ``(max_recv_tokens,)``.
+    """
+    parameters = _ep_common_parameters(config)
+    parameters["fused_shared_expert"] = config.fused_shared_expert
+    parameters["skip_a2a"] = config.use_allreduce
+    parameters["allreduce_world_size"] = config.n_gpus_per_node
+
+    device_ref = atomic_counter.device
+    op_name = "ep.dispatch"
+
+    input_vals: list[Value[Any]] = [
+        atomic_counter,
+        input_tokens,
+        topk_ids,
+        send_buf_ptrs,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+    ]
+
+    output_vals = _ep_dispatch_output_types(config, device_ref)
+
+    if config.dispatch_quant_config is not None:
+        quant_config = config.dispatch_quant_config
+
+        if _uses_block_scaled_nv_ep_layout(config):
+            if (
+                quant_config.is_nvfp4
+                and not config.nvfp4_dyn_global_scales
+                and input_scales is None
+            ):
+                raise ValueError(
+                    "input_scales must be provided when using NVFP4 dispatch"
+                )
+            op_name += ".block.scaled.nv"
+            parameters["dispatch_scale_dtype"] = (
+                DType.float8_e4m3fn
+                if quant_config.is_nvfp4
+                else DType.float8_e8m0fnu
+            )
+            if config.nvfp4_dyn_global_scales:
+                # The kernel derives each token's scale itself, so the op
+                # takes no input scale.
+                op_name += ".dyn_global_scales"
+            elif input_scales is not None:
+                input_vals.append(1.0 / input_scales.to(device_ref))
+            else:
+                input_vals.append(
+                    ops.constant([1.0], DType.float32, device=device_ref)
+                )
+        elif _is_legacy_float8_dispatch(config):
+            op_name += ".fp8"
+            parameters["dispatch_scale_granularity"] = str(
+                quant_config.input_scale.granularity
+            )
+        elif uses_mx_ep_token_format(config):
+            op_name += ".mxfp4"
+            _add_mx_format_parameter(parameters, config)
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
+
+    results = ops.inplace_custom(
+        op_name,
+        device=device_ref,
+        values=input_vals,
+        out_types=output_vals,
+        parameters=parameters,
+    )
+
+    return tuple([v.tensor for v in results])
+
+
+def call_distributed_ep_dispatch(
+    input_tokens: list[TensorValue],
+    topk_ids: list[TensorValue],
+    atomic_counters: list[BufferValue],
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    input_scales: list[TensorValue] | None = None,
+) -> list[tuple[TensorValue, ...]]:
+    """Multi-device fused EP dispatch (BF16, FP8, or NVFP4).
+
+    Selects the appropriate dispatch variant based on ``config`` and launches
+    a single multi-device graph op.
+
+    Returns:
+        Per-device output tuples. The number of tensors per tuple depends on
+        the quantization format (4 for BF16, 5 for FP8/MXFP4, 6 for NVFP4, 7
+        for NVFP4 with ``config.nvfp4_dyn_global_scales``).
+    """
+    num_devices = len(input_tokens)
+
+    quant_config = config.dispatch_quant_config
+    uses_nvidia_block_scaled = (
+        quant_config is not None and _uses_block_scaled_nv_ep_layout(config)
+    )
+    # Covers MXFP8 too; otherwise it would silently fall through to bf16.
+    is_mx_token_format = uses_mx_ep_token_format(config)
+    is_fp8 = _is_legacy_float8_dispatch(config)
+
+    output_types_per_device: list[list[TensorType]] = []
+    for i in range(num_devices):
+        device_ref = atomic_counters[i].device
+        types = _ep_dispatch_output_types(config, device_ref)
+        output_types_per_device.append(types)
+
+    if uses_nvidia_block_scaled and config.nvfp4_dyn_global_scales:
+        return ops.distributed_ep.dispatch_block_scaled_nv_dyn_global_scales(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+        )
+    elif uses_nvidia_block_scaled:
+        assert quant_config is not None
+        if quant_config.is_nvfp4 and input_scales is None:
+            raise ValueError("input_scales must be provided for NVFP4 dispatch")
+        if input_scales is not None:
+            inv_scales = [
+                1.0 / input_scales[i].to(atomic_counters[i].device)
+                for i in range(num_devices)
+            ]
+        else:
+            inv_scales = [
+                ops.constant(
+                    [1.0], DType.float32, device=atomic_counters[i].device
+                )
+                for i in range(num_devices)
+            ]
+        return ops.distributed_ep.dispatch_block_scaled_nv(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            inv_scales,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+        )
+    elif is_mx_token_format:
+        return ops.distributed_ep.dispatch_mxfp4(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+            mx_format=(
+                _mx_format_name(quant_config)
+                if quant_config is not None and quant_config.is_mxfp6
+                else _MX_FORMAT_AUTO
+            ),
+        )
+    elif is_fp8:
+        assert quant_config is not None
+        return ops.distributed_ep.dispatch_fp8(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+            dispatch_scale_granularity=str(
+                quant_config.input_scale.granularity
+            ),
+        )
+    else:
+        return ops.distributed_ep.dispatch_bf16(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+        )
+
+
+def call_distributed_ep_combine(
+    input_tokens: list[TensorValue],
+    src_info: list[TensorValue],
+    atomic_counters: list[BufferValue],
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    num_tokens_per_device: list[Dim],
+    router_weights: list[TensorValue],
+) -> list[TensorValue]:
+    """Multi-device fused EP combine.
+
+    Launches a single ``mo.distributed.ep.combine`` graph op that combines
+    expert outputs back to their original devices on all GPUs simultaneously.
+    """
+    num_devices = len(input_tokens)
+    output_types: list[TensorType] = []
+    for i in range(num_devices):
+        device_ref = atomic_counters[i].device
+        output_types.append(
+            TensorType(
+                dtype=config.combine_dtype,
+                shape=[num_tokens_per_device[i], config.hidden_size],
+                device=device_ref,
+            )
+        )
+
+    return ops.distributed_ep.combine(
+        input_tokens,
+        src_info,
+        send_buf_ptrs,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+        router_weights,
+        atomic_counters,
+        output_types,
+        hidden_size=config.hidden_size,
+        top_k=config.top_k,
+        n_experts=config.n_experts,
+        max_token_per_rank=config.max_tokens_per_rank,
+        n_gpus_per_node=config.n_gpus_per_node,
+        n_nodes=config.n_nodes,
+        fused_shared_expert=config.fused_shared_expert,
+    )
+
+
+def call_ep_combine(
+    input_tokens: TensorValue,
+    src_info: TensorValue,
+    atomic_counter: BufferValue,
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    num_tokens: Dim,
+    router_weights: TensorValue,
+    topk_ids: TensorValue | None = None,
+) -> TensorValue:
+    """Execute fused Expert Parallelism token combine (async + wait).
+
+    This function launches the fused EP combine kernel that combines both
+    combine_async and combine_wait functionality in a single kernel launch.
+    It sends expert outputs back to their original devices, waits for all
+    transfers to complete, and computes the weighted sum of routed expert
+    outputs for each token.
+
+    Args:
+        input_tokens: Expert output tokens to send back to original devices.
+            Shape: (max_tokens_per_rank, hidden_size)
+            Results from expert computation that need to be routed back.
+            For fused_shared_expert mode, this also contains shared expert
+            outputs at the start.
+        src_info: Source routing information from dispatch phase.
+            Shape: (max_tokens_per_rank, 2)
+            [original_token_index, topk_index] for each token
+        atomic_counter: Buffer for synchronization between thread blocks.
+        send_buf_ptrs: Device pointers to the send buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_local_experts * n_ranks * max_tokens_per_rank, msg_bytes).
+        recv_buf_ptrs: Device pointers to the receive buffers for each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (max_tokens_per_rank, top_k, msg_bytes).
+        recv_count_ptrs: Device pointers to the receive count buffers for
+            each GPU.
+            Shape: (n_gpus_per_node,) each points to a buffer of shape
+            (n_experts,)
+        config: EP configuration.
+        num_tokens: Number of original input tokens before expert processing.
+        router_weights: Router weights for the current device. All routed
+            experts' outputs for a token will be weighted and summed.
+            Shape: (num_tokens, top_k)
+        fused_shared_expert: Whether to add shared expert outputs to the
+            combined result. When True, the shared expert outputs are read
+            from input_tokens and added to the reduced routed expert outputs.
+
+    Returns:
+        output_tokens: Final output tensor with expert results.
+            Shape: (num_tokens, hidden_size)
+            Expert outputs arranged back in original token order.
+    """
+    parameters = _ep_common_parameters(config)
+    parameters["fused_shared_expert"] = config.fused_shared_expert
+    parameters["skip_a2a"] = config.use_allreduce
+
+    op_name = "ep.combine"
+    vals: list[Value[Any]] = [
+        atomic_counter,
+        input_tokens,
+        src_info,
+        send_buf_ptrs,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+        router_weights,
+    ]
+
+    if config.use_allreduce:
+        assert topk_ids is not None, (
+            "Top-k expert IDs are not provided for allreduce mode."
+        )
+        parameters["allreduce_world_size"] = config.n_gpus_per_node
+        op_name += ".skip_a2a"
+        vals.append(topk_ids)
+
+    device_ref = atomic_counter.device
+
+    result = ops.inplace_custom(
+        op_name,
+        device=device_ref,
+        values=vals,
+        out_types=[
+            TensorType(
+                dtype=config.combine_dtype,
+                shape=[num_tokens, config.hidden_size],
+                device=device_ref,
+            ),  # output_tokens
+        ],
+        parameters=parameters,
+    )
+
+    return result[0].tensor
+
+
+# ===-----------------------------------------------------------------------===#
+# Expert Parallelism Utils
+# ===-----------------------------------------------------------------------===#
+
+
+def fused_silu(
+    input: TensorValue,
+    row_offsets: TensorValue,
+    activation: GatedActivation | None = None,
+    interleaved: bool = False,
+) -> TensorValue:
+    """Performs the fused SILU operation for all the MLPs in the EP MoE
+    module.
+
+    After the EP dispatch phase, the host does not know how many tokens
+    were actually received, so this op reads the row offsets to determine
+    the received token count and applies the SILU operation only to the
+    received tokens.
+
+    Args:
+        input: The input tokens to apply the SILU operation to. Shape:
+            ``[max_recv_tokens, hidden_size]``.
+        row_offsets: The row offsets that determine the actual number of
+            received tokens in the input tensor. Shape:
+            ``[n_local_experts + 1]``.
+        activation: The gated activation applied to each ``(gate, up)``
+            pair: :class:`~max.nn.activation.GatedActivation`'s
+            ``fused_activation`` with its ``alpha`` and ``limit``. Defaults to
+            plain SiLU. It must not set ``gated_activation_fn``, which no
+            kernel fuses.
+        interleaved: Whether each ``input`` row holds the pairs interleaved,
+            ``[gate_0, up_0, gate_1, up_1, ...]``, rather than as
+            ``[gate | up]``. Defaults to ``False``.
+
+    Returns:
+        The output tokens after the SILU operation. Shape:
+        ``[max_recv_tokens, hidden_size]``.
+    """
+    if input.rank != 2:
+        raise ValueError("input must be rank 2 tensor")
+
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
+        )
+
+    hidden_size = input.shape[1] // 2
+
+    parameters: dict[str, bool | int | str] = {"interleaved": interleaved}
+    parameters.update((activation or GatedActivation()).kernel_parameters())
+    return ops.custom(
+        "ep.fused_silu",
+        device=input.device,
+        values=[input, row_offsets],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[input.shape[0], hidden_size],
+                device=input.device,
+            ),
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def fused_silu_quantized(
+    input: TensorValue,
+    row_offsets: TensorValue,
+    quant_config: QuantConfig,
+    out_type: DType,
+    input_scales: TensorValue | None = None,
+    scales_offsets: TensorValue | None = None,
+    max_padded_M: int = 0,
+    activation: GatedActivation | None = None,
+) -> tuple[TensorValue, TensorValue]:
+    """Perform fused SILU operation for all the MLPs in the EP MoE module.
+
+    We need to manually implement the custom operation here is because after
+    the EP dispatch phase, the actual number of received tokens is not known to
+    the host. This kernel will read the row offsets to determine the actual
+    number of received tokens in the input tensor, and then only perform the
+    SILU operation on the received tokens. Once the SILU operation is performed,
+    the output will be quantized to the NVFP4, MXFP4, MXFP6 or MXFP8 format.
+    Block-scaled FP8 (group size 128) has no kernel here: apply the gated
+    activation and call :func:`~max.nn.kernels.quantize_dynamic_scaled_float8`
+    with ``row_offsets``, which the graph compiler fuses into one kernel.
+
+    Args:
+        input: Input tokens to perform the SILU operation.
+            Shape: (max_recv_tokens, hidden_size)
+        row_offsets: Row offsets to determine the actual number of received
+            tokens in the input tensor.
+            Shape: (n_local_experts + 1,)
+        quant_config: Quantization configuration.
+        out_type: Output dtype.
+        input_scales: Optional input scales tensor. Needed by NVFP4.
+        scales_offsets: Optional scales offsets tensor. Needed by NVFP4.
+        max_padded_M: Per-expert slot stride in rows, required for the MX
+            formats, whose kernels write the E8M0 activation scale directly
+            into the grouped-matmul per-expert slot layout. A positive multiple
+            of 32, at least ``align_up(max_recv_tokens_per_expert, 32)``, and
+            the stride the matmul reads with (``a_scales_max_padded_m``). The
+            output scales tensor then has shape
+            ``[n_local_experts * max_padded_M, K_SCALES]``.
+        activation: The gated activation applied to each ``(gate, up)``
+            pair: :class:`~max.nn.activation.GatedActivation`'s
+            ``fused_activation`` with its ``alpha`` and ``limit``. Defaults to
+            plain SiLU. It must not set ``gated_activation_fn``, which no
+            kernel fuses.
+
+    Returns:
+        A tuple containing:
+        - output_tokens: Output tokens after the SILU operation.
+            Shape: (max_recv_tokens, hidden_size)
+        - output_scales: Output scales after the SILU operation. Shape depends
+            on the quantization format.
+    """
+    if input.rank != 2:
+        raise ValueError("input_tokens must be rank 2 tensor")
+
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
+        )
+
+    hidden_size = input.shape[1] // 2
+    op_name = "ep.fused_silu"
+    input_vals: list[Value[Any]] = [input, row_offsets]
+
+    if quant_config.is_nvfp4:
+        op_name += ".nvfp4"
+        hidden_size //= 2  # Two FP4 elements are packed into one uint8 element
+        assert scales_offsets is not None and input_scales is not None, (
+            "scales_offsets and input_scales must be provided when using NVFP4"
+        )
+        input_vals.append(scales_offsets)
+        input_vals.append(1.0 / input_scales.to(input.device))
+
+        # Pad the scales tensor to satisfy the grouped matmul requirement.
+        n_local_experts = row_offsets.shape[0] - 1
+        out_scales_type = quant_config.quantized_scales_type(
+            Shape(
+                [
+                    input.shape[0] + n_local_experts * NVFP4_MN_GROUP_SIZE,
+                    input.shape[1] // 2,
+                ]
+            ),
+            input.device,
+        )
+
+    elif quant_config.is_mxfp4:
+        op_name += ".mxfp4"
+        hidden_size //= 2  # Two FP4 elements are packed into one uint8 element
+    elif quant_config.is_mxfp6:
+        op_name += ".mxfp6"
+        hidden_size = hidden_size * 3 // 4
+    elif quant_config.is_mxfp8:
+        op_name += ".mxfp8"
+    else:
+        raise ValueError(
+            f"Unsupported quantization format: {quant_config.format}"
+        )
+
+    parameters: dict[str, bool | int | str] = {}
+    parameters.update((activation or GatedActivation()).kernel_parameters())
+    if quant_config.is_mx:
+        if max_padded_M <= 0 or max_padded_M % 32:
+            raise ValueError(
+                "MX fused_silu writes its scales in the grouped matmul's"
+                " per-expert slots, so max_padded_M must be a positive multiple"
+                f" of 32, got {max_padded_M}"
+            )
+        # KS64: the kernel writes the E8M0 scale straight into the grouped
+        # matmul's per-expert slots; the scale type takes the raw hidden dim.
+        n_local_experts = row_offsets.shape[0] - 1
+        out_scales_type = quant_config.quantized_scales_type(
+            Shape([n_local_experts * max_padded_M, input.shape[1] // 2]),
+            input.device,
+        )
+        parameters["max_padded_M"] = max_padded_M
+    if quant_config.is_mxfp6:
+        parameters["FP6_FORMAT"] = (
+            1 if quant_config.mxfp6_format == "e3m2" else 0
+        )
+
+    result = ops.custom(
+        op_name,
+        device=input.device,
+        values=input_vals,
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], hidden_size],
+                device=input.device,
+            ),
+            out_scales_type,
+        ],
+        parameters=parameters,
+    )
+
+    return result[0].tensor, result[1].tensor

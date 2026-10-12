@@ -1,0 +1,106 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_py_library(
+    name = "profiler",
+    srcs = [
+        "__init__.py",
+        "profiler.py",
+    ],
+    deps = [
+        "//max/python/max:tensor",  # Provides max.functional and max.tensor.Tensor
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "flux2_comparison",
+    srcs = ["flux2_comparison.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/diffusion",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        requirement("diffusers"),
+        requirement("pillow"),
+        requirement("pydantic"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "wan_comparison",
+    srcs = ["wan_comparison.py"],
+    ignore_extra_deps = [
+        # Required at runtime by diffusers for device dispatch
+        requirement("accelerate"),
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/wan",
+        "//max/python/max/pipelines/diffusion",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        requirement("accelerate"),
+        requirement("av"),
+        requirement("diffusers"),
+        requirement("numpy"),
+        requirement("pydantic"),
+        requirement("pillow"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "wan_mem_repro",
+    srcs = ["wan_mem_repro.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/wan",
+        "//max/python/max/pipelines/diffusion",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "vae_decode_timing",
+    srcs = ["vae_decode_timing.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/autoencoders",
+        "//max/python/max/pipelines/lib",
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_binary(
+    name = "simple_offline_generation",
+    srcs = ["simple_offline_generation.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        ":profiler",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/flux2",
+        "//max/python/max/pipelines/architectures/ideogram4",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("sentencepiece"),
+        requirement("torch"),  # for test
+    ],
+)

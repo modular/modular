@@ -1,0 +1,475 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
+load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
+load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
+load("//bazel:api.bzl", "modular_cc_library", "mojo_binary", "requirement")
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "MODULAR_CONFIGS", "TOP_LEVEL_TAG")
+
+# gazelle:default_visibility :see_docs_and_update_this_for_your_package
+
+package(default_visibility = [":see_docs_and_update_this_for_your_package"])
+
+package_group(
+    name = "see_docs_and_update_this_for_your_package",
+    packages = ["public"],
+)
+
+exports_files([
+    "pyproject.toml",
+])
+
+mojo_binary(
+    name = "repro",
+    testonly = True,
+    srcs = ["repro.mojo"],
+    tags = ["manual"],
+    deps = ALL_MOJOPKGS + [
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+alias(
+    name = "has_gpu",
+    actual = "@mojo_gpu_toolchains//:has_gpu",
+)
+
+alias(
+    name = "has_multi_gpu",
+    actual = "@mojo_gpu_toolchains//:has_multi_gpu",
+)
+
+alias(
+    name = "has_4_gpus",
+    actual = "@mojo_gpu_toolchains//:has_4_gpus",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+alias(
+    name = "amd_gpu",
+    actual = "@mojo_gpu_toolchains//:amd_gpu",
+)
+
+alias(
+    name = "nvidia_gpu",
+    actual = "@mojo_gpu_toolchains//:nvidia_gpu",
+)
+
+alias(
+    name = "apple_gpu",
+    actual = "@mojo_gpu_toolchains//:apple_gpu",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+[
+    alias(
+        name = "{}_gpu".format(gpu),
+        actual = "@mojo_gpu_toolchains//:{}_gpu".format(gpu),
+        tags = [ALLOW_UNUSED_TAG],
+    )
+    for gpu in SUPPORTED_GPUS.keys()
+]
+
+string_flag(
+    name = "release_type",
+    build_setting_default = "dev",
+    values = [
+        "dev",
+        "production",
+    ],
+)
+
+config_setting(
+    name = "production_build",
+    flag_values = {"//:release_type": "production"},
+)
+
+###
+# Release flags
+###
+
+string_flag(
+    name = "max_base_version",
+    build_setting_default = "26.7.0",
+    make_variable = "MAX_BASE_VERSION",
+)
+
+string_flag(
+    name = "mojo_base_version",
+    build_setting_default = "1.2.0",
+    make_variable = "MOJO_BASE_VERSION",
+)
+
+# The base versions are 'stable', while the labels change frequently.
+string_flag(
+    name = "max_version_label",
+    build_setting_default = ".dev0",
+    make_variable = "MAX_VERSION_LABEL",
+)
+
+string_flag(
+    name = "mojo_version_label",
+    build_setting_default = ".dev0",
+    make_variable = "MOJO_VERSION_LABEL",
+)
+
+string_flag(
+    name = "modular_version_sha",
+    build_setting_default = "deadbeef",
+)
+
+bool_flag(
+    name = "use_prebuilt_mojo_toolchain",
+    build_setting_default = True,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "use_prebuilt_mojo_toolchain_disabled",
+    flag_values = {":use_prebuilt_mojo_toolchain": "false"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+[
+    config_setting(
+        name = name + "_prebuilt_mojo_toolchain_enabled",
+        constraint_values = constraints,
+        flag_values = {":use_prebuilt_mojo_toolchain": "true"},
+        # Only used in OSS build
+        tags = ["maybe-unused"],
+    )
+    for name, constraints in [
+        (
+            "linux_x86_64",
+            [
+                "@platforms//cpu:x86_64",
+                "@platforms//os:linux",
+            ],
+        ),
+        (
+            "linux_aarch64",
+            [
+                "@platforms//cpu:aarch64",
+                "@platforms//os:linux",
+            ],
+        ),
+        (
+            "macos",
+            ["@platforms//os:macos"],
+        ),
+    ]
+]
+
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
+config_setting(
+    name = "linux_aarch64",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
+alias(
+    name = "lint",
+    actual = "//bazel/lint",
+    tags = [TOP_LEVEL_TAG],
+)
+
+alias(
+    name = "lint-all",
+    actual = "//bazel/lint:lint-all",
+    tags = [TOP_LEVEL_TAG],
+)
+
+alias(
+    name = "format",
+    actual = "//bazel/lint:format",
+    tags = [TOP_LEVEL_TAG],
+)
+
+alias(
+    name = "format-all",
+    actual = "//bazel/lint:format-all",
+    tags = [TOP_LEVEL_TAG],
+)
+
+platform(
+    name = "m7i-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "Pool": "m7i-large-executors",
+        "OSFamily": "Linux",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
+        "dockerNetwork": "off",
+    },
+)
+
+platform(
+    name = "b200-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":nvidia_gpu",
+        ":has_gpu",
+        ":has_multi_gpu",
+        ":b200_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "b200-executors",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
+        "dockerNetwork": "off",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+platform(
+    name = "b200-benchmark-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":nvidia_gpu",
+        ":has_gpu",
+        ":b200_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "b200-executors-benchmark",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
+        "dockerNetwork": "off",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+platform(
+    name = "mi355-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":amd_gpu",
+        ":has_gpu",
+        ":has_multi_gpu",
+        ":mi355_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "mi355-executors",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-rocm",
+        "dockerNetwork": "off",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+string_flag(
+    name = "modular_config",
+    build_setting_default = "default",
+    values = MODULAR_CONFIGS,
+)
+
+[
+    config_setting(
+        name = "modular_config_" + config,
+        flag_values = {"//:modular_config": config},
+    )
+    for config in MODULAR_CONFIGS
+]
+
+alias(
+    name = "asan",
+    actual = ":modular_config_asan",
+)
+
+config_setting(
+    name = "asan_linux",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {"//:modular_config": "asan"},
+)
+
+config_setting(
+    name = "asan_linux_aarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+    flag_values = {"//:modular_config": "asan"},
+)
+
+config_setting(
+    name = "asan_linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    flag_values = {"//:modular_config": "asan"},
+)
+
+config_setting(
+    name = "asan_macos",
+    constraint_values = ["@platforms//os:macos"],
+    flag_values = {"//:modular_config": "asan"},
+)
+
+alias(
+    name = "tsan",
+    actual = ":modular_config_tsan",
+)
+
+config_setting(
+    name = "tsan_linux",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {"//:modular_config": "tsan"},
+)
+
+config_setting(
+    name = "tsan_macos",
+    constraint_values = ["@platforms//os:macos"],
+    flag_values = {"//:modular_config": "tsan"},
+)
+
+alias(
+    name = "ubsan",
+    actual = ":modular_config_ubsan",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "ubsan_linux",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {"//:modular_config": "ubsan"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "ubsan_linux_aarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+    flag_values = {"//:modular_config": "ubsan"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "ubsan_linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    flag_values = {"//:modular_config": "ubsan"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "ubsan_macos",
+    constraint_values = ["@platforms//os:macos"],
+    flag_values = {"//:modular_config": "ubsan"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+# Should only be read from the host config
+string_flag(
+    name = "host_modular_config",
+    build_setting_default = "default",
+    scope = "universal",
+    values = [
+        "default",
+        "ci_build",
+    ],
+)
+
+config_setting(
+    name = "host_modular_config_ci_build",
+    flag_values = {"//:host_modular_config": "ci_build"},
+)
+
+config_setting(
+    name = "host_modular_config_default",
+    flag_values = {"//:host_modular_config": "default"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+filegroup(
+    name = "clang_tidy_config",
+    srcs = [".clang-tidy"],
+    tags = [TOP_LEVEL_TAG],
+)
+
+# Opt-in accelerator backend support. Gates an accelerator's dialect
+# registration and its third-party dependency edges, so a default build
+# neither fetches nor links them.
+bool_flag(
+    name = "accel_backend",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+# The gated accelerator backend lives outside this tree; nothing to link here.
+modular_cc_library(
+    name = "accel_registration",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "accel_backend_setting",
+    flag_values = {"//:accel_backend": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+bool_flag(
+    name = "use_sglang",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_sglang_setting",
+    flag_values = {"//:use_sglang": "true"},
+)
+
+bool_flag(
+    name = "use_vllm",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_vllm_setting",
+    flag_values = {"//:use_vllm": "true"},
+)
+
+bool_flag(
+    name = "use_aiperf",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_aiperf_setting",
+    flag_values = {"//:use_aiperf": "true"},
+)
+
+# When set, GPU tests disable MAX's device memory manager (caching allocator)
+# so each `enqueue_create_buffer` is a 1:1 device allocation and
+# compute-sanitizer memcheck/initcheck see true per-buffer bounds. Without this,
+# small OOBs and OOB reads land inside the shared ~205MB pool and go undetected.
+# Consumed by `get_default_test_env` in bazel/internal/config.bzl.
+bool_flag(
+    name = "gpu_disable_memory_manager",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "gpu_memory_manager_disabled",
+    flag_values = {"//:gpu_disable_memory_manager": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)

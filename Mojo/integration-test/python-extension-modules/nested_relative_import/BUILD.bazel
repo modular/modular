@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_py_test(
+    name = "main",
+    srcs = [
+        "__init__.py",
+        "test_module.py",
+    ],
+    data = ["nested/mojo_module.mojo"],
+    imports = [".."],
+    target_compatible_with = select({
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:python",
+    ],
+)

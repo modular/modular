@@ -1,0 +1,62 @@
+From 8f612ec31dca416649c5488e37379117c08de7da Mon Sep 17 00:00:00 2001
+From: Brendan <bhansconnect@modular.com>
+Date: Tue, 30 Sep 2025 16:10:39 +0000
+Subject: [PATCH] Check health endpoint with and without /v1
+
+This allows the script to work with both max and vllm.
+---
+ eval/models.py | 31 ++++++++++++++++---------------
+ 1 file changed, 16 insertions(+), 15 deletions(-)
+
+diff --git a/eval/models.py b/eval/models.py
+index dd12e07..9e3234f 100644
+--- a/eval/models.py
++++ b/eval/models.py
+@@ -31,28 +31,29 @@ class VLLMModel(Model):
+         match = re.match(r"^http.*:\d+$", base_url)
+         assert match is not None, base_url
+ 
+-        health_endpoint = f"{base_url}/health"
++        health_endpoints = [f"{base_url}/health", f"{base_url}/v1/health"]
+         timeout = 120
+         t0 = time.time()
+-        print(f"Waiting for VLLM server to come online at {health_endpoint} ...")
++        print(f"Waiting for VLLM server to come online at {health_endpoints} ...")
+         print(f"Timeout is {timeout}s")
+         while time.time() - t0 < timeout:
+             print(f"Waiting for server ({int(time.time() - t0)}s) ...")
+ 
+             # Query the endpoint
+-            try:
+-                req = requests.get(health_endpoint)
+-                print("Server is up!")
+-            except Exception:
+-                # Ignore exception
+-                pass
+-            else:
+-                if (
+-                    req.status_code == 200
+-                    and req.content == b""
+-                    or req.json() == {"status": "OK"}
+-                ):
+-                    return True
++            for health_endpoint in health_endpoints:
++                try:
++                    req = requests.get(health_endpoint)
++                    print("Server is up!")
++                except Exception:
++                    # Ignore exception
++                    pass
++                else:
++                    if (
++                        req.status_code == 200
++                        and req.content == b""
++                        or req.json() == {"status": "OK"}
++                    ):
++                        return True
+ 
+             # Backoff
+             time.sleep(5)
+-- 
+2.50.1
+

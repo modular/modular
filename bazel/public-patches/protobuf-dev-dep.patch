@@ -1,0 +1,28 @@
+diff --git a/python/build_targets.bzl b/python/build_targets.bzl
+index ae39c98e5..ea88c2143 100644
+--- a/python/build_targets.bzl
++++ b/python/build_targets.bzl
+@@ -100,7 +100,6 @@ def build_targets(name):
+         ],
+         deps = select({
+             "//conditions:default": [],
+-            ":use_fast_cpp_protos": ["@system_python//:python_headers"],
+         }),
+     )
+ 
+@@ -153,7 +152,6 @@ def build_targets(name):
+             "@abseil-cpp//absl/strings",
+         ] + select({
+             "//conditions:default": [],
+-            ":use_fast_cpp_protos": ["@system_python//:python_headers"],
+         }),
+     )
+ 
+@@ -478,7 +476,6 @@ def build_targets(name):
+             "//src/google/protobuf/io",
+             "@abseil-cpp//absl/log:absl_check",
+             "@abseil-cpp//absl/status",
+-            "@system_python//:python_headers",
+         ],
+     )
+ 

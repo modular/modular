@@ -1,0 +1,76 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+_COMMON_DEPS = [
+    "//max/python/max/driver",
+    "//max/python/max/dtype",
+    "//max/python/max/engine",
+    "//max/python/max/graph",
+    "//max/python/max/nn",
+    requirement("numpy"),
+]
+
+modular_py_test(
+    name = "cpu_tests",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "norm_test_utils.py",
+    ] + glob(
+        ["test_*.py"],
+        exclude = [
+            "*_gpu.py",
+            "test_state_dict.py",
+        ],
+    ),
+    per_test_tags = {
+        "test_module.py": ["skip-external-ci"],
+    },
+    deps = _COMMON_DEPS + [
+        "//max/python/max/mlir",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_state_dict",
+    srcs = ["test_state_dict.py"],
+    # TODO(MODELS-1494): Times out at 600s on slow macOS BuildBuddy workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_sampling_gpu",
+    timeout = "long",
+    srcs = [
+        "conftest.py",
+        "test_sampling_gpu.py",
+    ],
+    gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
+    precompile_shards = 4,
+    tags = ["gpu"],
+    target_compatible_with = select({
+        # FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = _COMMON_DEPS + [
+        "//max/python/max/pipelines/sampling",
+        "//max/python/max/support",
+    ],
+)

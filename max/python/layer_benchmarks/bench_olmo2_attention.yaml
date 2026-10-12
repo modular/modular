@@ -1,0 +1,30 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+name: olmo2_attention
+file: $BUILD_WORKSPACE_DIRECTORY/max/python/benchmarks/testbed/kbench_entrypoint.py
+single_invoke: true
+
+params:
+# allenai/OLMo-2-7B attention config
+- $harness: olmo2_attention
+  $model_name: olmo2-7b
+  $hidden_size: 4096
+  $n_heads: 32
+  $n_kv_heads: 8
+  $head_dim: 128
+  $max_seq_len: 4096
+  $rope_theta: 500000.0
+  $rms_norm_eps: 1e-5
+  $batch_size: [1, 8]
+  $seq_len: [1, 8192]
+  $ctx_len: [8192, 16384, 32768, 49152]

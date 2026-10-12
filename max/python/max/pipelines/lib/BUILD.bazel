@@ -1,0 +1,55 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "lib",
+    srcs = glob(["**/*.py"]),
+    ignore_extra_deps = [
+        # Used for speeding up HF downloads, not used directly
+        requirement("hf-transfer"),
+        # Optional dep of max.graph, used for loading gguf files
+        # TODO: Possible this dep should be pushed elsewhere
+        requirement("gguf"),
+        # Diffusers config files are loaded, but the package itself is not imported
+        requirement("diffusers"),
+    ],
+    test_docstring_examples = True,
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max:tree",
+        "//max/python/max/_xgrammar",
+        "//max/python/max/config",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines:graph_input_stager",
+        "//max/python/max/pipelines/audio",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/diffusion",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/kv_cache:kv_connector",
+        "//max/python/max/pipelines/lora",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/request",
+        "//max/python/max/pipelines/sampling",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/pipelines/weights",
+        "//max/python/max/profiler",
+        "//max/python/max/support",
+        requirement("hf-transfer"),
+        requirement("huggingface-hub"),
+        requirement("msgspec"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pydantic"),
+        requirement("pydantic-core"),
+        requirement("tqdm"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+    ],
+)
