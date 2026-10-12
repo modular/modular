@@ -1929,6 +1929,13 @@ def test_powf_large_whole_exponent() raises:
         Float64(1.0000001) ** Float64(3e9), 1.9423975992963885e130, rtol=1e-8
     )
 
+    # `-0.0` keeps its sign for odd exponents, like the `_powi` path.
+    comptime neg_zero = FloatLiteral.negative_zero
+    assert_equal(String(Float64(neg_zero) ** Float64(4294967297.0)), "-0.0")
+    assert_equal(String(Float64(neg_zero) ** Float64(4294967296.0)), "0.0")
+    assert_equal(Float64(neg_zero) ** Float64(-4294967297.0), -inf)
+    assert_equal(Float64(neg_zero) ** Float64(-4294967296.0), inf)
+
 
 def test_rpow() raises:
     comptime F32x4 = SIMD[.float32, 4]
