@@ -3336,6 +3336,8 @@ struct CPython(Defaultable, Movable):
     def Py_True(self) -> PyObjectPtr:
         """The Python `True` object.
 
+        Return value: Borrowed reference.
+
         References:
         - https://docs.python.org/3/c-api/bool.html#c.Py_True
         """
@@ -3343,6 +3345,8 @@ struct CPython(Defaultable, Movable):
 
     def Py_False(self) -> PyObjectPtr:
         """The Python `False` object.
+
+        Return value: Borrowed reference.
 
         References:
         - https://docs.python.org/3/c-api/bool.html#c.Py_False
