@@ -145,8 +145,10 @@ def bool_pass_raw_fastcall(
     # Lower bound for `bool_pass_def`: check truthiness, pick the singleton,
     # IncRef, return. No `Bool` / `PythonObject` wrappers.
     ref cpy = Python().cpython()
-    var ptr = (
-        cpy.Py_True() if cpy.PyObject_IsTrue(args[]) != 0 else cpy.Py_False()
-    )
+    var truthy = cpy.PyObject_IsTrue(args[])
+    if truthy < 0:
+        # `PyObject_IsTrue` failed; propagate the pending exception.
+        return PyObjectPtr()
+    var ptr = cpy.Py_True() if truthy == 1 else cpy.Py_False()
     cpy.Py_IncRef(ptr)
     return ptr
