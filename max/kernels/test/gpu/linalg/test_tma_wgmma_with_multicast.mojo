@@ -273,11 +273,11 @@ def multicast_tma_wgmma_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        warpgroup_fence(c_reg_tile.to_layout_tensor())
+        warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
-        wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile.to_layout_tensor())
+        wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         wgmma_op.commit_group()
-        warpgroup_fence(c_reg_tile.to_layout_tensor())
+        warpgroup_fence(c_reg_tile)
         wgmma_op.wait_group()
 
         barrier()

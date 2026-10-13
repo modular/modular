@@ -35,7 +35,7 @@ random rows have essentially no ties and would pass under a broken tie rule.
 from std.math import ceildiv
 
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.topk import topk_gpu
 from std.random import rand, seed
 from std.testing import assert_equal

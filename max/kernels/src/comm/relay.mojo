@@ -21,10 +21,6 @@ node, but both need the same gate, the same shard-splitting rule and the same
 shape of tuning entry, which live here.
 """
 
-from std.utils import StaticTuple
-
-from internal_utils import TuningConfig
-
 from .device_query import CommTuningConfig
 from .sync import MAX_GPUS
 

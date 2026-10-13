@@ -224,6 +224,14 @@ allows full utilization of an accelerator or CPU.
 Each algorithm is contained within its own function in
 `kernels/matrix_multiplication.mojo`. Next, we'll discuss how each works.
 
+On GPU, the operation obtains native `TileTensor` views with
+`to_tile_tensor()` before launching the selected kernel. The Python example
+also verifies rectangular inputs: a 128x256 matrix multiplied by a 256x384
+matrix. These dimensions provide full tiles for every algorithm in the example.
+The tiled kernels don't handle partial tiles, so this rectangular check doesn't
+establish support for arbitrary matrix dimensions. The naive kernel checks
+output bounds before storing results.
+
 ### Matrix multiplication algorithms
 
 The algorithms demonstrated in this example follow steps 1-6 in the progression
@@ -346,6 +354,10 @@ def naive_matrix_multiplication[
     b: TileTensor[dtype, b_layout, MutAnyOrigin],
     c: TileTensor[mut=True, dtype, c_layout, MutAnyOrigin],
 ):
+    comptime assert a.flat_rank == 2, "a must be rank 2"
+    comptime assert b.flat_rank == 2, "b must be rank 2"
+    comptime assert c.flat_rank == 2, "c must be rank 2"
+
     var M = Int(a.dim[0]())
     var N = Int(b.dim[1]())
     var K = Int(b.dim[0]())
@@ -359,7 +371,7 @@ def naive_matrix_multiplication[
         for k_index in range(K):
             dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
 
-    c[row, col] = dst_reg
+        c[row, col] = dst_reg
 ```
 
 However, if you glance up at the benchmark table in the previous section, you'll
@@ -369,8 +381,8 @@ can be improved.
 
 ## Kernel 2: Apply memory coalescing
 
-As one quick optimization that has an outsized impact, global memory accesses
-can be coalesced by swapping the thread indices for columns and rows:
+Global memory accesses can be coalesced by mapping the thread block's x axis
+to columns and its y axis to rows:
 
 ```mojo
 var row = block_dim.y * block_idx.y + thread_idx.y
@@ -378,9 +390,11 @@ var col = block_dim.x * block_idx.x + thread_idx.x
 ```
 
 With this change, adjacent threads access values in the same row of the input
-matrices, which are contiguous in memory.
-
-This leads to an almost tenfold jump in benchmarks on A100.
+matrices, which are contiguous in memory. The naive kernel above maps the x
+axis to rows instead, so its warp accesses stride across memory — that
+coordinate-mapping difference is what the A100 measurements in the benchmark
+table above show. Both kernels guard their store and size their launch grids
+for their own mapping, so both handle rectangular matrices correctly.
 
 ## Kernel 3: Rework to use shared memory tiling
 
@@ -784,7 +798,7 @@ def tensor_core_matrix_multiplication[
 ](
     A: TileTensor[dtype, layout_a, MutAnyOrigin],
     B: TileTensor[dtype, layout_b, MutAnyOrigin],
-    C: TileTensor[dtype, layout_c, MutAnyOrigin],
+    C: TileTensor[mut=True, dtype, layout_c, MutAnyOrigin],
 ):
     comptime M = C.static_shape[0]
     comptime N = C.static_shape[1]
@@ -802,14 +816,14 @@ def tensor_core_matrix_multiplication[
 
     var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
 
-    var A_sram_tile = stack_allocation[dtype, address_space=.SHARED](
+    var A_sram_tile = stack_allocation[A.dtype, address_space=.SHARED](
         row_major[BM, BK]()
     )
-    var B_sram_tile = stack_allocation[dtype, address_space=.SHARED](
+    var B_sram_tile = stack_allocation[B.dtype, address_space=.SHARED](
         row_major[BK, BN]()
     )
 
-    var c_reg = stack_allocation[dtype, address_space=.LOCAL](
+    var c_reg = stack_allocation[C.dtype, address_space=.LOCAL](
         row_major[WM // MMA_M, (WN * 4) // MMA_N]()
     ).fill(0)
 

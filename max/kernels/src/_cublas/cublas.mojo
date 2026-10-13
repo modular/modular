@@ -108,7 +108,7 @@ def check_cublas_error(stat: Result, msg: StringSlice) raises:
 
 @inline(.always)
 def _convert_to_cublas_datatype[mojo_type: DType]() -> DataType:
-    comptime __match mojo_type:
+    comptime match mojo_type:
         case .float32:
             return DataType.R_32F
         case .float16:

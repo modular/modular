@@ -32,21 +32,19 @@ Tile constraints:
   * `N` must be a multiple of 32 (= 16 * mn_pack) for B-scale cell alignment.
 """
 
-from std.math import ceildiv, exp
+from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory.unsafe import bitcast
 from std.sys import simd_width_of
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
 from max.gpu.sync import barrier
 from max.gpu.primitives import warp
-from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
 from max.gpu.memory import CacheOperation
 from max.gpu.sync import s_waitcnt
@@ -71,8 +69,9 @@ from structured_kernels.amd_tile_io import (
 )
 
 from ....utils import elementwise_epilogue_type
+from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
-from .block_scaled_matmul_amd import MX_BLOCK_SIZE, _smem_row_bytes
+from .block_scaled_matmul_amd import _smem_row_bytes
 from ....block_scaled_utils import compute_mxfp8_block_scale
 from .block_scaled_preshuffle_layouts import Shuffler
 from .block_scaled_preshuffle_loaders import (
@@ -893,6 +892,7 @@ struct BlockScaledMatmulAMD_PreB[
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     fuse_swiglu_mxfp8: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
 ]:
     """Preshuffled-B variant of `BlockScaledMatmulAMD`.
 
@@ -977,11 +977,13 @@ struct BlockScaledMatmulAMD_PreB[
         elementwise_lambda_fn: Optional epilogue applied to each output
             element in registers instead of storing it. The fused QKV ops
             use it to scatter K/V into the paged cache.
-        fuse_swiglu_mxfp8: Folds the clamped SwiGLU AND the MXFP8 requantize
-            into the epilogue, so `c` carries HALF the matmul's N as packed
-            E4M3 and `sfc_ptr` receives its E8M0 block scales. Requires the
-            gate_up weight sigma-permuted on N (gate and up in adjacent
+        fuse_swiglu_mxfp8: Folds the gated activation AND the MXFP8
+            requantize into the epilogue, so `c` carries HALF the matmul's N as
+            packed E4M3 and `sfc_ptr` receives its E8M0 block scales. Requires
+            the gate_up weight sigma-permuted on N (gate and up in adjacent
             columns); split halves cannot be paired in-register.
+        activation: The gated activation the fused epilogue applies to each
+            `(gate, up)` pair, selected at compile time (defaults to `swiglu`).
     """
 
     # WM is locked to BM — single warp along M for the preb (no-LDS-B) path.
@@ -1073,9 +1075,6 @@ struct BlockScaledMatmulAMD_PreB[
         sfc_expert_slot: Int = 0,
         # Zero selects plain row-major over the 4D slot layout.
         sfc_max_padded_m: Int = 0,
-        # Only read when `fuse_swiglu_mxfp8`; defaults are the OAI values.
-        swiglu_alpha: Float32 = 1.702,
-        swiglu_limit: Float32 = 7.0,
     ):
         comptime A_K_BYTES = a_layout.static_shape[1]
         comptime assert (
@@ -1220,8 +1219,7 @@ struct BlockScaledMatmulAMD_PreB[
         var k_counter = 0
 
         @inline(.always)
-        @__parameter
-        def load_a_tile_from_dram[reg_slot: Int = 0]():
+        def load_a_tile_from_dram[reg_slot: Int = 0]() {mut k_counter, imm}:
             # Register-bounce load into landing-ring slot `reg_slot` (no-op in dram_to_lds mode).
             comptime if not Self.dram_to_lds:
                 var a_block = a_blockrow.tile[Self.BM, Self.BK_BYTES](
@@ -1237,16 +1235,20 @@ struct BlockScaledMatmulAMD_PreB[
                     )
                 k_counter += 1
 
+        comptime a_smem_slot_return_type = type_of(
+            a_smem.tile[Self.BM, Self.A_SMEM_ROW_BYTES](0, 0)
+        )
+
         @inline(.always)
-        @__parameter
         def a_smem_slot(
             slot: Int,
-        ) -> type_of(a_smem.tile[Self.BM, Self.A_SMEM_ROW_BYTES](0, 0)):
+        ) {imm} -> a_smem_slot_return_type:
             return a_smem.tile[Self.BM, Self.A_SMEM_ROW_BYTES](slot, 0)
 
         @inline(.always)
-        @__parameter
-        def copy_a_tile_to_smem[reg_slot: Int = 0](slot: Int):
+        def copy_a_tile_to_smem[
+            reg_slot: Int = 0
+        ](slot: Int) {mut k_counter, imm}:
             comptime if Self.dram_to_lds:
                 # DRAM->LDS via the shared swizzled loader (TileLoaderLDS does
                 # the readfirstlane->m0 base + source-side byte swizzle +
@@ -1306,8 +1308,9 @@ struct BlockScaledMatmulAMD_PreB[
                         )
 
         @inline(.always)
-        @__parameter
-        def load_scales_for_iter[slot: Int = 0](k_pair_base: Int):
+        def load_scales_for_iter[
+            slot: Int = 0
+        ](k_pair_base: Int) {mut mma_op, imm}:
             """Issues all A+B preshuffled scale-dword loads for one outer-K iter.
 
             `k_pair_base = k_iter * mma_k_pair_per_tile` is the absolute
@@ -1349,10 +1352,9 @@ struct BlockScaledMatmulAMD_PreB[
         comptime n_clusters = ceildiv(Self.num_k_mmas, Self.mfma_cluster)
 
         @inline(.always)
-        @__parameter
         def mma_chain_plain[
             b_slot: Int, a_slot: Int = b_slot, scale_slot: Int = 0
-        ]():
+        ]() {imm}:
             # a_slot/scale_slot default to b_slot/0 (unchanged callers); the
             # co-deepened path passes distinct ring indices.
             var a_warp = a_smem_slot(a_slot).tile[
@@ -1365,8 +1367,7 @@ struct BlockScaledMatmulAMD_PreB[
             s_setprio[0]()
 
         @inline(.always)
-        @__parameter
-        def mma_chain_epilogue[slot: Int]():
+        def mma_chain_epilogue[slot: Int]() {imm}:
             # Last resident tile, no B prefetch left to overlap.
             comptime if Self.cluster_drain_sched:
                 # Fully drain the slot's B + scales first (a partial drain
@@ -1619,15 +1620,7 @@ struct BlockScaledMatmulAMD_PreB[
                     # expert-load skew costs more than the fusion saves.
                     v = v.cast[DType.bfloat16]().cast[DType.float32]()
                     comptime for j in range(OUT_PER_FRAG):
-                        var g_c = min(v[2 * j], swiglu_limit)
-                        var u_c = v[2 * j + 1].clamp(
-                            -swiglu_limit, swiglu_limit
-                        )
-                        var o = (
-                            g_c
-                            / (1.0 + exp(-(g_c * swiglu_alpha)))
-                            * (u_c + 1.0)
-                        )
+                        var o = Self.activation(v[2 * j], v[2 * j + 1])
                         acts[n_mma * OUT_PER_FRAG + j] = o
                         lane_max = max(lane_max, max(o, -o))
 

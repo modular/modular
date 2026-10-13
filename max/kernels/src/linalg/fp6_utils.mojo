@@ -295,8 +295,9 @@ def decode_fp6_to_f32[
     - The sign bit (code bit 5) is OR'd into float32 bit 31 after the select,
       so `-0` decodes to `0x80000000` and matches the table's `-0.0`.
 
-    Unlike `decode_e2m1_to_f32_inject` in `fp4_utils`, this never forms a
-    denormal float32 intermediate, so it is correct on flush-to-zero targets.
+    Unlike an exponent-injection decode in float32 (see `decode_e2m1_to_f16`
+    in `fp4_utils`), this never forms a denormal float32 intermediate, so it is
+    correct on flush-to-zero targets.
 
     Parameters:
         width: SIMD width (lane count) of the code vector.

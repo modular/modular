@@ -671,6 +671,20 @@ def _select_declared_speculator(
     return select_speculator(target, speculative.speculative_method, draft_arch)
 
 
+def _require_dspark(speculative: SpeculativeConfig, draft_arch: str) -> None:
+    """Refuses a DSpark draft under any method but ``dspark``.
+
+    Each fused DSpark graph runs a DSpark draft step, which a DFlash, Eagle
+    or MTP draft loop does not match.
+    """
+    if not speculative.is_dspark():
+        raise ValueError(
+            f"The {draft_arch} draft is a DSpark draft and requires"
+            " --speculative-method dspark, got"
+            f" {speculative.speculative_method!r}."
+        )
+
+
 def _apply_speculative_target_architecture(
     speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
 ) -> Speculator | None:
@@ -731,6 +745,7 @@ def _apply_speculative_target_architecture(
             # Speculators-format DSpark drafters (e.g.
             # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
             # generic architectures: ["DSparkDraftModel"].
+            _require_dspark(speculative, draft_archs[0])
             target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
         elif (
             speculative.is_dflash()
@@ -752,6 +767,7 @@ def _apply_speculative_target_architecture(
             else None
         )
         if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
+            _require_dspark(speculative, draft_archs[0])
             target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
     # Kimi K3's speculators-format DSpark drafter (
     # RedHatAI/Kimi-K3-speculator.dspark) declares the same generic
@@ -763,11 +779,8 @@ def _apply_speculative_target_architecture(
             if draft_model is not None
             else None
         )
-        if (
-            speculative.speculative_method == "dflash"
-            and draft_archs
-            and draft_archs[0] == "DSparkDraftModel"
-        ):
+        if draft_archs and draft_archs[0] == "DSparkDraftModel":
+            _require_dspark(speculative, draft_archs[0])
             target_archs[0] = "UnifiedDSparkKimiK3ForCausalLM"
     if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
         draft_archs = (
@@ -784,14 +797,7 @@ def _apply_speculative_target_architecture(
             # path forbids block-sparse attention.
             target_archs[0] = "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
         elif draft_archs and draft_archs[0] == "DSparkMiniMaxDraftModel":
-            # The fused graph verifies one DSpark block per step, which only
-            # the v1 dflash harness drives; Eagle, MTP and DFlash2 would load
-            # it against a draft loop that does not match.
-            if not speculative.is_dflash() or speculative.is_dflash2():
-                raise ValueError(
-                    "The MiniMax-M3 DSpark draft requires"
-                    " --speculative-method dflash"
-                )
+            _require_dspark(speculative, draft_archs[0])
             target_archs[0] = (
                 "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
             )

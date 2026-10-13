@@ -30,6 +30,7 @@ _TORCH_PACKAGES = {
 
 # Force the @multiple label, mainly for adding extra constraints to targets
 _FORCE_MULTIPLE = {
+    "aiperf",
     "sglang",
     "vllm",
 }
@@ -80,8 +81,21 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "transformers",  # MAX pins 5.12.x; sglang pins 5.3.0, vllm aligns on 5.12.x
         "vllm",
         "sglang",
+        # aiperf (SemiAnalysis fork) pins different versions for these.
+        "datasets",
+        "mteb",
+        "plotly",
+        "pyzmq",
+        "rich",
+        "tqdm",
     }
 )
+
+
+# Optional deps are forced into each package's own target, so an extra whose
+# dep depends back on the package forms a cycle: aiperf's textual requests
+# markdown-it-py[plugins], and mdit-py-plugins depends on markdown-it-py.
+_SKIP_OPTIONAL_DEPS = {("markdown-it-py", "mdit-py-plugins")}
 
 
 def _should_ignore(
@@ -160,13 +174,16 @@ def _main(uv_lock: str, output_path: str) -> None:
             print(f"  {package}")
         sys.exit(1)
 
+    packages = [
+        Package(package, all_versions, _SKIP_OPTIONAL_DEPS)
+        for package in data["package"]
+        if not _should_ignore(package, cpu_versions)
+    ]
+
     targets = ""
     all_downloads = set()
-    for package in data["package"]:
-        if _should_ignore(package, cpu_versions):
-            continue
-
-        pkg, downloads = Package(package, all_versions).render()
+    for package in packages:
+        pkg, downloads = package.render()
         targets += pkg
         all_downloads |= downloads
 

@@ -1087,6 +1087,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Control Flags"},
     )
 
+    workload_stats_json: str | None = Field(
+        default=None,
+        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-to-steady-state, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     trace: bool = Field(
         default=False,
         description="Enable nsys tracing. Requires server run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs.",

@@ -22,12 +22,7 @@ core path) and K=8 (TMA with OOB zero-fill).
 
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from std.testing import assert_almost_equal

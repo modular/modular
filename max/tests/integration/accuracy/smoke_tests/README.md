@@ -26,17 +26,17 @@ a large model (subsequent runs reuse the compile cache).
 
 ## What CI runs: nightly vs manual
 
-`smoke_test_github_matrix.py` holds two model sets:
+`smoke_test_github_matrix.py` maps every model CI knows how to smoke test
+(`MODELS`) to the HW it runs on. The nightly suite (`--tier nightly`) runs only
+the models whose entry also carries the `NIGHTLY` tag, for example
+`NIGHTLY | _1xB200 | _1xMI355`.
 
-- `MODELS` is every model CI knows how to smoke test, with the HW it runs on.
-- `NIGHTLY_MODELS` is the subset the nightly suite runs (`--tier nightly`).
-
-To run anything outside `NIGHTLY_MODELS`, dispatch the Serve Smoke Tests
+To run a model without the `NIGHTLY` tag, dispatch the Serve Smoke Tests
 workflow (`.github/workflows/serveSmokeTest.yaml`) with `model_tier: all`, the
 default for a manual run, or name the models in `models_override`.
 
-Membership in `NIGHTLY_MODELS` is opt-in: adding a model to `MODELS` does not
-add it to the nightly.
+The `NIGHTLY` tag is opt-in: adding a model to `MODELS` does not add it to the
+nightly.
 
 ## Task overrides
 

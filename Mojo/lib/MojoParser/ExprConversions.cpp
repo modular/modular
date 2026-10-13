@@ -414,9 +414,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
           MBValue(thunk.getArgument(thunkVariadicArgIndex));
 
       // Emit: the_pack[index]
-      auto indexAttr = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
-      CValue indexCValue = emitter.emitInt(
-          ASTExprAnd<PValue>{PValue(indexAttr), &node}, EC_ConversionThunk);
+      CValue indexCValue =
+          emitter.emitInt(indexInVariadic, useLoc, EC_ConversionThunk);
       SyntheticNode indexSynthNode(useLoc, indexCValue);
       SyntheticNode packSynthNode(useLoc, packRefMBValue);
       Operand subscriptOperand(&indexSynthNode, useLoc,

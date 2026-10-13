@@ -65,7 +65,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, Linear
-from max.nn.moe import MoE, MoEGate
+from max.nn.moe import GatedActivation, MoE, MoEGate
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.nn.state_space import (
@@ -885,7 +885,9 @@ class NemotronHBlock(Module):
                 quant_config=quant_config,
                 # Non-gated: relu2 over the whole up-projection (the moe_dim
                 # split arg from the base MoE is ignored).
-                gated_activation_fn=lambda gate_up, moe_dim: _relu2(gate_up),
+                activation=GatedActivation(
+                    gated_activation_fn=lambda gate_up, moe_dim: _relu2(gate_up)
+                ),
             )
         else:  # mlp
             self.mixer = NemotronHMLP(config, quant_config=quant_config)

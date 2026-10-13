@@ -17,7 +17,7 @@ Wraps the Apple Accelerate `cblas_sgemm` routine to provide single-precision mat
 
 from std.collections import Optional
 from std.math import fma
-from std.memory.alloc import ManagedAllocation, alloc, dealloc
+from std.memory.alloc import ManagedAllocation, alloc
 from std.sys import CompilationTarget, simd_width_of
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
@@ -272,7 +272,7 @@ def apple_gemv[
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Performs a parallelized and vectorized GEMV for the M=1 case on Apple CPUs.
 
@@ -374,9 +374,8 @@ def apple_gemv[
 
             var val = acc_vector.reduce_add() + acc_scalar
 
-            comptime if elementwise_lambda_fn:
-                comptime func = elementwise_lambda_fn.value()
-                func[c.dtype, 1](Index(0, n), val)
+            comptime if case .Some(func) = elementwise_lambda_fn:
+                func[c.dtype, 1]((0, n), val)
             else:
                 c.store[width=1](Coord(Idx[0], n), val)
 
@@ -454,10 +453,9 @@ def apple_matmul[
         rebind[UnsafePointer[Float32, ImmutAnyOrigin]](b.ptr),
     )
 
-    comptime if elementwise_lambda_fn:
+    comptime if case .Some(epilogue) = elementwise_lambda_fn:
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
-        comptime epilogue = elementwise_lambda_fn.value()
         comptime simd_size = simd_width_of[c.dtype]()
 
         @inline(.always)
@@ -465,9 +463,7 @@ def apple_matmul[
             simd_width: Int, alignment: Int = 1
         ](idx: Coord) {var}:
             var c_val = c.load[width=simd_width](idx)
-            epilogue[c.dtype, simd_width](
-                Index(idx[0].value(), idx[1].value()), c_val
-            )
+            epilogue[c.dtype, simd_width](idx, c_val)
 
         # TODO: thread a DeviceContext through the matmul stack so we can
         # drop this local construction.
@@ -564,25 +560,19 @@ def apple_batched_matmul[
     var b_rows = Int(b.dim[b.rank - 2]())
     var b_cols = Int(b.dim[b.rank - 1]())
 
-    var c_stride = c_rows * c_cols
-    var a_stride = a_rows * a_cols
-    var b_stride = b_rows * b_cols
+    # Collapse the leading batch dims into one batch axis so each per-batch
+    # 2D operand view is a subscript slice. This assumes the batch dims are
+    # packed contiguously, the same assumption the pointer form made.
+    var c3 = c.reshape(row_major(batch_size, c_rows, c_cols))
+    var a3 = a.reshape(row_major(batch_size, a_rows, a_cols))
+    var b3 = b.reshape(row_major(batch_size, b_rows, b_cols))
 
     var cblas_gemm = get_cblas_f32_function()
 
     for batch in range(batch_size):
-        var c2 = TileTensor(
-            c.ptr + batch * c_stride,
-            row_major(c_rows, c_cols),
-        )
-        var a2 = TileTensor(
-            a.ptr + batch * a_stride,
-            row_major(a_rows, a_cols),
-        )
-        var b2 = TileTensor(
-            b.ptr + batch * b_stride,
-            row_major(b_rows, b_cols),
-        )
+        var c2 = c3[batch, :, :]
+        var a2 = a3[batch, :, :]
+        var b2 = b3[batch, :, :]
 
         var batch_coords = _get_start_indices_of_nth_subvolume[2](
             batch, c_shape_idx
@@ -592,13 +582,16 @@ def apple_batched_matmul[
         @__copy_capture(batch_coords)
         def elementwise_lambda_2d[
             c_type: DType, width: SIMDLength, *, alignment: Int = 1
-        ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
+        ](out_coords: Coord, out_val: SIMD[c_type, width]):
+            comptime assert (
+                out_coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             var local_batch_coords = batch_coords
-            local_batch_coords[rank - 1] = out_coords[1]
-            local_batch_coords[rank - 2] = out_coords[0]
+            local_batch_coords[rank - 1] = Int(out_coords[1].value())
+            local_batch_coords[rank - 2] = Int(out_coords[0].value())
 
             comptime func = elementwise_epilogue_fn.value()
-            func[c_type, width, rank](local_batch_coords, out_val)
+            func[c_type, width](Coord(local_batch_coords), out_val)
 
         apple_matmul[
             transpose_b=transpose_b,

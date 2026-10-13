@@ -26,7 +26,7 @@ Provides two paths for 2-D convolution on RDNA 3+:
 from std.math import ceildiv
 from max.gpu import global_idx, WARP_SIZE
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
@@ -408,9 +408,12 @@ def dispatch_rdna_conv2d[
                 _width: SIMDLength,
                 *,
                 alignment: Int = 1,
-            ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-                var m_idx = coords_2d[0]
-                var n_idx = coords_2d[1]
+            ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+                comptime assert (
+                    coords_2d.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                var m_idx = Int(coords_2d[0].value())
+                var n_idx = Int(coords_2d[1].value())
                 var out_val = val
 
                 # Fold the fused skip connection: out = conv + beta*source.
@@ -422,8 +425,7 @@ def dispatch_rdna_conv2d[
                     )
                     out_val = out_val + s * resid_beta.cast[_dtype]()
 
-                comptime if maybe_epilogue_func:
-                    comptime epilogue_4d = maybe_epilogue_func.value()
+                comptime if case .Some(epilogue_4d) = maybe_epilogue_func:
                     var batch_idx: Int
                     var rem_idx: Int
                     var h_idx: Int
@@ -431,7 +433,7 @@ def dispatch_rdna_conv2d[
                     batch_idx, rem_idx = divmod(m_idx, hw)
                     h_idx, w_idx = divmod(rem_idx, out_w)
                     epilogue_4d(
-                        IndexList[4](batch_idx, h_idx, w_idx, n_idx),
+                        (batch_idx, h_idx, w_idx, n_idx),
                         rebind[SIMD[output_type, _width]](out_val),
                     )
                 else:

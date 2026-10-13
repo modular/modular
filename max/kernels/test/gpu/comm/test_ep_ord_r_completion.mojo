@@ -34,7 +34,7 @@ Per-expert words are progress data only; the consumer never waits on them.
 """
 
 from comm.sync import enable_p2p
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceContext
 from shmem.ep_comm import ep_signal_completion
 from std.atomic import Atomic, Ordering
 from max.gpu import block_idx, thread_idx

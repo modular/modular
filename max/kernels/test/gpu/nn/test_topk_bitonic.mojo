@@ -21,16 +21,19 @@ Tests `persistent_topk_block` (`topk_bitonic.mojo`) in isolation:
 - Duplicate scores are handled without producing duplicate indices.
 """
 
+from std.builtin.device_passable import DeviceTypeEncoder
 from std.collections import Set
 from max.gpu.host import DeviceContext
 from std.math import max
 from std.memory import bitcast
 from std.random import seed
 from std.testing import assert_equal, assert_true
-from layout import TileTensor, row_major
 
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
+    RowBound,
+    RowBoundsPtr,
+    TopkSink,
     _phi,
     _phi_of,
     persistent_topk_block,
@@ -1643,8 +1646,78 @@ def test_unordered_small_n(ctx: DeviceContext) raises:
 # ===----------------------------------------------------------------------=== #
 
 
+struct _MirrorSink(TopkSink):
+    """Writes each slot to `out` and a row-dependent image of it to `mirror`."""
+
+    var out: UnsafePointer[Int32, MutUntrackedOrigin]
+    var mirror: UnsafePointer[Int32, MutUntrackedOrigin]
+    var row: Int
+
+    @inline(.always)
+    def __init__(
+        out self,
+        out_ptr: UnsafePointer[Int32, MutAnyOrigin],
+        mirror: UnsafePointer[Int32, MutUntrackedOrigin],
+        row: Int,
+    ):
+        self.out = out_ptr.unsafe_origin_cast[MutUntrackedOrigin]()
+        self.mirror = mirror
+        self.row = row
+
+    @inline(.always)
+    def store(self, idx: Int, col: Int32):
+        self.out[idx] = col
+        self.mirror[idx] = _mirror_of(col, self.row)
+
+
+@inline(.always)
+def _mirror_of(col: Int32, row: Int) -> Int32:
+    """What `_MirrorSink` writes for `col` on `row`; `-1` stays `-1`."""
+    return col * 3 + Int32(row) if col >= 0 else Int32(-1)
+
+
+struct _MirrorBound(RowBound):
+    """`RowBoundsPtr`'s bounds with a sink that also fills `mirror`.
+
+    Checks that every output slot of every arm, `-1` padding included, goes
+    through the sink, and that the sink carries the per-row state `row`
+    resolved once at entry.
+    """
+
+    comptime device_type: AnyType = Self
+    comptime Sink = _MirrorSink
+
+    var bounds: UnsafePointer[Int32, ImmUntrackedOrigin]
+    var mirror: UnsafePointer[Int32, MutUntrackedOrigin]
+
+    def __init__(
+        out self,
+        bounds: UnsafePointer[Int32, ImmutAnyOrigin],
+        mirror: UnsafePointer[Int32, MutAnyOrigin],
+    ):
+        self.bounds = bounds.unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.mirror = mirror.unsafe_origin_cast[MutUntrackedOrigin]()
+
+    @inline(.always)
+    def row(
+        self, row: Int, out_idxs: UnsafePointer[Int32, MutAnyOrigin]
+    ) -> Tuple[Int, _MirrorSink]:
+        return (Int(self.bounds[row]), _MirrorSink(out_idxs, self.mirror, row))
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "_MirrorBound"
+
+
 def _run_and_check_bounded[
-    in_dtype: DType = .float32
+    in_dtype: DType = .float32,
+    ordered: Bool = True,
+    deterministic: Bool = True,
 ](
     ctx: DeviceContext,
     scores_host: List[Float32],  # B * N flat, poisoned at/past each bound
@@ -1682,7 +1755,7 @@ def _run_and_check_bounded[
         for b in range(B):
             buf[b] = Int32(bounds[b])
 
-    persistent_topk_block_split[ordered=True, deterministic=True](
+    persistent_topk_block_split[ordered=ordered, deterministic=deterministic](
         ctx,
         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
             scores_dev.unsafe_ptr()
@@ -1692,7 +1765,11 @@ def _run_and_check_bounded[
         K,
         total_seq_len=B,
         row_bounds=Optional(
-            rebind[ImmPointer[Int32, ImmutAnyOrigin]](bounds_dev.unsafe_ptr())
+            RowBoundsPtr(
+                rebind[ImmPointer[Int32, ImmutAnyOrigin]](
+                    bounds_dev.unsafe_ptr()
+                )
+            )
         ),
     )
     ctx.synchronize()
@@ -1733,12 +1810,67 @@ def _run_and_check_bounded[
         var row_idxs = List[Int](capacity=live)
         for k in range(live):
             row_idxs.append(Int(idxs_host[b * K + k]))
-        _check_topk_row(row_scores, row_idxs, bound, live, label, b)
+        comptime if ordered:
+            _check_topk_row(row_scores, row_idxs, bound, live, label, b)
+        else:
+            _check_set_row(row_scores, row_idxs, bound, live, label, b)
+
+    # Same launch through a custom sink: every slot of `mirror` must be the
+    # image of the slot the kernel wrote to the main output.
+    var mirror_dev = ctx.enqueue_create_buffer[.int32](B * K)
+    mirror_dev.enqueue_fill(Int32(-2))
+    idxs_dev.enqueue_fill(Int32(-2))
+    persistent_topk_block_split[
+        ordered=ordered, deterministic=deterministic, RB=_MirrorBound
+    ](
+        ctx,
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            scores_dev.unsafe_ptr()
+        ),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+        N,
+        K,
+        total_seq_len=B,
+        row_bounds=Optional(
+            _MirrorBound(
+                rebind[ImmPointer[Int32, ImmutAnyOrigin]](
+                    bounds_dev.unsafe_ptr()
+                ),
+                rebind[MutPointer[Int32, MutAnyOrigin]](
+                    mirror_dev.unsafe_ptr()
+                ),
+            )
+        ),
+    )
+    var mirror_host = ctx.enqueue_create_host_buffer[.int32](B * K)
+    ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
+    ctx.enqueue_copy(dst_buf=mirror_host, src_buf=mirror_dev)
+    ctx.synchronize()
+    for b in range(B):
+        for k in range(K):
+            var col = idxs_host[b * K + k]
+            assert_true(
+                col != -2 and mirror_host[b * K + k] == _mirror_of(col, b),
+                String(
+                    "[",
+                    label,
+                    "] sink row ",
+                    b,
+                    " slot ",
+                    k,
+                    ": out ",
+                    col,
+                    ", mirror ",
+                    mirror_host[b * K + k],
+                ),
+            )
 
     _ = scores_dev
     _ = idxs_dev
     _ = bounds_dev
+    _ = mirror_dev
     _ = idxs_host
+    _ = mirror_host
 
 
 def _poisoned_bounded_scores(
@@ -1819,6 +1951,42 @@ def test_bounded_histsel_fills_gpu(ctx: DeviceContext) raises:
     var scores = _poisoned_bounded_scores(B, N, bounds, 0xB0DEF111)
     _run_and_check_bounded(ctx, scores, N, K, B, bounds, "bounded_fills_gpu")
     print("PASS test_bounded_histsel_fills_gpu")
+
+
+def test_bounded_histsel_select_all_tail(ctx: DeviceContext) raises:
+    """A causal prefill whose rows mostly hold fewer live keys than `K`.
+
+    The MLA indexer's shape and contract (`ordered=False`,
+    `deterministic=False`): `N` just past the 2048 cutoff and every row's
+    bound ramping from below `K` to above it, with rows above the SM count.
+    Select-all rows append fewer than `K` keys, so their output tail must be
+    written `-1` rather than read back from unwritten selection slots.
+
+    Untouched shared memory reads as zero, which decodes to column `-1` and
+    hides an unwritten tail, so a first launch with every row full leaves real
+    keys in every SM's selection slots for the ramp launch to trip over.
+    """
+    comptime N = 2104
+    comptime K = 2048
+    comptime B = 200
+    var full = List[Int](length=B, fill=N)
+    _run_and_check_bounded[ordered=False, deterministic=False](
+        ctx,
+        _poisoned_bounded_scores(B, N, full, 0xB0DE7A10),
+        N,
+        K,
+        B,
+        full,
+        "bounded_select_all_tail_dirty",
+    )
+    var bounds = List[Int](capacity=B)
+    for b in range(B):
+        bounds.append(1901 + b)
+    var scores = _poisoned_bounded_scores(B, N, bounds, 0xB0DE7A11)
+    _run_and_check_bounded[ordered=False, deterministic=False](
+        ctx, scores, N, K, B, bounds, "bounded_select_all_tail"
+    )
+    print("PASS test_bounded_histsel_select_all_tail")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2269,7 +2437,11 @@ def _run_short_row_overrun[
         K,
         total_seq_len=B,
         row_bounds=Optional(
-            rebind[ImmPointer[Int32, ImmutAnyOrigin]](bounds_dev.unsafe_ptr())
+            RowBoundsPtr(
+                rebind[ImmPointer[Int32, ImmutAnyOrigin]](
+                    bounds_dev.unsafe_ptr()
+                )
+            )
         ),
     )
     ctx.synchronize()
@@ -2442,6 +2614,7 @@ def main() raises:
         test_bounded_resident_bin_digit(ctx)
         test_bounded_histsel_prefetch(ctx)
         test_bounded_histsel_fills_gpu(ctx)
+        test_bounded_histsel_select_all_tail(ctx)
         test_bf16_block_multirow(ctx)
         test_bf16_resident(ctx)
         test_bf16_histsel(ctx)

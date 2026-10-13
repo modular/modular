@@ -31,13 +31,12 @@ SMEM), so no separate readback verification is needed for either.
 """
 
 from std.math import ceildiv
-from std.memory import alloc
 from std.random import rand, randn, seed
 from std.sys import size_of
 
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     prefetch_tma_descriptor,

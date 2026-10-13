@@ -14,9 +14,12 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 import pytest
+from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 from max.benchmark.benchmark_shared.datasets.image_augmentation import (
     generate_random_image,
 )
@@ -37,6 +40,7 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
+    BenchmarkRunResultLabels,
     PercentileRow,
     _image_dimensions,
     _image_long_side,
@@ -45,6 +49,7 @@ from max.benchmark.benchmark_shared.serving_result_output import (
     format_percentile_table,
     print_benchmark_summary,
     print_workload_stats,
+    save_result_json,
 )
 
 
@@ -405,3 +410,64 @@ def test_image_long_side_none_for_corrupt_data() -> None:
         "image_url": {"url": "data:image/jpeg;base64,not-valid-base64!!"},
     }
     assert _image_long_side(image) is None
+
+
+def test_save_result_json_writes_labels_in_base_layout(
+    tmp_path: Path,
+) -> None:
+    """Labels land in the base layout with the iteration's rate and concurrency."""
+    config = ServingBenchmarkConfig(model="myorg/model", metadata=["tp=2"])
+    result = BenchmarkResult(
+        task_type="text",
+        max_concurrency=4,
+        text_data=TextGenAggregates(
+            duration=1.0,
+            completed=2,
+            failures=0,
+            request_throughput=2.0,
+            total_input=10,
+            total_output=7,
+            nonempty_response_chunks=7,
+            max_input=5,
+            max_output=4,
+            max_total=9,
+            global_cached_token_rate=0.0,
+            output_lens=[3, 4],
+        ),
+    )
+    path = tmp_path / "result.json"
+
+    save_result_json(
+        str(path),
+        BenchmarkRunResultLabels.from_config(
+            config,
+            benchmark_task="text-generation",
+            model_id="myorg/model",
+            tokenizer_id="myorg/tokenizer",
+        ),
+        result,
+        request_rate=2.5,
+        record_max_concurrency=4,
+    )
+
+    data = json.loads(path.read_text())
+    assert list(data)[:13] == [
+        "date",
+        "backend",
+        "benchmark_task",
+        "model_id",
+        "tokenizer_id",
+        "num_prompts",
+        "dataset_name",
+        "client_args",
+        "request_rate",
+        "burstiness",
+        "max_concurrency",
+        "max_concurrent_conversations",
+        "tp",
+    ]
+    assert data["tokenizer_id"] == "myorg/tokenizer"
+    assert data["tp"] == "2"
+    assert data["client_args"]["model"] == "myorg/model"
+    assert data["client_args"]["request_rate"] == "2.5"
+    assert data["client_args"]["max_concurrency"] == 4

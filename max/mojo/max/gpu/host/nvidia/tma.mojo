@@ -112,24 +112,25 @@ struct TensorMapDataType(TrivialRegisterPassable):
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        comptime if dtype == .float32:
-            return Self.FLOAT32
-        elif dtype == .float16:
-            return Self.FLOAT16
-        elif dtype == .uint16:
-            return Self.UINT16
-        elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
-            return Self.UINT8
-        elif dtype == .uint32:
-            return Self.UINT32
-        elif dtype == .int32:
-            return Self.INT32
-        elif dtype == .int64:
-            return Self.INT64
-        elif dtype == .uint64:
-            return Self.UINT64
-        else:
-            return Self.BFLOAT16
+        comptime match dtype:
+            case .float32:
+                return Self.FLOAT32
+            case .float16:
+                return Self.FLOAT16
+            case .uint16:
+                return Self.UINT16
+            case .float8_e4m3fn | .float8_e8m0fnu | .uint8:
+                return Self.UINT8
+            case .uint32:
+                return Self.UINT32
+            case .int32:
+                return Self.INT32
+            case .int64:
+                return Self.INT64
+            case .uint64:
+                return Self.UINT64
+            case _:
+                return Self.BFLOAT16
 
 
 @fieldwise_init("implicit")
@@ -226,7 +227,7 @@ struct TensorMapSwizzle(
         Args:
             writer: The writer to write to.
         """
-        __match self._value:
+        match self._value:
             case 1:
                 writer.write("32B swizzle")
             case 2:

@@ -44,8 +44,6 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, lane_id
 from max.gpu.memory import (
     async_copy,
-    async_copy_commit_group,
-    async_copy_wait_group,
     external_memory,
     fence_mbarrier_init,
     CacheEviction,
@@ -62,8 +60,6 @@ from layout import (
     DefaultEngine,
     ComptimeInt,
     Coord,
-    CoordLike,
-    Idx,
     Layout,
     RowMajorLayout,
     TensorEngine,
@@ -129,7 +125,10 @@ from ..structured_kernels.warp_context import (
 from ..structured_kernels.tile_loader import TileLoader
 from ..structured_kernels.tile_scheduler import TileScheduler, WorkIterator
 from ..structured_kernels.tile_scheduler_splitk import (
+    SPLITK_SLOT_WORDS,
+    SplitKTileCounters,
     TileScheduler as TileSchedulerSplitK,
+    splitk_tile_counters,
 )
 from linalg.structuring import SMemPtr
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
@@ -2422,6 +2421,26 @@ struct BlackwellMatmulSM100Kernel[
         comptime if Self.cta_group == 2:
             cluster_sync()
 
+    comptime parallel_splitk = (
+        Self.cta_group == 1
+        and Self.BM == 128
+        and Self.config.num_clc_pipeline_stages == 0
+        and Self.CLUSTER_M == 1
+        and Self.CLUSTER_N == 1
+    )
+    """Split-K tiles reduce in parallel (per-split workspace slots, every
+    split sums its slice of the tile) rather than through the serial lock
+    chain. Requires one accumulator row per epilogue thread, and one tile
+    per CTA without clusters: the splits of a tile wait on each other, so
+    they must all be resident, which the host checks CTA by CTA."""
+    comptime splitk_pieces_per_batch = max(
+        1, 96 // (4 * Self.config.num_split_k)
+    )
+    """Pieces per thread whose slot loads are in flight together in the
+    parallel reduction: num_split_k times this many 16-byte loads. The 96
+    floats of loaded state are the most that stayed out of spills (KERN-2796
+    sweep: a batch of 128 floats spilled and ran 10% slower)."""
+
     @staticmethod
     @inline(.always)
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
@@ -2441,6 +2460,9 @@ struct BlackwellMatmulSM100Kernel[
         a_tma_op: Self.ATmaOp_splitk,
         b_tma_op: Self.BTmaOp_splitk,
         c_tma_op: Self.CTmaOp_splitk,
+        c_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin],
+        c_row_stride: UInt32,
+        counter_slot: Int32,
         reduction_tensor: TileTensor[
             Self.config.accum_type,
             reduction_layout,
@@ -2466,6 +2488,12 @@ struct BlackwellMatmulSM100Kernel[
             a_tma_op: TMA descriptor for matrix A.
             b_tma_op: TMA descriptor for matrix B.
             c_tma_op: TMA descriptor for matrix C.
+            c_ptr: Base of the row-major C, which the parallel reduction
+                stores to directly.
+            c_row_stride: Elements between consecutive rows of C.
+            counter_slot: The launching context's slot in the parallel
+                reduction's counter global, or -1 to use per-call counters
+                in `lock_ptr`.
             reduction_tensor: Workspace for partial results from each split.
             lock_ptr: Synchronization locks for reduction coordination.
             cluster_dim: Cluster dimensions.
@@ -2539,6 +2567,7 @@ struct BlackwellMatmulSM100Kernel[
             smem.pipelines.clc_empty(),
             smem.pipelines.clc_throttle(),
             lock_ptr,
+            Self.config.k_group_size,
         )
 
         # Create tile loaders for A and B matrices (2D for split-K)
@@ -2565,6 +2594,9 @@ struct BlackwellMatmulSM100Kernel[
             var load_iter = scheduler.work_iterator()
 
             with MatmulProfilerType[0](workspace, 0):
+                comptime if Self.pdl_level > PDLLevel.OFF:
+                    wait_on_dependent_grids()
+
                 # Producer context: coordinates with MMA consumer via barriers
                 with input_pipeline.producer() as producer:
                     for current in load_iter:
@@ -2604,6 +2636,9 @@ struct BlackwellMatmulSM100Kernel[
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
+                comptime if Self.pdl_level > PDLLevel.OFF:
+                    wait_on_dependent_grids()
+
                 for _ in sched_iter:
                     sched_iter.signal_and_advance()
 
@@ -2665,9 +2700,29 @@ struct BlackwellMatmulSM100Kernel[
                         if not ctx.elect_one_cta:
                             mma_ctx.output_pipeline.pipeline.wait_producer()
 
+                comptime if Self.pdl_level > PDLLevel.OFF:
+                    launch_dependent_grids()
+
         if WarpRole.is_epilogue():
+            # The epilogue writes the workspace, the counters and C, which the
+            # grid before this one may still read.
+            comptime if Self.pdl_level > PDLLevel.OFF:
+                wait_on_dependent_grids()
+
             Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
 
+            var tile_counters: SplitKTileCounters
+            if counter_slot >= 0:
+                tile_counters = (
+                    splitk_tile_counters()
+                    + Int(counter_slot) * SPLITK_SLOT_WORDS
+                )
+            else:
+                tile_counters = rebind[SplitKTileCounters](
+                    lock_ptr.bitcast[UInt32]().unsafe_address_space_cast[
+                        AddressSpace.GLOBAL
+                    ]()
+                )
             var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
@@ -2688,15 +2743,34 @@ struct BlackwellMatmulSM100Kernel[
                 for current in epi_iter:
                     with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                         with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
-                            tile_writer.write_splitk(
-                                smem.c_tiles(),
-                                output_stage,
-                                scheduler,
-                                reduction_tensor,
-                                current,
-                                (mnk[0], mnk[1]),
-                                ctx.elect_one_warp,
-                            )
+                            comptime if Self.parallel_splitk:
+                                tile_writer.write_splitk_parallel[
+                                    pieces_per_batch=Self.splitk_pieces_per_batch
+                                ](
+                                    output_stage,
+                                    scheduler,
+                                    rebind[
+                                        UnsafePointer[
+                                            Scalar[Self.config.accum_type],
+                                            MutAnyOrigin,
+                                        ]
+                                    ](reduction_tensor.ptr),
+                                    tile_counters,
+                                    c_ptr,
+                                    Int(c_row_stride),
+                                    current,
+                                    (mnk[0], mnk[1]),
+                                )
+                            else:
+                                tile_writer.write_splitk(
+                                    smem.c_tiles(),
+                                    output_stage,
+                                    scheduler,
+                                    reduction_tensor,
+                                    current,
+                                    (mnk[0], mnk[1]),
+                                    ctx.elect_one_warp,
+                                )
 
                     tile_idx += 1
 
@@ -3044,13 +3118,12 @@ struct BlackwellMatmulSM100FallbackKernel[
                                 c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                             ).cast[Self.c_type]()
 
-                            comptime if Self.elementwise_lambda_fn:
+                            comptime if case .Some(
+                                epilogue
+                            ) = Self.elementwise_lambda_fn:
                                 comptime alignment = align_of[
                                     SIMD[Self.c_type, 2]
                                 ]()
-                                comptime epilogue = (
-                                    Self.elementwise_lambda_fn.value()
-                                )
                                 epilogue[alignment=alignment](
                                     (Int(m), Int(n)), c_mn
                                 )

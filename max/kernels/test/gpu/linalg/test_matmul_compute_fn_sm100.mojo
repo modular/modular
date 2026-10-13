@@ -14,18 +14,19 @@
 
 Each shape is chosen to land on one `matmul_dispatch_sm100` path: GEMV,
 small-MN split-K GEMV, small-MN MMA-cp.async, unaligned-N split-K GEMV,
-IEEE-fp32 split-K GEMV, the vendor BLAS low-perf route, and the tcgen05 tile
-GEMM. The closure scales by a power of two, so its result must match the plain
-dispatch exactly.
+IEEE-fp32 split-K GEMV, a tuned (N, K) whose split-K outlier rows the closure
+skips, and the tcgen05 tile GEMM. The closure scales by a power of two, so its
+result must match the plain dispatch exactly, except for the tuned (N, K): its
+plain dispatch takes a split-K row and sums K in another order, so that case
+allows one bf16 ulp.
 """
 
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
 
 from std.testing import assert_true
-from std.utils.index import IndexList
 
 
 def test_dispatch_compute_fn[
@@ -33,10 +34,13 @@ def test_dispatch_compute_fn[
     c_type: DType,
     N: Int,
     K: Int,
+    one_ulp: Bool = False,
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that the compute-closure `_matmul_gpu` stores exactly the
     closure applied to what the plain dispatch stores, at the closure's
-    index."""
+    index. With `one_ulp`, the two may differ by one bf16 ulp: the plain
+    dispatch takes a split-K row the closure must skip, so they sum K in
+    different orders."""
     comptime b_type = a_type
     var c_size = m * N
 
@@ -65,10 +69,9 @@ def test_dispatch_compute_fn[
 
     def scale_odd_rows_negated[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var scale} -> SIMD[
-        dtype, width
-    ]:
-        var row_scale = -scale if idx[0] % 2 == 1 else scale
+    ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row_scale = -scale if Int(idx[0].value()) % 2 == 1 else scale
         return val * SIMD[dtype, width](row_scale)
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
@@ -86,7 +89,15 @@ def test_dispatch_compute_fn[
     for i in range(c_size):
         var row_scale = -2 if (i // N) % 2 == 1 else 2
         var expected = c_ref_host_ptr[i] * Scalar[c_type](row_scale)
-        if c_host_ptr[i] != expected:
+        var slack = abs(expected.cast[DType.float32]()) / 128 if one_ulp else 0
+        var diff = abs(
+            c_host_ptr[i].cast[DType.float32]() - expected.cast[DType.float32]()
+        )
+        var steps = abs(Int(c_host_ptr[i].to_bits()) - Int(expected.to_bits()))
+        # The relative slack alone admits two steps just below a power of
+        # two, so `one_ulp` also bounds the encoding distance. Negated so that
+        # a NaN counts as an error.
+        if not (diff == 0 or (one_ulp and diff <= slack and steps <= 1)):
             errors += 1
             if errors <= 5:
                 print(
@@ -127,7 +138,9 @@ def main() raises:
         test_dispatch_compute_fn[.bfloat16, .bfloat16, 100, 4096](ctx, 4)
         # IEEE-fp32 split-K GEMV.
         test_dispatch_compute_fn[.float32, .float32, 128, 6144](ctx, 4)
-        # Vendor BLAS low-perf route.
-        test_dispatch_compute_fn[.bfloat16, .bfloat16, 2112, 14336](ctx, 64)
+        # Tuned (N, K) whose split-K outlier rows the compute epilogue skips.
+        test_dispatch_compute_fn[.bfloat16, .bfloat16, 2112, 14336, True](
+            ctx, 64
+        )
         # tcgen05 tile GEMM.
         test_dispatch_compute_fn[.bfloat16, .bfloat16, 4096, 4096](ctx, 256)

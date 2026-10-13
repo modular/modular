@@ -753,7 +753,7 @@ def selective_scan_update_cpu[
     D: TileTensor[mut=False, kernel_dtype, ...],
     z: TileTensor[mut=False, kernel_dtype, ...],
     dt_bias: TileTensor[mut=False, kernel_dtype, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU kernel for selective scan update (single step).
 
@@ -900,7 +900,7 @@ def selective_scan_fwd_cpu[
     D: TileTensor[mut=False, kernel_dtype, ...],
     z: TileTensor[mut=False, kernel_dtype, ...],
     delta_bias: TileTensor[mut=False, kernel_dtype, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU kernel for selective scan forward pass."""
 
@@ -1122,7 +1122,7 @@ def selective_scan_fwd_cpu_minimal[
     A: TileTensor[mut=False, kernel_dtype, ...],
     B: TileTensor[mut=False, kernel_dtype, ...],
     C: TileTensor[mut=False, kernel_dtype, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Minimal CPU kernel for selective scan forward - no D, z, or delta_bias.
 
@@ -1641,7 +1641,7 @@ def ssd_combined_cpu[
     gamma: TileTensor[kernel_dtype, gamma_LT, MutAnyOrigin, Engine=Engine],
     epsilon: Scalar[kernel_dtype],
     weight_offset: Scalar[kernel_dtype],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU kernel for SSD combined operation.
 
@@ -2040,7 +2040,7 @@ def mamba_split_conv1d_scan_combined_cpu[
         kernel_dtype, output_layout, MutAnyOrigin, Engine=Engine
     ],  # (batch, seqlen, dim) or (batch, seqlen, out_dim)
     epsilon: Scalar[kernel_dtype],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU kernel for mamba_split_conv1d_scan_combined operation.
 

@@ -30,7 +30,7 @@ from std.math.uutils import udivmod
 from std.sys.info import size_of
 from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.apple import ConvIm2colParams, enqueue_apple_conv2d
 from std.utils.index import IndexList
@@ -368,8 +368,7 @@ def dispatch_im2col_matmul_conv2d[
         var c_engine = output._offset_storage(m_offset * N)
         var c_tt = TileTensor(c_engine, row_major(m_count, N))
 
-        comptime if maybe_epilogue_func:
-            comptime epilogue_4d = maybe_epilogue_func.value()
+        comptime if case .Some(epilogue_4d) = maybe_epilogue_func:
 
             @__parameter
             @inline(.always)
@@ -379,15 +378,18 @@ def dispatch_im2col_matmul_conv2d[
                 _width: SIMDLength,
                 *,
                 alignment: Int = 1,
-            ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-                var full_m = m_offset + coords_2d[0]
-                var n_idx = coords_2d[1]
+            ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+                comptime assert (
+                    coords_2d.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                var full_m = m_offset + Int(coords_2d[0].value())
+                var n_idx = Int(coords_2d[1].value())
                 var batch_idx = full_m // HW_out
                 var sp = full_m - batch_idx * HW_out
                 var h_idx = sp // _W_out
                 var w_idx = sp - h_idx * _W_out
                 epilogue_4d(
-                    IndexList[4](batch_idx, h_idx, w_idx, n_idx),
+                    (batch_idx, h_idx, w_idx, n_idx),
                     rebind[SIMD[output_type, _width]](val),
                 )
 
@@ -590,8 +592,7 @@ def dispatch_fused_im2col_conv2d_apple[
         stride_w=Int32(stride[1]),
     )
 
-    comptime if maybe_epilogue_func:
-        comptime epilogue_4d = maybe_epilogue_func.value()
+    comptime if case .Some(epilogue_4d) = maybe_epilogue_func:
         var HW_out = _H_out * _W_out
 
         @__parameter
@@ -602,15 +603,18 @@ def dispatch_fused_im2col_conv2d_apple[
             _width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-            var full_m = coords_2d[0]
-            var n_idx = coords_2d[1]
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+            comptime assert (
+                coords_2d.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var full_m = Int(coords_2d[0].value())
+            var n_idx = Int(coords_2d[1].value())
             var batch_idx = full_m // HW_out
             var sp = full_m - batch_idx * HW_out
             var h_idx = sp // _W_out
             var w_idx = sp - h_idx * _W_out
             epilogue_4d(
-                IndexList[4](batch_idx, h_idx, w_idx, n_idx),
+                (batch_idx, h_idx, w_idx, n_idx),
                 rebind[SIMD[output_type, _width]](val),
             )
 

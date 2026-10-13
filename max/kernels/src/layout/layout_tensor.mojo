@@ -87,10 +87,10 @@ def _compute_distribute_layout[
     """
     var thread_tile = LayoutList()
 
-    comptime if axis:
+    comptime if case .Some(axis_idx) = axis:
         return zipped_divide(
             materialize[data_layout](),
-            Layout(threads_layout.shape[axis.value()]),
+            Layout(threads_layout.shape[axis_idx]),
         )
 
     else:
@@ -4083,8 +4083,7 @@ struct LayoutTensor[
             # the former is the unit in distribution.
             var swizzled_offset = offset
 
-            comptime if swizzle:
-                comptime swizzle_fn = swizzle.value()
+            comptime if case .Some(swizzle_fn) = swizzle:
                 swizzled_offset = swizzle_fn(
                     offset // Scalar[Self.linear_idx_type](self.element_size)
                 ) * Scalar[Self.linear_idx_type](self.element_size)
@@ -4144,8 +4143,7 @@ struct LayoutTensor[
             # the former is the unit in distribution.
             var swizzled_offset = offset
 
-            comptime if swizzle:
-                comptime swizzle_fn = swizzle.value()
+            comptime if case .Some(swizzle_fn) = swizzle:
                 swizzled_offset = swizzle_fn(
                     offset // Scalar[Self.linear_idx_type](self.element_size)
                 ) * Scalar[Self.linear_idx_type](self.element_size)
@@ -4252,8 +4250,7 @@ struct LayoutTensor[
             # the former is the unit in distribution.
             var swizzled_offset = offset
 
-            comptime if swizzle:
-                comptime swizzle_fn = swizzle.value()
+            comptime if case .Some(swizzle_fn) = swizzle:
                 swizzled_offset = swizzle_fn(
                     offset // Scalar[Self.linear_idx_type](self.element_size)
                 ) * Scalar[Self.linear_idx_type](self.element_size)
@@ -4322,8 +4319,7 @@ struct LayoutTensor[
             # the former is the unit in distribution.
             var swizzled_offset = offset
 
-            comptime if swizzle:
-                comptime swizzle_fn = swizzle.value()
+            comptime if case .Some(swizzle_fn) = swizzle:
                 swizzled_offset = swizzle_fn(
                     offset // Scalar[Self.linear_idx_type](self.element_size)
                 ) * Scalar[Self.linear_idx_type](self.element_size)
@@ -5670,8 +5666,7 @@ struct LayoutTensor[
                 comptime dst_idx = Self.layout(i)
                 var swizzled_idx: Scalar[self.linear_idx_type]
 
-                comptime if swizzle:
-                    comptime swizzle_fn = swizzle.value()
+                comptime if case .Some(swizzle_fn) = swizzle:
                     comptime dst_idx_base = dst_idx % swizzle_fn.size()
                     comptime dst_idx_diff = dst_idx - dst_idx_base
                     swizzled_idx = (
@@ -6159,16 +6154,17 @@ def _get_worker_idx[
     )
 
     comptime if thread_scope == ThreadScope.BLOCK:
-        comptime if block_dim_count == 1:
-            return thread_idx.x
-        elif block_dim_count == 2:
-            return thread_idx.y * block_dim.x + thread_idx.x
-        else:
-            return (
-                thread_idx.z * block_dim.y * block_dim.x
-                + thread_idx.y * block_dim.x
-                + thread_idx.x
-            )
+        comptime match block_dim_count:
+            case 1:
+                return thread_idx.x
+            case 2:
+                return thread_idx.y * block_dim.x + thread_idx.x
+            case _:
+                return (
+                    thread_idx.z * block_dim.y * block_dim.x
+                    + thread_idx.y * block_dim.x
+                    + thread_idx.x
+                )
     else:
         return lane_id()
 
@@ -6787,8 +6783,7 @@ def copy_sram_to_dram[
                     src.linear_idx_type
                 ](src_idx)
 
-                comptime if swizzle:
-                    comptime swizzle_fn = swizzle.value()
+                comptime if case .Some(swizzle_fn) = swizzle:
                     comptime src_idx_base = src_idx % swizzle_fn.size()
                     comptime src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
@@ -6803,8 +6798,7 @@ def copy_sram_to_dram[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx).cast[dst.dtype]()
 
-                comptime if binary_op:
-                    comptime binop = binary_op.value()
+                comptime if case .Some(binop) = binary_op:
                     var dst_vec = dst_fragments.ptr.load[
                         width=simd_size, alignment=dst_align
                     ](dst_idx)
@@ -6843,8 +6837,7 @@ def copy_sram_to_dram[
                     src.linear_idx_type
                 ](src_idx)
 
-                comptime if swizzle:
-                    comptime swizzle_fn = swizzle.value()
+                comptime if case .Some(swizzle_fn) = swizzle:
                     comptime src_idx_base = src_idx % swizzle_fn.size()
                     comptime src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
@@ -6864,8 +6857,7 @@ def copy_sram_to_dram[
                         .cast[dst.dtype]()
                     )
 
-                    comptime if binary_op:
-                        comptime binop = binary_op.value()
+                    comptime if case .Some(binop) = binary_op:
                         var dst_vec = dst_fragments.ptr.load[
                             width=simd_size, alignment=dst_align
                         ](dst_idx)
@@ -7201,8 +7193,8 @@ def _copy_dram_to_local[
                     )
                 )
 
-    if offset:
-        offset_helper(offset.value())
+    if case .Some(offset) = offset:
+        offset_helper(offset)
     else:
         var base_ptr = buffer.get_base_ptr()
         offset_helper(ufloordiv(Int(src.ptr) - base_ptr, size_of[src.dtype]()))
@@ -7371,8 +7363,7 @@ def copy_local_to_shared[
     comptime if not row_major:
         var dst_frag = dst.distribute[thread_layout](worker_idx)
 
-        comptime if swizzle:
-            comptime swizzle_fn = swizzle.value()
+        comptime if case .Some(swizzle_fn) = swizzle:
             comptime num_vecs = src.layout.size()
             comptime align_src = align_of[SIMD[src.dtype, src.element_size]]()
             comptime align_dst = align_of[SIMD[dst.dtype, dst.element_size]]()

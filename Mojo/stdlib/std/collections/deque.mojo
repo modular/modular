@@ -780,7 +780,7 @@ struct Deque[ElementType: Movable](
         """
         var start_normalized = start
 
-        var stop_normalized = len(self) if stop is None else stop.value()
+        var stop_normalized = stop.or_else(len(self))
 
         if start_normalized < 0:
             start_normalized += len(self)

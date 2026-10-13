@@ -444,8 +444,7 @@ def b2b_gemm[
         # Vectorized copy from shared to global memory, during which every 2 FP32
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
-        comptime if elementwise_lambda_fn:
-            comptime epilogue = elementwise_lambda_fn.value()
+        comptime if case .Some(epilogue) = elementwise_lambda_fn:
             comptime warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // WN, WN // simd_size
             )
@@ -517,8 +516,7 @@ def b2b_gemm[
 
     # Store FP32 results to FP32 buffer in global memory.
     else:
-        comptime if elementwise_lambda_fn:
-            comptime epilogue = elementwise_lambda_fn.value()
+        comptime if case .Some(epilogue) = elementwise_lambda_fn:
             var d_gmem_frag = d_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
             ](ln_id)

@@ -193,7 +193,7 @@ def _make_unified_config(
         draft=draft_config,
         draft_kv_params=draft_kv_params,
         speculative_config=SpeculativeConfig(
-            speculative_method="dflash",
+            speculative_method="dspark",
             num_speculative_tokens=num_speculative_tokens,
         ),
         target_layer_ids=list(TARGET_LAYER_IDS),

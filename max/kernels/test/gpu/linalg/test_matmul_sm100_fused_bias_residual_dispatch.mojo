@@ -34,13 +34,19 @@ from max.gpu.host import DeviceContext, DeviceBuffer
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import Coord, RowMajorLayout, TileTensor, row_major, Idx
+from layout import (
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+    Idx,
+)
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
 )
 from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     matmul_dispatch_sm100,
 )
+from linalg.matmul.vendor.matmul import matmul as matmul_vendor
 
 comptime EpilogueTile[c_type: DType] = TileTensor[
     c_type, RowMajorLayout[Int64, Int64], ImmutAnyOrigin
@@ -111,6 +117,7 @@ def run_case[
     static_k: Bool,
     epilogue_is_1d: Bool,
     transpose_b: Bool = True,
+    vendor_reference: Bool = False,
 ](
     ctx: DeviceContext,
     M: Int,
@@ -169,7 +176,9 @@ def run_case[
 
     # Reference = the SAME kernel run WITHOUT the residual, into `c_ref`.
     # `matmul_dispatch_sm100` and the fused dispatcher route identically for a
-    # given shape, so the matmul is bit-identical on both sides and the
+    # given shape (except shapes only the fused dispatcher sends to vendor
+    # BLAS; see `vendor_reference`), so the matmul is bit-identical on both
+    # sides and the
     # comparison isolates the residual application -- every case holds at a
     # tight 1e-2 regardless of K. (A cuBLAS reference drifts by a few bf16 ulps
     # vs the Mojo kernels on long reductions, which would force loose tols.)
@@ -184,9 +193,17 @@ def run_case[
         # b_tt is [N, K] for transpose_b, else [K, N]; dims static either way.
         comptime if transpose_b:
             var b_tt = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
-            matmul_dispatch_sm100[transpose_b=transpose_b](
-                c_ref_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
-            )
+            # Shapes the fused dispatcher hands to vendor BLAS while the plain
+            # dispatcher keeps them on Mojo take the reference from the same
+            # vendor matmul.
+            comptime if vendor_reference:
+                matmul_vendor[transpose_b=transpose_b](
+                    c_ref_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
+                )
+            else:
+                matmul_dispatch_sm100[transpose_b=transpose_b](
+                    c_ref_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
+                )
             fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 has_epilogue_tensor=True,
@@ -511,7 +528,7 @@ def main() raises:
         # --- Case 12: low_perf_shapes -> cuBLAS ------------------------------
         # (N,K)=(2112,14336) is in low_perf_shapes; the dispatcher hands it to
         # cuBLAS (residual via the elementwise wrapper) before the native gate.
-        # Very long K=14336 -> looser tolerance.
+        # The plain dispatcher runs it on Mojo, so the reference is cuBLAS too.
         run_case[
             bf16,
             bf16,
@@ -521,6 +538,7 @@ def main() raises:
             static_n=True,
             static_k=True,
             epilogue_is_1d=False,
+            vendor_reference=True,
         ](ctx, 256, "12-lowperf-cublas-2D")
 
         print("\n=== ALL CASES PASSED ===\n")

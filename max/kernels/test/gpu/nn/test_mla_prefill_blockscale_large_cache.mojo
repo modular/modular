@@ -47,12 +47,7 @@ from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from std.memory import alloc
 from std.utils.numerics import isinf, isnan
 from nn.attention.mha_mask import CausalMask
@@ -65,7 +60,6 @@ from _paged_prefill_test_utils import (
     HEAD_DIM_GRAN,
     KV_NUM_HEADS,
     NUM_LAYERS,
-    ROPE_DEPTH,
     SCALE_BLOCK_SIZE,
     fill_paged_block_scales,
     fill_paged_blocks_uniform,

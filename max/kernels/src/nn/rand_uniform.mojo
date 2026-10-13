@@ -29,9 +29,7 @@ def random_uniform[
     target: StaticString,
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDLength, _rank: Int](
-        idx: IndexList[_rank], val: SIMD[dtype, width]
-    ),
+    & def[width: SIMDLength](idx: Coord, val: SIMD[dtype, width]),
 ](
     shape: IndexList[rank],
     lower_bound: Scalar[dtype],
@@ -81,9 +79,7 @@ def random_uniform[
         var values: SIMD[.float32, 4] = generator.step_uniform()
         values = values * delta + Float32(lower_bound)
 
-        output_fn[width=width](
-            coord_to_index_list(idx), values.cast[dtype]().slice[width]()
-        )
+        output_fn[width=width](idx, values.cast[dtype]().slice[width]())
 
     elementwise[simd_width=4, target=target](generate, Coord(shape), ctx)
 
@@ -130,8 +126,8 @@ def keyed_uniform[
     def draw[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert width == 1, "each row keys its own Philox stream"
 
-        var row = coord_to_index_list(idx)[0]
+        var row = Int(idx[0].value())
         var generator = Random(seed=seed_ptr[row])
         out_ptr[row] = generator.step_uniform()[0]
 
-    elementwise[simd_width=1, target=target](draw, Coord(rows), ctx)
+    elementwise[simd_width=1, target=target](draw, (rows,), ctx)

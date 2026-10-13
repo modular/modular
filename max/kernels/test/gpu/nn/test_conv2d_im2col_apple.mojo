@@ -22,11 +22,10 @@ Target: Apple silicon M5 (compute_capability == 5), bf16/fp16.
 Run with: `mojo max/kernels/test/gpu/nn/test_conv2d_im2col_apple.mojo`.
 """
 
-from std.math import ceildiv, round
+from std.math import round
 
 from layout import (
     Coord,
-    Idx,
     LTToTTLayout,
     Layout,
     TileTensor,
@@ -129,8 +128,8 @@ def test_conv2d_fused_apple_dynamic_round(
     @inline(.always)
     @__copy_capture(out_ptr, W_out_i, HW_out_i, C_out_i)
     def round_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         # FLUX conv_out-style tail: scale, shift, clamp to [0,255], round.
         var x = val.cast[.float32]()
         x = x * 8.0 + 4.0
@@ -138,8 +137,12 @@ def test_conv2d_fused_apple_dynamic_round(
         x = min(x, 255.0)
         x = round(x)
         var y = x.cast[_dtype]()
-        var b = rebind[IndexList[4]](coords)
-        var flat = (b[0] * HW_out_i + b[1] * W_out_i + b[2]) * C_out_i + b[3]
+        comptime assert coords.rank == 4
+        var flat = (
+            Int(coords[0].value()) * HW_out_i
+            + Int(coords[1].value()) * W_out_i
+            + Int(coords[2].value())
+        ) * C_out_i + Int(coords[3].value())
         (out_ptr + flat).store(rebind[SIMD[.bfloat16, _width]](y))
 
     var handled = dispatch_fused_im2col_conv2d_apple[
@@ -325,13 +328,13 @@ def test_conv2d_im2col_direct[
         @inline(.always)
         @__copy_capture(output_tt_store)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
             var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
             output_tt_store.store[
                 width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                Coord(coords[0], coords[1], coords[2], coords[3]),
+                coords,
                 scaled,
             )
 
@@ -487,13 +490,13 @@ def test_conv2d_fused_apple[
         @inline(.always)
         @__copy_capture(output_tt_store)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
             var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
             output_tt_store.store[
                 width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                Coord(coords[0], coords[1], coords[2], coords[3]),
+                coords,
                 scaled,
             )
 
@@ -644,13 +647,13 @@ def test_conv2d_gpu_dispatch[
     @inline(.always)
     @__copy_capture(output_tt_store)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
         output_tt_store.store[
             width=_width, alignment=align_of[dtype]() * _alignment
         ](
-            Coord(coords[0], coords[1], coords[2], coords[3]),
+            coords,
             scaled,
         )
 

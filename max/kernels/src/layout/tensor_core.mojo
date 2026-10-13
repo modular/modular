@@ -299,20 +299,19 @@ struct TensorCore[
             for different combinations of input and output types.
         """
 
-        comptime if _out_type == .float32 and _in_type == .float32:
-            return [shape_16x8x4, shape_16x8x8]
-        elif _out_type == .float32 and _in_type == .bfloat16:
-            return [shape_16x8x8, shape_16x8x16]
-        elif _out_type == .float32 and _in_type == .float16:
-            return [shape_16x8x8, shape_8x8x4]
-        elif _out_type == .float32 and (
-            _in_type == .float8_e4m3fn or _in_type == .float8_e5m2
-        ):
-            return [shape_16x8x32]
-        elif _out_type == .float64 and _in_type == .float64:
-            return [shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16]
-        else:
-            comptime assert False, "No valid shape of mma"
+        comptime match (_out_type, _in_type):
+            case (.float32, .float32):
+                return [shape_16x8x4, shape_16x8x8]
+            case (.float32, .bfloat16):
+                return [shape_16x8x8, shape_16x8x16]
+            case (.float32, .float16):
+                return [shape_16x8x8, shape_8x8x4]
+            case (.float32, .float8_e4m3fn) | (.float32, .float8_e5m2):
+                return [shape_16x8x32]
+            case (.float64, .float64):
+                return [shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16]
+            case _:
+                comptime assert False, "No valid shape of mma"
 
     @staticmethod
     @inline(.always)
@@ -333,31 +332,32 @@ struct TensorCore[
     @staticmethod
     @inline(.always)
     def _nvidia_input_pack_width[registers: Int, a_operand: Bool]() -> Int:
-        comptime if Self.in_type == .float32:
-            comptime assert (
-                registers in (2, 4) if a_operand else registers in (1, 2, 4)
-            )
-            return 1
-        elif Self.in_type == .float64:
-            comptime assert (
-                registers
-                in (1, 2, 4, 8) if a_operand else registers
-                in (1, 2, 4)
-            )
-            return 1
-        elif Self.in_type in (DType.float16, DType.bfloat16):
-            comptime assert (
-                registers in (4, 8) if a_operand else registers in (2, 4)
-            )
-            return 2
-        else:
-            comptime assert Self.in_type in (
-                DType.float8_e4m3fn,
-                DType.float8_e5m2,
-            )
-            comptime assert _has_native_f8_support()
-            comptime assert registers == (16 if a_operand else 8)
-            return 4
+        comptime match Self.in_type:
+            case .float32:
+                comptime assert (
+                    registers in (2, 4) if a_operand else registers in (1, 2, 4)
+                )
+                return 1
+            case .float64:
+                comptime assert (
+                    registers
+                    in (1, 2, 4, 8) if a_operand else registers
+                    in (1, 2, 4)
+                )
+                return 1
+            case .float16 | .bfloat16:
+                comptime assert (
+                    registers in (4, 8) if a_operand else registers in (2, 4)
+                )
+                return 2
+            case _:
+                comptime assert Self.in_type in (
+                    DType.float8_e4m3fn,
+                    DType.float8_e5m2,
+                )
+                comptime assert _has_native_f8_support()
+                comptime assert registers == (16 if a_operand else 8)
+                return 4
 
     @inline(.always)
     def load_a[
@@ -650,43 +650,44 @@ struct TensorCore[
             DType.float8_e5m2,
         ), "No valid type to load matrix fragment a"
 
-        comptime if Self.in_type == .float32:
-            comptime assert reg_per_thread in (
-                2,
-                4,
-            ), "No valid mma shape to load matrix fragment a (float32)"
-            var a_reg_frags = a.distribute[warp_layout](lane_id())
-            a_reg_tile.copy_from(a_reg_frags)
+        comptime match Self.in_type:
+            case .float32:
+                comptime assert reg_per_thread in (
+                    2,
+                    4,
+                ), "No valid mma shape to load matrix fragment a (float32)"
+                var a_reg_frags = a.distribute[warp_layout](lane_id())
+                a_reg_tile.copy_from(a_reg_frags)
 
-        elif Self.in_type == .bfloat16 or Self.in_type == .float16:
-            comptime assert reg_per_thread in (
-                4,
-                8,
-            ), "No valid mma shape to load matrix fragment a (half-float)"
-            var a_reg_frags = a.vectorize[1, 2]().distribute[warp_layout](
-                lane_id()
-            )
-            a_reg_tile.vectorize[1, 2]().copy_from(a_reg_frags)
-        elif (Self.in_type == .float8_e4m3fn or Self.in_type == .float8_e5m2):
-            comptime assert (
-                _has_native_f8_support()
-            ), "float8 formats are only supported in SM90+"
-            comptime assert reg_per_thread in (
-                16,
-            ), "No valid mma shape to load matrix fragment a (half-float)"
-            var a_reg_frags = a.vectorize[1, 4]().distribute[warp_layout](
-                lane_id()
-            )
-            a_reg_tile.vectorize[1, 4]().copy_from(a_reg_frags)
-        elif Self.in_type == .float64:
-            comptime assert reg_per_thread in (
-                1,
-                2,
-                4,
-                8,
-            ), "No valid mma shape to load matrix fragment a (float64)"
-            var a_reg_frags = a.distribute[warp_layout](lane_id())
-            a_reg_tile.copy_from(a_reg_frags)
+            case .bfloat16 | .float16:
+                comptime assert reg_per_thread in (
+                    4,
+                    8,
+                ), "No valid mma shape to load matrix fragment a (half-float)"
+                var a_reg_frags = a.vectorize[1, 2]().distribute[warp_layout](
+                    lane_id()
+                )
+                a_reg_tile.vectorize[1, 2]().copy_from(a_reg_frags)
+            case .float8_e4m3fn | .float8_e5m2:
+                comptime assert (
+                    _has_native_f8_support()
+                ), "float8 formats are only supported in SM90+"
+                comptime assert reg_per_thread in (
+                    16,
+                ), "No valid mma shape to load matrix fragment a (half-float)"
+                var a_reg_frags = a.vectorize[1, 4]().distribute[warp_layout](
+                    lane_id()
+                )
+                a_reg_tile.vectorize[1, 4]().copy_from(a_reg_frags)
+            case .float64:
+                comptime assert reg_per_thread in (
+                    1,
+                    2,
+                    4,
+                    8,
+                ), "No valid mma shape to load matrix fragment a (float64)"
+                var a_reg_frags = a.distribute[warp_layout](lane_id())
+                a_reg_tile.copy_from(a_reg_frags)
         return a_reg_tile
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -824,52 +825,55 @@ struct TensorCore[
             8, 4
         ) if Self.transpose_b else Layout.col_major(4, 8)
 
-        comptime if Self.in_type == .float32:
-            comptime assert reg_per_thread in (
-                1,
-                2,
-                4,
-            ), "No valid mma shape to load matrix fragment b"
+        comptime match Self.in_type:
+            case .float32:
+                comptime assert reg_per_thread in (
+                    1,
+                    2,
+                    4,
+                ), "No valid mma shape to load matrix fragment b"
 
-            var b_ram_frags = b.distribute[warp_layout](lane_id())
-            b_reg_tile.copy_from(b_ram_frags)
+                var b_ram_frags = b.distribute[warp_layout](lane_id())
+                b_reg_tile.copy_from(b_ram_frags)
 
-        elif Self.in_type == .bfloat16 or Self.in_type == .float16:
-            comptime assert reg_per_thread in (
-                2,
-                4,
-            ), "No valid mma shape to load matrix fragment b"
+            case .bfloat16 | .float16:
+                comptime assert reg_per_thread in (
+                    2,
+                    4,
+                ), "No valid mma shape to load matrix fragment b"
 
-            comptime if Self.transpose_b:
-                var b_ram_frags = b.vectorize[1, 2]().distribute[warp_layout](
+                comptime if Self.transpose_b:
+                    var b_ram_frags = b.vectorize[1, 2]().distribute[
+                        warp_layout
+                    ](lane_id())
+                    b_reg_tile.vectorize[2, 1]().copy_from(
+                        b_ram_frags.transpose()
+                    )
+                else:
+                    var b_ram_frags = b.vectorize[2, 1]().distribute[
+                        warp_layout
+                    ](lane_id())
+                    b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags)
+            case .float8_e4m3fn | .float8_e5m2:
+                comptime assert reg_per_thread in (
+                    8,
+                ), "No valid mma shape to load matrix fragment b"
+
+                var b_ram_frags = b.vectorize[4, 1]().distribute[warp_layout](
                     lane_id()
                 )
-                b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags.transpose())
-            else:
-                var b_ram_frags = b.vectorize[2, 1]().distribute[warp_layout](
-                    lane_id()
-                )
-                b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags)
-        elif (Self.in_type == .float8_e4m3fn or Self.in_type == .float8_e5m2):
-            comptime assert reg_per_thread in (
-                8,
-            ), "No valid mma shape to load matrix fragment b"
+                b_reg_tile.vectorize[4, 1]().copy_from(b_ram_frags)
+            case .float64:
+                comptime assert reg_per_thread in (
+                    1,
+                    2,
+                    4,
+                ), "No valid mma shape to load matrix fragment b"
 
-            var b_ram_frags = b.vectorize[4, 1]().distribute[warp_layout](
-                lane_id()
-            )
-            b_reg_tile.vectorize[4, 1]().copy_from(b_ram_frags)
-        elif Self.in_type == .float64:
-            comptime assert reg_per_thread in (
-                1,
-                2,
-                4,
-            ), "No valid mma shape to load matrix fragment b"
-
-            var b_ram_frags = b.distribute[warp_layout](lane_id())
-            b_reg_tile.copy_from(b_ram_frags)
-        else:
-            comptime assert False, "No valid type to load matrix fragment b"
+                var b_ram_frags = b.distribute[warp_layout](lane_id())
+                b_reg_tile.copy_from(b_ram_frags)
+            case _:
+                comptime assert False, "No valid type to load matrix fragment b"
         return b_reg_tile
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -984,26 +988,27 @@ struct TensorCore[
         var c_reg_tile = type_of(res).stack_allocation()
         comptime reg_per_thread = num_matrix_reg[mma_m, mma_n]()
 
-        comptime if Self.out_type == .float32:
-            comptime assert (
-                reg_per_thread == 4
-            ), "No valid shape to load matrix fragment c"
+        comptime match Self.out_type:
+            case .float32:
+                comptime assert (
+                    reg_per_thread == 4
+                ), "No valid shape to load matrix fragment c"
 
-            var c_ram_frags = c.vectorize[1, 2]().distribute[
-                Layout.row_major(8, 4)
-            ](lane_id())
-            c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
-        elif Self.out_type == .float64:
-            comptime assert reg_per_thread in (
-                2,
-                4,
-            ), "No valid shape to load matrix fragment c (float64)"
-            var c_ram_frags = c.vectorize[1, 2]().distribute[
-                Layout.row_major(8, 4)
-            ](lane_id())
-            c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
-        else:
-            comptime assert False, "No valid type to load matrix fragment c"
+                var c_ram_frags = c.vectorize[1, 2]().distribute[
+                    Layout.row_major(8, 4)
+                ](lane_id())
+                c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
+            case .float64:
+                comptime assert reg_per_thread in (
+                    2,
+                    4,
+                ), "No valid shape to load matrix fragment c (float64)"
+                var c_ram_frags = c.vectorize[1, 2]().distribute[
+                    Layout.row_major(8, 4)
+                ](lane_id())
+                c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
+            case _:
+                comptime assert False, "No valid type to load matrix fragment c"
         return c_reg_tile
 
     @inline(.always)
@@ -1149,25 +1154,28 @@ struct TensorCore[
         comptime mma_n = Self.shape[1]
         comptime reg_per_thread = num_matrix_reg[mma_m, mma_n]()
 
-        comptime if Self.out_type == .float32:
-            comptime assert (
-                reg_per_thread == 4
-            ), "No valid shape to store to LayoutTensor d"
+        comptime match Self.out_type:
+            case .float32:
+                comptime assert (
+                    reg_per_thread == 4
+                ), "No valid shape to store to LayoutTensor d"
 
-            d_dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
-                lane_id()
-            ).copy_from(d_src.vectorize[1, 2]())
-        elif Self.out_type == .float64:
-            comptime assert reg_per_thread in (
-                2,
-                4,
-            ), "No valid shape to store to LayoutTensor d"
-            d_dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
-                lane_id()
-            ).copy_from(d_src.vectorize[1, 2]())
+                d_dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+                    lane_id()
+                ).copy_from(d_src.vectorize[1, 2]())
+            case .float64:
+                comptime assert reg_per_thread in (
+                    2,
+                    4,
+                ), "No valid shape to store to LayoutTensor d"
+                d_dst.vectorize[1, 2]().distribute[Layout.row_major(8, 4)](
+                    lane_id()
+                ).copy_from(d_src.vectorize[1, 2]())
 
-        else:
-            comptime assert False, "No valid type to store to LayoutTensor d"
+            case _:
+                comptime assert (
+                    False
+                ), "No valid type to store to LayoutTensor d"
 
     # Inlining keeps the stack-allocated result in the caller's allocation scope.
     @inline(.always)
@@ -1488,86 +1496,202 @@ struct TensorCore[
                     fragments[i + 1, 0] = rebind[frag_type](high_low[1])
 
         else:
-            comptime if Self.in_type == .float32:
-                comptime for i in range(num_frags):
-                    var mma_tile = warp_tile.tile[Self.shape[2], Self.shape[1]](
-                        mma_tile_coord_k, i
-                    )
-                    var frag = mma_tile.distribute[Layout.col_major(4, 8)](
-                        lane_id()
-                    )
-                    fragments[i, 0] = rebind[frag_type](
-                        SIMD[warp_tile.dtype, 2](
-                            rebind[Scalar[warp_tile.dtype]](frag[0, 0]),
-                            rebind[Scalar[warp_tile.dtype]](frag[1, 0]),
+            comptime match Self.in_type:
+                case .float32:
+                    comptime for i in range(num_frags):
+                        var mma_tile = warp_tile.tile[
+                            Self.shape[2], Self.shape[1]
+                        ](mma_tile_coord_k, i)
+                        var frag = mma_tile.distribute[Layout.col_major(4, 8)](
+                            lane_id()
                         )
-                    )
-            elif Self.in_type.is_float8():
-                comptime for i in range(num_frags):
-                    var mma_tile = warp_tile.tile[Self.shape[2], Self.shape[1]](
-                        mma_tile_coord_k, i
-                    )
-                    var frags = mma_tile.vectorize[4, 1]().distribute[
-                        Layout.col_major(4, 8)
-                    ](lane_id())
-                    fragments[i, 0] = rebind[frag_type](
-                        rebind[SIMD[warp_tile.dtype, 4]](frags[0, 0]).join(
-                            rebind[SIMD[warp_tile.dtype, 4]](frags[0, 1])
-                        ),
-                    )
-
-            else:
-                comptime assert self.supported_half
-
-                var mma_tile = warp_tile.tile[
-                    Self.shape[2], warp_tile.shape[1]()
-                ](mma_tile_coord_k, 0)
-
-                # This is a hack to get correct result for small warp tile.
-                # If we swizzle 3 bits, 8 simd vectors repeats a pattern,
-                # and if WN = 32 = 4 simd vectors, the result would be wrong
-                # because 2nd warp tile doesn't know it's in the middle of a pattern.
-                # The hack shifts back the pointer and use idx in shared memory tile
-                # to do the right swizzling.
-                # The potential fix is to have both base pointer and offset inside
-                # Layout tensor so the warp_tile has the original address of the
-                # shared memory tile.
-                comptime if WN == 32:  # 32 is the min in practice.
-                    var mma_tile_shifted = type_of(mma_tile)(
-                        mma_tile.ptr - warp_tile_coord_n * WN
-                    )
-
-                    comptime for i in range(0, num_frags, 2):
-                        var swizzle_offset = i + ufloordiv(
-                            warp_tile_coord_n * WN, simd_size
+                        fragments[i, 0] = rebind[frag_type](
+                            SIMD[warp_tile.dtype, 2](
+                                rebind[Scalar[warp_tile.dtype]](frag[0, 0]),
+                                rebind[Scalar[warp_tile.dtype]](frag[1, 0]),
+                            )
                         )
-                        var vec = _load_matrix_frag[
-                            swizzle=swizzle, transposed=True
-                        ](mma_tile_shifted, swizzle_offset)
-                        var high_low = vec.split()
-                        fragments[i, 0] = rebind[frag_type](high_low[0])
-                        fragments[i + 1, 0] = rebind[frag_type](high_low[1])
-                else:
-                    comptime num_frags_round_even = align_down(num_frags, 2)
-
-                    comptime for i in range(0, num_frags_round_even, 2):
-                        # load using x4 layout
-                        var vec = _load_matrix_frag[
-                            swizzle=swizzle, transposed=True
-                        ](mma_tile, i)
-
-                        var high_low = vec.split()
-                        fragments[i, 0] = rebind[frag_type](high_low[0])
-                        fragments[i + 1, 0] = rebind[frag_type](high_low[1])
-
-                    comptime if num_frags % 2:
-                        # load using x2 for the last fragment if necessary
-                        var vec = _load_matrix_frag[
-                            swizzle=swizzle, transposed=True, num_matrices=2
-                        ](mma_tile, num_frags_round_even)
-                        fragments[num_frags_round_even, 0] = rebind[frag_type](
-                            vec
+                case _ if Self.in_type.is_float8():
+                    comptime for i in range(num_frags):
+                        var mma_tile = warp_tile.tile[
+                            Self.shape[2], Self.shape[1]
+                        ](mma_tile_coord_k, i)
+                        var frags = mma_tile.vectorize[4, 1]().distribute[
+                            Layout.col_major(4, 8)
+                        ](lane_id())
+                        fragments[i, 0] = rebind[frag_type](
+                            rebind[SIMD[warp_tile.dtype, 4]](frags[0, 0]).join(
+                                rebind[SIMD[warp_tile.dtype, 4]](frags[0, 1])
+                            ),
                         )
+
+                case _:
+                    comptime assert self.supported_half
+
+                    var mma_tile = warp_tile.tile[
+                        Self.shape[2], warp_tile.shape[1]()
+                    ](mma_tile_coord_k, 0)
+
+                    # This is a hack to get correct result for small warp tile.
+                    # If we swizzle 3 bits, 8 simd vectors repeats a pattern,
+                    # and if WN = 32 = 4 simd vectors, the result would be wrong
+                    # because 2nd warp tile doesn't know it's in the middle of a pattern.
+                    # The hack shifts back the pointer and use idx in shared memory tile
+                    # to do the right swizzling.
+                    # The potential fix is to have both base pointer and offset inside
+                    # Layout tensor so the warp_tile has the original address of the
+                    # shared memory tile.
+                    comptime if WN == 32:  # 32 is the min in practice.
+                        var mma_tile_shifted = type_of(mma_tile)(
+                            mma_tile.ptr - warp_tile_coord_n * WN
+                        )
+
+                        comptime for i in range(0, num_frags, 2):
+                            var swizzle_offset = i + ufloordiv(
+                                warp_tile_coord_n * WN, simd_size
+                            )
+                            var vec = _load_matrix_frag[
+                                swizzle=swizzle, transposed=True
+                            ](mma_tile_shifted, swizzle_offset)
+                            var high_low = vec.split()
+                            fragments[i, 0] = rebind[frag_type](high_low[0])
+                            fragments[i + 1, 0] = rebind[frag_type](high_low[1])
+                    else:
+                        comptime num_frags_round_even = align_down(num_frags, 2)
+
+                        comptime for i in range(0, num_frags_round_even, 2):
+                            # load using x4 layout
+                            var vec = _load_matrix_frag[
+                                swizzle=swizzle, transposed=True
+                            ](mma_tile, i)
+
+                            var high_low = vec.split()
+                            fragments[i, 0] = rebind[frag_type](high_low[0])
+                            fragments[i + 1, 0] = rebind[frag_type](high_low[1])
+
+                        comptime if num_frags % 2:
+                            # load using x2 for the last fragment if necessary
+                            var vec = _load_matrix_frag[
+                                swizzle=swizzle, transposed=True, num_matrices=2
+                            ](mma_tile, num_frags_round_even)
+                            fragments[num_frags_round_even, 0] = rebind[
+                                frag_type
+                            ](vec)
+
+    @inline(.always)
+    def load_a[
+        swizzle: Optional[Swizzle] = None,
+        *,
+    ](
+        self,
+        warp_tile: TileTensor[Self.in_type, _, _, address_space=.SHARED, ...],
+        fragments: TileTensor[
+            mut=True, Self.in_type, _, _, address_space=.LOCAL, ...
+        ],
+        mma_tile_coord_k: Int = 0,  # the k coordinate of mma tile
+    ):
+        """
+        Load A matrix fragments from a shared-memory warp tile.
+
+        TileTensor-native variant of the shared-memory `load_a` above: the
+        warp tile and the fragment destination are `TileTensor`s, and the
+        swizzle must be passed explicitly (the legacy overload for
+        `LayoutTensor`s cannot infer it from a `TileTensor` layout).
+        Bridges to the identical ldmatrix/distribute implementation, so the
+        register ordering, swizzle pattern, and alignment requirements match
+        the legacy overload exactly.
+
+        Parameters:
+            swizzle: Optional memory access pattern to optimize memory
+                bandwidth. Must be `None` on NVIDIA GPUs.
+
+        Args:
+            warp_tile: The source data in shared memory.
+            fragments: The destination scalar tile in local memory, of
+                shape (num_frags, MMA M-by-K registers per thread).
+            mma_tile_coord_k: The K coordinate of the MMA tile. Defaults
+                to 0.
+        """
+        comptime assert (
+            self.supported_fp32 or self.supported_half or self.supported_fp8
+        )
+        comptime assert (
+            warp_tile.element_size == 1
+        ), "warp_tile must be a scalar tile"
+        comptime assert (
+            fragments.element_size == 1
+        ), "fragments must be a scalar tile; vectorize is applied internally"
+        comptime assert type_of(
+            fragments
+        ).LayoutType.all_dims_known, (
+            "fragments must have static shape and strides"
+        )
+        comptime frag_width = fragments.static_shape[1]
+        self.load_a[swizzle](
+            warp_tile.to_layout_tensor(),
+            fragments.to_layout_tensor().vectorize[1, frag_width](),
+            mma_tile_coord_k,
+        )
+
+    @inline(.always)
+    def load_b[
+        swizzle: Optional[Swizzle] = None,
+        *,
+    ](
+        self,
+        warp_tile: TileTensor[Self.in_type, _, _, address_space=.SHARED, ...],
+        fragments: TileTensor[
+            mut=True, Self.in_type, _, _, address_space=.LOCAL, ...
+        ],
+        mma_tile_coord_k: Int = 0,  # the k coordinate of mma tile
+        warp_tile_coord_n: Int = 0,  # n coordinate of warp tile
+    ):
+        """
+        Load B matrix fragments from a shared-memory warp tile.
+
+        TileTensor-native variant of the shared-memory `load_b` above: the
+        warp tile and the fragment destination are `TileTensor`s, and the
+        swizzle must be passed explicitly. Bridges to the identical
+        ldmatrix/distribute implementation, so the register ordering,
+        swizzle pattern, and alignment requirements match the legacy
+        overload exactly.
+
+        Parameters:
+            swizzle: Optional memory access pattern for AMD GPUs to optimize
+                memory bandwidth. Must be `None` on NVIDIA GPUs, where the
+                swizzle is always derived from the warp tile's row stride.
+
+        Args:
+            warp_tile: Source tile in shared memory containing the B matrix
+                data.
+            fragments: The destination scalar tile in local memory, of
+                shape (num_frags, MMA K-by-N registers per thread).
+            mma_tile_coord_k: K-dimension coordinate within the warp tile.
+                Defaults to 0.
+            warp_tile_coord_n: N-dimension coordinate of the warp tile.
+                Defaults to 0.
+        """
+        comptime assert (
+            self.supported_fp32 or self.supported_half or self.supported_fp8
+        )
+        comptime assert (
+            warp_tile.element_size == 1
+        ), "warp_tile must be a scalar tile"
+        comptime assert (
+            fragments.element_size == 1
+        ), "fragments must be a scalar tile; vectorize is applied internally"
+        comptime assert type_of(
+            fragments
+        ).LayoutType.all_dims_known, (
+            "fragments must have static shape and strides"
+        )
+        comptime frag_width = fragments.static_shape[1]
+        self.load_b[swizzle](
+            warp_tile.to_layout_tensor(),
+            fragments.to_layout_tensor().vectorize[1, frag_width](),
+            mma_tile_coord_k,
+            warp_tile_coord_n,
+        )
 
     @inline(.always)
     def load_b(
@@ -1900,7 +2024,7 @@ def _load_matrix_frag[
 
     comptime ldmatrix_layout = ComposedLayout(
         x4_layout,
-        swizzle.value() if swizzle else Swizzle(0, 0, 1),
+        swizzle.or_else(Swizzle(0, 0, 1)),
     )
 
     var lane_offset = eval_composed[ldmatrix_layout](lane, offset) * simd_size
@@ -1931,32 +2055,31 @@ def get_mma_shape[
     """
 
     comptime if default_accelerator().is_nvidia_gpu():
-        comptime if accum_type == .float32 and input_type == .float32:
-            comptime if shape_id == 0:
-                return shape_16x8x8
-            else:
-                return shape_16x8x4
+        comptime match (accum_type, input_type):
+            case (.float32, .float32):
+                comptime if shape_id == 0:
+                    return shape_16x8x8
+                else:
+                    return shape_16x8x4
 
-        elif accum_type == .float32 and input_type == .bfloat16:
-            comptime if shape_id == 0:
-                return shape_16x8x16
-            else:
-                return shape_16x8x8
+            case (.float32, .bfloat16):
+                comptime if shape_id == 0:
+                    return shape_16x8x16
+                else:
+                    return shape_16x8x8
 
-        elif accum_type == .float32 and input_type == .float16:
-            comptime if shape_id == 0:
-                return shape_16x8x16
-            elif shape_id == 1:
-                return shape_16x8x8
-            else:
-                return shape_8x8x4
-        elif accum_type == .float32 and input_type in (
-            DType.float8_e4m3fn,
-            DType.float8_e5m2,
-        ):
-            return shape_16x8x32
-        else:
-            comptime assert False, "Unsupported mma shape."
+            case (.float32, .float16):
+                comptime match shape_id:
+                    case 0:
+                        return shape_16x8x16
+                    case 1:
+                        return shape_16x8x8
+                    case _:
+                        return shape_8x8x4
+            case (.float32, .float8_e4m3fn) | (.float32, .float8_e5m2):
+                return shape_16x8x32
+            case _:
+                comptime assert False, "Unsupported mma shape."
     else:
         comptime if _is_amd_rdna():
             comptime if _is_amd_rdna2_or_earlier():
@@ -1965,36 +2088,32 @@ def get_mma_shape[
                     " paths (not yet implemented)"
                 )
 
-            comptime if accum_type == .float32 and input_type == .float32:
-                comptime assert False, (
-                    "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
-                    " -> FP32)"
-                )
-            elif accum_type == .float32 and input_type.is_half_float():
-                return shape_16x16x16
-            elif (
-                _is_amd_rdna4()
-                and accum_type == .float32
-                and input_type.is_float8()
-            ):
-                return shape_16x16x16
-            elif accum_type == .int32 and (
-                input_type == .int8 or input_type == .uint8
-            ):
-                return shape_16x16x16
-            elif accum_type == .int32 and (input_type == ._uint4):
-                return shape_16x16x16
-            else:
-                comptime assert False, "Unsupported RDNA mma shape."
+            comptime match (accum_type, input_type):
+                case (.float32, .float32):
+                    comptime assert False, (
+                        "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
+                        " -> FP32)"
+                    )
+                case (.float32, t) if t.is_half_float():
+                    return shape_16x16x16
+                case (.float32, t) if _is_amd_rdna4() and t.is_float8():
+                    return shape_16x16x16
+                case (.int32, .int8) | (.int32, .uint8):
+                    return shape_16x16x16
+                case (.int32, ._uint4):
+                    return shape_16x16x16
+                case _:
+                    comptime assert False, "Unsupported RDNA mma shape."
         else:
-            comptime if accum_type == .float32 and input_type == .float32:
-                return shape_16x16x4
-            elif accum_type == .float32 and input_type.is_half_float():
-                return shape_16x16x16
-            elif accum_type == .float32 and input_type.is_float8():
-                return shape_16x16x32
-            else:
-                comptime assert False, "Unsupported CDNA mma shape."
+            comptime match (accum_type, input_type):
+                case (.float32, .float32):
+                    return shape_16x16x4
+                case (.float32, t) if t.is_half_float():
+                    return shape_16x16x16
+                case (.float32, t) if t.is_float8():
+                    return shape_16x16x32
+                case _:
+                    comptime assert False, "Unsupported CDNA mma shape."
 
 
 @inline(.always)

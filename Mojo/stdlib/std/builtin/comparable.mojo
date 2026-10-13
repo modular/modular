@@ -13,7 +13,6 @@
 """Implements comparison and equality traits for Mojo types."""
 
 from std.builtin.constrained import _field_conforms_to_error
-from std.builtin.range import _ZeroStartingRange
 from std.reflection import reflect
 
 

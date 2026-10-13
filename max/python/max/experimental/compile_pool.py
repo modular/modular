@@ -45,6 +45,7 @@ import traceback
 import uuid
 from collections.abc import Callable, Sequence
 from concurrent.futures import CancelledError, Future, ProcessPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import TypeVar
@@ -150,6 +151,73 @@ def _pin_to_parent_death() -> None:
     libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL)
 
 
+@dataclass(frozen=True)
+class _CompileTarget:
+    """The accelerators a worker compiles for, described without opening them.
+
+    Opening a GPU (driver init, a context and a stream per device) costs
+    every worker process exclusive trips through the driver's node-wide
+    lock, and compiling only reads the target architecture. Workers
+    instead run in virtual-device mode, the same compile-only mode the
+    ``precompile_mefs`` record actions use, so their artifacts and MEF
+    cache keys match a process compiling against the real devices.
+    """
+
+    api: str
+    arch: str
+    count: int
+    cpu_target: str
+
+    @staticmethod
+    def of(
+        device_specs: Sequence[driver.DeviceSpec],
+    ) -> _CompileTarget | None:
+        """Describes the accelerators in *device_specs* by loading them here.
+
+        Returns:
+            The target, or None when the specs name no accelerator or
+            name a Metal one, which has no virtual compilation device.
+
+        Raises:
+            ValueError: If the accelerators differ in API or architecture.
+        """
+        gpu_specs = [s for s in device_specs if s.device_type == "gpu"]
+        if not gpu_specs:
+            return None
+        targets = {
+            (device.api, device.architecture_name)
+            for device in driver.load_devices(gpu_specs)
+        }
+        if len(targets) != 1:
+            raise ValueError(
+                "ProcessCompilePool compiles for a single accelerator"
+                f" target, but device_specs span {sorted(targets)}"
+            )
+        ((api, arch),) = targets
+        # TODO(MOCO-2411): Metal workers open the real device until Metal
+        # has a virtual compilation device.
+        if api == "metal":
+            return None
+        return _CompileTarget(
+            api=api,
+            arch=arch,
+            count=max(s.id for s in gpu_specs) + 1,
+            cpu_target=driver.get_virtual_cpu_target(),
+        )
+
+    def enter_virtual_device_mode(self) -> None:
+        """Makes this process's accelerators virtual.
+
+        Must run before the process creates its first device: device
+        objects and the compile target latch at first creation.
+        """
+        if self.cpu_target:
+            driver.set_virtual_cpu_target(self.cpu_target)
+        driver.set_virtual_device_api(self.api)
+        driver.set_virtual_device_target_arch(self.arch)
+        driver.set_virtual_device_count(self.count)
+
+
 # Worker-process state, created by _init_worker and _session_for.
 _WORKER_DEVICE_SPECS: tuple[driver.DeviceSpec, ...] = ()
 _WORKER_SESSIONS: dict[
@@ -170,11 +238,16 @@ def _start_parent_heartbeat_check() -> None:
         ).start()
 
 
-def _init_worker(device_specs: Sequence[driver.DeviceSpec]) -> None:
+def _init_worker(
+    device_specs: Sequence[driver.DeviceSpec],
+    target: _CompileTarget | None,
+) -> None:
     """Pins the worker's lifetime and records its default session devices."""
     global _WORKER_DEVICE_SPECS
     _pin_to_parent_death()
     _start_parent_heartbeat_check()
+    if target is not None:
+        target.enter_virtual_device_mode()
     _WORKER_DEVICE_SPECS = tuple(device_specs)
 
 
@@ -276,15 +349,20 @@ class ProcessCompilePool:
         Args:
             device_specs: Devices for the workers' sessions. If None,
                 defaults to all available accelerators plus the CPU.
-            max_workers: Upper bound on concurrent compiles. Each worker
-                holds an :class:`~max.engine.InferenceSession` for the
-                given devices which reserves some device memory.
+                Workers compile for these accelerators' target without
+                opening them; this process loads them to read it.
+            max_workers: Upper bound on concurrent compiles.
+
+        Raises:
+            ValueError: If the accelerators in ``device_specs`` differ in
+                API or architecture.
         """
         if device_specs is None:
             specs = driver.scan_available_devices()
             if (cpu := driver.DeviceSpec.cpu()) not in specs:
                 specs.append(cpu)
             device_specs = specs
+        target = _CompileTarget.of(device_specs)
 
         # max import is O(seconds), do this pre-fork for each worker
         mp_context = _NoMainForkServerContext()
@@ -293,7 +371,7 @@ class ProcessCompilePool:
             max_workers=max_workers,
             mp_context=mp_context,
             initializer=_init_worker,
-            initargs=(tuple(device_specs),),
+            initargs=(tuple(device_specs), target),
         )
 
         self._mef_dir = tempfile.TemporaryDirectory(prefix="max-compile-pool-")

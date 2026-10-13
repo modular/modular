@@ -34,7 +34,7 @@ from max.gpu.host.launch_attribute import (
 )
 from std._gpu.host.info import TargetAccelerator
 
-from ..host.info import H100, GPUInfo
+from ..host.info import H100
 
 comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 

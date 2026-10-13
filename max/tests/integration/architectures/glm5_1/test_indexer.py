@@ -285,7 +285,7 @@ def run_max_indexer(
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-        result = indexer(
+        result, _ = indexer(
             x_in,
             qr_in,
             rope.freqs_cis[:seq_len],
@@ -293,7 +293,9 @@ def run_max_indexer(
             indexer_k_collection,
             layer_idx,
             mask_variant,
+            write_logical=True,
         )
+        assert result is not None
 
         graph.output(result)
 

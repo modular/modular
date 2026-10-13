@@ -222,7 +222,7 @@ struct AMDScheduleBarrierMask(
         Args:
             writer: The object to write to.
         """
-        __match self:
+        match self:
             case .NONE:
                 return writer.write_string("NONE")
             case .ALL_ALU:
@@ -498,7 +498,7 @@ def _mbarrier_impl[
         address: Pointer to the memory barrier object location.
     """
 
-    comptime __match address_space:
+    comptime match address_space:
         case .SHARED:
             llvm_intrinsic[
                 "llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType

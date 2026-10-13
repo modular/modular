@@ -10,20 +10,23 @@ This version is still a work in progress.
 
 ## Language enhancements
 
-- Added experimental `__match` / `case` pattern matching for early testing,
-  including `comptime __match` for compile-time subjects. Patterns include
+- Added `match` / `case` pattern matching, including `comptime match` for
+  compile-time subjects. Patterns include
   literals, contextual initializer lists such as `{}` and `{1, offset=2}`,
-  or-patterns (`|`), guards (`if`), `as` / bare name bindings, tuples, structs,
-  and `EnumLike` types such as `Optional`. An initializer-list pattern
-  constructs a value of the subject type and compares it to the subject.
-  Dynamic match also supports `var` / `ref` bindings; comptime match binds
-  names as parameter values and rejects `var` / `ref`. Nested patterns can dig
-  through several layers in one case—for example, matching an optional point
-  at runtime or specializing a kernel path on a compile-time tile size:
+  explicit value patterns such as `== expected`, or-patterns (`|`), guards
+  (`if`), `as` / bare name bindings, tuples, structs, and `EnumLike` types such
+  as `Optional`, plus fixed and starred list patterns. An initializer-list
+  pattern constructs a value of the subject type and compares it to the
+  subject. An explicit value pattern compares
+  against an existing value or expression without binding its name. Dynamic
+  match also supports `var` / `ref` bindings; comptime match binds names as
+  parameter values and rejects `var` / `ref`. Nested patterns can dig through
+  several layers in one case—for example, matching an optional point at
+  runtime or specializing a kernel path on a compile-time tile size:
 
   ```mojo
   def describe(p: Optional[Point]) -> String:
-      __match p:
+      match p:
           case .Some(Point(x=0, y=0)):
               return "origin"
           case .Some(Point(x=var x, y=0)) | .Some(Point(x=0, y=var x)):
@@ -39,7 +42,7 @@ This version is still a work in progress.
   # a parameter and the bound names are also parameters. var and ref specifiers
   # are not allowed in comptime match, because they are not meaningful.
   def matmul_tile[m: Int, n: Int, k: Int](...):
-      comptime __match (m, n, k):
+      comptime match (m, n, k):
           case (16, 16, 16):
               # Hand-tuned 16³ path.
               ...
@@ -49,12 +52,26 @@ This version is still a work in progress.
           case _:
               # Generic fallback.
               ...
+
+  # comptime match can also be used as a "type switch" since traits are
+  # comparable to specific types with `==`.
+  def classify_type[T: AnyType]() -> String:
+      comptime match T:
+          case == Int:
+              return "integer"
+          case == String:
+              return "string"
+          case _:
+              return "other"
   ```
 
   Both forms warn on non-exhaustive `EnumLike` subjects (including `Bool` and
   tuples/structs of such types) and on unreachable or duplicate cases. Open
   subjects such as `Int` and `String` diagnose duplicate literal cases but are
-  not required to be exhaustive.
+  not required to be exhaustive. The Mojo language server offers an "Add
+  missing cases" code action on any `match` whose cases leave values
+  uncovered, including one with no cases yet, appending a `case` arm with a
+  `pass` body for each missing value.
 
   `EnumLike` types can now set `_enum_is_exhaustive` to `False` when their
   known cases do not cover every possible value. This is useful for extensible
@@ -75,7 +92,7 @@ This version is still a work in progress.
       ...
 
   def describe(error: ErrorCode) -> String:
-      __match error:
+      match error:
           case .FileNotFound:
               return "file not found"
           case .PermissionDenied:
@@ -94,6 +111,46 @@ This version is still a work in progress.
   clients. A library can add a known case without breaking previously compiled
   client matches when they compile against a new version of the package that
   adds a case they didn't know about.
+
+- Mojo supports list destructuring assignments and list patterns for
+  collections that conform to `Sized` and that are subscriptable. A single
+  `*name` captures the elements between any leading and trailing patterns:
+
+  ```mojo
+  var [first, *middle, last] = values
+
+  match values:
+      case []:
+          print("empty")
+      case [1, *middle, last]:
+          print(len(middle), last)
+      case [first, *rest]:
+          print(first, len(rest))
+  ```
+
+  The subject must conform to `Sized` and support integer and
+  `ContiguousSlice` subscripting if a `*` pattern is used. A destructuring
+  assignment with the wrong length raises an error, while a list pattern with
+  the wrong length does not match.
+
+- `if case` and `while case`: Conditional patterns are also available in
+  `if`, `elif`, and `while` statements using `case pattern = value`. The value
+  is evaluated once, and names bound by a successful pattern are available in
+  the statement body. An `if case` pattern failure continues to the next
+  `elif` or `else` arm. A `while case` pattern failure exits the loop normally
+  and runs its `else` block, if present:
+
+  ```mojo
+  def describe_optional(value: Optional[Int]) -> String:
+      if case .Some(item) = value:
+          return String("some:", item)
+      else:
+          return "none"
+
+  def consume():
+      while case .Some(item) = get_next():
+          process(item)
+  ```
 
 - The message on a `where` clause can now be written
   `where <condition> else "<message>"`, as the preferred alternative to the
@@ -139,9 +196,14 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Defaultable` now provides a default `__init__()` implementation that
+  default-constructs each field using reflection. A struct can conform to
+  `Defaultable` without defining an initializer when all its fields also
+  conform to `Defaultable`.
+
 - The enum-behaving structs across the standard library, MAX kernels, and
   MAX runtime now conform to `EnumLike`, so they support enum-style pattern
-  matching (`__match` with `case .NAME`) and reflective case metadata:
+  matching (`match` with `case .NAME`) and reflective case metadata:
   `Scope`, `FastMathFlag`, and `TestResult` in the standard library;
   `AllReduceAlgorithm`, `RasterOrder`, `MatmulSchedule`, `ReductionMode`,
   `GEMMKind`, `ThreadScope`, `FP6Format`, `MXFormat`, `Backend`,
@@ -154,7 +216,7 @@ This version is still a work in progress.
   resolution semantics.
 
   ```mojo
-  __match AllReduceAlgorithm.ONE_STAGE:
+  match AllReduceAlgorithm.ONE_STAGE:
       case .ONE_STAGE:
           launch_1stage()
       case .TWO_STAGE | .LAMPORT:
@@ -182,6 +244,14 @@ This version is still a work in progress.
   returns. `is_big_endian()` and `is_little_endian()` are deprecated; compare
   `Endian.native()` with `.big` or `.little` instead.
 
+- `SIMD` gained `to_endian()` and `from_endian()`, which convert an integer
+  value to and from a given byte order.
+
+  ```mojo
+  var wire = UInt16(8080).to_endian[.big]()  # stored as [0x1F, 0x90]
+  var port = UInt16.from_endian[.big](wire)  # 8080
+  ```
+
 - Hashing a byte sequence is now spelled `hash_bytes()`, which takes an
   `ImmSpan[Byte]`. The pointer-and-length `hash()` overload is deprecated:
 
@@ -208,6 +278,11 @@ This version is still a work in progress.
 - `StringSpan` now only provides immutable byte access. `MutStringSpan` and
   `MutStringSlice` have been removed, and the `mut` parameter on `StringSpan`
   has been removed.
+
+- `FileDescriptor` now stores its underlying descriptor as a `c_int`, matching
+  the C `int` type that the underlying descriptor APIs take. Integer literals
+  keep constructing one unchanged, but passing an `Int` variable now requires
+  an explicit `c_int()` conversion, and `.value` is a `c_int`.
 
 - Introduced a new `CompilationTarget` public type, which is now used in
   most APIs that are parameterized on compilation target, such as `size_of()`,
@@ -351,6 +426,102 @@ This version is still a work in progress.
   removed outright after all in-tree consumers migrated; spell the rank
   choice explicitly with `QTMATilePrefill` or `QTMATileFused`.
 
+- `std.math.scalb()` is now implemented in Mojo and runs on GPU as well as
+  CPU. The `float64` type is not supported on Apple GPU. On targets that
+  flush subnormals, subnormal inputs and subnormal results are handled;
+  the results are bit-exact against IEEE targets.
+
+- `std.utils.numerics.nextafter()` no longer calls the system libm and now
+  runs on GPU as well as CPU. Both share one Mojo implementation that steps
+  the IEEE-754 bit pattern directly, so the result is exact and matches the
+  system libm for non-NaN inputs, and — since every ordering, zero, and
+  equality predicate reads the raw bits — it is unaffected by targets that
+  flush subnormal arithmetic. `std.math.ulp()`, which is defined through
+  `nextafter`, follows it onto the GPU.
+- `std.math.atan()` and `std.math.atan2()` no longer call the system libm and
+  now run on GPU as well as CPU. On CPU their results come from the same Mojo
+  implementations, so they can differ from the system libm in the last ulp.
+  On targets that flush subnormals, subnormal inputs are handled and normal
+  results are correct; subnormal results flush to zero.
+- `std.math.gamma` no longer calls the system libm and now runs on GPU as
+  well as CPU. On CPU its results come from the same Mojo implementation, so
+  they can differ from the system libm in the last ulp. Subnormal inputs and
+  results are also handled on targets that flush subnormals, such as Apple
+  GPUs in float32.
+- `float64` `expm1()` in `std.math` no longer calls the system libm and now
+  runs on GPU as well as CPU. On CPU its result comes from the same Mojo
+  implementation, so it can differ from the system libm in the last ulp. On
+  targets that flush subnormals, subnormal inputs are handled; an input
+  whose result would be subnormal is returned bit-exactly, so no
+  subnormal result is ever flushed.
+- `std.math.logb` no longer calls the system libm and now runs on GPU as well
+  as CPU. It reads the exponent from the bit pattern, so subnormal inputs
+  return their true exponent even on GPUs that flush subnormals.
+- `std.math.lgamma()` no longer calls the system libm and now runs on GPU as
+  well as CPU. On CPU its result comes from the same Mojo implementation, so
+  it can differ from the system libm in the last ulp. It stays within about 2
+  ulp for negative inputs, including next to the negative real zeros of
+  `lgamma` (such as -2.457 and -2.748), where the result is near 0.
+- The Bessel functions `j0`, `j1`, `y0`, and `y1` in `std.math` no longer
+  call the system libm and now run on GPU as well as CPU. On CPU their
+  results come from the same Mojo implementations, so they can differ from
+  the system libm in the last ulp. For `float32`, relative error grows near
+  the zeros of each function, while absolute error stays small there. On
+  targets that flush subnormals, subnormal inputs and subnormal results
+  are handled; only `j1` can produce a subnormal result in `float32`, and
+  it is kept.
+- `std.math.log10()` no longer calls the system libm or GPU intrinsics: CPU
+  and every GPU now run the same Mojo implementation, accurate to within 1
+  ulp on measured targets, and `float64` `log10()` now runs on AMD GPUs. On
+  CPU, results can differ from the system libm in the last ulp, and results
+  can differ between targets in the last ulp where the compiler contracts a
+  multiply-add into an fma. On targets that flush subnormals, subnormal
+  inputs are handled and normal results are correct; subnormal results
+  flush to zero.
+- `float64` `erfc()` no longer calls the system libm and now runs on GPU as
+  well as CPU, and `float64` `erf()` now uses a `float64` approximation and
+  is accurate to about 1 ulp. Both share one Mojo implementation with
+  `float32` `erfc()`, so on CPU their results can differ from the system
+  libm in the last ulp.
+- `std.math.tan` no longer calls the system libm and now runs on GPU as well
+  as CPU. On CPU its results come from the same Mojo implementation, so they
+  can differ from the system libm in the last ulp, and CPU and GPU results
+  can differ from each other in the last ulp. On targets that flush
+  subnormals, subnormal inputs are handled and normal results are correct;
+  subnormal results flush to zero.
+- `cbrt()` no longer calls the system libm and now runs on GPU for every
+  floating-point type, including `float64`. On CPU its results come from the
+  same Mojo implementation, so they can differ from the system libm in the
+  last ulp; `float32` results are within 0.505 ulp of the true root.
+
+- `std.math.remainder()` no longer calls the system libm and now runs on GPU
+  as well as CPU. It is exact, so it matches the system libm bit for bit. On
+  targets that flush subnormals, subnormal inputs and subnormal results
+  are handled; the results match the system libm bit for bit.
+- `std.math.hypot` no longer calls the system libm and now runs on GPU as well
+  as CPU. On CPU its result comes from the same Mojo implementation, so it can
+  differ from the system libm in the last ulp.
+
+- `float64` `log()` now uses double-precision coefficients and is within
+  1 ulp of the correctly rounded result; it was previously off by up to about
+  2e7 ulp. It runs the same Mojo code on CPU and GPU.
+- `log1p()` now evaluates in the input's own precision with a Mojo
+  implementation based on musl, shared by CPU and GPU, and is accurate to
+  within 1 ulp for `float32` and `float64`. `float16` and `bfloat16` inputs
+  are computed in `float32`. `float64` `log1p()` is no longer supported on
+  Apple GPUs, which have no `float64` arithmetic.
+- `atanh()` in `std.math` no longer calls the system libm for `float64`, so
+  its `float64` form now runs on GPUs that have `float64` as well as on CPU.
+  All floating-point types share one Mojo implementation on CPU and GPU, so
+  `float32` GPU results, previously up to 16 ulp off through a
+  target-dependent `log`, are now within 1 ulp of the CPU. Results can
+  differ from the system libm, and between targets, in the last ulp. On
+  targets that flush subnormals, subnormal inputs are handled and normal
+  results are correct; subnormal results flush to zero.
+- `std.math` `acosh` and `asinh` no longer call the system libm and now run
+  on GPU as well as CPU. On CPU their results come from the same Mojo
+  implementations, so they can differ from the system libm in the last ulp.
+
 ## Tooling changes
 
 - The `mojo` compiler now uses jemalloc as its allocator on Linux. Compiling
@@ -364,6 +535,28 @@ This version is still a work in progress.
   nested in its parameters, so an `Array` of shared pointers is marked too.
 
 ## Removed
+
+- Removed `has_nvidia_gpu_accelerator()`, `has_amd_gpu_accelerator()` and
+  `has_apple_gpu_accelerator()` from `std.sys`, including the sub-architecture
+  overloads of the NVIDIA variant. Ask the target itself instead, using the
+  new `CompilationTarget` predicate methods:
+
+  ```mojo
+  # Before
+  from std.sys import has_nvidia_gpu_accelerator
+
+  comptime if has_nvidia_gpu_accelerator():
+      ...
+
+  # After
+  from std.sys import default_accelerator
+
+  comptime if default_accelerator().is_nvidia_gpu():
+      ...
+  ```
+
+  Code that already holds a device context can check its target directly,
+  for example `ctx.target.is_nvidia_gpu()`.
 
 - Removed `sum()` from the `CoordLike` trait and from its implementations
   (`Coord`, `ComptimeInt` and the `All` marker). Nothing called it: a
@@ -398,3 +591,22 @@ This version is still a work in progress.
   `Tuple[Pointer[Node, origin], Int]` inside `struct Node` was spuriously
   rejected with `struct has recursive reference to itself`, despite the
   recursion being behind a pointer.
+
+- Passing `x^` to an `imm` or `ref` argument now warns that the move has
+  no effect instead of it being silently ignored.
+- On macOS, `scalb()` now returns NaN for a non-integral exponent, as it does
+  on Linux.
+- `float32` `expm1()` no longer overflows early for inputs just below 88.7,
+  and it now returns `-0.0` for `-0.0` and `inf` for `inf`.
+- `float32` `erfc()` is now accurate in its tail, for large positive inputs,
+  and returns subnormal results instead of flushing them to zero. On targets
+  that flush subnormals, subnormal inputs are handled and normal results are
+  correct; subnormal results flush to zero.
+- `cbrt()` of `inf` and `-inf` now returns `inf` and `-inf` instead of
+  `Float32.MAX` and `-Float32.MAX`, and `float32` `cbrt()` is correct near
+  `Float32.MAX` and for subnormal inputs. On targets that flush subnormals,
+  subnormal inputs are handled and normal results are correct; subnormal
+  results flush to zero, though `cbrt()` never produces one.
+- `log()`, `log2()`, and `log1p()` of `inf` now return `inf` instead of `nan`.
+- `float64` `log1p()` is now accurate for inputs whose `1 + x` falls in
+  `[sqrt(2)/2, sqrt(2))`, where it was off by up to about 7e9 ulp.

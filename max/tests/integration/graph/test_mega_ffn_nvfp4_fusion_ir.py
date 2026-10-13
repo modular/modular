@@ -15,7 +15,7 @@
 Dumps the graph-compiler MO IR (``max-debug.ir-output-dir``) while compiling
 the chained two-leg graphs from ``_mega_ffn_graphs``, then asserts the raw
 ``.mo.mlir`` still shows the two leg composites while the post-MO
-``.mo-pre-mogg.mlir`` (after the MO ``PatternFusion`` pass) has collapsed them
+``.mo-pre-map.mlir`` (after the MO ``PatternFusion`` pass) has collapsed them
 into a single ``mo.composite.mega_ffn_nvfp4``. The execution checks in
 ``test_mega_ffn_nvfp4_fusion_gpu.py`` would also pass on the unfused two-kernel
 fallback; this proves the fusion pattern fired on the graphs the real
@@ -60,7 +60,7 @@ def _compile_ir(graph: Graph, ir_dir: Path) -> tuple[str, str]:
         assert paths, f"no IR dump matched {pattern} in {ir_dir}"
         return "\n".join(p.read_text() for p in paths)
 
-    return _read("*.mo.mlir"), _read("*.mo-pre-mogg.mlir")
+    return _read("*.mo.mlir"), _read("*.mo-pre-map.mlir")
 
 
 def _op_defs(text: str, name: str) -> int:

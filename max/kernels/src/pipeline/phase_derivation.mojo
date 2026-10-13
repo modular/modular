@@ -768,11 +768,10 @@ def apply_edge_rules(
                         continue
 
                 # K-offset filter on consumer.
-                if rule.k_offset_filter == 1:
-                    if c_op.k_offset != KOffsetKind.K_PREV:
+                match rule.k_offset_filter:
+                    case 1 if c_op.k_offset != KOffsetKind.K_PREV:
                         continue
-                elif rule.k_offset_filter == 2:
-                    if c_op.k_offset == KOffsetKind.K_PREV:
+                    case 2 if c_op.k_offset == KOffsetKind.K_PREV:
                         continue
 
                 # Compute loop distance.

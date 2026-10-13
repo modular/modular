@@ -43,13 +43,9 @@ from layout import (
     DefaultEngine,
     ImmTileTensor,
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TensorLayout,
     TileTensor,
-    lt_to_tt_idx,
     row_major,
-    UNKNOWN_VALUE,
 )
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
@@ -170,7 +166,7 @@ struct FlashAttentionAlgorithm(
 
     @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
-        __match self._value:
+        match self._value:
             case 0:
                 writer.write("naive-attention")
             case 1:
@@ -354,8 +350,8 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(128)
             var reg_per = 224 if self.num_queries_per_block > 64 else 256
-            if num_keys_per_block:
-                self.num_keys_per_block = num_keys_per_block.value()
+            if case .Some(num_keys_per_block) = num_keys_per_block:
+                self.num_keys_per_block = num_keys_per_block
             # FIXME: for depth == 64, larger num_keys_per_block values currently
             #        trigger correctness issues; this hardcoded value is a
             #        temporary workaround and should be revisited.
@@ -477,8 +473,8 @@ def indexer_key_bound[
     (`sparse_index_fp8_sm100[_prefill].mojo`) write score slots `[0, bound)`
     for each token and nothing else, computing this same bound inline in
     their store guards (their operands are `Int32`), and the bounded top-k
-    (`topk_row_bounds_kernel` in `mla_index_fp8.mojo` feeding
-    `persistent_topk_block_split`) reads exactly that range with no `-inf`
+    (`persistent_topk_block_split` with `mla_index_fp8.mojo`'s
+    `_IndexerRowBound`) reads exactly that range with no `-inf`
     prefill between them. If either side drifts, the top-k reads score slots
     the scorer never wrote.
     """
@@ -744,66 +740,6 @@ def _copy_frag_to_smem[
         ]()
 
 
-# Legacy LayoutTensor-overload retained: its callers still pass LayoutTensor
-# register views — gpu/mha.mojo (mha_single_batch,
-# mha_single_batch_pipelined, mha_decoding_single_batch_pipelined),
-# gpu/mla.mojo (mla_decoding_single_batch, mla_prefill_single_batch), and
-# the p-fragment scatter tests. gpu/mha.mojo's mha_decoding_single_batch
-# already passes a native TileTensor and binds to the overload above. The
-# shared-memory operand has no TileTensor iterator equivalent yet.
-@inline(.always)
-def _copy_frag_to_smem[
-    BM: Int,
-    BN: Int,
-    BK: Int,
-    WM: Int,
-    WN: Int,
-    MMA_M: Int,
-    MMA_N: Int,
-    frag_simd_width: Int,
-    *,
-    type0: DType,
-    layout0: Layout,
-    type1: DType,
-    layout1: Layout,
-](
-    # Shared-memory iterator params stay legacy: there is no TileTensor
-    # iterator equivalent yet (repo-wide migration tracking).
-    p_smem_iter: LayoutTensorIter[
-        mut=True, type0, layout0, address_space=.SHARED, ...
-    ],
-    p_reg_tile: LayoutTensor[type1, layout1, _, address_space=.LOCAL],
-    warp_x: UInt32,
-    warp_y: UInt32,
-):
-    comptime if is_nvidia_gpu():
-        _copy_frag_to_smem_nvidia[
-            BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
-        ](
-            p_smem_iter,
-            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                p_reg_tile
-            ),
-            warp_x,
-            warp_y,
-        )
-    elif is_amd_gpu():
-        _copy_frag_to_smem_amd[
-            BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
-        ](
-            p_smem_iter,
-            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                p_reg_tile
-            ),
-            warp_x,
-            warp_y,
-        )
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
-
-
 @inline(.always)
 def get_start_and_end_for_partitions[
     tile_size: Int
@@ -874,32 +810,36 @@ def dispatch_mask[
         return callback_fn(mask)
 
     # TODO: attach string constants to mask types themselves.
-    comptime if MaskName.CAUSAL == mask_type:
-        return outer_wrapper(CausalMask())
-    elif MaskName.CHUNKED == mask_type:
-        comptime assert (
-            local_window_size > 0
-        ), "You must specify local_window_size for ChunkedMask"
-        return outer_wrapper(ChunkedMask[local_window_size]())
-    elif MaskName.NULL == mask_type:
-        return outer_wrapper(NullMask())
-    elif MaskName.SLIDING_WINDOW_CAUSAL == mask_type:
-        comptime assert (
-            local_window_size > 0
-        ), "You must specify local_window_size for SlidingWindowCausalMask"
-        return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
-    elif MaskName.SLIDING_WINDOW_NONCAUSAL == mask_type:
-        comptime assert (
-            local_window_size > 0
-        ), "You must specify local_window_size for SlidingWindowNonCausalMask"
-        return outer_wrapper(SlidingWindowNonCausalMask[local_window_size]())
-    elif MaskName.CHUNKED_CAUSAL == mask_type:
-        comptime assert (
-            local_window_size > 0
-        ), "You must specify local_window_size for ChunkedCausalMask"
-        return outer_wrapper(ChunkedCausalMask[local_window_size]())
-    else:
-        comptime assert False, "Unsupported mask type: " + mask_type
+    comptime match mask_type:
+        case "causal":
+            return outer_wrapper(CausalMask())
+        case "chunked":
+            comptime assert (
+                local_window_size > 0
+            ), "You must specify local_window_size for ChunkedMask"
+            return outer_wrapper(ChunkedMask[local_window_size]())
+        case "null":
+            return outer_wrapper(NullMask())
+        case "sliding_window_causal":
+            comptime assert (
+                local_window_size > 0
+            ), "You must specify local_window_size for SlidingWindowCausalMask"
+            return outer_wrapper(SlidingWindowCausalMask[local_window_size]())
+        case "sliding_window_noncausal":
+            comptime assert local_window_size > 0, (
+                "You must specify local_window_size for"
+                " SlidingWindowNonCausalMask"
+            )
+            return outer_wrapper(
+                SlidingWindowNonCausalMask[local_window_size]()
+            )
+        case "chunked_causal":
+            comptime assert (
+                local_window_size > 0
+            ), "You must specify local_window_size for ChunkedCausalMask"
+            return outer_wrapper(ChunkedCausalMask[local_window_size]())
+        case _:
+            comptime assert False, "Unsupported mask type: " + mask_type
 
 
 @inline(.always)

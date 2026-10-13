@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the non-swapAB GEMM tensor-core kernel."""
 
-from std.math import ceildiv
 from std.random import random_float64
 
 from max.gpu.host import DeviceContext
@@ -24,8 +23,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from internal_utils import assert_almost_equal
 from std.testing import assert_equal
 
-from layout import TileTensor, Coord, Idx, row_major
-from std.utils import IndexList
+from layout import TileTensor, Coord, row_major
 
 
 def run_gemm_mma_cpasync[
@@ -216,9 +214,10 @@ def run_gemm_mma_cpasync_residual[
     @__copy_capture(c_tensor, residual_tensor)
     def residual_epilogue[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
-        var res = residual_tensor.load[width=width](Coord(idx)).cast[dtype]()
-        c_tensor.store[width=width](Coord(idx), (val + res).cast[c_type]())
+    ](idx: Coord, val: SIMD[dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var res = residual_tensor.load[width=width](idx).cast[dtype]()
+        c_tensor.store[width=width](idx, (val + res).cast[c_type]())
 
     gemm_mma_cpasync[
         tile_k=tile_k,
@@ -319,10 +318,11 @@ def run_gemm_mma_cpasync_epilogue_fn[
 
     def store_odd_rows_negated[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var out_tensor}:
-        var row_scale = -2 if idx[0] % 2 == 1 else 2
+    ](idx: Coord, val: SIMD[dtype, width]) {var out_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row_scale = -2 if Int(idx[0].value()) % 2 == 1 else 2
         out_tensor.store[width=width](
-            Coord(idx),
+            idx,
             (val * SIMD[dtype, width](row_scale)).cast[out_tensor.dtype](),
         )
 

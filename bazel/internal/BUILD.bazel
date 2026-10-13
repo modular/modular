@@ -2,6 +2,7 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
 load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_rust_pyo3//:defs.bzl", "rust_pyo3_toolchain")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
@@ -311,3 +312,22 @@ modular_cc_library(
     copts = ["-Wno-global-constructors"],
     alwayslink = True,
 )
+
+# pyo3 for the max._kv_core extension (//max/python/max:_kv_core.bindings).
+# Bound to the kv-core crate universe (//rust_kv/kv-core-pyo3).
+rust_pyo3_toolchain(
+    name = "pyo3_toolchain_target",
+    pyo3 = "@kv_core_crates//:pyo3",
+    pyo3_introspection = "@kv_core_crates//:pyo3-introspection",
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+)
+
+toolchain(
+    name = "pyo3_toolchain",
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+    toolchain = ":pyo3_toolchain_target",
+    toolchain_type = "@rules_rust_pyo3//:rust_toolchain_type",
+)
+
+# Applied by both MODULE.bazel files' rules_rust archive_override.
+exports_files(["rules_rust_extra_exec_triple.patch"])

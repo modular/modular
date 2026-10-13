@@ -23,12 +23,7 @@ from std.sys import size_of
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import (
-    Layout,
-    TileTensor,
-    coord,
-    flatten_leading,
-)
+from layout import TileTensor, coord, flatten_leading
 from layout.tma_async import create_tensor_tile
 
 from std.utils.index import Index, IndexList
@@ -40,7 +35,6 @@ from .matmul import _get_c_smem_layout
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -97,7 +91,6 @@ def grouped_matmul_sm90[
     config: MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -128,7 +121,6 @@ def grouped_matmul_sm90[
         transpose_b: Whether B is stored transposed (must be True).
         wgmma_shape: WGMMA instruction shape (M, N, K).
         config: Full SM90 kernel configuration.
-        elementwise_lambda_fn: Optional epilogue applied to each output tile.
         has_epilogue_fn: Whether `epilogue_fn` stores the output.
         has_compute_fn: Whether `compute_fn` maps each output before it is
             stored.
@@ -193,9 +185,7 @@ def grouped_matmul_sm90[
     # When an epilogue owns every store, `c.ptr` may be dangling, which the
     # descriptor encode rejects, so point it at a 1-element scratch buffer
     # (its extent is never read), as the SM100 kernel does.
-    comptime epilogue_owns_stores = Bool(
-        elementwise_lambda_fn
-    ) or has_epilogue_fn
+    comptime epilogue_owns_stores = has_epilogue_fn
     var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
     var c_desc_ptr = c.ptr.as_unsafe_any_origin()
     comptime if epilogue_owns_stores:
@@ -233,7 +223,6 @@ def grouped_matmul_sm90[
         use_tma_store=False,
         promotion_frequency=1,
         pdl_level=config.pdl_level(),
-        elementwise_lambda_fn=elementwise_lambda_fn,
         a_engine=type_of(a).Engine,
         b_engine=type_of(b_flat).Engine,
         c_engine=type_of(c).Engine,

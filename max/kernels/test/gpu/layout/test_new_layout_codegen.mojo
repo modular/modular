@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedLayout GPU memory codegen with runtime indices."""
 
-import std.sys
-
 from max.gpu import thread_idx
 from max.gpu.host.compile import _compile_code, get_gpu_target
 from layout.tile_layout import Layout

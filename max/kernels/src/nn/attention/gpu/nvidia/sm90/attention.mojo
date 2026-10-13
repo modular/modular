@@ -54,7 +54,6 @@ from nn.attention.mha_operand import (
     MHAOperand,
     PagedRowIndices,
     kv_sub_tile_rows,
-    kv_num_sub_tiles,
 )
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHASchedulerSynchronization,
@@ -64,7 +63,6 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     SeqInfo,
 )
 from nn.attention.mha_utils import (
-    MHAConfig,
     MHAPartitionScheme,
     OptionallyStaticInt,
     _is_decoding,
@@ -88,7 +86,6 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     OptionalPointer,
     Pack,
-    QTMATilePrefill,
     QTMATileFused,
     _LocalTT,
     _SharedMemTT,
@@ -574,11 +571,10 @@ def produce[
     var tile_state = tile_state_arg
     var position = initial_position
 
-    @__parameter
     @inline(.nodebug)
     def q_producer(
         q_idx: UInt32, offset: UInt32 = 0
-    ) -> TileTensor[
+    ) {imm} -> TileTensor[
         qkv_type,
         type_of(row_major(q_tile_shape)),
         type_of(q_smem).origin,
@@ -619,7 +615,6 @@ def produce[
         BM, BN, page_size
     ]()
 
-    @__parameter
     @inline(.nodebug)
     def _num_valid_pages(end_row: UInt32, current_kv_row: UInt32) -> UInt32:
         return min(
@@ -627,7 +622,6 @@ def produce[
             UInt32(KVPagedRows.num_pages),
         )
 
-    @__parameter
     @inline(.nodebug)
     def produce_kv[
         is_k_side: Bool,
@@ -638,7 +632,7 @@ def produce[
         prompt_idx: UInt32,
         kv_tile_row: UInt32,
         kv_head_idx: UInt32,
-    ):
+    ) {imm}:
         var write_idx: UInt32 = state.index()
         var write_phase: UInt32 = state.phase()
 
@@ -676,7 +670,6 @@ def produce[
             )
         state.step()
 
-    @__parameter
     @inline(.nodebug)
     def produce_kv_partial[
         is_k_side: Bool,
@@ -688,7 +681,7 @@ def produce[
         kv_tile_row: UInt32,
         kv_head_idx: UInt32,
         num_valid_pages: UInt32,
-    ):
+    ) {imm}:
         """Like `produce_kv` but with runtime-bounded page loops.
 
         Uses `populate` + `tma_copy_{k,v}[needs_partial=True]` so the
@@ -732,9 +725,8 @@ def produce[
             )
         state.step()
 
-    @__parameter
     @inline(.always)
-    def get_position(seq_info: SeqInfo) -> PositionType:
+    def get_position(seq_info: SeqInfo) {imm} -> PositionType:
         return _get_position[
             BM,
             BN,

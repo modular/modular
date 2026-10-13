@@ -35,7 +35,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.memory import alloc
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
 from nn.attention.mha_utils import MHAConfig
@@ -74,7 +73,12 @@ def run_test_paged_variable[
     q_type: DType,
     kv_type: DType,
     num_heads: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](
+    name: StringLiteral,
+    cache_lengths: List[Int],
+    ctx: DeviceContext,
+    num_partitions: Optional[Int] = None,
+) raises:
     var batch_size = len(cache_lengths)
     print(
         "test:",
@@ -317,6 +321,7 @@ def run_test_paged_variable[
         ctx,
         scalar_args_buf_tt,
         q_max_seq_len=q_max_seq_len,
+        num_partitions=num_partitions,
     )
 
     ctx.synchronize()
@@ -1669,7 +1674,12 @@ def run_bench_paged_variable[
 
 def run_test_paged_variable_native_fp8[
     num_heads: Int,
-](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+](
+    name: StringLiteral,
+    cache_lengths: List[Int],
+    ctx: DeviceContext,
+    num_partitions: Optional[Int] = None,
+) raises:
     """Test native FP8 MLA decode through the paged path.
 
     In the native FP8 path:
@@ -1701,6 +1711,8 @@ def run_test_paged_variable_native_fp8[
         kv_type,
         " output_type:",
         ref_type,
+        " num_partitions:",
+        num_partitions.value() if num_partitions else -1,
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -1936,6 +1948,7 @@ def run_test_paged_variable_native_fp8[
         ctx,
         scalar_args_buf_tt,
         q_max_seq_len=q_max_seq_len,
+        num_partitions=num_partitions,
     )
 
     ctx.synchronize()
@@ -3363,6 +3376,33 @@ def main() raises:
             )
             run_test_paged_variable_native_fp8[16](
                 "amd_s1_native_fp8", amd_cl, ctx
+            )
+
+            # GLM-5.3 TP8 per-rank shape: 8 heads, depth 576 (kv_lora 512 + rope
+            # 64), FP8 paged KV, page 128, S=1 decode; run np=1 and np=4.
+            print("--- Group A: S=1 paged decode (8 heads, GLM-5.3 TP8) ---")
+
+            var amd_cl_h8: List[Int] = [30, 256, 640, 1024]
+            run_test_paged_variable_native_fp8[8](
+                "amd_s1_native_fp8_h8_np1", amd_cl_h8, ctx
+            )
+            run_test_paged_variable_native_fp8[8](
+                "amd_s1_native_fp8_h8_np4",
+                amd_cl_h8,
+                ctx,
+                num_partitions=Optional(4),
+            )
+
+            # GLM-5.3 stages the decode Q in bf16; exercise that shape (8 heads,
+            # depth 576, v 512, page 128), variable lengths, np=1 and split-K.
+            run_test_paged_variable[.bfloat16, DType.bfloat16, 8](
+                "amd_s1_bf16_h8_np1", amd_cl_h8, ctx
+            )
+            run_test_paged_variable[.bfloat16, DType.bfloat16, 8](
+                "amd_s1_bf16_h8_np4",
+                amd_cl_h8,
+                ctx,
+                num_partitions=Optional(4),
             )
 
             # -----------------------------------------------------------

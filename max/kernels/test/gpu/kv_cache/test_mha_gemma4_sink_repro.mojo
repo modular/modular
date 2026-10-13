@@ -44,13 +44,10 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
-from nn.attention.gpu.mha import (
-    MHADecodeDispatchMetadata,
-    flash_attention,
-)
+from nn.attention.gpu.mha import MHADecodeDispatchMetadata
 from nn.kv_cache_ragged import generic_flash_attention_kv_cache_ragged
 from nn.attention.mha_mask import CausalMask
 

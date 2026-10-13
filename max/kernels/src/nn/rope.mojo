@@ -17,7 +17,7 @@ from std.sys.info import CompilationTarget, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.complex import ComplexSIMD
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
@@ -27,7 +27,6 @@ from layout import (
     TensorEngine,
     TensorLayout,
     TileTensor,
-    coord,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -195,13 +194,13 @@ def rope_ragged[
     comptime PtrType = type_of(position_ids.value().ptr.as_imm())
     var pos_ids_ptr: PtrType
     var pos_ids_stride: Int
-    if has_position_ids:
-        pos_ids_ptr = rebind[PtrType](position_ids.value().ptr.as_imm())
+    if case .Some(pos_ids) = position_ids:
+        pos_ids_ptr = rebind[PtrType](pos_ids.ptr.as_imm())
         # Row stride from the layout, not `dim[1]()`: the kernel steps whole
         # position_ids rows (`section_idx * pos_ids_stride`), so use the actual
         # dim-0 stride rather than assuming a row-major-contiguous layout where
         # it happens to equal `dim[1]`.
-        pos_ids_stride = Int(position_ids.value().layout.stride[0]().value())
+        pos_ids_stride = Int(pos_ids.layout.stride[0]().value())
     else:
         pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_imm())
         pos_ids_stride = 0
@@ -235,11 +234,11 @@ def rope_ragged[
 
             var position_ids_idx = Int(post_seq_idx)
             if has_position_ids:
-                comptime if mrope_section:
+                comptime if case .Some(sections) = mrope_section:
                     var section_idx = 0
 
-                    comptime for i in range(len(mrope_section.value())):
-                        comptime val = Int(mrope_section.value()[i].value())
+                    comptime for i in range(len(sections)):
+                        comptime val = Int(sections[i].value())
                         if head_dim_idx < val:
                             section_idx = i
                             break
@@ -288,14 +287,14 @@ def rope_ragged[
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
             target
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+        ]() else simd_width_of[dtype, target=context.target]()
     )
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    comptime if mrope_section:
-        comptime for i in range(len(mrope_section.value())):
+    comptime if case .Some(sections) = mrope_section:
+        comptime for i in range(len(sections)):
             comptime assert (
-                mrope_section.value()[i].static_value % kernel_simd_width == 0
+                sections[i].static_value % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     comptime assert (

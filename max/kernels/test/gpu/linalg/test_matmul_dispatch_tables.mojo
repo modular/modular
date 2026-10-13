@@ -27,12 +27,12 @@ def main() raises:
 
 
 def _is_core(group: TuningGroup) -> Bool:
-    """Returns True when the runtime `__match` selects `TuningGroup.CORE`.
+    """Returns True when the runtime `match` selects `TuningGroup.CORE`.
 
     Every case is named so the match fails to compile if `_enum_case_names`
     drifts from the comptime case constants.
     """
-    __match group:
+    match group:
         case .CORE:
             return True
         case .MISCELLANEOUS:
@@ -60,12 +60,12 @@ def _test_enumlike() raises:
 
 
 def _is_none(schedule: MatmulSchedule) -> Bool:
-    """Returns True when the runtime `__match` selects `MatmulSchedule.NONE`.
+    """Returns True when the runtime `match` selects `MatmulSchedule.NONE`.
 
     Every case is named so the match fails to compile if `_enum_case_names`
     drifts from the comptime case constants.
     """
-    __match schedule:
+    match schedule:
         case .NONE:
             return True
         case .TILE1D:
@@ -77,8 +77,8 @@ def _is_none(schedule: MatmulSchedule) -> Bool:
 
 
 def _is_along_n(order: RasterOrder) -> Bool:
-    """Returns True when the runtime `__match` selects `RasterOrder.AlongN`."""
-    __match order:
+    """Returns True when the runtime `match` selects `RasterOrder.AlongN`."""
+    match order:
         case .AlongN:
             return True
         case .AlongM:

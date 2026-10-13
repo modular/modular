@@ -67,12 +67,7 @@ from layout import (
     TileTensor,
 )
 from layout.coord import Coord
-from layout.tile_layout import (
-    Layout as TileLayout,
-    RowMajorLayout,
-    TensorLayout,
-    row_major,
-)
+from layout.tile_layout import Layout as TileLayout, TensorLayout, row_major
 
 from linalg.arch.apple.mma import MmaOpApple
 
@@ -1048,7 +1043,7 @@ def fa_prefill_apple[
             def _dispatch[sg: Int]() raises {var}:
                 _enqueue[sg]()
 
-            __match sg_env:
+            match sg_env:
                 case "4":
                     _dispatch[4]()
                 case "8":

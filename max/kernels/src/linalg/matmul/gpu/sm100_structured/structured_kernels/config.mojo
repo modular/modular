@@ -138,7 +138,7 @@ struct GEMMKind(
         Args:
             writer: The writer to write the GEMM kind to.
         """
-        __match self:
+        match self:
             case .GEMM:
                 writer.write("kind::gemm")
             case .BMM:
@@ -153,7 +153,7 @@ struct GEMMKind(
     @inline(.always)
     def __str__(self) -> String:
         """Convert GEMM kind to a string."""
-        __match self:
+        match self:
             case .GEMM:
                 return "gemm"
             case .BMM:
@@ -283,7 +283,7 @@ def _compute_swizzle_modes(
             # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
             var elem_size = 2 if c_type == DType.bfloat16 else 4
             var row_bytes = output_tile_shape[1] * elem_size
-            __match row_bytes:
+            match row_bytes:
                 case 128:
                     c_swizzle = TensorMapSwizzle.SWIZZLE_128B
                 case 64:
@@ -473,7 +473,7 @@ def _write_common_config[
 
 
 def _get_dtype_name(dtype: DType) -> String:
-    __match dtype:
+    match dtype:
         case .bfloat16:
             return "bf16"
         case .float8_e4m3fn:
@@ -738,10 +738,8 @@ struct MatmulConfig[
             epilogue_is_1d,
         )
 
-        if num_tma_epilogue_pipeline_stages:
-            self.num_tma_epilogue_pipeline_stages = (
-                num_tma_epilogue_pipeline_stages.value()
-            )
+        if case .Some(epilogue_stages) = num_tma_epilogue_pipeline_stages:
+            self.num_tma_epilogue_pipeline_stages = epilogue_stages
         else:
             self.num_tma_epilogue_pipeline_stages = (
                 max_num_tma_epi_pipeline_stages
@@ -763,11 +761,11 @@ struct MatmulConfig[
             epilogue_is_1d=self.epilogue_is_1d,
         )
 
-        if num_pipeline_stages:
+        if case .Some(num_pipeline_stages) = num_pipeline_stages:
             assert (
-                num_pipeline_stages.value() <= max_num_pipeline_stages
+                num_pipeline_stages <= max_num_pipeline_stages
             ), "MatmulConfig requested num_pipeline_stages exceeds smem budget."
-            self.num_pipeline_stages = num_pipeline_stages.value()
+            self.num_pipeline_stages = num_pipeline_stages
         else:
             # Every tile whose smem budget reaches past 16 stages is
             # faster with the deeper prefetch, by 2-9% at M<=96 on B200.
@@ -787,10 +785,10 @@ struct MatmulConfig[
         # derivable from mma_shape, so they are explicit opt-in knobs;
         # applied last so the default derivations (block_tile_shape, A/B
         # swizzles) are unaffected.
-        if output_tile_shape:
-            self.output_tile_shape = output_tile_shape.value()
-        if c_swizzle:
-            self.c_swizzle = c_swizzle.value()
+        if case .Some(output_tile_shape) = output_tile_shape:
+            self.output_tile_shape = output_tile_shape
+        if case .Some(c_swizzle) = c_swizzle:
+            self.c_swizzle = c_swizzle
 
     def swap_AB_type(
         self,
@@ -1361,12 +1359,12 @@ struct BlockScaledMatmulConfig[
             reserved_smem=reserved_smem,
         )
 
-        if num_pipeline_stages:
-            assert num_pipeline_stages.value() <= max_num_pipeline_stages, (
+        if case .Some(num_pipeline_stages) = num_pipeline_stages:
+            assert num_pipeline_stages <= max_num_pipeline_stages, (
                 "BlockScaledMatmulConfig requested num_pipeline_stages exceeds"
                 " smem budget. "
             )
-            self.num_pipeline_stages = num_pipeline_stages.value()
+            self.num_pipeline_stages = num_pipeline_stages
         else:
             self.num_pipeline_stages = max_num_pipeline_stages
 

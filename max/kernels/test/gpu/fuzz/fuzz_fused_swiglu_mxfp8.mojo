@@ -51,7 +51,7 @@ from std.sys.defines import get_defined_bool, get_defined_int
 from std.utils.numerics import isfinite
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
@@ -60,6 +60,7 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     get_scale_factor,
 )
+from linalg.swiglu_activation import get_swiglu_activation
 from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
 
 from _fuzz import (
@@ -100,7 +101,7 @@ def _swiglu(g: Float32, u: Float32) -> Float32:
         var g_c = min(g, LIMIT)
         var u_c = max(min(u, LIMIT), -LIMIT)
         var sig = recip(Float32(1.0) + exp(-(g_c * ALPHA)))
-        return (u_c + Float32(1.0)) * g_c * sig
+        return g_c * sig * (u_c + Float32(1.0))
     else:
         var silu_g = g * recip(Float32(1.0) + exp(-g))
         return silu_g * u
@@ -225,7 +226,9 @@ def run_one_case(
         sc_off_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
-        clamp_activation=CLAMP,
+        activation=get_swiglu_activation[
+            "swigluoai" if CLAMP else "silu", ALPHA, LIMIT if CLAMP else 0.0
+        ],
     ]
     ctx.enqueue_function[kernel](
         out_tt,
@@ -233,8 +236,6 @@ def run_one_case(
         in_immut,
         row_off_immut,
         sc_off_immut,
-        ALPHA,
-        LIMIT,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )

@@ -32,7 +32,8 @@ from std.utils.coord import ComptimeInt
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
-from nn.normalization import rms_norm, rms_norm_quantize_dynamic_scaled_fp8
+from builtin_kernels.rowwise_normalization import rms_norm
+from nn.normalization import rms_norm_quantize_dynamic_scaled_fp8
 
 comptime IN_DTYPE = DType.bfloat16
 comptime OUT_DTYPE = DType.float8_e4m3fn

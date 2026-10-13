@@ -18,22 +18,18 @@ to half SMEM, TMA store to GMEM.
 """
 
 from std.math import align_up, ceildiv
-from std.sys import size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
-    Coord,
     coord,
     DefaultEngine,
-    Idx,
     RowMajorLayout,
     TensorEngine,
     TensorLayout,
     TileTensor,
-    row_major as tt_row_major,
 )
 from std.collections import OptionalReg
 from structured_kernels.tile_types import create_tma_tile

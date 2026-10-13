@@ -283,7 +283,17 @@ def functional(
             with ensure_context():
                 return to_tensors(on_graph_values(*args, **kwargs))
 
-        mesh = distributed[0].mesh
+        # Keyword arguments flatten in sorted order, so a host-side argument
+        # such as a per-device length could come first; the op runs on the
+        # devices that hold the real data.
+        mesh = next(
+            (
+                t.mesh
+                for t in distributed
+                if not all(isinstance(d, CPU) for d in t.mesh.devices)
+            ),
+            distributed[0].mesh,
+        )
         active_rule = getattr(wrapper, "rule", None)
         if active_rule is None:
             # Without a rule nothing relates the per-device results, so the op
@@ -1789,8 +1799,7 @@ tile.__doc__ = """Repeats a tensor along each of its dimensions.
 Each dimension ``i`` is copied ``repeats[i]`` times, so its output size is
 ``x.shape[i] * repeats[i]``.
 
-This op runs on CPU. An input on another device is copied to CPU for the
-operation and the result is copied back.
+The op runs on ``x``'s device; only ``repeats`` are host values.
 
 .. code-block:: python
 
@@ -1812,9 +1821,8 @@ Returns:
     A ``Tensor`` containing the tiled input.
 
 Raises:
-    ValueError: If ``repeats`` doesn't have one value per dimension, if any
-        statically known value isn't positive, or if ``x`` is on a non-CPU
-        device and ``strict_device_placement=DevicePlacementPolicy.Error``.
+    ValueError: If ``repeats`` doesn't have one value per dimension, or if
+        any statically known value isn't positive.
 """
 
 pad = functional(ops.pad, rule=pad_rule)

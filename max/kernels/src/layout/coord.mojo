@@ -23,7 +23,6 @@ from std.utils.coord import (
     coord_to_index_list,
     crd2idx,
     idx2crd,
-    _AllStatic,
     _IsNotTuplePredicate,
     _CeilDiv,
     _CoordToDynamic,

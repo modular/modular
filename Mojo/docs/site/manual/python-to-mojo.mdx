@@ -51,6 +51,19 @@ var counts: Dict[String, Int] = {"a": 1, "b": 2}
 counts["c"] = 3
 ```
 
+Mojo collections don't support negative indexes. Count from the end
+explicitly:
+
+```mojo
+var readings: List[Int] = [12, 80, 45]
+print(readings[len(readings) - 1])   # 45
+print(readings[len(readings) - 2:])  # [80, 45]
+```
+
+A literal negative index, such as `readings[-1]`, is a compile-time error.
+A negative index computed at run time aborts with an out-of-bounds error.
+Slices follow the same rule, so `readings[-2:]` aborts too.
+
 If a collection needs a known set of different types, use `Variant` as its
 element or value type.
 

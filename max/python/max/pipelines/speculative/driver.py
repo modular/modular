@@ -39,8 +39,10 @@ from typing import Any, Generic, Literal, Protocol
 
 from max import tree
 from max.dtype import DType
+from max.experimental import functional as F
 from max.experimental.nn import Module as ModuleV3
 from max.experimental.realization_context import current_realization_context
+from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
@@ -101,6 +103,7 @@ __all__ = [
     "SequentialDriver",
     "SequentialProposer",
     "TensorAdapter",
+    "gather_variable_rows",
 ]
 
 _T = TypeVar("_T", TensorValue, Tensor, default=TensorValue)
@@ -529,6 +532,54 @@ def _replica_leading_rows(
             ops.slice_tensor(value, [(slice(0, count), out_dims[i])])
         )
     return selected
+
+
+def gather_variable_rows(
+    h: Tensor,
+    input_row_offsets: Tensor,
+    return_n_logits: Tensor,
+    mesh: DeviceMesh,
+) -> tuple[Tensor, Tensor]:
+    """Gathers each request's last ``return_n_logits`` rows of ``h``.
+
+    Also returns their offsets, ``return_n_logits`` apart, matching the
+    graph-API ``deepseek_logits_postprocess``.
+    """
+    # Built on one device and broadcast: per-device ranges that share the
+    # symbolic out_dim trip a cross-device rebind (see the graph-API
+    # implementation).
+    n_range = F.range(
+        return_n_logits[0],
+        0,
+        -1,
+        out_dim="return_n_logits_range",
+        dtype=DType.int64,
+        device=mesh.devices[0],
+    )
+    if mesh.num_devices > 1:
+        n_range = F.distributed_broadcast(n_range, mesh)
+    else:
+        n_range = n_range.to(mesh)
+
+    def _body(
+        h: TensorValue, offsets: TensorValue, n_range: TensorValue
+    ) -> TensorValue:
+        rows = ops.unsqueeze(offsets[1:], -1) - n_range
+        return ops.gather(h, ops.reshape(rows, (-1,)), axis=0)
+
+    # The rule-less body gathers each device's own rows.
+    variable_h = F.functional(_body)(
+        h, input_row_offsets, n_range
+    ).rebind_mapping(h.mapping)
+    offsets = F.range(
+        0,
+        F.shape_to_tensor(variable_h.shape)[0] + return_n_logits[0],
+        return_n_logits[0],
+        out_dim="logit_offsets",
+        dtype=DType.int64,
+        device=mesh.devices[0],
+    )
+    return variable_h, offsets
 
 
 class SequentialDriver(

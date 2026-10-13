@@ -512,8 +512,8 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     # Input lambda: generates data on-the-fly
     @inline(.always)
     def input_fn[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
         comptime if input_index == 0:
             # First input: return constant 1.0
             return SIMD[dtype, width](1.0)
@@ -526,12 +526,11 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     @inline(.always)
     @__copy_capture(output_dyn)
     def output_fn[
-        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        var coord = Coord(indices)
-        comptime assert output_dyn.flat_rank >= coord.flat_rank
+        c_type: DType, width: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[c_type, width]):
+        comptime assert output_dyn.flat_rank >= coords.flat_rank
         output_dyn.store[width=width](
-            coord, rebind[SIMD[dtype, width]](val + 10)
+            coords, rebind[SIMD[dtype, width]](val + 10)
         )
 
     fused_concat[
@@ -634,12 +633,11 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
 
     @inline(.always)
     def epilogue_scale_by_2[
-        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output_dyn}:
-        var coord = Coord(indices)
-        comptime assert output_dyn.flat_rank >= coord.flat_rank
+        c_type: DType, width: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[c_type, width]) {var output_dyn}:
+        comptime assert output_dyn.flat_rank >= coords.flat_rank
         output_dyn.store[width=width](
-            coord, rebind[SIMD[dtype, width]](val * 2)
+            coords, rebind[SIMD[dtype, width]](val * 2)
         )
 
     _concat_gpu[has_epilogue=True](

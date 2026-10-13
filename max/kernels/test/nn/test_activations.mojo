@@ -24,7 +24,7 @@ from nn.activations import (
     sigmoid,
     silu,
 )
-from test_utils import libm_call
+from test_utils.math import libm_call
 
 
 # CHECK-LABEL: test_elu

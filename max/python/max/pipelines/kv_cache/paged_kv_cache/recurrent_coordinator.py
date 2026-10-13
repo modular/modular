@@ -397,9 +397,9 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     @traced
     def forward_blocks(
         self, batch: Sequence[TextContext], num_blocks: Sequence[int]
-    ) -> dict[str, list[list[int]]]:
+    ) -> dict[str, list[Sequence[int]]]:
         """Returns the block each request's recurrence runs in."""
-        plans: dict[str, list[list[int]]] = {self.leaf_id: []}
+        plans: dict[str, list[Sequence[int]]] = {self.leaf_id: []}
         for ctx in batch:
             runs_in = self.live_blocks(ctx.request_id)
             if runs_in is None:

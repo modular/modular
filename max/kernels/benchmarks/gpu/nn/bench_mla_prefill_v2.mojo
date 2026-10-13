@@ -92,14 +92,13 @@ from std.benchmark import (
 )
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from std.utils import StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Idx, TileTensor, row_major
 
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
-from nn.attention.mha_operand import TileTensorMHAOperand, MHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 from nn.attention.gpu.amd_structured.mha_mma_op import MlaConfigV2
 from nn.attention.gpu.amd_structured.mla_prefill_v2 import MlaPrefillV2

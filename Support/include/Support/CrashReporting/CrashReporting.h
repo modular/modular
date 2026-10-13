@@ -51,15 +51,16 @@ getCrashDatabasePath(const std::filesystem::path &dataPath);
 /// from code that reasonably "owns" the process, not from a library where we
 /// don't know what the rest of the code in the process is doing.
 ///
-/// The argv0 parameter should be the first available argument (e.g. argv[0])
-/// and may be used to help locate the crashpad binary (if there is no relevant
-/// configuration). The program parameter is used for metadata when posting to
-/// the crashpad API, which allows for clustering crashes server-side for
-/// analysis; this should be simple and fixed (e.g. "mojo" is a good name).
-/// The machineID and sessionID parameters are attached so crash reports
-/// can be joined with usage events.
+/// The program parameter is used for metadata when posting to the crashpad
+/// API, which allows for clustering crashes server-side for analysis; this
+/// should be simple and fixed (e.g. "mojo" is a good name). The machineID,
+/// machineIDSource and sessionID parameters are the values from
+/// Telemetry::createLocalIDs(), attached as annotations so crash reports can
+/// be joined with usage events. The optional settings supply
+/// crash_reporting.handler_path and crash_reporting.url.
 void initCrashpadForProgram(StringRef program, StringRef machineID,
-                            StringRef sessionID, Config *settings = nullptr);
+                            StringRef machineIDSource, StringRef sessionID,
+                            Config *settings = nullptr);
 
 /// Generate a crash dump with the current state of the process, without
 /// actually causing the current process to crash and terminate.

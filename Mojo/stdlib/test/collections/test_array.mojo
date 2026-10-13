@@ -528,12 +528,12 @@ def _test_array_iter_bounds[
     for i in range(array_len):
         var lower, upper = iter.bounds()
         assert_equal(array_len - i, lower)
-        assert_equal(array_len - i, upper.value())
+        assert_equal(Optional(array_len - i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 struct NonWritable(Copyable):

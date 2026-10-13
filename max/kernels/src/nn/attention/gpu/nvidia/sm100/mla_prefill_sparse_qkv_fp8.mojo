@@ -112,7 +112,6 @@ from linalg.arch.sm100.mma import smem_descriptor
 from layout import (
     TileTensor,
     row_major,
-    Idx,
     TensorLayout,
     TensorEngine,
     Coord,

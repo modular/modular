@@ -49,6 +49,7 @@ Submodules
    pipelines.kv_cache
    pipelines.lib
    pipelines.lib.arch_lookup
+   pipelines.lib.generate
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
    pipelines.lib.registry
@@ -80,6 +81,17 @@ Configuration
    SamplingConfig
    SpeculativeConfig
 
+In-process generation
+---------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   AutoModel
+   AutoTokenizer
+
 Pipelines
 ---------
 
@@ -101,7 +113,6 @@ Model interface
    :toctree: generated
    :template: autosummary/class.rst
 
-   GenerateMixin
    MemoryEstimator
    ModelInputs
    ModelOutputs

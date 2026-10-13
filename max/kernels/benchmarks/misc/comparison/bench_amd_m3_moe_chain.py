@@ -34,18 +34,14 @@
 # Baseline chain (production shape, MXFP8 a8w8):
 #   gemm1: grouped_dynamic_block_scaled_matmul_amd (gate_up, N=6144 K=6144)
 #   act:   ep.fused_silu_quantized (OAI-clamped SwiGLU + E8M0 requant,
-#          max_padded_M=stride slot-fold)  [3-launch variant adds the
-#          standalone A-scale preshuffle instead]
+#          max_padded_M=stride slot-fold)
 #   gemm2: grouped_dynamic_block_scaled_matmul_amd (down, N=6144 K=3072)
 #
 # Variants:
-#   plain+preshuffle  4 launches (gemm1, fused_silu, A-scale preshuffle, gemm2)
-#   plain+fold        3 launches (gemm1, fused_silu w/ slot scales, gemm2)
-#                     load). No activation kernel and no A-scale traffic: the
-#                     down-proj scales are computed in-kernel and never reach
-#                     memory. Takes the gate_up weight sigma-permuted so gate
-#                     and up land in one output tile. Exposes no packed
-#                     intermediate, so --check skips its byte-identity gate.
+#   plain+fold   3 launches (gemm1, fused_silu w/ slot scales, gemm2)
+#   fused_mxfp8  2 launches (gemm1 with the SwiGLU + MXFP8 requant epilogue,
+#                gemm2). Takes the gate_up weight sigma-permuted so gate and
+#                up land in one output tile.
 #
 # Run (bazel, gpu):
 #   bazel run //max/kernels/benchmarks/misc/comparison:bench_amd_m3_moe_chain \
@@ -91,13 +87,11 @@ _MAX_CAPTURE_KEY = 0
 _SWIGLU_ALPHA = 1.702
 _SWIGLU_LIMIT = 7.0
 _CHAIN_LAUNCHES = {
-    "plain+preshuffle": 4,
     "plain+fold": 3,
     "fused_mxfp8": 2,
 }
 # Variants in baseline -> most-fused order.
 _CHAIN_VARIANTS = (
-    "plain+preshuffle",
     "plain+fold",
     "fused_mxfp8",
 )
@@ -269,6 +263,7 @@ def bench_chain(
     from max.dtype import DType
     from max.engine import InferenceSession
     from max.graph import DeviceRef, Graph, TensorType, ops
+    from max.nn.activation import GatedActivation
     from max.nn.comm.ep.ep_kernels import fused_silu_quantized
     from max.nn.kernels import (
         block_scaled_preshuffle_b_5d,
@@ -278,6 +273,7 @@ def bench_chain(
 
     est_total_m = m
     decode_grid_m_rows = _decode_grid_m_rows(decode_grid_m_cap, cfg)
+    oai = GatedActivation("swigluoai", alpha=_SWIGLU_ALPHA, limit=_SWIGLU_LIMIT)
     n1, k1 = cfg.hidden, cfg.hidden  # gate_up N=6144 K=6144
     n2, k2 = cfg.hidden, cfg.inter  # down N=6144 K=3072
 
@@ -415,7 +411,6 @@ def bench_chain(
         ids: TensorValue,
         usage_in: TensorValue,
         est_m: TensorValue,
-        slot: bool,
     ) -> TensorValue:
         return grouped_dynamic_block_scaled_matmul_amd(
             a,
@@ -428,8 +423,7 @@ def bench_chain(
             out_type=DType.bfloat16,
             estimated_total_m=est_m,
             preshuffled_b=True,
-            a_scales_preshuffled=slot,
-            a_scales_max_padded_m=stride if slot else 0,
+            a_scales_max_padded_m=stride,
             decode_grid_m_cap=decode_grid_m_cap,
             decode_grid_m_rows=decode_grid_m_rows,
         )
@@ -440,7 +434,7 @@ def bench_chain(
     def _est_m() -> TensorValue:
         return ops.constant(est_total_m, dtype=DType.uint32, device=cpu)
 
-    def _build_plain(fold: bool) -> ChainBuilder:
+    def _build_plain() -> ChainBuilder:
         def build(
             act_in: TensorValue,
             a_sc: TensorValue,
@@ -455,17 +449,15 @@ def bench_chain(
         ) -> ChainOut:
             est_m = _est_m()
             gate_up = _matmul(
-                act_in, gu_w, a_sc, gu_ws, off, ids, usage_in, est_m, slot=True
+                act_in, gu_w, a_sc, gu_ws, off, ids, usage_in, est_m
             )
             c_packed, c_scales = fused_silu_quantized(
                 gate_up,
                 off,
                 qcfg,
                 DType.float8_e4m3fn,
-                max_padded_M=stride if fold else 0,
-                clamp_activation=True,
-                swiglu_alpha=_SWIGLU_ALPHA,
-                swiglu_limit=_SWIGLU_LIMIT,
+                max_padded_M=stride,
+                activation=oai,
             )
             down = _matmul(
                 c_packed,
@@ -476,7 +468,6 @@ def bench_chain(
                 ids,
                 usage_in,
                 est_m,
-                slot=fold,
             )
             return down, c_packed, c_scales
 
@@ -512,9 +503,11 @@ def bench_chain(
                     ids,
                     usage_in,
                     estimated_total_m=est_m,
+                    a_scales_max_padded_m=stride,
                     decode_grid_m_cap=decode_grid_m_cap,
                     decode_grid_m_rows=decode_grid_m_rows,
                     out_scales_max_padded_m=stride,
+                    activation=oai,
                 )
             )
             down = _matmul(
@@ -526,15 +519,13 @@ def bench_chain(
                 ids,
                 usage_in,
                 est_m,
-                slot=True,
             )
             return down, c_packed, c_scales
 
         return build
 
     builders = {
-        "plain+preshuffle": _build_plain(fold=False),
-        "plain+fold": _build_plain(fold=True),
+        "plain+fold": _build_plain(),
         "fused_mxfp8": _build_fused_mxfp8(),
     }
     variants = _CHAIN_VARIANTS

@@ -19,7 +19,7 @@ Mixture of experts
    :toctree: generated
    :template: autosummary/class.rst
 
-   ClampedSwiGLU
+   GatedActivation
    SigmoidTopKRouter
    StackedMoE
 

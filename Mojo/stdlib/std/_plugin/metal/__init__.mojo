@@ -11,4 +11,5 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .metal_plugin import MetalPlugin
+from .metal_plugin import MetalPlugin, MetalPluginHooks
+from .metal_targets import MetalTargets

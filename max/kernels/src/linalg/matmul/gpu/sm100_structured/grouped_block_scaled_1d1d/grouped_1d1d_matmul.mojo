@@ -42,7 +42,6 @@ from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import Coord, Idx, TileTensor, coord, row_major
 from layout.tma_async import create_tensor_tile
 from structured_kernels.tile_types import create_tma_tile, TmaOpType
-from structured_kernels.kernel_common import WarpRole1D1D
 
 from std.utils.static_tuple import StaticTuple
 
@@ -92,6 +91,7 @@ def grouped_matmul_block_scaled[
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
+    swiglu_inplace_token_per_lane: Bool = False,
     RowScalesT: RowScales = NullRowScales,
 ](
     c_device: TileTensor,
@@ -147,6 +147,10 @@ def grouped_matmul_block_scaled[
         swiglu_use_inplace: When `True`, the SwiGLU epilogue writes
             packed output in place via `store_packed_word` instead of
             a separate store path (defaults to `False`).
+        swiglu_inplace_token_per_lane: Enables experimental token-per-lane
+            staging for NVFP4 when `swiglu_use_inplace=True`. Each lane
+            quantizes and stores one token's scale-factor block. Ignored
+            for MXFP8. Defaults to `False`.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`.
 
@@ -327,6 +331,7 @@ def grouped_matmul_block_scaled[
         swiglu_enable_trace=swiglu_enable_trace,
         TraceBufT=TraceBufT,
         swiglu_use_inplace=swiglu_use_inplace,
+        swiglu_inplace_token_per_lane=swiglu_inplace_token_per_lane,
         c_device_engine=type_of(c_device).Engine,
         offsets_engine=type_of(a_offsets).Engine,
         a_scale_offsets_engine=type_of(a_scale_offsets).Engine,

@@ -18,7 +18,6 @@ formatted reporting. It includes support for colored output, timing statistics,
 and flexible test selection via CLI arguments.
 """
 
-from std.math import ceil, floor
 from std.os import sep
 from std.time import perf_counter_ns
 from std.utils._ansi import Color, Text
@@ -134,7 +133,7 @@ struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
         Args:
             writer: The writer to output the result code to.
         """
-        __match self:
+        match self:
             case .PASS:
                 writer.write(Text[Color.GREEN]("PASS"))
             case .FAIL:
@@ -150,7 +149,7 @@ struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
             writer: The writer to output to.
         """
         writer.write_string("TestResult.")
-        __match self:
+        match self:
             case .PASS:
                 writer.write_string("PASS")
             case .FAIL:
@@ -682,7 +681,7 @@ struct TestSuite(not Deinitable, Movable):
         var report = self.generate_report(skip_all=skip_all)
 
         if report.failures > 0:
-            raise Error(report^)
+            raise Error(report)
         if not quiet:
             print(report)
 

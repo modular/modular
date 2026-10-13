@@ -43,7 +43,6 @@ from std.time import global_perf_counter_ns
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
-    Idx,
     IntTuple,
     Layout,
     RuntimeTuple,
@@ -77,7 +76,7 @@ from structured_kernels.kernel_common import WarpRole1D1D
 from .config import OutputPipelineConfig
 from .tile_pipeline import OutputStage
 from .output_writer_trait import OutputWriter
-from .tile_scheduler_splitk import TileScheduler, WorkInfo
+from .tile_scheduler_splitk import SplitKTileCounters, TileScheduler, WorkInfo
 from .epilogue_components import (
     AccumBarrier,
     AccumTile,
@@ -855,6 +854,56 @@ struct TileWriter[
         self._copy_to_gmem(c_tiles, stage, (work_info.m, work_info.n), shape)
 
     @inline(.always)
+    def write_splitk_parallel[
+        pieces_per_batch: Int
+    ](
+        self,
+        stage: Self.Stage,
+        scheduler: TileScheduler,
+        workspace: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
+        counters: SplitKTileCounters,
+        c: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin],
+        c_row_stride: Int,
+        work_info: WorkInfo,
+        shape: Tuple[UInt32, UInt32],
+    ):
+        """Writes a split-K tile with the parallel reduction: this split's
+        partial goes to its own workspace slot, the TMEM stage is released,
+        then every split of the tile reduces its slice of all the slots and
+        stores it to C (see `TileScheduler.reduce_slice_to_output`).
+
+        Parameters:
+            pieces_per_batch: Pieces per thread whose slot loads are in
+                flight together.
+
+        Args:
+            stage: The accumulator stage holding this split's partial.
+            scheduler: The split-K tile scheduler.
+            workspace: Base of the fp32 workspace, one slot per split.
+            counters: The kernel's tile counters.
+            c: Base of the row-major output.
+            c_row_stride: Elements between consecutive rows of the output.
+            work_info: The split's work tile.
+            shape: The output's (rows, columns).
+        """
+        var epilogue_thread_idx = thread_idx.x
+        scheduler.store_partial_slot(
+            stage.tmem.address(), workspace, epilogue_thread_idx, work_info
+        )
+        AccumBarrier[Self.cta_group].arrive(stage.pipeline, stage.index)
+        scheduler.reduce_slice_to_output[
+            transpose_c=Self.transpose_c, pieces_per_batch=pieces_per_batch
+        ](
+            workspace,
+            counters,
+            c,
+            c_row_stride,
+            epilogue_thread_idx,
+            work_info,
+            shape,
+        )
+
+    @inline(.always)
     def write_absolute_with_bounds_check[
         c_tensor_layout: TensorLayout,
         c_tensor_engine: TensorEngine,
@@ -935,12 +984,11 @@ struct TileWriter[
         c_shape: Tuple[UInt32, UInt32],
     ):
         """TMEM → Registers → SMEM → GMEM pipeline (2D coords)."""
-        comptime if Self.elementwise_lambda_fn:
-            comptime elementwise_lambda = Self.elementwise_lambda_fn.value()
+        comptime if case .Some(elementwise_lambda) = Self.elementwise_lambda_fn:
 
             def forward[
                 dtype: DType, width: SIMDLength, *, alignment: Int
-            ](idx: IndexList[2], val: SIMD[dtype, width]):
+            ](idx: Coord, val: SIMD[dtype, width]):
                 elementwise_lambda[dtype, width, alignment=alignment](idx, val)
 
             self._copy_to_gmem_with_elementwise_epilogue_impl(
@@ -964,12 +1012,11 @@ struct TileWriter[
         If elementwise epilogue function is provided, it will be used to write the results to global memory.
         Otherwise, the results will be written to global memory using the standard TMA based pipeline.
         """
-        comptime if Self.elementwise_lambda_fn:
-            comptime elementwise_lambda = Self.elementwise_lambda_fn.value()
+        comptime if case .Some(elementwise_lambda) = Self.elementwise_lambda_fn:
 
             def forward[
                 dtype: DType, width: SIMDLength, *, alignment: Int
-            ](idx: IndexList[2], val: SIMD[dtype, width]):
+            ](idx: Coord, val: SIMD[dtype, width]):
                 elementwise_lambda[dtype, width, alignment=alignment](idx, val)
 
             self._copy_to_gmem_with_elementwise_epilogue_impl(
@@ -1261,17 +1308,12 @@ struct TileWriter[
         batch_idx: UInt32 = 0,
     ):
         """Run the unified pipeline with `elementwise_compute_lambda_fn`."""
-        comptime if Self.elementwise_compute_lambda_fn:
-            comptime compute_lambda_fn = (
-                Self.elementwise_compute_lambda_fn.value()
-            )
+        comptime if case .Some(compute_fn) = Self.elementwise_compute_lambda_fn:
 
             def forward[
                 dtype: DType, width: SIMDLength, *, alignment: Int
-            ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-                return compute_lambda_fn[dtype, width, alignment=alignment](
-                    idx, val
-                )
+            ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+                return compute_fn[dtype, width, alignment=alignment](idx, val)
 
             self._copy_to_gmem_impl[has_compute_fn=True](
                 c_tiles,
@@ -2696,7 +2738,7 @@ struct TileWriter[
             # lambda owns the GMEM write (post-residual contract — see
             # `nn/conv/gpu/amd/amd_4wave_conv_residual.mojo` for the matching
             # AMD path); otherwise stage to SMEM and TMA-store.
-            comptime if Self.elementwise_lambda_fn:
+            comptime if case .Some(epilogue) = Self.elementwise_lambda_fn:
                 # Cast fragments from epilogue_dtype to c_type. Chunked by
                 # 4 bytes to match the hardware cvt instruction width.
                 comptime cast_width = 4 // size_of[Scalar[Self.c_type]]()
@@ -2716,16 +2758,10 @@ struct TileWriter[
                         upper_simd[offset + _j] = dst_u[_j]
                         lower_simd[offset + _j] = dst_l[_j]
 
-                comptime elementwise_lambda = (
-                    Self.elementwise_lambda_fn.value()
-                )
-
                 def forward[
                     dtype: DType, width: SIMDLength, *, alignment: Int
-                ](idx: IndexList[2], val: SIMD[dtype, width]):
-                    elementwise_lambda[dtype, width, alignment=alignment](
-                        idx, val
-                    )
+                ](idx: Coord, val: SIMD[dtype, width]):
+                    epilogue[dtype, width, alignment=alignment](idx, val)
 
                 epilogue_applier.apply_elementwise_epilogue_to_both_fragments[
                     Self.c_type,

@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/KGENDialect/KGENParameters.h"
+#include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -104,6 +105,26 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
   }
   return nullptr;
 }
+
+template <typename BaseT>
+BaseT IndexDepthAdjuster::replaceCached(BaseT value) {
+  if (!value)
+    return value;
+  CompilerCaches *caches = CompilerCaches::get(value.getContext());
+  if (!caches)
+    return IndexParameterReplacer<IndexDepthAdjuster>::replace(value);
+  std::tuple<const void *, int64_t, unsigned> key(
+      value.getAsOpaquePointer(), adjustDepth, onlyAdjustIndexRef);
+  if (const void *hit = caches->depthAdjust.lookup(key))
+    return BaseT::getFromOpaquePointer(hit);
+  BaseT result = IndexParameterReplacer<IndexDepthAdjuster>::replace(value);
+  if (result)
+    caches->depthAdjust.insert(key, result.getAsOpaquePointer());
+  return result;
+}
+
+template Attribute IndexDepthAdjuster::replaceCached(Attribute);
+template Type IndexDepthAdjuster::replaceCached(Type);
 
 //===----------------------------------------------------------------------===//
 // ParameterCollector

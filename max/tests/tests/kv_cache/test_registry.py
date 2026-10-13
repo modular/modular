@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -23,19 +24,25 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParams,
+    KVConnectorType,
     MHAKVCacheParams,
     MultiKVCacheParams,
+    NullKVConnectorConfig,
     RecurrentStateParams,
     RecurrentStateRegion,
     estimated_memory_size,
 )
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,
+    PagedKVCacheManager,
     PagedKVCacheManagerInterface,
     kv_cache_memory_size,
     load_kv_manager,
 )
-from max.pipelines.kv_cache.registry import _use_jenga_kv_cache
+from max.pipelines.kv_cache.registry import (
+    _use_jenga_kv_cache,
+    jenga_supports_di,
+)
 
 
 def create_kv_params(
@@ -93,17 +100,89 @@ class TestUseJengaKvCache:
             model_name=model_name,
         )
 
-    @pytest.mark.parametrize(
-        "model_name", ["openai/gpt-oss-20b", "Qwen/Qwen3-8B"]
-    )
-    def test_disaggregated_inference_disables_jenga(
-        self, model_name: str, monkeypatch: pytest.MonkeyPatch
+    def test_disaggregated_inference_keeps_jenga_for_full_attention(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
-        assert not _use_jenga_kv_cache(
+        assert _use_jenga_kv_cache(
             create_kv_params(),
             is_di_enabled=True,
-            model_name=model_name,
+            model_name="meta-llama/Llama-3.1-8B-Instruct",
+        )
+
+    def test_disaggregated_inference_rejects_sliding_window(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
+        sliding = MHAKVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=2,
+            devices=[DeviceRef.GPU()],
+            page_size=128,
+            window_size=4096,
+        )
+        assert not jenga_supports_di(sliding)
+        with pytest.raises(ValueError, match="only full-attention"):
+            _use_jenga_kv_cache(
+                sliding,
+                is_di_enabled=True,
+                model_name="openai/gpt-oss-20b",
+            )
+
+    def test_legacy_env_rejects_disaggregated_inference(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_USE_LEGACY_KV_CACHE", "1")
+        with pytest.raises(
+            ValueError,
+            match=r"Disaggregated inference.*legacy KV manager.*Unset"
+            r" MODULAR_USE_LEGACY_KV_CACHE",
+        ):
+            _use_jenga_kv_cache(
+                create_kv_params(),
+                is_di_enabled=True,
+                model_name="meta-llama/Llama-3.1-8B-Instruct",
+            )
+
+    @pytest.mark.parametrize(
+        "connector",
+        [
+            KVConnectorType.tiered,
+            KVConnectorType.rust_tiered,
+            KVConnectorType.dkv,
+        ],
+    )
+    def test_legacy_env_rejects_kv_connector(
+        self, connector: KVConnectorType, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MODULAR_USE_LEGACY_KV_CACHE", "1")
+        params = replace(
+            create_kv_params(),
+            enable_prefix_caching=True,
+            kv_connector_config=NullKVConnectorConfig(type=connector),
+        )
+        with pytest.raises(
+            ValueError,
+            match=rf"'{connector.value}' KV connector.*legacy KV manager.*"
+            r"Unset MODULAR_USE_LEGACY_KV_CACHE",
+        ):
+            _use_jenga_kv_cache(params, is_di_enabled=False, model_name="FAKE")
+
+    def test_jenga_accepts_kv_connector(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
+        params = replace(
+            create_kv_params(),
+            enable_prefix_caching=True,
+            kv_connector_config=NullKVConnectorConfig(
+                type=KVConnectorType.rust_tiered
+            ),
+        )
+        assert _use_jenga_kv_cache(
+            params, is_di_enabled=False, model_name="FAKE"
         )
 
     def test_a_state_selects_jenga_whatever_else_says(
@@ -129,8 +208,12 @@ class TestUseJengaKvCache:
             }
         )
         assert _use_jenga_kv_cache(
-            with_state, is_di_enabled=True, model_name="FAKE"
+            with_state, is_di_enabled=False, model_name="FAKE"
         )
+        with pytest.raises(ValueError, match="only full-attention"):
+            _use_jenga_kv_cache(
+                with_state, is_di_enabled=True, model_name="FAKE"
+            )
 
 
 @pytest.mark.parametrize(
@@ -447,3 +530,28 @@ class TestKvCacheMemorySize:
         )
 
         assert self._size(params, "FAKE") >= exact
+
+
+@pytest.mark.parametrize(
+    "connector",
+    [
+        KVConnectorType.tiered,
+        KVConnectorType.rust_tiered,
+        KVConnectorType.dkv,
+    ],
+)
+def test_legacy_manager_rejects_kv_connector(
+    connector: KVConnectorType,
+) -> None:
+    params = replace(
+        create_kv_params(),
+        enable_prefix_caching=True,
+        kv_connector_config=NullKVConnectorConfig(type=connector),
+    )
+    with pytest.raises(ValueError, match="incompatible with the legacy"):
+        PagedKVCacheManager(
+            params=params,
+            session=MagicMock(),
+            total_num_pages=8,
+            max_batch_size=1,
+        )

@@ -19,6 +19,7 @@
 #ifndef KGEN_MOJOPARSER_SHAREDSTATE_H
 #define KGEN_MOJOPARSER_SHAREDSTATE_H
 
+#include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/LITDialect/OriginTrackable.h"
 #include "Mojo/MojoParser/IRValues.h"
@@ -26,6 +27,7 @@
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "Mojo/Support/TriBool.h"
 
+#include "Support/BumpAllocator.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -161,6 +163,10 @@ public:
   /// This is used to efficiently walk MLIR types to find embedded origins.
   CachedOriginFinder cachedOriginFinder;
 
+  /// Caches for the parameter helpers, shared with every other state on this
+  /// context.
+  std::shared_ptr<KGEN::CompilerCaches> compilerCaches;
+
   /// Find all ParamDeclRefAttr's in side the type at the current scope.
   void collectParamRefsInType(Type type,
                               SmallVectorImpl<ParamDeclRefAttr> &uses);
@@ -211,34 +217,13 @@ public:
   FileLineColLoc createLocation(StringRef filename, unsigned line,
                                 unsigned column);
 
-  /// Allocate an expression node into the persistent bump pointer allocator.
-  template <typename T, typename... Args>
-  T *allocPersistent(Args &&...args) {
-    void *node = persistentAllocator.Allocate(sizeof(T), llvm::Align::Of<T>());
-    return new (node) T(std::forward<Args>(args)...);
-  }
+  /// Stores memory that lives as long as the global parser.
+  BumpAllocator persistentAllocator;
 
-  /// memcpy the specified ArrayRef into the persistent allocator and return a
-  /// pointer to the new data.  This cannot be used with things that have
-  /// non-trivial copyctors/dtors because the expression allocator does run
-  /// destructors.
-  template <typename T>
-  ArrayRef<T> getPersistentCopy(ArrayRef<T> elements) {
-    if (elements.empty())
-      return elements;
-
-    size_t dataSize = sizeof(T) * elements.size();
-    T *result = static_cast<T *>(
-        persistentAllocator.Allocate(dataSize, llvm::Align::Of<T>()));
-    memcpy((void *)result, elements.data(), dataSize);
-    return ArrayRef<T>(result, elements.size());
-  }
-
-  /// memcpy the specified string data into the persistent allocator.
-  StringRef getPersistentCopy(StringRef str) {
-    auto result = getPersistentCopy(ArrayRef<char>(str.data(), str.size()));
-    return StringRef(result.data(), result.size());
-  }
+  /// Stores expression trees and other statement-scoped parser data. Do not
+  /// allocate anything into this that would outlive the current statement being
+  /// parsed.
+  BumpAllocator stmtAllocator;
 
   /// Lookup an operation inside the symbol table of the container decl.
   Operation *lookupSymbolIn(ASTDecl *container, StringAttr name);
@@ -256,10 +241,6 @@ public:
   /// torn down.  This can be used to allocate BlockArgument's that may or may
   /// not get used in the future.
   Block &getArgumentOwningBlock();
-
-  /// Delete this decl and the operation associated with it. Handles all the
-  /// related bookkeeping.
-  void deleteDecl(ASTDecl &decl);
 
   //===--------------------------------------------------------------------===//
   // Name Lookup
@@ -546,6 +527,11 @@ public:
                                         llvm::SMLoc rsquareLoc,
                                         ArrayRef<Operand> operands);
 
+  /// Notify the parser listener, if present, that a `match` statement leaves
+  /// values uncovered, and of the arms that would cover them.
+  void notifyListenerOnMatchMissingCases(llvm::SMRange matchRange,
+                                         SMLoc insertLoc, StringRef arms);
+
   //===--------------------------------------------------------------------===//
   // Builtin Module
 
@@ -706,9 +692,6 @@ private:
   /// Claim `key` for `thunk`, returning false when a thunk is already
   /// registered under it and this one is a redundant copy.
   bool tryRegisterConversionThunk(Attribute key, FnOp thunk);
-
-  /// This is used for memory that lives as long as the global parser does.
-  llvm::BumpPtrAllocator persistentAllocator;
 
   /// A flag indicating if prebuilt packages should not be considered during
   /// parsing.

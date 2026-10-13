@@ -34,7 +34,8 @@ from the device: a read-back would sync every forward and rule out device
 graph capture.
 
 Segment ids are a prefix sum over segment ends rather than a
-``repeat_interleave``, which has no GPU kernel.
+``repeat_interleave``, whose GPU kernel is scalar-repeats only (a
+tensor-repeats kernel is still outstanding, AGENT-491).
 """
 
 from __future__ import annotations

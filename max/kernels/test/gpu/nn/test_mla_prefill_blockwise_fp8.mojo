@@ -13,12 +13,7 @@
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from std.random import randn
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import TileTensorMHAOperand

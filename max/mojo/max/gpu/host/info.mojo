@@ -42,7 +42,6 @@ from std._gpu.host._builtin_targets import (
     AMDCDNA3Family,
     AMDCDNA4Family,
     AMDRDNAFamily,
-    AppleMetalFamily,
     B100,
     B200,
     B300,
@@ -58,16 +57,6 @@ from std._gpu.host._builtin_targets import (
     MI300X,
     MI355X,
     MI455X,
-    MetalM1,
-    MetalM1Metal4,
-    MetalM2,
-    MetalM2Metal4,
-    MetalM3,
-    MetalM3Metal4,
-    MetalM4,
-    MetalM4Metal4,
-    MetalM5,
-    MetalM5Metal4,
     NvidiaAdaFamily,
     NvidiaAmpereDatacenterFamily,
     NvidiaAmpereEmbeddedFamily,
@@ -98,6 +87,22 @@ from std._gpu.host._builtin_targets import (
     TeslaP100,
 )
 
+
+@__doc_inline
+from std._plugin.metal.metal_targets import (
+    AppleMetalFamily,
+    MetalM1,
+    MetalM1Metal4,
+    MetalM2,
+    MetalM2Metal4,
+    MetalM3,
+    MetalM3Metal4,
+    MetalM4,
+    MetalM4Metal4,
+    MetalM5,
+    MetalM5Metal4,
+)
+
 from std._gpu.host.info import (
     _empty_target,
     _encode_device_types_with_host_layout,
@@ -106,12 +111,14 @@ from std._gpu.host.info import (
 from std._gpu.host._builtin_targets import (
     _a100_target,
     _h100_target,
-    _metal_m1_target,
-    _metal_m2_target,
     _mi300x_target,
     _mi355x_target,
     _is_sm10x_gpu,
     _is_sm12x_gpu,
+)
+from std._plugin.metal.metal_targets import (
+    _metal_m1_target,
+    _metal_m2_target,
 )
 
 

@@ -38,6 +38,7 @@ from std.utils.static_tuple import StaticTuple
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule, TileScheduler
 from .matmul_kernels import find_K_alignment_upto_16B, HopperMatmulSM90Kernel
 from .tile_loader import CPAsyncBarrierHandler
+from ....utils import ElementwiseComputeFn, ElementwiseEpilogueFn
 
 
 __extension HopperMatmulSM90Kernel:
@@ -61,6 +62,10 @@ __extension HopperMatmulSM90Kernel:
         grid_shape: IndexList[2],
         schedule: MatmulSchedule,
         c_tensor_layout: TensorLayout,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        has_epilogue_fn: Bool,
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool,
     ](
         a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
         b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
@@ -69,6 +74,8 @@ __extension HopperMatmulSM90Kernel:
             c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
         problem_shape: IndexList[3],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         comptime K = b_layout.static_shape[1]
         comptime num_k_iters = ceildiv(K, Self.BK)
@@ -158,7 +165,10 @@ __extension HopperMatmulSM90Kernel:
                     final_c_reg_tile if a_type == .float8_e4m3fn else c_reg_tile
                 )
 
-                Self.consumer_output(
+                Self.consumer_output[
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](
                     c_tma_op,
                     c,
                     smem.c_tile(),
@@ -168,6 +178,8 @@ __extension HopperMatmulSM90Kernel:
                     thread_idx.x - WARPGROUP_SIZE,
                     block_y,
                     block_x,
+                    epilogue_fn,
+                    compute_fn,
                 )
                 work_info = scheduler.fetch_next_work()
 
@@ -184,11 +196,17 @@ __extension HopperMatmulSM90Kernel:
     def run_unaligned[
         c_tile_shape: Coord,
         c_desc_shape: Coord,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        has_epilogue_fn: Bool,
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool,
     ](
         c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
         a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=Self.a_engine],
         b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=Self.b_engine],
         c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=Self.c_engine],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
         """
@@ -271,7 +289,9 @@ __extension HopperMatmulSM90Kernel:
                 final_c_reg_tile if a_type == .float8_e4m3fn else c_reg_tile
             )
 
-            Self.consumer_output(
+            Self.consumer_output[
+                has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+            ](
                 c_tma_op,
                 c,
                 smem.c_tile(),
@@ -281,6 +301,8 @@ __extension HopperMatmulSM90Kernel:
                 thread_idx.x - WARPGROUP_SIZE,
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
+                epilogue_fn,
+                compute_fn,
             )
 
         Self.finalize_kernel()

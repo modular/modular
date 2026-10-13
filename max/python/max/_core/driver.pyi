@@ -123,6 +123,11 @@ class Device:
     def max_single_alloc_size(self) -> int:
         """Largest single contiguous allocation, in bytes."""
 
+    def _allocation_range(self, address: int) -> tuple[int, int]:
+        """
+        Returns ``(base, size)`` of the driver allocation that contains ``address``.
+        """
+
     @property
     def label(self) -> str:
         """
@@ -474,6 +479,9 @@ class DeviceEvent:
     An event can be used to wait for the GPU execution to reach a certain
     point on the given queue.
 
+    For example, create an event, record it on the default queue, and
+    wait for the queue to reach it:
+
     .. code-block:: python
 
         from max import driver
@@ -485,31 +493,19 @@ class DeviceEvent:
         device.default_queue.record_event(event)
         # Wait for execution on the default queue to reach the event
         event.synchronize()
+
+    Args:
+        device (Device): The device on which to create the event.
+        enable_timing (bool): If True, enable GPU timing on this event.
+            Events created with ``enable_timing=True`` can be used with
+            :meth:`elapsed_time` to measure GPU execution time.
+            Defaults to False.
+
+    Raises:
+        ValueError: If event creation failed.
     """
 
-    def __init__(self, device: Device, enable_timing: bool = False) -> None:
-        """
-        Creates an event for synchronization on the specified device.
-
-        Args:
-            device (Device): The device on which to create the event.
-            enable_timing (bool): If True, enable GPU timing on this event.
-                Events created with ``enable_timing=True`` can be used with
-                :meth:`elapsed_time` to measure GPU execution time.
-                Defaults to False.
-
-        Raises:
-            ValueError: If event creation failed.
-
-        .. code-block:: python
-
-            from max import driver
-
-            device = driver.Accelerator()
-            event = driver.DeviceEvent(device)
-            timed_event = driver.DeviceEvent(device, enable_timing=True)
-        """
-
+    def __init__(self, device: Device, enable_timing: bool = False) -> None: ...
     def synchronize(self) -> None:
         """
         Ensures all operations on this queue complete before returning.
@@ -537,15 +533,7 @@ class DeviceEvent:
         and recorded on a queue before calling this method. The end
         event must be synchronized before calling this method.
 
-        Args:
-            end_event (DeviceEvent): The ending event.
-
-        Returns:
-            float: Elapsed time in milliseconds.
-
-        Raises:
-            RuntimeError: If either event was not created with timing
-                enabled, or if the events have not been recorded.
+        For example, time the GPU work enqueued between two recorded events:
 
         .. code-block:: python
 
@@ -562,6 +550,16 @@ class DeviceEvent:
             end.synchronize()
 
             elapsed_ms = start.elapsed_time(end)
+
+        Args:
+            end_event (DeviceEvent): The ending event.
+
+        Returns:
+            float: Elapsed time in milliseconds.
+
+        Raises:
+            RuntimeError: If either event was not created with timing
+                enabled, or if the events have not been recorded.
         """
 
     def __eq__(self, arg: object, /) -> bool: ...
@@ -1543,8 +1541,13 @@ class _ChunkedStagingRegion:
     fails. Callers work from :obj:`address` and keep each transfer inside
     one ``row_bytes`` row, which no chunk boundary splits.
 
+    With ``driver_alloc``, each chunk is instead its own pinned host
+    allocation from the GPU driver, which the kernel cannot migrate during
+    memory compaction. The chunks are then not contiguous, so callers work
+    from :obj:`chunk_addresses`.
+
     Releases on garbage collection: drains the device, unregisters every
-    chunk, then unmaps.
+    chunk, then unmaps (or frees every driver-allocated chunk).
 
     Internal to ``max``; no compatibility guarantee.
 
@@ -1552,11 +1555,14 @@ class _ChunkedStagingRegion:
         byte_size (int): Total bytes to map. Must be a positive multiple of ``row_bytes``.
         row_bytes (int): Row width no chunk boundary may fall inside.
         device (Device): GPU/Accelerator the range is made accessible to. Must not be CPU.
-        threads (int, optional): Parallel page-touch workers. Defaults to 16.
+        threads (int, optional): Parallel page-touch workers. Defaults to 16. Unused with ``driver_alloc``.
         chunk_bytes (int, optional): Registration granularity, rounded up to whole rows and pages. Defaults to 512 MiB.
+        driver_alloc (bool, optional): Allocate each chunk as pinned host memory from the GPU driver instead of registering one host mapping. Defaults to False.
+        mlock_pages (bool, optional): ``mlock`` the registered mapping. Not allowed with ``driver_alloc``. Defaults to False.
 
     Raises:
         ValueError: If ``device`` is a CPU device, any size is zero, or ``byte_size`` is not a multiple of ``row_bytes``.
+        RuntimeError: If registering or allocating a chunk fails.
     """
 
     def __init__(
@@ -1566,11 +1572,25 @@ class _ChunkedStagingRegion:
         device: Device,
         threads: int = 16,
         chunk_bytes: int = 536870912,
+        driver_alloc: bool = False,
+        mlock_pages: bool = False,
     ) -> None: ...
     @property
     def address(self) -> int:
-        """Base host address, valid until this is released."""
+        """
+        Base host address, valid until this is released. Raises for a ``driver_alloc`` region, which has no single base.
+        """
 
+    @property
+    def chunk_addresses(self) -> list[int]:
+        """
+        Host address of each chunk, in order; chunk ``i`` holds region bytes ``[i * chunk_bytes, (i + 1) * chunk_bytes)``.
+        """
+
+    @property
+    def driver_alloc(self) -> bool: ...
+    @property
+    def mlocked(self) -> bool: ...
     @property
     def byte_size(self) -> int: ...
     @property

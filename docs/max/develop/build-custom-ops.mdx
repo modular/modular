@@ -148,7 +148,7 @@ Now let's look at the body of the `execute()` function, which is highlighted in
 the following code. The op's core computation that adds `1` to each element in
 the tensor happens in the `elementwise_add_one()` closure function.
 
-```mojo title="kernels/add_one.mojo" {11-18}
+```mojo title="kernels/add_one.mojo" {11-17}
 @extensibility.register("add_one")
 struct AddOne:
     @staticmethod
@@ -159,14 +159,13 @@ struct AddOne:
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
         def elementwise_add_one[
             width: Int
-        ](idx: Coord) -> SIMD[x.dtype, width]:
+        ](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[elementwise_add_one, target=target](output, ctx)
+        foreach[target=target](elementwise_add_one, output, ctx)
 ```
 
 We call `elementwise_add_one()` using

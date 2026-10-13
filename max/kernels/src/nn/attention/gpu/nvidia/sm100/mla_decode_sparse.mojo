@@ -79,11 +79,11 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     expect_bytes_pred,
     SharedMemPointer,
     MBarType,
-    ProducerPipeline,
     ConsumerPipeline,
 )
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+    SparseRowLayout,
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
@@ -127,6 +127,7 @@ struct MLA_SM100_Decode_Sparse[
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     has_extra_kv: Bool = False,
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
+    sparse_row: SparseRowLayout = SparseRowLayout(),
     Engine: TensorEngine = DefaultEngine[element_width=1],
 ](TrivialRegisterPassable):
     """Sparse MLA decoding kernel for SM100 with FP8 KV cache and gather4 TMA.
@@ -162,6 +163,8 @@ struct MLA_SM100_Decode_Sparse[
         TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
             `extra_topk_lengths`; non-null reads the sparse top-k length per
             batch instead of using the stride (defaults to `NullPointer`).
+        sparse_row: How the sparse producer packs each row; the mask bounds
+            each row by its valid length (defaults to plain top-k).
         Engine: Engine policy of the `scalar_args` tile operand
             (defaults to `DefaultEngine[element_width=1]`).
     """
@@ -438,6 +441,9 @@ struct MLA_SM100_Decode_Sparse[
             MutAnyOrigin,
             Engine=Self.Engine,
         ],
+        # Positions between the token each sparse row was computed for and
+        # the token that reads it.
+        selection_lag_dev: Int32,
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
         # (MLA_SM100_Decode_QKV_FP8). Reject it here at comptime.
@@ -463,6 +469,7 @@ struct MLA_SM100_Decode_Sparse[
         var indices_stride = Int(indices_stride_dev)
         var extra_indices_stride = Int(extra_indices_stride_dev)
         var batch_size = Int(scalar_args.raw_load(0))
+        var selection_lag = Int(selection_lag_dev)
         var q_max_seq_len = Int(scalar_args.raw_load(1))
         var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask
@@ -778,7 +785,14 @@ struct MLA_SM100_Decode_Sparse[
                         DType.float32
                     ]() * Float32(log2e)
 
-            Self.Common_MLA_Op.Softmax[has_attn_sink=Self.has_attn_sink,](
+            comptime if Self.MaskType.get_type_name() == "CausalMask":
+                offset_position.assert_row_packed[Self.sparse_row](
+                    d_indices, indices_stride, selection_lag
+                )
+            Self.Common_MLA_Op.Softmax[
+                has_attn_sink=Self.has_attn_sink,
+                sparse_row=Self.sparse_row,
+            ](
                 attn_tmem_addr[cluster_size=1](),
                 s_bars,
                 p_bars,
@@ -796,6 +810,7 @@ struct MLA_SM100_Decode_Sparse[
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
                 attn_sink_log2=attn_sink_log2,
+                selection_lag=selection_lag,
             )
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
             warpgroup_reg_dealloc[num_reg_correction]()

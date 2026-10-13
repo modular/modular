@@ -20,7 +20,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc, unsafe_memset_zero
+from std.memory import unsafe_memset_zero
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -29,7 +29,6 @@ from std.random import rand
 from internal_utils._measure import relative_difference
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,

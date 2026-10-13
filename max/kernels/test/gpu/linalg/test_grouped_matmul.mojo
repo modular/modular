@@ -14,12 +14,7 @@
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200, H100, _is_sm10x_gpu
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from std.testing import assert_almost_equal
@@ -205,11 +200,14 @@ def test[
         @inline(.always)
         def perm_dim_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: IndexList[2], val: SIMD[dtype, width]) {
+        ](idx: Coord, val: SIMD[dtype, width]) {
             var c_out_ptr, var total_num_tokens
         }:
-            var i = idx[0]
-            var j = idx[1]
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var i = Int(idx[0].value())
+            var j = Int(idx[1].value())
             var new_j, new_k = divmod(j, N)
             comptime assert N % width == 0, "N must be divisible by width"
             # The current index is [i, new_j, new_k] in the M x 3 x N row major
@@ -240,15 +238,18 @@ def test[
         @inline(.always)
         def epilogue_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: IndexList[2], val: SIMD[dtype, width]) {var c_out_ptr}:
+        ](idx: Coord, val: SIMD[dtype, width]) {var c_out_ptr}:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             var new_val = val
+            var row = Int(idx[0].value())
+            var col = Int(idx[1].value())
 
             comptime for i in range(width):
-                new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
+                new_val[i] = test_epilogue(row, col + i, val[i])
 
-            var ptr = (
-                c_out_ptr.bitcast[Scalar[out_type]]() + idx[0] * N + idx[1]
-            )
+            var ptr = c_out_ptr.bitcast[Scalar[out_type]]() + row * N + col
             ptr.store[width=width, alignment=alignment](
                 new_val.cast[out_type]()
             )
@@ -269,11 +270,16 @@ def test[
         @inline(.always)
         def compute_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             var new_val = val
+            var row = Int(idx[0].value())
+            var col = Int(idx[1].value())
 
             comptime for i in range(width):
-                new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
+                new_val[i] = test_epilogue(row, col + i, val[i])
             return new_val
 
         grouped_matmul[has_compute_fn=True](

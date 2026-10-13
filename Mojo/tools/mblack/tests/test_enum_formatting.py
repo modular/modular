@@ -26,7 +26,7 @@ __enum Token(Copyable, Writable):
     case span(Int, Int)
 
     def is_eof(self) -> Bool:
-        __match self:
+        match self:
             case .eof:
                 return True
             case _:
@@ -203,7 +203,7 @@ __enum Token:
 
 
 def test_case_as_name_and_in_match_is_unchanged():
-    """`case` as a name and in `__match` is unaffected by enum cases."""
+    """`case` as a name and in `match` is unaffected by enum cases."""
     source = """\
 __enum E:
     case a
@@ -212,7 +212,7 @@ __enum E:
         var case = 1
         case += 1
         case.bit_count()
-        __match self:
+        match self:
             case .a:
                 return case
 """

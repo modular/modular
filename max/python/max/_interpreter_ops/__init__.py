@@ -53,8 +53,8 @@ from . import (
 # Import handlers after the op modules to avoid circular import issues:
 # handlers.py imports the op modules above (via the package).
 # Re-export the warm-adoption query (from gc_compile) so a consumer can assert
-# the ops were force-loaded from the manifest rather than cold-compiled.
-from .gc_compile import adopted_from_manifest
+# the ops were loaded from the warm store rather than cold-compiled.
+from .gc_compile import adopted_from_store
 from .handlers import _MO_OP_HANDLERS, lookup_handler, register_op_handler
 
 # Every warm path iterates this; each ``*_gc.py`` self-registers at import
@@ -67,7 +67,7 @@ GC_FAMILIES: tuple[gc_compile.GCOpFamily, ...] = (
 def compile_all_families() -> None:
     """Compile every registered GC family's full sweep into the cache.
 
-    Stamps once, after every family; a manifest force-load does not stamp.
+    Stamps once, after every family; loading the warm store does not stamp.
     """
     swept = [family.compile_sweep() for family in GC_FAMILIES]
     if swept and all(swept):
@@ -102,7 +102,7 @@ _precompile_gc_models()
 __all__ = [
     "GC_FAMILIES",
     "_MO_OP_HANDLERS",
-    "adopted_from_manifest",
+    "adopted_from_store",
     "compile_all_families",
     "lookup_handler",
     "register_op_handler",

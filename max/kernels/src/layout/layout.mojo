@@ -1407,8 +1407,8 @@ def tile_to_shape(
         tiler_shape.append(a // b)
 
     var new_order: IntTuple
-    if order:
-        new_order = order.value()
+    if case .Some(order) = order:
+        new_order = order
     else:
         new_order = prefix_product(tiler_shape)  # default to column major
     var tiler = make_ordered_layout(tiler_shape, new_order)

@@ -1,7 +1,6 @@
 ---
 title: Mojo expression reference
 sidebar_label: Expressions
-sidebar_position: 3
 description: >
   Complete reference for Mojo expressions. Covers
   parenthesized expressions, tuples, collection literal expressions,
@@ -333,10 +332,10 @@ result in a single step:
 
 ```mojo
 def main() raises:
-    var items = List(range(20))
-    var n: Int
-    if (n := len(items)) > 10:
-        print(n)
+    var samples = List(range(20))
+    var sample_count: Int
+    if (sample_count := len(samples)) > 10:
+        print(sample_count)
 
     var name: String                  # declare before use
     while name := input("Prompt: "):  # input is raising
@@ -369,17 +368,19 @@ The walrus operator has the lowest precedence of any expression operator.
 Use parentheses when needed to make your intent clear:
 
 ```mojo
+var readings: List[Int] = [12, 80]
 var item: Int
-if item := list[idx] < 50:        # binds comparison result
-    print(t"{item} is under 50")  # Compilation error, expecting Bool
+if item := readings[0] < 50:      # Error: stores a Bool into an Int
+    print(t"{item} is under 50")
 ```
 
 versus:
 
 ```mojo
+var readings: List[Int] = [12, 80]
 var item: Int
-if (item := list[idx]) < 50:      # binds list item
-    print(t"{item} is under 50")  # "(actual number) is under 50"
+if (item := readings[0]) < 50:    # stores the reading
+    print(t"{item} is under 50")  # 12 is under 50
 ```
 
 ## Compile-time expressions

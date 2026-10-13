@@ -234,8 +234,7 @@ def run_case[
         var idx = Int(indices[k])
         coords[norm_axis] = idx + dim if idx < 0 else idx
         var o = _ravel(coords, in_shape)
-        comptime if reduce_fn:
-            comptime reduce = reduce_fn.value()
+        comptime if case .Some(reduce) = reduce_fn:
             expected[o] = reduce[dt, 1](expected[o], updates[k])
         else:
             expected[o] = updates[k]

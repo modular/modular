@@ -25,7 +25,6 @@ from max.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
-    thread_idx,
     warp_id,
 )
 from max.gpu.host import DeviceContext
@@ -39,7 +38,6 @@ from std.utils.numerics import get_accum_type
 from layout import TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major, col_major
-from layout.tensor_core import num_matrix_reg
 
 from std.bit import log2_floor
 
@@ -56,15 +54,7 @@ from pipeline.config import ScheduleConfig, SchedulingStrategy
 from pipeline.pipeline_dsl import ScheduleEntry
 from pipeline.program_builder import derive_safe_max_globals
 from .amd_target import mi355x_target
-from .amd_ping_pong_schedule import (
-    build_schedule,
-    PingPongOps,
-    LOAD_A,
-    LOAD_B,
-    MMA_LOAD_A,
-    MMA_LOAD_B,
-    MMA,
-)
+from .amd_ping_pong_schedule import build_schedule, PingPongOps
 
 from .matmul_mma import QuadrantMmaOp
 from structured_kernels.amd_tile_io import RegTileWriter, TileLoaderLDS
@@ -631,8 +621,7 @@ struct AMDPingPongMatmul[
         )
 
         @inline(.always)
-        @__parameter
-        def load_a[stage: Int, which: Int](k: Int):
+        def load_a[stage: Int, which: Int](k: Int) {imm}:
             a_loader.load_tile(
                 a_load_tiles[stage][which],
                 m_offset=which * half_BM,
@@ -640,8 +629,7 @@ struct AMDPingPongMatmul[
             )
 
         @inline(.always)
-        @__parameter
-        def load_b[stage: Int, which: Int](k: Int):
+        def load_b[stage: Int, which: Int](k: Int) {imm}:
             b_loader.load_tile(
                 b_load_tiles[stage][which],
                 m_offset=which * half_BN,
@@ -683,35 +671,36 @@ struct AMDPingPongMatmul[
             Self.LGKM_PER_LOAD_B,
         ](sched_config, target)
 
-        @__parameter
         @inline(.always)
-        def _bind[entry: ScheduleEntry](k_base: Int):
+        def _bind[entry: ScheduleEntry](k_base: Int) {imm}:
             comptime k_off = entry.op.k_offset.signed_bk_multiple()
             var k = k_base + k_off * BK
-            comptime if entry.op.tag == LOAD_A:
-                load_a[entry.op.stage, entry.op.subtile](k)
-            elif entry.op.tag == LOAD_B:
-                load_b[entry.op.stage, entry.op.subtile](k)
-            elif entry.op.tag == MMA_LOAD_A:
-                mma_op.load_a_quadrant[entry.op.subtile](
-                    a_mma_tiles[entry.op.stage][entry.op.subtile]
-                )
-            elif entry.op.tag == MMA_LOAD_B:
-                mma_op.load_b_quadrant[entry.op.subtile](
-                    b_mma_tiles[entry.op.stage][entry.op.subtile]
-                )
-            elif entry.op.tag == MMA:
-                mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
-            elif entry.op.tag == PingPongOps.BARRIER.value:
-                s_barrier()
-            elif entry.op.tag == PingPongOps.WAIT_VM.value:
-                s_waitcnt[vmcnt=UInt32(entry.op.wait_value)]()
-            elif entry.op.tag == PingPongOps.WAIT_LGKM.value:
-                s_waitcnt[lgkmcnt=UInt32(entry.op.wait_value)]()
-            elif entry.op.tag == PingPongOps.SET_PRIO.value:
-                s_setprio[Int16(entry.op.wait_value)]()
-            elif entry.op.tag == PingPongOps.SCHEDULE_BARRIER.value:
-                schedule_barrier()
+            comptime op = PingPongOps(entry.op.tag)
+            comptime match op:
+                case .LOAD_A:
+                    load_a[entry.op.stage, entry.op.subtile](k)
+                case .LOAD_B:
+                    load_b[entry.op.stage, entry.op.subtile](k)
+                case .MMA_LOAD_A:
+                    mma_op.load_a_quadrant[entry.op.subtile](
+                        a_mma_tiles[entry.op.stage][entry.op.subtile]
+                    )
+                case .MMA_LOAD_B:
+                    mma_op.load_b_quadrant[entry.op.subtile](
+                        b_mma_tiles[entry.op.stage][entry.op.subtile]
+                    )
+                case .MMA:
+                    mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
+                case .BARRIER:
+                    s_barrier()
+                case .WAIT_VM:
+                    s_waitcnt[vmcnt=UInt32(entry.op.wait_value)]()
+                case .WAIT_LGKM:
+                    s_waitcnt[lgkmcnt=UInt32(entry.op.wait_value)]()
+                case .SET_PRIO:
+                    s_setprio[Int16(entry.op.wait_value)]()
+                case .SCHEDULE_BARRIER:
+                    schedule_barrier()
 
         # Prologue.
         comptime for i in range(schedule.warp_stagger_index):
@@ -786,7 +775,7 @@ struct AMDPingPongMatmul[
                                                 compute_fn[
                                                     Self.c_type, 1, alignment=1
                                                 ](
-                                                    IndexList[2](m, col),
+                                                    (m, col),
                                                     SIMD[Self.c_type, 1](v[e]),
                                                 ),
                                             )
@@ -796,7 +785,7 @@ struct AMDPingPongMatmul[
                                                 alignment=scalar_align,
                                             ](
                                                 epilogue_fn,
-                                                IndexList[2](m, col),
+                                                (m, col),
                                                 SIMD[Self.c_type, 1](v[e]),
                                             )
                             else:
@@ -813,7 +802,7 @@ struct AMDPingPongMatmul[
                                                 Self.c_type,
                                                 c_frag_size,
                                                 alignment=1,
-                                            ](IndexList[2](m, n), v),
+                                            ]((m, n), v),
                                         )
                                     else:
                                         apply_elementwise_epilogue[
@@ -821,7 +810,7 @@ struct AMDPingPongMatmul[
                                             alignment=align_of[
                                                 SIMD[Self.c_type, c_frag_size]
                                             ](),
-                                        ](epilogue_fn, IndexList[2](m, n), v)
+                                        ](epilogue_fn, (m, n), v)
             else:
                 var c_block = c.tile[BM, BN](block_idx.y, block_idx.x)
                 var c_warp = c_block.tile[WM, WN](warp_id_m, warp_id_n)
@@ -877,8 +866,7 @@ def amd_ping_pong_matmul[
     var M = Int(c.dim[0]())
 
     @inline(.always)
-    @__parameter
-    def run_kernel[config: KernelConfig]() raises:
+    def run_kernel[config: KernelConfig]() raises {imm}:
         comptime kernel = AMDPingPongMatmul[
             a_type,
             b_type,

@@ -44,12 +44,7 @@ from max.gpu.host import DeviceContext
 from std.memory import alloc
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.gpu.mla import flare_mla_prefill
 from nn.attention.mha_mask import CausalMask

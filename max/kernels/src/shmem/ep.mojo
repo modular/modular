@@ -20,8 +20,7 @@ from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import is_gpu
 from std.math import ceildiv
-from layout import DefaultEngine, TensorLayout, TileTensor, Idx
-from layout.tile_tensor import row_major
+from layout import DefaultEngine, TensorLayout, TileTensor
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import simd_width_of, size_of
 from max.gpu import WARP_SIZE
@@ -37,7 +36,7 @@ from shmem.ep_comm import (
     combine_async_kernel,
     combine_wait_kernel,
     combine_kernel,
-    elementwise_epilogue_type,
+    ep_combine_store_type,
     router_weights_wrapper_type,
     input_scales_wrapper_type,
 )
@@ -842,7 +841,6 @@ def ep_combine_async_kernel_api[
 @inline(.always)
 def ep_combine_wait_kernel_api[
     combine_dtype: DType,
-    //,
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
@@ -850,15 +848,14 @@ def ep_combine_wait_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
+    store_fn: ep_combine_store_type,
     router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
-    epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    output_tokens: TileTensor[combine_dtype, Engine=DefaultEngine[], ...],
+    num_tokens: Int,
     atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
     recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     context: DeviceContext,
-    num_input_tokens: Int = -1,
 ) raises:
     """Execute the Expert Parallelism combine completion kernel.
 
@@ -876,28 +873,22 @@ def ep_combine_wait_kernel_api[
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
+        store_fn: Stores the output tokens. Called with `(token_idx, elem)`
+            when `router_weights_wrapper` is set, and with
+            `(token_idx, topk_idx, elem)` otherwise.
         router_weights_wrapper: Wrapper for the optional router weights.
-        epilogue_fn: Optional elementwise epilogue function applied after
-            computing combined output.
 
     Arguments:
-        output_tokens: Final output tensor with expert results.
+        num_tokens: Number of output tokens.
         atomic_counters: EP kernel synchronization counters.
             Used to coordinate between different thread blocks.
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
-        num_input_tokens: Per-rank input token count for this layer. When
-            >= 0 enables the decode-fast-path grid sizing. Default `-1`
-            keeps the full-`sm_count` grid for backwards compatibility.
     """
 
     # Ensure this kernel only runs on GPU targets
     comptime assert is_gpu[target](), "EP is only supported on GPU."
-    # Ensure the shape for the output tensor is correct
-    comptime assert (
-        output_tokens.static_shape[1] == hidden_size
-    ), "EP combine: output tokens shape doesn't match hidden size."
     comptime assert (
         recv_ptrs.flat_rank == 1
     ), "Receive pointers must be a 1D tensor."
@@ -919,15 +910,14 @@ def ep_combine_wait_kernel_api[
     comptime combine_wait = combine_wait_kernel[
         combine_dtype,
         hw_info.max_thread_block_size,
-        output_tokens.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
         n_ranks,
         combine_msg_size,
         max_token_per_rank,
+        store_fn,
         router_weights_wrapper=router_weights_wrapper,
-        elementwise_lambda_fn=epilogue_fn,
     ]
 
     @inline(.always)
@@ -969,19 +959,16 @@ def ep_combine_wait_kernel_api[
         )
         var grid_dim_x: Int
         comptime if gpu_ctx.target.is_amd_gpu():
-            if num_input_tokens >= 0:
-                grid_dim_x = _ep_combine_wait_grid_dim(
-                    num_input_tokens,
-                    n_chunks_per_tok,
-                    n_warps_per_block,
-                    hw_info.sm_count,
-                )
-            else:
-                grid_dim_x = hw_info.sm_count
+            grid_dim_x = _ep_combine_wait_grid_dim(
+                num_tokens,
+                n_chunks_per_tok,
+                n_warps_per_block,
+                hw_info.sm_count,
+            )
         else:
             grid_dim_x = hw_info.sm_count
         gpu_ctx.enqueue_function[combine_wait](
-            output_tokens,
+            Int32(num_tokens),
             recv_buf_ptr,
             recv_count_ptr,
             ep_counters,
@@ -1007,14 +994,14 @@ def ep_fused_combine_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
+    store_fn: ep_combine_store_type,
     router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
-    epilogue_fn: Optional[elementwise_epilogue_type] = None,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
 ](
-    output_tokens: TileTensor[combine_dtype, Engine=DefaultEngine[], ...],
+    num_tokens: Int,
     atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
     input_tokens: TileTensor[
         mut=False, combine_dtype, Engine=DefaultEngine[], ...
@@ -1043,9 +1030,10 @@ def ep_fused_combine_kernel_api[
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
+        store_fn: Stores the combined output tokens. Called with
+            `(token_idx, elem)` when `router_weights_wrapper` is set, and
+            with `(token_idx, topk_idx, elem)` otherwise.
         router_weights_wrapper: Wrapper for the optional router weights.
-        epilogue_fn: Optional elementwise epilogue function applied after
-            computing combined output.
         fused_shared_expert: Whether to add shared expert outputs to the
             combined routed expert outputs.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
@@ -1056,7 +1044,7 @@ def ep_fused_combine_kernel_api[
             the shared expert (if has one).
 
     Arguments:
-        output_tokens: Final output tensor with expert results.
+        num_tokens: Number of output tokens.
         atomic_counters: EP kernel synchronization counters.
         input_tokens: Expert output tokens to send back.
         src_info: Source routing information from dispatch phase.
@@ -1073,9 +1061,6 @@ def ep_fused_combine_kernel_api[
     comptime assert (
         input_tokens.static_shape[1] == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
-    comptime assert (
-        output_tokens.static_shape[1] == hidden_size
-    ), "EP combine: output tokens shape doesn't match hidden size."
     comptime assert (
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
@@ -1103,7 +1088,6 @@ def ep_fused_combine_kernel_api[
         hw_info.max_thread_block_size,
         input_tokens.LayoutType,
         src_info.LayoutType,
-        output_tokens.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
@@ -1111,9 +1095,9 @@ def ep_fused_combine_kernel_api[
         combine_msg_size,
         max_token_per_rank,
         n_gpus_per_node,
+        store_fn,
         router_weights_wrapper=router_weights_wrapper,
         fused_shared_expert=fused_shared_expert,
-        epilogue_fn=epilogue_fn,
         skip_a2a=skip_a2a,
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
@@ -1198,7 +1182,7 @@ def ep_fused_combine_kernel_api[
             func,
             input_tokens,
             src_info,
-            output_tokens,
+            Int32(num_tokens),
             send_ptr,
             recv_ptrs_arr,
             recv_count_ptrs_arr,

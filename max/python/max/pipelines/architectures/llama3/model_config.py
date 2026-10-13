@@ -361,7 +361,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 quantization_encoding,
                 pipeline_config.model.huggingface_config,
             ),
-            kv_params=Llama3Config.construct_kv_params(
+            kv_params=cls.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,
                 devices=device_refs,

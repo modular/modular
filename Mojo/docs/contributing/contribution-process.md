@@ -27,6 +27,14 @@ aware of what's already being worked on.
 Search the existing issues before you create a new one, and follow the
 [issue and PR etiquette](issue-pr-etiquette.md) when you open one.
 
+### Check you've signed the CLA
+
+Before merging your first PR, all contributors must sign the
+[CLA](https://github.com/modular/cla/blob/main/CLA.md) by leaving a comment on
+your PR stating:
+
+> I have read the CLA Document and I hereby sign the CLA
+
 ## Stage 2: Planning
 
 ### Study the existing implementation

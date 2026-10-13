@@ -120,14 +120,15 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     expect_bytes_pred,
     SharedMemPointer,
     MBarType,
-    ProducerPipeline,
     ConsumerPipeline,
 )
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+    SparseRowLayout,
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
+    sparse_kv_row,
     ORaggedTMATile,
     MLA_Decode_Pack,
     OffsetPosition,
@@ -162,6 +163,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     fold_shared_index: Bool = False,
     q_len_fold: Int = 1,
+    physical_indices: Bool = True,
+    sparse_row: SparseRowLayout = SparseRowLayout(),
     Engine: TensorEngine = DefaultEngine[element_width=1],
 ](TrivialRegisterPassable):
     """Sparse MLA decode with native FP8 WGMMA for SM100 (B200), unified gather.
@@ -336,6 +339,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             MutAnyOrigin,
             Engine=Self.Engine,
         ],
+        # Positions between the token each sparse row was computed for and
+        # the token that reads it.
+        selection_lag_dev: Int32,
     ):
         comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
@@ -360,6 +366,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         var indices_stride = Int(indices_stride_dev)
         var extra_indices_stride = Int(extra_indices_stride_dev)
         var batch_size = Int(scalar_args.ptr[0])
+        var selection_lag = Int(selection_lag_dev)
         var q_max_seq_len = Int(scalar_args.ptr[1])
         var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask
@@ -602,12 +609,18 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                         DType.float32
                     ]() * Float32(log2e)
 
+            comptime if Self.MaskType.get_type_name() == "CausalMask" and not Self.fold_shared_index:
+                if not logical_indices:
+                    offset_position.assert_row_packed[Self.sparse_row](
+                        d_indices, indices_stride, selection_lag
+                    )
             Self.Common_MLA_Op.Softmax[
                 native_fp8=True,
                 num_sp_stages=Self.num_stages,
                 has_attn_sink=Self.has_attn_sink,
                 fold_q=Self.fold_shared_index,
                 q_len_fold=Self.q_len_fold,
+                sparse_row=Self.sparse_row,
             ](
                 attn_tmem_addr[cluster_size=1](),
                 s_bars,
@@ -631,6 +644,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 logical_indices=logical_indices,
                 logical_indices_stride=indices_stride,
                 logical_indices_len=offset_position.sparse_topk,
+                selection_lag=selection_lag,
             )
         elif warp_idx >= 4 and warp_idx < 8:
             warpgroup_reg_alloc[num_reg_correction]()
@@ -738,6 +752,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         indices_base: Int,
         kv_lut: Self.KVLUTType,
         topk: UInt32,
+        batch_idx: UInt32,
     ):
         var lane = thread_idx.x & 31
         var max_idx = max(topk, UInt32(1)) - 1
@@ -747,10 +762,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             var idx_pos = UInt32(indices_base + row_in_tile)
             var clamped_pos = min(idx_pos, max_idx)
             var raw_index = d_indices.unsafe_value()[Int(clamped_pos)]
-            var tma_row = kv_lut.get_tma_row(raw_index)
-            if raw_index == -1:
-                tma_row = -1
-            idx_smem[row_in_tile] = tma_row
+            idx_smem[row_in_tile] = sparse_kv_row[Self.physical_indices](
+                kv_lut, batch_idx, raw_index
+            )
 
     @staticmethod
     @inline(.always)
@@ -780,6 +794,11 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_topk: Int,
     ):
+        # The extra stream's caller (latent sparse attention) passes flat
+        # physical rows, so it cannot share a logical selection's decoding.
+        comptime assert not (
+            not Self.physical_indices and Self.has_extra_kv
+        ), "logical sparse indices do not support an extra KV stream"
         var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
@@ -788,6 +807,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
         var idx_prod = idx_bars.producer()
         var orig_topk_u32 = UInt32(offset_position.sparse_topk)
+        var batch_idx = UInt32(offset_position.batch_idx)
 
         var num_orig_tiles = num_k_tiles
         comptime if Self.has_extra_kv:
@@ -813,6 +833,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 orig_indices_base,
                 kv_lut,
                 orig_topk_u32,
+                batch_idx,
             )
             idx_prod.commit()
             orig_indices_base += Self.config.BN_QK
@@ -830,6 +851,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 orig_indices_base,
                 kv_lut,
                 orig_topk_u32,
+                batch_idx,
             )
             idx_prod.commit()
             orig_indices_base += Self.config.BN_QK
@@ -852,6 +874,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                     extra_indices_base,
                     extra_kv_lut,
                     extra_topk_u32,
+                    batch_idx,
                 )
                 idx_prod.commit()
                 extra_indices_base += Self.config.BN_QK
@@ -869,6 +892,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                     extra_indices_base,
                     extra_kv_lut,
                     extra_topk_u32,
+                    batch_idx,
                 )
                 idx_prod.commit()
                 extra_indices_base += Self.config.BN_QK

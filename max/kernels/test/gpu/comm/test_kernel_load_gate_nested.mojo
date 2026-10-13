@@ -13,13 +13,10 @@
 """Regression test for nesting under the kernel-load gate's collective side.
 
 The thread that opens a collective waits for its fan-out with
-`TaskGroup.wait()`. On an AsyncRT worker that wait donates: it runs other work
-items as nested calls on the same stack. When the opener held the gate across
-that wait, a nested first-time load waited for the collective to close, but
-only the frame buried beneath it could close it, and the process hung. The gate
-is now claimed and released by continuations, so the opener holds nothing
-while it waits. Nothing spins on a GPU here; the cycle was entirely on the
-opener's stack.
+`TaskGroup.wait()`, which on an AsyncRT worker runs other tasks nested on the
+same stack. The opener must hold nothing while it waits, or a nested task that
+needs the gate would wait for a release only the buried opener can perform.
+Nothing spins on a GPU here.
 
 Three scenarios run in order, each bounded so a hang fails as an abort. In the
 control, the cold load is pinned to another worker, waits at the gate, and

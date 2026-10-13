@@ -35,6 +35,21 @@ kgen.func @used_as_store_arg(%arg0: !kgen.pointer<index> imm_mem) {
   hlcf.return
 }
 
+// CHECK-LABEL: kgen.func @atomic_load
+// CHECK-SAME: %arg0: !kgen.pointer<index> imm_mem
+kgen.func @atomic_load(%arg0: !kgen.pointer<index> imm_mem) -> index {
+  %0 = pop.load atomic seq_cst %arg0 : !kgen.pointer<index>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @atomic_store
+// CHECK-SAME: %arg0: !kgen.pointer<index> mut
+kgen.func @atomic_store(%arg0: !kgen.pointer<index> mut) {
+  %idx0 = kgen.param.constant: index = <0>
+  pop.store atomic release %idx0, %arg0 : !kgen.pointer<index>
+  hlcf.return
+}
+
 // CHECK-LABEL: kgen.func @captured_pointer
 // CHECK-SAME: %arg0: !kgen.pointer<index> imm_mem
 kgen.func @captured_pointer(%arg0: !kgen.pointer<index> imm_mem) {

@@ -15,10 +15,15 @@
 
 from std.math import iota
 
-from std.memory import ThinAllocation, dealloc
+from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.random import random_float64
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import (
+    Coord,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from nn.softmax import softmax_inline
 
 

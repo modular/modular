@@ -14,7 +14,6 @@
 from std.math import ceildiv, isclose, isnan, nan
 from std.os import abort
 from std.random import random_float64
-from std.sys import is_nvidia_gpu
 
 from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
@@ -38,17 +37,10 @@ def mma_layout_tc[
     mat_b: TileTensor[in_type, layout_b, MutAnyOrigin],
 ):
     var tc = TensorCore[out_type, in_type, shape]()
-    # NVIDIA A/B fragment loaders still require legacy register-layout views.
-    comptime if is_nvidia_gpu():
-        var a = tc.load_a(mat_a.to_layout_tensor())
-        var b = tc.load_b(mat_b.to_layout_tensor())
-        var c = tc.load_c(mat_c.to_layout_tensor())
-        tc.store_d(mat_c, tc.mma_op(a, b, c))
-    else:
-        var a = tc.load_a(mat_a)
-        var b = tc.load_b(mat_b)
-        var c = tc.load_c(mat_c)
-        tc.store_d(mat_c, tc.mma_op(a, b, c))
+    var a = tc.load_a(mat_a)
+    var b = tc.load_b(mat_b)
+    var c = tc.load_c(mat_c)
+    tc.store_d(mat_c, tc.mma_op(a, b, c))
 
 
 def matmul_naive[

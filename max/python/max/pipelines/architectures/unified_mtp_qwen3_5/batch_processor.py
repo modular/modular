@@ -24,7 +24,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.nn.kv_cache import KVCacheInputs, RecurrentStateInputsPerDevice
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
+from max.pipelines.kv_cache.paged_kv_cache._common import (
     prompt_tokens_for_context,
 )
 from max.pipelines.lib.interfaces.arch_config import ArchConfig

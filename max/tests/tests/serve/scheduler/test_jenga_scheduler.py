@@ -418,10 +418,11 @@ def test_jenga_rejects_a_max_seq_len_that_cannot_fit() -> None:
     with pytest.raises(RuntimeError) as e:
         create_scheduler(True, num_huge_pages=8, max_seq_len=1000)
 
-    # 7 allocatable huge blocks: 3 go to the sliding leaf's window, leaving 4
-    # for the full leaf at 16 pages of 10 tokens each.
+    # 7 allocatable huge blocks: 4 go to the sliding leaf (its 25-token
+    # window spans 4 pages of 10 once it starts mid-page), leaving 3 for the
+    # full leaf at 16 pages of 10 tokens each.
     assert "Insufficient cache memory" in str(e.value)
-    assert "Reduce --max-length to at most 640" in str(e.value)
+    assert "Reduce --max-length to at most 480" in str(e.value)
 
 
 def _three_leaf_params() -> MultiKVCacheParams:

@@ -12,15 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import isnan, nan
-from std.sys import align_of
 from std.testing import assert_almost_equal, assert_true
-from std.utils import Index, IndexList
+from std.utils import Index
 
 from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tensor_core import get_mma_shape
 from linalg.matmul.gpu import _amdgpu_get_mma_shape, multistage_gemm
-from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
 
 
@@ -69,23 +67,20 @@ def run_split_k[
     )
     var c = TileTensor(c_device, row_major(m, Idx[N]))
 
-    @inline(.always)
-    @__copy_capture(c)
-    def epilogue[
-        value_type: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[value_type, width]](),
-    ](idx: IndexList[2], value: SIMD[value_type, width]) capturing -> None:
-        c.store[alignment=alignment](Coord(idx), value.cast[dtype]() + 1)
+    def add_one[
+        value_type: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, value: SIMD[value_type, width]) -> SIMD[value_type, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return value + 1
 
-    multistage_gemm[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            epilogue
-        ) if use_epilogue else None,
-    ](c, a.as_imm(), b.as_imm(), config, ctx)
+    comptime if use_epilogue:
+        multistage_gemm[transpose_b=transpose_b, config=config](
+            c, a.as_imm(), b.as_imm(), config, add_one, ctx
+        )
+    else:
+        multistage_gemm[transpose_b=transpose_b, config=config](
+            c, a.as_imm(), b.as_imm(), config, ctx
+        )
 
     with a_device.map_to_host() as a_host, b_device.map_to_host() as b_host, c_device.map_to_host() as c_host:
         for row in range(m):

@@ -37,7 +37,7 @@ reused primitive exercises the codegen `MlaPrefillV2` ships.
 from max.gpu import WARP_SIZE, lane_id
 from std.sys.intrinsics import llvm_intrinsic
 
-from layout import TensorLayout, TileTensor, DefaultEngine
+from layout import TensorLayout, TileTensor
 from layout._utils import make_amd_buffer_resource
 from layout.coord import Coord
 from layout.swizzle import Swizzle
@@ -63,7 +63,6 @@ from nn.attention.mha_operand import MHAOperand
 from .buffers import _cast_f32_to_fp8_raw
 from .mha_softmax import OnlineSoftmax
 from .mha_mma_op import MlaConfigV2, MlaMmaOp
-from .iglp import sched_barrier_exp_pairs
 
 
 # ==--------------------------------------------------------------------==

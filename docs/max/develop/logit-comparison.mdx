@@ -121,9 +121,12 @@ The script uses
 [`PipelineArgs`](/api/python/generated/max.pipelines.PipelineArgs/) to load your
 architecture from
 [`PIPELINE_REGISTRY`](/api/python/generated/max.pipelines.lib.registry.PIPELINE_REGISTRY/),
-then sends a
+then builds a
 [`TextGenerationRequest`](/api/python/generated/max.pipelines.modeling.types.TextGenerationRequest/)
-per prompt. To capture each step's logits, the request's
+per prompt and runs it to completion with
+[`Batch`](/api/python/generated/max.pipelines.lib.generate.Batch/) from
+[`max.pipelines.lib.generate`](/api/python/pipelines.lib.generate), one forward
+pass per step. To capture each step's logits, the request's
 [`SamplingParams`](/api/python/generated/max.pipelines.context.SamplingParams/)
 attaches a
 [`LogitsProcessor`](/api/python/generated/max.pipelines.context.LogitsProcessor/)
@@ -140,12 +143,14 @@ all later-step comparisons.
 ```python
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.context import ProcessorInputs, SamplingParams
+from max.pipelines.lib.generate import Batch
 from max.pipelines.modeling.types import RequestID, TextGenerationRequest
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -212,7 +217,10 @@ def max_logits_for(prompt: str) -> np.ndarray:
             logits_processors=[capture],
         ),
     )
-    pipeline.generate([request])
+    context = asyncio.run(pipeline.tokenizer.new_context(request))
+    with Batch.from_contexts(pipeline, [context]) as batch:
+        while not batch.done:
+            batch.step()
     return np.stack(capture.captured[request.request_id]).astype(np.float64)
 
 

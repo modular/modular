@@ -19,9 +19,8 @@ etc.).
 
 from std.math import align_up
 from max.gpu.host import DeviceContext
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from std.collections import OptionalReg
 
 from std.utils.index import Index

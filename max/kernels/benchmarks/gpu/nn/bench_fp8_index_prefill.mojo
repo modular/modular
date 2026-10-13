@@ -71,7 +71,6 @@ from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     KVCacheScalesMHAOperand,
 )
-from nn.attention.mha_mask import MaskName
 from std.math import ceildiv, log
 from std.memory import bitcast
 from std.utils.index import IndexList

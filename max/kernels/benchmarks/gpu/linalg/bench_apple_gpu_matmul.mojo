@@ -196,8 +196,8 @@ def _bench_shape[
 
     var tb_str = String("T") if transpose_b else String("N")
     var route = String("auto")
-    if force_split_k:
-        route = String("split") if force_split_k.value() else String("single")
+    if case .Some(force_split_k) = force_split_k:
+        route = String("split") if force_split_k else String("single")
     print(
         " ",
         in_type,

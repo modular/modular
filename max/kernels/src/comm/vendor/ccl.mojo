@@ -29,7 +29,7 @@ from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor, row_major
 from std.memory.unsafe_pointer import unsafe_cast
 from std.memory.alloc import Layout as AllocLayout
-from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host._amdgpu_hip import HIP
 from max.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
@@ -303,14 +303,15 @@ struct Communicators(ImplicitlyCopyable):
 
 
 def _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
-    comptime if dtype == .float32:
-        return ncclDataType_t.ncclFloat32
-    elif dtype == .bfloat16:
-        return ncclDataType_t.ncclBfloat16
-    elif dtype == .float16:
-        return ncclDataType_t.ncclFloat16
-
-    raise Error("vendor_ccl: dtype not supported: ", dtype)
+    comptime match dtype:
+        case .float32:
+            return ncclDataType_t.ncclFloat32
+        case .bfloat16:
+            return ncclDataType_t.ncclBfloat16
+        case .float16:
+            return ncclDataType_t.ncclFloat16
+        case _:
+            raise Error("vendor_ccl: dtype not supported: ", dtype)
 
 
 @inline(.always)
@@ -322,8 +323,8 @@ def _check_ccl_ok(status: ncclResult_t) raises:
 def _get_global_comms(ngpus: Int) raises -> Communicators:
     var NAME = String(t"COMM_VENDOR_CCL_{ngpus}")
     var global_ptr = _get_global_or_null(NAME)
-    if global_ptr:
-        return global_ptr.value().unsafe_bitcast[Communicators]()[]
+    if case .Some(global_ptr) = global_ptr:
+        return global_ptr.unsafe_bitcast[Communicators]()[]
 
     if ngpus > MAX_GPUS:
         raise Error("too many GPUs for CCL")
@@ -476,7 +477,7 @@ def allreduce[
         )
     )
 
-    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=ctx.target]()
 
     def epilogue_wrapper[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var flat_idx = idx[0].value()

@@ -23,8 +23,6 @@ from std.collections.string.string_span import (
     CodepointSliceIter,
     GraphemeIndicesIter,
     GraphemeSliceIter,
-    _to_string_list,
-    _unsafe_strlen,
 )
 from std.builtin.builtin_slice import ContiguousSlice
 from std.hashlib.hasher import Hasher

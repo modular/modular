@@ -33,7 +33,6 @@ from max.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
-    thread_idx,
     warp_id,
 )
 from max.gpu.sync import barrier
@@ -62,13 +61,7 @@ from ....utils_gpu import MatmulConfig
 
 from .matmul_mma import MmaOp
 from .amd_matmul_schedule import build_default_matmul_schedule
-from .amd_matmul_schedule import (
-    DefaultMatmulOps,
-    COMPUTE,
-    LOAD_DRAM,
-    LOAD_FRAG,
-    STORE_SMEM,
-)
+from .amd_matmul_schedule import DefaultMatmulOps
 from pipeline.pipeline_dsl import ScheduleEntry
 from structured_kernels.amd_tile_io import (
     RegTileLoader,
@@ -437,8 +430,7 @@ struct AMDMatmul[
         var k_counter = 0
 
         @inline(.always)
-        @__parameter
-        def load_tiles_from_dram():
+        def load_tiles_from_dram() {mut k_counter, imm}:
             var a_block = a_blockrow.tile[BM, BK](0, k_counter)
             var b_block = b_blockrow.tile[BN, BK](0, k_counter)
             a_loader.load(a_load_reg, a_block.vectorize[1, simd_width]())
@@ -446,8 +438,7 @@ struct AMDMatmul[
             k_counter += 1
 
         @inline(.always)
-        @__parameter
-        def copy_tiles_to_smem():
+        def copy_tiles_to_smem() {imm}:
             comptime thread_layout = row_major[
                 load_thread_rows, load_thread_cols
             ]()
@@ -485,55 +476,57 @@ struct AMDMatmul[
             b_loads_per_thread=b_loads_per_thread,
         ]()
 
-        @__parameter
         @inline(.always)
-        def _bind[entry: ScheduleEntry]():
-            comptime if entry.op.tag == LOAD_DRAM:
-                load_tiles_from_dram()
-            elif entry.op.tag == STORE_SMEM:
-                copy_tiles_to_smem()
-            elif entry.op.tag == LOAD_FRAG:
-                # Block-local SMEM views for this k-tile within this
-                # warp-K partition's slice of the BK-wide SMEM buffer.
-                # Offset is in blocked-product element order, not row-major.
-                comptime k = entry.op.subtile
-                var a_blk = TileTensor(
-                    a_smem.ptr + a_warp_k_off + k * BM * k_tile_size,
-                    row_major[BM, k_tile_size](),
-                )
-                var b_blk = TileTensor(
-                    b_smem.ptr + b_warp_k_off + k * BN * k_tile_size,
-                    row_major[BN, k_tile_size](),
-                )
-                mma_op.load_frag[k](
-                    a_blk.tile[WM, k_tile_size](warp_m, 0),
-                    b_blk.tile[WN, k_tile_size](warp_n, 0),
-                )
-            elif entry.op.tag == COMPUTE:
-                mma_op.mma[entry.op.subtile]()
-            elif entry.op.tag == DefaultMatmulOps.BARRIER.value:
-                barrier()
-            elif entry.op.tag == DefaultMatmulOps.SCHEDULE_BARRIER.value:
-                schedule_barrier()
-            elif entry.op.tag == DefaultMatmulOps.SCHED_GROUP_BARRIER.value:
-                comptime sub = entry.op.subtile
-                comptime wait = entry.op.wait_value
-                comptime if sub == SCHED_MASK_DS_READ:
-                    schedule_group_barrier(
-                        AMDScheduleBarrierMask.DS_READ, Int32(wait), 0
+        def _bind[entry: ScheduleEntry]() {imm}:
+            comptime op = DefaultMatmulOps(entry.op.tag)
+            comptime match op:
+                case .LOAD_DRAM:
+                    load_tiles_from_dram()
+                case .STORE_SMEM:
+                    copy_tiles_to_smem()
+                case .LOAD_FRAG:
+                    # Block-local SMEM views for this k-tile within this
+                    # warp-K partition's slice of the BK-wide SMEM buffer.
+                    # Offset is in blocked-product element order, not row-major.
+                    comptime k = entry.op.subtile
+                    var a_blk = TileTensor(
+                        a_smem.ptr + a_warp_k_off + k * BM * k_tile_size,
+                        row_major[BM, k_tile_size](),
                     )
-                elif sub == SCHED_MASK_DS_WRITE:
-                    schedule_group_barrier(
-                        AMDScheduleBarrierMask.DS_WRITE, Int32(wait), 0
+                    var b_blk = TileTensor(
+                        b_smem.ptr + b_warp_k_off + k * BN * k_tile_size,
+                        row_major[BN, k_tile_size](),
                     )
-                elif sub == SCHED_MASK_VMEM_READ:
-                    schedule_group_barrier(
-                        AMDScheduleBarrierMask.VMEM_READ, Int32(wait), 0
+                    mma_op.load_frag[k](
+                        a_blk.tile[WM, k_tile_size](warp_m, 0),
+                        b_blk.tile[WN, k_tile_size](warp_n, 0),
                     )
-                elif sub == SCHED_MASK_MFMA:
-                    schedule_group_barrier(
-                        AMDScheduleBarrierMask.MFMA, Int32(wait), 0
-                    )
+                case .COMPUTE:
+                    mma_op.mma[entry.op.subtile]()
+                case .BARRIER:
+                    barrier()
+                case .SCHEDULE_BARRIER:
+                    schedule_barrier()
+                case .SCHED_GROUP_BARRIER:
+                    comptime sub = entry.op.subtile
+                    comptime wait = entry.op.wait_value
+                    comptime match sub:
+                        case == SCHED_MASK_DS_READ:
+                            schedule_group_barrier(
+                                AMDScheduleBarrierMask.DS_READ, Int32(wait), 0
+                            )
+                        case == SCHED_MASK_DS_WRITE:
+                            schedule_group_barrier(
+                                AMDScheduleBarrierMask.DS_WRITE, Int32(wait), 0
+                            )
+                        case == SCHED_MASK_VMEM_READ:
+                            schedule_group_barrier(
+                                AMDScheduleBarrierMask.VMEM_READ, Int32(wait), 0
+                            )
+                        case == SCHED_MASK_MFMA:
+                            schedule_group_barrier(
+                                AMDScheduleBarrierMask.MFMA, Int32(wait), 0
+                            )
 
         # Prologue.
         comptime for i in range(len(schedule.prologue)):
@@ -607,7 +600,7 @@ struct AMDMatmul[
                                             compute_fn[
                                                 Self.c_type, 1, alignment=1
                                             ](
-                                                IndexList[2](m, col),
+                                                (m, col),
                                                 SIMD[Self.c_type, 1](v[e]),
                                             ),
                                         )
@@ -617,7 +610,7 @@ struct AMDMatmul[
                                             alignment=scalar_align,
                                         ](
                                             epilogue_fn,
-                                            IndexList[2](m, col),
+                                            (m, col),
                                             SIMD[Self.c_type, 1](v[e]),
                                         )
                         else:
@@ -634,7 +627,7 @@ struct AMDMatmul[
                                             Self.c_type,
                                             c_frag_size,
                                             alignment=1,
-                                        ](IndexList[2](m, n), v),
+                                        ]((m, n), v),
                                     )
                                 else:
                                     apply_elementwise_epilogue[
@@ -642,7 +635,7 @@ struct AMDMatmul[
                                         alignment=align_of[
                                             SIMD[Self.c_type, c_frag_size]
                                         ](),
-                                    ](epilogue_fn, IndexList[2](m, n), v)
+                                    ](epilogue_fn, (m, n), v)
         elif N % BN != 0:
             # Boundary path: N not block-aligned, per-element OOB store.
             var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)

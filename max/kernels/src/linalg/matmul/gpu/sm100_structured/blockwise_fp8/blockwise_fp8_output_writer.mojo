@@ -31,7 +31,6 @@ from max.gpu.sync import named_barrier
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     DefaultEngine,
     Idx,
     TensorLayout,

@@ -22,18 +22,15 @@ and that the combine kernel produces the expected weighted reduction:
 from std.random import randint, randn, seed
 from std.sys import default_accelerator, size_of
 
-from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import TileTensor, Idx, row_major
+from max.gpu.host import DeviceContext
+from layout import Coord, TileTensor, Idx, row_major
 from shmem.ep import (
     ep_fused_dispatch_kernel_api,
     ep_fused_combine_kernel_api,
 )
-from shmem.ep_comm import (
-    BF16TokenFormat,
-    EPLocalSyncCounters,
-    router_weights_wrapper_type,
-)
+from shmem.ep_comm import BF16TokenFormat, EPLocalSyncCounters
 from std.testing import assert_almost_equal
+from std.utils.index import IndexList
 
 
 def legalize_topk_ids[
@@ -207,6 +204,16 @@ def test_skip_a2a[
         var w = router_weights_tt.load[width=1]((token_idx, topk_id))
         return SIMD[.float32, width](w)
 
+    @inline(.always)
+    @__parameter
+    @__copy_capture(combine_output_tt)
+    def store_combine_output[
+        dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
+    ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        combine_output_tt.store[
+            width=width, alignment=alignment * size_of[dtype]()
+        ](Coord(coords), rebind[SIMD[input_type, width]](val))
+
     # --- Run fused dispatch ---
     ep_fused_dispatch_kernel_api[
         n_local_experts,
@@ -249,12 +256,13 @@ def test_skip_a2a[
         n_gpus_per_node,
         n_nodes,
         "gpu",
+        store_combine_output,
         router_weights_wrapper=router_weights_fn,
         fused_shared_expert=fused_shared_expert,
         skip_a2a=True,
         allreduce_world_size=N_DEVICES,
     ](
-        combine_output_tt,
+        n_tokens,
         atomic_counters_tt,
         dispatch_output_immut,
         src_info_immut,

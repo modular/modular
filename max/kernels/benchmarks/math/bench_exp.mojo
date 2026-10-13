@@ -27,7 +27,7 @@ from std.benchmark import (
     ThroughputMeasure,
     keep,
 )
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
 from std.memory import (

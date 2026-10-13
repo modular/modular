@@ -846,8 +846,10 @@ class WanTransformerPreProcess(Module):
         # with a pre-concatenated [cond; uncond] B=2 text embedding, and
         # this fold avoids needing a separate pack graph. For non-CFG /
         # I2V the broadcast is an identity because all three inputs share
-        # the same batch. ``ops.broadcast_to`` is used (not ``ops.tile``)
-        # because tile currently falls back to CPU on GPU graphs.
+        # the same batch. ``ops.broadcast_to`` stays: it expands to the
+        # target batch without materializing repeated copies, which is
+        # what this pack step wants even now that ``ops.tile`` runs on
+        # the GPU.
         target_batch = encoder_hidden_states.shape[0]
         hidden_states = ops.broadcast_to(
             hidden_states,

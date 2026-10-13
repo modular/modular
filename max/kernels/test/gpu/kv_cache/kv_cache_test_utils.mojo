@@ -239,9 +239,9 @@ struct CacheLengthsTable(Copyable):
         self.max_seq_length_batch = max_seq_length_batch
         self.total_length = total_length
 
-        if ctx:
-            self.cache_lengths.copy_to_device(ctx.value())
-            self.input_row_offsets.copy_to_device(ctx.value())
+        if case .Some(ctx) = ctx:
+            self.cache_lengths.copy_to_device(ctx)
+            self.input_row_offsets.copy_to_device(ctx)
 
     @staticmethod
     def build(
@@ -302,8 +302,8 @@ struct PagedLookupTable[page_size: Int](Copyable):
                 host_tensor[batch, block_idx] = UInt32(blocks[page_pos])
                 page_pos += 1
 
-        if ctx:
-            self.paged_lut.copy_to_device(ctx.value())
+        if case .Some(ctx) = ctx:
+            self.paged_lut.copy_to_device(ctx)
 
     @staticmethod
     def build(

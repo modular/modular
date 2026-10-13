@@ -45,7 +45,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from internal_utils import arg_parse, CacheBustingBuffer, CACHE_BUST_BYTES
 from internal_utils._utils import InitializationType
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import Shuffler, block_scaled_grouped_matmul_amd_preb
 

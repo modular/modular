@@ -34,18 +34,15 @@ TileTensor is used throughout:
 
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
-from std.sys import simd_width_of, llvm_intrinsic
+from std.sys import simd_width_of
 from max.gpu import WARP_SIZE, lane_id
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
-    Layout,
     MixedLayout,
     TensorLayout,
     TileTensor,
-    DefaultEngine,
 )
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation

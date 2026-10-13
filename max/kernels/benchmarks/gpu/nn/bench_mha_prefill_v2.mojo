@@ -22,7 +22,6 @@ Run:
       -- --seq_len=8192 --num_keys=8192 --batch_size=1 --verify=False
 """
 
-from std.math import isclose
 from std.random import seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
@@ -36,8 +35,6 @@ from std.benchmark import (
 )
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from std.utils import StaticTuple
-from std.utils.numerics import min_or_neg_inf
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType

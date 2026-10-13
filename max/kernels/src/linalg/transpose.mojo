@@ -356,14 +356,15 @@ def transpose_inplace[
     comptime assert rows == buf.static_shape[0]
     comptime assert cols == buf.static_shape[1]
 
-    comptime if rows == 4:
-        _transpose_inplace_4x4[rows, cols, dtype](buf)
-    elif rows == 8:
-        _transpose_inplace_8x8[rows, cols, dtype](buf)
-    elif rows == 16:
-        _transpose_inplace_16x16[rows, cols, dtype](buf)
-    else:
-        _transpose_inplace_naive[rows, cols, dtype](buf)
+    comptime match rows:
+        case 4:
+            _transpose_inplace_4x4[rows, cols, dtype](buf)
+        case 8:
+            _transpose_inplace_8x8[rows, cols, dtype](buf)
+        case 16:
+            _transpose_inplace_16x16[rows, cols, dtype](buf)
+        case _:
+            _transpose_inplace_naive[rows, cols, dtype](buf)
 
 
 def _permute_data[
@@ -633,7 +634,7 @@ def _transpose_2d_parallel_tiled[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime if rank < 2:
         return
@@ -697,7 +698,7 @@ def transpose_2d[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Transposes the inner two dimensions of a simplified rank-2 tensor.
 
@@ -758,7 +759,7 @@ def _transpose_4d_swap_middle_helper[
     M: Int,
     N: Int,
     K: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     var work = L * M * N
     var total_size = L * M * N * K
@@ -821,7 +822,7 @@ def transpose_4d_swap_middle[
     perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Transposes the middle two axes of a rank-4 tensor.
 
@@ -949,7 +950,7 @@ def transpose_trivial_memcpy[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Copies the input buffer to the output buffer as a trivial transpose.
 
@@ -1005,7 +1006,7 @@ def _copy_with_strides[
     output_strides: UnsafePointer[mut=False, Int, _],
     input_offset: Int,
     output_offset: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """
     Copy data from `input_ptr` to `output_ptr`, starting at corresponding
@@ -1143,7 +1144,7 @@ def transpose_strided[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Transposes a tensor with arbitrary strides via a generic strided copy.
 
@@ -1222,7 +1223,7 @@ def transpose[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in

@@ -19,8 +19,6 @@ reference at the GLM MoE shapes. Manual target (not run in CI):
       //max/kernels/test/gpu/linalg:test_blockwise_fp8_grouped_matmul_amd_bench.mojo.test
 """
 
-from std.math import ceildiv
-
 from max.gpu.host import DeviceContext
 from std.random import rand
 from layout import Coord, Idx, TileTensor, row_major

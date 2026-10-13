@@ -330,8 +330,8 @@ def test_bf16_stacking_refuses_a_quantized_expert() -> None:
         ("backbone.layers.1.mixer.shared_experts.up_proj", 2, 2),
         # Row parallel: each device interleaves its own input columns.
         ("backbone.layers.1.mixer.shared_experts.down_proj", 2, 2),
-        # Replicated: one share that every device holds whole.
-        ("lm_head", 2, 1),
+        # The LM head splits the vocabulary across devices.
+        ("lm_head", 2, 2),
         ("backbone.layers.1.mixer.shared_experts.up_proj", 1, 1),
     ],
 )

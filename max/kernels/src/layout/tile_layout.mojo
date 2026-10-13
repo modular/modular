@@ -42,7 +42,6 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 
 import std.sys
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.math.uutils import udivmod_unchecked
 
 from layout.coord import (
@@ -769,18 +768,19 @@ def _types_to_int_tuple[Types: TypeList[Trait=CoordLike, ...]]() -> IntTuple:
     Falls back to append for rank > 2.
     """
     comptime N = Types.length
-    comptime if N == 1:
-        return _type_to_int_tuple[Types[0]]()
-    elif N == 2:
-        return IntTuple(
-            _type_to_int_tuple[Types[0]](),
-            _type_to_int_tuple[Types[1]](),
-        )
-    else:
-        var result = IntTuple()
-        comptime for i in range(N):
-            result.append(_type_to_int_tuple[Types[i]]())
-        return result
+    comptime match N:
+        case 1:
+            return _type_to_int_tuple[Types[0]]()
+        case 2:
+            return IntTuple(
+                _type_to_int_tuple[Types[0]](),
+                _type_to_int_tuple[Types[1]](),
+            )
+        case _:
+            var result = IntTuple()
+            comptime for i in range(N):
+                result.append(_type_to_int_tuple[Types[i]]())
+            return result
 
 
 # This is passed a pair of [shape, stride] as CoordLike values.

@@ -37,7 +37,7 @@ bound on the pure kernel delta.
 from max.gpu.host import DeviceContext
 from std.time import perf_counter
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.matmul.gpu.apple.matmul2d_fp8 import enqueue_grouped_matmul2d_fp8

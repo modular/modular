@@ -32,7 +32,6 @@ from max.gpu import lane_id
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu.intrinsics import ds_read_tr8_b64
 from std.math import exp2 as math_exp2
-from std.memory import AddressSpace
 from std.sys import size_of
 from std.utils import IndexList
 

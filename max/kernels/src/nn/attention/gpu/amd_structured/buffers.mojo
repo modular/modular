@@ -22,7 +22,7 @@ from std.sys import simd_width_of, size_of
 from max.gpu import lane_id, WARP_SIZE
 from max.gpu.intrinsics import cvt_pk_fp8_f32_raw
 from layout import TensorEngine, TensorLayout, TileTensor
-from layout.coord import Coord, ComptimeInt, Idx
+from layout.coord import Coord, ComptimeInt
 from layout.swizzle import Swizzle
 from layout.tile_layout import (
     Layout as TileLayout,
@@ -646,12 +646,12 @@ struct PRegisterBuffer[
 
                 # Interleaved P read: single 16-byte load (ds_read_b128).
                 # Each 8-element group = [lo_frag(4), hi_frag(4)].
-                comptime if Self.p_swizzle:
+                comptime if case .Some(swizzle) = Self.p_swizzle:
                     comptime simd_w = simd_width_of[Self.dtype]()
                     var r = umod(lane_id(), warp_m)
                     var c = ufloordiv(lane_id(), warp_m)
                     var group_idx = r * (Self.BK // simd_w) + c
-                    var swizzled_group = Self.p_swizzle.value()(group_idx)
+                    var swizzled_group = swizzle(group_idx)
                     var data = (smem_base + swizzled_group * simd_w).load[
                         width=simd_w
                     ]()
@@ -905,9 +905,7 @@ struct PRegisterBuffer[
                 ),
             )
         )
-        var mma_3d = TileTensor[
-            Self.dtype, layout_3d, MutAnyOrigin, address_space=.SHARED
-        ](mma_tile.ptr, layout_3d())
+        var mma_3d = mma_tile.reshape(layout_3d())
 
         var dist_res = mma_3d.distribute_with_offset[tl_3d](lane_id())
         var dst_frag = dist_res[0]
@@ -925,10 +923,10 @@ struct PRegisterBuffer[
         # Apply swizzle to spread rows across different LDS banks.
         # Use block base (smem_base + byte_offset) so the swizzle
         # offset matches the read path in get_mma_tile_shared.
-        comptime if Self.p_swizzle:
+        comptime if case .Some(swizzle) = Self.p_swizzle:
             var block_base = smem_base + byte_offset
             var elem_off = mma_tile_off + lane_off_in_mma
-            var swizzled = Self.p_swizzle.value()(elem_off // frag_w) * frag_w
+            var swizzled = swizzle(elem_off // frag_w) * frag_w
             (block_base + swizzled).store[width=frag_w](reg_val)
         else:
             dst_frag.raw_store[width=frag_w](0, reg_val)
@@ -1035,7 +1033,7 @@ struct PRegisterBuffer[
             var smem_offset = block_idx * Self.BM * Self.BK
             var warp_offset = smem_offset + warp_row * Self.WM * Self.BK
 
-            comptime if Self.p_swizzle:
+            comptime if case .Some(swizzle) = Self.p_swizzle:
                 # Match the reader's load_a granularity:
                 # `simd_w = num_matrix_reg(mma_m, mma_k)` elements per lane.
                 # Per row, 4 (= BK / simd_w) 32-element vecs. Each vec is
@@ -1054,7 +1052,7 @@ struct PRegisterBuffer[
                 ).ptr
 
                 var group_idx = r * (Self.BK // simd_w) + n_mma_in_block
-                var swizzled_group = Self.p_swizzle.value()(group_idx)
+                var swizzled_group = swizzle(group_idx)
 
                 comptime for m_mma in range(Self.num_m_mmas):
                     comptime for n_mma in range(Self.num_n_mmas):

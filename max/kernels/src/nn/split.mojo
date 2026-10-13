@@ -17,7 +17,7 @@ from std.sys import simd_width_of
 from std.sys.info import CompilationTarget
 
 from max.algorithm import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
@@ -150,7 +150,7 @@ def split[
             simd_width_of[
                 dtype, target=CompilationTarget.current()
             ]() if is_cpu[target]() else simd_width_of[
-                dtype, target=get_gpu_target()
+                dtype, target=ctx.target
             ]()
         )
 

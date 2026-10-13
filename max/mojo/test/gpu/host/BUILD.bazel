@@ -87,3 +87,12 @@ mojo_test(
         "@mojo//:test_utils",
     ],
 )
+
+mojo_test(
+    name = "test_launch_attribute.mojo.test",
+    srcs = ["test_launch_attribute.mojo"],
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)

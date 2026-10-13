@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import bisect
 import ctypes
 import logging
 import os
@@ -25,6 +26,7 @@ from collections import defaultdict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from itertools import pairwise
 from typing import TYPE_CHECKING, NamedTuple
 from uuid import uuid4
 
@@ -42,8 +44,9 @@ from max.pipelines.kv_cache._nixl_backend import (
 )
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 
+from ._cuda_alloc import allocation_splits
 from ._ucx_env import configure_ucx_env
-from .cache_manager import PagedKVCacheManagerInterface
+from .cache_manager_interface import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
 
@@ -264,6 +267,85 @@ def _build_group_descriptors(
     return descs
 
 
+def _splits_within(splits: Sequence[int], start: int, length: int) -> list[int]:
+    """Returns splits inside ``(start, start + length)``, relative to start."""
+    lo = bisect.bisect_right(splits, start)
+    hi = bisect.bisect_left(splits, start + length)
+    return [split - start for split in splits[lo:hi]]
+
+
+def _build_paired_group_descriptors(
+    bytes_per_group: Sequence[int],
+    src_base_addrs: Sequence[int],
+    src_region_splits: Sequence[Sequence[int]],
+    src_idxs_per_group: Sequence[Sequence[int]],
+    src_device_id: int,
+    dst_base_addrs: Sequence[int],
+    dst_region_splits: Sequence[Sequence[int]],
+    dst_idxs_per_group: Sequence[Sequence[int]],
+    dst_device_id: int,
+) -> tuple[list[tuple[int, int, int]], list[tuple[int, int, int]]]:
+    """Builds paired source and destination descriptors for all groups.
+
+    Matches :func:`_build_group_descriptors` on each side, except that a page
+    crossing a registered-region boundary on either side is cut there, so every
+    descriptor lies inside one NIXL registration on both sides. Each side's
+    ``region_splits[g]`` lists the byte offsets from that group's base where a
+    new registered region begins; an empty (or missing) list means the group is
+    one region.
+    """
+    if not any(src_region_splits) and not any(dst_region_splits):
+        return (
+            _build_group_descriptors(
+                src_base_addrs,
+                bytes_per_group,
+                src_idxs_per_group,
+                src_device_id,
+            ),
+            _build_group_descriptors(
+                dst_base_addrs,
+                bytes_per_group,
+                dst_idxs_per_group,
+                dst_device_id,
+            ),
+        )
+
+    src_descs: list[tuple[int, int, int]] = []
+    dst_descs: list[tuple[int, int, int]] = []
+    for group_idx, bpp in enumerate(bytes_per_group):
+        src_base = src_base_addrs[group_idx]
+        dst_base = dst_base_addrs[group_idx]
+        src_splits = (
+            src_region_splits[group_idx]
+            if group_idx < len(src_region_splits)
+            else ()
+        )
+        dst_splits = (
+            dst_region_splits[group_idx]
+            if group_idx < len(dst_region_splits)
+            else ()
+        )
+        for src_idx, dst_idx in zip(
+            src_idxs_per_group[group_idx],
+            dst_idxs_per_group[group_idx],
+            strict=True,
+        ):
+            src_off = src_idx * bpp
+            dst_off = dst_idx * bpp
+            cuts = sorted(
+                set(_splits_within(src_splits, src_off, bpp))
+                | set(_splits_within(dst_splits, dst_off, bpp))
+            )
+            for lo, hi in pairwise([0, *cuts, bpp]):
+                src_descs.append(
+                    (src_base + src_off + lo, hi - lo, src_device_id)
+                )
+                dst_descs.append(
+                    (dst_base + dst_off + lo, hi - lo, dst_device_id)
+                )
+    return src_descs, dst_descs
+
+
 def _page_idxs_per_group(
     role: str,
     idxs: Mapping[str, Sequence[int]],
@@ -366,6 +448,10 @@ class TensorAgentMetadata(
     device_id: int
     """Device ID for this tensor."""
 
+    region_splits: list[list[int]] = msgspec.field(default_factory=list)
+    """Per NIXL group, the byte offsets from ``base_addrs[g]`` where a new
+    registered region begins. Empty when every group is registered whole."""
+
 
 _AMD_RDMA_START_ALIGNMENT = 2 * 1024 * 1024
 _AMD_RDMA_ALIGNED_SIZE_FACTOR = 32
@@ -427,8 +513,8 @@ class TensorAgent:
 
     base_addrs: list[int]
     """Base memory address per NIXL group for this shard, indexed by group.
-    Parallel to ``reg_dlists`` and to the engine's ``bytes_per_group``; there
-    is no special "main" group."""
+    Parallel to the engine's ``bytes_per_group``; there is no special "main"
+    group."""
 
     backend: int
     """NIXL backend handle (UCX or libfabric)."""
@@ -440,7 +526,18 @@ class TensorAgent:
     """Metadata for this agent."""
 
     reg_dlists: list[nixl.RegistrationDescriptorList]
-    """Registration descriptor list per NIXL group, parallel to ``base_addrs``."""
+    """One registration per distinct memory region. Groups that view the same
+    region share its registration, so this can be shorter than
+    ``base_addrs``."""
+
+    region_splits: list[list[int]]
+    """Per NIXL group, the byte offsets from ``base_addrs[g]`` where a new
+    registered region begins; see :attr:`TensorAgentMetadata.region_splits`."""
+
+    buffers: list[Buffer]
+    """Registered buffers, parallel to ``base_addrs``. NIXL holds only raw
+    addresses, so these keep the memory alive until the engine's
+    ``cleanup()`` deregisters it."""
 
     @classmethod
     def create_agent(
@@ -526,25 +623,45 @@ class TensorAgent:
             init_params=backend_params,
         )
 
-        # Register one memory region per group, uniformly.
+        # Register each distinct region once, one CUDA allocation at a time
+        # on UCX + CUDA (see _cuda_alloc). Jenga hands every leaf a view of the
+        # same slab, and NIXL rejects remote metadata that lists one
+        # (addr, len, dev) twice with different backend keys
+        # (NIXL_ERR_NOT_ALLOWED in load_remote_metadata).
         base_addrs: list[int] = []
         reg_dlists: list[nixl.RegistrationDescriptorList] = []
+        region_splits: list[list[int]] = []
+        registered: set[tuple[int, int]] = set()
         for group_index, tensor in enumerate(tensors):
             base_addr = tensor._data_ptr()
             num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
             _check_rdma_start_alignment(
                 base_addr, num_bytes, device, agent_name, group_index
             )
+            splits = (
+                allocation_splits(
+                    base_addr, num_bytes, device._allocation_range
+                )
+                if backend_type == "ucx" and device.api == "cuda"
+                else []
+            )
+            base_addrs.append(base_addr)
+            region_splits.append(splits)
+            if (base_addr, num_bytes) in registered:
+                continue
+            registered.add((base_addr, num_bytes))
             reg_dlist = nixl.RegistrationDescriptorList(
                 type=memory_type,
-                descs=[(base_addr, num_bytes, device.id, "")],
+                descs=[
+                    (base_addr + lo, hi - lo, device.id, "")
+                    for lo, hi in pairwise([0, *splits, num_bytes])
+                ],
             )
             status = agent.register_memory(reg_dlist, [backend])
             if status != nixl.Status.SUCCESS:
                 raise ValueError(
                     f"Failed to register memory for {agent_name}: {status}"
                 )
-            base_addrs.append(base_addr)
             reg_dlists.append(reg_dlist)
 
         # Get metadata after registration
@@ -559,6 +676,8 @@ class TensorAgent:
             device_id=device.id,
             agent_metadata=agent_metadata,
             reg_dlists=reg_dlists,
+            region_splits=region_splits,
+            buffers=list(tensors),
         )
 
     def to_metadata(self) -> TensorAgentMetadata:
@@ -568,6 +687,7 @@ class TensorAgent:
             metadata=self.agent_metadata,
             base_addrs=self.base_addrs,
             device_id=self.device_id,
+            region_splits=self.region_splits,
         )
 
 
@@ -790,10 +910,14 @@ class KVTransferEngineMetadata(TransferEngineMetadata):
     """Total number of pages in each group, including the null block.
     Parallel to ``bytes_per_group``."""
 
+    bytes_per_page: int
+    """Bytes per page for each tensor."""
+
     bytes_per_group: list[int]
     """Bytes per page for each tensor group, one entry per NIXL group. The
     first entry is the main group; subsequent entries correspond to extra
-    groups, such as draft KV in speculative decoding."""
+    groups, such as draft KV in speculative decoding. ``bytes_per_page``
+    equals ``sum(bytes_per_group)``."""
 
     replicated_per_group: list[bool] = []
     """Per-group TP replication, parallel to ``bytes_per_group``. ``True``
@@ -879,6 +1003,11 @@ class TransferEngine:
     num_pages_per_group: list[int]
     """Total number of pages in each group, including the null block."""
 
+    bytes_per_page: int
+    """Total bytes per page across all groups. For single-group engines this
+    equals the main group's bytes per page; for multi-group engines it is
+    ``sum(bytes_per_group)``."""
+
     bytes_per_group: list[int]
     """Bytes per page for each group. ``bytes_per_group[0]`` is the main
     group; subsequent entries are extra groups (such as draft KV in
@@ -916,6 +1045,7 @@ class TransferEngine:
         *,
         leaf_ids: list[str],
         num_pages_per_group: list[int],
+        bytes_per_page: int,
         bytes_per_group: list[int],
         memory_type: nixl.MemoryType,
         dp: int,
@@ -935,6 +1065,7 @@ class TransferEngine:
             )
         self.leaf_ids = leaf_ids
         self.num_pages_per_group = num_pages_per_group
+        self.bytes_per_page = bytes_per_page
         self.bytes_per_group = bytes_per_group
         self.memory_type = memory_type
         self.dp = dp
@@ -988,6 +1119,7 @@ class TransferEngine:
             name=self.name,
             leaf_ids=self.leaf_ids,
             num_pages_per_group=self.num_pages_per_group,
+            bytes_per_page=self.bytes_per_page,
             memory_type=self.memory_type,
             agents_meta=agents_meta,
             hostname=socket.gethostname(),
@@ -1082,6 +1214,11 @@ class TransferEngine:
         # Fail fast on a plan the transport cannot execute yet (sharded
         # reshard); the per-group plan is valid, the reshard strategy is not.
         _assert_no_gather_scatter(strategy)
+
+        if self.bytes_per_page != remote.bytes_per_page:
+            raise ValueError(
+                f"Bytes per page mismatch: {self.bytes_per_page} != {remote.bytes_per_page}"
+            )
 
         if self.bytes_per_group != remote.bytes_per_group:
             raise ValueError(
@@ -1330,15 +1467,14 @@ class TransferEngine:
             ta = local_replica_agents[src_shard]
             remote_agent_meta = remote_replica_agents_meta[dst_shard]
 
-            descs_src = _build_group_descriptors(
-                ta.base_addrs,
+            descs_src, descs_dst = _build_paired_group_descriptors(
                 self.bytes_per_group,
+                ta.base_addrs,
+                ta.region_splits,
                 src_per_group,
                 ta.device_id,
-            )
-            descs_dst = _build_group_descriptors(
                 remote_agent_meta.base_addrs,
-                self.bytes_per_group,
+                remote_agent_meta.region_splits,
                 dst_per_group,
                 remote_agent_meta.device_id,
             )
@@ -1458,16 +1594,18 @@ class TransferEngine:
             ta = local_replica_agents[dst_shard]
             remote_agent_meta = remote_replica_agents_meta[remote_shard]
 
-            # Build descriptors for each group. Local uses this engine's
-            # bytes_per_group; remote uses the peer's advertised strides.
-            descs_local = _build_group_descriptors(
-                ta.base_addrs, self.bytes_per_group, dst_per_group, ta.device_id
-            )
-            descs_remote = _build_group_descriptors(
-                remote_agent_meta.base_addrs,
+            # The remote is the source; its advertised strides equal ours
+            # (checked above).
+            descs_remote, descs_local = _build_paired_group_descriptors(
                 remote_bpg,
+                remote_agent_meta.base_addrs,
+                remote_agent_meta.region_splits,
                 src_per_group,
                 remote_agent_meta.device_id,
+                ta.base_addrs,
+                ta.region_splits,
+                dst_per_group,
+                ta.device_id,
             )
 
             local_dlist = nixl.TransferDescriptorList(
@@ -1857,6 +1995,7 @@ class TransferEngine:
                         raise ValueError(
                             f"Failed to deregister memory: {status}"
                         )
+                ta.buffers.clear()
 
 
 class KVTransferEngine(TransferEngine):
@@ -2030,6 +2169,7 @@ class KVTransferEngine(TransferEngine):
                 f"Found: {set(memory_types)}"
             )
 
+        bytes_per_page = sum(bytes_per_group)
         memory_type = memory_types[0]
 
         # Create one agent per (replica, shard), registering every group's
@@ -2057,6 +2197,7 @@ class KVTransferEngine(TransferEngine):
             tensor_agents=tensor_agents,
             leaf_ids=list(leaf_ids),
             num_pages_per_group=num_pages_per_group,
+            bytes_per_page=bytes_per_page,
             bytes_per_group=bytes_per_group,
             memory_type=memory_type,
             dp=dp,

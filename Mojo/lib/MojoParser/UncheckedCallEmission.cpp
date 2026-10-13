@@ -315,6 +315,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         return pmb;
     }
 
+    emitter.warnIfTransferIsOnlyBorrowed(operand);
+
     // Emit the operand as a 'ref'.
     Value refValue = emitter.emitRefValue(operand, EC_CallRefArgValue);
     if (!refValue)

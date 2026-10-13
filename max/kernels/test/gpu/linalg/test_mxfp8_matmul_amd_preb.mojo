@@ -29,7 +29,6 @@ Usage:
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from max.gpu.host import DeviceContext, HostBuffer
 from max.gpu.host.info import MI355X
-from max.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv, isnan
 from std.memory import bitcast
 from std.random import random_ui64, seed
@@ -38,7 +37,6 @@ from std.utils import StaticTuple
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     Idx,
     TensorLayout,
     TensorEngine,

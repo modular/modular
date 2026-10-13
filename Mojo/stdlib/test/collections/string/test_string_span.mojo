@@ -21,7 +21,7 @@ from std.collections.string.string_span import (
 )
 from std.sys.info import size_of, simd_width_of
 
-from std.testing import assert_equal, assert_false, assert_true, assert_raises
+from std.testing import assert_equal, assert_false, assert_true
 from std.testing import TestSuite
 
 # ===----------------------------------------------------------------------=== #

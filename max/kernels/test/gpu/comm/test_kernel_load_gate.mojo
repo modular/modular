@@ -10,40 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Regression test for the kernel-load gate (MXSERV-441 / GEX-4227).
+"""Regression test for the kernel-load gate.
 
-Reproduces the deadlock the gate exists to prevent. Device 0 runs a
-GPU-filling kernel that waits for device 1 to release it, standing in for a
-collective's barrier peer-wait, and an unrelated lane cold-loads a kernel
-onto device 0 while it spins.
+Device 0 runs a GPU-filling kernel that spins until device 1 releases it,
+standing in for a collective's barrier. Meanwhile a lane pinned to device 1's
+launch worker makes a call that blocks until device 0 is idle. Without the
+gate the call parks that worker, device 1 never launches, and the run takes
+the full spin timeout. With it, the call waits on an AsyncRT value and the
+worker runs the launch. The spins are bounded, so a regression fails on
+elapsed time rather than wedging the GPU.
 
-A first-time load blocks until its device quiesces, so that load cannot
-return until device 1 arrives. The lane is pinned to the very worker device
-1's launch task is pinned to, which is what closes the cycle: affinity tasks
-sit on a private queue only their own worker dequeues, so a worker parked on
-a blocking driver call starves the launch behind it and device 1 never
-arrives. See GEX-3234 for the same shape reached through a one-thread
-runtime, and DRIV-462 for the pinned-worker edge.
+Each blocking call gets its own round with a fresh spinner: vendor BLAS handle
+bring-up, a vendor dispatch that first uses a GEMM kernel, and a first-time
+kernel load. They cannot share a window: once one call waits on the gate, the
+collective closes and the next call runs on an idle device.
 
-The gate breaks the cycle by making the load wait on an AsyncRT value rather
-than parking the worker, so the donated worker still runs that launch.
-Measured on 2xB200: each round finishes in 110-370ms with its gate, and in
-20s without it, bounded only by the spin timeout below. Both spins are bounded
-so a regression fails on elapsed time rather than wedging the GPU and timing
-out.
-
-Three calls block this way, each behind its own gate, and each gets its own
-round with a fresh spinner: bringing up a vendor BLAS handle, a vendor
-dispatch that first uses a GEMM kernel, which the library loads lazily, and a
-first-time kernel load. Neither vendor call reaches `loadFunction`. Any one of
-them starves the worker, so each has to be gated. They cannot share a window:
-a gated wait donates the worker, the peer launches and the collective closes,
-so whatever the lane does next runs on an idle device and proves nothing.
-
-It also cannot see a gate whose state got duplicated by static linking: this
-binary links one copy of everything, where a served process links five. Only
-an end-to-end run across the real shared objects covers that, so keep the
-gate's state in the driver object and off file scope. See KernelLoadGate.h.
+This binary links one copy of the gate, so it cannot catch gate state
+duplicated across the shared objects of a served process.
 """
 
 import linalg.matmul.vendor.blas as vendor_blas

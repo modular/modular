@@ -41,7 +41,6 @@ Two arms (parameter `use_native_mn`):
 B200-only (SM100). Single CTA, single elected thread issues the MMA.
 """
 
-from std.math import sqrt
 from std.memory import bitcast
 from std.sys import default_accelerator, size_of
 
@@ -53,7 +52,6 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu import block_idx
-from max.gpu.primitives.cluster import block_rank_in_cluster
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from max.gpu.memory import external_memory
@@ -86,7 +84,6 @@ from layout.tma_async import (
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
-from std.utils.static_tuple import StaticTuple
 
 
 # Core-matrix row count for the WGMMA/UMMA descriptor canonical layout. Matches

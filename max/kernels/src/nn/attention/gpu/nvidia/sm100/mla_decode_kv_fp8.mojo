@@ -37,7 +37,6 @@ from layout.tma_async import (
 from std.memory import bitcast
 from layout import (
     ComptimeInt,
-    CoordLike,
     RowMajorLayout,
     TensorEngine,
     TileTensor,

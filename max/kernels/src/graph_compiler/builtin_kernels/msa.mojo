@@ -82,12 +82,10 @@ Three attention routes, picked at runtime from `kv_collection.max_seq_length`
 
 import extensibility
 
-from std.collections import OptionalReg
 from max.gpu.host import DeviceContext, DeviceBuffer
-from std.math import ceildiv, min
-from std.memory import UnsafePointer
+from std.math import ceildiv
 
-from layout import row_major, TileTensor, Coord
+from layout import row_major, TileTensor
 from layout.tile_tensor import row_major as tt_row_major
 
 from extensibility import InputTensor, OutputTensor

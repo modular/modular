@@ -29,14 +29,11 @@ from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     CompletedTransfer,
-    KVConnector,
     KVLoadFailed,
 )
 from max.pipelines.kv_cache.paged_kv_cache import PrefixCacheHits
-from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
-    BlockManager,
-    compute_block_hashes,
-)
+from max.pipelines.kv_cache.paged_kv_cache._common import compute_block_hashes
+from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     PagedKVCacheManager,
 )
@@ -2222,34 +2219,13 @@ def test_dp_ce_balance__pooled_request_prefers_replica_with_cached_prefix() -> (
     assert has_request(inputs.batches[1], ctx.request_id)
 
 
-class _LookupOnlyConnector:
-    """A connector written against the protocol from before ``probe``.
-
-    It does not inherit :class:`KVConnector`, so it has no ``probe`` and is
-    priced through ``lookup`` alone.
-    """
-
-    def __init__(self) -> None:
-        self.held: set[bytes] = set()
-        self.lookups = 0
-
-    def lookup(
-        self,
-        block_hashes: Sequence[bytes],
-        replica_idx: int = 0,
-        hint: bytes | None = None,
-    ) -> Mapping[str, Sequence[bool]]:
-        self.lookups += 1
-        return {"full": [h in self.held for h in block_hashes]}
-
-
-def test_dp_ce_balance__a_connector_without_probe_is_priced_by_lookup() -> None:
+def test_dp_ce_balance__legacy_manager_prices_each_replicas_device_run() -> (
+    None
+):
     page_size = 16
-    connector = _LookupOnlyConnector()
     block_manager = BlockManager(
         total_num_blocks=32,
         block_size=page_size,
-        connector=cast(KVConnector, connector),
         enable_prefix_caching=True,
         num_replicas=2,
     )
@@ -2261,14 +2237,12 @@ def test_dp_ce_balance__a_connector_without_probe_is_priced_by_lookup() -> None:
         block_manager.kv_hash_algo,
         block_manager.kv_hash_seed,
     )
-    # Unequal device runs over one external continuation: replica 1 holds a
-    # block more on device, so its external run starts a block later.
+    # Unequal device runs: replica 1 holds a block more than replica 0.
     for replica_idx, depth in ((0, 1), (1, 2)):
         pool = block_manager.device_block_pools[replica_idx]
         for block_hash in hashes[:depth]:
             block, _ = pool.alloc_block()
             pool.commit_into_prefix_cache(block_hash, block)
-    connector.held = set(hashes[1:4])
     cache = cast(
         PagedKVCacheManager,
         SimpleNamespace(
@@ -2280,10 +2254,9 @@ def test_dp_ce_balance__a_connector_without_probe_is_priced_by_lookup() -> None:
     hits = PagedKVCacheManager.get_prefix_cache_hit_counts(cache, ctx)
 
     assert hits == [
-        PrefixCacheHits(device_blocks=1, external_blocks=3),
-        PrefixCacheHits(device_blocks=2, external_blocks=2),
+        PrefixCacheHits(device_blocks=1),
+        PrefixCacheHits(device_blocks=2),
     ]
-    assert connector.lookups == 1, "the shared tiers answer every replica once"
     batch_constructor = create_dp_balance_constructor()
     _mock_kv_cache_of(batch_constructor).get_prefix_cache_hit_counts = Mock(
         side_effect=lambda c: PagedKVCacheManager.get_prefix_cache_hit_counts(
@@ -2291,7 +2264,7 @@ def test_dp_ce_balance__a_connector_without_probe_is_priced_by_lookup() -> None:
         )
     )
     batch_constructor.enqueue_new_request(ctx)
-    assert batch_constructor._ce_pending[ctx.request_id].weights == [32, 32]
+    assert batch_constructor._ce_pending[ctx.request_id].weights == [80, 64]
 
 
 def test_dp_ce_balance__defers_lone_unexpired_ce_when_tg_available() -> None:

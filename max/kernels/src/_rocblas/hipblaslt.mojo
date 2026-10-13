@@ -499,7 +499,7 @@ def _check_hipblas_error(status: Status) raises:
 
 @inline(.always)
 def _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
-    comptime __match dtype:
+    comptime match dtype:
         case .float32:
             return hipDataType_t.R_32F
         case .float16:

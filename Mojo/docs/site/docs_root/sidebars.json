@@ -147,6 +147,7 @@
       ]
     },
     "docs/reference/keywords",
+    "docs/reference/lexical-structure",
     "docs/reference/literals",
     "docs/reference/numeric-types",
     "docs/reference/types",

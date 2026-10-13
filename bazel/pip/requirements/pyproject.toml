@@ -220,6 +220,9 @@ cpu = [
   "torchvision==0.25.0+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "torchvision==0.25.0; platform_machine != 'x86_64'",
   "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  # Precompile-MEF record actions import GPU tests' torch references (which
+  # use tilelang) in the CPU exec configuration.
+  "tilelang==0.1.8",
 ]
 
 nvidia = [
@@ -288,6 +291,10 @@ nvidia-sglang = [
   "sse-starlette==2.1.2",
 ]
 
+aiperf = [
+  "aiperf; python_version >= '3.11' and python_version < '3.14'",
+]
+
 [tool.uv]
 default-groups = ["cpu"]
 conflicts = [
@@ -297,11 +304,13 @@ conflicts = [
     { group = "nvidia" },
     { group = "nvidia-vllm" },
     { group = "nvidia-sglang" },
+    { group = "aiperf" },
   ],
   [
     { group = "common" },
     { group = "nvidia-vllm" },
     { group = "nvidia-sglang" },
+    { group = "aiperf" },
   ]
 ]
 
@@ -323,9 +332,25 @@ override-dependencies = [
   "grpcio==1.80.0",
   "grpcio-reflection==1.80.0",
   "typing-extensions==4.16.0",
+
+  # For the aiperf group to match other groups.
+  "pillow>=12.3.0",
+  "kaleido==0.2.1",
+  "prometheus-client==0.20.0",
+  "pyarrow==22.0.0",
+  "pygments==2.18.0",
 ]
 
 [tool.uv.sources]
+aiperf = [
+  # SemiAnalysis fork (github.com/SemiAnalysisAI/agentx-harness) pinned at
+  # commit 754356e9a39acc6cc6afb242d123bb57c3fb6f75 (tag agentx-v1.0.5,
+  # matching InferenceX's pinned harness) publishes no wheels. The wheel is
+  # built from that commit with `uv build --wheel` and hosted behind a flat
+  # index (not a direct URL), since uv checks a direct source's
+  # requires-python against the 3.10 resolver interpreter.
+  { index = "semianalysis-aiperf" },
+]
 torch = [
   { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.2.3/torch-2.10.0%2Brocm7.2.3.lw.git1a270074-cp313-cp313-linux_x86_64.whl" , group = "amd" },
   { index = "pytorch-cpu", group = "cpu" },
@@ -384,4 +409,10 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-nvidia-cu130"
 url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "semianalysis-aiperf"
+url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/aiperf/754356e9a39acc6cc6afb242d123bb57c3fb6f75/f60bfadc06d9fbcbb46704aa93189dce284723653e7d5594509469f84949bf2a/index.html"
+format = "flat"
 explicit = true

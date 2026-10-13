@@ -692,6 +692,17 @@
                 },
                 {
                   "type": "category",
+                  "label": "generate",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.generate"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.generate__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "interfaces",
                   "link": {
                     "type": "doc",

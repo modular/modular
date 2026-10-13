@@ -86,8 +86,8 @@ def auto_reshard(
     On each mesh axis the picker takes the cheapest row whose transitions
     are all in ``allowed_transitions``, and ``mode`` decides what happens
     when that row moves an input. Outside any block the picker allows
-    :data:`DEFAULT_TRANSITIONS` and moves inputs silently; an argument
-    left out keeps the enclosing block's setting. Use ``"warn"`` to find
+    :data:`DEFAULT_TRANSITIONS` and raises when a row would move an input;
+    an argument left out keeps the enclosing block's setting. Use ``"warn"`` to find
     the moves an op makes, and ``"raise"`` to require each one to be
     written as an explicit ``transfer_to``. Also works as a decorator. For
     example:

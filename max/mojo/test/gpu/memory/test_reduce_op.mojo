@@ -17,8 +17,8 @@ from max.gpu import CacheEviction, Consistency, Fill, ReduceOp
 
 
 def _matched_case(op: ReduceOp) -> Int:
-    """Returns the 1-based case index selected by `__match` for `op`."""
-    __match op:
+    """Returns the 1-based case index selected by `match` for `op`."""
+    match op:
         case .ADD:
             return 1
         case .MIN:
@@ -34,7 +34,7 @@ def _matched_case(op: ReduceOp) -> Int:
 
 
 def test_match_selects_case() raises:
-    # Materialize each case into a runtime value so the `__match` in
+    # Materialize each case into a runtime value so the `match` in
     # `_matched_case` is exercised on a runtime `ReduceOp`.
     var cases = List[ReduceOp]()
     cases.append(ReduceOp.ADD)
@@ -72,8 +72,8 @@ def test_formatting_keeps_custom_mnemonics() raises:
 
 
 def _cache_eviction_rank(eviction: CacheEviction) -> Int:
-    """Returns the 0-based case index selected by `__match`."""
-    __match eviction:
+    """Returns the 0-based case index selected by `match`."""
+    match eviction:
         case .EVICT_NORMAL:
             return 0
         case .EVICT_FIRST:
@@ -87,8 +87,8 @@ def _cache_eviction_rank(eviction: CacheEviction) -> Int:
 
 
 def _fill_rank(fill: Fill) -> Int:
-    """Returns the 0-based case index selected by `__match`."""
-    __match fill:
+    """Returns the 0-based case index selected by `match`."""
+    match fill:
         case .NONE:
             return 0
         case .ZERO:
@@ -98,8 +98,8 @@ def _fill_rank(fill: Fill) -> Int:
 
 
 def _consistency_rank(consistency: Consistency) -> Int:
-    """Returns the 0-based case index selected by `__match`."""
-    __match consistency:
+    """Returns the 0-based case index selected by `match`."""
+    match consistency:
         case .WEAK:
             return 0
         case .RELAXED:

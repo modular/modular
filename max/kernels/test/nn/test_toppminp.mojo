@@ -16,7 +16,12 @@ from std.random import random_float64
 
 from max.algorithm.functional import parallelize_over_rows
 from std.benchmark import Bench, Bencher, BenchId
-from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
+from layout import (
+    Idx,
+    DefaultEngine,
+    TileTensor,
+    row_major,
+)
 from nn.toppminp import min_p_sampling, top_p_sampling
 from std.testing import assert_equal
 

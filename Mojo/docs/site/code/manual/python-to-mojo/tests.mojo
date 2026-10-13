@@ -25,46 +25,49 @@
 #   3. A `List` has one element type and can grow; a `Dict` has fixed key and
 #      value types.
 #      -> test_list_append, test_dict_insert
-#   4. `Variant` works as the element type of a collection that holds a known
+#   4. Collections take no negative indexes; `len(x) - 1` reaches the last
+#      element, and a slice can start at `len(x) - 2`.
+#      -> test_end_relative_index
+#   5. `Variant` works as the element type of a collection that holds a known
 #      set of types.
 #      -> test_variant_elements
-#   5. List, dictionary, and set comprehensions and `for` and `while` loops
+#   6. List, dictionary, and set comprehensions and `for` and `while` loops
 #      are supported.
 #      -> test_comprehensions, test_loops
-#   6. A `ref` binding shares the value: appending through `b` changes `a`.
+#   7. A `ref` binding shares the value: appending through `b` changes `a`.
 #      -> test_ref_shares_value
-#   7. `Int` copies implicitly; the copy is independent.
+#   8. `Int` copies implicitly; the copy is independent.
 #      -> test_int_copies_implicitly
-#   8. A `List` copy made with `.copy()` is independent; ownership can also
+#   9. A `List` copy made with `.copy()` is independent; ownership can also
 #      move with `^`.
 #      -> test_list_explicit_copy, test_list_transfer
-#   9. A `Variant[String, Int]` variable keeps its type while the held value
+#  10. A `Variant[String, Int]` variable keeps its type while the held value
 #      switches between the allowed types.
 #      -> test_variant_switches_held_type
-#  10. A variable can be reassigned a value of the same type.
+#  11. A variable can be reassigned a value of the same type.
 #      -> test_variable_reassignment
-#  11. A `mut` argument modifies the caller's value; a `mut self` method
+#  12. A `mut` argument modifies the caller's value; a `mut self` method
 #      modifies the instance.
 #      -> test_mut_argument, test_mut_self_method
-#  12. A `var` argument takes ownership of the caller's value.
+#  13. A `var` argument takes ownership of the caller's value.
 #      -> test_var_argument_takes_ownership
-#  13. `Int` is machine width; `Int8`, `Int32`, and `Int64` are sized.
+#  14. `Int` is machine width; `Int8`, `Int32`, and `Int64` are sized.
 #      -> test_int_is_machine_width, test_sized_integers
-#  14. `Int32` and `Float32` are one-element `SIMD` aliases, and `SIMD`
+#  15. `Int32` and `Float32` are one-element `SIMD` aliases, and `SIMD`
 #      holds fixed-size vectors.
 #      -> test_scalar_aliases_are_simd, test_simd_vector
-#  15. `Int / Int` produces an `Int` (7 / 2 is 3); integer-literal division
+#  16. `Int / Int` produces an `Int` (7 / 2 is 3); integer-literal division
 #      produces a floating-point result at compile time (7 / 2 is 3.5).
 #      -> test_int_division, test_literal_division
-#  16. The `Point` initializer uses `out self` to initialize every field;
+#  17. The `Point` initializer uses `out self` to initialize every field;
 #      `@fieldwise_init` synthesizes an equivalent initializer.
 #      -> test_point_initializer, test_fieldwise_init
-#  17. A trait states the interface and the compiler checks conformance.
+#  18. A trait states the interface and the compiler checks conformance.
 #      -> test_trait_bound
-#  18. A raising function declares `raises`; a non-raising caller handles the
+#  19. A raising function declares `raises`; a non-raising caller handles the
 #      error with `try`/`except`.
 #      -> test_validate_raises, test_check_handles_error
-#  19. A function can declare a typed error.
+#  20. A function can declare a typed error.
 #      -> test_typed_error
 #
 # Not tested (the page shows these as compile errors, so a passing build
@@ -74,10 +77,14 @@
 #   - `value += 1` on a default (immutable) argument
 #   - calling `validate()` from a non-raising function without `try`
 #   - a bare `var b = a` on a `List` (not `ImplicitlyCopyable`)
+#   - `readings[-1]` with a literal negative index (compile-time error)
 #   - "Mojo doesn't have a general `Float` type" (`Float` is an unknown
 #     declaration)
 #   - adding a field to a struct instance at runtime, and passing a
 #     non-`Drawable` type to `sketch()` (no runnable form)
+#
+# Not tested (aborts at run time; hand-verified with `mojo run`):
+#   - a negative index computed at run time, and `readings[-2:]`
 #
 # Not tested (no runnable behavior):
 #   - the Python blocks
@@ -125,6 +132,15 @@ def test_dict_insert() raises:
     counts["c"] = 3
     assert_equal(len(counts), 3)
     assert_equal(counts["c"], 3)
+
+
+def test_end_relative_index() raises:
+    var readings: List[Int] = [12, 80, 45]
+    assert_equal(readings[len(readings) - 1], 45)
+    var tail = readings[len(readings) - 2 :]
+    assert_equal(len(tail), 2)
+    assert_equal(tail[0], 80)
+    assert_equal(tail[1], 45)
 
 
 def test_variant_elements() raises:
@@ -394,6 +410,7 @@ def main() raises:
     test_annotated_literal_is_list()
     test_list_append()
     test_dict_insert()
+    test_end_relative_index()
     test_variant_elements()
     test_comprehensions()
     test_loops()

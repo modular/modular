@@ -19,7 +19,7 @@ from std.testing import *
 
 from std.utils.fast_div import FastDiv
 
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, row_major
 
 
 def test_fast_div() raises:

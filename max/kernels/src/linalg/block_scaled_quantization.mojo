@@ -26,7 +26,7 @@ from max.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
-from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from max.gpu.host import DeviceContext, FuncAttribute
 from layout import (
     coord,
     Coord,
@@ -36,7 +36,6 @@ from layout import (
     TensorEngine,
     TileTensor,
     row_major,
-    coord_to_index_list,
 )
 from layout.tile_layout import TensorLayout
 from std.collections import OptionalReg
@@ -98,7 +97,7 @@ from linalg.matmul.gpu.sm100_structured.default.dispatch import DISPATCH_HIT
 from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from max.runtime.tracing import Trace, TraceLevel, trace_arg, get_safe_task_id
 from std.collections.string.string_span import get_static_string
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
 from linalg.matmul.gpu.sm100.tile_scheduler import RasterOrder
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
@@ -850,11 +849,8 @@ def naive_block_scaled_matmul_kernel[
 
     accum *= alpha.cast[accum_type]()
 
-    comptime if elementwise_lambda_fn:
-        comptime elementwise_lambda = elementwise_lambda_fn.value()
-        elementwise_lambda[c_type, 1](
-            Index(row_idx, col_idx), accum.cast[c_type]()
-        )
+    comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
+        elementwise_lambda[c_type, 1]((row_idx, col_idx), accum.cast[c_type]())
     else:
         c[Coord(row_idx, col_idx)] = accum.cast[c_type]()
 
@@ -1630,8 +1626,8 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             var input_vector = SIMD[input_dtype, ELEMENTS_PER_THREAD](0)
             if is_valid:
                 var source_row = token_start + local_row
-                if row_indices:
-                    source_row = Int(row_indices.value()[source_row])
+                if case .Some(row_indices) = row_indices:
+                    source_row = Int(row_indices[source_row])
                 input_vector = input_tensor.load[width=ELEMENTS_PER_THREAD](
                     (source_row, input_col)
                 )
@@ -2044,33 +2040,18 @@ def block_scaled_matmul_with_epilogue[
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
-        comptime if not elementwise_lambda_fn:
-            matmul[scales_type=scales_dtype](
-                ctx,
-                c,
-                a,
-                b,
-                a_scales=a_scales,
-                b_scales=b_scales,
-                transpose_b=True,
-                c_row_major=True,
-                alpha=tensor_sf,
-            )
-        else:
-            comptime epilogue = elementwise_lambda_fn.value()
+        comptime if case .Some(epilogue) = elementwise_lambda_fn:
             # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
             comptime use_32b_simd = True
             comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-                simd_width_of[c_type, target=get_gpu_target()]()
+                simd_width_of[c_type, target=ctx.target]()
             )
 
             def epilogue_wrapper[
                 simd_width: Int, alignment: Int = 1
             ](idx: Coord) {var}:
                 var c_val = c.load[width=simd_width](idx)
-                epilogue[c_type, simd_width, alignment=alignment](
-                    Index(idx[0].value(), idx[1].value()), c_val
-                )
+                epilogue[c_type, simd_width, alignment=alignment](idx, c_val)
 
             matmul[scales_type=scales_dtype](
                 ctx,
@@ -2084,6 +2065,18 @@ def block_scaled_matmul_with_epilogue[
                 c_row_major=True,
             )
             elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
+        else:
+            matmul[scales_type=scales_dtype](
+                ctx,
+                c,
+                a,
+                b,
+                a_scales=a_scales,
+                b_scales=b_scales,
+                transpose_b=True,
+                c_row_major=True,
+                alpha=tensor_sf,
+            )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2252,15 +2245,18 @@ def block_scaled_matmul[
     @__copy_capture(c)
     def compute_lambda_wrapper[
         _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[_dtype, _width]):
-        comptime if elementwise_compute_lambda_fn:
-            comptime compute_lambda = elementwise_compute_lambda_fn.value()
+    ](coords: Coord, val: SIMD[_dtype, _width]):
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        comptime if case .Some(compute_lambda) = elementwise_compute_lambda_fn:
             var output = compute_lambda(coords, val)
             comptime assert (
                 output.dtype == c_type
             ), "compute epilogue lambda output and c type mismatch"
-            c.store_linear[alignment=alignment * size_of[c_type]()](
-                coords, rebind[SIMD[c_type, _width]](output)
+            c.store[alignment=alignment * size_of[c_type]()](
+                coords,
+                rebind[SIMD[c_type, _width]](output),
             )
 
     comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](

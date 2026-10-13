@@ -303,7 +303,6 @@ def test_grouped_amd_matmul_preshuffles_with_a_scale_row_bound() -> None:
         {},
         {
             "preshuffled_b": True,
-            "a_scales_preshuffled": True,
             "a_scales_max_padded_m": 64,
         },
     ],

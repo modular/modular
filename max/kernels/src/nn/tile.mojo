@@ -12,10 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the ONNX Tile operator, which replicates a tensor a specified number of times along each axis."""
 
-from layout import TileTensor
+from layout import Coord, TileTensor, coord_to_index_list
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu
 from std.memory import unsafe_memcpy
-
-from std.utils import IndexList
+from std.sys.info import simd_width_of
+from std.utils import IndexList, StaticTuple
 
 # TODO: This implementation supports up to 4 dimensions.
 
@@ -26,7 +29,7 @@ from std.utils import IndexList
 
 
 @inline(.always)
-def tile[
+def _tile_cpu[
     dtype: DType, type_repeats: DType
 ](
     input: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -256,6 +259,172 @@ def tile[
 
 
 @inline(.always)
+def _tile_gpu[
+    dtype: DType,
+    type_repeats: DType,
+    target: StaticString,
+](
+    input: TileTensor[dtype, address_space=.GENERIC, ...],
+    repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """Tiles `input` into `output` on a GPU.
+
+    The original kernel ran one thread per scalar element with a divmod
+    chain per axis, so the SMs spent their issue slots on integer
+    division (75% SM throughput at 3% L2 throughput on a B200) instead
+    of moving data. This version splits by repeat pattern:
+
+    - `repeat_inner == 1` (every output row IS one input row -- the
+      common outer-repeats-only case, e.g. expand-embeddings and MoE row
+      blocks): a vector-width elementwise pass over the original rank-N
+      shape. The framework packs consecutive elements per closure, which
+      stay in one row because the inner extent must divide by the vector
+      width (else the launch falls back to scalar); each closure wraps
+      every axis by the input extent once per vector. Measured 6.7-7.5x
+      faster than the per-element kernel on a B200.
+    - otherwise (the last axis repeats too): the per-element kernel,
+      which a chunk-per-thread variant regressed against on B200.
+
+    The input extents are read on the host and captured by value; the
+    coordinate decode is arithmetic against those, never through
+    device-side layout round-trips.
+    """
+    comptime assert input.rank == output.rank
+    comptime assert input.rank <= 4
+    comptime assert (
+        repeats.flat_rank == 1 and type_repeats == .int64
+    ), "repeats must be rank-1 int64"
+    if input.rank != Int(repeats.dim(0)):
+        raise Error(
+            "Length of repeats tensor should be equal to the rank of the"
+            " input tensor."
+        )
+
+    var num_elements = output.num_elements()
+    if num_elements == 0:
+        return
+
+    # All extents are read on the host and captured by value: the source
+    # coordinate of each output element wraps per axis by the input extent.
+    var input_dims = coord_to_index_list(input.layout.shape_coord())
+    var output_dims = coord_to_index_list(output.layout.shape_coord())
+    comptime rank = input.rank
+    var in_dims_t = StaticTuple[Int64, rank](fill=0)
+    comptime for axis in range(rank):
+        in_dims_t[axis] = Int64(input_dims[axis])
+
+    var in_inner = Int(input_dims[rank - 1])
+    var out_inner = Int(output_dims[rank - 1])
+    if in_inner == 0:
+        return
+    var repeat_inner = out_inner // in_inner
+
+    comptime full_width = simd_width_of[dtype]()
+    # The vector pass stays inside one row only when the inner extent
+    # divides by the vector width (the framework packs consecutive
+    # elements; a ragged extent would let a group wrap rows).
+    var width = full_width if in_inner % full_width == 0 else 1
+
+    if repeat_inner == 1:
+        # Every output row IS one input row: wrap every axis by the input
+        # extent and vectorize along the innermost.
+        @inline(.always)
+        def copy_row[
+            simd_width: Int, alignment: Int = 1
+        ](output_index: Coord) {var}:
+            # The framework may probe or fall back to other widths (the
+            # scalar tail path); every width <= full_width stays within a
+            # row because the inner extent divides by the launch width.
+            var out_coord = coord_to_index_list(output_index)
+            var in_coord = out_coord
+            comptime for axis in range(rank):
+                in_coord[axis] = out_coord[axis] % Int(in_dims_t[axis])
+            output.store[width=simd_width](
+                Coord(out_coord),
+                input.load[width=simd_width](Coord(in_coord)),
+            )
+
+        comptime if full_width > 1:
+            if width == full_width:
+                elementwise[
+                    simd_width=full_width,
+                    target=target,
+                    _trace_description="tile",
+                ](copy_row, output.layout.shape_coord(), ctx)
+            else:
+                elementwise[
+                    simd_width=1,
+                    target=target,
+                    _trace_description="tile",
+                ](copy_row, output.layout.shape_coord(), ctx)
+        else:
+            elementwise[
+                simd_width=1,
+                target=target,
+                _trace_description="tile",
+            ](copy_row, output.layout.shape_coord(), ctx)
+    else:
+        # Inner axis repeats too: keep the per-element kernel. A
+        # chunk-per-thread variant regressed on B200 (the extra grid
+        # dimension costs more than the outer-axis wraps it saves), so
+        # only the vectorizable `repeat_inner == 1` case takes the fast
+        # path above.
+        @inline(.always)
+        def copy_element[
+            simd_width: Int, alignment: Int = 1
+        ](output_index: Coord) {var}:
+            comptime assert simd_width == 1
+            # `output_index` is the output's per-axis coordinate. The
+            # source coordinate wraps each axis by the input's extent.
+            var output_coord = coord_to_index_list(output_index)
+            var input_index = output_coord
+            comptime for axis in range(rank):
+                input_index[axis] = output_coord[axis] % Int(in_dims_t[axis])
+            output.store(
+                Coord(output_coord),
+                input.load(Coord(input_index)),
+            )
+
+        elementwise[
+            simd_width=1,
+            target=target,
+            _trace_description="tile",
+        ](copy_element, output.layout.shape_coord(), ctx)
+
+
+@inline(.always)
+def tile[
+    dtype: DType, type_repeats: DType
+](
+    input: TileTensor[dtype, address_space=.GENERIC, ...],
+    repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+) raises:
+    """Tiles `input` into `output` on the CPU."""
+    _tile_cpu(input, repeats, output)
+
+
+@inline(.always)
+def tile[
+    dtype: DType,
+    type_repeats: DType,
+    target: StaticString,
+](
+    input: TileTensor[dtype, address_space=.GENERIC, ...],
+    repeats: TileTensor[type_repeats, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """Tiles `input` into `output` on CPU or GPU."""
+    comptime if is_cpu[target]():
+        _tile_cpu(input, repeats, output)
+    else:
+        _tile_gpu[dtype, type_repeats, target](input, repeats, output, ctx)
+
+
+@inline(.always)
 def tile_shape[
     input_type: DType,
     repeats_type: DType,
@@ -285,10 +454,14 @@ def tile_shape[
     if Int(repeats_buf.dim(0)) != input_buf.rank:
         raise Error("[tile] requires (len(repeats) == input_rank)")
 
-    # Compute and return the output shape.
+    # Compute and return the output shape. Negative repeats would produce a
+    # negative dimension, so reject them here (zero stays valid, like NumPy).
     var output_shape = IndexList[input_buf.rank]()
 
     comptime for i in range(input_buf.rank):
-        output_shape[i] = Int(input_buf.dim(i)) * Int(repeats_buf[i])
+        var repeat = Int(repeats_buf[i])
+        if repeat < 0:
+            raise Error("[tile] requires non-negative repeats")
+        output_shape[i] = Int(input_buf.dim(i)) * repeat
 
     return output_shape

@@ -32,7 +32,6 @@ from std.random import random_float64, random_si64, seed
 from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from std.sys.info import _accelerator_arch
-from std.utils import IndexList
 
 from layout import Coord, TileTensor, Idx
 from layout.tile_layout import row_major
@@ -263,13 +262,16 @@ def _run_8x8_bias_case[
     @__copy_capture(d_ptr, bias_ptr, row_stride)
     def bias_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
+    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
-        var bias = (bias_ptr + coords[1]).load[width=w]()
+        var bias = (bias_ptr + Int(coords[1].value())).load[width=w]()
         var v_c = rebind[SIMD[c_type, w]](val)
-        (d_ptr + coords[0] * row_stride + coords[1]).store[alignment=alignment](
-            v_c + bias
-        )
+        (
+            d_ptr + Int(coords[0].value()) * row_stride + Int(coords[1].value())
+        ).store[alignment=alignment](v_c + bias)
 
     comptime kernel = gemm_kernel_apple_8x8[
         c_type,
@@ -1677,11 +1679,16 @@ def _run_bias_epilogue_test[
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
+    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
         # Kernel invokes with `dt == c_type`; rebind so the store matches d_ptr.
-        var b = (bias_ptr + coords[1]).load[width=w]()
+        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
         var v_c = rebind[SIMD[c_type, w]](val)
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](v_c + b)
+        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
+            alignment=alignment
+        ](v_c + b)
 
     # Mojo `comptime if` does not lift `var` bindings out of branches, so
     # inline both enqueue calls.
@@ -1900,10 +1907,15 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
     @__copy_capture(d_ptr)
     def relu_compose_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
+    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
         var relu_val = max(v_fp16, SIMD[.float16, w](0))
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](relu_val)
+        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
+            alignment=alignment
+        ](relu_val)
 
     enqueue_apple_matmul[
         in_type=.float16,
@@ -1981,14 +1993,17 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     @__copy_capture(d_ptr, bias_ptr)
     def bias_relu_compose_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
+    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + coords[1]).load[width=w]()
+        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
         var biased = v_fp16 + b
         var activated = max(biased, SIMD[.float16, w](0))
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](
-            activated
-        )
+        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
+            alignment=alignment
+        ](activated)
 
     enqueue_apple_matmul[
         in_type=.float16,
@@ -2068,12 +2083,15 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
+    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
         var v_fp16 = rebind[SIMD[.float16, w]](val)
-        var b = (bias_ptr + coords[1]).load[width=w]()
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](
-            v_fp16 + b
-        )
+        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
+        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
+            alignment=alignment
+        ](v_fp16 + b)
 
     enqueue_apple_matmul[
         in_type=.float16,
@@ -2211,10 +2229,15 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        var b = (bias_ptr + coords[1]).load[width=w]()
+    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        var b = (bias_ptr + Int(coords[1].value())).load[width=w]()
         var v_c = rebind[SIMD[.float16, w]](val)
-        (d_ptr + coords[0] * N + coords[1]).store[alignment=alignment](v_c + b)
+        (d_ptr + Int(coords[0].value()) * N + Int(coords[1].value())).store[
+            alignment=alignment
+        ](v_c + b)
 
     enqueue_apple_matmul[
         in_type=.float16,
@@ -2338,38 +2361,73 @@ def _run_gemv_case[
     rows_per_warp: Int,
     tile_k: Int = 8,
     unroll: Int = 2,
+    compute: Bool = False,
 ](ctx: DeviceContext, m: Int, name: String) raises:
-    """Runs one launch configuration at `[m, N, K]` and checks it."""
+    """Runs one launch configuration at `[m, N, K]` and checks it.
+
+    With `compute`, a `compute_fn` adds a per-column bias and the kernel
+    stores the result; the bias is subtracted before the check, which
+    verifies the `(row, col)` coordinates the kernel hands the closure.
+    """
     print("==", name, "m", m, "n", N, "k", K)
     var act_h = ctx.enqueue_create_host_buffer[in_type](m * K)
     var w_h = ctx.enqueue_create_host_buffer[in_type](N * K)
+    var bias_h = ctx.enqueue_create_host_buffer[.float32](N)
     var c_h = ctx.enqueue_create_host_buffer[c_type](tile_m * N)
     _gemv_fill_random(act_h, m * K)
     _gemv_fill_random(w_h, N * K)
+    _gemv_fill_random(bias_h, N, 4.0)
     for i in range(tile_m * N):
         c_h[i] = Scalar[c_type](_GEMV_SENTINEL)
 
     var act_d = ctx.enqueue_create_buffer[in_type](m * K)
     var w_d = ctx.enqueue_create_buffer[in_type](N * K)
+    var bias_d = ctx.enqueue_create_buffer[.float32](N)
     var c_d = ctx.enqueue_create_buffer[c_type](tile_m * N)
     ctx.enqueue_copy(act_d, act_h)
     ctx.enqueue_copy(w_d, w_h)
+    ctx.enqueue_copy(bias_d, bias_h)
     ctx.enqueue_copy(c_d, c_h)
 
     var a_tt = TileTensor(act_d, row_major(m, Idx[K])).as_imm()
     var w_tt = TileTensor(w_d, row_major(Idx[N], Idx[K])).as_imm()
     var c_tt = TileTensor(c_d, row_major(m, Idx[N]))
-    enqueue_apple_gemv_config[
-        tile_m=tile_m,
-        rows_per_warp=rows_per_warp,
-        tile_k=tile_k,
-        unroll=unroll,
-    ](c_tt, a_tt, w_tt, ctx)
+    var bias_ptr = bias_d.unsafe_ptr()
+
+    @inline(.always)
+    def bias_add_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var bias_ptr} -> SIMD[
+        dtype, width
+    ]:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        var col = Int(coords[1].value())
+        var out = val.cast[.float32]() + bias_ptr.load[width=width](col)
+        return out.cast[dtype]()
+
+    comptime if compute:
+        enqueue_apple_gemv_config[
+            tile_m=tile_m,
+            rows_per_warp=rows_per_warp,
+            tile_k=tile_k,
+            unroll=unroll,
+            has_compute_fn=True,
+        ](c_tt, a_tt, w_tt, ctx, compute_fn=bias_add_fn)
+    else:
+        enqueue_apple_gemv_config[
+            tile_m=tile_m,
+            rows_per_warp=rows_per_warp,
+            tile_k=tile_k,
+            unroll=unroll,
+        ](c_tt, a_tt, w_tt, ctx)
     ctx.enqueue_copy(c_h, c_d)
     ctx.synchronize()
-    _ = act_d^
-    _ = w_d^
-    _ = c_d^
+    comptime if compute:
+        for i in range(m):
+            for j in range(N):
+                c_h[i * N + j] -= bias_h[j].cast[c_type]()
     _gemv_check[in_type, c_type](c_h, act_h, w_h, m, tile_m, N, K, name)
     print("  PASS")
 
@@ -2442,6 +2500,17 @@ def test_gemv_small_batch(ctx: DeviceContext) raises:
     )
 
 
+def test_gemv_compute_fn(ctx: DeviceContext) raises:
+    """`compute_fn` at ragged N and M below `tile_m`."""
+    seed(4)
+    _run_gemv_case[
+        .bfloat16, .float32, 203, 512, tile_m=4, rows_per_warp=2, compute=True
+    ](ctx, 3, "compute_fn m3 of 4")
+    _run_gemv_case[
+        .float16, .float32, 256, 1024, tile_m=8, rows_per_warp=1, compute=True
+    ](ctx, 8, "compute_fn fp16 m8")
+
+
 def test_gemv_large_shapes(ctx: DeviceContext) raises:
     """Narrow N, short K, long K, and K below the dispatch floor."""
     seed(3)
@@ -2508,10 +2577,13 @@ def _run_gemv_dispatch_case[
     @__copy_capture(c_tt, bias_tt)
     def bias_epilogue[
         dt: DType, w: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[dt, w]) capturing -> None:
-        var b = bias_tt.load[width=w, alignment=alignment](Coord(coords[1]))
+    ](coords: Coord, val: SIMD[dt, w]) capturing -> None:
+        comptime assert (
+            coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        var b = bias_tt.load[width=w, alignment=alignment]((coords[1],))
         c_tt.store[alignment=alignment](
-            Coord(coords[0], coords[1]),
+            coords,
             (val.cast[.float32]() + b).cast[c_type](),
         )
 
@@ -2730,5 +2802,6 @@ def main() raises:
     test_gemv_configs(ctx)
     test_gemv_ragged(ctx)
     test_gemv_small_batch(ctx)
+    test_gemv_compute_fn(ctx)
     test_gemv_large_shapes(ctx)
     test_gemv_dispatch(ctx)

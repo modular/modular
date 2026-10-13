@@ -19,14 +19,13 @@ rows [valid, BM) == 0 (the partial-tile zero-fill the LT path produces).
 """
 
 from layout import TensorLayout, TileTensor
-from layout.tile_tensor import stack_allocation as tt_stack_alloc
 from layout.tile_layout import (
     Layout as InternalLayout,
     row_major as tt_row_major,
 )
 from layout.tile_io import copy_dram_to_sram_async
 from layout.coord import ComptimeInt, Coord, Idx
-from max.gpu import block_idx, thread_idx
+from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 from max.gpu.memory import (

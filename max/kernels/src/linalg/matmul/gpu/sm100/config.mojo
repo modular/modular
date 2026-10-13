@@ -20,6 +20,4 @@ from ..sm100_structured.structured_kernels.config import (
     MatmulConfig,
     BlockScaledMatmulConfig,
     GEMMKind,
-    choose_config,
-    build_sm100_matmul_configs,
 )

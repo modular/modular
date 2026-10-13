@@ -33,7 +33,6 @@ Runtime arguments:
 
 from std.math import ceildiv
 from std.sys import get_defined_int, size_of
-from std.random import rand, randint
 from std.memory import bitcast
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (

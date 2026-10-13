@@ -85,7 +85,7 @@ def _scatter[dtype: DType](output: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
     barrier()
     _copy_frag_to_smem[BM, BN, BK, WM, WN, MMA_M, MMA_N, WIDTH](
         stages,
-        registers.to_layout_tensor().as_unsafe_any_origin(),
+        registers,
         UInt32(1),
         UInt32(1),
     )

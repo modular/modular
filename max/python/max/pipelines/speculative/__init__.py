@@ -14,7 +14,6 @@
 
 from .config import (
     MAGIC_DRAFT_TOKEN_ID,
-    RejectionSamplingStrategy,
     SpeculativeConfig,
     SpeculativeMethod,
     VerifyWidthRange,
@@ -39,7 +38,6 @@ __all__ = [
     "NO_ALIASES",
     "DraftAliases",
     "RaggedTokenMerger",
-    "RejectionSamplingStrategy",
     "SpecDecodeGraphInputs",
     "SpecDecodeInputTypeSpec",
     "SpecDecodeTailValues",

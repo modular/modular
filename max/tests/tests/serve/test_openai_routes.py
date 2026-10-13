@@ -1149,8 +1149,8 @@ def test_process_chat_log_probabilities_with_logprobs() -> None:
     # Simulate a token with log probabilities
     token_log_probs = [-0.5, -1.2]  # Log probs for 2 tokens
     top_log_probs = [
-        {"hello": -0.5, "world": -1.0, "foo": -2.0},  # Top 3 for token 1
-        {"bar": -1.2, "baz": -1.5, "qux": -2.5},  # Top 3 for token 2
+        {1: ("hello", -0.5), 2: ("world", -1.0), 3: ("foo", -2.0)},
+        {4: ("bar", -1.2), 5: ("baz", -1.5), 6: ("qux", -2.5)},
     ]
 
     outputs = [
@@ -1194,7 +1194,7 @@ def test_process_chat_log_probabilities_multiple_outputs() -> None:
             decoded_tokens="a",
             token_count=1,
             token_log_probabilities=[-0.1],
-            top_log_probabilities=[{"a": -0.1, "b": -0.5}],
+            top_log_probabilities=[{1: ("a", -0.1), 2: ("b", -0.5)}],
             sampled_tokens=["a"],
         ),
         TokenGeneratorOutput(
@@ -1202,7 +1202,7 @@ def test_process_chat_log_probabilities_multiple_outputs() -> None:
             decoded_tokens="b",
             token_count=1,
             token_log_probabilities=[-0.2],
-            top_log_probabilities=[{"b": -0.2, "c": -0.8}],
+            top_log_probabilities=[{2: ("b", -0.2), 3: ("c", -0.8)}],
             sampled_tokens=["b"],
         ),
     ]
@@ -1230,7 +1230,9 @@ def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
             decoded_tokens="x",
             token_count=1,
             token_log_probabilities=[-1.0],
-            top_log_probabilities=[{"x": -1.0, "y": -0.5, "z": -2.0}],
+            top_log_probabilities=[
+                {1: ("x", -1.0), 2: ("y", -0.5), 3: ("z", -2.0)}
+            ],
             sampled_tokens=["x"],
         )
     ]
@@ -1260,8 +1262,12 @@ def test_process_chat_log_probabilities_tied_sampled_token() -> None:
             token_count=2,
             token_log_probabilities=[-0.725921630859375, -0.5],
             top_log_probabilities=[
-                {",": -0.725921630859375, ".": -0.725921630859375, "x": -2.0},
-                {"b": -0.5, "a": -0.25, "c": -3.0},
+                {
+                    1: (",", -0.725921630859375),
+                    2: (".", -0.725921630859375),
+                    3: ("x", -2.0),
+                },
+                {4: ("b", -0.5), 5: ("a", -0.25), 6: ("c", -3.0)},
             ],
             sampled_tokens=[".", "b"],
         )
@@ -1293,7 +1299,7 @@ def test_process_chat_log_probabilities_bytes_encoding() -> None:
             decoded_tokens="é",
             token_count=1,
             token_log_probabilities=[-0.3],
-            top_log_probabilities=[{"é": -0.3}],
+            top_log_probabilities=[{1: ("é", -0.3)}],
             sampled_tokens=["é"],
         )
     ]
@@ -3801,7 +3807,9 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["error"]["message"].lower()
+    message = response.json()["error"]["message"]
+    assert "--no-enable-overlap-scheduler --force" in message
+    assert "--allow-unsupported-logprobs" in message
 
 
 @pytest.mark.asyncio
@@ -3892,7 +3900,9 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["error"]["message"].lower()
+    message = response.json()["error"]["message"]
+    assert "--no-enable-overlap-scheduler --force" in message
+    assert "--allow-unsupported-logprobs" in message
 
 
 @pytest.mark.asyncio

@@ -12,11 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.string.string_span import _get_kgen_string
+from std.sys.info import CompilationTarget
 
-from ._trait import MaxPluginHooks
+from ._trait import MaxPlugin, MaxPluginHooks
 
 
-struct HipMaxPlugin(MaxPluginHooks):
+struct HipMaxPlugin(MaxPlugin):
     """Provides default MAX behavior for HIP targets."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["hip"]()
+    comptime HookFor[target: CompilationTarget] = HipMaxPluginHooks[target]
+
+
+struct HipMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
+    pass

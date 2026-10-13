@@ -37,14 +37,10 @@ from layout import (
 )
 from layout.tile_tensor import stack_allocation
 from layout.tile_layout import Layout as _NewLayout
-from layout.tile_io import (
-    GenericToLocalTileCopier,
-    LocalToGenericTileCopier,
-)
+from layout.tile_io import GenericToLocalTileCopier
 from std.collections import OptionalReg
 from std.utils import IndexList
 from linalg.utils import (
-    NullTileConsumer,
     NullTileOperation,
     TileConsumer,
     TileOperation,
@@ -57,6 +53,8 @@ from extensibility import (
     get_kernel_tile_shape,
 )
 
+from ._tile_fusion import _tile_store_consumer
+
 
 @fieldwise_init
 struct _ComputeFusionTileOp[
@@ -67,10 +65,8 @@ struct _ComputeFusionTileOp[
 
     Holds the fused-output `ComputeOutputFusionTile` struct and forwards the
     per-tile epilogue to its `compute`, exactly as `_ElementwiseFusionTileAdapter`
-    drives `elem.compute`. This lets `_NaiveMatmulTileAdapter` hold a plain
-    `TileTensor` for `c` (used only for the raw store) while the fusion lives
-    behind the `TileOperation` boundary. Holds only the `TrivialRegisterPassable`
-    fusion struct, so it rides into the kernel as a by-value capture.
+    drives `elem.compute`. Holds only the `TrivialRegisterPassable` fusion
+    struct, so it rides into the kernel as a by-value capture.
 
     Transitional scaffolding for the tile-codegen bring-up (see GEX-3919).
     """
@@ -130,63 +126,16 @@ struct _ComputeFusionTileOp[
 
 
 @fieldwise_init
-struct _TileStoreConsumer[
-    c_dtype: DType,
-    CLayout: TensorLayout,
-](TileConsumer):
-    """Minimal terminal `TileConsumer` that performs the output store.
-
-    A `TileConsumer` is terminal: when one is bound it OWNS the store, so the
-    parent kernel skips its own store path. This consumer copies the per-thread
-    fragment into the global output tile via `LocalToGenericTileCopier`, exactly
-    as `_NaiveMatmulTileAdapter`'s built-in store would. It is not wired to any
-    `mo.*` op; it exists solely to exercise the `TileConsumer` trait end-to-end
-    and is injected only behind a `comptime` toggle in `MatmulTileSM100`.
-
-    Transitional scaffolding for the tile-codegen bring-up (see GEX-3919).
-    """
-
-    comptime src_address_space = AddressSpace.LOCAL
-
-    var c: TileTensor[Self.c_dtype, Self.CLayout, MutUntrackedOrigin]
-
-    @inline(.always)
-    def __call__[
-        dtype: DType,
-        LayoutType: TensorLayout,
-    ](
-        ref self,
-        tile_coord: Coord,
-        tile: TileTensor[
-            dtype, LayoutType, ..., address_space=Self.src_address_space
-        ],
-        thread_layout: _NewLayout,
-    ) -> None:
-        comptime assert type_of(
-            thread_layout
-        ).all_dims_known, "TileConsumer thread_layout must be statically known"
-        comptime assert tile_coord.is_flat, "Tile coordinate must be flat."
-        comptime TM = LayoutType.static_shape[0]
-        comptime TN = LayoutType.static_shape[1]
-        var elem = rebind[IndexList[2]](coord_to_index_list(tile_coord))
-        var out_tile = self.c.tile[TM, TN](Coord(elem[0] // TM, elem[1] // TN))
-        LocalToGenericTileCopier[type_of(thread_layout)()]().copy(
-            out_tile, tile
-        )
-
-
-@fieldwise_init
 struct _NaiveMatmulTileAdapter[
-    c_dtype: DType,
-    CLayout: TensorLayout,
     a_dtype: DType,
     ALayout: TensorLayout,
     b_dtype: DType,
     BLayout: TensorLayout,
+    TileConsumerType: TileConsumer,
     //,
+    c_dtype: DType,
     tile_shape: IndexList[2],
     TileOperationType: TileOperation = NullTileOperation,
-    TileConsumerType: TileConsumer = NullTileConsumer,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Naive per-tile matmul driver for the tile programming model (GPU).
 
@@ -196,8 +145,8 @@ struct _NaiveMatmulTileAdapter[
     tile_shape` so each of the `TM * TN` threads owns a `1x1` fragment and
     computes exactly one output element `C[row, col] = sum_k A[row, k] *
     B[k, col]`. The per-thread fragment is routed through the injected
-    `TileOperation` epilogue (matmul+add, case 5) and stored via the same store
-    copier the elementwise driver uses. No tensor cores / SMEM tiling: this is
+    `TileOperation` epilogue (matmul+add, case 5), and the bound `TileConsumer`
+    owns its store. No tensor cores / SMEM tiling: this is
     the validation kernel for the tile-codegen path, not a perf kernel.
 
     Transitional scaffolding for the tile-codegen bring-up; expected to be
@@ -209,30 +158,21 @@ struct _NaiveMatmulTileAdapter[
     )
     comptime frag_layout = type_of(row_major[1, 1]())
 
-    var c: TileTensor[Self.c_dtype, Self.CLayout, MutUntrackedOrigin]
     var a: TileTensor[Self.a_dtype, Self.ALayout, MutUntrackedOrigin]
     var b: TileTensor[Self.b_dtype, Self.BLayout, MutUntrackedOrigin]
     var k_dim: Int
-    # Optional epilogues, both defaulting to their null sentinels (absent). The
-    # non-terminal `tile_operation` transforms the fragment; a terminal
-    # `tile_consumer`, if present, owns the store.
+    # The non-terminal `tile_operation`, if bound, transforms the fragment; the
+    # terminal `tile_consumer` owns the store.
     # Here we use OptionalReg, but elsewhere Optional, due to capture/passing
     # convention differences.
     var tile_operation: OptionalReg[Self.TileOperationType]
-    var tile_consumer: OptionalReg[Self.TileConsumerType]
+    var tile_consumer: Self.TileConsumerType
 
     @inline(.always)
     def __call__(self) capturing:
         comptime TM = Self.tile_shape[0]
         comptime TN = Self.tile_shape[1]
 
-        comptime assert not (
-            is_valid_epilogue[Self.TileConsumerType]()
-            and is_valid_epilogue[Self.TileOperationType]()
-        ), (
-            "It is not permitted to pass both TileOperation and TileConsumer"
-            " epilogues"
-        )
         # One block per output tile; `thread_idx.x` selects this thread's
         # element within the tile (row-major over `thread_layout`).
         var tile_row = block_idx.y
@@ -285,25 +225,16 @@ struct _NaiveMatmulTileAdapter[
                 Coord(tile_row * TM, tile_col * TN), dst, Self.thread_layout
             )
 
-        # Terminal store. A bound `TileConsumer` OWNS the store (replacing the
-        # kernel store path); otherwise the adapter stores the fragment itself.
         # The `address_space_cast` back to LOCAL is the store-side half of the
         # staging dance noted above (see TODO(GEX-3912)).
-        var res_local = res.address_space_cast[.LOCAL]()
-        comptime if is_valid_epilogue[Self.TileConsumerType]():
-            var consumer = self.tile_consumer.value()
-            consumer(
-                Coord(tile_row * TM, tile_col * TN),
-                res_local.address_space_cast[
-                    Self.TileConsumerType.src_address_space
-                ](),
-                Self.thread_layout,
-            )
-        else:
-            var out_tile = self.c.tile[TM, TN](Coord(tile_row, tile_col))
-            LocalToGenericTileCopier[Self.thread_layout]().copy(
-                out_tile, res_local
-            )
+        var consumer = self.tile_consumer
+        consumer(
+            Coord(tile_row * TM, tile_col * TN),
+            res.address_space_cast[.LOCAL]().address_space_cast[
+                Self.TileConsumerType.src_address_space
+            ](),
+            Self.thread_layout,
+        )
 
 
 # Transitional tile-codegen scaffolding (remove per GEX-3941): a SEPARATE,
@@ -363,65 +294,27 @@ struct MatmulTileSM100:
             "tile-codegen matmul requires tile-divisible output shapes",
         )
 
-        # This `mo.matmul` function demonstrate 3 different options for
-        # tile-based epilogues.
-        # 1. via TileOperation, a 'compute' lambda (if the GC performed epilogue fusion)
-        # 2. via TileConsumer, a trivial 'store only' epilogue (if demo_tile_consumer is True)
-        # 3. no epilogue
-        comptime demo_tile_consumer = False
-
-        var c_tt = c.to_tile_tensor()
         var a_tt = a.to_tile_tensor()
         var b_tt = b.to_tile_tensor()
+        var store = _tile_store_consumer(c)
 
-        # 1. GC-generated epilogue, wrapped in TileOperation
+        # A GC-generated compute epilogue rides in as a `TileOperation`.
         comptime if has_epilogue_fusion:
             var op = _ComputeFusionTileOp(c.compute_fusion_tile)
             var adapter = _NaiveMatmulTileAdapter[
-                tile_shape=tile_shape, TileOperationType=type_of(op)
-            ](
-                c_tt,
-                a_tt,
-                b_tt,
-                k_dim,
-                OptionalReg(op),
-                OptionalReg[NullTileConsumer](),
-            )
+                c.dtype, tile_shape=tile_shape, TileOperationType=type_of(op)
+            ](a_tt, b_tt, k_dim, OptionalReg(op), store)
             ctx.enqueue_function(
                 adapter,
                 grid_dim=(n_dim // TN, m_dim // TM),
                 block_dim=(TM * TN),
             )
-        # 2. Trivial TileConsumer (just stores the data for demonstration purposes!)
-        elif demo_tile_consumer:
-            var cons = _TileStoreConsumer(c_tt)
-            var adapter = _NaiveMatmulTileAdapter[
-                tile_shape=tile_shape, TileConsumerType=type_of(cons)
-            ](
-                c_tt,
-                a_tt,
-                b_tt,
-                k_dim,
-                OptionalReg[NullTileOperation](),
-                OptionalReg(cons),
-            )
-            ctx.enqueue_function(
-                adapter,
-                grid_dim=(n_dim // TN, m_dim // TM),
-                block_dim=(TM * TN),
-            )
-        # 3. No fusion, no epilogue
         else:
-            var adapter = _NaiveMatmulTileAdapter[tile_shape=tile_shape](
-                c_tt,
-                a_tt,
-                b_tt,
-                k_dim,
-                OptionalReg[NullTileOperation](),
-                OptionalReg[NullTileConsumer](),
-            )
+            var adapter = _NaiveMatmulTileAdapter[
+                c.dtype, tile_shape=tile_shape
+            ](a_tt, b_tt, k_dim, OptionalReg[NullTileOperation](), store)
             ctx.enqueue_function(
                 adapter,
                 grid_dim=(n_dim // TN, m_dim // TM),
-                block_dim=(TN * TM),
+                block_dim=(TM * TN),
             )

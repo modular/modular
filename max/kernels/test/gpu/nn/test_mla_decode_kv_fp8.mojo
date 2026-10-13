@@ -17,7 +17,7 @@ from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import TileTensorMHAOperand
@@ -28,7 +28,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index
 
 
 # ===-----------------------------------------------------------------------===#
@@ -106,7 +105,7 @@ def test[
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "seq_len:",
         seq_len,
         "num_keys:",

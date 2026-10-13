@@ -22,7 +22,7 @@ from max.gpu.compute.mma_util import (
     load_matrix_b,
     store_matrix_d,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_false
 

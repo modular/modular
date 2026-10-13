@@ -23,7 +23,7 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from algorithm.reductions import (
+from .rowwise_reductions import (
     reduce_argmax,
     reduce_argmin,
     reduce_max,
@@ -35,15 +35,14 @@ from algorithm.reductions import (
 )
 from algorithm.rowwise_types import RowCoord
 
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from nn import arg_nonzero
 from nn.argsort import argsort
 from nn.cumsum import cumsum
 from nn.gather_scatter import _unsafe_normalize_neg_index
-from nn.normalization import (
-    apply_qk_rms_norm,
-    group_norm,
+from nn.normalization import apply_qk_rms_norm, group_norm
+from .rowwise_normalization import (
     layer_norm,
     layer_norm_rope_ragged,
     rms_norm_fused_residual_add,
@@ -52,7 +51,7 @@ from nn.normalization import (
     row_mean_of_squares_qk,
     row_mean_of_squares,
 )
-from nn.softmax import softmax
+from .rowwise_softmax import softmax
 from nn.topk import _top_k_cpu, top_k, top_k_shape_impl, topk_gpu
 from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
@@ -207,19 +206,27 @@ struct ArgNonZero:
     """Registers the `mo.arg_nonzero` graph op with the graph compiler."""
 
     @staticmethod
-    def execute(
+    def execute[
+        target: StaticString,
+    ](
         output_buffer: OutputTensor[rank=2, ...],
         input_buffer: InputTensor,
+        ctx: DeviceContext,
     ) raises:
         """Executes the `mo.arg_nonzero` graph op.
+
+        Parameters:
+            target: Compilation target string.
 
         Args:
             output_buffer: Output tensor receiving the nonzero indices.
             input_buffer: Input tensor whose nonzero indices are found.
+            ctx: Device context used to enqueue GPU work.
         """
-        arg_nonzero.arg_nonzero(
+        arg_nonzero.arg_nonzero[target=target](
             input_buffer.to_tile_tensor[.int64](),
             output_buffer.to_tile_tensor[.int64](),
+            ctx,
         )
 
 
@@ -2163,7 +2170,7 @@ struct TopKPerRow:
                 indices.to_tile_tensor[.int64](),
                 1000,
                 sorted=True,
-                ctx=Optional[DeviceContext](ctx),
+                ctx=Optional(ctx.assert_cpu_target()),
                 k=k_tt,
             )
         else:

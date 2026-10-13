@@ -31,6 +31,7 @@ from max.driver import (
     Buffer,
     Device,
     Usage,
+    accelerator_api,
 )
 from max.driver.driver import load_device
 from max.dtype import DType
@@ -718,6 +719,35 @@ class ModelWorker:
             pass  # suppress noisy stack traces for user abort
 
 
+def _enable_driver_staging_for_worker(pipeline_config: PipelineConfig) -> None:
+    """Sets ``HSA_USERPTR_FOR_PAGED_MEM=0`` for the model worker when its KV
+    connector config asks for a driver-allocated host staging region.
+
+    HIP latches this once, at its own first driver call, so it has to be in
+    the environment before the worker makes that call. Setting it inside the
+    worker itself would often be too late if something ahead of the KV
+    connector (such as a device probe) already touched HIP first.
+
+    The model worker is spawned as a fresh ``multiprocessing`` ``spawn``
+    process rather than a fork, so it inherits this (parent) process's
+    environment at its own startup and reads the variable from there at its
+    own, independent HIP init -- whether this process has already
+    initialized HIP for its own device probing (it has, by this point, via
+    ``scan_available_devices``) has no bearing on the worker's HIP state.
+    """
+    try:
+        kv_connector_config = pipeline_config.model.kv_cache.kv_connector_config
+    except ValueError:
+        # No main model configured (e.g. a diffusion pipeline with no text
+        # role); none of those use the tiered KV connector.
+        return
+    if (
+        kv_connector_config.host_staging_alloc == "driver"
+        and accelerator_api() == "hip"
+    ):
+        os.environ["HSA_USERPTR_FOR_PAGED_MEM"] = "0"
+
+
 @asynccontextmanager
 async def start_model_worker(
     model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
@@ -751,6 +781,10 @@ async def start_model_worker(
     """
     worker_name = "MODEL_" + str(uuid.uuid4())
     logger.info("Starting worker: %s", worker_name)
+
+    # Must happen before the subprocess spawns below: HIP reads the
+    # environment once, at its own init, inside the worker.
+    _enable_driver_staging_for_worker(pipeline_config)
 
     mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Model Worker") as proc:

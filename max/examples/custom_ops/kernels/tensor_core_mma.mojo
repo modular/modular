@@ -35,9 +35,7 @@ from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )
-from max.gpu.sync import AMDScheduleBarrierMask
 from max.gpu.sync import schedule_barrier as amd_schedule_barrier
-from max.gpu.sync import schedule_group_barrier
 
 # Import AMD helper functions and structs from the kernels subdirectory
 
@@ -60,7 +58,7 @@ from layout.tile_io import copy_dram_to_sram, copy_dram_to_sram_async
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
 
-from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
+from extensibility import InputTensor, OutputTensor
 
 from std.utils import StaticTuple
 from std.utils.index import Index, IndexList

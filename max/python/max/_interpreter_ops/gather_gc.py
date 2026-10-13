@@ -278,7 +278,7 @@ def gather_model(
 
     Lazy by default: compiled on first use and cached for the process lifetime.
     With ``MAX_EAGER_OP_PRECOMPILE=1`` it was precompiled at import and this is a
-    lookup. On the first miss a warm cache is adopted whole (manifest force-load,
+    lookup. On the first miss a warm cache is adopted whole (the warm store,
     else a batched stamp sweep) instead of compiling per target.
 
     Args:

@@ -69,13 +69,14 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     expect_bytes_pred,
     SharedMemPointer,
     MBarType,
-    ProducerPipeline,
     ConsumerPipeline,
 )
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+    SparseRowLayout,
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
+    sparse_kv_row,
     QOTMATile,
     ORaggedTMATile,
     MLA_Decode_Pack,
@@ -143,6 +144,10 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
     # Number of q positions folded into the BM tile (the MTP step width);
     # meaningful only when fold_shared_index=True, else 1.
     q_len_fold: Int = 1,
+    # Whether `d_indices` holds paged physical rows rather than token
+    # positions (decoded through the cache's lookup table); see `sparse_kv_row`.
+    physical_indices: Bool = True,
+    sparse_row: SparseRowLayout = SparseRowLayout(),
     Engine: TensorEngine = DefaultEngine[element_width=1],
 ](TrivialRegisterPassable):
     # Presence of the optional operands is carried by their pointer types.
@@ -381,6 +386,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             MutAnyOrigin,
             Engine=Self.Engine,
         ],
+        # Positions between the token each sparse row was computed for and
+        # the token that reads it.
+        selection_lag_dev: Int32,
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
         # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
@@ -411,6 +419,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         var indices_stride = Int(indices_stride_dev)
         var extra_indices_stride = Int(extra_indices_stride_dev)
         var batch_size = Int(scalar_args.ptr[0])
+        var selection_lag = Int(selection_lag_dev)
         var q_max_seq_len = Int(scalar_args.ptr[1])
         var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask
@@ -749,6 +758,10 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                         DType.float32
                     ]() * Float32(log2e)
 
+            comptime if Self.MaskType.get_type_name() == "CausalMask" and not Self.fold_shared_index:
+                offset_position.assert_row_packed[Self.sparse_row](
+                    d_indices, indices_stride, selection_lag
+                )
             # Shared-index fold: drive the shared utils fold-Q layout — BM=64
             # packs q_len_fold * num_q_heads rows and each row keeps its own
             # causal horizon (cache_len + score_row // num_q_heads + 1). There
@@ -757,6 +770,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 has_attn_sink=Self.has_attn_sink,
                 fold_q=Self.fold_shared_index,
                 q_len_fold=Self.q_len_fold,
+                sparse_row=Self.sparse_row,
             ](
                 attn_tmem_addr[cluster_size=1](),
                 s_bars,
@@ -775,6 +789,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
                 attn_sink_log2=attn_sink_log2,
+                selection_lag=selection_lag,
             )
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
             warpgroup_reg_dealloc[num_reg_correction]()
@@ -897,15 +912,13 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         indices_base: Int,
         kv_lut: Self.KVLUTType,
         topk: UInt32,
+        batch_idx: UInt32,
     ):
-        """Transform d_indices from physical_block*page_size+offset to TMA rows.
+        """Transform d_indices to TMA rows, `-1` for unused slots.
 
-        All 32 threads of warp 8 cooperatively transform BN_QK=64 indices.
-        Each thread handles 2 indices (lane and lane+32).
-
-        d_indices values encode: physical_block * page_size + offset.
-        The kernel calls kv_lut.get_tma_row() to convert each encoded
-        index to the actual TMA row.  Invalid indices (-1) are preserved.
+        All 32 threads of warp 11 cooperatively transform BN_QK=64 indices.
+        Each thread handles 2 indices (lane and lane+32), which
+        `_load_scales_for_tile_sparse` reads back.
         """
         var lane = thread_idx.x & 31
         var max_idx = max(topk, UInt32(1)) - 1
@@ -915,12 +928,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             var idx_pos = UInt32(indices_base + row_in_tile)
             var clamped_pos = min(idx_pos, max_idx)
             var raw_index = d_indices.unsafe_value()[Int(clamped_pos)]
-            # Convert encoded index to TMA row via the KV cache.
-            var tma_row = kv_lut.get_tma_row(raw_index)
-            # Preserve -1 for invalid entries.
-            if raw_index == -1:
-                tma_row = -1
-            idx_smem[row_in_tile] = tma_row
+            idx_smem[row_in_tile] = sparse_kv_row[Self.physical_indices](
+                kv_lut, batch_idx, raw_index
+            )
 
     # ------------------------------------------------------------------
     # Index producer: warp 11 transforms indices and loads scales
@@ -964,6 +974,11 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         blockwise) loads FP32 scales to scale SMEM. Signals idx_bars
         when each tile's data is ready. Runs 1 tile ahead of warp 8.
         """
+        # The extra stream's caller (latent sparse attention) passes flat
+        # physical rows, so it cannot share a logical selection's decoding.
+        comptime assert not (
+            not Self.physical_indices and Self.has_extra_kv
+        ), "logical sparse indices do not support an extra KV stream"
         var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
@@ -972,6 +987,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
 
         var idx_prod = idx_bars.producer()
         var orig_topk_u32 = UInt32(offset_position.sparse_topk)
+        var batch_idx = UInt32(offset_position.batch_idx)
 
         # Compute original vs extra tile counts (mirrors warp 8 logic).
         var num_orig_tiles = num_k_tiles
@@ -1002,16 +1018,14 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 orig_indices_base,
                 kv_lut,
                 orig_topk_u32,
+                batch_idx,
             )
             comptime if Self.config.scale_block_size > 0:
                 Self._load_scales_for_tile_sparse(
                     scale_smem_base,
                     scales_ptr,
                     kv_stage_idx,
-                    d_indices,
-                    orig_indices_base,
-                    kv_lut,
-                    orig_topk_u32,
+                    idx_smem,
                 )
             idx_prod.commit()
             orig_indices_base += Self.config.BN_QK
@@ -1031,16 +1045,14 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 orig_indices_base,
                 kv_lut,
                 orig_topk_u32,
+                batch_idx,
             )
             comptime if Self.config.scale_block_size > 0:
                 Self._load_scales_for_tile_sparse(
                     scale_smem_base,
                     scales_ptr,
                     kv_stage_idx,
-                    d_indices,
-                    orig_indices_base,
-                    kv_lut,
-                    orig_topk_u32,
+                    idx_smem,
                 )
             idx_prod.commit()
             orig_indices_base += Self.config.BN_QK
@@ -1066,16 +1078,14 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                     extra_indices_base,
                     extra_kv_lut,
                     extra_topk_u32,
+                    batch_idx,
                 )
                 comptime if Self.config.scale_block_size > 0:
                     Self._load_scales_for_tile_sparse(
                         scale_smem_base,
                         extra_scales_ptr,
                         kv_stage_idx,
-                        extra_d_indices,
-                        extra_indices_base,
-                        extra_kv_lut,
-                        extra_topk_u32,
+                        idx_smem,
                     )
                 idx_prod.commit()
                 extra_indices_base += Self.config.BN_QK
@@ -1094,16 +1104,14 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                     extra_indices_base,
                     extra_kv_lut,
                     extra_topk_u32,
+                    batch_idx,
                 )
                 comptime if Self.config.scale_block_size > 0:
                     Self._load_scales_for_tile_sparse(
                         scale_smem_base,
                         extra_scales_ptr,
                         kv_stage_idx,
-                        extra_d_indices,
-                        extra_indices_base,
-                        extra_kv_lut,
-                        extra_topk_u32,
+                        idx_smem,
                     )
                 idx_prod.commit()
                 extra_indices_base += Self.config.BN_QK
@@ -1414,43 +1422,33 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         scale_smem_base: SharedMemPointer[UInt8],
         scales_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
         stage_idx: UInt32,
-        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        indices_base: Int,
-        kv_lut: Self.KVLUTType,
-        topk: UInt32,
+        idx_smem: SharedMemPointer[Int32],
     ):
-        """Load FP32 scales for sparse tokens, convert to e8m0.
+        """Load FP32 scales for the tile's gathered rows, convert to e8m0.
 
-        Like _load_scales_for_tile but reads the encoded index from d_indices
-        and uses kv_lut.get_tma_row() to convert each encoded index to the
-        physical TMA row.
-
-        Called by all 32 threads of warp 11. Each thread handles 2 rows
-        (32 threads * 2 rows = 64 = BN_QK).
+        Reads the TMA rows `_transform_indices_to_smem` just wrote to
+        `idx_smem`. Called by all 32 threads of warp 11; each thread handles
+        the same 2 rows (lane and lane+32) it wrote, so program order alone
+        orders the read after the write. An unused slot (`-1`) gathers zeros,
+        so its scale is 1 rather than a load from before the pool.
         """
         comptime scales_per_token = Self.config.scales_per_token
         var scale_smem_stage = scale_smem_base + stage_idx * UInt32(
             Self.config.scale_smem_per_stage
         )
         var lane = thread_idx.x & 31
-        var max_idx = max(topk, UInt32(1)) - 1
 
-        # Each of 32 threads handles 2 rows (rows lane and lane+32).
         comptime for row_pass in range(2):
             var row_in_tile = lane + row_pass * 32
-            var idx_pos = UInt32(indices_base + row_in_tile)
-            # Clamp to valid range within topk.
-            var clamped_pos = min(idx_pos, max_idx)
-            # Read encoded index and convert to TMA row via the KV cache.
-            var raw_index = d_indices.unsafe_value()[Int(clamped_pos)]
-            var gmem_row = Int(kv_lut.get_tma_row(raw_index))
-            var row_base = scales_ptr.unsafe_value() + (
-                gmem_row * scales_per_token
-            )
+            var gmem_row = Int(idx_smem[row_in_tile])
             var smem_off = row_in_tile * scales_per_token
 
             comptime for s in range(scales_per_token):
-                var fp32_val = row_base[s]
+                var fp32_val = Float32(1.0)
+                if gmem_row >= 0:
+                    fp32_val = scales_ptr.unsafe_value()[
+                        gmem_row * scales_per_token + s
+                    ]
                 scale_smem_stage[smem_off + s] = bitcast[.uint8](
                     fp32_val.cast[.float8_e8m0fnu]()
                 )

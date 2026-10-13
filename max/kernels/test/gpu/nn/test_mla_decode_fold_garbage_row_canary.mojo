@@ -57,7 +57,6 @@ and MiniMax-M2 if configured for MLA) -- not specific to MiniMax-M3, which
 uses dense (non-MLA) attention and the already-fixed kernel.
 """
 
-from std.math import ceildiv, sqrt
 from std.random import randn, seed
 from std.testing import assert_equal, assert_true
 

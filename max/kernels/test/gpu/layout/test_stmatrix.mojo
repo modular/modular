@@ -19,12 +19,7 @@ from max.gpu import WARP_SIZE, lane_id, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import ld_matrix, mma, st_matrix
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import unsafe_stack_allocation

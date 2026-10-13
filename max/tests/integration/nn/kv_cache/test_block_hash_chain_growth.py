@@ -28,7 +28,6 @@ import numpy as np
 import pytest
 from max.nn.kv_cache import KVCacheGroupId, PagedKVLeafRegion
 from max.pipelines.context import TextContext, TokenBuffer
-from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import (
     KVHashAlgo,
@@ -84,7 +83,6 @@ def test_block_manager_hashes_match_one_shot_as_the_chain_grows(
     bm = BlockManager(
         total_num_blocks=32,
         block_size=BLOCK_SIZE,
-        connector=NullConnector(),
         enable_prefix_caching=True,
         kv_hash_algo=algo,
         kv_hash_seed=seed,

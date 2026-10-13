@@ -34,7 +34,12 @@ from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm.device_collective import _launch_device_collective
 from comm import Signal
 from extensibility import StaticTensorSpec
-from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
+from max.gpu.host import (
+    CompletionFlag,
+    DeviceContext,
+    DeviceContextArray,
+    DeviceGraphBuilder,
+)
 from layout.tile_tensor import row_major
 from max.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -101,6 +106,7 @@ from nn.rand_normal import random_normal
 from nn.rand_uniform import keyed_uniform, random_uniform
 from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.roi_align import roi_align_nhwc
+from nn.roi_align_gpu import roi_align_gpu
 from nn.rope import rope_ragged
 from nn.sampling import (
     apply_masked_penalties_to_logits,
@@ -144,6 +150,7 @@ from extensibility import (
     IOSpec,
     ManagedTensorSlice,
     OutputTensor,
+    StableInputVariadicTensors,
     Tensor,
     TileTensorable,
     VariadicTensors,
@@ -319,16 +326,15 @@ struct Copy:
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @__parameter
         @inline(.always)
         def func[
             width: Int, element_alignment: Int
-        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
+        ](idx: IndexList[rank]) {var} -> SIMD[dtype, width]:
             return input._fused_load[
                 width, element_alignment=element_alignment
             ](idx)
 
-        foreach[func](output, ctx)
+        foreach(func, output, ctx)
 
 
 @extensibility.register("nan_check_count")
@@ -687,6 +693,7 @@ struct ROIAlign:
         aligned: Bool,
         mode: StaticString,
         dtype: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4, ...],
         input: InputTensor[dtype=dtype, rank=4, ...],
@@ -695,16 +702,35 @@ struct ROIAlign:
         output_width: Int64,
         spatial_scale: Scalar,
         sampling_ratio: Scalar,
-    ):
-        roi_align_nhwc[aligned, mode](
-            output.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            rois.to_tile_tensor[.int64](),
-            Int(output_height),
-            Int(output_width),
-            spatial_scale,
-            sampling_ratio,
-        )
+        ctx: DeviceContext,
+    ) raises:
+        comptime if is_cpu[target]():
+            roi_align_nhwc[aligned, mode](
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                rois.to_tile_tensor[.int64](),
+                Int(output_height),
+                Int(output_width),
+                spatial_scale,
+                sampling_ratio,
+            )
+        elif is_gpu[target]():
+            roi_align_gpu[
+                dtype,
+                aligned,
+                mode,
+            ](
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                rois.to_tile_tensor[.int64](),
+                Int(output_height),
+                Int(output_width),
+                spatial_scale,
+                sampling_ratio,
+                ctx,
+            )
+        else:
+            comptime assert False, "Unknown target " + target
 
 
 @extensibility.register_shape_function("mo.roi_align")
@@ -760,7 +786,9 @@ struct RepeatInterleave:
     """Registers the `repeat_interleave` graph op with the graph compiler."""
 
     @staticmethod
-    def execute(
+    def execute[
+        target: StaticString,
+    ](
         output: OutputTensor,
         input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         repeats: InputTensor[rank=1, ...],
@@ -771,7 +799,7 @@ struct RepeatInterleave:
             axis.dtype.is_integral()
         ), "axis value must be integer type"
 
-        repeat_interleave(
+        repeat_interleave[target=target](
             input.to_tile_tensor[.int64](),
             repeats.to_tile_tensor[.int64](),
             Int(normalize_neg_index(axis, input.rank)),
@@ -832,12 +860,10 @@ struct RandomNormal:
     ) capturing raises:
         @inline(.always)
         def output_fn[
-            _width: SIMDLength,
-            _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {imm output}:
+            _width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, _width]) {imm output}:
             output._lambda_store[width=_width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](val),
+                coords, rebind[SIMD[output.dtype, _width]](val)
             )
 
         random_normal[target=target](
@@ -909,12 +935,10 @@ struct RandomUniform:
     ) capturing raises:
         @inline(.always)
         def output_fn[
-            _width: SIMDLength,
-            _rank: Int,
-        ](coords: IndexList[_rank], val: SIMD[dtype, _width]) {imm output}:
+            _width: SIMDLength
+        ](coords: Coord, val: SIMD[dtype, _width]) {imm output}:
             output._lambda_store[width=_width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](val),
+                coords, rebind[SIMD[output.dtype, _width]](val)
             )
 
         random_uniform[target=target](
@@ -2069,7 +2093,10 @@ struct Struct_moe_router_group_limited:
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+        ](coords: Coord) -> SIMD[scores_type, width]:
+            comptime assert (
+                coords.rank == 2
+            ), "the expert-scores lambda contract is rank 2"
             return expert_scores._lambda_load[width=width](coords)
 
         router_group_limited[
@@ -2079,15 +2106,11 @@ struct Struct_moe_router_group_limited:
             topk_group,
             norm_weights,
             target=target,
-            scores_input_fn=OptionalReg[
-                def[
-                    width: Int
-                ](IndexList[2]) capturing -> SIMD[scores_type, width]
-            ](scores_input_fn),
+            scores_input_fn=scores_input_fn,
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
-            expert_scores.to_tile_tensor[.int64]().as_imm(),
+            expert_scores.runtime_layout(),
             expert_bias.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
@@ -2159,7 +2182,10 @@ struct Struct_moe_single_group_router_eplb:
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+        ](coords: Coord) -> SIMD[scores_type, width]:
+            comptime assert (
+                coords.rank == 2
+            ), "the expert-scores lambda contract is rank 2"
             return expert_scores._lambda_load[width=width](coords)
 
         single_group_router_eplb[
@@ -2170,16 +2196,12 @@ struct Struct_moe_single_group_router_eplb:
             max_replicas=max_replicas,
             hash_decorrelate=hash_decorrelate,
             target=target,
-            scores_input_fn=OptionalReg[
-                def[
-                    width: Int
-                ](IndexList[2]) capturing -> SIMD[scores_type, width]
-            ](scores_input_fn),
+            scores_input_fn=scores_input_fn,
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_indices_log.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
-            expert_scores.to_tile_tensor[.int64]().as_imm(),
+            expert_scores.runtime_layout(),
             expert_bias.to_tile_tensor[.int64]().as_imm(),
             logcnt.to_tile_tensor[.int64]().as_imm(),
             log2phy.to_tile_tensor[.int64]().as_imm(),
@@ -2216,7 +2238,10 @@ struct Struct_moe_single_group_router:
         @inline(.always)
         def scores_input_fn[
             width: Int
-        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+        ](coords: Coord) -> SIMD[scores_type, width]:
+            comptime assert (
+                coords.rank == 2
+            ), "the expert-scores lambda contract is rank 2"
             return expert_scores._lambda_load[width=width](coords)
 
         single_group_router[
@@ -2657,7 +2682,7 @@ struct Struct_fused_token_sampling:
                     input.to_tile_tensor[.int64](),
                     rank - 1,
                     out_idxs.to_tile_tensor[.int64](),
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
                 return
             _fused_token_sampling_cpu(
@@ -3057,47 +3082,26 @@ struct BundledAllReduceSum:
     """
 
     @staticmethod
-    def execute[
+    def _launch[
         dtype: DType,
         rank: Int,
-        target: StaticString,
-        _trace_name: StaticString,
+        num_devices: Int,
+        in_layout: TensorLayout,
+        in_origin: Origin,
+        in_engine: TensorEngine,
+        //,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        in_tensors: Array[
+            TileTensor[dtype, in_layout, in_origin, Engine=in_engine],
+            num_devices,
+        ],
+        input_size: Int,
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
         ctx: DeviceContext,
     ) capturing raises:
-        """Per-device allreduce sum, for use with mo.parallel dispatch.
-
-        Unlike DistributedAllReduceSum which dispatches to all GPUs internally,
-        this kernel handles a single GPU. The mo.parallel framework is
-        responsible for launching one instance per device and passing all N
-        input buffers to each launch.
-
-        Because `mo.parallel` owns the fan-out, this path does not take the
-        kernel-load gate that `_launch_device_collective` claims for a
-        distributed op's per-device enqueues. A first-time kernel load on
-        another thread can therefore interleave with these launches and
-        deadlock against the device-side barrier (MXSERV-441); the lowering
-        emits N independent async stubs, with no single point to claim the
-        gate from or release it at.
-
-        Parameters:
-            dtype: Element type of the input and output tensors.
-            rank: Number of dimensions in the input and output tensors.
-            target: Target device identifier for code generation.
-            _trace_name: Trace name used for profiling and debugging.
-
-        Args:
-            output: Output tensor for THIS GPU.
-            inputs: Input tensors from ALL participating GPUs.
-            signal_buffers: Signal buffers for ALL participating GPUs.
-            ctx: Device context for THIS GPU.
-        """
-        comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
             "expected allreduce inputs and signal buffers to have"
             " the same number of elements"
@@ -3106,26 +3110,21 @@ struct BundledAllReduceSum:
         # allreduce 2-stage uses size/ngpus scratch space
         var scratch_buffer_size_bytes = _partitioned_scratch_requirement[
             num_devices, dtype
-        ](inputs[0].size())
+        ](input_size)
         _check_signal_buffer_size(
             signal_buffers[0].size(), scratch_buffer_size_bytes
         )
 
-        comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_imm()
-        )
-        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var out_buf = output.to_tile_tensor[.int64]()
+        var out_layout = output.runtime_layout()
         var rank_sigs = Array[_, num_devices](
             fill_with_unrolled=lambda [i: Int]() -> Pointer[
                 Signal, MutAnyOrigin
-            ]: (signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin())
-        )
-
-        comptime for i in range(num_devices):
-            in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_imm()
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
             )
+        )
 
         @inline(.always)
         @__parameter
@@ -3145,9 +3144,98 @@ struct BundledAllReduceSum:
             output_lambda=output_lambda,
         ](
             in_tensors,
-            out_buf,
+            out_layout,
             rank_sigs,
             ctx,
+        )
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        ctx: DeviceContext,
+    ) capturing raises:
+        """Per-device allreduce sum, for use with mo.parallel dispatch.
+
+        This path does not take the kernel-load gate: `mo.parallel` emits N
+        independent async stubs, with no single point to claim or release it,
+        so a first-time kernel load can still interleave with these launches.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Number of dimensions in the input and output tensors.
+            target: Target device identifier for code generation.
+            _trace_name: Trace name used for profiling and debugging.
+
+        Args:
+            output: Output tensor for THIS GPU.
+            inputs: Input tensors from ALL participating GPUs.
+            signal_buffers: Signal buffers for ALL participating GPUs.
+            ctx: Device context for THIS GPU.
+        """
+        comptime num_devices = inputs.size
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[.int64]().as_imm()
+        )
+        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
+
+        comptime for i in range(num_devices):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[.int64]().as_imm()
+            )
+
+        Self._launch(output, in_tensors, inputs[0].size(), signal_buffers, ctx)
+
+    @staticmethod
+    def build_graph[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        inputs: StableInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        builder: DeviceGraphBuilder,
+    ) capturing raises:
+        """Records the per-device allreduce sum into a device graph.
+
+        The peers arrive as stable address slots: the recorded kernels read
+        each peer's data pointer out of its slot at replay time, so the graph
+        does not bake in the peer buffers themselves.
+
+        Parameters:
+            dtype: Element type of the input and output tensors.
+            rank: Number of dimensions in the input and output tensors.
+            target: Target device identifier for code generation.
+            _trace_name: Trace name used for profiling and debugging.
+
+        Args:
+            output: Output tensor for THIS GPU.
+            inputs: Slot-backed input tensors from ALL participating GPUs.
+            signal_buffers: Signal buffers for ALL participating GPUs.
+            builder: Device graph builder for THIS GPU.
+        """
+        var in_tensors = inputs.to_tile_tensor()
+
+        # The recording context reports the builder's backing device id, so
+        # the rank resolves exactly as it does under `execute`.
+        Self._launch(
+            output,
+            in_tensors,
+            inputs[0].size(),
+            signal_buffers,
+            builder.recording_context(),
         )
 
 
@@ -4589,7 +4677,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     b_fn,
                     c_fn,
                     slot_fn,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
             elif not is_gpu[target]():
                 raise Error("Unsupported target device")
@@ -4692,7 +4780,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         )
 
         var dstate = B.dim_size(2)
-        __match dstate:
+        match dstate:
             case 16:
                 launch[16]()
             case 64:
@@ -4942,7 +5030,7 @@ struct CausalConv1DVarlenFwd[
                     x_vector_loads=False,
                 )
 
-            __match weight.dim_size(1):
+            match weight.dim_size(1):
                 case 1:
                     launch_gpu[1]()
                 case 2:

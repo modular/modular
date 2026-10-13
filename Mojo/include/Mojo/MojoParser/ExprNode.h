@@ -109,6 +109,7 @@ public:
     kTransfer, // x^
     kVarPat,   // var x
     kRefPat,   // ref x
+    kPrefixEQ, // ==x
     kComptime, // comptime (x)
     kFirstUnaryOp = kNeg,
     kLastUnaryOp = kComptime,

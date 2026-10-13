@@ -586,8 +586,7 @@ struct AppleM5Fp4MatMul[
                 v_fp32: SIMD[.float32, 4],
             ) {imm}:
                 var y = v_fp32.cast[Self.c_type]()
-                comptime if Self.elementwise_lambda_fn:
-                    comptime epilogue = Self.elementwise_lambda_fn.value()
+                comptime if case .Some(epilogue) = Self.elementwise_lambda_fn:
                     if acol + 3 < n:
                         epilogue[Self.c_type, 4, alignment=elem_align](
                             (arow, acol), y

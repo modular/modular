@@ -96,15 +96,14 @@ def _linear_bytes(config: NemotronHConfig, module: str) -> int:
 def _replicated_bytes(config: NemotronHConfig) -> int:
     """Returns the bytes of the weights every device holds whole.
 
-    Those are the embedding, the LM head, the block norms and the final norm,
-    the MoE routers, the W4A4 experts' global scales and the MLP mixers. The
-    LM head and MLP mixers load in their stored format, the routers and
+    Those are the embedding, the block norms and the final norm, the MoE
+    routers, the W4A4 experts' global scales and the MLP mixers. The
+    MLP mixers load in their stored format, the routers and
     global scales in float32 and the rest in BF16.
     """
     hidden = config.hidden_size
     # The embedding, every block's norm and the final norm.
     size = 2 * (config.vocab_size + len(config.layer_kinds) + 1) * hidden
-    size += _linear_bytes(config, "lm_head")
     for mixer in config.mixers(LayerKind.MLP):
         size += _linear_bytes(config, f"{mixer}.up_proj")
         size += _linear_bytes(config, f"{mixer}.down_proj")

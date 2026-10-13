@@ -51,12 +51,12 @@ from .gather_scatter import normalize_neg_index
 from .shapes import _get_start_indices_of_nth_subvolume_static
 
 comptime elementwise_epilogue_type = def[
-    c_type: DType, rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-](IndexList[rank], SIMD[c_type, width]) capturing -> None
+    c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+](Coord, SIMD[c_type, width]) capturing -> None
 
 comptime _elementwise_epilogue_fn_signature = def[
-    c_type: DType, rank: Int, width: SIMDLength, *, alignment: Int
-](IndexList[rank], SIMD[c_type, width]) -> None
+    c_type: DType, width: SIMDLength, *, alignment: Int
+](Coord, SIMD[c_type, width]) -> None
 
 comptime ElementwiseEpilogueFn = (
     ImplicitlyCopyable & RegisterPassable & _elementwise_epilogue_fn_signature
@@ -72,8 +72,8 @@ legacy type relied on its defaults.
 
 @inline(.always)
 def _no_epilogue_body[
-    c_type: DType, rank: Int, width: SIMDLength, *, alignment: Int
-](idx: IndexList[rank], val: SIMD[c_type, width]):
+    c_type: DType, width: SIMDLength, *, alignment: Int
+](coords: Coord, val: SIMD[c_type, width]):
     pass
 
 
@@ -199,8 +199,8 @@ def memcpy_or_fuse[
                 out_shape,
             )
 
-            epilogue_fn[dtype, rank, simd_width, alignment=1](
-                out_index.cast[.int64](),
+            epilogue_fn[dtype, simd_width, alignment=1](
+                Coord(out_index),
                 load,
             )
             return
@@ -284,7 +284,7 @@ def _concat_parallel[
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
     epilogue_fn: EpilogueFnType,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     var output_canon = _canonical_reshape_output(output, axis, inputs)
 
@@ -585,7 +585,7 @@ def _concat_cpu[
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
     epilogue_fn: EpilogueFnType,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     _check_input_consistency[dtype](axis, inputs)
 
@@ -799,7 +799,7 @@ def _concat_impl[
                 axis,
                 inputVec,
                 epilogue_fn,
-                ctx=Optional[DeviceContext](context),
+                ctx=Optional(context.assert_cpu_target()),
             )
         else:
             _concat_gpu[dtype, has_epilogue](
@@ -925,13 +925,13 @@ def _concat_inner_most_single_dim[
     var in_coord = Coord(index)
 
     comptime for i in range(num_inputs):
-        var out_index = rebind[IndexList[output.rank]](index.canonicalize())
+        var out_index = index
         out_index[output.rank - 1] = i
         var out_coord = Coord(out_index)
 
         comptime if has_epilogue:
-            epilogue_fn[dtype, output.rank, 1, alignment=1](
-                out_index, inputs[i].load[width=1](in_coord)
+            epilogue_fn[dtype, 1, alignment=1](
+                out_coord, inputs[i].load[width=1](in_coord)
             )
         else:
             output.store(out_coord, inputs[i].load[width=1](in_coord))
@@ -1072,8 +1072,8 @@ def _concat_gpu_elementwise[
                 var in_coord = Coord(in_index)
 
                 comptime if has_epilogue:
-                    epilogue_fn[dtype, out_index.rank, simd_width, alignment=1](
-                        coord_to_index_list(out_index),
+                    epilogue_fn[dtype, simd_width, alignment=1](
+                        out_index,
                         input.load[width=simd_width](in_coord),
                     )
                 else:
@@ -1197,8 +1197,8 @@ def _concat_gpu[
 def _fused_concat_cpu[
     rank: Int,
     dtype: DType,
-    input_fn: def[input_index: Int, width: Int, rank: Int, alignment: Int = 1](
-        IndexList[rank]
+    input_fn: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size: Int,
@@ -1216,15 +1216,17 @@ def _fused_concat_cpu[
         def elementwise_wrapper[
             _width: Int, alignment: Int = 1
         ](indices: Coord) {var}:
-            var c = rebind[IndexList[rank]](coord_to_index_list(indices))
+            # `axis` is a runtime value, so shifting the concat dim needs an
+            # `IndexList`; the read still uses the typed input coordinate.
+            # TODO(GPUA-245): shift the dim on the `Coord` in place once it
+            # supports assignment at a runtime index.
+            var c = coord_to_index_list(indices)
             c[axis] += offset
 
             # Call the input/output lambda for fused concat kernel.
-            output_0_fn[dtype, rank, width=_width, alignment=1](
-                c,
-                input_fn[i, _width, rank, alignment](
-                    rebind[IndexList[rank]](coord_to_index_list(indices))
-                ),
+            output_0_fn[dtype, width=_width, alignment=1](
+                Coord(c),
+                input_fn[i, _width, alignment](indices),
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
@@ -1244,8 +1246,8 @@ def _fused_concat_inner_most_single_dim[
     rank: Int,
     dtype: DType,
     block_size: Int,
-    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
-        IndexList[_rank]
+    input_fn: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size: Int,
@@ -1274,9 +1276,9 @@ def _fused_concat_inner_most_single_dim[
         var out_index = index
         out_index[rank - 1] = i
 
-        output_0_fn[dtype, rank, width=1](
-            rebind[IndexList[rank]](out_index.canonicalize()),
-            input_fn[i, 1, rank](rebind[IndexList[rank]](index.canonicalize())),
+        output_0_fn[dtype, width=1](
+            Coord(out_index),
+            input_fn[i, 1](Coord(index)),
         )
 
 
@@ -1289,14 +1291,14 @@ def _fused_dual_concat_inner_most_single_dim[
     rank: Int,
     dtype: DType,
     block_size: Int,
-    input_fn_0: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
+    input_fn_0: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
+    ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size_0: Int,
-    input_fn_1: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
+    input_fn_1: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
+    ) capturing -> SIMD[dtype, width],
     output_1_fn: elementwise_epilogue_type,
     size_1: Int,
 ](
@@ -1322,11 +1324,9 @@ def _fused_dual_concat_inner_most_single_dim[
             var out_index = index
             out_index[rank - 1] = i
 
-            output_0_fn[dtype, rank, width=1](
-                rebind[IndexList[rank]](out_index.canonicalize()),
-                input_fn_0[i, 1, rank](
-                    rebind[IndexList[rank]](index.canonicalize())
-                ),
+            output_0_fn[dtype, width=1](
+                Coord(out_index),
+                input_fn_0[i, 1](Coord(index)),
             )
 
     if idx < product(input_shapes_1[0], rank):
@@ -1340,11 +1340,9 @@ def _fused_dual_concat_inner_most_single_dim[
             var out_index = index
             out_index[rank - 1] = i
 
-            output_1_fn[dtype, rank, width=1](
-                rebind[IndexList[rank]](out_index.canonicalize()),
-                input_fn_1[i, 1, rank](
-                    rebind[IndexList[rank]](index.canonicalize())
-                ),
+            output_1_fn[dtype, width=1](
+                Coord(out_index),
+                input_fn_1[i, 1](Coord(index)),
             )
 
 
@@ -1352,14 +1350,14 @@ def _fused_dual_concat_inner_most_single_dim[
 def _fused_dual_concat_gpu[
     rank: Int,
     dtype: DType,
-    input_fn_0: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
+    input_fn_0: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
+    ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size_0: Int,
-    input_fn_1: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
+    input_fn_1: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
+    ) capturing -> SIMD[dtype, width],
     output_1_fn: elementwise_epilogue_type,
     size_1: Int,
     OutputLayout0Type: TensorLayout,
@@ -1411,8 +1409,8 @@ def _fused_concat_gpu_elementwise[
     axis: Int,
     rank: Int,
     dtype: DType,
-    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
-        IndexList[_rank]
+    input_fn: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size: Int,
@@ -1427,19 +1425,22 @@ def _fused_concat_gpu_elementwise[
     def per_output_elem[
         simd_width: Int, alignment: Int = 1
     ](out_index: Coord) {var}:
-        var in_index = coord_to_index_list(out_index)
+        comptime assert out_index.rank == rank
+        var in_index = out_index.make_dynamic[.int]()
 
         comptime for i in range(num_inputs):
             var input_shape = input_shapes[i]
 
             if Int(in_index[axis].value()) < input_shape[axis]:
                 output_0_fn[dtype, width=simd_width, alignment=alignment](
-                    coord_to_index_list(out_index),
+                    out_index,
                     input_fn[i, simd_width, alignment=alignment](in_index),
                 )
                 return
 
-            in_index[axis] -= input_shape[axis]
+            in_index.replace_dynamic[axis](
+                Int(in_index[axis].value()) - input_shape[axis]
+            )
 
     # When axis != rank-1, the SIMD group spans the innermost (non-concat)
     # dimension, so we can use vectorized 32B loads/stores on sm_100a
@@ -1495,14 +1496,14 @@ def _fused_dual_concat_gpu_elementwise[
     axis: Int,
     rank: Int,
     dtype: DType,
-    input_fn_0: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
+    input_fn_0: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
+    ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size_0: Int,
-    input_fn_1: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
+    input_fn_1: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
+    ) capturing -> SIMD[dtype, width],
     output_1_fn: elementwise_epilogue_type,
     size_1: Int,
 ](
@@ -1521,41 +1522,37 @@ def _fused_dual_concat_gpu_elementwise[
     def per_output_elem_0[
         simd_width: Int, alignment: Int = 1
     ](out_index: Coord) {var}:
-        var in_index = coord_to_index_list(out_index)
-        var out_idx = in_index
+        comptime assert out_index.rank == rank
+        var in_index = out_index.make_dynamic[.int]()
         comptime for i in range(size_0):
             var input_shape = input_shapes_0[i]
-            if Int(in_index[axis].value()) < Int(input_shape[axis].value()):
-                output_0_fn[
-                    dtype, out_index.rank, width=simd_width, alignment=alignment
-                ](
-                    out_idx,
-                    input_fn_0[
-                        i, simd_width, out_index.rank, alignment=alignment
-                    ](in_index),
+            if Int(in_index[axis].value()) < input_shape[axis]:
+                output_0_fn[dtype, width=simd_width, alignment=alignment](
+                    out_index,
+                    input_fn_0[i, simd_width, alignment=alignment](in_index),
                 )
                 return
-            in_index[axis] -= input_shape[axis]
+            in_index.replace_dynamic[axis](
+                Int(in_index[axis].value()) - input_shape[axis]
+            )
 
     @inline(.always)
     def per_output_elem_1[
         simd_width: Int, alignment: Int = 1
     ](out_index: Coord) {var}:
-        var in_index = coord_to_index_list(out_index)
-        var out_idx = in_index
+        comptime assert out_index.rank == rank
+        var in_index = out_index.make_dynamic[.int]()
         comptime for i in range(size_1):
             var input_shape = input_shapes_1[i]
-            if in_index[axis] < input_shape[axis]:
-                output_1_fn[
-                    dtype, out_index.rank, width=simd_width, alignment=alignment
-                ](
-                    out_idx,
-                    input_fn_1[
-                        i, simd_width, out_index.rank, alignment=alignment
-                    ](in_index),
+            if Int(in_index[axis].value()) < input_shape[axis]:
+                output_1_fn[dtype, width=simd_width, alignment=alignment](
+                    out_index,
+                    input_fn_1[i, simd_width, alignment=alignment](in_index),
                 )
                 return
-            in_index[axis] -= input_shape[axis]
+            in_index.replace_dynamic[axis](
+                Int(in_index[axis].value()) - input_shape[axis]
+            )
 
     # Build IndexList[rank] explicitly so both shapes share the same type.
     var _s0 = coord_to_index_list(output_layout_0.shape_coord())
@@ -1650,8 +1647,8 @@ def _fused_dual_concat_gpu_elementwise[
 def _fused_concat_gpu[
     rank: Int,
     dtype: DType,
-    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
-        IndexList[_rank]
+    input_fn: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size: Int,
@@ -1715,14 +1712,14 @@ def _fused_concat_gpu[
 def _fused_dual_concat_gpu[
     rank: Int,
     dtype: DType,
-    input_fn_0: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
+    input_fn_0: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
+    ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     size_0: Int,
-    input_fn_1: def[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](IndexList[_rank]) capturing -> SIMD[dtype, width],
+    input_fn_1: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
+    ) capturing -> SIMD[dtype, width],
     output_1_fn: elementwise_epilogue_type,
     size_1: Int,
     OutputLayout0Type: TensorLayout,
@@ -1798,8 +1795,8 @@ def _fused_dual_concat_gpu[
 def fused_concat[
     dtype: DType,
     rank: Int,
-    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
-        IndexList[_rank]
+    input_fn: def[input_index: Int, width: Int, alignment: Int = 1](
+        Coord
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
     OutputLayoutType: TensorLayout,

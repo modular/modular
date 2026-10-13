@@ -43,24 +43,17 @@ from max.gpu.sync import (
     cp_async_bulk_wait_group,
     umma_arrive_leader_cta,
 )
-from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_fence_after,
-    tcgen05_fence_before,
-    tcgen05_ld,
-    tcgen05_store_wait,
-)
+from max.gpu.compute.arch.tcgen05 import tcgen05_fence_after, tcgen05_ld
 from max.gpu.primitives.cluster import block_rank_in_cluster
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
-from layout import IntTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import tile_layout_k_major
-from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
+from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
-    SharedMemPointer,
     MBarType,
     TMemTile,
     llvm_opaque_tid,
@@ -75,9 +68,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     scale_pack_o_row,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
-from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.common import OptionalPointer
-from nn.attention.gpu.nvidia.mha_tile_scheduler import SeqInfo
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from .barriers import Depth512MBars

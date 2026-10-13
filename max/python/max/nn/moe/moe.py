@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import (
@@ -26,6 +25,7 @@ from max.graph import (
 )
 from typing_extensions import Self
 
+from ..activation import GatedActivation
 from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
 from ..kernels import (
@@ -79,87 +79,19 @@ def make_concatenated_gated_activation_fn(
     return _concatenated_gated_activation_fn
 
 
-@dataclass
-class _InterleavedGatedActivation:
-    """Gated activation for interleaved ``[g0, u0, g1, u1, ...]`` projections.
-
-    Reads the gate and up halves with a stride rather than a split point,
-    which lets a checkpoint with interleaved gate/up rows reach the matmul
-    unrearranged. A distinct type carrying ``activation_fn`` so
-    :class:`MoEQuantized` can recognize both the layout and the activation
-    when selecting the fused SwiGLU kernel.
-    """
-
-    activation_fn: Callable[[TensorValue], TensorValue]
-
-    def __call__(self, gate_up: TensorValue, moe_dim: int) -> TensorValue:
-        del moe_dim  # The halves are separated by a stride, not a split point.
-        return self.activation_fn(gate_up[:, 0::2]) * gate_up[:, 1::2]
-
-
 def make_interleaved_gated_activation_fn(
     activation_fn: Callable[[TensorValue], TensorValue],
 ) -> Callable[[TensorValue, int], TensorValue]:
-    """Builds a gated activation for interleaved ``[gate | up]`` projections."""
-    return _InterleavedGatedActivation(activation_fn)
+    """Builds a gated activation for interleaved ``[g0, u0, g1, u1, ...]``
+    projections."""
 
+    def _interleaved_gated_activation_fn(
+        gate_up: TensorValue, moe_dim: int
+    ) -> TensorValue:
+        del moe_dim  # The halves are separated by a stride, not a split point.
+        return activation_fn(gate_up[:, 0::2]) * gate_up[:, 1::2]
 
-def _swigluoai_activation(
-    gate_up: TensorValue,
-    moe_dim: int,
-    alpha: float,
-    limit: float,
-) -> TensorValue:
-    """Applies the OAI-style clamped SwiGLU activation."""
-    gate = gate_up[:, :moe_dim]
-    up = gate_up[:, moe_dim:]
-
-    lim = float(limit)
-
-    gate = ops.min(gate, lim)
-    up = ops.min(ops.max(up, -lim), lim)
-    return (up + 1.0) * gate * ops.sigmoid(gate * float(alpha))
-
-
-def _clamped_swiglu_activation(
-    gate_up: TensorValue,
-    moe_dim: int,
-    limit: float,
-) -> TensorValue:
-    """Applies a clamped SwiGLU: ``silu(min(gate, limit)) *
-    clamp(up, -limit, limit)``.
-
-    Clamps before the activation, like ``_swigluoai_activation``, but omits
-    its GPT-OSS ``+1`` bias on ``up`` and its ``alpha`` scale inside the
-    sigmoid (equivalent to ``alpha=1``).
-    """
-    gate = gate_up[:, :moe_dim]
-    up = gate_up[:, moe_dim:]
-
-    lim = ops.constant(limit, gate.dtype, device=gate.device)
-    neg_lim = ops.constant(-limit, up.dtype, device=up.device)
-
-    gate = ops.min(gate, lim)
-    up = ops.min(ops.max(up, neg_lim), lim)
-    return ops.silu(gate) * up
-
-
-@dataclass(frozen=True)
-class ClampedSwiGLU:
-    """Declarative marker for the clamped SwiGLU activation.
-
-    Set as a :class:`MoE` or :class:`MoEQuantized` ``gated_activation_fn`` to
-    select ``silu(min(gate, limit)) * clamp(up, -limit, limit)``. A named type
-    rather than a bare callable so the EP quantized path can recognize it by
-    ``isinstance`` and allow it where it rejects an arbitrary one, which it
-    must because the fused grouped-matmul epilogue cannot express a callable
-    it has never seen.
-    """
-
-    limit: float
-
-    def __call__(self, gate_up: TensorValue, moe_dim: int) -> TensorValue:
-        return _clamped_swiglu_activation(gate_up, moe_dim, self.limit)
+    return _interleaved_gated_activation_fn
 
 
 class MoEGate(Module):
@@ -298,17 +230,14 @@ class MoE(Module, Shardable):
             ``None``.
         quant_config: The scaled quantization configuration. Defaults to
             ``None``.
-        use_swigluoai: Whether to use the OAI-style clamped SwiGLU activation
-            function. Defaults to ``False``.
-        swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
-            Defaults to ``0.0``.
-        swiglu_limit: The limit value for the clamped SwiGLU activation function.
-            Defaults to ``0.0``.
-        gated_activation_fn: Activation applied to the concatenated
-            ``[gate | up]`` projection. ``None`` (default) uses a fused
-            SiLU kernel; use
-            :func:`make_concatenated_gated_activation_fn` for custom
-            activations.
+        activation: The gated activation between the gate-up and down
+            projections; see :class:`~max.nn.activation.GatedActivation`.
+            Defaults to a fused SiLU.
+        interleaved_gate_up: Whether each row of the gate-up projection's
+            output is ``[gate_0, up_0, gate_1, up_1, ...]`` rather than
+            ``[gate | up]``. The default ``gate_up_proj`` builds concatenated
+            rows; a subclass whose ``gate_up_proj`` returns interleaved rows
+            sets this. Defaults to ``False``.
         shared_experts_dtype: Weight storage dtype for shared-expert MLPs. When
             equal to ``dtype`` (routed experts) and ``quant_config`` is set,
             shared experts use the same quantization as routed experts. When
@@ -362,11 +291,8 @@ class MoE(Module, Shardable):
         shared_experts_dim: int = 0,
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
-        use_swigluoai: bool = False,
-        swiglu_alpha: float = 0.0,
-        swiglu_limit: float = 0.0,
-        gated_activation_fn: Callable[[TensorValue, int], TensorValue]
-        | None = None,
+        activation: GatedActivation | None = None,
+        interleaved_gate_up: bool = False,
         pre_expert_norm_cls: Callable[[], Module] | None = None,
         ep_batch_manager: EPBatchManager | None = None,
         quant_config: QuantConfig | None = None,
@@ -388,10 +314,8 @@ class MoE(Module, Shardable):
         self.shared_experts_dim = shared_experts_dim
         self.ep_size = ep_size
         self.dtype = dtype
-        self.use_swigluoai = use_swigluoai
-        self.swiglu_alpha = swiglu_alpha
-        self.swiglu_limit = swiglu_limit
-        self.gated_activation_fn = gated_activation_fn
+        self.activation = activation or GatedActivation()
+        self.interleaved_gate_up = interleaved_gate_up
         self.pre_expert_norm_cls = pre_expert_norm_cls
         self.pre_expert_norm = (
             pre_expert_norm_cls() if pre_expert_norm_cls else None
@@ -409,15 +333,6 @@ class MoE(Module, Shardable):
             shared_experts_dtype if shared_experts_dtype is not None else dtype
         )
         self.shared_experts_quant_config = shared_experts_quant_config
-
-        if use_swigluoai:
-            assert swiglu_alpha != 0.0 and swiglu_limit != 0.0, (
-                "swiglu_alpha and swiglu_limit must be set when use_swigluoai is True"
-            )
-
-        assert not (use_swigluoai and gated_activation_fn is not None), (
-            "use_swigluoai and gated_activation_fn cannot be set at the same time"
-        )
 
         if has_shared_experts:
             assert shared_experts_dim > 0, (
@@ -472,20 +387,6 @@ class MoE(Module, Shardable):
             "EPBatchManager must be provided if using expert parallel strategy"
         )
         return self._ep_batch_manager
-
-    def configure_ep_scale_fusion(self, dispatch_supports_fold: bool) -> None:
-        """Configure any EP dispatch-scale fusion before the dispatch op.
-
-        No-op on the base class; ``MoEQuantized`` overrides it to enable the
-        MXFP4 up-proj A-scale preshuffle fold. Defined here (rather than
-        duck-typed) so the EP forward driver can call it on any ``MoE`` shard:
-        non-quantized subclasses inherit this no-op and consistently skip the
-        fold (no fusion, no corruption).
-
-        Args:
-            dispatch_supports_fold: Whether the selected dispatch path wires the
-                A-scale fold params. Ignored by this base no-op.
-        """
 
     @property
     def _shared_experts_use_quant(self) -> bool:
@@ -596,10 +497,8 @@ class MoE(Module, Shardable):
                 shared_experts_dim=sharded_shared_experts_dim,
                 ep_size=self.ep_size,
                 dtype=self.dtype,
-                use_swigluoai=self.use_swigluoai,
-                swiglu_alpha=self.swiglu_alpha,
-                swiglu_limit=self.swiglu_limit,
-                gated_activation_fn=self.gated_activation_fn,
+                activation=self.activation,
+                interleaved_gate_up=self.interleaved_gate_up,
                 pre_expert_norm_cls=self.pre_expert_norm_cls,
                 quant_config=self.quant_config,
                 shared_experts_dtype=self.shared_experts_dtype,
@@ -658,14 +557,14 @@ class MoE(Module, Shardable):
     def _uses_fused_swiglu_layout(self) -> bool:
         # True when gate_up weights and scales are sigma-permuted to the
         # (gate, up) interleaved N-axis layout that the fused
-        # SwiGLU+NVFP4 grouped-matmul kernel consumes. The kernel runs a
-        # fused SiLU so gated_activation_fn must be None, and the layout
-        # only makes sense under expert parallelism.
+        # SwiGLU+NVFP4 grouped-matmul kernel consumes. The kernel fuses the
+        # activation, so there must be no graph-op gated_activation_fn, and
+        # the layout only makes sense under expert parallelism.
         return (
             self.quant_config is not None
             and self.quant_config.can_use_fused_swiglu
             and self._ep_batch_manager is not None
-            and self.gated_activation_fn is None
+            and self.activation.gated_activation_fn is None
         )
 
     @property
@@ -782,15 +681,6 @@ class MoE(Module, Shardable):
             " experts"
         )
 
-    def _swigluoai_activation(self, gate_up: TensorValue) -> TensorValue:
-        """Applies the configured OAI-style clamped SwiGLU activation."""
-        return _swigluoai_activation(
-            gate_up,
-            self.moe_dim,
-            self.swiglu_alpha,
-            self.swiglu_limit,
-        )
-
     def _local_ep_compute(
         self,
         expert_inputs: tuple[TensorValue, ...],
@@ -819,12 +709,16 @@ class MoE(Module, Shardable):
             self.gate_up_proj,
             *expert_inputs[1:],
         )
-        if self.gated_activation_fn is not None:
-            activated = self.gated_activation_fn(gate_up_projs, self.moe_dim)
-        elif self.use_swigluoai:
-            activated = self._swigluoai_activation(gate_up_projs)
+        gated_activation_fn = self.activation.gated_activation_fn
+        if gated_activation_fn is not None:
+            activated = gated_activation_fn(gate_up_projs, self.moe_dim)
         else:
-            activated = fused_silu(gate_up_projs, expert_inputs[1])
+            activated = fused_silu(
+                gate_up_projs,
+                expert_inputs[1],
+                activation=self.activation,
+                interleaved=self.interleaved_gate_up,
+            )
         return grouped_matmul_ragged(
             activated,
             self.down_proj,
@@ -913,14 +807,16 @@ class MoE(Module, Shardable):
             expert_usage_stats,
         )
 
-        if self.gated_activation_fn is not None:
-            gate_up_projs = self.gated_activation_fn(
-                gate_up_projs, self.moe_dim
-            )
-        elif self.use_swigluoai:
-            gate_up_projs = self._swigluoai_activation(gate_up_projs)
+        gated_activation_fn = self.activation.gated_activation_fn
+        if gated_activation_fn is not None:
+            gate_up_projs = gated_activation_fn(gate_up_projs, self.moe_dim)
         else:
-            gate_up_projs = fused_silu(gate_up_projs, expert_start_indices)
+            gate_up_projs = fused_silu(
+                gate_up_projs,
+                expert_start_indices,
+                activation=self.activation,
+                interleaved=self.interleaved_gate_up,
+            )
 
         down_projs = grouped_matmul_ragged(
             gate_up_projs,

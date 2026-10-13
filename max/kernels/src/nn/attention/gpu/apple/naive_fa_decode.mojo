@@ -53,11 +53,7 @@ from std.sys import llvm_intrinsic
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
-from layout import (
-    Idx,
-    TensorEngine,
-    TileTensor,
-)
+from layout import TensorEngine, TileTensor
 from layout.coord import Coord
 from layout.tile_layout import (
     TensorLayout,

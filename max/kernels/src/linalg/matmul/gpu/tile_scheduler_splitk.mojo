@@ -18,7 +18,7 @@ accumulations with semaphore-ordered or atomic strategies for deterministic
 or nondeterministic numeric behavior.
 """
 
-from std.math import align_up, ceildiv
+from std.math import ceildiv
 from std.math.uutils import umod, ualign_up
 from std.atomic import Atomic
 from std.sys import size_of

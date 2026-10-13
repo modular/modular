@@ -157,7 +157,8 @@ class Unknown(Placement):
 
     The devices may hold different values, or happen to hold equal ones; only
     a claim with :meth:`~max.experimental.tensor.Tensor.rebind_mapping` or a
-    collective establishes a relation.
+    collective establishes a relation. An op takes an ``Unknown`` operand
+    only through a sharding rule row that names it.
     """
 
     def __repr__(self) -> str:

@@ -10,158 +10,95 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""EP8 A/B gate: the one-launch fused EP MoE against the shipping NVFP4 chain.
+"""EP8 runtime test for the one-launch fused EP MoE (``mega_ffn.ep_fused``).
 
-Arm A is the shipping expert-parallel NVFP4 MoE (``ep.dispatch_async`` ->
-side-stream shared expert -> ``ep.dispatch_wait`` -> ``mega_ffn.ep_combine_send``
--> ``ep.combine_wait``). Arm B is ``mega_ffn.ep_fused`` (dispatch, MegaFFN and
-the weighted combine in ONE launch per rank) with the shared expert inline on
-the default stream. Same weights, same routing, same inputs, same devices.
+Geometry is GLM-5.3's MoE (hidden 6144, 256 routed experts, MoE 2048, top-k 8)
+at EP8 (32 local experts) with a decode capacity of 24 tokens per
+rank, in both formats: NVFP4 with GLM-5.3's BF16 shared expert, and MXFP8
+routed-only. The gates are `fused_megaffn_gates`'s; this module runs them on
+devices 0-7:
 
-UNRUN DRAFT (needs 8 GPUs). This is not a qualified EP8 gate and not a model
-benchmark; review its construction before relying on it:
+* the shipping reference alone, one and two layers per graph, finite and
+  repeatable under changing generations;
+* one fused arm, eager or captured, against the shipping reference, which
+  must not change after the fused arm ran (a bisect aid);
+* production allocation and lowering; two chained layers as distinct module
+  instances on one workspace; two independent EP instances; CUDA-graph
+  capture replayed across changing generations with a NaN canary, against the
+  eager one-layer shipping reference executed layer by layer; the host plan
+  query equal to what EP init allocated, at token block 8;
+* a batch of 25 tokens per rank, refused on the host before any launch;
+* a capacity above 24 tokens per rank refused at EP init with a logged
+  reason, the graph keeping the shipping chain; the allreduce backend refused
+  at EP init;
+* the fail-closed host checks: no workspace, or one of another layout;
+* a fused and a shipping model alternating on one EP instance;
+* the captured launch trace equal to eager execution's;
+* an nsys subject (``EP8_FUSED_NSYS=1``), whose profile must show one fused
+  kernel per layer and device per replay;
+* one real GLM-5.3 NVFP4 MoE layer (its 256 routed experts with their real
+  E4M3 block scales, per-tensor ``weight_scale_2`` and ``input_scale``, its
+  BF16 shared expert and its router matrix) from a local GLM-5.3 NVFP4
+  checkpoint named by ``GLM53_NVFP4_SNAPSHOT`` (layer
+  ``GLM53_LAYER``, default 10), through the replay gate. Routing there uses
+  the generic top-k gate on the real router matrix (not GLM's sigmoid +
+  correction-bias router), and the hidden states are synthetic; both arms see
+  the same ones.
 
-* It chains two ``forward_moe_sharded_layers`` calls on ONE module. In
-  ``test_ep_moe_fused_megaffn_ep2.py`` that pattern reused the shared
-  expert's memoized weight concat across side-stream regions (an MLIR
-  dominance error), so the EP2 test builds one module per layer (its
-  ``_Stack``).
-* Its shipping reference runs both layers in one graph. On an older main the
-  NVFP4 two-layer shipping graph returned non-finite rows on its second
-  execution; the EP2 test's two-layer shipping check passes on the current
-  main, which has not been tried at EP8.
-
-Geometry is GLM-5.3's MoE (hidden 6144, 256 routed experts, moe 2048, top-k 8)
-at EP8 (32 local experts) with the recipe's decode bound of 24 tokens per rank.
-Two MoE layers are chained in one graph so consecutive fused launches share
-one workspace (the production layout), and every cell runs several executions
-so the EP generation parity alternates and the mailbox generation advances.
-The ``bs1_q6`` cell is the batch-1 MTP verify step: six ranks hold one token
-and two ranks hold none, which the fused kernel must still serve.
-
-The second test replays ONE real GLM-5.3 MoE layer (its 256 NVFP4 routed
-experts with their real E4M3 block scales, per-tensor ``weight_scale_2`` and
-``input_scale``, its BF16 shared expert and its router matrix) from the local
-``RadixArk/GLM-5.3-NVFP4`` snapshot named by ``GLM53_NVFP4_SNAPSHOT`` (layer
-``GLM53_LAYER``, default 10). Routing there uses the generic top-k gate on the
-real router matrix (not GLM's sigmoid + correction-bias router), and the
-hidden states are synthetic; both arms see the same ones.
-
-Synthetic weights and routing in the first test; this is a runtime-integration
-gate, not a model-quality test.
+Synthetic weights and routing elsewhere: a runtime-integration gate, not a
+model-quality test.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
-from unittest import mock
 
 import pytest
 import torch
-from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
-from max.dtype import DType
-from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, Shape, ShardingStrategy, TensorType
-from max.graph.weights import WeightData
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import MoEQuantized
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
+from fused_megaffn_gates import (
+    FORMATS,
+    Geometry,
+    graph_replay,
+    launch_fails_closed,
+    mode_vs_ship,
+    nsys_subject,
+    refused_at_ep_init,
+    refused_capacity,
+    replay_trace_matches,
+    shared_instance,
+    ship_arrival_count_refused,
+    ship_reference_repeats,
+    wrap,
 )
+from max.driver import accelerator_api, accelerator_count
+from max.graph.weights import WeightData
+from safetensors import safe_open
 from test_common.graph_utils import is_b100_b200
 
-HIDDEN_DIM = 6144
-NUM_EXPERTS = 256
-MOE_DIM = 2048
-TOP_K = 8
-N_DEVICES = 8
-MAX_TOKENS_PER_RANK = 24
-N_LAYERS = 2
-N_GENERATIONS = 6
+GEO = Geometry(n_devices=8, num_experts=256, max_tokens_per_rank=24)
 
+# Source tokens per rank: the balanced decode batches across the capacity,
+# the ragged one with a light rank, the skewed verify step, and the batch-1
+# MTP verify step (six ranks hold one token, two hold none).
 CELLS = {
-    "dense24": [24] * N_DEVICES,
+    "dense8": [8] * 8,
+    "dense16": [16] * 8,
+    "dense24": [24] * 8,
+    "ragged5": [24] * 7 + [5],
+    "skew": [1, 3, 24, 5, 7, 12, 2, 24],
     "bs1_q6": [1, 1, 1, 1, 1, 1, 0, 0],
-    "ragged": [1, 3, 24, 5, 7, 12, 2, 24],
 }
 
-
-def _nvfp4_weights() -> dict[str, torch.Tensor]:
-    """Random NVFP4 experts + shared expert, generated on cuda:0 (fast)."""
-    torch.manual_seed(20260928)
-    device = "cuda:0"
-
-    def _proj(
-        w: dict[str, torch.Tensor],
-        prefix: str,
-        out_dim: int,
-        in_dim: int,
-        weight_scale_2: torch.Tensor | None = None,
-        input_scale: float = 1.0,
-    ) -> torch.Tensor:
-        w[f"{prefix}.weight"] = torch.randint(
-            0, 256, (out_dim, in_dim // 2), dtype=torch.uint8, device=device
-        )
-        w[f"{prefix}.weight_scale"] = (
-            torch.rand(out_dim, in_dim // 16, device=device) * 100.0 + 50.0
-        ).to(torch.float8_e4m3fn)
-        if weight_scale_2 is None:
-            weight_scale_2 = torch.rand((), device=device) * 1e-4
-        w[f"{prefix}.weight_scale_2"] = weight_scale_2
-        w[f"{prefix}.input_scale"] = torch.full(
-            (), input_scale, dtype=torch.float32, device=device
-        )
-        return weight_scale_2
-
-    w: dict[str, torch.Tensor] = {
-        "gate.gate_score.weight": torch.randn(
-            NUM_EXPERTS, HIDDEN_DIM, dtype=torch.bfloat16, device=device
-        )
-        * 1e-3
-    }
-    for e in range(NUM_EXPERTS):
-        s2 = _proj(w, f"experts.{e}.gate_proj", MOE_DIM, HIDDEN_DIM)
-        _proj(
-            w,
-            f"experts.{e}.up_proj",
-            MOE_DIM,
-            HIDDEN_DIM,
-            weight_scale_2=s2,
-        )
-        # Non-unit, per-expert down input scales: the fused op must invert
-        # them exactly as the shipping chain does.
-        _proj(
-            w,
-            f"experts.{e}.down_proj",
-            HIDDEN_DIM,
-            MOE_DIM,
-            input_scale=0.75 + 0.5 * (e % 4) / 3,
-        )
-    # GLM-5.3's shared expert is BF16 (the modelopt export ignores it).
-    for name, shape in (
-        ("gate_proj", (MOE_DIM, HIDDEN_DIM)),
-        ("up_proj", (MOE_DIM, HIDDEN_DIM)),
-        ("down_proj", (HIDDEN_DIM, MOE_DIM)),
-    ):
-        w[f"shared_experts.{name}.weight"] = (
-            torch.randn(*shape, dtype=torch.bfloat16, device=device) * 1e-2
-        )
-    return w
+# The capacity rule EP init applies above the decode block's 24 tokens.
+ABOVE_DECODE_REASON = "gated at 2 ranks only"
 
 
-def _glm_layer_weights(snapshot: Path, layer: int) -> dict[str, torch.Tensor]:
+def _glm_layer_weights(
+    snapshot: Path, layer: int
+) -> dict[str, WeightData | torch.Tensor]:
     """One real GLM-5.3 NVFP4 MoE layer, renamed to the MoE module's keys."""
-    import json
-
-    from safetensors import safe_open
-
     index = json.loads((snapshot / "model.safetensors.index.json").read_text())[
         "weight_map"
     ]
@@ -181,187 +118,16 @@ def _glm_layer_weights(snapshot: Path, layer: int) -> dict[str, torch.Tensor]:
                 elif key.startswith("gate."):
                     continue  # e_score_correction_bias: unused by MoEGate
                 w[key] = f.get_tensor(n)
-    return w
-
-
-def _wrap(
-    weights: dict[str, torch.Tensor],
-) -> dict[str, WeightData | torch.Tensor]:
-    out: dict[str, WeightData | torch.Tensor] = {}
-    for key, value in weights.items():
-        value = value.cpu()
-        if value.dtype == torch.float8_e4m3fn:
-            out[key] = WeightData(
-                Buffer.from_dlpack(value.view(torch.uint8)).view(
-                    DType.float8_e4m3fn
-                ),
-                key,
-                DType.float8_e4m3fn,
-                Shape(value.shape),
-            )
-        else:
-            out[key] = value
-    return out
-
-
-def _quant_config() -> QuantConfig:
-    return QuantConfig(
-        input_scale=InputScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            origin=ScaleOrigin.STATIC,
-            dtype=DType.float32,
-            block_size=(1, 16),
-        ),
-        weight_scale=WeightScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            dtype=DType.float8_e4m3fn,
-            block_size=(1, 16),
-        ),
-        mlp_quantized_layers=set(),
-        attn_quantized_layers=set(),
-        embedding_output_dtype=None,
-        format=QuantFormat.NVFP4,
-        can_use_fused_swiglu=True,
-    )
-
-
-def _build_arm(
-    fused: bool,
-    wrapped: dict[str, WeightData | torch.Tensor],
-    session: InferenceSession,
-    devices_ref: list[DeviceRef],
-) -> tuple[Model, EPCommInitializer, str]:
-    quant = _quant_config()
-    ep_config = EPConfig(
-        dispatch_dtype=DType.uint8,
-        combine_dtype=DType.bfloat16,
-        hidden_size=HIDDEN_DIM,
-        top_k=TOP_K,
-        n_experts=NUM_EXPERTS,
-        max_tokens_per_rank=MAX_TOKENS_PER_RANK,
-        n_gpus_per_node=N_DEVICES,
-        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
-        dispatch_quant_config=quant,
-        fused_shared_expert=False,
-        fuse_ffn_combine_send=True,
-        moe_dim=MOE_DIM,
-    )
-    ep_comm_init = EPCommInitializer(ep_config)
-    ep_batch_manager = EPBatchManager(ep_config)
-    moe = MoEQuantized(
-        devices=[DeviceRef.CPU()] + devices_ref,
-        hidden_dim=HIDDEN_DIM,
-        num_experts=NUM_EXPERTS,
-        num_experts_per_token=TOP_K,
-        moe_dim=MOE_DIM,
-        has_shared_experts=True,
-        shared_experts_dim=MOE_DIM,
-        ep_size=N_DEVICES,
-        dtype=DType.uint8,
-        ep_batch_manager=ep_batch_manager,
-        quant_config=quant,
-        shared_experts_dtype=DType.bfloat16,
-    )
-    moe.sharding_strategy = ShardingStrategy.expert_parallel(N_DEVICES)
-    moe_shards = moe.shard(devices_ref)
-    moe.load_state_dict(wrapped)
-    with mock.patch.dict(
-        os.environ, {"MODULAR_EP_FUSED_MOE": "1" if fused else "0"}
-    ):
-        ep_comm_init.ep_init(session)
-    assert ep_config.fused_moe_ready == fused
-
-    with Graph(
-        "EPMoE_FusedMegaFFN" if fused else "EPMoE_Shipping",
-        input_types=[
-            *(
-                TensorType(
-                    DType.bfloat16,
-                    (f"input_len_{i}", HIDDEN_DIM),
-                    DeviceRef.GPU(i),
-                )
-                for i in range(N_DEVICES)
-            ),
-            *ep_batch_manager.input_types(),
-        ],
-    ) as graph:
-        xs = [x.tensor for x in graph.inputs[:N_DEVICES]]
-        ep_batch_manager.fetch_buffers(graph.inputs[N_DEVICES:])
-        # Two chained MoE layers (same weights) on ONE module, the pattern the
-        # module docstring's UNRUN DRAFT note asks to review.
-        for _ in range(N_LAYERS):
-            xs = forward_moe_sharded_layers(moe_shards, xs)
-        graph.output(*xs)
-
-    ir = str(graph)
-    compiled = session.load(graph, weights_registry=moe.state_dict())
-    return compiled, ep_comm_init, ir
-
-
-def _run_ab(wrapped: dict[str, WeightData | torch.Tensor]) -> None:
-    devices = [Accelerator(i) for i in range(N_DEVICES)]
-    devices_ref = [DeviceRef(d.label, d.id) for d in devices]
-    session = InferenceSession(devices=devices)
-
-    shipping, ship_init, ship_ir = _build_arm(
-        False, wrapped, session, devices_ref
-    )
-    fused, fused_init, fused_ir = _build_arm(
-        True, wrapped, session, devices_ref
-    )
-
-    # Structure: arm B launches exactly one fused op per (layer, device) and
-    # none of the shipping EP/FFN ops; its shared expert is not on a side
-    # stream (the exclusive-launch contract). Arm A is the shipping chain.
-    assert (
-        fused_ir.count('symbol = "mega_ffn.ep_fused"') == N_LAYERS * N_DEVICES
-    )
-    for op in ("ep.dispatch_async", "ep.dispatch_wait", "ep.combine_wait"):
-        assert f'symbol = "{op}' not in fused_ir, op
-    assert 'symbol = "mega_ffn.ep_combine_send"' not in fused_ir
-    assert "mo.sequence" not in fused_ir
-    assert 'symbol = "mega_ffn.ep_fused"' not in ship_ir
-    assert "mo.sequence" in ship_ir
-
-    exact = 0
-    total = 0
-    for cell, lengths in CELLS.items():
-        for gen in range(N_GENERATIONS):
-            torch.manual_seed(1000 * gen + len(cell))
-            inputs = [
-                Buffer.from_dlpack(
-                    torch.randn(n, HIDDEN_DIM, dtype=torch.bfloat16)
-                ).to(devices[i])
-                for i, n in enumerate(lengths)
-            ]
-            ref = shipping.execute(*inputs, *ship_init.model_inputs())
-            out = fused.execute(*inputs, *fused_init.model_inputs())
-            for i, (r, o) in enumerate(zip(ref, out, strict=True)):
-                r_t = torch.from_dlpack(r).cpu().float()
-                o_t = torch.from_dlpack(o).cpu().float()
-                assert r_t.shape == o_t.shape == (lengths[i], HIDDEN_DIM)
-                if lengths[i] == 0:
-                    continue
-                assert torch.isfinite(o_t).all(), (cell, gen, i)
-                assert o_t.abs().max() > 0, (cell, gen, i)
-                cos = torch.nn.functional.cosine_similarity(r_t, o_t, dim=-1)
-                assert cos.min() > 0.9999, (
-                    f"{cell} gen {gen} rank {i}: cosine {cos.min().item():.6f}"
-                )
-                exact += int(torch.equal(r_t, o_t))
-                total += 1
-    # Informational: the fused FFN is the native NVFP4 math and the tail
-    # reuses the shipping reduce, so bit-identity is expected but not gated.
-    print(f"fused == shipping bit-exactly on {exact}/{total} (cell, gen, rank)")
+    return wrap(w)
 
 
 _needs_ep8 = [
     pytest.mark.skipif(
-        accelerator_api() == "hip", reason="NVFP4 fused EP MoE is NVIDIA-only"
+        accelerator_api() == "hip", reason="NVIDIA-only kernels"
     ),
     pytest.mark.skipif(not is_b100_b200(), reason="requires B100/B200 (SM100)"),
     pytest.mark.skipif(
-        accelerator_count() < N_DEVICES, reason="requires 8 GPUs (EP8)"
+        accelerator_count() < GEO.n_devices, reason="requires 8 GPUs (EP8)"
     ),
 ]
 
@@ -369,8 +135,131 @@ _needs_ep8 = [
 @_needs_ep8[0]
 @_needs_ep8[1]
 @_needs_ep8[2]
-def test_ep_fused_megaffn_matches_shipping() -> None:
-    _run_ab(_wrap(_nvfp4_weights()))
+@pytest.mark.parametrize(
+    ("fmt", "layers"),
+    [("nvfp4", 1), ("mxfp8", 1), ("mxfp8", 2), ("nvfp4", 2)],
+)
+def test_ep8_ship_reference_repeats(fmt: str, layers: int) -> None:
+    """The shipping reference alone, healthy under repeated execution.
+
+    With two layers the graph holds two side-stream regions, one per layer's
+    shared expert, so each layer needs its own module: a sharded weight
+    materializes its shard on first use and caches it (`Weight._mlir_value`),
+    and a module reused for the second layer would hand that region the
+    first region's values, which fails graph verification ("operand #0 does
+    not dominate this use" on the shared expert's gate/up concat).
+    """
+    ship_reference_repeats(GEO, fmt, layers, CELLS)
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+@pytest.mark.parametrize(
+    "words",
+    [
+        # One slot short of 32 local experts + 1.
+        32 * 32,
+        # Not a whole number of 32-word slots (the allocator's 225 slots, less
+        # one word).
+        225 * 32 - 1,
+    ],
+)
+def test_ep8_ship_arrival_count_undersized_refused(words: int) -> None:
+    """The NVFP4 combine send refuses an ``arrival_count`` that cannot hold
+    one 32-word slot per local expert plus one. The allocator's own size, 225
+    slots at 24 tokens per rank, runs in `test_ep8_ship_reference_repeats`.
+    """
+    ship_arrival_count_refused(GEO, words, CELLS["dense24"])
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+@pytest.mark.parametrize("mode", ("eager", "graph"))
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep8_fused_mode_vs_ship(fmt: str, mode: str) -> None:
+    mode_vs_ship(GEO, fmt, mode, CELLS)
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep8_fused_graph_replay(fmt: str) -> None:
+    # Capacity 24 keeps the decode specialization (token block 8).
+    assert graph_replay(GEO, fmt, CELLS) == 8
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep8_fused_replay_trace_matches(fmt: str) -> None:
+    replay_trace_matches(GEO, fmt, CELLS["dense24"])
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+@pytest.mark.parametrize("max_tpr", (25, 32))
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep8_fused_refused_capacity(fmt: str, max_tpr: int) -> None:
+    """Above 24 tokens per rank the fused path is gated at 2 ranks only: at
+    EP8 EP init must refuse, log why, allocate nothing, and the layers keep
+    the shipping chain."""
+    refused_capacity(GEO, fmt, max_tpr, ABOVE_DECODE_REASON)
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+def test_ep8_fused_refused_under_allreduce() -> None:
+    """The allreduce backend's EP ops see one rank, which the backend's rank
+    rule refuses before it allocates."""
+    refused_at_ep_init(GEO, "nvfp4", "allreduce", use_allreduce=True)
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+@pytest.mark.parametrize(
+    ("case", "match"),
+    [
+        ("no_workspace", "no fused EP MoE workspace"),
+        ("other_layout", "set up for another configuration"),
+    ],
+)
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep8_fused_launch_fails_closed(fmt: str, case: str, match: str) -> None:
+    launch_fails_closed(GEO, fmt, case, match, smaller_capacity=16)
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep8_fused_and_shipping_share_an_ep_instance(fmt: str) -> None:
+    shared_instance(
+        GEO, fmt, {c: CELLS[c] for c in ("dense24", "skew", "bs1_q6")}
+    )
+
+
+@_needs_ep8[0]
+@_needs_ep8[1]
+@_needs_ep8[2]
+@pytest.mark.skipif(
+    os.environ.get("EP8_FUSED_NSYS", "0") != "1",
+    reason="nsys subject: set EP8_FUSED_NSYS=1",
+)
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep8_fused_nsys_subject(fmt: str) -> None:
+    nsys_subject(
+        GEO,
+        fmt,
+        CELLS["dense24"],
+        int(os.environ.get("EP8_FUSED_NSYS_REPLAYS", "3")),
+    )
 
 
 @_needs_ep8[0]
@@ -380,7 +269,12 @@ def test_ep_fused_megaffn_matches_shipping() -> None:
     "GLM53_NVFP4_SNAPSHOT" not in os.environ,
     reason="set GLM53_NVFP4_SNAPSHOT to a local RadixArk/GLM-5.3-NVFP4 snapshot",
 )
-def test_ep_fused_megaffn_real_glm_layer() -> None:
+def test_ep8_fused_real_glm_layer() -> None:
     snapshot = Path(os.environ["GLM53_NVFP4_SNAPSHOT"])
     layer = int(os.environ.get("GLM53_LAYER", "10"))
-    _run_ab(_wrap(_glm_layer_weights(snapshot, layer)))
+    assert (
+        graph_replay(
+            GEO, "nvfp4", CELLS, wrapped=_glm_layer_weights(snapshot, layer)
+        )
+        == 8
+    )

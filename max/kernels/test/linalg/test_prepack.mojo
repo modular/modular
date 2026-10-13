@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from layout import Idx, TileTensor
+from layout import TileTensor
 from layout.tile_layout import row_major
 from linalg.packing import pack_b
 from std.memory import unsafe_memset_zero, unsafe_stack_allocation

@@ -57,7 +57,7 @@ def _create_mma_desc_k_major[
 
 
 @fieldwise_init("implicit")
-struct Major(TrivialRegisterPassable):
+struct Major(EnumLike, TrivialRegisterPassable):
     """Selects the major (contiguous) dimension for an MMA operand tile layout.
 
     Used to configure whether the K dimension or the MN dimension is the
@@ -68,6 +68,25 @@ struct Major(TrivialRegisterPassable):
 
     comptime K = Major(0)
     comptime MN = Major(1)
+
+    # The implicit fieldwise initializer accepts raw values outside the two
+    # named cases, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of["K".value, "MN".value].values
+    comptime _enum_case_types = TypeList.splat[2, NoneType].values
+
+    def _get_enum_discriminant(self) -> Int:
+        """Return the active case index."""
+        return self.val
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Return the payload of case `id`. Major cases carry no payload."""
+        comptime assert False, "Major has no payload"
 
     def __eq__(self, rhs: Major) -> Bool:
         return self.val == rhs.val
@@ -88,18 +107,21 @@ def max_contiguous_tile_shape[
 
     comptime assert rank == 2, "Only 2D tensors are supported!"
 
-    comptime if major == Major.K:
-        # Tile shape is (MN, K), max K is based on swizzle.
-        return IntTuple(tile_shape[0], swizzle_mode.bytes() // size_of[dtype]())
-    elif major == Major.MN:
-        # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
-        # canonical layout.
-        # The following are rare in practice but worth checking.
-        # TODO: this may not work for swizzle.NONE, need to double-check
-        # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
-        return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
-    else:
-        comptime assert False, "Invalid major"
+    comptime match major:
+        case .K:
+            # Tile shape is (MN, K), max K is based on swizzle.
+            return IntTuple(
+                tile_shape[0], swizzle_mode.bytes() // size_of[dtype]()
+            )
+        case .MN:
+            # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
+            # canonical layout.
+            # The following are rare in practice but worth checking.
+            # TODO: this may not work for swizzle.NONE, need to double-check
+            # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
+            return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
+        case _:
+            comptime assert False, "Invalid major"
 
 
 def _create_mma_desc_pair[
@@ -390,7 +412,7 @@ struct MmaOpSM100_SS[
 
     @staticmethod
     def _get_umma_kind[dtype: DType]() -> UMMAKind:
-        comptime __match dtype:
+        comptime match dtype:
             case .float32:
                 return UMMAKind.KIND_TF32
             case .float16 | DType.bfloat16:

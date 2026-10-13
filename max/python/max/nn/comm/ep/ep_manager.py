@@ -53,6 +53,7 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
 from numpy.typing import NDArray
 
+from ...activation import GatedActivation
 from .ep_config import (
     _EP_LOCAL_SYNC_RESERVED_WORDS,
     NUM_GROUPS,
@@ -747,7 +748,7 @@ class EPBatchManager:
         c_input_scales: TensorValue,
         estimated_total_m: TensorValue,
         num_active_experts: TensorValue,
-        clamp_activation: bool = False,
+        activation: GatedActivation | None = None,
     ) -> None:
         """Runs the MoE FFN with the combine send fused into its epilogue.
 
@@ -775,7 +776,8 @@ class EPBatchManager:
             c_input_scales: Per-expert input scale for the re-quant.
             estimated_total_m: Estimated total non-padded tokens.
             num_active_experts: Active expert slots.
-            clamp_activation: Select the clamped (``swigluoai``) activation.
+            activation: The gated activation the kernel fuses; see
+                :func:`~max.nn.comm.ep.ep_kernels.fused_silu`.
         """
         COMBINE_GROUP = 1
 
@@ -840,7 +842,7 @@ class EPBatchManager:
             estimated_total_m,
             num_active_experts,
             self.config,
-            clamp_activation=clamp_activation,
+            activation=activation,
         )
 
         # Reset so a stale routing table cannot be reused for the next
@@ -863,6 +865,7 @@ class EPBatchManager:
         gate_up_expert_scales: TensorValue,
         down_expert_scales: TensorValue,
         c_input_scales: TensorValue,
+        activation: GatedActivation | None = None,
     ) -> TensorValue:
         """One-launch fused EP MoE: dispatch -> MegaFFN -> weighted combine.
 
@@ -887,6 +890,8 @@ class EPBatchManager:
             gate_up_expert_scales: Per-local-expert L1 alpha.
             down_expert_scales: Per-local-expert L2 alpha.
             c_input_scales: Per-local-expert L1->L2 requant scale.
+            activation: The gated activation the kernel fuses; see
+                :func:`~max.nn.comm.ep.ep_kernels.fused_silu`.
 
         Returns:
             The routed-expert MoE output ``(T, hidden)`` BF16.
@@ -906,6 +911,7 @@ class EPBatchManager:
             c_input_scales,
             self.recv_count_ptrs[0],
             self.config,
+            activation=activation,
         )
 
     def ep_combine_wait(

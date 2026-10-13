@@ -36,7 +36,7 @@ Coverage:
   where each thread owns a single vector.
 """
 
-from max.gpu import thread_idx
+from max.gpu import WARP_SIZE, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import (
@@ -44,7 +44,9 @@ from max.gpu.memory import (
     async_copy_wait_all,
 )
 
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.layout_tensor import ThreadScope
+from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
 from layout.tile_io import (
     copy_dram_to_local,
@@ -346,6 +348,155 @@ def test_async_dram_to_sram_to_dram(ctx: DeviceContext) raises:
     )
 
 
+def _bounded_local_to_dram_kernel[
+    ROWS: Int,
+    NUM_THREADS: Int = 32,
+    SCOPE: ThreadScope = ThreadScope.BLOCK,
+](
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+    after_ptr: MutPointer[Float32, MutAnyOrigin],
+    valid0: Int32,
+    valid1: Int32,
+    row_stride: Int32,
+):
+    comptime thread_layout = row_major[8, 4]()
+    var worker = Int(thread_idx.x)
+    var warp = worker // 32
+    var lane = worker % 32
+    var owner = stack_allocation[.float32, address_space=.LOCAL, alignment=16](
+        row_major[ROWS + 2]()
+    )
+    owner[0] = Float32(-7001)
+    owner[ROWS + 1] = Float32(-7001)
+    comptime for i in range(ROWS):
+        owner[i + 1] = Float32(warp * 100000 + lane * 1000 + i)
+    var local = TileTensor[address_space=.LOCAL](
+        owner.ptr + 1, row_major[ROWS // 4, 4]()
+    )
+    var layout = TileLayout(
+        Coord(Idx[ROWS], Idx[32]), Coord(row_stride, Idx[1])
+    )
+    var offset = 9 + (warp * (ROWS + 4) + 2) * Int(row_stride) + 32
+    var dst = TileTensor[linear_idx_type=.int32](dst_ptr + offset, layout)
+    var valid_rows = Int(valid0 if warp == 0 else valid1)
+    copy_local_to_dram[
+        thread_layout, num_threads=NUM_THREADS, thread_scope=SCOPE
+    ](
+        dst.vectorize[1, 2](),
+        local.vectorize[1, 2]().transpose().as_imm(),
+        valid_rows,
+    )
+    comptime for i in range(ROWS + 2):
+        after_ptr[worker * (ROWS + 2) + i] = owner[i]
+
+
+def _check_bounded_local_to_dram[
+    ROWS: Int,
+    NUM_THREADS: Int = 32,
+    SCOPE: ThreadScope = ThreadScope.BLOCK,
+](ctx: DeviceContext, valid0: Int, valid1: Int, stride: Int) raises:
+    print(
+        "== bounded_local_to_dram",
+        ROWS,
+        valid0,
+        valid1,
+        stride,
+        NUM_THREADS,
+        SCOPE,
+    )
+    comptime prefix = 9
+    comptime suffix = 16
+    var size = prefix + 2 * (ROWS + 4) * stride + suffix
+    var host = ctx.enqueue_create_host_buffer[.float32](size)
+    var device = ctx.enqueue_create_buffer[.float32](size)
+    var after_host = ctx.enqueue_create_host_buffer[.float32](64 * (ROWS + 2))
+    var after_device = ctx.enqueue_create_buffer[.float32](64 * (ROWS + 2))
+    for i in range(size):
+        host[i] = Float32(-9999)
+    for i in range(64 * (ROWS + 2)):
+        after_host[i] = Float32(-9999)
+    assert_equal(Int(device.unsafe_ptr() + prefix) % 4, 0)
+    for tile in range(2):
+        var offset = prefix + (tile * (ROWS + 4) + 2) * stride + 32
+        assert_equal(Int(device.unsafe_ptr() + offset) % 8, 4)
+    ctx.enqueue_copy(device, host)
+    ctx.enqueue_copy(after_device, after_host)
+    ctx.enqueue_function[
+        _bounded_local_to_dram_kernel[ROWS, NUM_THREADS, SCOPE]
+    ](
+        device,
+        after_device,
+        Int32(valid0),
+        Int32(valid1),
+        Int32(stride),
+        grid_dim=1,
+        block_dim=64,
+    )
+    ctx.enqueue_copy(host, device)
+    ctx.enqueue_copy(after_host, after_device)
+    ctx.synchronize()
+
+    for i in range(size):
+        var expected = Float32(-9999)
+        var physical = i - prefix
+        if physical >= 0 and physical < 2 * (ROWS + 4) * stride:
+            var tile = physical // ((ROWS + 4) * stride)
+            var row = (physical // stride) % (ROWS + 4) - 2
+            var col = physical % stride - 32
+            var bound = min(ROWS, max(0, valid0 if tile == 0 else valid1))
+            var active: Bool
+            comptime if NUM_THREADS > 32 and SCOPE == ThreadScope.BLOCK:
+                active = tile == 0
+            else:
+                active = True
+            if active and row >= 0 and row < bound and col >= 0 and col < 32:
+                var lane = (row % 8) * 4 + (col % 8) // 2
+                var mma: Int
+                var fragment: Int
+                comptime if ROWS == 16:
+                    mma = col // 8
+                    fragment = 2 * (row // 8) + col % 2
+                else:
+                    # Literal MMA row-group packing, not a distribution replay.
+                    var group = row // 8
+                    mma = 2 * (col // 8) + (1 if group >= 2 else 0)
+                    fragment = (2 if group % 2 == 1 else 0) + col % 2
+                expected = Float32(
+                    tile * 100000 + lane * 1000 + 4 * mma + fragment
+                )
+        assert_equal(host[i], expected)
+    for worker in range(64):
+        for i in range(ROWS + 2):
+            var expected = Float32(-7001)
+            if i > 0 and i <= ROWS:
+                expected = Float32(
+                    (worker // 32) * 100000 + (worker % 32) * 1000 + i - 1
+                )
+            assert_equal(after_host[worker * (ROWS + 2) + i], expected)
+    print(
+        "PASS bounded_local_to_dram",
+        ROWS,
+        valid0,
+        valid1,
+        stride,
+        NUM_THREADS,
+        SCOPE,
+    )
+
+
+def test_bounded_local_to_dram(ctx: DeviceContext) raises:
+    var bounds: List[Int] = [-1, 0, 1, 7, 8, 9, 16, 17, 31, 32, 33]
+    for bound in bounds:
+        _check_bounded_local_to_dram[32](
+            ctx, bound, 32 - bound, 101 if bound % 2 != 0 else 104
+        )
+    _check_bounded_local_to_dram[32](ctx, 32, 32, 101)
+    _check_bounded_local_to_dram[16](ctx, 16, 16, 101)
+    _check_bounded_local_to_dram[16](ctx, 9, 7, 104)
+    _check_bounded_local_to_dram[32, 64, ThreadScope.BLOCK](ctx, 32, 32, 101)
+    _check_bounded_local_to_dram[32, 64, ThreadScope.WARP](ctx, 32, 32, 101)
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_dram_to_sram_to_dram(ctx)
@@ -355,3 +506,5 @@ def main() raises:
         test_swizzled_vectorized_sram_to_dram(ctx)
         test_swizzled_vectorized_local_to_shared(ctx)
         test_async_dram_to_sram_to_dram(ctx)
+        comptime if WARP_SIZE == 32:
+            test_bounded_local_to_dram(ctx)

@@ -12,7 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import Coord, CoordLike, Idx, MixedLayout, TileTensor, row_major
+from layout import (
+    CoordLike,
+    Idx,
+    TileTensor,
+    row_major,
+)
 from layout._fillers import random
 from linalg.fp8_quantization import (
     batched_quantize_dynamic_scaled_fp8,
@@ -20,7 +25,7 @@ from linalg.fp8_quantization import (
     quantize_static_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
 )
-from std.testing import assert_equal, assert_true, assert_almost_equal
+from std.testing import assert_equal, assert_true
 
 from std.utils.numerics import (
     get_accum_type,

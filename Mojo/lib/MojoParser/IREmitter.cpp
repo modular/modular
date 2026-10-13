@@ -177,6 +177,26 @@ PValue IREmitter::emitErrorForDynamicValueInParameter(Location loc,
   return {};
 }
 
+void IREmitter::warnIfTransferIsOnlyBorrowed(ASTExprAnd<AnyValue> value) {
+  MRValue transferred = value.ir.getIfMRValue();
+  if (!transferred || !value.expr)
+    return;
+
+  auto *transfer = dyn_cast<UnaryOpNode>(value.expr->getWithoutParens());
+  if (!transfer || transfer->kind != ExprNode::kTransfer)
+    return;
+
+  if (Value storage =
+          OriginTrackable::findUnderlyingValueFromField(transferred))
+    if (auto varDecl = storage.getDefiningOp<VarDeclOp>();
+        varDecl && varDecl.isSynthetic())
+      return;
+
+  emitWarning(transfer->getLoc()) << "this value is borrowed here, so the "
+                                     "transfer has no effect and can be removed"
+                                  << FixIt::remove(transfer->getLoc());
+}
+
 //===----------------------------------------------------------------------===//
 // Emission helpers for various value classifications.
 
@@ -304,6 +324,7 @@ BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
     if (auto pmb = value.ir.getIfPMBValue())
       return pmb;
     // Otherwise decay MLValue/MRValue to MBValue.
+    warnIfTransferIsOnlyBorrowed(value);
     return MBValue(value.ir.getMValueReference());
   }
 
@@ -1802,6 +1823,12 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue,
                           ExprContext context) {
   ExprDest dest(context);
   return emitInt(indexValue, dest);
+}
+
+CValue IREmitter::emitInt(int64_t value, llvm::SMLoc loc, ExprContext context) {
+  SyntheticNode expr(loc);
+  auto indexAttr = IntegerAttr::get(IndexType::get(getContext()), value);
+  return emitInt(ASTExprAnd<AnyValue>{PValue(indexAttr), &expr}, context);
 }
 
 /// This returns an instance of Tuple[...] with the specified element types

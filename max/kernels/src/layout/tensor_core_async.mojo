@@ -175,20 +175,27 @@ def _supported_mma_shape[
 
     # Ideally this check should be input/output type dependent as mma_shape depends on input/output types
     # (https://mlir.llvm.org/docs/Dialects/NVVMDialect/#nvvmwgmmamma_async-nvvmwgmmammaasyncop).
-    comptime if mma_shape[0] == 64 and mma_shape[2] == 8:
-        return (
-            mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
-        )
-    elif mma_shape[0] == 64 and mma_shape[2] == 16:
-        return (
-            mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
-        )
-    elif mma_shape[0] == 64 and mma_shape[2] == 32:
-        return (
-            mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
-        )
-    else:
-        return False
+    comptime match (mma_shape[0], mma_shape[2]):
+        case (64, 8):
+            return (
+                mma_shape[1] % 8 == 0
+                and mma_shape[1] >= 8
+                and mma_shape[1] <= 256
+            )
+        case (64, 16):
+            return (
+                mma_shape[1] % 8 == 0
+                and mma_shape[1] >= 8
+                and mma_shape[1] <= 256
+            )
+        case (64, 32):
+            return (
+                mma_shape[1] % 8 == 0
+                and mma_shape[1] >= 8
+                and mma_shape[1] <= 256
+            )
+        case _:
+            return False
 
 
 # Core matrix dimensions
@@ -1438,6 +1445,7 @@ struct TensorCoreAsync[
                     var b_desc_n = b_desc + b_offset
 
                     var c_frags = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+                    comptime assert c_frags.rank == c_frags.flat_rank == 2
 
                     var c_frags_in_tuple = _convert_cfrags_to_tuple[
                         Self.c_type, c_frag_size

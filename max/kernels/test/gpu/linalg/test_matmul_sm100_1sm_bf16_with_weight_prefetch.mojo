@@ -24,7 +24,6 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
-from linalg.utils import elementwise_epilogue_type
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -313,30 +312,27 @@ def test_rmsnorm_then_matmul[
         prefetch_tiles_n=prefetch_tiles_n,
     )
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_ours_tensor)
+    var out_shape = IndexList[2](
+        Int(c_ours_tensor.dim[0]()), Int(c_ours_tensor.dim[1]())
+    )
+
     def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = 1,
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_ours_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         c_ours_tensor.raw_store[
             width=width, alignment=alignment * size_of[c_type]()
-        ](c_ours_tensor.layout(Coord(idx)), rebind[SIMD[c_type, width]](val))
-
-    comptime epi = Optional[elementwise_epilogue_type](epilogue_fn)
+        ](c_ours_tensor.layout(idx), rebind[SIMD[c_type, width]](val))
 
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        elementwise_lambda_fn=epi,
         pdl_level=pdl_level,
     ](
-        c_ours_tensor,
+        out_shape,
         a_normed_ours_tensor,
         b_tensor,
+        epilogue_fn,
         ctx,
     )
 

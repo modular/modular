@@ -11,5 +11,3 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Implements I/O write interfaces."""
-
-from std.format import Writer, Writable

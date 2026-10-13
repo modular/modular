@@ -23,7 +23,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from max.gpu.memory import external_memory
 from max.gpu.primitives.grid_controls import (
@@ -766,7 +766,7 @@ def rms_norm_fused_residual_gpu[
         indices[rank - 1] = col
         return residual_input_fn[simd_width](Coord(indices))
 
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows

@@ -102,7 +102,7 @@ struct DataType(Equatable, TrivialRegisterPassable):
         self._value = Int32(value)
 
     def __init__(out self, dtype: DType) raises:
-        __match dtype:
+        match dtype:
             case .float32:
                 self = Self.FLOAT
             case .float16:

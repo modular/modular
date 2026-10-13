@@ -52,7 +52,6 @@ from layout import (
     RowMajorLayout,
     TensorEngine,
     TileTensor,
-    CoordLike,
 )
 from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (

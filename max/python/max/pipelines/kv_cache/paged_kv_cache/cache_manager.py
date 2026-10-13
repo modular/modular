@@ -26,7 +26,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     BatchCharacteristics,
-    KVCacheGroupId,
     KVCacheInputs,
     KVCacheParamInterface,
 )
@@ -35,6 +34,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
     KVCacheMemory,
+    KVConnectorType,
     recurrent_leaf,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
@@ -52,19 +52,21 @@ from max.pipelines.graph_input_stager import (
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     ByteCount,
-    KVConnector,
+    CompletedTransfer,
     KVTransfer,
 )
 from max.profiler import traced
 from max.support.math import ceildiv
 
-from ..connectors import create_connector
-from .block_manager import (
-    BlockManager,
+from ._common import (
+    KV_CACHE_LENGTHS,
     PrefixCacheHits,
     _compute_seq_len,
+    cache_valid_length_for_context,
     compute_block_hashes,
+    prompt_tokens_for_context,
 )
+from .block_manager import BlockManager
 from .block_utils import InsufficientBlocksError
 from .cache_manager_interface import PagedKVCacheManagerInterface
 
@@ -72,9 +74,6 @@ logger = logging.getLogger("max.pipelines")
 
 KV_LUT_TABLE = "kv_lut_table"
 """Device input holding each request's page ids, one row per request."""
-
-KV_CACHE_LENGTHS = "kv_cache_lengths"
-"""Device input holding how much cache each request already has."""
 
 KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 
@@ -95,36 +94,6 @@ def _does_req_need_more_blocks(
     return seq_len > num_blocks_allocated * params.page_size
 
 
-def prompt_tokens_for_context(ctx: TextContext) -> int:
-    """Returns the per-step query (prompt) width for ``ctx``.
-
-    The new tokens processed this step plus any draft tokens to verify. Matches
-    the decode kernel's ``q_max_seq_len`` (prefill: full prompt; decode:
-    ``1 + num_draft_tokens_to_verify``).
-    """
-    return ctx.tokens.active_length + len(
-        ctx.spec_decoding_state.draft_tokens_to_verify
-    )
-
-
-def cache_valid_length_for_context(
-    ctx: TextContext, num_draft_tokens: int
-) -> int:
-    """Returns the maximum valid cache length this forward reads for ``ctx``.
-
-    Already-cached tokens (processed + accepted draft) plus this step's query
-    width (:func:`prompt_tokens_for_context`) plus the draft tokens written this
-    step (``num_draft_tokens``). Shared with the graph-capture replay path so
-    its upper-bound characteristics match what this manager prepares.
-    """
-    return (
-        ctx.tokens.processed_length
-        + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
-        + prompt_tokens_for_context(ctx)
-        + num_draft_tokens
-    )
-
-
 @dataclass
 class _ReplicaMetadata:
     block_manager: BlockManager
@@ -134,9 +103,6 @@ class _ReplicaMetadata:
     pass the replica index. Device memory is partitioned per replica inside the
     manager.
     """
-
-    connector: KVConnector
-    """Connector for external cache tiers (host memory, LMCache, etc.)."""
 
     devices: Sequence[Device]
     """Devices for the replica."""
@@ -239,6 +205,13 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 " JengaKVCacheManager, whose slab the state shares."
             )
 
+        connector_type = params.kv_connector_config.type
+        if connector_type != KVConnectorType.null:
+            raise ValueError(
+                f"The '{connector_type.value}' KV connector is incompatible"
+                " with the legacy PagedKVCacheManager; use JengaKVCacheManager."
+            )
+
         self.params = params
 
         devices = [d.to_device() for d in params.devices]
@@ -261,19 +234,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             self._kv_buffers[replica_idx].to_memory()
             for replica_idx in range(num_replicas)
         ]
-
-        # A single connector serves every replica; each ``load``/``offload``
-        # passes ``replica_idx`` to select the device endpoint.
-        self._connector = create_connector(
-            # Legacy KV cache manager treats all leaves as full attention groups.
-            leaves={
-                leaf_id: KVCacheGroupId.full() for leaf_id in params.leaves()
-            },
-            devices=devices,
-            replica_kv_memory=replica_kv_memory,
-            params=params,
-            device_memory_bytes=(total_num_pages + 1) * params.bytes_per_block,
-        )
 
         # One instance across every replica and tensor-parallel shard. A
         # shard is a destination of one name; a replica scopes the name,
@@ -327,12 +287,10 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         if num_replicas > 1 and params.enable_prefix_caching:
             cross_replica_kv_memory = replica_kv_memory
 
-        # A single block manager owns every replica's device block pool and the
-        # single shared connector.
+        # A single block manager owns every replica's device block pool.
         self._block_manager = BlockManager(
             total_num_blocks=total_num_pages,
             block_size=params.page_size,
-            connector=self._connector,
             enable_prefix_caching=params.enable_prefix_caching,
             enable_runtime_checks=enable_runtime_checks,
             num_replicas=num_replicas,
@@ -347,7 +305,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         self._replica: list[_ReplicaMetadata] = [
             _ReplicaMetadata(
                 block_manager=self._block_manager,
-                connector=self._connector,
                 devices=devices_per_replica[replica_idx],
             )
             for replica_idx in range(num_replicas)
@@ -400,29 +357,15 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 already be assigned to a replica via ``claim``.
 
         Returns:
-            The async onload transfer for the request's reused prefix -- an
-            already-complete :class:`CompletedTransfer` when nothing was
-            onloaded (a device hit). The caller polls ``is_complete()`` to hold
-            the request out of a batch until its onloaded KV has landed, since
-            a connector's H2D runs off the forward stream. If it raises
-            :class:`KVLoadFailed` instead, the next ``alloc`` rolls the
-            onloaded prefix back and the request recomputes it.
+            An already-complete :class:`CompletedTransfer`: this manager has no
+            external tier to onload from.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation. The request is left as it was before the
             call, so the caller can release or retry it.
-            RuntimeError: If the request was run past an onload whose copy
-                failed, rather than held out of the batch until it landed.
         """
-        # Drain completed async KV transfers first to release any g0 blocks of
-        # completed transfers.
-        self._block_manager.poll_transfers()
-        self._block_manager.rollback_failed_onload(ctx)
-
-        skip_amount, load_event = (
-            self._block_manager.reuse_blocks_from_prefix_cache(ctx)
-        )
+        skip_amount = self._block_manager.reuse_blocks_from_prefix_cache(ctx)
         try:
             self._block_manager.allocate_new_blocks(
                 ctx,
@@ -435,7 +378,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             # into the next alloc claiming tokens it holds no blocks for.
             self._block_manager.rollback_prefix_reuse(ctx, skip_amount)
             raise
-        return load_event
+        return CompletedTransfer()
 
     @traced
     def _compute_kv_cache_assignments(
@@ -587,9 +530,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 ),
             )
 
-        # Initiate saves to external cache tiers.
-        self._block_manager.offload(replica_idx)
-
         # Choose the shape used to prepare attention dispatch metadata. When
         # ``batch_characteristics`` is provided (e.g. graph-capture replay), the
         # dispatch key is resolved once from those (aligned, upper-bound) values
@@ -737,18 +677,11 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         self._block_manager.step(ctx)
 
     def poll_transfers(self) -> None:
-        """Drains completed async KV transfers (onloads and offloads).
-
-        Unpins the device blocks of completed transfers, commits completed
-        onloads into the device prefix cache, and lets connectors reclaim their
-        host-side resources. Cheap to call every scheduler iteration, and a
-        no-op when no transfer is in flight.
-        """
-        self._block_manager.poll_transfers()
+        """No-op; this manager posts no async transfers."""
 
     def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
-        """Returns whether any async KV transfer is in flight on the replica."""
-        return self._block_manager.pending_transfers_exist(replica_idx)
+        """Returns False; this manager posts no async transfers."""
+        return False
 
     def contains(self, ctx: TextContext) -> bool:
         """Returns whether the request is claimed on any replica."""
@@ -759,20 +692,11 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         return self._block_manager.take_metrics()
 
     def reset_prefix_cache(self) -> None:
-        """Resets the device prefix caches and every connector's tiers."""
+        """Resets the device prefix caches."""
         self._block_manager.reset_prefix_cache()
-        for replica in self._replica:
-            replica.connector.reset_prefix_cache()
 
     def shutdown(self) -> None:
-        """Releases the KV connector's external resources.
-
-        Drains in-flight host/disk transfers and frees the shared pinned host
-        buffer; for the tiered connector this also removes the on-disk offload
-        directory. A single connector backs every replica, so this shuts it
-        down once. A no-op for the ``null`` connector.
-        """
-        self._connector.shutdown()
+        """No-op; this manager holds no external resources."""
 
     def get_metrics_aggregated(self) -> KVCacheMetrics:
         """Returns aggregated metrics across all replicas."""
@@ -791,12 +715,12 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         return len(self._block_manager.get_req_blocks(ctx))
 
     def host_byte_count(self) -> ByteCount:
-        """Returns the host KV tier occupancy in bytes, shared by every replica."""
-        return self._connector.host_byte_count
+        """Returns an empty host tier; this manager has none."""
+        return ByteCount(free=0, total=0)
 
     def disk_byte_count(self) -> ByteCount:
-        """Returns the disk KV tier occupancy in bytes, shared by every replica."""
-        return self._connector.disk_byte_count
+        """Returns an empty disk tier; this manager has none."""
+        return ByteCount(free=0, total=0)
 
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
         """Returns the replica's KV buffer (single leaf or tree).

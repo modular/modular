@@ -33,13 +33,43 @@ from std.random import Random
 from std.utils import IndexList
 
 
-struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
+struct InitializationType(
+    DevicePassable, EnumLike, Equatable, TrivialRegisterPassable
+):
     var _value: Int64
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
     comptime uniform_distribution = InitializationType(2)
     comptime arange = InitializationType(3)
     comptime fill = InitializationType(4)
+
+    # The public `__init__(value: Int)` accepts raw backing values the named
+    # cases do not cover, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "zero".value,
+        "one".value,
+        "uniform_distribution".value,
+        "arange".value,
+        "fill".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "InitializationType has no payload"
 
     comptime device_type: AnyType = Self
 
@@ -66,7 +96,7 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
 
     @staticmethod
     def from_str(str: String) raises -> Self:
-        __match str:
+        match str:
             case "zero":
                 return InitializationType.zero
             case "one":
@@ -95,17 +125,20 @@ def bench_compile_time[
     def bench_call(mut b: Bencher) raises {}:
         @inline(.always)
         def bench_iter() raises {}:
-            comptime if emission_kind == "asm" or emission_kind == "llvm":
-                var s = compile_info[func, emission_kind=emission_kind]().asm
-                keep(s)
-            elif emission_kind == "ptx":
-                with DeviceContext() as ctx:
-                    var func = DeviceFunction[
-                        func, TypeList.of[Trait=AnyType]()
-                    ](ctx)
-                    # Ensure that the compilation step is not optimized away.
-                    keep(UnsafePointer(to=func))
-                    clobber_memory()
+            comptime match emission_kind:
+                case "asm" | "llvm":
+                    var s = compile_info[
+                        func, emission_kind=emission_kind
+                    ]().asm
+                    keep(s)
+                case "ptx":
+                    with DeviceContext() as ctx:
+                        var func = DeviceFunction[
+                            func, TypeList.of[Trait=AnyType]()
+                        ](ctx)
+                        # Ensure that the compilation step is not optimized away.
+                        keep(UnsafePointer(to=func))
+                        clobber_memory()
 
         b.iter(bench_iter)
 
@@ -215,32 +248,33 @@ def _get_arg(handle: String) -> Optional[String]:
 
 def arg_parse(handle: String, default: Int) raises -> Int:
     var val = _get_arg(handle)
-    if val:
-        return Int(val.value())
+    if case .Some(val) = val:
+        return Int(val)
     return default
 
 
 def arg_parse(handle: String, default: Bool) raises -> Bool:
     var val = _get_arg(handle)
-    if val:
-        if val.value() == "True":
-            return True
-        elif val.value() == "False":
-            return False
+    if case .Some(value) = val:
+        match value:
+            case "True":
+                return True
+            case "False":
+                return False
     return default
 
 
 def arg_parse(handle: String, default: String) raises -> String:
     var val = _get_arg(handle)
-    if val:
-        return val.value()
+    if case .Some(val) = val:
+        return val
     return default
 
 
 def arg_parse(handle: String, default: Float64) raises -> Float64:
     var val = _get_arg(handle)
-    if val:
-        return atof(val.value())
+    if case .Some(val) = val:
+        return atof(val)
     return default
 
 
@@ -258,12 +292,13 @@ struct Mode(TrivialRegisterPassable, Writable):
         var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
         for h in handle_lower:
-            if String(Self.RUN.handle) == h:
-                self.append(Self.RUN)
-            elif String(Self.BENCHMARK.handle) == h:
-                self.append(Self.BENCHMARK)
-            elif String(Self.VERIFY.handle) == h:
-                self.append(Self.VERIFY)
+            match h:
+                case == (String(Self.RUN.handle)):
+                    self.append(Self.RUN)
+                case == (String(Self.BENCHMARK.handle)):
+                    self.append(Self.BENCHMARK)
+                case == (String(Self.VERIFY.handle)):
+                    self.append(Self.VERIFY)
 
     def append(mut self, other: Self):
         self._value |= other._value
@@ -370,34 +405,35 @@ def init_vector_gpu[
             tid += stride
 
     var values = SIMD[dtype, 4]()
-    if mode == InitializationType.zero:
-        values = SIMD[dtype, 4](0)
-    elif mode == InitializationType.one:
-        values = SIMD[dtype, 4](1)
-    elif mode == InitializationType.fill:
-        values = SIMD[dtype, 4](value)
-    elif mode == InitializationType.uniform_distribution:
-        var rng = Random(offset=UInt64(tid))
+    match mode:
+        case .zero:
+            values = SIMD[dtype, 4](0)
+        case .one:
+            values = SIMD[dtype, 4](1)
+        case .fill:
+            values = SIMD[dtype, 4](value)
+        case .uniform_distribution:
+            var rng = Random(offset=UInt64(tid))
 
-        comptime if dtype.is_floating_point():
-            values = SIMD[dtype, 4](rng.step_uniform())
+            comptime if dtype.is_floating_point():
+                values = SIMD[dtype, 4](rng.step_uniform())
 
-        elif dtype.is_unsigned():
-            values = (rng.step() & Scalar[dtype].MAX.cast[.uint32]()).cast[
-                dtype
-            ]()
-        else:
-            comptime assert (
-                False
-            ), "unsupported dtype for uniform distribution initialization"
+            elif dtype.is_unsigned():
+                values = (rng.step() & Scalar[dtype].MAX.cast[.uint32]()).cast[
+                    dtype
+                ]()
+            else:
+                comptime assert (
+                    False
+                ), "unsupported dtype for uniform distribution initialization"
 
-    elif mode == InitializationType.arange:
-        values = SIMD[dtype, 4](
-            UInt64(tid).cast[dtype](),
-            UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + 2 * stride).cast[dtype](),
-            UInt64(tid + 3 * stride).cast[dtype](),
-        )
+        case .arange:
+            values = SIMD[dtype, 4](
+                UInt64(tid).cast[dtype](),
+                UInt64(tid + stride).cast[dtype](),
+                UInt64(tid + 2 * stride).cast[dtype](),
+                UInt64(tid + 3 * stride).cast[dtype](),
+            )
     apply(values)
 
 

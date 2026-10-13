@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import max.gpu.primitives.warp as warp
 from max.gpu import global_idx, lane_id
 from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext

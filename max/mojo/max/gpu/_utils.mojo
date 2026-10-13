@@ -176,7 +176,7 @@ comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 
 @inline(.nodebug)
 def _dtype_to_llvm_type_str[dtype: DType]() -> StaticString:
-    comptime __match dtype:
+    comptime match dtype:
         case .float32:
             return "f32"
         case .float16:
@@ -265,7 +265,7 @@ def simd_to_llvm_struct[
 
 @inline(.nodebug)
 def _dtype_to_pop_scalar_str[dtype: DType]() -> StaticString:
-    comptime __match dtype:
+    comptime match dtype:
         case .bool:
             return "!kgen.scalar<bool>"
         case .int8:

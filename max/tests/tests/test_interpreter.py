@@ -125,6 +125,9 @@ class TestCanExecute:
             graph.output(result)
 
         assert _interpreter.can_execute(graph) is False
+        assert _interpreter.refusal(graph) == (
+            "rmo.concat has no interpreter handler"
+        )
 
 
 class TestOpHandlerRegistry:

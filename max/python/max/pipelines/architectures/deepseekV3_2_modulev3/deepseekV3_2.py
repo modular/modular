@@ -40,7 +40,9 @@ from max.graph import TensorValue
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.speculative.driver import gather_variable_rows
 
 from ..deepseekV2_modulev3.layers.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
@@ -88,7 +90,7 @@ class DeepseekV3_2TextModel(
             Tensor | None,
             EPCommBuffers | None,
         ],
-        ModuleV3Outputs,
+        tuple[Tensor, ...],
     ]
 ):
     """The DeepseekV3.2 language model.
@@ -181,6 +183,12 @@ class DeepseekV3_2TextModel(
         self.kv_params = config.kv_params
         self.config = config
         self.mesh = config.mesh
+        # A unified spec-decode graph sets these as the graph-API model does:
+        # it reads VARIABLE logits and every token's normalized hidden state,
+        # and skips the last-token projection it never uses.
+        self.return_logits = ReturnLogits.LAST_TOKEN
+        self.return_hidden_states = ReturnHiddenStates.NONE
+        self.emit_last_token_logits = True
 
     def forward(
         self,
@@ -193,7 +201,7 @@ class DeepseekV3_2TextModel(
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: EPCommBuffers | None = None,
-    ) -> ModuleV3Outputs:
+    ) -> tuple[Tensor, ...]:
         if self.mesh is not None:
             if self.mesh.num_devices > 1:
                 tokens = F.distributed_broadcast(tokens, self.mesh)
@@ -268,19 +276,113 @@ class DeepseekV3_2TextModel(
                 False,
             )
 
-        last_token_h = gather_last_tokens(h, input_row_offsets)
-        if self.config.data_parallel_degree > 1:
-            last_token_h = F.allgather(last_token_h)
-        last_logits = self.lm_head(self.norm(last_token_h))
-        if self.mesh is not None:
-            last_logits = last_logits.to(self.mesh.devices[0])
-        last_logits = F.cast(last_logits, DType.float32)
-        last_logits = mask_padded_tail(
-            last_logits,
+        self._check_output_modes()
+        outputs: list[Tensor] = []
+        if self.emit_last_token_logits:
+            last_token_h = gather_last_tokens(h, input_row_offsets)
+            if self.config.data_parallel_degree > 1:
+                last_token_h = F.allgather(last_token_h)
+            outputs.append(self._project(last_token_h))
+        if self.return_logits is ReturnLogits.VARIABLE:
+            outputs.extend(
+                self._variable_logits(h, input_row_offsets, return_n_logits)
+            )
+        if self.return_hidden_states is ReturnHiddenStates.ALL_NORMALIZED:
+            outputs.append(self.norm(h))
+        return tuple(outputs)
+
+    def module_outputs(self, outputs: tuple[Tensor, ...]) -> ModuleV3Outputs:
+        """Names the outputs of :meth:`forward` for the pipeline model."""
+        if not self.emit_last_token_logits:
+            raise ValueError(
+                "The pipeline model reads the last-token logits, which this"
+                " model was configured to skip."
+            )
+        rest = iter(outputs)
+        next_token_logits = next(rest)
+        logits = logit_offsets = hidden_states = None
+        if self.return_logits is ReturnLogits.VARIABLE:
+            logits, logit_offsets = next(rest), next(rest)
+        if self.return_hidden_states is ReturnHiddenStates.ALL_NORMALIZED:
+            hidden_states = next(rest)
+        return ModuleV3Outputs(
+            next_token_logits=next_token_logits,
+            logits=logits,
+            logit_offsets=logit_offsets,
+            hidden_states=hidden_states,
+        )
+
+    def _check_output_modes(self) -> None:
+        supported_logits = (ReturnLogits.LAST_TOKEN, ReturnLogits.VARIABLE)
+        supported_hidden = (
+            ReturnHiddenStates.NONE,
+            ReturnHiddenStates.ALL_NORMALIZED,
+        )
+        if (
+            self.return_logits not in supported_logits
+            or self.return_hidden_states not in supported_hidden
+        ):
+            raise NotImplementedError(
+                f"return_logits={self.return_logits} with "
+                f"return_hidden_states={self.return_hidden_states} is not "
+                "implemented on ModuleV3."
+            )
+        if (
+            self.return_logits is ReturnLogits.VARIABLE
+            or self.return_hidden_states is not ReturnHiddenStates.NONE
+        ) and self.config.data_parallel_degree > 1:
+            # Each replica would hold only its own rows; the graph-API model
+            # allgathers them, which is not built here yet.
+            raise NotImplementedError(
+                "VARIABLE logits and hidden-state outputs require "
+                "data_parallel_degree=1 on ModuleV3."
+            )
+        if not self.emit_last_token_logits and (
+            self.return_logits is not ReturnLogits.VARIABLE
+        ):
+            raise ValueError(
+                "Skipping the last-token logits requires VARIABLE logits."
+            )
+
+    def _project(self, h: Tensor) -> Tensor:
+        return project_to_logits(
+            h,
+            self.norm,
+            self.lm_head,
+            self.mesh,
             self.config.vocab_size,
             self.config.unpadded_vocab_size,
         )
-        return ModuleV3Outputs(next_token_logits=last_logits)
+
+    def _variable_logits(
+        self, h: Tensor, input_row_offsets: Tensor, return_n_logits: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        assert self.mesh is not None
+        variable_h, offsets = gather_variable_rows(
+            h, input_row_offsets, return_n_logits, self.mesh
+        )
+        return self._project(variable_h), offsets
+
+
+def project_to_logits(
+    h: Tensor,
+    norm: Callable[[Tensor], Tensor],
+    lm_head: Callable[[Tensor], Tensor],
+    mesh: DeviceMesh | None,
+    vocab_size: int,
+    unpadded_vocab_size: int | None,
+) -> Tensor:
+    """Returns the float32 logits of ``h`` on the first device of ``mesh``.
+
+    Vocabulary rows at or past ``unpadded_vocab_size`` are masked to negative
+    infinity.
+    """
+    logits = lm_head(norm(h))
+    if mesh is not None:
+        logits = logits.to(mesh.devices[0])
+    return mask_padded_tail(
+        logits.cast(DType.float32), vocab_size, unpadded_vocab_size
+    )
 
 
 class DeepseekV3_2(Module[..., ModuleV3Outputs]):
@@ -360,7 +462,7 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
             # so they thread through each MoE block's subgraph boundary.
             ep_buffers = list(kv_inputs)
             comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
-        return self.language_model(
+        outputs = self.language_model(
             tokens,
             kv_collection,
             indexer_kv_collection,
@@ -371,3 +473,4 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
             input_row_offsets_i64,
             comm_buffers,
         )
+        return self.language_model.module_outputs(outputs)

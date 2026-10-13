@@ -515,6 +515,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 f"must divide its {kv_heads} KV heads or be a multiple of them"
             )
         for count, what in (
+            (hf.vocab_size, "vocabulary entries"),
             (hf.num_attention_heads, "attention heads"),
             (hf.moe_intermediate_size, "routed expert channels"),
             (

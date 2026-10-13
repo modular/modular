@@ -300,7 +300,7 @@ TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
         std::string docPath;
 
         // Check if this is an alias declaration
-        bool isAlias = isa_and_nonnull<AliasDeclOp>(declRef->getIfOperation());
+        bool isAlias = isa<AliasASTDecl>(&**declRef);
         if (isAlias) {
           // Preserve the original alias name (used to build the URL anchor)
           typeName = baseType.str();

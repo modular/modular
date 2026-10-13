@@ -20,9 +20,7 @@ from std.sys.intrinsics import llvm_intrinsic
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     CoordLike,
-    Layout,
     TileTensor,
     Idx,
     row_major,

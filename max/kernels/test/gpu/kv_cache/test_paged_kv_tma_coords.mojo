@@ -33,7 +33,7 @@ from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, assert_true
 
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import (
     KVCacheStaticParams,

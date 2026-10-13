@@ -58,7 +58,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal, assert_raises
 from max.gpu.host.info import B200, _is_sm10x_gpu
-from std.utils.index import Index
 
 
 # ===-----------------------------------------------------------------------===#

@@ -21,7 +21,7 @@ GPU kernel output to it.
 
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.tpool_patch_merger import (
     tpool_patch_merger,
 )

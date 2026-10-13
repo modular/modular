@@ -176,13 +176,13 @@ State Graph::doAnalysis(BlockArgument arg) {
 
     // Direct load.
     if (auto load = dyn_cast<LoadOp>(user))
-      if (!load.mightBeVolatile())
+      if (!load.isAtomicOrMightBeVolatile())
         continue;
 
     // Check stores.
     if (auto store = dyn_cast<StoreOp>(user)) {
       // Check if this is a direct capture.
-      if (store.getArg() == use.get() || store.mightBeVolatile())
+      if (store.getArg() == use.get() || store.isAtomicOrMightBeVolatile())
         return State::Capture;
       // Otherwise, this is a direct store.
       continue;

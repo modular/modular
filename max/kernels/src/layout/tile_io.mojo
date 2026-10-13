@@ -18,11 +18,12 @@ from max.gpu.memory import CacheEviction, Fill
 from std.math.uutils import umod
 from std.sys import align_of
 
-from layout import Idx
+from layout import Coord, Idx
 from .layout_tensor import ThreadScope
 from .swizzle import Swizzle
 from .tile_layout import Layout
 from .tile_tensor import TileTensor
+from .tensor_engine import DefaultEngine
 
 
 @inline(.nodebug)
@@ -244,15 +245,10 @@ struct SharedToGenericTileCopier[
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
-        comptime if not Self.swizzle:
-            dst_fragments.copy_from(
-                src_fragments.bitcast[dst_fragments.dtype]()
-            )
-        else:
+        comptime if case .Some(swizzle_fn) = Self.swizzle:
             comptime simd_size = src.element_size
             comptime src_align = align_of[SIMD[src.dtype, simd_size]]()
             comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
-            comptime swizzle_fn = Self.swizzle.value()
 
             var src_frag_offset = Scalar[src.linear_idx_type](
                 src_fragments._distance(src)
@@ -279,6 +275,10 @@ struct SharedToGenericTileCopier[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx).cast[dst.dtype]()
                 dst_fragments.raw_store[alignment=dst_align](dst_idx, src_vec)
+        else:
+            dst_fragments.copy_from(
+                src_fragments.bitcast[dst_fragments.dtype]()
+            )
 
 
 @fieldwise_init
@@ -442,8 +442,8 @@ struct LocalToSharedTileCopier[
 ](ImplicitlyCopyable, Movable, TileCopier):
     """A `TileCopier` that moves a tile from registers into shared memory.
 
-    The AMD `row_major` prefetch pattern and fp32 -> half precision
-    downcast are not supported.
+    Supports numeric FP32 to FP16 or BF16 conversion. The AMD `row_major`
+    prefetch pattern is not supported.
 
     Parameters:
         thread_layout: Layout describing how threads are organized over
@@ -473,7 +473,10 @@ struct LocalToSharedTileCopier[
             dst: Destination tile in shared memory.
             src: Source tile in local memory.
         """
-        comptime assert src.dtype == dst.dtype, "src and dst dtype must match."
+        comptime assert src.dtype == dst.dtype or (
+            src.dtype == .float32
+            and (dst.dtype == .float16 or dst.dtype == .bfloat16)
+        ), "Only matching dtypes or FP32 to FP16/BF16 are supported."
         comptime assert src.element_size == dst.element_size
 
         comptime num_busy_threads = Self.thread_layout.size()
@@ -485,13 +488,18 @@ struct LocalToSharedTileCopier[
 
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
-        comptime if not Self.swizzle:
-            dst_fragments.copy_from(src.bitcast[dst_fragments.dtype]())
-        else:
+        comptime if src.dtype != dst.dtype:
+            comptime assert src.LayoutType.all_dims_known
+            comptime assert dst_fragments.LayoutType.all_dims_known
+            comptime assert (
+                src.LayoutType.static_product
+                == dst_fragments.LayoutType.static_product
+            )
+
+        comptime if case .Some(swizzle_fn) = Self.swizzle:
             comptime simd_size = src.element_size
             comptime src_align = align_of[SIMD[src.dtype, simd_size]]()
             comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
-            comptime swizzle_fn = Self.swizzle.value()
 
             var dst_frag_offset = Scalar[dst.linear_idx_type](
                 dst_fragments._distance(dst)
@@ -515,6 +523,11 @@ struct LocalToSharedTileCopier[
                     width=simd_size, alignment=src_align
                 ](src_idx).cast[dst.dtype]()
                 dst.raw_store[alignment=dst_align](swizzled_idx, src_vec)
+        else:
+            comptime if src.dtype == dst.dtype:
+                dst_fragments.copy_from(src.bitcast[dst_fragments.dtype]())
+            else:
+                dst_fragments.copy_from(src)
 
 
 @fieldwise_init
@@ -638,11 +651,7 @@ struct GenericToSharedAsyncTileCopier[
             # with an explicit runtime value when `src`'s own dim0 is static
             # (e.g. a `.tile[...]` sub-view, which does not runtime-clip dim0
             # the way the legacy `LayoutTensor` iterator did).
-            var src_num_rows = (
-                src_num_valid_rows.value() if src_num_valid_rows else Int(
-                    src.dim[0]()
-                )
-            )
+            var src_num_rows = src_num_valid_rows.or_else(Int(src.dim[0]()))
             src_idx_bound = Scalar[idx_type](
                 src_num_rows * Int(src.LayoutType.static_stride[0])
             ) - Scalar[idx_type](src_fragments._distance(src))
@@ -799,6 +808,91 @@ def copy_local_to_dram[
 
 
 @inline(.nodebug)
+def copy_local_to_dram[
+    thread_layout: Layout,
+    *,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](
+    dst: TileTensor[mut=True, address_space=.GENERIC, ...],
+    src: TileTensor[address_space=.LOCAL, ...],
+    valid_rows: Int,
+):
+    """Copies register vectors into the valid rows of a generic-memory tile.
+
+    Clamps the signed row bound to the destination height. Unlike the
+    unbounded overload, this path uses natural scalar alignment for vector
+    loads and stores, including when every row is valid.
+
+    Parameters:
+        thread_layout: Canonical row-major, flat rank-two thread layout.
+        num_threads: Number of participating threads, with the same filtering
+            semantics as the unbounded overload.
+        thread_scope: Scope used to obtain the worker index.
+
+    Args:
+        dst: Flat rank-two FP32 tile with contiguous two-scalar vectors.
+        src: Static FP32 register layout with the same distributed vector count.
+        valid_rows: Number of valid destination rows, relative to `dst`.
+
+    Constraints:
+        Uses `DefaultEngine` with vector width two. Destination dimensions
+        must be positive, static, and divisible by the thread dimensions.
+        Source scalar offsets must describe disjoint contiguous vectors.
+        Destination column stride must be two; its positive row stride must
+        cover the entire row. Bases and scalar offsets require FP32 alignment.
+        Allocations and signed index types must accommodate the full layout.
+        BLOCK workers that wrap the thread layout require distinct destination
+        views and register owners, as in independent warp copies.
+    """
+    comptime assert src.dtype == .float32 and dst.dtype == .float32
+    comptime assert src.Engine == DefaultEngine[element_width=2]
+    comptime assert dst.Engine == DefaultEngine[element_width=2]
+    comptime assert src.rank == 2 and src.flat_rank == 2
+    comptime assert dst.rank == 2 and dst.flat_rank == 2
+    comptime assert src.LayoutType.all_dims_known
+    comptime assert dst.LayoutType.shape_known
+    comptime assert thread_layout.rank == 2
+    comptime assert thread_layout.shape_known and thread_layout.stride_known
+    comptime rows = dst.LayoutType.static_shape[0]
+    comptime cols = dst.LayoutType.static_shape[1]
+    comptime thread_rows = thread_layout.static_shape[0]
+    comptime thread_cols = thread_layout.static_shape[1]
+    comptime assert rows > 0 and cols > 0
+    comptime assert thread_rows > 0 and thread_cols > 0
+    comptime assert thread_layout.static_stride[0] == thread_cols
+    comptime assert thread_layout.static_stride[1] == 1
+    comptime assert rows % thread_rows == 0 and cols % thread_cols == 0
+    comptime assert dst.LayoutType.static_stride[1] == 2
+    comptime assert src.LayoutType.static_product == (
+        rows * cols // thread_layout.size()
+    )
+    debug_assert(Int(dst.layout.stride[0]().value()) >= 2 * cols)
+
+    var row_bound = min(rows, max(0, valid_rows))
+    if row_bound == 0:
+        return
+    var worker_idx = _get_worker_idx[thread_scope]()
+    comptime if num_threads > thread_layout.size():
+        if worker_idx >= thread_layout.size():
+            return
+
+    var thread_row = (worker_idx // thread_cols) % thread_rows
+    var thread_col = worker_idx % thread_cols
+    comptime fragment_rows = rows // thread_rows
+    comptime for i in range(src.LayoutType.static_product):
+        var row = thread_row + (i % fragment_rows) * thread_rows
+        if row < row_bound:
+            var col = thread_col + (i // fragment_rows) * thread_cols
+            dst._store_storage[alignment=4](
+                dst.layout[linear_idx_type=dst.linear_idx_type](
+                    Coord(row, col)
+                ),
+                rebind[dst.ElementType](src[(i)]),
+            )
+
+
+@inline(.nodebug)
 def copy_dram_to_local[
     thread_layout: Layout,
     *,
@@ -844,9 +938,9 @@ def copy_local_to_shared[
 ):
     """Synchronously copies a tile from registers (LOCAL) to SRAM (shared).
 
-    Delegates to `LocalToSharedTileCopier`. The AMD `row_major` prefetch
-    pattern and fp32 -> half-precision downcast of the legacy free function
-    are not supported here.
+    Delegates to `LocalToSharedTileCopier`, including numeric FP32 to FP16
+    or BF16 conversion. The legacy AMD `row_major` prefetch pattern is not
+    supported here.
 
     Parameters:
         thread_layout: Layout describing how threads are organized over the

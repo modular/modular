@@ -263,7 +263,7 @@ struct LogProbabilitiesRagged:
             parallelize(
                 lp_idx_kernel,
                 num_output_tokens,
-                ctx=Optional[DeviceContext](ctx),
+                ctx=Optional(ctx.assert_cpu_target()),
             )
         elif is_gpu[target]():
 

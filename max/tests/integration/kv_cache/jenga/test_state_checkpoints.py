@@ -827,3 +827,22 @@ def count_checkpoints(strides: Sequence[int]) -> int:
 
 def test_a_speculative_stride_keeps_checkpointing_while_caching_is_on() -> None:
     assert count_checkpoints(_SPEC_STRIDES) > 1
+
+
+def test_no_checkpoint_is_left_unpublished_under_speculative_strides() -> None:
+    # The commit scan skips the settled head of the row. A speculative step
+    # sizes the row for every draft token, so the boundary it accepts up to
+    # can sit behind the row's last slot; whatever the stride, nothing below
+    # the filled blocks may stay committable.
+    bm = make_manager()
+    ctx = make_ctx(BLOCK_SIZE)
+    bm.claim(ctx)
+    for num_tokens in _SPEC_STRIDES:
+        forward_n(bm, ctx, num_tokens)
+        filled = ctx.tokens.processed_length // BLOCK_SIZE
+        for group in state_groups(bm):
+            row = group.rows[ctx.request_id][group.leaf_id]
+            assert not any(
+                group._is_committable(ctx.request_id, row, idx)
+                for idx in range(min(filled, len(row)))
+            )

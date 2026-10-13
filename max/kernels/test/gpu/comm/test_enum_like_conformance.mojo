@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Exercises runtime `__match` on the kernels' enum-like structs.
+"""Exercises runtime `match` on the kernels' enum-like structs.
 
 Each helper names every case so the match fails to compile if
 `_enum_case_names` drifts from the comptime case constants. All cases are
-materialized into runtime values so the `__match` dispatch is exercised at
+materialized into runtime values so the `match` dispatch is exercised at
 runtime, not just at compile time.
 """
 
@@ -40,7 +40,7 @@ from pipeline.types import Phase
 
 
 def _allreduce_rank(algorithm: AllReduceAlgorithm) -> Int:
-    __match algorithm:
+    match algorithm:
         case .ONE_STAGE:
             return 0
         case .TWO_STAGE:
@@ -50,7 +50,7 @@ def _allreduce_rank(algorithm: AllReduceAlgorithm) -> Int:
 
 
 def _thread_scope_rank(scope: ThreadScope) -> Int:
-    __match scope:
+    match scope:
         case .BLOCK:
             return 0
         case .WARP:
@@ -58,7 +58,7 @@ def _thread_scope_rank(scope: ThreadScope) -> Int:
 
 
 def _fp6_rank(format: FP6Format) -> Int:
-    __match format:
+    match format:
         case .E2M3:
             return 0
         case .E3M2:
@@ -71,7 +71,7 @@ def _mx_rank(format: MXFormat) -> Int:
     `MXFormat` is non-exhaustive: its public `__init__(value: Int)` accepts
     raw backing values, and those must not select any named case.
     """
-    __match format:
+    match format:
         case .FP8_E4M3:
             return 0
         case .FP8_E5M2:
@@ -87,7 +87,7 @@ def _mx_rank(format: MXFormat) -> Int:
 
 
 def _matmul_schedule_rank(schedule: MatmulSchedule) -> Int:
-    __match schedule:
+    match schedule:
         case .NONE:
             return 0
         case .TILE1D:
@@ -99,7 +99,7 @@ def _matmul_schedule_rank(schedule: MatmulSchedule) -> Int:
 
 
 def _raster_rank(order: RasterOrder) -> Int:
-    __match order:
+    match order:
         case .AlongN:
             return 0
         case .AlongM:
@@ -107,7 +107,7 @@ def _raster_rank(order: RasterOrder) -> Int:
 
 
 def _reduction_mode_rank(mode: ReductionMode) -> Int:
-    __match mode:
+    match mode:
         case .Deterministic:
             return 0
         case .Nondeterministic:
@@ -120,7 +120,7 @@ def _gemm_kind_rank(kind: GEMMKind) -> Int:
     `GEMMKind` is non-exhaustive: its implicit fieldwise initializer permits
     raw backing values, and those must not select any named case.
     """
-    __match kind:
+    match kind:
         case .GEMM:
             return 0
         case .BMM:
@@ -134,7 +134,7 @@ def _gemm_kind_rank(kind: GEMMKind) -> Int:
 
 
 def _backend_rank(backend: Backend) -> Int:
-    __match backend:
+    match backend:
         case .AUTOMATIC:
             return 0
         case .CUBLAS:
@@ -153,7 +153,7 @@ def _fa_algorithm_rank(algorithm: FlashAttentionAlgorithm) -> Int:
     The enum is non-exhaustive: `__init__(-1)` is the runtime "unspecified"
     value `init()` resolves, and it must not select any named case.
     """
-    __match algorithm:
+    match algorithm:
         case .NAIVE:
             return 0
         case .FLASH_ATTENTION_1:
@@ -167,7 +167,7 @@ def _fa_algorithm_rank(algorithm: FlashAttentionAlgorithm) -> Int:
 
 
 def _iglp_rank(strategy: AMDIGLPStrategy) -> Int:
-    __match strategy:
+    match strategy:
         case .MFMA_SMALL_GEMM:
             return 0
         case .MFMA_SMALL_GEMM_SINGLE_WAVE:
@@ -179,7 +179,7 @@ def _iglp_rank(strategy: AMDIGLPStrategy) -> Int:
 
 
 def _mha_schedule_rank(schedule: MHASchedule) -> Int:
-    __match schedule:
+    match schedule:
         case .DEFAULT:
             return 0
         case .PROMPT_ROTATE:
@@ -187,7 +187,7 @@ def _mha_schedule_rank(schedule: MHASchedule) -> Int:
 
 
 def _scatter_strategy_rank(strategy: ScatterOobIndexStrategy) -> Int:
-    __match strategy:
+    match strategy:
         case .UNDEFINED:
             return 0
         case .SKIP:
@@ -195,7 +195,7 @@ def _scatter_strategy_rank(strategy: ScatterOobIndexStrategy) -> Int:
 
 
 def _scheduling_strategy_rank(strategy: SchedulingStrategy) -> Int:
-    __match strategy:
+    match strategy:
         case .IDENTITY:
             return 0
         case .GREEDY:
@@ -205,7 +205,7 @@ def _scheduling_strategy_rank(strategy: SchedulingStrategy) -> Int:
 
 
 def _phase_rank(phase: Phase) -> Int:
-    __match phase:
+    match phase:
         case .PROLOGUE:
             return 0
         case .KERNEL:
@@ -215,7 +215,7 @@ def _phase_rank(phase: Phase) -> Int:
 
 
 def _phase_action_rank(action: PhaseAction) -> Int:
-    __match action:
+    match action:
         case .EMIT:
             return 0
         case .BARRIER:

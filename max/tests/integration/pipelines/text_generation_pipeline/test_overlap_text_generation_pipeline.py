@@ -27,7 +27,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.context import FUTURE_TOKEN
-from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
+from max.pipelines.kv_cache.paged_kv_cache._common import (
     _compute_seq_len,
 )
 from max.pipelines.lib import (
@@ -253,6 +253,8 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager.effective_max_seq_length = 100 * 128
     pipeline._spec_decode_state = None
     pipeline._kv_manager.num_caches = 1
+    pipeline._graph_capture_runner = None
+    assert not pipeline.graph_capture_ready
 
     with patch(
         "max.pipelines.lib.pipeline_variants.overlap_text_generation"
@@ -262,6 +264,8 @@ def test_warmup_graph_capture_batch_size(
         mock_runner_instance.warmup_pre_ready = MagicMock()
 
         pipeline.warmup_graph_capture()
+
+        assert pipeline.graph_capture_ready
 
         call_kwargs = MockRunner.call_args.kwargs
         assert call_kwargs["model"] is mock_model.model

@@ -465,12 +465,24 @@ class OutputImageContent(BaseModel):
         Converts a numpy array containing image data to base64-encoded format
         suitable for the OpenResponses API.
 
+        For example, create a simple red image and encode it as PNG:
+
+        .. code-block:: python
+
+            import numpy as np
+
+            from max.pipelines.request.open_responses import OutputImageContent
+
+            img_array = np.zeros((100, 100, 3), dtype=np.uint8)
+            img_array[:, :, 0] = 255  # Set red channel to max
+            output = OutputImageContent.from_numpy(img_array, format="png")
+
         Args:
             array: A uint8 numpy array with values in [0, 255]. Expected shapes:
                    - [H, W, C] for color images (C=3 for RGB, C=4 for RGBA)
                    - [H, W] for grayscale images
-            format: The image format to use for encoding (e.g., 'png', 'jpeg', 'webp').
-                    Defaults to 'png'.
+            format: The image format to use for encoding (such as ``"png"``,
+                    ``"jpeg"``, or ``"webp"``). Defaults to ``"png"``.
             detail: Optional detail level for the generated image.
 
         Returns:
@@ -479,14 +491,6 @@ class OutputImageContent(BaseModel):
         Raises:
             ImportError: If PIL/Pillow is not available.
             ValueError: If the array shape or dtype is invalid.
-
-        Example:
-            >>> import numpy as np
-            >>> from max.pipelines.request.open_responses import OutputImageContent
-            >>> # Create a simple red image
-            >>> img_array = np.zeros((100, 100, 3), dtype=np.uint8)
-            >>> img_array[:, :, 0] = 255  # Set red channel to max
-            >>> output = OutputImageContent.from_numpy(img_array, format="png")
         """
         if array.dtype != np.uint8:
             raise ValueError(
@@ -1829,34 +1833,40 @@ class ResponseResource(BaseModel):
 
         Converts pipeline generation output to the OpenResponses API response format.
 
+        For example, wrap a generated image in a complete response resource:
+
+        .. code-block:: python
+
+            import numpy as np
+
+            from max.pipelines.context import GenerationOutput, GenerationStatus
+            from max.pipelines.request import RequestID
+            from max.pipelines.request.open_responses import (
+                OutputImageContent,
+                ResponseResource,
+            )
+
+            # Create generation output
+            img_array = (np.random.rand(512, 512, 3) * 255).astype(np.uint8)
+            gen_output = GenerationOutput(
+                request_id=RequestID(value="req-123"),
+                final_status=GenerationStatus.END_OF_SEQUENCE,
+                output=[OutputImageContent.from_numpy(img_array, format="png")],
+            )
+
+            # Convert to ResponseResource
+            response = ResponseResource.from_generation_output(
+                gen_output, model="flux-2-dev-t2i-bfloat16-v2"
+            )
+
         Args:
             generation_output: The generation output from the pipeline, containing
-                the generated content (images, etc.) and request metadata.
+                the generated content (images and so on) and request metadata.
             model: The model name used for generation.
 
         Returns:
             A ResponseResource instance with the generated content formatted as
             an assistant message in the output field.
-
-        Example:
-            >>> from max.pipelines.context import GenerationOutput
-            >>> from max.pipelines.request import RequestID
-            >>> from max.pipelines.request.open_responses import OutputImageContent
-            >>> from max.pipelines.modeling.types.status import GenerationStatus
-            >>> import numpy as np
-            >>>
-            >>> # Create generation output
-            >>> img_array = (np.random.rand(512, 512, 3) * 255).astype(np.uint8)
-            >>> gen_output = GenerationOutput(
-            ...     request_id=RequestID(value="req-123"),
-            ...     final_status=GenerationStatus.END_OF_SEQUENCE,
-            ...     output=[OutputImageContent.from_numpy(img_array, format="png")]
-            ... )
-            >>>
-            >>> # Convert to ResponseResource
-            >>> response = ResponseResource.from_generation_output(
-            ...     gen_output, model="flux-2-dev-t2i-bfloat16-v2"
-            ... )
         """
         if any(
             isinstance(content, OutputVideoContent)

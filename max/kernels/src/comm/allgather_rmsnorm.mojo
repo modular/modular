@@ -25,7 +25,7 @@ row's `block.sum` runs parallel across blocks, not `ngpus` serial within one.
 
 from std.collections import Array
 from std.math.uutils import ualign_down
-from std.math import ceildiv, rsqrt
+from std.math import rsqrt
 from std.sys import (
     align_of,
     simd_width_of,
@@ -39,7 +39,7 @@ from max.gpu import (
     grid_dim,
     thread_idx,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from layout import Coord, TensorLayout, TileTensor
 from std.utils import StaticTuple
@@ -187,8 +187,7 @@ def _allgather_rmsnorm_kernel[
             normed_out.store[width=simd_width](Coord(grow, col_idx), normed)
         # Same bf16 a standalone quantize would read back from `normed_out`, so
         # folding one in is byte-identical.
-        comptime if quant_epilogue:
-            comptime epilogue = quant_epilogue.value()
+        comptime if case .Some(epilogue) = quant_epilogue:
             epilogue[width=simd_width](grow, col_idx, normed)
 
     # End barrier: peers P2P-read this rank's shard, so it must not be reused
@@ -432,7 +431,7 @@ def _allgather_rmsnorm_impl[
     if not is_p2p_enabled():
         raise Error("allgather_rmsnorm requires P2P access between GPUs")
 
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.or_else(Int(ctx.id()))
     if not 0 <= global_rank < ngpus:
         raise Error(
             String(
@@ -472,7 +471,7 @@ def _allgather_rmsnorm_impl[
     # (64*8*16=8192). Assert fit + divisibility below.
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
-    comptime simd_width = simd_width_of[in_dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime max_supported_cols = WARP_SIZE * simd_width * max_warps_per_block
     if cols > max_supported_cols:
         raise Error(
@@ -721,7 +720,7 @@ def _dispatch_ag_norm[
 
     # Fusing only when every group in the span fuses keeps the threshold's
     # per-group meaning.
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.or_else(Int(ctx.id()))
     comptime gate_groups = 2 if _relay_pairs[ngpus, group_size](
         ctx.default_device_info.version
     ) else 1
@@ -848,7 +847,7 @@ def _dispatch_ag_norm_quant[
 
     # Fusing only when every group in the span fuses keeps the threshold's
     # per-group meaning.
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.or_else(Int(ctx.id()))
     comptime gate_groups = 2 if _relay_pairs[ngpus, group_size](
         ctx.default_device_info.version
     ) else 1

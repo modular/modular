@@ -15,9 +15,10 @@ from std.sys.info import simd_width_of
 
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, row_major
 from layout._fillers import random
-from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add
+from nn.normalization import rms_norm_cpu
+from builtin_kernels.rowwise_normalization import rms_norm_fused_residual_add
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList

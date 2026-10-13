@@ -39,7 +39,13 @@ from layout.layout_tensor import copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 
-from layout import TileTensor, Idx, Coord, TensorLayout, col_major, row_major
+from layout import (
+    TileTensor,
+    Coord,
+    TensorLayout,
+    col_major,
+    row_major,
+)
 from layout.tile_tensor import stack_allocation
 from layout.tile_io import copy_dram_to_sram_async as copy_tiles_async
 

@@ -33,6 +33,9 @@ In either case, a change *should not*:
 - Alter the intended IR semantics for our MLIR dialects.
 - Alter the compilation pipeline.
 
+To find a place to start, see the
+[open good first compiler issues](https://github.com/modular/modular/issues?q=is%3Aissue+state%3Aopen+label%3A%22good+first+issue%22+label%3A%22help+wanted%22+label%3A%22Team%3A+Mojo+Compiler%22).
+
 For technical details on working in the compiler codebase, see the
 [compiler contributor docs](compiler/README.md).
 

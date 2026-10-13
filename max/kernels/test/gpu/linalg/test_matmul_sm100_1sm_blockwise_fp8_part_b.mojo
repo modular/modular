@@ -29,7 +29,6 @@ from std.random import rand
 from internal_utils._measure import relative_difference
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,

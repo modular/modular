@@ -22,7 +22,7 @@ from std.math import exp
 from std.random import seed
 
 from internal_utils import assert_almost_equal, assert_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from max.gpu.host import DeviceContext
 from nn.moe import sink_gate_router

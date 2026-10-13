@@ -24,7 +24,7 @@ from layout import Idx, TensorLayout, TensorEngine, TileTensor
 from layout.coord import Coord
 from std.math import ceildiv
 from std.sys import size_of
-from std.utils import Index, IndexList
+from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from ....utils import elementwise_epilogue_type
@@ -212,10 +212,9 @@ def _mma8_store[
             var col = col_base + ni * MMA8_DIM + fcol
             comptime if INTERIOR:
                 # Odd `n` allows only element alignment.
-                comptime if elementwise_lambda_fn:
-                    comptime ep = elementwise_lambda_fn.value()
+                comptime if case .Some(ep) = elementwise_lambda_fn:
                     ep[c_type, FRAG8, alignment=size_of[c_type]()](
-                        Index(row, col), frag
+                        (row, col), frag
                     )
                 else:
                     c.store_linear[alignment=size_of[c_type]()](
@@ -224,9 +223,8 @@ def _mma8_store[
             else:
                 comptime for s in range(FRAG8):
                     if row < m and col + s < n:
-                        comptime if elementwise_lambda_fn:
-                            comptime ep = elementwise_lambda_fn.value()
-                            ep[c_type, 1](Index(row, col + s), frag[s])
+                        comptime if case .Some(ep) = elementwise_lambda_fn:
+                            ep[c_type, 1]((row, col + s), frag[s])
                         else:
                             c.store_linear[alignment=size_of[c_type]()](
                                 IndexList[2](row, col + s),

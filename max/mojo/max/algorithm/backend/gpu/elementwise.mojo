@@ -38,7 +38,7 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
 from max.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
-from std.math import ceildiv, clamp
+from std.math import clamp
 from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import unsafe_stack_allocation
 from std.sys._assembly import inlined_assembly

@@ -26,7 +26,7 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from layout import IntTuple, TileTensor, coord_to_index_list
+from layout import Coord, IntTuple, TileTensor, coord_to_index_list
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
@@ -37,7 +37,11 @@ from nn.conv.conv_transpose import (
 )
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
-from nn.pad_gpu import pad_constant as pad_constant_gpu
+from nn.pad_gpu import (
+    pad_constant as pad_constant_gpu,
+    pad_reflect as pad_reflect_gpu,
+    pad_repeat as pad_repeat_gpu,
+)
 from nn.pool import avg_pool, pool_shape, pool_shape_ceil
 from extensibility import (
     InputTensor,
@@ -299,17 +303,32 @@ struct PadRepeat:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         padding: InputTensor[rank=1, ...],
-    ):
+        ctx: DeviceContext,
+    ) raises:
         var paddings_ptr = padding._ptr
-        pad_repeat(
-            output.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            paddings_ptr,
-        )
+
+        comptime if is_cpu[target]():
+            pad_repeat(
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                paddings_ptr,
+            )
+        elif is_gpu[target]():
+            pad_repeat_gpu(
+                output._ptr,
+                output.shape(),
+                input._ptr,
+                input.shape(),
+                paddings_ptr,
+                ctx,
+            )
+        else:
+            comptime assert False, "Unknown target " + target
 
 
 @extensibility.register_shape_function("mo.pad.repeat")
@@ -334,17 +353,32 @@ struct PadReflect:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         padding: InputTensor[rank=1, ...],
-    ):
+        ctx: DeviceContext,
+    ) raises:
         var paddings_ptr = padding._ptr
-        pad_reflect(
-            output.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            paddings_ptr,
-        )
+
+        comptime if is_cpu[target]():
+            pad_reflect(
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                paddings_ptr,
+            )
+        elif is_gpu[target]():
+            pad_reflect_gpu(
+                output._ptr,
+                output.shape(),
+                input._ptr,
+                input.shape(),
+                paddings_ptr,
+                ctx,
+            )
+        else:
+            comptime assert False, "Unknown target " + target
 
 
 @extensibility.register_shape_function("mo.pad.reflect")
@@ -389,11 +423,10 @@ struct Conv:
         @inline(.always)
         @__copy_capture(output)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](val),
+                coords, rebind[SIMD[output.dtype, _width]](val)
             )
 
         comptime assert (
@@ -424,15 +457,16 @@ struct Conv:
         var pad_h_tuple = IndexList[2](0)
         var pad_w_tuple = IndexList[2](0)
 
-        comptime if input.rank == 3:
-            pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-        elif input.rank == 4:
-            pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-            pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
-        elif input.rank == 5:
-            pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-            pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
-            pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
+        comptime match input.rank:
+            case 3:
+                pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+            case 4:
+                pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+                pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+            case 5:
+                pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+                pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+                pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
 
         comptime input_shape_val = Int(
             input._static_shape_tuple[input.rank - 1]
@@ -477,7 +511,7 @@ struct Conv:
                 pad_h_tuple,
                 pad_w_tuple,
                 Int(num_groups),
-                Optional[DeviceContext](ctx),
+                Optional(ctx.assert_cpu_target()),
             )
         else:
             comptime assert (input.rank == 4 and filter.rank == 4) or (
@@ -569,18 +603,17 @@ struct Conv2dResidualAdd:
         @inline(.always)
         @__copy_capture(output, bias)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
             var result = val
 
             comptime if has_bias:
-                var c_idx = coords[_rank - 1]
+                var c_idx = Int(coords[coords.rank - 1].value())
                 var bias_vec = (bias.unsafe_ptr() + c_idx).load[width=_width]()
                 result = val + bias_vec.cast[_dtype]()
 
             output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](result),
+                coords, rebind[SIMD[output.dtype, _width]](result)
             )
 
         comptime assert not is_cpu[
@@ -709,11 +742,10 @@ struct ConvTranspose:
         @__parameter
         @inline(.always)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](val),
+                coords, rebind[SIMD[output.dtype, _width]](val)
             )
 
         comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
@@ -734,7 +766,7 @@ struct ConvTranspose:
                 pad_d,
                 pad_h,
                 pad_w,
-                Optional[DeviceContext](ctx),
+                Optional(ctx.assert_cpu_target()),
             )
         else:
             comptime assert (

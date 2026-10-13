@@ -186,7 +186,10 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         self.lm_head = quantized_linear(config, "lm_head")
 
     def _logits(self, h: Tensor) -> Tensor:
-        return F.cast(self.lm_head(self.backbone.norm_f(h)), DType.float32)
+        logits = self.lm_head(self.backbone.norm_f(h))
+        # Gather the vocabulary before selecting the sampler's device.
+        logits = F.allgather(logits, tensor_axis=-1)
+        return logits.cast(DType.float32)
 
     def forward(
         self,
@@ -222,13 +225,19 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         )
         h = self.backbone(tokens, kv_collection, state, input_row_offsets)
 
-        last = self._logits(F.gather(h, input_row_offsets[1:] - 1, axis=0))
-        # The head is replicated, so device 0 holds the full vocabulary.
-        # The sampler reads that one buffer.
         if self.return_logits == ReturnLogits.ALL:
+            # One projection and one gather serve both outputs: the last
+            # rows are gathered from the full logits, so the head runs
+            # once instead of once per request row and once per batch.
+            logits = self._logits(h)
+            last = F.gather(
+                logits, input_row_offsets[1:] - 1, axis=0
+            ).local_shards[0]
+            # The sampler reads the full vocabulary on device 0.
             return ModuleV3Outputs(
-                next_token_logits=last.local_shards[0],
-                logits=self._logits(h).local_shards[0],
+                next_token_logits=last,
+                logits=logits.local_shards[0],
                 logit_offsets=row_offsets,
             )
+        last = self._logits(F.gather(h, input_row_offsets[1:] - 1, axis=0))
         return ModuleV3Outputs(next_token_logits=last.local_shards[0])

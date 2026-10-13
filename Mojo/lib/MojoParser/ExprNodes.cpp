@@ -1272,8 +1272,6 @@ lookupMembersInDecls(SmallVectorImpl<ASTDecl *> &memberDecls,
     bool isExtension =
         isa_and_nonnull<ExtensionDeclOp>(containerDecl->getIfOperation());
     for (ASTDecl *decl : lookup.getIfSuccess()) {
-      if (decl->isDisabled())
-        continue;
       if (isExtension)
         if (!decl->getIfOperation())
           if (PValue cv = decl->getIfIRValue().getIfPValue())
@@ -1487,7 +1485,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                          expr->getRange(), CallSyntax::kDirectCall, {});
 
   // Aliases form a PValue.
-  if (auto param = dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(decl)) {
+    AliasDeclOp param = aliasDecl->getOp();
     PValue result =
         resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
 
@@ -2000,8 +1999,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
         StringAttr::get(emitter.getContext(), staticGetterName));
     SubscriptNode subscriptNode(&getItemNode, node->getLoc(), exprOperands,
                                 node->getLoc());
-    if (isa_and_nonnull<AliasDeclOp>(
-            staticGetters.getIfSuccess().front()->getIfOperation())) {
+    if (isa<AliasASTDecl>(staticGetters.getIfSuccess().front())) {
       return emitter.emitExpr(&subscriptNode, dest);
     }
 
@@ -2330,16 +2328,16 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   // dynamic lookup attribute methods (__getattr__ etc) on the type.
   if (memberDecls.empty()) {
     // Convert the attribute name to a StringLiteralNode since that's how the
-    // operand will be emitted.  We need to allocate it persistently to enable
-    // DLValues to capture it.
+    // operand will be emitted. Allocate it with the surrounding statement so
+    // DLValues can capture it through emission.
     std::string quotedName = '"' + spelling.str() + '"';
-    StringRef quotedNameRef = shared.getPersistentCopy(StringRef(quotedName));
+    StringRef quotedNameRef = shared.stmtAllocator.internString(quotedName);
     // StringLiteral wants ArrayRef<StringRef>.
-    auto strRefs = shared.getPersistentCopy(ArrayRef(quotedNameRef));
-    auto *strLiteral = shared.allocPersistent<StringLiteralNode>(strRefs);
+    auto strRefs = shared.stmtAllocator.internElements(ArrayRef(quotedNameRef));
+    auto *strLiteral = shared.stmtAllocator.create<StringLiteralNode>(strRefs);
     // Put the expression in a ParenNode so it has a location.
     auto *parenNode =
-        shared.allocPersistent<ParenNode>(getLoc(), strLiteral, getLoc());
+        shared.stmtAllocator.create<ParenNode>(getLoc(), strLiteral, getLoc());
     return emitGetterSetterAccess(
         this, {baseVal, base},
         Operand(parenNode, getLoc(), ArgUnpackStyle::kPositional), dest,
@@ -2432,18 +2430,18 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   };
 
   // References to an AliasDecl form a PValue.
-  if (isa_and_nonnull<AliasDeclOp>(memberDecls[0]->getIfOperation())) {
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(memberDecls[0])) {
     // Handle accessing an alias in a struct or an extension.
     // Can not be a TraitDeclOp, member lookup should be routed with a TraitType
     // Decl, and should be handled below;
     assert(isa_and_nonnull<StructDeclOp>(typeDeclOp) ||
            isa_and_nonnull<ExtensionDeclOp>(
                memberDecls[0]->getParentDecl()->getIfOperation()));
-    PValue result = resolveAliasReference(
-        cast<AliasDeclOp>(memberDecls[0]->getIfOperation()), spelling,
-        baseRVType.getParamBindings(), getLoc(), emitter);
+    PValue result =
+        resolveAliasReference(aliasDecl->getOp(), spelling,
+                              baseRVType.getParamBindings(), getLoc(), emitter);
     return emitter.emitResult(getParamMemberSugar(result), this, dest);
-  } else if (WitnessDecl *witness = memberDecls[0]->getIfWitness()) {
+  } else if (auto *witness = dyn_cast<WitnessASTDecl>(memberDecls[0])) {
     assert(sugarIsa<TraitType>(typeDecl->getIfTypeValue()) &&
            "Trait witness lookup must be routed via TraitType decl.");
 
@@ -3161,7 +3159,7 @@ static AnyValue emitFStringSubscriptMLIROp(const SubscriptNode &subscript,
       }
       concat.append(dre->spelling.data(), dre->spelling.size());
     }
-    tmpl = emitter.shared.getPersistentCopy(StringRef(concat));
+    tmpl = emitter.shared.stmtAllocator.internString(concat);
   }
 
   // 3. Process `_type` if present (single Type or Tuple of Types).
@@ -3626,6 +3624,8 @@ static AnyValue emitListLiteral(const ExprNode *expr,
 ExprNode::ELVIITResult ListLiteralNode::emitLCVIR(ExprDest &dest,
                                                   IREmitter &emitter,
                                                   bool isSpeculative) const {
+  auto expectedType = dest.getIfInitializerType();
+
   // Speculative emission is used for LHS patterns like `var [a, b] = …`. We
   // don't do anything with it, because `[var x:Int] = ...` isn't enough to
   // infer the type of the RHS anyway.  Just wait for the RHS to get emitted.
@@ -3634,12 +3634,20 @@ ExprNode::ELVIITResult ListLiteralNode::emitLCVIR(ExprDest &dest,
 
   // If this is the LHS of an assignment, then we unpack the list pattern into
   // the subexpressions of the pattern.
-  if (auto expectedType = dest.getIfInitializerType()) {
+  if (expectedType) {
     if (sugarIsa<TypeCheckErrorType>(expectedType))
       return {};
+
     DLValue result(RCRef<ListPatternDLValue>::create(
         exprs, expectedType, dest.getPatternDeclKind(), this));
     return emitter.emitResult(result, this, dest);
+  }
+
+  if (starIndex) {
+    emitter.emitError(exprs[*starIndex]->getLoc(),
+                      "can't use starred expression here")
+        << exprs[*starIndex]->getRange();
+    return {};
   }
 
   // Normal RHS emission: `[a, b, c]` as a list literal initializer.
@@ -3959,8 +3967,11 @@ AnyValue BinOpNode::emitWalrus(ExprDest &dest, IREmitter &emitter) const {
   if (rhsRValue.getIfSRValue())
     rhsRValue = emitter.emitMRValue({rhsRValue, rhs}, EC_Assignment);
 
-  // A setter taking a 'var' argument would consume the value we return.
-  BValue bValue = emitter.emitBValue({rhsRValue, rhs}, EC_Assignment);
+  // A setter taking a 'var' argument would consume the value we return. The
+  // synthetic node keeps a `x^` RHS from warning that it is only borrowed,
+  // since the value is moved into the result below.
+  SyntheticNode rhsNode(rhs->getLoc());
+  BValue bValue = emitter.emitBValue({rhsRValue, &rhsNode}, EC_Assignment);
   if (!bValue)
     return {};
   if (!emitter.emitStoreToLValue({bValue, rhs}, lhsLV, EC_Assignment))
@@ -4416,7 +4427,7 @@ UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
   if (newSubExpr == subExpr)
     return this;
 
-  return emitter.shared.allocPersistent<UnaryOpNode>(
+  return emitter.shared.stmtAllocator.create<UnaryOpNode>(
       kind, opLoc, const_cast<ExprNode *>(newSubExpr));
 }
 
@@ -4455,6 +4466,12 @@ AnyValue UnaryOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       return {};
     }
     return result;
+  }
+
+  if (kind == kPrefixEQ) {
+    emitter.emitError(getLoc(), "prefix '==' is only valid in a pattern")
+        << getRange();
+    return {};
   }
 
   if (kind == kComptime)
@@ -5457,13 +5474,8 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
     // Get the item from the tuple into the corresponding LValue.
     ExprDest eltDest(eltType, EC_TupleElement);
 
-    // Bind the i parameters.  Int explicitly constructs from index type now.
-    TypedAttr indexAttr =
-        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-
     CValue intIndexCValue =
-        emitter.emitInt(ASTExprAnd<PValue>{PValue(indexAttr), this},
-                        ExprContext::EC_CallParamValue);
+        emitter.emitInt(index, getLoc(), ExprContext::EC_CallParamValue);
     PValue intIndex = intIndexCValue.getIfPValue();
     assert(intIndex && "Int must be PValue when constructed from int attr");
 
@@ -5591,12 +5603,12 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
         newExprs.push_back(const_cast<ExprNode *>(newExpr));
       else {
         assert(result.getIfValue() && "unexpected result kind");
-        newExprs.push_back(shared.allocPersistent<SyntheticNode>(
+        newExprs.push_back(shared.stmtAllocator.create<SyntheticNode>(
             expr->getLoc(), result.getIfValue()));
       }
     }
-    return shared.allocPersistent<TupleNode>(
-        firstCommaLoc, shared.getPersistentCopy(ArrayRef(newExprs)));
+    return shared.stmtAllocator.create<TupleNode>(
+        firstCommaLoc, shared.stmtAllocator.internElements(ArrayRef(newExprs)));
   }
 
   // Otherwise, emit in a non-speculatively path, which could be an LValue or

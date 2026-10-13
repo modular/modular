@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import CompilationTarget
 from std.testing import *
 
 from max.gpu.host.compile import _compile_code

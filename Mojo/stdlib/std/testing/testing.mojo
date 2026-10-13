@@ -34,7 +34,6 @@ def main() raises:
 from std.math import isclose
 
 from std.reflection import call_location, SourceLocation
-from std.memory import unsafe_memcmp
 from std.python import PythonObject
 from std.utils._ansi import Color, Text
 
@@ -445,7 +444,7 @@ def _colorize_diff_string[color: Color](s: String, other: String) -> String:
     var other_codepoints = other.codepoints()
     for s_codepoint in s.codepoints():
         var other_codepoint = other_codepoints.next()
-        if other_codepoint and s_codepoint == other_codepoint.value():
+        if other_codepoint == Optional(s_codepoint):
             # Codepoints match - no color
             result.append(s_codepoint)
         else:
@@ -581,9 +580,9 @@ struct assert_raises:
         Returns:
             True if the error was successfully caught and matched.
         """
-        if self.message_contains:
+        if case .Some(message_contains) = self.message_contains:
             comptime assert conforms_to(
                 E, Writable
             ), "assert_raises(contains=...) requires a Writable error type"
-            return self.message_contains.value() in String(error)
+            return message_contains in String(error)
         return True

@@ -12,11 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for dual-concat kernels (two independent concats in one launch)."""
 
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
-from nn.concat import (
-    _fused_dual_concat_gpu,
-    elementwise_epilogue_type,
-)
+from layout import Coord, TileTensor, row_major
+from nn.concat import _fused_dual_concat_gpu
 
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
@@ -97,43 +94,41 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
     @inline(.always)
     @__copy_capture(a0, a1, a2)
     def input_fn_0[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-        var coord = Coord(indices)
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
         comptime if input_index == 0:
-            return rebind[SIMD[dtype, width]](a0.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](a0.load[width=width](coords))
         elif input_index == 1:
-            return rebind[SIMD[dtype, width]](a1.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](a1.load[width=width](coords))
         else:
-            return rebind[SIMD[dtype, width]](a2.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](a2.load[width=width](coords))
 
     @__parameter
     @inline(.always)
     @__copy_capture(out0)
     def output_0_fn[
-        c_type: DType, _rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        out0.store[width=width](Coord(indices), rebind[SIMD[dtype, width]](val))
+        c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[c_type, width]):
+        out0.store[width=width](coords, rebind[SIMD[dtype, width]](val))
 
     @__parameter
     @inline(.always)
     @__copy_capture(b0, b1)
     def input_fn_1[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-        var coord = Coord(indices)
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
         comptime if input_index == 0:
-            return rebind[SIMD[dtype, width]](b0.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](b0.load[width=width](coords))
         else:
-            return rebind[SIMD[dtype, width]](b1.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](b1.load[width=width](coords))
 
     @__parameter
     @inline(.always)
     @__copy_capture(out1)
     def output_1_fn[
-        c_type: DType, _rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        out1.store[width=width](Coord(indices), rebind[SIMD[dtype, width]](val))
+        c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[c_type, width]):
+        out1.store[width=width](coords, rebind[SIMD[dtype, width]](val))
 
     _fused_dual_concat_gpu[
         rank,
@@ -268,41 +263,39 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
     @inline(.always)
     @__copy_capture(c0, c1)
     def input_fn_0[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-        var coord = Coord(indices)
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
         comptime if input_index == 0:
-            return rebind[SIMD[dtype, width]](c0.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](c0.load[width=width](coords))
         else:
-            return rebind[SIMD[dtype, width]](c1.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](c1.load[width=width](coords))
 
     @__parameter
     @inline(.always)
     @__copy_capture(out0)
     def output_0_fn[
-        c_type: DType, _rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        out0.store[width=width](Coord(indices), rebind[SIMD[dtype, width]](val))
+        c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[c_type, width]):
+        out0.store[width=width](coords, rebind[SIMD[dtype, width]](val))
 
     @__parameter
     @inline(.always)
     @__copy_capture(d0, d1)
     def input_fn_1[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-        var coord = Coord(indices)
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
         comptime if input_index == 0:
-            return rebind[SIMD[dtype, width]](d0.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](d0.load[width=width](coords))
         else:
-            return rebind[SIMD[dtype, width]](d1.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](d1.load[width=width](coords))
 
     @__parameter
     @inline(.always)
     @__copy_capture(out1)
     def output_1_fn[
-        c_type: DType, _rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        out1.store[width=width](Coord(indices), rebind[SIMD[dtype, width]](val))
+        c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[c_type, width]):
+        out1.store[width=width](coords, rebind[SIMD[dtype, width]](val))
 
     _fused_dual_concat_gpu[
         rank,
@@ -453,27 +446,25 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
     @inline(.always)
     @__copy_capture(a0, a1, a2)
     def input_fn_0[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-        var coord = Coord(indices)
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
         comptime if input_index == 0:
-            return rebind[SIMD[dtype, width]](a0.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](a0.load[width=width](coords))
         elif input_index == 1:
-            return rebind[SIMD[dtype, width]](a1.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](a1.load[width=width](coords))
         else:
-            return rebind[SIMD[dtype, width]](a2.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](a2.load[width=width](coords))
 
     @__parameter
     @inline(.always)
     @__copy_capture(b0, b1)
     def input_fn_1[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-        var coord = Coord(indices)
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
         comptime if input_index == 0:
-            return rebind[SIMD[dtype, width]](b0.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](b0.load[width=width](coords))
         else:
-            return rebind[SIMD[dtype, width]](b1.load[width=width](coord))
+            return rebind[SIMD[dtype, width]](b1.load[width=width](coords))
 
     # --- Static-output run (fold fires on both decompositions). ---
     var out0_static = TileTensor(out0_static_buf, static_out_layout_0)
@@ -483,21 +474,17 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
     @inline(.always)
     @__copy_capture(out0_static)
     def output_0_static_fn[
-        c_type: DType, _rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        out0_static.store[width=width](
-            Coord(indices), rebind[SIMD[dtype, width]](val)
-        )
+        c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[c_type, width]):
+        out0_static.store[width=width](coords, rebind[SIMD[dtype, width]](val))
 
     @__parameter
     @inline(.always)
     @__copy_capture(out1_static)
     def output_1_static_fn[
-        c_type: DType, _rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        out1_static.store[width=width](
-            Coord(indices), rebind[SIMD[dtype, width]](val)
-        )
+        c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[c_type, width]):
+        out1_static.store[width=width](coords, rebind[SIMD[dtype, width]](val))
 
     _fused_dual_concat_gpu[
         rank,
@@ -528,21 +515,17 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
     @inline(.always)
     @__copy_capture(out0_dyn)
     def output_0_dyn_fn[
-        c_type: DType, _rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        out0_dyn.store[width=width](
-            Coord(indices), rebind[SIMD[dtype, width]](val)
-        )
+        c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[c_type, width]):
+        out0_dyn.store[width=width](coords, rebind[SIMD[dtype, width]](val))
 
     @__parameter
     @inline(.always)
     @__copy_capture(out1_dyn)
     def output_1_dyn_fn[
-        c_type: DType, _rank: Int, width: SIMDLength = 1, *, alignment: Int = 1
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        out1_dyn.store[width=width](
-            Coord(indices), rebind[SIMD[dtype, width]](val)
-        )
+        c_type: DType, width: SIMDLength = 1, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[c_type, width]):
+        out1_dyn.store[width=width](coords, rebind[SIMD[dtype, width]](val))
 
     _fused_dual_concat_gpu[
         rank,

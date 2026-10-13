@@ -41,7 +41,7 @@ conversion in `_to_device_type`) — the host struct keeps the full
 from asyncrt_test_utils import create_test_device_context
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from max.gpu import global_idx
-from max.gpu.host import DeviceContext, DevicePointer
+from max.gpu.host import DevicePointer
 from std.testing import TestSuite, assert_equal
 
 

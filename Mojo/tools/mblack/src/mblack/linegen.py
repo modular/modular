@@ -273,7 +273,7 @@ class LineGenerator(Visitor[Line]):
                 yield from self.visit(child)
 
     def visit_match_stmt(self, node: Node) -> Iterator[Line]:
-        """Visit a match / __match statement.
+        """Visits a match statement, including the deprecated __match spelling.
 
         Cases are indented under the header. Input written with cases at the
         header's own indent is reindented on the way out.

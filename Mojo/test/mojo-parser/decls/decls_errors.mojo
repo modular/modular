@@ -81,7 +81,7 @@ def use_non_copyable_type(a: ThingWithStaticMethod) raises:
   pass
 
 def test_use_non_copyable_type(var b: ThingWithStaticMethod) raises:
-  use_non_copyable_type(b^)
+  use_non_copyable_type(b)
 
 
 @fieldwise_init

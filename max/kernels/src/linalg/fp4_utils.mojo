@@ -18,7 +18,7 @@ from std.sys import is_nvidia_gpu, bit_width_of, llvm_intrinsic
 from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 from std.utils.numerics import FPUtils
 from std.memory import bitcast
-from layout import Coord, CoordLike, Idx, TileTensor
+from layout import Coord, CoordLike, TileTensor
 from layout.tile_layout import TensorLayout
 from std.simd import _convert_f32_to_float8_ue8m0
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
@@ -165,25 +165,30 @@ def decode_e2m1_to_f16[
 ](nibble: SIMD[.uint16, width]) -> SIMD[.float16, width]:
     """Decodes E2M1 nibbles to float16 by exponent injection (Preston's trick).
 
-    The float16 twin of `decode_e2m1_to_f32_inject`, but -- unlike the f32/bf16
-    injection variants -- **correct on the Apple M5** (and any FTZ target). It
-    injects the 3 magnitude bits `(e1 e0 m0)` at float16 bits 11:9 and the sign
-    at bit 15, then renormalizes with a single `* 2^14` (a power of two, hence
-    exact). The result is **bit-identical** to `E2M1_TO_FLOAT32[nibble]` cast to
-    float16 for all 16 values (every `{+-0, +-0.5, ..., +-6}` is exactly
-    representable in float16), so `decode_e2m1_to_f16(n).cast[float32]()` equals
-    `decode_e2m1_to_f32(n)` bit-for-bit.
+    It injects the 3 magnitude bits `(e1 e0 m0)` at float16 bits 11:9 and the
+    sign at bit 15, then renormalizes with a single `* 2^14` (a power of two,
+    hence exact). The result is **bit-identical** to `E2M1_TO_FLOAT32[nibble]`
+    cast to float16 for all 16 values (every `{+-0, +-0.5, ..., +-6}` is
+    exactly representable in float16), so
+    `decode_e2m1_to_f16(n).cast[float32]()` equals `decode_e2m1_to_f32(n)`
+    bit-for-bit.
 
-    Why it is M5-safe where the f32/bf16 inject is not: the `+-0.5` codes
-    (`E == 0, m == 1`) route through the float16 subnormal `0x0200` / `0x8200`
-    (value `2^-15`), which `* 2^14` renormalizes to `+-0.5`. The Apple M5
-    flushes **f32/bf16** denormals to zero on arithmetic inputs (see
-    `patterns/apple-m5-denormal-flush-to-zero`) -- which is why
-    `decode_e2m1_to_f32_inject` decodes `+-0.5` to `+-0` there -- but it
-    **preserves float16 subnormals**, so this f16 decode keeps `+-0.5` exact
-    (verified on-device: all 16 codes match `E2M1_TO_FLOAT32`). Callers that
-    need f32/bf16 cast the f16 result afterwards; the cast of the now-normal
-    `+-0.5` is exact.
+    Why the injection is done in float16: the `+-0.5` codes (`E == 0, m == 1`)
+    are the only ones that pass through a subnormal intermediate. The same
+    trick in float32 (inject at bits 22..24, renormalize by `* 2^126`) makes
+    that intermediate the float32 denormal `0x00400000`, and the bf16 variant
+    makes it `0x0040`. Any target that flushes f32/bf16 denormals to zero on
+    arithmetic inputs -- the Apple M5, and NVIDIA/AMD under
+    `--fp-mode=denormal=flush` -- zeroes it before the multiply, so `+-0.5`
+    decodes to `+-0` (verified on-device on the M5: nibbles 1 and 9 mismatch).
+    Here the intermediate is the float16 subnormal `0x0200` / `0x8200` (value
+    `2^-15`), which `* 2^14` renormalizes to `+-0.5`. The M5 **preserves
+    float16 subnormals** (see `patterns/apple-m5-denormal-flush-to-zero`), so
+    this decode keeps `+-0.5` exact there (verified on-device: all 16 codes
+    match `E2M1_TO_FLOAT32`). Callers that need f32/bf16 cast the f16 result
+    afterwards; the cast of the now-normal `+-0.5` is exact. On a target that
+    also flushes f16 denormals, use `decode_e2m1_to_f32` or
+    `decode_e2m1_to_bf16`, which never form a denormal.
 
     It is also cheaper than `decode_e2m1_to_f32` (no `uint32` widen, no
     `select`, no `E == 0` compare) while staying bit-exact -- the reason to
@@ -251,66 +256,6 @@ def decode_e2m1_to_f32[
     var is_subnormal = e.eq(type_of(e)(0))  # SIMD[bool, width] mask
     var mag = is_subnormal.select(subnormal_mag, normal_mag)
     return bitcast[.float32](sign | mag)
-
-
-@inline(.always)
-def decode_e2m1_to_f32_inject[
-    width: SIMDLength, //
-](nibble: SIMD[.uint16, width]) -> SIMD[.float32, width]:
-    """Decodes E2M1 nibbles to float32 by exponent injection (Preston's trick).
-
-    A branch-free alternative to `decode_e2m1_to_f32` with NO `select`: inject
-    the 3 value bits `(e1 e0 m0)` and the sign directly into a float32 bit
-    pattern at a SHIFTED exponent position, then renormalize with a single
-    `* 2^126` multiply (a power-of-two scale, hence exact). The result is
-    **bit-identical** to `decode_e2m1_to_f32` / `E2M1_TO_FLOAT32[nibble]` for all
-    16 values on a denormal-honoring target (verified host-side, including `+-0`
-    and the signed values).
-
-    !!! warning "Wrong on flush-to-zero (FTZ) GPUs, including Apple M5"
-        This trick relies on the `+-0.5` E2M1 values (`E == 0, m == 1`)
-        producing a **denormal** float32 intermediate (`0x00400000`) that
-        survives until the `* 2^126` renormalizes it. On a GPU that flushes
-        denormals to zero on arithmetic inputs -- **the Apple M5 does** -- that
-        intermediate is zeroed and `+-0.5` decodes to `+-0.0` (verified
-        on-device: nibbles 1 and 9 mismatch, every other value is exact). Use
-        `decode_e2m1_to_f32` (which builds the normalized value directly, no
-        denormal intermediate) on Apple GPU and any FTZ target. This function is
-        retained only for non-FTZ targets and as documentation of why the
-        injection trick does not port to M5.
-
-    Construction (float32 `s | 8-bit exp | 23-bit mantissa`): place `(e1 e0 m0)`
-    at bits 22..24 and the sign at bit 31, leaving a denormalized/small float
-    whose significand encodes the value; `* 2^126` shifts those bits into the
-    proper exponent range, reproducing `2^(E-1) * (1 + m/2)` for `E >= 1` and
-    `0.5 * m` for `E == 0` exactly (the same value the table holds). The
-    `E == 0, m == 1` case is the lone denormal intermediate (see the warning).
-
-    NOTE on folding: `2^126` CANNOT be folded into the per-block FP8 scale --
-    `scale * 2^126` overflows float32 for any `scale >= 4.0` (fp8_e4m3 scales
-    routinely exceed this), which corrupts the result. The `* 2^126` must be
-    applied to the injected value FIRST (where the product is <= 6.0, no
-    overflow), then the caller multiplies by the block scale. So this is NOT a
-    multiply saved over `decode_e2m1_to_f32` -- it trades the `select` + the
-    `(E+126)<<23 | m<<22` assembly for an extra `* 2^126`; whether it is faster
-    is a per-target measurement (on Apple M5 it is moot -- it is wrong, see the
-    warning -- and the dequant cost there is the scale LOAD, not the arith).
-
-    Parameters:
-        width: SIMD width (lane count) of the nibble vector.
-
-    Args:
-        nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
-
-    Returns:
-        The decoded values as `SIMD[.float32, width]`, bit-identical to
-        `E2M1_TO_FLOAT32[nibble]`.
-    """
-    var n = nibble.cast[.uint32]()
-    # Inject (e1 e0 m0) at bits 22..24, sign (bit 3) at bit 31.
-    var inj = ((n & 0x7) << 22) | ((n & 0x8) << 28)
-    comptime c2_126 = bitcast[.float32](UInt32(0x7E800000))
-    return bitcast[.float32](inj) * c2_126
 
 
 @inline(.always)
@@ -617,18 +562,19 @@ def cast_float_to_fp4e2m1_amd[
     var packed = UInt32(0)
 
     comptime for i in range(width // 2):
-        comptime if dtype == .bfloat16:
-            packed = llvm_intrinsic[
-                "llvm.amdgcn.cvt.scalef32.pk.fp4.bf16",
-                UInt32,
-            ](packed, input.slice[2, offset=i * 2](), scale, Int32(i))
-        elif dtype == .float32:
-            packed = llvm_intrinsic[
-                "llvm.amdgcn.cvt.scalef32.pk.fp4.f32",
-                UInt32,
-            ](packed, input[i * 2], input[i * 2 + 1], scale, Int32(i))
-        else:
-            comptime assert False, "Unsupported dtype"
+        comptime match dtype:
+            case .bfloat16:
+                packed = llvm_intrinsic[
+                    "llvm.amdgcn.cvt.scalef32.pk.fp4.bf16",
+                    UInt32,
+                ](packed, input.slice[2, offset=i * 2](), scale, Int32(i))
+            case .float32:
+                packed = llvm_intrinsic[
+                    "llvm.amdgcn.cvt.scalef32.pk.fp4.f32",
+                    UInt32,
+                ](packed, input[i * 2], input[i * 2 + 1], scale, Int32(i))
+            case _:
+                comptime assert False, "Unsupported dtype"
 
     return packed
 

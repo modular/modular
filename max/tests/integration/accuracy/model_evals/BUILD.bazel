@@ -265,6 +265,16 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_gpqa_eval",
+    size = "small",
+    srcs = ["test_gpqa_eval.py"],
+    deps = [
+        ":eval_common",
+        ":gpqa_eval",
+    ],
+)
+
+modular_py_test(
     name = "test_exacto_report",
     size = "small",
     srcs = ["test_exacto_report.py"],
@@ -279,6 +289,16 @@ modular_py_test(
     srcs = ["test_collect_scores.py"],
     deps = [
         ":collect_scores",
+    ],
+)
+
+modular_py_test(
+    name = "test_aime_eval",
+    size = "small",
+    srcs = ["test_aime_eval.py"],
+    deps = [
+        ":aime_eval",
+        requirement("click"),
     ],
 )
 

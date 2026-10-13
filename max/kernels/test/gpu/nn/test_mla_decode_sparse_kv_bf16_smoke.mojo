@@ -24,9 +24,6 @@ from max.gpu.host import DeviceContext
 from nn.attention.gpu.nvidia.sm100.mla_decode_sparse_kv_bf16 import (
     MLA_SM100_Decode_Sparse_KV_BF16,
 )
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
-    MLA_SM100_Decode_Config,
-)
 
 
 def main() raises:

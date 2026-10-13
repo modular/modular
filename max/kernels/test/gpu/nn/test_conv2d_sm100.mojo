@@ -35,12 +35,7 @@ from std.sys import align_of
 from std.testing import assert_false
 
 import linalg.matmul.vendor.blas as vendor_blas
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
@@ -523,9 +518,10 @@ def test_conv2d_epilogue_lambda[
     @inline(.always)
     def epilogue_add_bias[
         _dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) {var bias_tensor} -> SIMD[
+    ](idx: Coord, val: SIMD[_dtype, width]) {var bias_tensor} -> SIMD[
         _dtype, width
     ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # Load bias value for this channel and broadcast to SIMD width
         # Note: For width > 1, consecutive columns may have different biases
         # so we need to load a vector of biases
@@ -697,9 +693,10 @@ def test_conv2d_bias_fusion[
     @inline(.always)
     def add_bias[
         _dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) {var bias_tensor} -> SIMD[
+    ](idx: Coord, val: SIMD[_dtype, width]) {var bias_tensor} -> SIMD[
         _dtype, width
     ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val + bias_tensor.load[width=width]((idx[1],)).cast[_dtype]()
 
     # Run conv2d with fused bias
@@ -1105,8 +1102,8 @@ def test_conv_gpu_scale_epilogue[
     @inline(.always)
     @__copy_capture(out_epilogue_tt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
         out_epilogue_tt.store[
             width=_width, alignment=align_of[dtype]() * _alignment
@@ -1228,8 +1225,8 @@ def test_conv_gpu_additive_epilogue[
     @inline(.always)
     @__copy_capture(out_epilogue_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         var coord = Coord(coords[0], coords[1], coords[2], coords[3])
         var existing = out_epilogue_tt.load[
             width=_width, alignment=align_of[_dtype]() * _alignment
@@ -1621,8 +1618,8 @@ def test_conv_gpu_residual_with_bias[
     @inline(.always)
     @__copy_capture(out_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         var coord = Coord(coords[0], coords[1], coords[2], coords[3])
         var existing = out_tt.load[
             width=_width, alignment=align_of[_dtype]() * _alignment

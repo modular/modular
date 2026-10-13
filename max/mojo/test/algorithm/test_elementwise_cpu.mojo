@@ -16,7 +16,7 @@ from max.algorithm.functional import (
     elementwise,
 )
 from max.gpu.host import DeviceContext
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal
 from std.testing import TestSuite
 
 from std.utils.coord import Coord, coord_to_index_list

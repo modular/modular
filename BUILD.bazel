@@ -447,6 +447,16 @@ config_setting(
     flag_values = {"//:use_vllm": "true"},
 )
 
+bool_flag(
+    name = "use_aiperf",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_aiperf_setting",
+    flag_values = {"//:use_aiperf": "true"},
+)
+
 # When set, GPU tests disable MAX's device memory manager (caching allocator)
 # so each `enqueue_create_buffer` is a 1:1 device allocation and
 # compute-sanitizer memcheck/initcheck see true per-buffer bounds. Without this,

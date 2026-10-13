@@ -18,7 +18,7 @@
 
 """Registers gather, scatter, and indexed-access graph ops backed by the `nn.gather_scatter` kernels."""
 
-from std.math import gcd
+from std.math import ceildiv, gcd
 from std.sys import align_of
 from std.sys.info import simd_width_of
 import extensibility
@@ -27,6 +27,7 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_cpu
 from layout import (
@@ -50,6 +51,7 @@ from nn.gather_scatter import (
     gather_nd,
     gather_nd_shape,
     gather_reduce,
+    gather_sum,
     gather_shape,
     _unsafe_normalize_neg_index as normalize_neg_index,
     scatter_elements,
@@ -142,6 +144,254 @@ def check_axis_in_range[dim_size: Int](idx: Int) raises:
     raise Error("indices must be in range [-dim_size, dim_size)")
 
 
+@inline(.always)
+def _is_shape_index_listed[
+    indices_type: DType
+](
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int,
+    num_indices: Int,
+    rank: Int,
+    position: Int,
+) -> Bool:
+    for j in range(num_indices):
+        if (
+            Int(
+                normalize_neg_index(
+                    indices[unsafe_offset=j * indices_stride], rank
+                )
+            )
+            == position
+        ):
+            return True
+    return False
+
+
+@inline(.always)
+def _check_shape_index[
+    indices_type: DType
+](
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int,
+    j: Int,
+    rank: Int,
+):
+    var index = Int(
+        normalize_neg_index(indices[unsafe_offset=j * indices_stride], rank)
+    )
+    assert (
+        0 <= index < rank
+    ), "Shape indices must be between [-r, r-1] where r is the rank they index."
+    for k in range(j):
+        assert index != Int(
+            normalize_neg_index(indices[unsafe_offset=k * indices_stride], rank)
+        ), "Duplicate shape indices point to the same dimension."
+
+
+@inline(.always)
+def _check_shape_indices[
+    indices_type: DType
+](
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int,
+    num_indices: Int,
+    rank: Int,
+):
+    for j in range(num_indices):
+        _check_shape_index(indices, indices_stride, j, rank)
+
+
+@inline(.always)
+def _count_listed_at_or_below[
+    indices_type: DType
+](
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int,
+    num_indices: Int,
+    rank: Int,
+    position: Int,
+) -> Tuple[Int, Int]:
+    """Returns how many distinct valid listed positions are below `position`,
+    and whether `position` is listed. Out-of-range indices count toward
+    neither, and a duplicated index counts once, so the results match the
+    sequential CPU loops even when asserts are compiled out."""
+    var below = 0
+    var equal = 0
+    for j in range(num_indices):
+        var index = Int(
+            normalize_neg_index(indices[unsafe_offset=j * indices_stride], rank)
+        )
+        if index < 0 or index > position:
+            continue
+        var first = True
+        for k in range(j):
+            if (
+                Int(
+                    normalize_neg_index(
+                        indices[unsafe_offset=k * indices_stride], rank
+                    )
+                )
+                == index
+            ):
+                first = False
+                break
+        if not first:
+            continue
+        below += Int(index < position)
+        equal += Int(index == position)
+    return (below, equal)
+
+
+def _squeeze_shape[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int,
+    remove_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    remove_indices_stride: Int,
+    num_input_dims: Int,
+    num_remove_indices: Int,
+):
+    _check_shape_indices(
+        remove_indices,
+        remove_indices_stride,
+        num_remove_indices,
+        num_input_dims,
+    )
+    var final_rank = num_input_dims - num_remove_indices
+    var output_index = 0
+    for input_index in range(num_input_dims):
+        if _is_shape_index_listed(
+            remove_indices,
+            remove_indices_stride,
+            num_remove_indices,
+            num_input_dims,
+            input_index,
+        ):
+            continue
+        # Duplicate indices with asserts compiled out would overrun the output.
+        if output_index >= final_rank:
+            return
+        output[unsafe_offset=output_index * output_stride] = input[
+            unsafe_offset=input_index * input_stride
+        ]
+        output_index += 1
+
+
+def _unsqueeze_shape[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int,
+    padding_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    padding_indices_stride: Int,
+    num_input_dims: Int,
+    num_padding_indices: Int,
+):
+    var final_rank = num_input_dims + num_padding_indices
+    _check_shape_indices(
+        padding_indices, padding_indices_stride, num_padding_indices, final_rank
+    )
+    var input_index = 0
+    for output_index in range(final_rank):
+        var dim: Scalar[dtype] = 1
+        if not _is_shape_index_listed(
+            padding_indices,
+            padding_indices_stride,
+            num_padding_indices,
+            final_rank,
+            output_index,
+        ):
+            # Invalid or duplicate indices with asserts compiled out would
+            # read past the input. Skip rather than stop so the listed
+            # positions still get their 1, as in the GPU kernel.
+            if input_index >= num_input_dims:
+                continue
+            dim = input[unsafe_offset=input_index * input_stride]
+            input_index += 1
+        output[unsafe_offset=output_index * output_stride] = dim
+
+
+# Shape vectors hold a handful of entries, so each thread handles one position
+# and scans every index itself: no shared memory, barriers, or warp ops, which
+# keeps the kernel correct for any rank and warp size. `Int` is not
+# `DevicePassable`, hence the `Int32` arguments.
+comptime _SHAPE_BLOCK = 64
+
+
+@__name(t"mo_squeeze_shape_{dtype}_{indices_type}")
+def _squeeze_shape_kernel[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int32,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int32,
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int32,
+    num_input_dims: Int32,
+    num_indices: Int32,
+):
+    var rank = Int(num_input_dims)
+    var count = Int(num_indices)
+    var i = global_idx.x
+    if i >= rank:
+        return
+    if i < count:
+        _check_shape_index(indices, Int(indices_stride), i, rank)
+    var counts = _count_listed_at_or_below(
+        indices, Int(indices_stride), count, rank, i
+    )
+    if counts[1] != 0:
+        return
+    # Duplicate or out-of-range indices with asserts compiled out would
+    # misplace the output position.
+    var out_pos = i - counts[0]
+    if out_pos < 0 or out_pos >= rank - count:
+        return
+    output[unsafe_offset=out_pos * Int(output_stride)] = input[
+        unsafe_offset=i * Int(input_stride)
+    ]
+
+
+@__name(t"mo_unsqueeze_shape_{dtype}_{indices_type}")
+def _unsqueeze_shape_kernel[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int32,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int32,
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int32,
+    num_input_dims: Int32,
+    num_indices: Int32,
+):
+    var count = Int(num_indices)
+    var rank = Int(num_input_dims) + count
+    var o = global_idx.x
+    if o >= rank:
+        return
+    if o < count:
+        _check_shape_index(indices, Int(indices_stride), o, rank)
+    var counts = _count_listed_at_or_below(
+        indices, Int(indices_stride), count, rank, o
+    )
+    var dim: Scalar[dtype] = 1
+    if counts[1] == 0:
+        # Duplicate or out-of-range indices with asserts compiled out would
+        # read outside the input.
+        var in_pos = o - counts[0]
+        if in_pos < 0 or in_pos >= Int(num_input_dims):
+            return
+        dim = input[unsafe_offset=in_pos * Int(input_stride)]
+    output[unsafe_offset=o * Int(output_stride)] = dim
+
+
 @extensibility.register("mo.squeeze_shape")
 struct SqueezeShape:
     """Registers the `mo.squeeze_shape` graph op with the graph compiler."""
@@ -155,42 +405,44 @@ struct SqueezeShape:
         output_shape: OutputTensor[dtype=dtype, rank=1, ...],
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
         remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
-    ) capturing:
-        # remove_indices may not be sorted so our strategy is to use -1 to
-        # represent removed dimensions in a copied version of our input shape buffer
+        ctx: DeviceContext,
+    ) capturing raises:
+        """Removes the dimensions at `remove_indices` from `input_shape`.
+
+        Raises:
+            If the GPU kernel launch fails.
+        """
         var num_input_dims = input_shape.dim_size[0]()
         var num_remove_indices = remove_indices.dim_size[0]()
-        var final_rank = num_input_dims - num_remove_indices
-
         assert (
-            final_rank == output_shape.dim_size[0]()
+            num_input_dims - num_remove_indices == output_shape.dim_size[0]()
         ), "Incorrect output shape."
 
-        comptime MAX_VECTOR_LIMIT = 12
-        assert (
-            num_input_dims <= MAX_VECTOR_LIMIT
-        ), "Only support shape vectors up to rank-12."
-        var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
-        for i in range(num_input_dims):
-            input_shape_copy[i] = Int(input_shape[i])
-
-        # Mark every squeezed dimension as -1 in our copy of the shape tensor
-        for remove_index_index in range(num_remove_indices):
-            var remove_index = Int(remove_indices[remove_index_index])
-            var remove_index_normalize = remove_index + num_input_dims * Int(
-                remove_indices[remove_index_index] < 0
+        comptime if is_cpu[target]():
+            _squeeze_shape(
+                output_shape.unsafe_ptr(),
+                output_shape.stride_length[0](),
+                input_shape.unsafe_ptr(),
+                input_shape.stride_length[0](),
+                remove_indices.unsafe_ptr(),
+                remove_indices.stride_length[0](),
+                num_input_dims,
+                num_remove_indices,
             )
-            input_shape_copy[remove_index_normalize] = -1
-
-        # # Copy over the non -1 dimensions
-        var output_shape_index = 0
-        for input_shape_index in range(num_input_dims):
-            if input_shape_copy[input_shape_index] == -1:
-                continue
-            output_shape[output_shape_index] = Scalar[dtype](
-                input_shape_copy[input_shape_index]
+        else:
+            comptime kernel = _squeeze_shape_kernel[dtype, indices_type]
+            ctx.enqueue_function[kernel](
+                output_shape.unsafe_ptr(),
+                Int32(output_shape.stride_length[0]()),
+                input_shape.unsafe_ptr(),
+                Int32(input_shape.stride_length[0]()),
+                remove_indices.unsafe_ptr(),
+                Int32(remove_indices.stride_length[0]()),
+                Int32(num_input_dims),
+                Int32(num_remove_indices),
+                grid_dim=max(ceildiv(num_input_dims, _SHAPE_BLOCK), 1),
+                block_dim=_SHAPE_BLOCK,
             )
-            output_shape_index += 1
 
 
 @extensibility.register_shape_function("mo.squeeze_shape")
@@ -224,44 +476,47 @@ struct UnsqueezeShape:
         output_shape: OutputTensor[dtype=dtype, rank=1, ...],
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
         padding_indices: InputTensor[dtype=indices_type, rank=1, ...],
-    ) capturing:
-        # represent uninitialized dimensions, add the padding dimensions, and copy
-        # over the remaining dimensions later.
+        ctx: DeviceContext,
+    ) capturing raises:
+        """Inserts size-1 dimensions into `input_shape` at `padding_indices`.
+
+        Raises:
+            If the GPU kernel launch fails.
+        """
         var num_input_dims = input_shape.dim_size[0]()
         var num_padding_indices = padding_indices.dim_size[0]()
-        var final_rank = num_input_dims + num_padding_indices
         assert (
-            final_rank == output_shape.dim_size[0]()
+            num_input_dims + num_padding_indices == output_shape.dim_size[0]()
         ), "Incorrect output shape."
-        for output_index in range(final_rank):
-            output_shape[output_index] = -1
 
-        for padding_index_index in range(num_padding_indices):
-            var padding_index = Int(padding_indices[padding_index_index])
-            var padding_index_normalize = padding_index + final_rank * Int(
-                padding_indices[padding_index_index] < 0
+        comptime if is_cpu[target]():
+            _unsqueeze_shape(
+                output_shape.unsafe_ptr(),
+                output_shape.stride_length[0](),
+                input_shape.unsafe_ptr(),
+                input_shape.stride_length[0](),
+                padding_indices.unsafe_ptr(),
+                padding_indices.stride_length[0](),
+                num_input_dims,
+                num_padding_indices,
             )
-
-            assert (
-                padding_index_normalize >= 0
-                and padding_index_normalize < final_rank
-            ), (
-                "Padding indices must be between [-r, r-1] where r is the"
-                " final output rank."
+        else:
+            comptime kernel = _unsqueeze_shape_kernel[dtype, indices_type]
+            ctx.enqueue_function[kernel](
+                output_shape.unsafe_ptr(),
+                Int32(output_shape.stride_length[0]()),
+                input_shape.unsafe_ptr(),
+                Int32(input_shape.stride_length[0]()),
+                padding_indices.unsafe_ptr(),
+                Int32(padding_indices.stride_length[0]()),
+                Int32(num_input_dims),
+                Int32(num_padding_indices),
+                grid_dim=max(
+                    ceildiv(num_input_dims + num_padding_indices, _SHAPE_BLOCK),
+                    1,
+                ),
+                block_dim=_SHAPE_BLOCK,
             )
-            assert output_shape[padding_index_normalize] == -1, (
-                "Duplicate padding indices point to the same dimension in"
-                " the final output shape."
-            )
-            output_shape[padding_index_normalize] = 1
-
-        # Copy over the remaining shapes
-        var orig_shape_index = 0
-        for output_shape_index in range(final_rank):
-            if output_shape[output_shape_index] != -1:
-                continue
-            output_shape[output_shape_index] = input_shape[orig_shape_index]
-            orig_shape_index += 1
 
 
 @extensibility.register_shape_function("mo.unsqueeze_shape")
@@ -1623,21 +1878,16 @@ struct GatherSum:
         indices: InputTensor[dtype=.int32, ...],
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_cpu[target](), "only valid on CPUs"
+        """Fused gather (axis 0) + sum reduction (axis 1).
 
-        def add[
-            dtype: DType, simd_width: SIMDLength
-        ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
-            dtype, simd_width
-        ]:
-            return x + y
-
-        gather_reduce[output.dtype, 0, 1, simd_width_of[output.dtype](), add](
+        Dispatches to the CPU `gather_reduce` kernel or the GPU
+        `gather_sum` kernel based on `target`.
+        """
+        gather_sum[target=target](
             output.to_tile_tensor[.int64](),
             input.to_tile_tensor[.int64](),
             indices.to_tile_tensor[.int64](),
-            0,
-            Optional[DeviceContext](ctx),
+            ctx,
         )
 
 
@@ -1647,16 +1897,20 @@ struct Tile:
 
     @staticmethod
     def execute[
-        dtype: DType, rank: Int
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         repeats: InputTensor,
+        ctx: DeviceContext,
     ) raises:
-        tile(
+        tile[target=target](
             input.to_tile_tensor[.int64](),
             repeats.to_tile_tensor[.int64](),
             output.to_tile_tensor[.int64](),
+            ctx,
         )
 
 
@@ -1725,14 +1979,14 @@ struct Concat:
         @__parameter
         @__copy_capture(inputs)
         def inputs_lambda[
-            input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            input_index: Int, width: Int, alignment: Int = 1
+        ](coords: Coord) -> SIMD[dtype, width]:
             comptime assert (
                 input_index < inputs.size
             ), "tensor index out of bounds"
             return inputs[input_index]._lambda_load[
                 width=width, element_alignment=alignment
-            ](rebind[IndexList[rank]](indices))
+            ](coords)
 
         # Copy-capture `output` for the same reason as `inputs` above: a
         # by-reference capture leaves the device kernel holding a host pointer
@@ -1741,10 +1995,10 @@ struct Concat:
         @__parameter
         @__copy_capture(output)
         def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            _dtype: DType, width: SIMDLength, *, alignment: Int = 1
+        ](coords: Coord, value: SIMD[_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](indices),
+                coords,
                 rebind[SIMD[output.dtype, width]](value),
             )
 
@@ -2096,22 +2350,19 @@ struct AdvancedIndexingSetItem:
         """
 
         # First copy over input tensor into the output
-        @__parameter
         @inline(.always)
         def func[
             width: Int, element_alignment: Int
-        ](idx: IndexList[output_tensor.rank]) -> SIMD[
+        ](idx: IndexList[output_tensor.rank]) {var} -> SIMD[
             output_tensor.dtype, width
         ]:
             return input_tensor._fused_load[
                 width, element_alignment=element_alignment
             ](idx)
 
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name + "_p1/2_copy",
-        ](output_tensor, ctx)
+        foreach[target=target, _trace_name=_trace_name + "_p1/2_copy"](
+            func, output_tensor, ctx
+        )
 
         # Then run the updates in-place.
         # For type checking

@@ -18,8 +18,6 @@ from std.sys import bit_width_of
 from std.utils.static_tuple import StaticTuple
 
 from layout import (
-    Coord,
-    Idx,
     ImmTileTensor,
     MutTileTensor,
     TensorLayout,

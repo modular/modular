@@ -10,17 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Socket constants and types shared by the Unix platforms, Linux and macOS.
-
-The values are transcribed from `<sys/socket.h>`, `<netinet/tcp.h>`, and
-`<fcntl.h>`. Every name here is defined on both platforms. A value they
-share is a plain literal, and one that differs resolves for the compilation
-target, so using it on any other target is a compile error. Names that only
-one platform defines live in `linux` or `macos`.
+"""Socket constants, types, and syscall bindings shared by the Unix
+platforms, Linux and macOS.
 """
 
-from std.ffi import c_int, c_uint
-from std.sys.info import platform_map
+from std.ffi import c_int, c_size_t, c_ssize_t, c_uint, external_call
+from std.sys.info import platform_map, platform_type_map
+
+from .linux import sockaddr as linux_sockaddr
+from .macos import sockaddr as macos_sockaddr
 
 comptime socklen_t = c_uint
 """C `socklen_t`: the size of a socket address or option value, in bytes."""
@@ -162,3 +160,238 @@ comptime O_NONBLOCK: c_int = constant[
     "O_NONBLOCK", linux=0o4000, macos=0x0004
 ]()
 """Non-blocking file status flag."""
+
+
+# ===----------------------------------------------------------------------=== #
+# Socket addresses
+# ===----------------------------------------------------------------------=== #
+
+comptime sockaddr = platform_type_map[
+    linux=linux_sockaddr,
+    macos=macos_sockaddr,
+]
+"""The compilation target's C `struct sockaddr`."""
+
+
+# ===----------------------------------------------------------------------=== #
+# Syscall bindings (`<sys/socket.h>`)
+# ===----------------------------------------------------------------------=== #
+
+
+def socket(domain: c_int, type: c_int, protocol: c_int) -> c_int:
+    """C `socket(2)`: creates an endpoint for communication.
+
+    Args:
+        domain: The protocol family (`AF_*`).
+        type: The socket type (`SOCK_*`).
+        protocol: The protocol, or 0 for the type's default.
+
+    Returns:
+        A new socket descriptor, or -1 with `errno` set.
+    """
+    return external_call["socket", c_int](domain, type, protocol)
+
+
+def bind(
+    sockfd: c_int, addr: ImmPointer[sockaddr, _], addrlen: socklen_t
+) -> c_int:
+    """C `bind(2)`: assigns a local address to a socket.
+
+    Args:
+        sockfd: The socket descriptor.
+        addr: Pointer to the address to bind.
+        addrlen: The valid size of the address behind `addr`, in bytes.
+
+    Returns:
+        0 on success, or -1 with `errno` set.
+    """
+    return external_call["bind", c_int](sockfd, addr, addrlen)
+
+
+def listen(sockfd: c_int, backlog: c_int) -> c_int:
+    """C `listen(2)`: marks a socket as accepting connections.
+
+    Args:
+        sockfd: The socket descriptor.
+        backlog: The maximum length of the pending-connection queue.
+
+    Returns:
+        0 on success, or -1 with `errno` set.
+    """
+    return external_call["listen", c_int](sockfd, backlog)
+
+
+def accept(
+    sockfd: c_int,
+    addr: OptionalMutPointer[sockaddr, _],
+    addrlen: OptionalMutPointer[socklen_t, _],
+) -> c_int:
+    """C `accept(2)`: accepts a connection on a listening socket.
+
+    Args:
+        sockfd: The listening socket descriptor.
+        addr: Out-pointer to storage for the peer address, typically a
+            `sockaddr_storage` cast to `sockaddr`, or `None` when the
+            caller does not want it.
+        addrlen: In/out pointer holding the storage capacity on entry and
+            the written address size on return; `None` exactly when `addr`
+            is `None`.
+
+    Returns:
+        The new connection's descriptor, or -1 with `errno` set.
+    """
+    return external_call["accept", c_int](sockfd, addr, addrlen)
+
+
+def connect(
+    sockfd: c_int, addr: ImmPointer[sockaddr, _], addrlen: socklen_t
+) -> c_int:
+    """C `connect(2)`: initiates a connection on a socket.
+
+    Args:
+        sockfd: The socket descriptor.
+        addr: Pointer to the peer address.
+        addrlen: The valid size of the address behind `addr`, in bytes.
+
+    Returns:
+        0 on success, or -1 with `errno` set.
+    """
+    return external_call["connect", c_int](sockfd, addr, addrlen)
+
+
+def send(
+    sockfd: c_int, buf: ImmPointer[UInt8, _], len: c_size_t, flags: c_int
+) -> c_ssize_t:
+    """C `send(2)`: sends bytes on a connected socket.
+
+    Args:
+        sockfd: The socket descriptor.
+        buf: Pointer to the bytes to send.
+        len: The number of bytes to send.
+        flags: `MSG_*` flags, or 0.
+
+    Returns:
+        The number of bytes sent (possibly less than `len`), or -1 with
+        `errno` set.
+    """
+    return external_call["send", c_ssize_t](sockfd, buf, len, flags)
+
+
+def recv(
+    sockfd: c_int, buf: MutPointer[UInt8, _], len: c_size_t, flags: c_int
+) -> c_ssize_t:
+    """C `recv(2)`: receives bytes from a connected socket.
+
+    Args:
+        sockfd: The socket descriptor.
+        buf: Pointer to the buffer to receive into.
+        len: The buffer capacity, in bytes.
+        flags: `MSG_*` flags, or 0.
+
+    Returns:
+        The number of bytes received, 0 on orderly peer shutdown when
+        `len` is nonzero, or -1 with `errno` set.
+    """
+    return external_call["recv", c_ssize_t](sockfd, buf, len, flags)
+
+
+def shutdown(sockfd: c_int, how: c_int) -> c_int:
+    """C `shutdown(2)`: shuts down part of a full-duplex connection.
+
+    Args:
+        sockfd: The socket descriptor.
+        how: One of `SHUT_RD`, `SHUT_WR`, or `SHUT_RDWR`.
+
+    Returns:
+        0 on success, or -1 with `errno` set.
+    """
+    return external_call["shutdown", c_int](sockfd, how)
+
+
+def getsockname(
+    sockfd: c_int,
+    addr: MutPointer[sockaddr, _],
+    addrlen: MutPointer[socklen_t, _],
+) -> c_int:
+    """C `getsockname(2)`: returns the socket's local address.
+
+    Args:
+        sockfd: The socket descriptor.
+        addr: Out-pointer to storage for the address, typically a
+            `sockaddr_storage` cast to `sockaddr`.
+        addrlen: In/out pointer holding the storage capacity on entry and
+            the written address size on return.
+
+    Returns:
+        0 on success, or -1 with `errno` set.
+    """
+    return external_call["getsockname", c_int](sockfd, addr, addrlen)
+
+
+def getpeername(
+    sockfd: c_int,
+    addr: MutPointer[sockaddr, _],
+    addrlen: MutPointer[socklen_t, _],
+) -> c_int:
+    """C `getpeername(2)`: returns the connected peer's address.
+
+    Args:
+        sockfd: The socket descriptor.
+        addr: Out-pointer to storage for the address, typically a
+            `sockaddr_storage` cast to `sockaddr`.
+        addrlen: In/out pointer holding the storage capacity on entry and
+            the written address size on return.
+
+    Returns:
+        0 on success, or -1 with `errno` set.
+    """
+    return external_call["getpeername", c_int](sockfd, addr, addrlen)
+
+
+def setsockopt(
+    sockfd: c_int,
+    level: c_int,
+    optname: c_int,
+    optval: ImmPointer[NoneType, _],
+    optlen: socklen_t,
+) -> c_int:
+    """C `setsockopt(2)`: sets a socket option.
+
+    Args:
+        sockfd: The socket descriptor.
+        level: The option's protocol level (`SOL_SOCKET`, `IPPROTO_TCP`, ...).
+        optname: The option name (`SO_*`, `TCP_*`, ...).
+        optval: Pointer to the option value.
+        optlen: The size of the value behind `optval`, in bytes.
+
+    Returns:
+        0 on success, or -1 with `errno` set.
+    """
+    return external_call["setsockopt", c_int](
+        sockfd, level, optname, optval, optlen
+    )
+
+
+def getsockopt(
+    sockfd: c_int,
+    level: c_int,
+    optname: c_int,
+    optval: MutPointer[NoneType, _],
+    optlen: MutPointer[socklen_t, _],
+) -> c_int:
+    """C `getsockopt(2)`: gets a socket option.
+
+    Args:
+        sockfd: The socket descriptor.
+        level: The option's protocol level (`SOL_SOCKET`, `IPPROTO_TCP`, ...).
+        optname: The option name (`SO_*`, `TCP_*`, ...).
+        optval: Out-pointer to storage for the option value.
+        optlen: In/out pointer holding the storage capacity on entry and
+            the written value size on return.
+
+    Returns:
+        0 on success, or -1 with `errno` set.
+    """
+    return external_call["getsockopt", c_int](
+        sockfd, level, optname, optval, optlen
+    )

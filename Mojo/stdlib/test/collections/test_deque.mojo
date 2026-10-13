@@ -1102,12 +1102,12 @@ def _test_deque_iter_bounds[
     for i in range(deque_len):
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
-        assert_equal(deque_len - i, upper.value())
+        assert_equal(Optional(deque_len - i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 def test_deque_iter_bounds() raises:
@@ -1381,12 +1381,12 @@ def test_deque_iter_owned_bounds() raises:
     for i in range(3, 0, -1):
         var lower, upper = iter.bounds()
         assert_equal(i, lower)
-        assert_equal(i, upper.value())
+        assert_equal(Optional(i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 def test_deque_move_only() raises:

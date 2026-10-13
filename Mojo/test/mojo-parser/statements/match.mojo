@@ -36,7 +36,7 @@ def match_trivial(i: Int):
     # Irrefutable `case _` is not a match: the body is emitted inline.
     # CHECK-NEXT:    lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK-NOT:     hlcf.match
-    __match i:
+    match i:
     case _:
         case_callee[0]()
 
@@ -50,7 +50,7 @@ def match_trivial(i: Int):
     # CHECK:       } else {
     # CHECK:         hlcf.yield
     # CHECK:       }
-    __match i:
+    match i:
     case _ if i > 0:
         case_callee[1]()
 
@@ -62,7 +62,7 @@ def match_bindings(i: Int, var s: String):
     # CHECK:       [[BX:%.*]] = lit.var.decl "x" bound
     # CHECK:       lit.ref.store %i, [[BX]]
     # CHECK:       lit.call {{.*}}@"__add__(
-    __match i:
+    match i:
     case x:
         _ = x+1
 
@@ -70,7 +70,7 @@ def match_bindings(i: Int, var s: String):
     # CHECK:       lit.ref.store {{.*}}, [[SX]]
     # CHECK:       lit.ref.load [[SX]]
     # CHECK:       lit.call {{.*}}@"__len__(::String)"{{.*}}muttoimm
-    __match s:
+    match s:
     case x:
         _ = x.__len__()
 
@@ -78,14 +78,14 @@ def match_bindings(i: Int, var s: String):
     # CHECK:       [[VX:%.*]] = lit.var.decl "x" var
     # CHECK:       lit.ref.store %i, [[VX]]
     # CHECK:       lit.call {{.*}}@"__iadd__({{.*}}([[VX]],
-    __match i:
+    match i:
     case var x:
         x += 1
 
     # CHECK:       [[VS:%.*]] = lit.var.decl "x" var
     # CHECK:       lit.call {{.*}}@"__init__(copy:::String)"{{.*}}[[VS]]
     # CHECK:       lit.call {{.*}}@"__iadd__{{.*}}([[VS]],
-    __match s:
+    match s:
     case var x:
         x += "x"
 
@@ -93,7 +93,7 @@ def match_bindings(i: Int, var s: String):
     # CHECK:       [[RX:%.*]] = lit.var.decl "x" ref
     # CHECK:       lit.ref.store %s, [[RX]]
     # CHECK:       lit.call {{.*}}@"__iadd__{{.*}}[mut *"s`
-    __match s:
+    match s:
     case ref x:
         x += "x"
 
@@ -120,7 +120,7 @@ def match_bindings(i: Int, var s: String):
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    }
 def match_same_indent(x: Int):
-    __match x:
+    match x:
     case 0:
         case_callee[0]()
     case 1:
@@ -141,7 +141,7 @@ def match_same_indent(x: Int):
 # CHECK:         hlcf.yield
 # CHECK:       }
 def match_indented_cases(x: Int):
-    __match x:
+    match x:
         case 0:
             case_callee[0]()
         case _:
@@ -171,7 +171,7 @@ def match_indented_cases(x: Int):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         hlcf.match.complete
 def match_tuple_subject(point: Tuple[Int, Int]):
-    __match point:
+    match point:
     case (0, 0):
         case_callee[0]()
     case _:
@@ -186,7 +186,7 @@ def match_tuple_subject(point: Tuple[Int, Int]):
 # CHECK:       lit.call {{.*}}@"__eq__({{.*}}InitPattern
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
 def match_initializer_list(value: InitPattern):
-    __match value:
+    match value:
     case {}:
         case_callee[0]()
     case {1, offset=2}:
@@ -204,7 +204,7 @@ def match_initializer_list(value: InitPattern):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
 def match_comma_subject(a: Bool, b: Bool):
-    __match a, b:
+    match a, b:
     case True, True:
         case_callee[0]()
     case False, True:
@@ -249,7 +249,7 @@ def match_comma_subject(a: Bool, b: Bool):
 # CHECK-NEXT:      hlcf.yield
 # CHECK-NEXT:    }
 def match_with_guard(x: Int, c: Int):
-    __match x:
+    match x:
     case _ if c != 0:
         case_callee[0]()
     case 0 if c != 0:
@@ -268,7 +268,7 @@ def match_with_guard(x: Int, c: Int):
 # CHECK:         hlcf.yield
 # CHECK:       }
 def match_case_body(x: Int):
-    __match x:
+    match x:
     case 0:
         var inside_case: Int
     case _:
@@ -286,7 +286,7 @@ def match_case_body(x: Int):
 # CHECK:         hlcf.yield
 # CHECK:       }
 def match_float(x: Float64):
-    __match x:
+    match x:
     case 0.0:
         case_callee[0]()
     case _:
@@ -304,7 +304,7 @@ def match_float(x: Float64):
 # CHECK:         hlcf.yield
 # CHECK:       }
 def match_string(x: String):
-    __match x:
+    match x:
     case "a":
         case_callee[0]()
     case _:
@@ -330,7 +330,7 @@ def match_string(x: String):
 # CHECK:         hlcf.unreachable
 # CHECK:       }
 def match_bool(x: Bool):
-    __match x:
+    match x:
     case True:
         case_callee[0]()
     case False:
@@ -389,7 +389,7 @@ struct OpenColor(ImplicitlyCopyable, EnumLike):
 # CHECK-LABEL: lit.fn @"match_open_enum_partial
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
 def match_open_enum_partial(color: OpenColor):
-    __match color:
+    match color:
     case .red:
         case_callee[0]()
 
@@ -399,7 +399,7 @@ def match_open_enum_partial(color: OpenColor):
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 2
 def match_open_enum_catch_all(color: OpenColor):
-    __match color:
+    match color:
     case .red:
         case_callee[1]()
     case .green:
@@ -438,7 +438,7 @@ def match_open_enum_catch_all(color: OpenColor):
 # CHECK:         hlcf.unreachable
 # CHECK:       }
 def match_color(c: Color):
-    __match c:
+    match c:
     case Color.red:  # explicit enum case.
         case_callee[0]()
     case .green:     # inferred case.
@@ -501,7 +501,7 @@ def match_color(c: Color):
 # CHECK:         hlcf.yield
 # CHECK:       }
 def match_color_complex(tc: Tuple[Color, Int]):
-    __match tc:
+    match tc:
     case (Color.red, 0):
         case_callee[0]()
     case (Color.green, 0):
@@ -518,7 +518,7 @@ def match_var_and_ref_binding(value: String, mut mutString: String):
     # CHECK:       lit.call {{.*}}@"__init__(copy:::String)"{{.*}}(%value, [[X]])
     # CHECK:       lit.call {{.*}}@"__iadd__{{.*}}([[X]],
     # CHECK:       lit.call {{.*}}@"byte_length(
-    __match value:
+    match value:
     case var x:
         x += "x"
         _ = x.byte_length()
@@ -527,7 +527,7 @@ def match_var_and_ref_binding(value: String, mut mutString: String):
     # CHECK:       [[Y:%.*]] = lit.var.decl "y" ref
     # CHECK:       lit.ref.store %value, [[Y]]
     # CHECK:       lit.call {{.*}}@"byte_length(
-    __match value:
+    match value:
     case ref y:
         _ = y.byte_length()
 
@@ -535,14 +535,14 @@ def match_var_and_ref_binding(value: String, mut mutString: String):
     # CHECK:       [[Z:%.*]] = lit.var.decl "z" ref
     # CHECK:       lit.ref.store %mutString, [[Z]]
     # CHECK:       lit.call {{.*}}@"__iadd__{{.*}}(
-    __match mutString:
+    match mutString:
     case ref z:
         z += "x"
 
 
 # Tuple patterns with nested var bindings (from the pattern-matching proposal).
 def match_inspect_point(point: Tuple[Int, Int]):
-    __match point:
+    match point:
     case (0, 0):
         case_callee[0]()
     case (var x, 0):
@@ -560,7 +560,7 @@ def match_as_pattern(value: String):
     # CHECK:       lit.ref.store %value, [[S]]
     # CHECK-NOT:   lit.call {{.*}}@"__init__(copy:::String)"
     # CHECK:       lit.call {{.*}}@"byte_length(
-    __match value:
+    match value:
     case _ as s:
         _ = s.byte_length()
 
@@ -569,7 +569,7 @@ def match_as_pattern(value: String):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       [[T:%.*]] = lit.var.decl "t" ref
     # CHECK:       lit.ref.store %value, [[T]]
-    __match value:
+    match value:
     case "hello" as t:
         _ = t.byte_length()
 
@@ -577,7 +577,7 @@ def match_as_pattern(value: String):
     # CHECK:       [[X:%.*]] = lit.var.decl "x" bound
     # CHECK:       lit.ref.store {{.*}}, [[X]]
     # CHECK:       lit.call {{.*}}@"__add__(
-    __match 42:
+    match 42:
     case _ as x:
         _ = x + 1
 
@@ -592,7 +592,7 @@ def match_as_pattern(value: String):
     # CHECK:       lit.ref.store %point, [[P]]
     # CHECK:       lit.var.decl "x" var
     var point: Tuple[Int, Int] = (0, 0)
-    __match point:
+    match point:
     case (0, 0) as origin:
         _ = origin
         case_callee[0]()
@@ -612,7 +612,7 @@ def match_as_pattern(value: String):
     # CHECK:       [[B0:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[NE0]])
     # CHECK:       hlcf.if [[B0]] {
     # CHECK:       lit.call {{.*}}@"byte_length(
-    __match value:
+    match value:
     case _ as s if s.byte_length() != 0:
         _ = s.byte_length()
 
@@ -678,7 +678,7 @@ def match_as_pattern(value: String):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
 # CHECK:         hlcf.match.complete
 def match_or_pattern_int(x: Int):
-    __match x:
+    match x:
     case 0 | 1:
         case_callee[0]()
     case 0 | 1 | 2:
@@ -725,7 +725,7 @@ def match_or_pattern_int(x: Int):
 # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
 # CHECK:         hlcf.match.complete
 def match_or_pattern_tup(point: Tuple[Int, Int]):
-    __match point:
+    match point:
     case (0, 0) | (1, 1):
         case_callee[2]()
 
@@ -739,7 +739,7 @@ def match_or_pattern_bind(var point: Tuple[Int, Int]):
     # CHECK:       lit.ref.store {{.*}}, [[X]]
     # CHECK:       lit.var.decl "x" var
     # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 3
-    __match point:
+    match point:
     case (0, var x) | (var x, 1):
         _ = x
         case_callee[3]()
@@ -751,7 +751,7 @@ def match_or_pattern_bind(var point: Tuple[Int, Int]):
     # CHECK:       lit.ref.store {{.*}}, [[RX]]
     # CHECK:       lit.var.decl "x" ref
     # CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 4
-    __match point:
+    match point:
     case (2, ref x) | (ref x, 3):
         _ = x
         case_callee[4]()
@@ -765,11 +765,42 @@ def test_or_MOCO_4953(var a: Optional[Int]):
     # CHECK:       lit.ref.store {{.*}}, [[X]] : <!lit.ref<!Int, [[COMMON_ORIGIN]]>, mut
     # CHECK:       lit.ref.store {{.*}}, [[X]] : <!lit.ref<!Int, [[COMMON_ORIGIN]]>, mut
     # CHECK:       lit.var.decl "x" ref
-    __match (a, a):
+    match (a, a):
     case (.Some(x), .None) | (.None, .Some(x)):
         _ = x
     case _:
         pass
+
+
+# CHECK-LABEL: lit.fn @"match_optional_product_concluding
+# MOCO-4945
+def match_optional_product_concluding(
+    a: Tuple[Optional[Int], Optional[Int]]
+) -> Int:
+    # Covering every constructor pair makes each residual match conclusive.
+    # Each dimension only tests Some; None is its exclusive complement.
+    # CHECK:       _get_enum_discriminant
+    # CHECK:       @"__eq__(::SIMD
+    # CHECK:       _get_enum_discriminant
+    # CHECK:       @"__eq__(::SIMD
+    # CHECK:       lit.return
+    # CHECK:       lit.return
+    # CHECK:       _get_enum_discriminant
+    # CHECK:       @"__eq__(::SIMD
+    # CHECK:       lit.return
+    # CHECK:       lit.return
+    # CHECK-NOT:   _get_enum_discriminant
+    # CHECK-NOT:   @"__eq__(::SIMD
+    # CHECK:       lit.end_fn
+    match a:
+    case (.Some(x), .Some(y)):
+        return 1
+    case (.Some(x), .None):
+        return 2
+    case (.None, .Some(y)):
+        return 3
+    case (.None, .None):
+        return 4
 
 
 @fieldwise_init
@@ -788,7 +819,7 @@ def match_vec3(v: Vec3):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       lit.ref.struct.ger {{.*}}[z]
     # CHECK:       lit.call {{.*}}@"__eq__(
-    __match v:
+    match v:
     case Vec3(x=0, y=0, z=0):
         case_callee[0]()
 
@@ -798,28 +829,101 @@ def match_vec3(v: Vec3):
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       [[X:%.*]] = lit.var.decl "x" var
     # CHECK:       lit.ref.store {{.*}}, [[X]]
-    __match v:
+    match v:
     case Vec3(x=var x, y=0, z=_):
         _ = x
         case_callee[1]()
 
 
+# CHECK-LABEL: lit.fn @"match_list
+def match_list(values: List[Int]):
+    # Fixed-length list patterns test the length before indexing.
+    # CHECK:       [[MIN:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
+    # CHECK-NEXT:  [[EXACT:%.*]] = kgen.param.constant: !Bool = <{:scalar<bool> true}>
+    # CHECK:       [[LENGTH_MATCHES:%.*]] = lit.call {{.*}}@"list_length_matches{{.*}}(%values, [[MIN]], [[EXACT]])
+    # CHECK:       hlcf.if
+    # CHECK:         [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
+    # CHECK:         lit.call {{.*}}@List::@"__getitem__{{.*}}(%values, [[ZERO]])
+    match values:
+    case [0, value]:
+        _ = value
+        case_callee[0]()
+    case _:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"match_starred_list
+def match_starred_list(values: List[Int]):
+    # A starred pattern accepts its minimum length and extracts the middle
+    # through ContiguousSlice subscripting.
+    # CHECK:       [[MIN:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 2}>
+    # CHECK-NEXT:  [[INEXACT:%.*]] = kgen.param.constant: !Bool = <{:scalar<bool> false}>
+    # CHECK:       lit.call {{.*}}@"list_length_matches{{.*}}(%values, [[MIN]], [[INEXACT]])
+    # CHECK:       lit.call {{.*}}@List::@"__len__
+    # CHECK:       lit.call {{.*}}@List::@"__getitem__{{.*ContiguousSlice}}
+    match values:
+    case [first, *middle, last]:
+        _ = first
+        _ = middle
+        _ = last
+        case_callee[0]()
+    case _:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"match_optional_refined_payload
+def match_optional_refined_payload(opt: Optional[Int]):
+    # `Some(0)` only covers one payload value; the following `Some(n)` remains
+    # reachable and covers the rest of the constructor.
+    # CHECK-NEXT:  [[DISC:%.*]] = lit.call {{.*}}@"_get_enum_discriminant{{.*}}(%opt)
+    # CHECK-NEXT:  [[TAG:%.*]] = kgen.rebind [[DISC]]
+    # CHECK-NEXT:  [[SOME:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 1}>
+    # CHECK-NEXT:  [[IS_SOME:%.*]] = lit.call {{.*}}@"__eq__({{.*}}([[TAG]], [[SOME]])
+    # CHECK-NEXT:  [[SOME_COND:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[IS_SOME]])
+    # CHECK-NEXT:  hlcf.if [[SOME_COND]] {
+    # CHECK-NEXT:    [[PAYLOAD:%.*]] = lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%opt)
+    # CHECK-NEXT:    [[VALUE:%.*]] = lit.ref.load [[PAYLOAD]]
+    # CHECK-NEXT:    [[ZERO:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 0}>
+    # CHECK-NEXT:    [[IS_ZERO:%.*]] = lit.call {{.*}}@"__eq__({{.*}}([[VALUE]], [[ZERO]])
+    # CHECK-NEXT:    [[ZERO_COND:%.*]] = lit.call {{.*}}@"__mlir_bool__(::Bool)"([[IS_ZERO]])
+    # CHECK-NEXT:    hlcf.if [[ZERO_COND]] {
+    # CHECK-NEXT:      lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK-NEXT:      hlcf.yield
+    # CHECK-NEXT:    } else {
+    # CHECK-NEXT:      [[N:%.*]] = lit.var.decl "n" ref
+    # CHECK-NEXT:      lit.ref.store [[PAYLOAD]], [[N]]
+    # CHECK-NEXT:      lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK-NEXT:      hlcf.yield
+    # CHECK-NEXT:    }
+    # CHECK-NEXT:    hlcf.yield
+    # CHECK-NEXT:  } else {
+    # CHECK-NEXT:    lit.call {{.*}}@"case_callee{{.*}}<index> 2
+    # CHECK-NEXT:    hlcf.yield
+    # CHECK-NEXT:  }
+    match opt:
+    case .Some(0):
+        case_callee[0]()
+    case .Some(n):
+        case_callee[1]()
+    case .None:
+        case_callee[2]()
+
+
 # CHECK-LABEL: lit.fn @"match_optional
 def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
-    # Immutable Optional: None then Some (sorted by discriminant). Some's
-    # then-region projects the payload.
+    # Immutable Optional: Some is tested and None is its exclusive complement.
+    # Some's then-region projects the payload.
     # CHECK:       lit.call {{.*}}@"_get_enum_discriminant{{.*}}[imm *"opt`
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       hlcf.if %{{.*}} {
-    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
-    # CHECK:       } else {
-    # CHECK:         hlcf.if.elifcond.yield
-    # CHECK:       } then {
     # CHECK:         lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%opt)
     # CHECK:         [[ELT:%.*]] = lit.var.decl "elt" ref
     # CHECK:         lit.ref.store {{.*}}, [[ELT]]
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
-    __match opt:
+    # CHECK:       } else {
+    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:       }
+    match opt:
     case Optional.Some(ref elt):
         _ = elt
         case_callee[0]()
@@ -832,15 +936,14 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
     # CHECK:       lit.call {{.*}}@"_get_enum_discriminant{{.*}}[muttoimm *"mut_opt`
     # CHECK:       lit.call {{.*}}@"__eq__(
     # CHECK:       hlcf.if %{{.*}} {
-    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 3
-    # CHECK:       } else {
-    # CHECK:         hlcf.if.elifcond.yield
-    # CHECK:       } then {
     # CHECK:         lit.call {{.*}}@"_unsafe_get_enum_payload{{.*}}(%mut_opt)
     # CHECK:         [[MELT:%.*]] = lit.var.decl "elt" ref
     # CHECK:         lit.ref.store {{.*}}, [[MELT]]
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 2
-    __match mut_opt:
+    # CHECK:       } else {
+    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 3
+    # CHECK:       }
+    match mut_opt:
     case Optional.Some(ref elt):
         _ = elt
         case_callee[2]()
@@ -848,7 +951,7 @@ def match_optional(opt: Optional[Int], mut mut_opt: Optional[Int]):
         case_callee[3]()
 
     # Matching with inferred base also work.
-    __match opt:
+    match opt:
     case .Some(ref elt):
         case_callee[0]()
     case ((.None)):  # Extra parens are fine of course.
@@ -875,29 +978,23 @@ def testLValueMutableMatch(var a: Optional[Int]):
     # CHECK:       [[VALUE:%.*]] = lit.var.decl "value" ref
     # CHECK:       lit.ref.store {{.*}}, [[VALUE]]
     # CHECK:       lit.call {{.*}}@"__iadd__{{.*}}[mut *"a`
-    __match a: # expected-warning {{'match' is not exhaustive; missing case for 'None'}}
+    match a: # expected-warning {{'match' is not exhaustive; missing case for 'None'}}
     case .Some(ref value):
         value += 1
 
 # Bool ladder is one `hlcf.if` (no enclosing match: nothing follows it).
-# Arms are ordered by spelling (`False` then `True`).
+# `True` is tested and `False` is its exclusive complement.
 # The tuple ladder folds `(_, y_elt)` into the elif else of `y[0] == True`.
 # CHECK-LABEL: lit.fn @"testMatchLadder
 def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
     # CHECK:       lit.call {{.*}}@"__eq__(::Bool,::Bool)"(%x,
     # CHECK:       hlcf.if %{{.*}} {
-    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
-    # CHECK:         hlcf.yield
-    # CHECK:       } else {
-    # CHECK:         lit.call {{.*}}@"__eq__(::Bool,::Bool)"(%x,
-    # CHECK:         hlcf.if.elifcond.yield
-    # CHECK:       } then {
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:         hlcf.yield
     # CHECK:       } else {
-    # CHECK:         hlcf.unreachable
+    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:       }
-    __match x:
+    match x:
     case True:
         case_callee[0]()
     case False:
@@ -911,18 +1008,14 @@ def testMatchLadder(x: Bool, y: Tuple[Bool, Int]):
     # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:         hlcf.yield
     # CHECK:       } else {
-    # CHECK:         hlcf.match {
-    # CHECK:           lit.call {{.*}}@"__getitem_param__{{.*}}(%y)
-    # CHECK:           [[Y_ELT:%.*]] = lit.var.decl "y_elt" ref
-    # CHECK:           lit.ref.store {{.*}}, [[Y_ELT]]
-    # CHECK:           lit.call {{.*}}@"case_callee{{.*}}<index> 1
-    # CHECK:           hlcf.match.complete
-    # CHECK:         } else {
-    # CHECK:           hlcf.unreachable
-    # CHECK:         }
+    # CHECK-NOT:     hlcf.match {
+    # CHECK:         lit.call {{.*}}@"__getitem_param__{{.*}}(%y)
+    # CHECK:         [[Y_ELT:%.*]] = lit.var.decl "y_elt" ref
+    # CHECK:         lit.ref.store {{.*}}, [[Y_ELT]]
+    # CHECK:         lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:         hlcf.yield
     # CHECK:       }
-    __match y:
+    match y:
     case (True, _):
         case_callee[0]()
     case (_, y_elt):
@@ -938,7 +1031,7 @@ def comptime_match_wildcard[x: Int]():
     # Irrefutable `case _` emits the body with no comptime.if.
     # CHECK-NOT: hlcf.comptime.if
     # CHECK:     lit.call {{.*}}@"case_callee{{.*}}<index> 0
-    comptime __match x:
+    comptime match x:
     case _:
         case_callee[0]()
 
@@ -955,10 +1048,62 @@ def comptime_match_literals[x: Int]():
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 2
     # CHECK:        hlcf.comptime.yield
     # CHECK:      }
-    comptime __match x:
+    comptime match x:
     case 0:
         case_callee[0]()
     case 1:
+        case_callee[1]()
+    case _:
+        case_callee[2]()
+
+
+# CHECK-LABEL: lit.fn @"match_explicit_values
+def match_explicit_values(
+    value: Int, expected: Int, pair: Tuple[Int, Int]
+):
+    # A prefix-equality pattern compares against an existing value instead of
+    # introducing a binding.
+    # CHECK:       lit.call {{.*}}@"__eq__(::SIMD{{.*}}(%value, %expected)
+    match value:
+    case == expected:
+        case_callee[0]()
+    case _:
+        case_callee[1]()
+
+    # It composes with structural patterns.
+    # CHECK:       lit.call {{.*}}@"__getitem_param__{{.*}}(%pair)
+    # CHECK:       lit.call {{.*}}@"__eq__(::SIMD
+    match pair:
+    case (_, == expected):
+        case_callee[2]()
+    case _:
+        case_callee[3]()
+
+    # The expected value can be computed by an arbitrary expression.
+    # CHECK:       lit.call {{.*}}@"__add__(
+    # CHECK:       lit.call {{.*}}@"__eq__(::SIMD
+    match value:
+    case == (expected + 1):
+        case_callee[4]()
+    case _:
+        case_callee[5]()
+
+
+# CHECK-LABEL: lit.fn @"comptime_match_type
+def comptime_match_type[T: AnyType]():
+    # Types are values, so explicit value patterns can distinguish them
+    # without interpreting bare identifiers as constants.
+    # CHECK:      hlcf.comptime.if {{.*}}identical(:!AnyType T, !Int){{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
+    # CHECK:      } elif {{.*}}identical(:!AnyType T, !String){{.*}} {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
+    # CHECK:      } else {
+    # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 2
+    # CHECK:      }
+    comptime match T:
+    case == Int:
+        case_callee[0]()
+    case == String:
         case_callee[1]()
     case _:
         case_callee[2]()
@@ -976,7 +1121,7 @@ def comptime_match_bool[flag: Bool]():
     # CHECK:      } else {
     # CHECK:        hlcf.unreachable
     # CHECK:      }
-    comptime __match flag:
+    comptime match flag:
     case True:
         case_callee[0]()
     case False:
@@ -995,7 +1140,7 @@ def comptime_match_bool_unreachable_wildcard[flag: Bool]():
     # CHECK:      } else {
     # CHECK:        hlcf.unreachable
     # CHECK:      }
-    comptime __match flag:
+    comptime match flag:
     case True:
         case_callee[0]()
     case False:
@@ -1015,7 +1160,7 @@ def comptime_match_or[x: Int]():
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:        hlcf.comptime.yield
     # CHECK:      }
-    comptime __match x:
+    comptime match x:
     case 0 | 1:
         case_callee[0]()
     case _:
@@ -1034,7 +1179,7 @@ def comptime_match_or_binding[x: Tuple[Int, Int]]():
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 0
     # CHECK:        hlcf.comptime.yield
     # CHECK:      }
-    comptime __match x:
+    comptime match x:
     case (0, y) | (y, 1):
         case_callee[y]()
     case _:
@@ -1046,7 +1191,7 @@ def comptime_match_binding[x: Int]():
     # Bare binding is irrefutable: no comptime.if; `y` is a PValue alias of `x`.
     # CHECK-NOT: hlcf.comptime.if
     # CHECK:     lit.call {{.*}}@"case_callee{{.*}}<:!Int x>
-    comptime __match x:
+    comptime match x:
     case y:
         case_callee[y]()
 
@@ -1061,7 +1206,7 @@ def comptime_match_binding_guard[x: Int]():
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:        hlcf.comptime.yield
     # CHECK:      }
-    comptime __match x:
+    comptime match x:
     case y if y > 0:
         case_callee[y]()
     case _:
@@ -1078,7 +1223,7 @@ def comptime_match_literal_guard[x: Int, flag: Bool]():
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:        hlcf.comptime.yield
     # CHECK:      }
-    comptime __match x:
+    comptime match x:
     case 0 if flag:
         case_callee[0]()
     case _:
@@ -1095,7 +1240,7 @@ def comptime_match_literal_binding[x: Int]():
     # CHECK:        lit.call {{.*}}@"case_callee{{.*}}<index> 1
     # CHECK:        hlcf.comptime.yield
     # CHECK:      }
-    comptime __match x:
+    comptime match x:
     case 0 as y:
         case_callee[y]()
     case _:

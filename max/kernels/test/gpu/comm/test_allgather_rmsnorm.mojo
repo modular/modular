@@ -38,7 +38,6 @@ from std.math.uutils import ualign_down
 from std.math import rsqrt
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
-from std.utils.numerics import get_accum_type
 from std.testing import assert_equal, assert_raises, assert_true
 
 from layout import Coord, TileTensor, row_major

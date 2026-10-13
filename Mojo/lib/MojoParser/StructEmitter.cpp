@@ -1095,9 +1095,6 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   if (spDecls.isErroneous())
     return nullptr;
   for (ASTDecl *decl : spDecls.getIfSuccess()) {
-    // Skip disabled ASTDecls which have null operations.
-    if (decl->isDisabled())
-      continue;
     auto fnOp = dyn_cast<FnOp>(decl->getIfOperation());
     if (!fnOp)
       continue;

@@ -23,7 +23,7 @@ from max.gpu.primitives.grid_controls import (
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
 
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from layout import TensorLayout, TensorEngine, TileTensor, coord_to_index_list
 from nn.topk import TopK_2, _block_reduce_topk, _topk_dead_val
@@ -364,7 +364,7 @@ def argmaxmin_gpu[
                 "argmaxmin_gpu: inner dimension exceeds the int32 index range"
             )
 
-        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
         # A single block streaming a whole row tops out at the per-SM load
         # rate (~44 GB/s measured on B200), so a 512KB row would take ~12us.

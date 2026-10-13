@@ -164,20 +164,9 @@ def get_1d_rotary_pos_embed(
     sin_emb = F.sin(freqs)
 
     # Repeat interleave: [S, dim/2] -> [S, dim]
-    # repeat_interleave not supported on GPU, use stack + reshape instead
     # PyTorch: repeat_interleave(2, dim=1) makes [a, b, c] -> [a, a, b, b, c, c]
-    # MAX equivalent: stack([x, x], axis=2) + reshape
-    cos_stacked = F.stack([cos_emb, cos_emb], axis=2)  # [S, dim/2, 2]
-    sin_stacked = F.stack([sin_emb, sin_emb], axis=2)  # [S, dim/2, 2]
-
-    freqs_cos = F.reshape(
-        cos_stacked,
-        [cos_emb.shape[0], cos_stacked.shape[1] * cos_stacked.shape[2]],
-    )  # [S, dim]
-    freqs_sin = F.reshape(
-        sin_stacked,
-        [sin_emb.shape[0], sin_stacked.shape[1] * sin_stacked.shape[2]],
-    )  # [S, dim]
+    freqs_cos = F.repeat_interleave(cos_emb, 2, axis=1)  # [S, dim]
+    freqs_sin = F.repeat_interleave(sin_emb, 2, axis=1)  # [S, dim]
 
     return freqs_cos, freqs_sin
 

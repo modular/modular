@@ -17,8 +17,6 @@ from std.sys import argv, default_accelerator
 
 from std.benchmark import (
     Bench,
-    BenchConfig,
-    Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,

@@ -36,8 +36,8 @@ from max.gpu import global_idx
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
 
-from layout import Idx, TensorEngine, TileTensor
-from layout.tile_layout import TensorLayout, row_major
+from layout import TensorEngine, TileTensor
+from layout.tile_layout import TensorLayout
 
 from linalg.fp4_utils import E2M1_TO_FLOAT32, NVFP4_SF_VECTOR_SIZE
 

@@ -186,16 +186,9 @@ def get_1d_rotary_pos_embed(
     cos_emb = F.cos(freqs)
     sin_emb = F.sin(freqs)
 
-    # repeat_interleave(2, dim=1) via stack+reshape:
-    # PyTorch: [a, b, c] -> [a, a, b, b, c, c].
-    cos_stacked = F.stack([cos_emb, cos_emb], axis=2)
-    sin_stacked = F.stack([sin_emb, sin_emb], axis=2)
-    freqs_cos = cos_stacked.reshape(
-        [cos_emb.shape[0], cos_stacked.shape[1] * cos_stacked.shape[2]]
-    )
-    freqs_sin = sin_stacked.reshape(
-        [sin_emb.shape[0], sin_stacked.shape[1] * sin_stacked.shape[2]]
-    )
+    # repeat_interleave(2, dim=1): PyTorch [a, b, c] -> [a, a, b, b, c, c].
+    freqs_cos = F.repeat_interleave(cos_emb, 2, axis=1)
+    freqs_sin = F.repeat_interleave(sin_emb, 2, axis=1)
 
     return freqs_cos, freqs_sin
 

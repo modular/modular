@@ -170,6 +170,35 @@ class Model:
     number of inputs doesn't match.
 
     For supported input types and execution errors, see :meth:`execute`.
+
+    For example, load a graph, list its inputs, and run it:
+
+    .. code-block:: python
+
+        import numpy as np
+
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+
+        with Graph(
+            "add_one",
+            input_types=[
+                TensorType(DType.float32, ["batch"], device=DeviceRef.CPU())
+            ],
+        ) as graph:
+            (x,) = graph.inputs
+            graph.output(x + 1.0)
+
+        session = InferenceSession(devices=[CPU()])
+        model = session.load(graph)
+        for tensor in model.input_metadata:
+            print(
+                f"name: {tensor.name}, shape: {tensor.shape},"
+                f" dtype: {tensor.dtype}"
+            )
+        outputs = model.execute(np.ones((2,), np.float32))
     """
 
     @property

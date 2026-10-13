@@ -242,9 +242,8 @@ struct CodepointSliceIter[
         """
         var result: Optional[StringSlice[Self.origin]] = self.peek_next()
 
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var slice_len = result.unsafe_value().byte_length()
+        if case .Some(codepoint_slice) = result:
+            var slice_len = codepoint_slice.byte_length()
             # Advance the pointer in _slice.
             self._slice._slice._data = self._slice._slice._data.unsafe_offset(
                 slice_len
@@ -267,9 +266,8 @@ struct CodepointSliceIter[
         """
         var result: Optional[StringSlice[Self.origin]] = self.peek_back()
 
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var slice_len = result.unsafe_value().byte_length()
+        if case .Some(codepoint_slice) = result:
+            var slice_len = codepoint_slice.byte_length()
             # Decrement the byte-length of _slice.
             self._slice._slice._len -= slice_len
 
@@ -410,9 +408,8 @@ struct CodepointsIter[origin: ImmOrigin](
         """
         var result: Optional[Codepoint] = self.peek_next()
 
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var char_len = result.unsafe_value().utf8_byte_length()
+        if case .Some(codepoint) = result:
+            var char_len = codepoint.utf8_byte_length()
             # Advance the pointer in _slice.
             self._slice._slice._data = self._slice._slice._data.unsafe_offset(
                 char_len

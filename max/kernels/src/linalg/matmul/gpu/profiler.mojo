@@ -80,14 +80,15 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
     @staticmethod
     def _get_warp_count[warp_role: UInt32]() -> UInt32:
-        comptime if warp_role == 0:
-            return Self.load_warps
-        elif warp_role == 1:
-            return Self.scheduler_warps
-        elif warp_role == 2:
-            return Self.mma_warps
-        else:
-            return Self.epilogue_warps
+        comptime match warp_role:
+            case 0:
+                return Self.load_warps
+            case 1:
+                return Self.scheduler_warps
+            case 2:
+                return Self.mma_warps
+            case _:
+                return Self.epilogue_warps
 
     @staticmethod
     def _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:

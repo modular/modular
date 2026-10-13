@@ -42,7 +42,7 @@ from std.collections import Array, Optional
 from std.math import align_up, ceildiv
 from std.memory import Pointer, UnsafePointer, bitcast
 from std.math.uutils import ufloordiv, umod
-from std.sys import align_of, get_defined_bool, get_defined_int, size_of
+from std.sys import align_of, get_defined_int, size_of
 
 from max.gpu import (
     WARP_SIZE,
@@ -77,7 +77,6 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 from layout.tma_async import PipelineState
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
@@ -100,13 +99,12 @@ from layout.tile_layout import Layout as TileLayout, _IntToComptimeInt
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
-from std.math import exp, recip
+from std.math import recip
 from std.time import global_perf_counter_ns
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
-    MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
     SF_ATOM_K,
@@ -116,6 +114,11 @@ from linalg.fp4_utils import (
     block_scaled_operands_compatible,
     cast_fp32_to_fp4e2m1,
     set_scale_factor,
+)
+from linalg.swiglu_activation import (
+    apply_swiglu_activation,
+    swiglu,
+    swiglu_activation_type,
 )
 from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
@@ -319,10 +322,7 @@ trait SwiGLUOutput(DevicePassable, TrivialRegisterPassable):
 
     comptime SfDtype: DType
     comptime SfVectorSize: Int
-    # `True` enables clamped SwiGLU (`swigluoai`):
-    #   g' = min(g, L); u' = clamp(u, -L, L); (u'+1)·g'·σ(g'·α).
-    # `clamp_alpha()` and `clamp_limit()` carry the runtime constants.
-    comptime ClampActivation: Bool
+    comptime Activation: swiglu_activation_type
 
     def store_packed_byte(self, m: Int, byte_pos: Int, val: UInt8):
         """Store one output byte at GMEM (m, byte_pos).
@@ -373,16 +373,6 @@ trait SwiGLUOutput(DevicePassable, TrivialRegisterPassable):
         """
         ...
 
-    def clamp_alpha(self) -> Float32:
-        """Runtime α for the clamped activation. Unused when
-        `ClampActivation=False`."""
-        ...
-
-    def clamp_limit(self) -> Float32:
-        """Runtime limit L for the clamped activation. Unused when
-        `ClampActivation=False`."""
-        ...
-
     def pad_sf_zero_block(
         self,
         sf_block_base: Int,
@@ -412,12 +402,12 @@ trait SwiGLUOutput(DevicePassable, TrivialRegisterPassable):
 struct NullSwiGLUOutput[
     _sf_dtype: DType = NVFP4_SF_DTYPE,
     _sf_vector_size: Int = NVFP4_SF_VECTOR_SIZE,
-    _clamp_activation: Bool = False,
+    _activation: swiglu_activation_type = swiglu[0.0],
 ](SwiGLUOutput):
     """Zero-sized no-op SwiGLU output for `fuse_swiglu=False`.
 
     Parametric so the kernel's comptime trait bound matches the
-    dispatch's wiring; defaults are NVFP4 + plain SwiGLU.
+    dispatch's wiring; defaults are NVFP4 + `swiglu`.
 
     Parameters:
         _sf_dtype: `DType` of the per-block scale factors; `NVFP4_SF_DTYPE`
@@ -426,15 +416,14 @@ struct NullSwiGLUOutput[
         _sf_vector_size: Number of output elements covered by each scale
             factor; 16 for NVFP4, 32 for MXFP8 (defaults to
             `NVFP4_SF_VECTOR_SIZE`).
-        _clamp_activation: When `True`, enables the clamped SwiGLU
-            activation; unused on this no-op struct but kept so the
-            trait bound matches the dispatch wiring (defaults to
-            `False`).
+        _activation: Gated activation; unused on this no-op struct but
+            kept so the trait bound matches the dispatch wiring (defaults
+            to `swiglu`).
     """
 
     comptime SfDtype = Self._sf_dtype
     comptime SfVectorSize = Self._sf_vector_size
-    comptime ClampActivation = Self._clamp_activation
+    comptime Activation = Self._activation
 
     comptime device_type: AnyType = Self
 
@@ -456,14 +445,6 @@ struct NullSwiGLUOutput[
 
     @inline(.always)
     def input_scale(self, active_expert_idx: Int) -> Float32:
-        return Float32(0.0)
-
-    @inline(.always)
-    def clamp_alpha(self) -> Float32:
-        return Float32(0.0)
-
-    @inline(.always)
-    def clamp_limit(self) -> Float32:
         return Float32(0.0)
 
     @inline(.always)
@@ -495,7 +476,7 @@ struct RealSwiGLUOutput[
     sf_dim1: Int,
     _sf_dtype: DType = NVFP4_SF_DTYPE,
     _sf_vector_size: Int = NVFP4_SF_VECTOR_SIZE,
-    _clamp_activation: Bool = False,
+    _activation: swiglu_activation_type = swiglu[0.0],
 ](SwiGLUOutput):
     """Carries the three GMEM destinations (packed output, 5D SF tile,
     per-expert input scales) as raw pointers + comptime shape info.
@@ -519,14 +500,13 @@ struct RealSwiGLUOutput[
         _sf_vector_size: Number of output elements covered by each scale
             factor; 16 for NVFP4, 32 for MXFP8 (defaults to
             `NVFP4_SF_VECTOR_SIZE`).
-        _clamp_activation: When `True`, enables the clamped SwiGLU
-            activation (`swigluoai`); the runtime constants are carried
-            by `clamp_alpha` and `clamp_limit` (defaults to `False`).
+        _activation: Gated activation applied to each `(gate, up)` pair
+            (defaults to `swiglu`).
     """
 
     comptime SfDtype = Self._sf_dtype
     comptime SfVectorSize = Self._sf_vector_size
-    comptime ClampActivation = Self._clamp_activation
+    comptime Activation = Self._activation
 
     comptime device_type: AnyType = Self
 
@@ -538,10 +518,6 @@ struct RealSwiGLUOutput[
 
     @__allow_legacy_any_origin_fields
     var c_input_scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
-    # Runtime alpha and L for the clamped activation. Always stored;
-    # the 8 bytes keep the struct layout uniform across activations.
-    var _clamp_alpha: Float32
-    var _clamp_limit: Float32
 
     @inline(.always)
     def __init__(
@@ -551,14 +527,10 @@ struct RealSwiGLUOutput[
             Scalar[Self._sf_dtype], MutAnyOrigin
         ],
         c_input_scales_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-        clamp_alpha: Float32 = Float32(0.0),
-        clamp_limit: Float32 = Float32(0.0),
     ):
         self.c_packed_ptr = c_packed_ptr
         self.c_swiglu_scales_ptr = c_swiglu_scales_ptr
         self.c_input_scales_ptr = c_input_scales_ptr
-        self._clamp_alpha = clamp_alpha
-        self._clamp_limit = clamp_limit
 
     @inline(.always)
     def store_packed_byte(self, m: Int, byte_pos: Int, val: UInt8):
@@ -599,14 +571,6 @@ struct RealSwiGLUOutput[
     @inline(.always)
     def input_scale(self, active_expert_idx: Int) -> Float32:
         return self.c_input_scales_ptr[active_expert_idx]
-
-    @inline(.always)
-    def clamp_alpha(self) -> Float32:
-        return self._clamp_alpha
-
-    @inline(.always)
-    def clamp_limit(self) -> Float32:
-        return self._clamp_limit
 
     @inline(.always)
     def pad_sf_zero_block(
@@ -710,6 +674,11 @@ struct Grouped1D1DMatmulKernel[
     # cta_group=1 layout. False (default) keeps the cooperative
     # scatter path.
     swiglu_use_inplace: Bool = False,
+    # NVFP4 in-place path only: stage each warp's SwiGLU values through
+    # SMEM so that every lane quantizes and stores one token's SF block,
+    # instead of gathering each block into one writer lane with shuffles.
+    # Same output bytes; MXFP8 ignores it.
+    swiglu_inplace_token_per_lane: Bool = False,
     c_device_engine: TensorEngine = DefaultEngine[element_width=1],
     offsets_engine: TensorEngine = DefaultEngine[element_width=1],
     a_scale_offsets_engine: TensorEngine = DefaultEngine[element_width=1],
@@ -779,6 +748,11 @@ struct Grouped1D1DMatmulKernel[
             register path that skips the `bfloat16` SMEM scratchpad via
             cross-lane shuffles; `False` (default) keeps the cooperative
             scatter path.
+        swiglu_inplace_token_per_lane: When `True`, the NVFP4 in-place
+            path stages each warp's SwiGLU values through SMEM and every
+            lane quantizes and stores one token's SF block; the output
+            bytes are unchanged and MXFP8 ignores it (defaults to
+            `False`).
         c_device_engine: Engine of the C `TileTensor`.
         offsets_engine: Engine of the per-expert offsets
             `TileTensor`.
@@ -3373,7 +3347,7 @@ struct Grouped1D1DMatmulKernel[
             " MXFP8 (SF=32, E8M0); MXFP4 is not yet implemented."
         )
         comptime is_mxfp8 = SfVectorSize == 32
-        comptime ClampActivation = Self.SwiGLUOutputT.ClampActivation
+        comptime activation = Self.SwiGLUOutputT.Activation
         # NUM_THREADS_PER_SF=1 for NVFP4, =2 for MXFP8; MXFP8 lanes
         # cooperate via lane_group_max to derive the per-block scale.
         comptime src_width = 16
@@ -3448,6 +3422,186 @@ struct Grouped1D1DMatmulKernel[
             warp_row_offset = UInt32(warp_id_v) * UInt32(16)
         else:
             warp_row_offset = (UInt32(warp_id_v) % UInt32(2)) * UInt32(32)
+
+        # In-place NVFP4 with one token per lane. The path below gathers
+        # each token's SF block into one writer lane: per stage, 2 * repeats
+        # rounds of 12 shuffles and a whole quantization, with 4 of 32 lanes
+        # storing. Here each (gate, up) pair is evaluated once (the even
+        # lane takes the upper fragment, the odd lane the lower), the values
+        # go through SMEM, and lane t quantizes token t's block with the
+        # same arithmetic, so the output bytes do not change.
+        comptime if (
+            Self.swiglu_use_inplace
+            and Self.swiglu_inplace_token_per_lane
+            and not is_mxfp8
+        ):
+            comptime assert is_lower_frag_required and stageN <= WARP_SIZE, (
+                "one token per lane needs both TMEM row halves and at most"
+                " WARP_SIZE tokens per stage"
+            )
+            comptime TokPartialType = Array[
+                Scalar[Self.accum_type], rep_frag_size
+            ]
+            # A warp's stage is `stageN` rows of `SfVectorSize` floats.
+            # The c_tiles SMEM is idle on the in-place path.
+            comptime warp_floats = stageN * SfVectorSize
+            comptime rows_bytes = (
+                num_output_warps * warp_floats * size_of[DType.float32]()
+            )
+            comptime c_tile_bytes = (
+                Self.OutputM * Self.OutputN * size_of[Self.c_type]()
+            )
+            comptime assert (
+                rows_bytes <= c_tile_bytes
+            ), "the per-warp SwiGLU rows must fit in one C tile"
+            # Indexed (warp, token, granule, word): each token row's
+            # `SfVectorSize` floats as 4-float granules.
+            comptime tok_rows_layout = row_major[
+                num_output_warps, stageN, SfVectorSize // 4, 4
+            ]()
+            var tok_rows = TileTensor[
+                DType.float32,
+                type_of(tok_rows_layout),
+                MutAnyOrigin,
+                address_space=AddressSpace.SHARED,
+                linear_idx_type=DType.uint32,
+            ](c_tiles[0].unsafe_ptr().bitcast[Float32](), tok_rows_layout)
+            var tok_warp = UInt32(warp_id_v)
+            var tok_is_even = (lane_row & UInt32(1)) == UInt32(0)
+            # A row's 4-float granule g sits at g ^ ((token >> 1) & 3): the
+            # scalar stores are then at most 2-way bank conflicted and each
+            # lane's 16-byte row loads conflict-free. Every token this lane
+            # holds has (token >> 1) & 3 == lane % 4, and its values are
+            # word lane_row // 2 of granule 2 * (lane_row % 2) + f // 2.
+            var tok_key = UInt32(lane_v) % UInt32(4)
+            var tok_gran = UInt32(2) * (lane_row & UInt32(1))
+            var tok_gran0 = tok_gran ^ tok_key
+            var tok_gran1 = (tok_gran + UInt32(1)) ^ tok_key
+            var tok_word = lane_row >> 1
+            var tok_t = UInt32(lane_v)
+            var tok_ld_key = (tok_t >> 1) & UInt32(3)
+            var tok_byte_base = Int(n_abs) // 4 + Int(warp_row_offset) // 4
+            var tok_sf_col = Int(n_abs) // 2 + Int(warp_row_offset) // 2
+
+            comptime for loop_stage in range(num_stages):
+                # Element `2 * r + j` scales the fragment pair `(4 * r + j,
+                # 4 * r + 2 + j)`.
+                var token_scales = tile_scales.pairs[
+                    repeats, loop_stage * stageN
+                ](UInt32(lane_v))
+
+                var frags_tok = accum_tiles[loop_stage].load_fragments[
+                    repeats
+                ]()
+                AccumTmemArrayLocal.Tile.wait_load()
+
+                comptime if loop_stage == num_stages - 1:
+                    AccumBarrier[Self.cta_group].arrive(
+                        output_stage.pipeline, output_stage.index
+                    )
+
+                var upper_tok = rebind[TokPartialType](frags_tok.upper).copy()
+                var lower_tok = rebind[TokPartialType](frags_tok.lower).copy()
+
+                # Expert scale and bf16 round trip, as the path below.
+                comptime for r0 in range(repeats):
+                    var pair_scale = token_scales.slice[2, offset=2 * r0]()
+                    comptime for _pair in range(2):
+                        comptime _off = r0 * 4 + _pair * 2
+                        var src_u = SIMD[Self.accum_type, 2](
+                            upper_tok[_off], upper_tok[_off + 1]
+                        )
+                        var dst_u = (
+                            (src_u * pair_scale)
+                            .cast[.bfloat16]()
+                            .cast[Self.accum_type]()
+                        )
+                        upper_tok[_off] = dst_u[0]
+                        upper_tok[_off + 1] = dst_u[1]
+                        var src_l = SIMD[Self.accum_type, 2](
+                            lower_tok[_off], lower_tok[_off + 1]
+                        )
+                        var dst_l = (
+                            (src_l * pair_scale)
+                            .cast[.bfloat16]()
+                            .cast[Self.accum_type]()
+                        )
+                        lower_tok[_off] = dst_l[0]
+                        lower_tok[_off + 1] = dst_l[1]
+
+                # The even lane holds the gates, the odd lane the ups. Each
+                # sends the operand of the half the other evaluates.
+                var sw_tok = TokPartialType(uninitialized=True)
+                comptime for j in range(rep_frag_size):
+                    var give = lower_tok[j] if tok_is_even else upper_tok[j]
+                    var take = warp.shuffle_xor(give, UInt32(4))
+                    var gate = upper_tok[j] if tok_is_even else take
+                    var up = take if tok_is_even else lower_tok[j]
+                    sw_tok[j] = activation(gate, up)
+
+                # Earlier row loads of this warp read these slots.
+                syncwarp()
+                # Element `4 * r + f` is token `lane_col + 8 * r + f % 2`.
+                comptime for j in range(rep_frag_size):
+                    var tok = lane_col + UInt32(8 * (j // 4) + (j % 4) % 2)
+                    comptime if (j % 4) // 2 == 0:
+                        tok_rows[tok_warp, tok, tok_gran0, tok_word] = sw_tok[j]
+                    else:
+                        tok_rows[tok_warp, tok, tok_gran1, tok_word] = sw_tok[j]
+                syncwarp()
+
+                if stageN == WARP_SIZE or tok_t < UInt32(stageN):
+                    var pack16 = SIMD[Self.accum_type, SfVectorSize]()
+                    comptime for g in range(SfVectorSize // 4):
+                        var quad = tok_rows.load[width=4, alignment=16](
+                            (tok_warp, tok_t, UInt32(g) ^ tok_ld_key, Idx[0])
+                        )
+                        comptime for i in range(4):
+                            pack16[4 * g + i] = quad[i]
+
+                    var block_max = abs(pack16).reduce_max()
+                    var sf_f32 = tensor_sf * (block_max * SIXTH)
+                    var sf_byte = sf_f32.cast[SfDtype]()
+                    var output_scale = Float32(0.0)
+                    if block_max != Float32(0.0):
+                        output_scale = tensor_sf * recip(
+                            sf_byte.cast[.float32]()
+                        )
+                    var p_scaled = pack16 * output_scale
+                    var packed_lo = cast_fp32_to_fp4e2m1(
+                        p_scaled.slice[8, offset=0]()
+                    )
+                    var packed_hi = cast_fp32_to_fp4e2m1(
+                        p_scaled.slice[8, offset=8]()
+                    )
+                    var token_g = (
+                        m_abs + UInt32(loop_stage) * UInt32(stageN) + tok_t
+                    )
+                    if token_g < m_end:
+                        swiglu_out.store_packed_word(
+                            Int(token_g), tok_byte_base, packed_lo
+                        )
+                        swiglu_out.store_packed_word(
+                            Int(token_g), tok_byte_base + 4, packed_hi
+                        )
+                        swiglu_out.set_sf(
+                            Int(token_g) - m_local_base + sf_block_base,
+                            tok_sf_col,
+                            sf_byte,
+                        )
+
+            # Per-expert SF tail-pad zero-fill, as the path below.
+            if Int(m_abs) + Int(Self.MMA_N) >= Int(m_end) and n_abs == UInt32(
+                0
+            ):
+                swiglu_out.pad_sf_zero_block(
+                    sf_block_base,
+                    Int(m_end) - Int(m_start),
+                    Int(UInt32(warp_id_v) * UInt32(WARP_SIZE) + UInt32(lane_v)),
+                    num_output_warps * WARP_SIZE,
+                )
+
+            return
 
         # In-place register-only path (gated comptime; default off).
         # Skips the bf16 SMEM scratchpad: 4 useful lanes per warp
@@ -3580,22 +3734,9 @@ struct Grouped1D1DMatmulKernel[
                         else:
                             gate = partner
                             up = local
-                        comptime if ClampActivation:
-                            var alpha_ip = swiglu_out.clamp_alpha()
-                            var limit_ip = swiglu_out.clamp_limit()
-                            var g_c = min(gate, limit_ip)
-                            var u_c = max(min(up, limit_ip), -limit_ip)
-                            var sigmoid_ip = recip(
-                                Float32(1.0) + exp(-(g_c * alpha_ip))
-                            )
-                            sw_ip[r1 * n_swiglu_per_repeat + s] = (
-                                (u_c + Float32(1.0)) * g_c * sigmoid_ip
-                            )
-                        else:
-                            var sigmoid = recip(Float32(1.0) + exp(-gate))
-                            sw_ip[r1 * n_swiglu_per_repeat + s] = (
-                                gate * sigmoid * up
-                            )
+                        sw_ip[r1 * n_swiglu_per_repeat + s] = activation(
+                            gate, up
+                        )
 
                 # ---- Store path: per (warp, token, half) ----
                 # The writer lane is lane_row==0 at lane_col=token&~1
@@ -4019,26 +4160,10 @@ struct Grouped1D1DMatmulKernel[
                 var pair = pair_bf.cast[.float32]()
                 var gate, up = pair.deinterleave()
 
-                # silu(g) and the final SF reciprocal use `recip()`
-                # (`rcp.approx.ftz.f32`) rather than fp32 `/`: with only
-                # 4 epilogue warps (1 warp/scheduler) IEEE `div.f32`
-                # latency does not hide.
-                #
-                # Clamped variant: g' = min(g, L); u' = clamp(u, -L, L);
-                #                  z  = (u' + 1) · g' · σ(g'·α).
-                var z: SIMD[Self.accum_type, src_width]
-                comptime if ClampActivation:
-                    var alpha = swiglu_out.clamp_alpha()
-                    var limit = swiglu_out.clamp_limit()
-                    var g_clamped = min(gate, limit)
-                    var u_clamped = max(min(up, limit), -limit)
-                    var sigmoid = recip(
-                        Float32(1.0) + exp(-(g_clamped * alpha))
-                    )
-                    z = (u_clamped + Float32(1.0)) * g_clamped * sigmoid
-                else:
-                    var sigmoid = recip(Float32(1.0) + exp(-gate))
-                    z = gate * sigmoid * up
+                # The final SF reciprocal uses `recip()` (`rcp.approx.ftz.f32`)
+                # rather than fp32 `/`: with only 4 epilogue warps (1
+                # warp/scheduler) IEEE `div.f32` latency does not hide.
+                var z = apply_swiglu_activation[activation](gate, up)
 
                 # MXFP8 needs cross-lane amax across the 2 lanes that
                 # share one 32-elt SF block; NVFP4's 16-elt block fits

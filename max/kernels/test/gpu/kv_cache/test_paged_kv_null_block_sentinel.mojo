@@ -31,7 +31,7 @@ Complements the Python-layer regression tests for the KV cache manager.
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import (
     KVCacheStaticParams,

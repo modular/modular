@@ -48,7 +48,7 @@ One job per dataset, all in parallel, each on its own runner:
 
 | Toggle                        | Jobs                                                |
 |-------------------------------|-----------------------------------------------------|
-| run_text                      | aime25, gpqa, hle, aa-lcr, aa-omniscience           |
+| run_text                      | aime25, aime26, gpqa, hle, aa-lcr, aa-omniscience   |
 | run_scicode                   | scicode                                             |
 | run_multimodal                | mmmu-pro, omnidocbench, mmmu-video                  |
 | run_agent_class (default off) | agent-class (SWE-bench + GAIA health check)         |

@@ -26,7 +26,8 @@ import math
 import os
 import re
 import statistics
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from typing import NamedTuple
@@ -62,6 +63,10 @@ from max.benchmark.benchmark_shared.percentile_metrics import (
 )
 from max.benchmark.benchmark_shared.server_metrics import print_server_metrics
 from max.benchmark.benchmark_shared.utils import print_section
+from max.benchmark.benchmark_shared.workload_stats import (
+    Distribution,
+    WorkloadStats,
+)
 from PIL import Image, UnidentifiedImageError
 from tabulate import tabulate
 
@@ -205,12 +210,63 @@ def _print_image_stats(
         )
 
 
-def print_workload_stats(samples: Samples) -> None:
+def _format_stats_distribution(dist: Distribution, label: str) -> str:
+    columns = ["count", "mean", *(f"p{p}" for p in dist.percentiles), "max"]
+    values = [dist.count, dist.mean, *dist.percentiles.values(), dist.max]
+    header = "    " + "".join(f"{name:<10}" for name in columns)
+    row = "    " + "".join(f"{v:<10.2f}" for v in values)
+    lines = [f"  {label}:", header, row]
+    if dist.fraction_above:
+        shares = ", ".join(
+            f">{t // 1000}k: {share:.2%}"
+            for t, share in dist.fraction_above.items()
+        )
+        lines.append(f"    share above {shares}")
+    return "\n".join(lines)
+
+
+def _print_requests_sent(stats: WorkloadStats) -> None:
+    """Prints the requests the run would send, in production's terms."""
+    print()
+    print_section(title=" Requests Sent ", char="-")
+    print(f"  {'Requests:':<30} {stats.requests}")
+    if stats.context_limit is not None:
+        print(f"  {'Context limit:':<30} {stats.context_limit}")
+    if (dropped := stats.dropped_turn_fraction) is not None and dropped > 0:
+        print(
+            f"  {'Turns dropped at the limit:':<30}"
+            f" {stats.turns_dropped_at_context_limit} ({dropped:.2%})"
+        )
+    for dist, label in (
+        (stats.input_len, "Input length"),
+        (stats.input_len_first_turn, "Input length (first turn)"),
+        (stats.input_len_later_turn, "Input length (later turns)"),
+        (stats.output_len, "Output length"),
+        (stats.tools_per_request, "Tools per tool-offering request"),
+    ):
+        if dist is not None:
+            print()
+            print(_format_stats_distribution(dist, label))
+    print()
+    for share, label in (
+        (stats.tool_request_fraction, "Tool-offering requests:"),
+        (stats.image_request_fraction, "Image-carrying requests:"),
+        (stats.constrained_request_fraction, "Structured-output requests:"),
+    ):
+        if share is not None:
+            print(f"  {label:<30} {share:.2%}")
+
+
+def print_workload_stats(
+    samples: Samples, stats: WorkloadStats | None = None
+) -> None:
     """Print workload distribution statistics and exit.
 
     For single-turn workloads, prints input/output length stats.
     For multi-turn workloads, additionally prints num_turns and
-    delay_until_next_message stats.
+    delay_until_next_message stats. When ``stats`` is given, also prints the
+    requests the run would send: lengths split by turn, the long-context
+    tail and the request mix.
     """
     print_section(title=" Workload Statistics ", char="=")
 
@@ -331,6 +387,9 @@ def print_workload_stats(samples: Samples) -> None:
             for img in msg.images
         ]
         _print_image_stats(images_per_session, all_images, "per session")
+
+    if stats is not None:
+        _print_requests_sent(stats)
 
     print("=" * 50)
 
@@ -743,7 +802,7 @@ def print_benchmark_summary(
     print("=" * 50)
 
 
-def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
+def _parse_metadata(metadata: Sequence[str] | None) -> dict[str, str]:
     """Parse ``KEY=VALUE`` metadata strings into a flat dict.
 
     The special key ``server_cpu`` is mapped to ``cpu``.
@@ -761,45 +820,116 @@ def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
     return result
 
 
+@dataclass(frozen=True)
+class BenchmarkRunResultLabels:
+    """The benchmark configuration a result was produced with."""
+
+    backend: Backend
+    """The serving backend benchmarked."""
+
+    benchmark_task: BenchmarkTask
+    """The task benchmarked."""
+
+    model_id: str
+    """The model benchmarked."""
+
+    tokenizer_id: str
+    """The tokenizer tokens were counted with."""
+
+    dataset_name: str
+    """The dataset the requests were drawn from."""
+
+    burstiness: float | None
+    """The arrival burstiness factor, or ``None`` when the load generator has
+    none."""
+
+    max_concurrent_conversations: int | None
+    """The limit on concurrent multi-turn sessions, or ``None``."""
+
+    client_args: Mapping[str, object]
+    """The load generator's configuration, recorded verbatim apart from the
+    iteration's request rate and concurrency."""
+
+    metadata: Sequence[str]
+    """``KEY=VALUE`` strings recorded as top-level fields."""
+
+    @classmethod
+    def from_config(
+        cls,
+        args: ServingBenchmarkConfig,
+        *,
+        benchmark_task: BenchmarkTask,
+        model_id: str,
+        tokenizer_id: str,
+    ) -> BenchmarkRunResultLabels:
+        """Builds labels for a result produced with ``args``.
+
+        Args:
+            args: The serving benchmark's configuration.
+            benchmark_task: The task benchmarked.
+            model_id: The model benchmarked.
+            tokenizer_id: The tokenizer tokens were counted with.
+
+        Returns:
+            The result's labels.
+        """
+        return cls(
+            backend=args.backend,
+            benchmark_task=benchmark_task,
+            model_id=model_id,
+            tokenizer_id=tokenizer_id,
+            dataset_name=args.dataset_name,
+            burstiness=args.burstiness,
+            max_concurrent_conversations=args.max_concurrent_conversations,
+            client_args=args.model_dump(),
+            metadata=list(args.metadata),
+        )
+
+
 def save_result_json(
     result_filename: str | None,
-    args: ServingBenchmarkConfig,
+    labels: BenchmarkRunResultLabels,
     benchmark_result: BenchmarkResult,
     *,
-    benchmark_task: BenchmarkTask,
-    model_id: str,
-    tokenizer_id: str,
     request_rate: float,
     record_max_concurrency: int | None,
 ) -> None:
-    """Persist benchmark results to *result_filename*."""
+    """Writes a benchmark result to ``result_filename``.
+
+    Args:
+        result_filename: The file to write, or ``None`` to write nothing. An
+            existing file is moved aside to ``<result_filename>.orig``.
+        labels: The benchmark configuration the result was produced with.
+        benchmark_result: The result's metrics.
+        request_rate: The iteration's request rate.
+        record_max_concurrency: The iteration's concurrency limit.
+    """
     if not result_filename:
         return
-    backend: Backend = args.backend
-    client_args = args.model_dump()
+    client_args = dict(labels.client_args)
     rr_client = str(request_rate) if request_rate < float("inf") else "inf"
     client_args["request_rate"] = rr_client
     client_args["max_concurrency"] = record_max_concurrency
     result_json: dict[str, object] = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "backend": backend,
-        "benchmark_task": benchmark_task,
-        "model_id": model_id,
-        "tokenizer_id": tokenizer_id,
+        "backend": labels.backend,
+        "benchmark_task": labels.benchmark_task,
+        "model_id": labels.model_id,
+        "tokenizer_id": labels.tokenizer_id,
         "num_prompts": (
             agg.completed
             if (agg := benchmark_result.aggregates) is not None
             else 0
         ),
-        "dataset_name": args.dataset_name,
+        "dataset_name": labels.dataset_name,
         "client_args": client_args,
         "request_rate": (
             request_rate if request_rate < float("inf") else "inf"
         ),
-        "burstiness": args.burstiness,
+        "burstiness": labels.burstiness,
         "max_concurrency": record_max_concurrency,
-        "max_concurrent_conversations": args.max_concurrent_conversations,
-        **_parse_metadata(args.metadata),
+        "max_concurrent_conversations": labels.max_concurrent_conversations,
+        **_parse_metadata(labels.metadata),
         **benchmark_result.to_result_dict(),
     }
     logger.info(f"Writing file: {result_filename}")

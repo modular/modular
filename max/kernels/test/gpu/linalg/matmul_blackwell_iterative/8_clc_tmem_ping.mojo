@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin._closure import __ownership_keepalive
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up, ceildiv
 from std.math.uutils import udivmod

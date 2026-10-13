@@ -38,7 +38,6 @@ from layout.tma_async import (
 )
 from layout import (
     ComptimeInt,
-    CoordLike,
     RowMajorLayout,
     TensorEngine,
     TileTensor,

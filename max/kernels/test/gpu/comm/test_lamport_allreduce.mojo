@@ -42,7 +42,12 @@ from std.sys import size_of, simd_width_of
 from std.itertools import product
 from std.random import random_float64, random_si64
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import (
+    Coord,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from comm import Signal
 from comm.sync import enable_p2p, init_signal_buffer
 from comm.lamport import Lamport
@@ -52,7 +57,6 @@ from comm.allreduce import (
     _allreduce_lamport_p2p,
     allreduce,
     allreduce_tuning_table,
-    elementwise_epilogue_type,
 )
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
 from comm.device_query import dispatch_select_comm_config, get_sm_version
@@ -61,7 +65,6 @@ from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.primitives.grid_controls import PDLLevel
 from std.memory import bitcast
 from std.testing import assert_equal, assert_true
-from std.collections import Optional
 from std.utils import IndexList, StaticTuple
 
 # Sizes through the small (Lamport) regime. All must be whole 128-bit packs
@@ -86,6 +89,21 @@ comptime NUM_ITERS = 12
 # Back-to-back calls for the unsynced-skew test. Large so inter-rank drift has
 # many opportunities to accumulate across the three-generation rotation.
 comptime NUM_UNSYNCED_ITERS = 128
+
+# Wrap regression (KERN-3670): seed the device counter two below 2^32 so the
+# uint32 wrap (0xFFFFFFFF -> 0) lands inside the call sequence, then run enough
+# calls to cover before, at, and after it.
+comptime WRAP_SEED_FLAG = UInt32(0xFFFFFFFE)
+comptime NUM_WRAP_CALLS = 6
+
+
+def _set_lamport_flag(sig: MutPointer[Signal, MutAnyOrigin], flag: UInt32):
+    """Overwrites a rank's device-resident Lamport generation counter.
+
+    Lets a test place the counter just below the uint32 wrap without issuing
+    ~2^32 real allreduces to reach it.
+    """
+    sig[].lamport_state_ptr().store[volatile=True](Lamport.STATE_FLAG, flag)
 
 
 def lamport_allreduce_test[
@@ -231,7 +249,7 @@ def lamport_allreduce_test[
                 pdl_level=PDLLevel(),
             ](
                 in_tensors,
-                out_tensors[i],
+                out_tensors[i].layout,
                 rank_sigs,
                 lamport_cfg,
                 list_of_ctx[i],
@@ -429,7 +447,7 @@ def lamport_mixed_size_test[
                     pdl_level=PDLLevel(),
                 ](
                     in_tensors,
-                    out_tensors[i],
+                    out_tensors[i].layout,
                     rank_sigs,
                     cfg,
                     list_of_ctx[i],
@@ -947,7 +965,7 @@ def lamport_coexist_test[
                 pdl_level=PDLLevel(),
             ](
                 sin_tensors,
-                sout_tensors[i],
+                sout_tensors[i].layout,
                 rank_sigs,
                 cfg,
                 list_of_ctx[i],
@@ -1120,7 +1138,7 @@ def lamport_unsynced_skew_test[
                 pdl_level=PDLLevel(),
             ](
                 in_tensors,
-                out_capture[i],
+                out_capture[i].layout,
                 rank_sigs,
                 cfg,
                 list_of_ctx[i],
@@ -1158,6 +1176,175 @@ def lamport_unsynced_skew_test[
                         "expected",
                         expected,
                         "(generation rotation skew exceeded its slack)",
+                    )
+                    raise e^
+
+    for i in range(ngpus):
+        host[i].free()
+
+
+def lamport_wrap_test[
+    dtype: DType,
+    ngpus: Int,
+](list_of_ctx: List[DeviceContext], length: Int) raises:
+    """Seeds the device generation counter just below 2^32 and runs a short
+    sequence of forced Lamport allreduces across the uint32 wrap, asserting
+    every call -- before, at, and after the wrap -- returns the correct sum
+    (KERN-3670).
+
+    The generation is picked as `flag % 3` and was advanced as
+    `UInt32(flag + 1)`. Because `2^32 == 1 (mod 3)`, a raw uint32 increment
+    makes the calls at flag `0xFFFFFFFF` and `0` reuse one generation back to
+    back: the post-wrap call finds the previous call's peer packs still in that
+    generation, does not wait for the fresh ones, and silently returns a stale
+    sum. Seeding at `0xFFFFFFFE` and running `NUM_WRAP_CALLS` puts the wrap
+    inside the sequence; inputs vary per call so a stale cross-call read is a
+    detectable wrong sum. With the counter kept mod 3 the rotation never
+    reuses a generation and every call is correct.
+    """
+    comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
+
+    var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var host = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
+        capacity=ngpus
+    )
+
+    var scratch_bytes = 3 * ngpus * Lamport.MAX_SMALL_MESSAGE_BYTES
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+
+    for i in range(ngpus):
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        out_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        host.append(alloc[Scalar[dtype]](length))
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](
+                size_of[Signal]() + scratch_bytes
+            )
+        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    comptime OutType = TileTensor[
+        dtype, type_of(row_major(length)), MutAnyOrigin
+    ]
+    var out_capture = StaticTuple[OutType, ngpus]()
+    for i in range(ngpus):
+        out_capture[i] = TileTensor(out_dev[i], row_major(length))
+
+    @inline(.always)
+    @__parameter
+    @__copy_capture(out_capture)
+    def wrap_epilogue[
+        input_index: Int,
+        _dtype: DType,
+        _width: SIMDLength,
+        *,
+        _alignment: Int,
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
+        out_capture[input_index].store_linear[
+            width=_width, alignment=_alignment
+        ](
+            rebind[IndexList[1]](coord_to_index_list(coords)),
+            rebind[SIMD[dtype, _width]](val),
+        )
+
+    # One-time init, then seed every rank's counter just below the wrap so all
+    # ranks cross it on the same call (as they do in production).
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+        list_of_ctx[i].enqueue_function[_set_lamport_flag](
+            rank_sigs[i], WRAP_SEED_FLAG, grid_dim=1, block_dim=1
+        )
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    for call in range(NUM_WRAP_CALLS):
+        # Per-call value for rank i: distinct across calls so a stale read of an
+        # earlier call's peer data is a detectable wrong sum, and small enough
+        # that the integer sum is exact in both bf16 and fp32.
+        for i in range(ngpus):
+            var v = Scalar[dtype](16 * (call + 1) + (i + 1))
+            for j in range(length):
+                host[i][j] = v
+            list_of_ctx[i].enqueue_copy(in_dev[i], host[i])
+        for i in range(ngpus):
+            list_of_ctx[i].synchronize()
+
+        comptime InType = TileTensor[
+            dtype, type_of(row_major(length)), ImmutAnyOrigin
+        ]
+        var in_tensors = Array[_, ngpus](
+            fill_with=lambda (i: Int) -> InType: InType(
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    in_dev[i].unsafe_ptr()
+                ),
+                row_major(length),
+            )
+        )
+        var out_tensors = Array[_, ngpus](
+            fill_with=lambda (i: Int) -> OutType: OutType(
+                rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                    out_dev[i].unsafe_ptr()
+                ),
+                row_major(length),
+            )
+        )
+
+        var cfg = AllReduceTuningConfig(
+            ngpus=ngpus,
+            num_bytes=length * size_of[dtype](),
+            sm_version=get_sm_version(),
+            num_blocks=512,
+            algorithm=AllReduceAlgorithm.LAMPORT,
+        )
+        comptime for i in range(ngpus):
+            _allreduce_lamport_p2p[
+                ngpus=ngpus,
+                output_lambda=wrap_epilogue[input_index=i, ...],
+                pdl_level=PDLLevel(),
+            ](
+                in_tensors,
+                out_tensors[i].layout,
+                rank_sigs,
+                cfg,
+                list_of_ctx[i],
+                i,
+            )
+        for i in range(ngpus):
+            list_of_ctx[i].synchronize()
+
+        var expected_accum = Float32(0)
+        comptime for i in range(ngpus):
+            expected_accum += Float32(16 * (call + 1) + (i + 1))
+        var expected = Scalar[dtype](expected_accum)
+
+        for i in range(ngpus):
+            list_of_ctx[i].enqueue_copy(host[i], out_dev[i])
+        for i in range(ngpus):
+            list_of_ctx[i].synchronize()
+
+        for i in range(ngpus):
+            for j in range(length):
+                try:
+                    assert_equal(host[i][j], expected)
+                except e:
+                    print(
+                        "Wrap mismatch at call",
+                        call,
+                        "GPU",
+                        i,
+                        "index",
+                        j,
+                        "got",
+                        host[i][j],
+                        "expected",
+                        expected,
+                        "(generation counter wrapped and reused a generation)",
                     )
                     raise e^
 
@@ -1294,3 +1481,17 @@ def main() raises:
             ctx.append(DeviceContext(device_id=i))
         print("====lamport-allreduce-unsynced-skew-", dtype, "-", num_gpus)
         lamport_unsynced_skew_test[dtype=dtype, ngpus=num_gpus](ctx, 8 * 1024)
+
+    # Counter-wrap regression (KERN-3670): seed the device generation counter
+    # just below 2^32 and run a sequence that crosses the uint32 wrap; every
+    # call must stay correct. 2 GPUs is sufficient (the bug is rank-count
+    # independent and every rank wraps on the same call).
+    comptime for dtype_idx in range(len(test_dtypes)):
+        comptime dtype = test_dtypes[dtype_idx]
+        if DeviceContext.number_of_devices() < 2:
+            continue
+        var ctx = List[DeviceContext]()
+        for i in range(2):
+            ctx.append(DeviceContext(device_id=i))
+        print("====lamport-allreduce-wrap-", dtype, "-2")
+        lamport_wrap_test[dtype=dtype, ngpus=2](ctx, 8 * 1024)

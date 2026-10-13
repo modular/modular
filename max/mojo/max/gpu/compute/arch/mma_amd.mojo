@@ -40,18 +40,19 @@ def _mma_wmma_cdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime fp8_dtypes = (DType.float8_e4m3fn, DType.float8_e5m2)
 
     def _wmma_type_name[dtype: DType]() -> StaticString:
-        comptime if dtype == .float32:
-            return ".f32"
-        elif dtype == .float16:
-            return ".f16"
-        elif dtype == .bfloat16:
-            return ".bf16"
-        elif dtype == .float8_e4m3fn:
-            return ".fp8"
-        elif dtype == .float8_e5m2:
-            return ".bf8"
-        else:
-            comptime assert False, "unsupported dtype"
+        comptime match dtype:
+            case .float32:
+                return ".f32"
+            case .float16:
+                return ".f16"
+            case .bfloat16:
+                return ".bf16"
+            case .float8_e4m3fn:
+                return ".fp8"
+            case .float8_e5m2:
+                return ".bf8"
+            case _:
+                comptime assert False, "unsupported dtype"
 
     def _wmma_intrinsic_base[
         intrinsic_name: StaticString

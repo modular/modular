@@ -204,6 +204,13 @@ struct ContextParams(TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
+# Bytes per split-K partial-state slot. The scaffolders allocate the partials
+# scratch before the body picks its concrete monoid, so the slot is a fixed
+# worst-case size. Slots hold the lane-collapsed `State.Single`, so 128 bytes
+# covers every monoid; a bigger state falls back to one worker per row.
+comptime _SPLITK_STATE_BYTES = 128
+
+
 struct Context[params: ContextParams](TrivialRegisterPassable):
     """Per-block dispatch bundle. Comptime tier identity and widths
     flow through `params`; runtime per-block plumbing (split-K scratch
@@ -359,6 +366,75 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
             block_in_row=Int32(0),
             row_idx=Int32(0),
             is_last_block=False,
+        )
+
+    @inline(.always)
+    def partial_slot[
+        S: AnyType
+    ](self, slot: Int) -> UnsafePointer[S, MutUntrackedOrigin]:
+        """Returns split-K partials slot `slot`, typed as `S`.
+
+        The scratch is an array of fixed `_SPLITK_STATE_BYTES` slots, so it is
+        addressed by slot index: indexing an `UnsafePointer[S]` would stride by
+        `size_of[S]()` and walk off the slot bounds.
+
+        Parameters:
+            S: The state type the slot holds (a monoid's `Single`).
+
+        Args:
+            slot: The slot index into the partials scratch.
+
+        Returns:
+            A pointer to the slot's state.
+        """
+        return (self._partials_base + slot * _SPLITK_STATE_BYTES).bitcast[S]()
+
+    @inline(.always)
+    def row_partial[
+        S: AnyType
+    ](self, split: Int) -> UnsafePointer[S, MutUntrackedOrigin]:
+        """Returns split `split`'s partial for this row in the reduce-shaped
+        split-K scratch, laid out `[num_rows x blocks_per_row]`.
+
+        Parameters:
+            S: The state type the slot holds.
+
+        Args:
+            split: The split (block or worker) within the row.
+
+        Returns:
+            A pointer to the slot's state.
+        """
+        return self.partial_slot[S](
+            Int(self._row_idx) * Int(self._blocks_per_row) + split
+        )
+
+    @inline(.always)
+    def phase_partial[
+        S: AnyType
+    ](self, reduce_index: Int, split: Int) -> UnsafePointer[
+        S, MutUntrackedOrigin
+    ]:
+        """Returns split `split`'s partial for reduce `reduce_index` of this
+        row in the per-element split-K scratch, laid out
+        `[num_rows x num_reduces x blocks_per_row]` with
+        `num_reduces = num_phases - 1`.
+
+        Parameters:
+            S: The state type the slot holds.
+
+        Args:
+            reduce_index: Order index of the reduce within the body.
+            split: The split (block or worker) within the row.
+
+        Returns:
+            A pointer to the slot's state.
+        """
+        comptime num_reduces = Self.params._num_phases - 1
+        return self.partial_slot[S](
+            (Int(self._row_idx) * num_reduces + reduce_index)
+            * Int(self._blocks_per_row)
+            + split
         )
 
 

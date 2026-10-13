@@ -82,7 +82,7 @@ modular_py_test(
     imports = ["."],
     # One test per shard: NIXL transfers can hit invalid-FD errors when
     # multiple transfers share a process (see test_send_recv.py header).
-    shard_count = 8,
+    shard_count = 10,
     target_compatible_with = [
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
@@ -209,11 +209,15 @@ _LIGHT_TRANSFER_GPU_TESTS = [
     "test_spawn_plugin_preload_gpu.py",
 ]
 
+_VMM_CUDA_IPC_GPU_TEST = "test_send_recv_vmm_cuda_ipc_gpu.py"
+
 modular_py_test(
     name = "multi-gpu-tests",
     srcs = glob(
         ["*_gpu.py"],
-        exclude = _4X_GPU_TESTS + _LIGHT_TRANSFER_GPU_TESTS,
+        exclude = _4X_GPU_TESTS + _LIGHT_TRANSFER_GPU_TESTS + [
+            _VMM_CUDA_IPC_GPU_TEST,
+        ],
     ) + ["conftest.py"],
     exec_properties = {
         "test.resources:gpu-memory": "3",
@@ -226,6 +230,45 @@ modular_py_test(
     tags = ["gpu"],
     # NVIDIA or AMD, never Apple: Apple GPUs only exist on the macOS
     # platform, and NIXL/UCX is Linux-only.
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":transfer_engine_test_helpers",
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/tests/tests/nixl:nixl_plugin_env",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "vmm_cuda_ipc_gpu_test",
+    srcs = [
+        _VMM_CUDA_IPC_GPU_TEST,
+        "conftest.py",
+    ],
+    env = {
+        # Small granules make every buffer span many CUDA allocations.
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "1",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+        # Without InfiniBand, GPU data either takes cuda_ipc or is staged
+        # through host memory over tcp, which the test's bandwidth floor
+        # rejects. NIXL requires cuda_copy whenever a GPU is present, and its
+        # endpoints need tcp for peer failure handling.
+        "UCX_TLS": "cuda_ipc,cuda_copy,tcp,sm,self",
+        "UCX_NET_DEVICES": "all",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+        "//:nvidia_gpu",
+    ],
+    imports = ["."],
+    tags = ["gpu"],
     target_compatible_with = [
         "@platforms//os:linux",
     ],

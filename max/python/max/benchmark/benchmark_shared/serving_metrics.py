@@ -37,6 +37,7 @@ from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncOutput,
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
+    ServerTokenStats,
     measured_window_duration,
 )
 from max.benchmark.benchmark_shared.steady_state import (
@@ -805,6 +806,14 @@ def build_pixel_generation_result(
     return metrics
 
 
+def _session_sort_key(sid: str) -> tuple[int, int, str]:
+    """Sorts numeric session ids first by integer value, then anonymous ids."""
+    try:
+        return (0, int(sid), "")
+    except ValueError:
+        return (1, 0, sid)
+
+
 def build_text_generation_result(
     *,
     outputs: Sequence[BaseRequestFuncOutput],
@@ -822,6 +831,7 @@ def build_text_generation_result(
     kv_block_size: int = 128,
     record_request_text: bool = False,
     gpu_device_groups: Mapping[str, str] | None = None,
+    outputs_by_session: Mapping[str, Sequence[RequestFuncOutput]] | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result for text-generation tasks.
 
@@ -843,6 +853,10 @@ def build_text_generation_result(
     ``steady_state_warning``, ``num_outliers_rejected``) are attached to
     the returned ``BenchmarkResult`` for observability without duplicating
     the full metric set.
+
+    Per-request server token stats are attached grouped by session (numeric
+    session ids in integer order) when ``outputs_by_session`` is given, else
+    as one flat list in output order.
     """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
@@ -978,8 +992,23 @@ def build_text_generation_result(
     for warn in text_metrics.confidence_warnings():
         logger.warning(f"Confidence: {warn}")
 
+    session_server_stats: dict[str, list[ServerTokenStats]] | None = None
+    aggregate_server_stats: list[ServerTokenStats] | None = None
+    if outputs_by_session is not None:
+        session_server_stats = {
+            sid: [out.server_token_stats for out in outs]
+            for sid, outs in sorted(
+                outputs_by_session.items(),
+                key=lambda kv: _session_sort_key(kv[0]),
+            )
+        }
+    else:
+        aggregate_server_stats = [out.server_token_stats for out in outputs]
+
     return text_metrics.model_copy(
         update={
+            "session_server_stats": session_server_stats,
+            "aggregate_server_stats": aggregate_server_stats,
             "steady_state_detected": steady.detected,
             "steady_state_window_count": steady.steady_state_count,
             "steady_state_mode": mode,

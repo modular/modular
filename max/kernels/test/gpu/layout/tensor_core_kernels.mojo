@@ -265,14 +265,13 @@ def mma_load_and_print_operands_kernel_ldmatrix[
         row_major[1, b_simd_width]()
     )
 
-    # Preserve coverage of the explicit-output legacy loader API.
     mma.load_a(
-        a_smem.to_layout_tensor(),
-        a_reg_tile.to_layout_tensor().vectorize[1, a_simd_width](),
+        a_smem,
+        a_reg_tile,
     )
     mma.load_b(
-        b_smem.to_layout_tensor(),
-        b_reg_tile.to_layout_tensor().vectorize[1, b_simd_width](),
+        b_smem,
+        b_reg_tile,
     )
 
     var a_frags = load_to_simd(a_reg_tile).cast[.float64]()

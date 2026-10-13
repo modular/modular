@@ -10,14 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections import Optional
 from std.random import shuffle, seed
-from std.sys import align_of, size_of, argv
+from std.sys import size_of, argv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -112,9 +110,10 @@ def test_matmul_sm100_epilogue[
     @inline(.always)
     def test_lambda_add_coords_prod[
         _dtype: DType, width: SIMDLength, *, alignment: Int
-    ](
-        idx: IndexList[2], val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]
-    ) -> SIMD[_dtype, width]:
+    ](idx: Coord, val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]) -> SIMD[
+        _dtype, width
+    ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # this function helps us determine if the provided indexes are correct
         # while also testing arithmetic operations
         return val * c_val
@@ -201,12 +200,13 @@ def test_matmul_sm100_epilogue[
         @inline(.always)
         def test_lambda_add_coords_prod_local[
             _dtype: DType, width: SIMDLength
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) {
-            var c_host_copy
-        } -> SIMD[_dtype, width]:
-            return (
-                val * c_host_copy.load[width=width](Coord(idx)).cast[_dtype]()
-            )
+        ](idx: Coord, val: SIMD[_dtype, width]) {var c_host_copy} -> SIMD[
+            _dtype, width
+        ]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            return val * c_host_copy.load[width=width](idx).cast[_dtype]()
 
         comptime if test_lambda_fn:
             # Apply the compute lambda directly on the reference tensor
@@ -214,7 +214,7 @@ def test_matmul_sm100_epilogue[
                 for j in range(N):
                     comptime assert c_host_ref.flat_rank == 2
                     c_host_ref[i, j] = test_lambda_add_coords_prod_local(
-                        (i, j), c_host_ref[i, j]
+                        Coord(i, j), c_host_ref[i, j]
                     )
 
         comptime rtol = 1e-2

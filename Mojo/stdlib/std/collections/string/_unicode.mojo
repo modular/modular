@@ -54,8 +54,8 @@ def _to_index(lookup: Span[UInt32, ImmStaticOrigin], rune: Codepoint) -> Int:
 
     var result = lookup._binary_search_index(rune.to_u32())
 
-    if result:
-        return Int(result.unsafe_value())
+    if case .Some(result) = result:
+        return Int(result)
     else:
         return -1
 
@@ -102,11 +102,8 @@ def _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
         global_constant[has_lowercase_mapping]()
     )._binary_search_index(char.to_u32())
 
-    if index:
-        # SAFETY: We just checked that `result` is present.
-        var codepoint = global_constant[lowercase_mapping]()[
-            index.unsafe_value()
-        ]
+    if case .Some(index) = index:
+        var codepoint = global_constant[lowercase_mapping]()[index]
 
         # SAFETY:
         #   We know this is a valid `Codepoint` because the mapping data tables
@@ -216,15 +213,13 @@ def to_uppercase(s: StringSlice[_]) -> String:
         )
         var uppercase_replacement_opt = _get_uppercase_mapping(char)
 
-        if uppercase_replacement_opt:
+        if case .Some(uppercase_replacement) = uppercase_replacement_opt:
             var count: Int
             # A given character can be replaced with a sequence of characters
             # up to 3 characters in length. A fixed size `Codepoint` array is
             # returned, along with a `count` (1, 2, or 3) of how many
             # replacement characters are in the uppercase replacement sequence.
-            count, ref uppercase_replacement_chars = (
-                uppercase_replacement_opt.unsafe_value()
-            )
+            count, ref uppercase_replacement_chars = uppercase_replacement
             for char_idx in range(count):
                 result.append(uppercase_replacement_chars[char_idx])
         else:

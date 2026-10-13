@@ -47,7 +47,6 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from std.memory import Pointer
 
 from std.utils.index import IndexList
 

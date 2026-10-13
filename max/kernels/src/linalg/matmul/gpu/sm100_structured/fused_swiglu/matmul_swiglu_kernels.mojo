@@ -88,9 +88,8 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.structuring import SMemArray, SMemPtr
+from linalg.structuring import SMemArray
 
-from ..structured_kernels.config import OutputPipelineConfig
 from .config import FusedSwiGLUMatmulConfig
 from ..structured_kernels.tile_scheduler import TileScheduler
 from linalg.matmul.gpu.tile_scheduler import RasterOrder

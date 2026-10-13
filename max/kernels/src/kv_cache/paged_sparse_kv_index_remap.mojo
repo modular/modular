@@ -38,6 +38,7 @@ If the LUT entry is ``>= invalid_block_id`` (runtime sentinel ``total_num_pages`
 the output slot is written ``-1``.
 """
 
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
@@ -75,6 +76,195 @@ def _remap_one(
     if block_id >= invalid_block_id:
         return Int32(-1)
     return Int32(Int(block_id) * page_size + tok_in_page)
+
+
+trait SparseIndexRemap(DevicePassable, TrivialRegisterPassable):
+    """A second output a sparse-index producer writes beside each logical slot.
+
+    Lets the kernel that selects the logical indices also emit what a
+    consumer would otherwise derive from them in a separate pass.
+    """
+
+    comptime enabled: Bool
+    """Whether `store` writes anything; `False` lets callers skip the batch
+    lookup it would need."""
+
+    def offset(self, slots: Int) -> Self:
+        """Returns this remap with its output advanced by `slots` slots.
+
+        Args:
+            slots: Flat slots to advance by.
+
+        Returns:
+            The advanced remap.
+        """
+        ...
+
+    def store(self, idx: Int, batch: Int, logical: Int32):
+        """Writes the remapped value of output slot `idx`.
+
+        Args:
+            idx: Flat output slot.
+            batch: Batch entry the slot's row belongs to.
+            logical: The slot's logical token position, or `-1`.
+        """
+        ...
+
+
+struct NoRemap(SparseIndexRemap):
+    """Writes nothing: the producer emits logical indices only."""
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias; the struct is trivially device-passable."""
+
+    comptime enabled = False
+    """Nothing is written."""
+
+    @inline(.always)
+    def __init__(out self):
+        """Creates the empty remap."""
+        pass
+
+    @inline(.always)
+    def offset(self, slots: Int) -> Self:
+        """Returns `self`; there is no output to advance.
+
+        Args:
+            slots: Ignored.
+
+        Returns:
+            `self`.
+        """
+        return self
+
+    @inline(.always)
+    def store(self, idx: Int, batch: Int, logical: Int32):
+        """Does nothing.
+
+        Args:
+            idx: Ignored.
+            batch: Ignored.
+            logical: Ignored.
+        """
+        pass
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"NoRemap"`.
+        """
+        return "NoRemap"
+
+
+struct PagedKVRemap[page_size: Int](SparseIndexRemap):
+    """Writes each slot's physical paged-cache row, as the remap kernel would.
+
+    The value written for slot `idx` is exactly what
+    `paged_sparse_kv_index_remap` produces for it, so a consumer can take this
+    buffer in place of running that kernel.
+
+    Parameters:
+        page_size: Tokens per page of the cache `lut` indexes.
+    """
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias; the struct is trivially device-passable."""
+
+    comptime enabled = True
+    """Physical rows are written."""
+
+    var physical_out: UnsafePointer[Int32, MutUntrackedOrigin]
+    """Flat output buffer, laid out like the logical indices."""
+    var lut: UnsafePointer[UInt32, ImmUntrackedOrigin]
+    """Row-major `[lut_rows, lut_cols]` page lookup table."""
+    var lut_cols: Int32
+    """Logical pages per batch entry."""
+    var lut_rows: Int32
+    """Batch entries in `lut`."""
+    var invalid_block_id: UInt32
+    """Block ids at or above this (the page count) are invalid."""
+
+    @inline(.always)
+    def __init__(
+        out self,
+        physical_out: UnsafePointer[mut=True, Int32, _],
+        lut: UnsafePointer[UInt32, _],
+        lut_cols: Int,
+        lut_rows: Int,
+        invalid_block_id: UInt32,
+    ):
+        """Describes the cache to remap into and where to write.
+
+        Args:
+            physical_out: Flat output buffer, laid out like the logical
+                indices.
+            lut: Row-major `[lut_rows, lut_cols]` page lookup table.
+            lut_cols: Logical pages per batch entry.
+            lut_rows: Batch entries in `lut`.
+            invalid_block_id: Block ids at or above this are invalid; the
+                cache's page count.
+        """
+        self.physical_out = physical_out.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
+        self.lut = lut.as_imm().unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.lut_cols = Int32(lut_cols)
+        self.lut_rows = Int32(lut_rows)
+        self.invalid_block_id = invalid_block_id
+
+    @inline(.always)
+    def offset(self, slots: Int) -> Self:
+        """Returns this remap with `physical_out` advanced by `slots`.
+
+        Args:
+            slots: Flat slots to advance by.
+
+        Returns:
+            The advanced remap.
+        """
+        var r = self
+        r.physical_out = self.physical_out.unsafe_offset(slots)
+        return r
+
+    @inline(.always)
+    def store(self, idx: Int, batch: Int, logical: Int32):
+        """Writes `physical_out[idx]` for logical position `logical`.
+
+        Args:
+            idx: Flat output slot.
+            batch: Batch entry the slot's row belongs to.
+            logical: The slot's logical token position, or `-1`.
+        """
+        self.physical_out[idx] = _remap_one(
+            logical,
+            UInt32(batch),
+            self.lut,
+            Int(self.lut_cols),
+            Int(self.lut_rows),
+            Self.page_size,
+            self.invalid_block_id,
+        )
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"PagedKVRemap"`.
+        """
+        return "PagedKVRemap"
 
 
 @inline(.always)

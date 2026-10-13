@@ -47,8 +47,13 @@ modular_py_test(
     srcs = ["test_grouped_collectives_compile.py"],
     # The virtual CUDA (sm_100a) graphs below need the NVPTX compiler to
     # elaborate kernels, which is Linux-only (CUDACompilationDevice).
+    # TODO(GEX-4362): re-enable on asan once KGEN stops leaking the
+    # _populate_captures stubs from evaluateCompileOffloadClosureAttr.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }) + select({
+        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [

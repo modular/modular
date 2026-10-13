@@ -14,8 +14,6 @@
 initialized.
 """
 
-from std.builtin.rebind import downcast
-from std.os import abort
 from std.memory import unsafe_memset_zero
 from std.traits import (
     IsTriviallyCopyable,

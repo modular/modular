@@ -2987,11 +2987,10 @@ def fa4_softmax[
     ](kv_row: UInt32) -> Float32:
         return maximum(load_mask_max_impl[mask_strategy=mask_strategy](kv_row))
 
-    @__parameter
     @inline(.always)
     def load_mask_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32, old_max: Float32) -> Float32:
+    ](kv_row: UInt32, old_max: Float32) {imm} -> Float32:
         pipeline_s.wait()
         tcgen05_fence_after()
         return maximum(
@@ -3001,11 +3000,10 @@ def fa4_softmax[
     # Same wait+fence+load as `load_mask_max`, but returns the pure tile-local
     # max (no `old_max` fusion) so one reduction feeds both the running max
     # and the BLASST vote.
-    @__parameter
     @inline(.always)
     def load_mask_tile_max[
         mask_strategy: MaskStrategy
-    ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+    ](kv_row: UInt32) {imm} -> StaticTuple[Float32, max_unroll]:
         pipeline_s.wait()
         tcgen05_fence_after()
         return load_mask_max_impl[mask_strategy=mask_strategy](kv_row)

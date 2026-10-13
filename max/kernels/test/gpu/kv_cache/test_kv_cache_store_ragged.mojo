@@ -319,10 +319,9 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     @__parameter
     @inline(.always)
     @__copy_capture(q_device_tensor)
-    def input_fn[
-        width: Int, alignment: Int
-    ](idx: IndexList[4]) -> SIMD[dtype, width]:
-        return q_device_tensor.load[width=width](Coord(idx))
+    def input_fn[width: Int, alignment: Int](idx: Coord) -> SIMD[dtype, width]:
+        comptime assert idx.rank == 4
+        return q_device_tensor.load[width=width](idx)
 
     var k_cache_device = kv_collection_paged_device.get_key_cache(0)
     kv_cache_store_padded[input_fn=input_fn, target="gpu"](

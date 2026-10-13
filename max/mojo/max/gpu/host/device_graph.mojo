@@ -32,7 +32,7 @@ from max.gpu.host import (
 from std.collections.optional import OptionalReg
 from std.ffi import c_size_t, external_call
 from std.logger import Logger
-from std.sys import align_of, bit_width_of, size_of, CompilationTarget
+from std.sys import align_of, bit_width_of, size_of
 from std.memory import unsafe_memcpy
 from std.memory.unsafe import bitcast
 from std.reflection import call_location, SourceLocation
@@ -51,7 +51,6 @@ from max.gpu.host.device_context import (
     _check_dim,
     _checked,
     _CString,
-    _DeviceBufferMode,
     _DeviceBufferPtr,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
@@ -251,7 +250,7 @@ struct StableAddr(TrivialRegisterPassable):
     pointer. Neither layer may be dereferenced on the host.
     """
 
-    var ptr: Pointer[Pointer[NoneType, MutUntrackedOrigin], MutUntrackedOrigin]
+    var ptr: Pointer[Pointer[NoneType, MutUntrackedOrigin], ImmUntrackedOrigin]
     """Device address of the slot; the slot holds the device data pointer."""
 
 
@@ -367,9 +366,9 @@ struct DeviceGraphCache(Movable):
     ) -> String:
         var key = Self._closure_key(build)
 
-        if ctx:
+        if case .Some(ctx) = ctx:
             try:
-                key.write(t"Device({ctx.value().id()})", "|")
+                key.write(t"Device({ctx.id()})", "|")
             except e:
                 pass
 
@@ -1374,8 +1373,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         ties to the enclosing `DeviceGraph.create` scope.
         """
         var id = self._last_node_id()
-        if id:
-            return Self.Node(id.value())
+        if case .Some(id) = id:
+            return Self.Node(id)
         return None
 
     @inline(.always)
@@ -2081,7 +2080,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        comptime __match bitwidth:
+        comptime match bitwidth:
             case 8:
                 value = UInt64(Int(bitcast[.uint8, 1](val)))
             case 16:

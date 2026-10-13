@@ -330,6 +330,10 @@ public:
   /// This emits an error and returns null if emission fails.
   Value emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
+  /// Warn when `value` is a transfer out of a variable that is about to
+  /// be borrowed rather than consumed.
+  void warnIfTransferIsOnlyBorrowed(ASTExprAnd<AnyValue> value);
+
   //===--------------------------------------------------------------------===//
   // Function Calls
 
@@ -585,6 +589,9 @@ public:
   /// Emit a `Int`-typed value from an `index` value.
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprDest &dest);
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprContext context);
+
+  /// Emit an `Int`-typed value from a C++ integer.
+  CValue emitInt(int64_t value, llvm::SMLoc loc, ExprContext context);
 
   /// Given an expression that can be used in `origin_of` or a ref expression,
   /// analyze it to determine which origin it represents.  If it doesn't work,

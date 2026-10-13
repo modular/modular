@@ -134,7 +134,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
             else:
                 selective_scan_fwd_cpu[
@@ -157,7 +157,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx
@@ -369,7 +369,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
             else:
                 selective_scan_fwd_cpu_minimal[
@@ -388,7 +388,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx
@@ -585,7 +585,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
             else:
                 selective_scan_update_cpu[
@@ -607,7 +607,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    Optional[DeviceContext](ctx),
+                    Optional(ctx.assert_cpu_target()),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx

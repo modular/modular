@@ -410,7 +410,7 @@ def test_optional_encodes_engaged_payload() raises:
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
     assert_true(Bool(buf[]))
-    assert_equal(buf[].value(), 42)
+    assert_equal(buf[], Optional[Int32](42))
 
 
 def test_optional_encodes_none() raises:

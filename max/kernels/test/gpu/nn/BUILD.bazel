@@ -138,9 +138,11 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # Scalar index kernel; arch-neutral fallbacks are valid on CDNA4.
     "test_index_fp8.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
+        "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     # The SM100 K-streaming scorer only (tcgen05, TMA).
@@ -155,6 +157,16 @@ _EXTRA_CONSTRAINTS = {
     "test_mla_prefill_qkv_fp8.mojo": select({
         "//:b200_gpu": [],
         "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_kv_fp8_gather.mojo": select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_prefill_sparse_kv_fp8_gather.mojo": select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_prefill_per_token_scale_fp8.mojo": select({
@@ -207,6 +219,7 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_mla_decode_fp8_q_graph.mojo": select({
         "//:b200_gpu": [],
+        "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_decode_split_policy.mojo": select({
@@ -241,8 +254,15 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # Scalar MLA index kernel; arch-neutral fallbacks are valid on CDNA4.
     "test_mla_index_fp8.mojo": select({
         "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # k-pooled scorer over GLM-5.3-Flash's per-token pooled cache layout.
+    "test_mla_index_kpool_cache_layout.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -490,10 +510,22 @@ _EXTRA_DEPS = {
     "attention/test_mha_sm100_depth512_sink.mojo": ["//max:kv_cache"],
     "test_mla_layout_g_mma_smoke.mojo": ["//max:max_mojo"],
     "test_mma_ws_ts.mojo": ["//max:max_mojo"],
+    "test_layer_norm.mojo": ["//max:builtin_kernels"],
+    "test_layer_norm_rope_ragged.mojo": ["//max:builtin_kernels"],
     "test_mma_ws_ts_pv_m32.mojo": ["//max:max_mojo"],
-    "test_rms_norm_fused_residual_add.mojo": ["//max:max_mojo"],
+    "test_rms_norm.mojo": ["//max:builtin_kernels"],
+    "test_rms_norm_fused_residual_add.mojo": [
+        "//max:builtin_kernels",
+        "//max:max_mojo",
+    ],
+    "test_rms_norm_quantize_fp8_grouped.mojo": ["//max:builtin_kernels"],
+    "test_rms_norm_rope.mojo": ["//max:builtin_kernels"],
+    "test_row_mean_of_squares.mojo": ["//max:builtin_kernels"],
+    "test_row_mean_of_squares_qk.mojo": ["//max:builtin_kernels"],
+    "test_rowwise_determinism.mojo": ["//max:builtin_kernels"],
     "test_topk_gpu.mojo": ["//max:max_mojo"],
     "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
+    "test_topk_softmax_sample_topk_arr.mojo": ["//max:max_mojo"],
     "test_topk_greedy_tiebreak.mojo": ["//max:max_mojo"],
     "test_topk_topp_degenerate_row.mojo": ["//max:max_mojo"],
     "test_toppminp_gpu.mojo": ["//max:max_mojo"],
@@ -502,8 +534,58 @@ _EXTRA_DEPS = {
 
 _GPU_MEMORY = {
     # The bs22 x 35k-context case needs ~3 GiB beyond the 4 GiB default.
-    "attention/test_mha_sm100_d256_pack_gqa.mojo": "16",
-    "test_cudnn_conv.mojo": "7",
+    "attention/test_mha_sm100_1q_sink.mojo": "3",
+    "attention/test_mha_sm100_d256_pack_gqa.mojo": "7",
+    "attention/test_mha_sm100_depth512_sink.mojo": "4",
+    "attention/test_mha_sm100_qkv_fp8_d256_prefill.mojo": "3",
+    "attention/test_mha_sm100_qkv_fp8_d512_prefill.mojo": "3",
+    "attention/test_mha_sm100_ws_bm32.mojo": "3",
+    "probe_block_scan_metal.mojo": "4",
+    "test_amd_4wave_conv3d.mojo": "4",
+    "test_amd_4wave_conv_miopen.mojo": "4",
+    "test_amd_4wave_conv_residual.mojo": "4",
+    "test_amd_4wave_conv_rt_hw.mojo": "4",
+    "test_apple_fa_prefill.mojo": "4",
+    "test_apple_fa_softmax_unit.mojo": "4",
+    "test_attention_fp8_tail_stress_amd.mojo": "4",
+    "test_causal_padding_mask.mojo": "4",
+    "test_conv2d_im2col_apple.mojo": "4",
+    "test_cudnn_conv.mojo": "2",
+    "test_flash_attention.mojo": "3",
+    "test_flash_attention_amd.mojo": "4",
+    "test_fused_dual_qk_rms_norm_rope_nvfp4.mojo": "3",
+    "test_fused_qk_rms_norm_rope.mojo": "3",
+    "test_fused_qk_rope_ragged.mojo": "3",
+    "test_index_fp8.mojo": "3",
+    "test_index_fp8_sm100_kscale_war.mojo": "3",
+    "test_mha_chunked_mask.mojo": "4",
+    "test_mha_gemma4_global_decode_amd.mojo": "4",
+    "test_mha_mask.mojo": "4",
+    "test_mha_operand_tma.mojo": "3",
+    "test_mha_p_fragment_scatter_amd.mojo": "4",
+    "test_miopen_conv.mojo": "4",
+    "test_mla.mojo": "4",
+    "test_mla_decode_blockwise_fp8.mojo": "3",
+    "test_mla_decode_config_stages.mojo": "4",
+    "test_mla_decode_fp8_q_graph.mojo": "3",
+    "test_mla_decode_kv_fp8.mojo": "3",
+    "test_mla_decode_qkv_fp8.mojo": "4",
+    "test_mla_decode_qkv_fp8_per_token_scale_rope_aware.mojo": "3",
+    "test_mla_decode_qkv_fp8_sliding_window.mojo": "4",
+    "test_mla_decode_qkv_fp8_tail_stress.mojo": "3",
+    "test_mla_decode_sparse_kv_bf16.mojo": "3",
+    "test_mla_decode_sparse_kv_fp8_gather.mojo": "4",
+    "test_mla_decode_split_policy.mojo": "4",
+    "test_mla_index_fp8.mojo": "3",
+    "test_mla_prefill_blockwise_fp8.mojo": "4",
+    "test_mla_prefill_per_token_scale_fp8.mojo": "4",
+    "test_mla_prefill_qkv_fp8.mojo": "4",
+    "test_mla_prefill_sparse_kv_fp8_gather.mojo": "4",
+    "test_mla_prefill_sparse_qkv_fp8.mojo": "3",
+    "test_rms_norm.mojo": "3",
+    "test_rope_split_store.mojo": "3",
+    "test_topk_warp_isa_amd.mojo": "4",
+    "test_toppminp_gpu.mojo": "3",
 }
 
 _FILECHECK_TESTS = [
@@ -554,7 +636,7 @@ _FILECHECK_TESTS = [
             ],
         }),
         exec_properties = {
-            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "4"),
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "2"),
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
@@ -569,6 +651,7 @@ _FILECHECK_TESTS = [
     for src in glob(
         ["**/*.mojo"],
         exclude = _FILECHECK_TESTS + [
+            "test_mha_fa2_fp32_direct_output.mojo",
             "test_mha_causal_mask.mojo",
             "test_mha_causal_mask_amd.mojo",
             "test_mla_decode_paged_variable.mojo",
@@ -725,7 +808,7 @@ mojo_test(
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = True,
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"] + select({
@@ -756,7 +839,7 @@ mojo_test(
             "MHA_FP8_HEAD_DIM={}".format(d),
         ],
         exec_properties = {
-            "test.resources:gpu-memory": "4",
+            "test.resources:gpu-memory": "2",
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + select({
@@ -1294,7 +1377,7 @@ _MHA_CAUSAL_MASK_CONFIGS = [
             "depth={}".format(depth),
         ],
         exec_properties = {
-            "test.resources:gpu-memory": "4",
+            "test.resources:gpu-memory": "2",
         },
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + constraints,
@@ -1392,8 +1475,10 @@ _MLA_DECODE_PAGED_CONFIGS = [
     for page_size in _MLA_DECODE_PAGED_CONFIGS
 ]
 
-# Disabled due to nondeterminism. Tracking: QUA-777
+# QUA-777 / KERN-3237: disabled on B200 due to nondeterminism.
 # Re-enable tracking: https://linear.app/modularml/issue/KERN-3237
+# Verified on MI355 (gfx950), so enable there to guard the S=1 paged decode
+# path including the new num_heads=8 GLM-5.3 TP8 shape.
 mojo_test(
     name = "test_mla_decode_paged_variable_ps128.mojo.test",
     size = "large",
@@ -1410,7 +1495,10 @@ mojo_test(
         "test.resources:gpu-memory": "6",
     },
     tags = ["gpu"],
-    target_compatible_with = ["@platforms//:incompatible"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//max:internal_utils",
         "//max:kv_cache",
@@ -1459,19 +1547,19 @@ _MLA_PREFILL_PAGED_VARIANTS = [
         "test_mla_prefill_generic_paged.mojo",
         "test_mla_prefill_generic_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "6",
+        "3",
     ),
     (
         "test_mla_prefill_blockscale_paged.mojo",
         "test_mla_prefill_blockscale_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "6",
+        "3",
     ),
     (
         "test_mla_prefill_per_token_scale_paged.mojo",
         "test_mla_prefill_per_token_scale_paged",
         _MLA_PREFILL_PAGED_PAGE_SIZES,
-        "6",
+        "3",
     ),
     # CENG-282 regression: dense MLA prefill must honor v_head_dim independently
     # of qk_nope_head_dim. Runs CONTROL (v==nope), GLM (v<nope), and STRESS
@@ -1488,7 +1576,7 @@ _MLA_PREFILL_PAGED_VARIANTS = [
             "64",
             "128",
         ],
-        "6",
+        "3",
     ),
     # Large-cache_length finiteness sweep: production page_size (256) only,
     # targeting the softmax-accumulator / scale-range / partition-count axis at
@@ -1498,7 +1586,7 @@ _MLA_PREFILL_PAGED_VARIANTS = [
         "test_mla_prefill_blockscale_large_cache.mojo",
         "test_mla_prefill_blockscale_large_cache",
         ["256"],
-        "10",
+        "4",
     ),
 ]
 
@@ -1664,6 +1752,26 @@ mojo_test(
         "//max:internal_utils",
         "//max:kv_cache",
         "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Bounded native LOCAL-to-DRAM epilogue correctness, exercised through
+# the direct FP32 MHA output path.
+mojo_test(
+    name = "test_mha_fa2_fp32_direct_output.mojo.test",
+    size = "large",
+    srcs = ["test_mha_fa2_fp32_direct_output.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
         "//max:nn",
         "@mojo//:std",
     ],

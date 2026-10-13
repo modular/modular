@@ -106,177 +106,178 @@ struct CausalConv1D[activation: StaticString]:
                 O,
                 B,
                 silu_activation,
-                Optional[DeviceContext](ctx),
+                Optional(ctx.assert_cpu_target()),
             )
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx
             comptime kNThreads = 128
             comptime kNElts = 4
-            if width == 1:
-                comptime kWidth = 1
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                        X.Engine,
-                        W.Engine,
-                        O.Engine,
-                        B.Engine,
-                    ]
-                ]()
-                var silu_activation_int8 = Int8(silu_activation)
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(batch_size),
-                    Int32(dim),
-                    Int32(seqlen),
-                    Int32(width),
-                    X,
-                    W,
-                    O,
-                    B,
-                    silu_activation_int8,
-                    grid_dim=(
-                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
-                        Int(X.dim[1]()),
-                        Int(X.dim[0]()),
-                    ),
-                    block_dim=(kNThreads),
-                )
-            elif width == 2:
-                comptime kWidth = 2
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                        X.Engine,
-                        W.Engine,
-                        O.Engine,
-                        B.Engine,
-                    ]
-                ]()
-                var silu_activation_int8 = Int8(silu_activation)
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(batch_size),
-                    Int32(dim),
-                    Int32(seqlen),
-                    Int32(width),
-                    X,
-                    W,
-                    O,
-                    B,
-                    silu_activation_int8,
-                    grid_dim=(
-                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
-                        Int(X.dim[1]()),
-                        Int(X.dim[0]()),
-                    ),
-                    block_dim=(kNThreads),
-                )
-            elif width == 3:
-                comptime kWidth = 3
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                        X.Engine,
-                        W.Engine,
-                        O.Engine,
-                        B.Engine,
-                    ]
-                ]()
-                var silu_activation_int8 = Int8(silu_activation)
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(batch_size),
-                    Int32(dim),
-                    Int32(seqlen),
-                    Int32(width),
-                    X,
-                    W,
-                    O,
-                    B,
-                    silu_activation_int8,
-                    grid_dim=(
-                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
-                        Int(X.dim[1]()),
-                        Int(X.dim[0]()),
-                    ),
-                    block_dim=(kNThreads),
-                )
-            elif width == 4:
-                comptime kWidth = 4
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_channel_first_fwd_gpu[
-                        X.dtype,
-                        W.dtype,
-                        O.dtype,
-                        kNThreads,
-                        kWidth,
-                        kNElts,
-                        B.dtype,
-                        X.LayoutType,
-                        W.LayoutType,
-                        O.LayoutType,
-                        B.LayoutType,
-                        X.Engine,
-                        W.Engine,
-                        O.Engine,
-                        B.Engine,
-                    ]
-                ]()
-                var silu_activation_int8 = Int8(silu_activation)
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(batch_size),
-                    Int32(dim),
-                    Int32(seqlen),
-                    Int32(width),
-                    X,
-                    W,
-                    O,
-                    B,
-                    silu_activation_int8,
-                    grid_dim=(
-                        ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
-                        Int(X.dim[1]()),
-                        Int(X.dim[0]()),
-                    ),
-                    block_dim=(kNThreads),
-                )
-            else:
-                raise Error(
-                    "Unsupported kernel width: only widths 1, 2, 3, 4 are"
-                    " supported"
-                )
+            match width:
+                case 1:
+                    comptime kWidth = 1
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_channel_first_fwd_gpu[
+                            X.dtype,
+                            W.dtype,
+                            O.dtype,
+                            kNThreads,
+                            kWidth,
+                            kNElts,
+                            B.dtype,
+                            X.LayoutType,
+                            W.LayoutType,
+                            O.LayoutType,
+                            B.LayoutType,
+                            X.Engine,
+                            W.Engine,
+                            O.Engine,
+                            B.Engine,
+                        ]
+                    ]()
+                    var silu_activation_int8 = Int8(silu_activation)
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        Int32(batch_size),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(width),
+                        X,
+                        W,
+                        O,
+                        B,
+                        silu_activation_int8,
+                        grid_dim=(
+                            ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
+                            Int(X.dim[1]()),
+                            Int(X.dim[0]()),
+                        ),
+                        block_dim=(kNThreads),
+                    )
+                case 2:
+                    comptime kWidth = 2
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_channel_first_fwd_gpu[
+                            X.dtype,
+                            W.dtype,
+                            O.dtype,
+                            kNThreads,
+                            kWidth,
+                            kNElts,
+                            B.dtype,
+                            X.LayoutType,
+                            W.LayoutType,
+                            O.LayoutType,
+                            B.LayoutType,
+                            X.Engine,
+                            W.Engine,
+                            O.Engine,
+                            B.Engine,
+                        ]
+                    ]()
+                    var silu_activation_int8 = Int8(silu_activation)
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        Int32(batch_size),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(width),
+                        X,
+                        W,
+                        O,
+                        B,
+                        silu_activation_int8,
+                        grid_dim=(
+                            ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
+                            Int(X.dim[1]()),
+                            Int(X.dim[0]()),
+                        ),
+                        block_dim=(kNThreads),
+                    )
+                case 3:
+                    comptime kWidth = 3
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_channel_first_fwd_gpu[
+                            X.dtype,
+                            W.dtype,
+                            O.dtype,
+                            kNThreads,
+                            kWidth,
+                            kNElts,
+                            B.dtype,
+                            X.LayoutType,
+                            W.LayoutType,
+                            O.LayoutType,
+                            B.LayoutType,
+                            X.Engine,
+                            W.Engine,
+                            O.Engine,
+                            B.Engine,
+                        ]
+                    ]()
+                    var silu_activation_int8 = Int8(silu_activation)
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        Int32(batch_size),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(width),
+                        X,
+                        W,
+                        O,
+                        B,
+                        silu_activation_int8,
+                        grid_dim=(
+                            ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
+                            Int(X.dim[1]()),
+                            Int(X.dim[0]()),
+                        ),
+                        block_dim=(kNThreads),
+                    )
+                case 4:
+                    comptime kWidth = 4
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_channel_first_fwd_gpu[
+                            X.dtype,
+                            W.dtype,
+                            O.dtype,
+                            kNThreads,
+                            kWidth,
+                            kNElts,
+                            B.dtype,
+                            X.LayoutType,
+                            W.LayoutType,
+                            O.LayoutType,
+                            B.LayoutType,
+                            X.Engine,
+                            W.Engine,
+                            O.Engine,
+                            B.Engine,
+                        ]
+                    ]()
+                    var silu_activation_int8 = Int8(silu_activation)
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        Int32(batch_size),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(width),
+                        X,
+                        W,
+                        O,
+                        B,
+                        silu_activation_int8,
+                        grid_dim=(
+                            ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
+                            Int(X.dim[1]()),
+                            Int(X.dim[0]()),
+                        ),
+                        block_dim=(kNThreads),
+                    )
+                case _:
+                    raise Error(
+                        "Unsupported kernel width: only widths 1, 2, 3, 4 are"
+                        " supported"
+                    )
         else:
             raise Error("Unsupported target device")
 

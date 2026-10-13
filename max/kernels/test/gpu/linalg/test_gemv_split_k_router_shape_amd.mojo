@@ -32,7 +32,7 @@ from std.testing import assert_equal
 from internal_utils import assert_almost_equal
 from layout import TileTensor, row_major
 from linalg.gemv import gemv_split_k
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 
 # K3's MoE router gate at TP8: N = routed-expert count, K = hidden_size. The
 # weight is replicated (not TP-split, see `KimiK3MoEGate`), so this is the
@@ -64,7 +64,7 @@ def _run_case[M: Int](ctx: DeviceContext) raises:
     comptime c_type = DType.float32
     comptime a_type = DType.float32
     comptime b_type = DType.float32
-    comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[c_type, target=ctx.target]()
     comptime check_bounds_n = ROUTER_N % TILE_N != 0
 
     var a_host = ctx.enqueue_create_host_buffer[a_type](M * ROUTER_K)

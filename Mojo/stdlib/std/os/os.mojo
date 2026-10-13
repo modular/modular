@@ -648,7 +648,7 @@ def isatty(fd: Int) -> Bool:
         ```
     """
 
-    return FileDescriptor(fd).isatty()
+    return FileDescriptor(c_int(fd)).isatty()
 
 
 # ===----------------------------------------------------------------------=== #

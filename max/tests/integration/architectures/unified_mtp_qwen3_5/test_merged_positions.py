@@ -30,7 +30,7 @@ from max.pipelines.architectures.unified_mtp_qwen3_5.batch_processor import (
     merged_position_rows,
 )
 from max.pipelines.context import ImageMetadata, TextContext, TokenBuffer
-from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
+from max.pipelines.kv_cache.paged_kv_cache._common import (
     prompt_tokens_for_context,
 )
 

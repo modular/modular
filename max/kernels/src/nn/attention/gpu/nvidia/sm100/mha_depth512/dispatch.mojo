@@ -22,7 +22,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout import Coord, TensorEngine
-from layout.tma_async import RaggedTMA3DTile, TMATensorTile
+from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.common import (
@@ -283,19 +283,18 @@ def mha_sm100_depth512_dispatch[
             num_qk_stages=d512_config.num_qk_stages,
         ](ctx, q, num_rows_q)
 
-        @__parameter
         @inline(.always)
-        def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
-            @__parameter
+        def with_sink[
+            SinkType: OptionalPointer
+        ](sink_ptr: SinkType) raises {imm}:
             @inline(.always)
             def with_kv_offsets[
                 KVRowOffsetsType: OptionalPointer
-            ](kv_row_offsets: KVRowOffsetsType) raises:
-                @__parameter
+            ](kv_row_offsets: KVRowOffsetsType) raises {imm}:
                 @inline(.always)
                 def with_valid_length[
                     ValidLengthType: OptionalPointer
-                ](valid_len: ValidLengthType) raises:
+                ](valid_len: ValidLengthType) raises {imm}:
                     comptime PackType = Pack[
                         MaskType,
                         SchedulerType,
@@ -386,9 +385,9 @@ def mha_sm100_depth512_dispatch[
                     with_valid_length[NullPointer[.uint32]]({})
 
             # --- kv_input_row_offsets dispatch ---
-            if kv_input_row_offsets:
+            if case .Some(kv_input_row_offsets) = kv_input_row_offsets:
                 with_kv_offsets[NonNullPointer[.uint32]](
-                    {kv_input_row_offsets.value().ptr}
+                    {kv_input_row_offsets.ptr}
                 )
             else:
                 with_kv_offsets[NullPointer[.uint32]]({})
@@ -413,19 +412,18 @@ def mha_sm100_depth512_dispatch[
             num_qk_stages=d512_config.num_qk_stages,
         ](ctx, q, num_rows_q)
 
-        @__parameter
         @inline(.always)
-        def with_sink_q[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
-            @__parameter
+        def with_sink_q[
+            SinkType: OptionalPointer
+        ](sink_ptr: SinkType) raises {imm}:
             @inline(.always)
             def with_kv_offsets_q[
                 KVRowOffsetsType: OptionalPointer
-            ](kv_row_offsets: KVRowOffsetsType) raises:
-                @__parameter
+            ](kv_row_offsets: KVRowOffsetsType) raises {imm}:
                 @inline(.always)
                 def with_valid_length_q[
                     ValidLengthType: OptionalPointer
-                ](valid_len: ValidLengthType) raises:
+                ](valid_len: ValidLengthType) raises {imm}:
                     comptime PackType = Pack[
                         MaskType,
                         SchedulerType,
@@ -516,9 +514,9 @@ def mha_sm100_depth512_dispatch[
                     with_valid_length_q[NullPointer[.uint32]]({})
 
             # --- kv_input_row_offsets dispatch ---
-            if kv_input_row_offsets:
+            if case .Some(kv_input_row_offsets) = kv_input_row_offsets:
                 with_kv_offsets_q[NonNullPointer[.uint32]](
-                    {kv_input_row_offsets.value().ptr}
+                    {kv_input_row_offsets.ptr}
                 )
             else:
                 with_kv_offsets_q[NullPointer[.uint32]]({})

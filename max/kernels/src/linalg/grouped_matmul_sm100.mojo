@@ -1217,7 +1217,7 @@ def multi_stage_store_C[
                     comptime if has_elementwise_lambda:
                         apply_elementwise_epilogue[
                             elementwise_lambda_fn, alignment=alignment
-                        ](epilogue_fn, (Int(n), Int(m)), val_vec)
+                        ](epilogue_fn, (n, m), val_vec)
                     else:
                         (c_ptr + Int(n) * cN + Int(m)).store[
                             alignment=alignment
@@ -1396,7 +1396,7 @@ def zero_output_epilogue[
             if m < UInt32(cN):
                 apply_elementwise_epilogue[
                     elementwise_lambda_fn, alignment=alignment
-                ](epilogue_fn, (Int(n), Int(m)), zero_vec)
+                ](epilogue_fn, (n, m), zero_vec)
 
 
 # Important deviation from the normal SM100 matmul: The coordinate returned by
@@ -2337,12 +2337,12 @@ def _grouped_matmul_sm100_persistent[
         max_pipeline_stages >= 1
     ), "Max pipeline stages must be at least 1"
 
-    comptime if num_pipeline_stages:
+    comptime if case .Some(stages) = num_pipeline_stages:
         comptime assert (
-            num_pipeline_stages.value() <= max_pipeline_stages
+            stages <= max_pipeline_stages
         ), "Pipeline stage must be less than or equal to max pipeline stages"
 
-    comptime pipeline_stage = num_pipeline_stages.value() if num_pipeline_stages else max_pipeline_stages
+    comptime pipeline_stage = num_pipeline_stages.or_else(max_pipeline_stages)
     comptime producer_consumer_smem = producer_consumer_smem_per_stage * pipeline_stage
 
     comptime smem_size = (

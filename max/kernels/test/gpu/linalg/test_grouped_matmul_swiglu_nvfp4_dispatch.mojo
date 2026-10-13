@@ -56,20 +56,32 @@ dispatch applies them before its fused SwiGLU.
 """
 from std.math import align_up, ceildiv
 from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import Pointer, alloc
 from std.random import random_float64, random_ui64, seed, rand
 from std.simd import _convert_f32_to_float8_scalar
 
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.grouped_1d1d_matmul import (
+    grouped_matmul_block_scaled,
+)
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.grouped_1d1d_matmul_kernel import (
+    RealSwiGLUOutput,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    BlockScaledMatmulConfig,
+    GEMMKind,
+)
+from linalg.swiglu_activation import (
+    swiglu,
+    swigluoai,
+    swiglu_activation_type,
+)
+from std.utils.index import Index
 from linalg.fp4_utils import (
     E2M1_TO_FLOAT32,
     SF_MN_GROUP_SIZE,
@@ -300,6 +312,10 @@ def _test_swiglu_dispatch[
     K: Int,
     match_bf16: Bool = True,
     with_row_scales: Bool = False,
+    *,
+    test_direct_inplace: Bool = False,
+    token_per_lane: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
 ](
     num_tokens_by_expert: List[Int],
     expert_ids: List[Int],
@@ -630,6 +646,7 @@ def _test_swiglu_dispatch[
         input_scales_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
+        activation=activation,
     ]
     ctx.enqueue_function[fused_silu_ref](
         O_ref_tensor,
@@ -650,7 +667,63 @@ def _test_swiglu_dispatch[
     # cooperative loop on prefill (`mma_bn >= 64`); both are exercised
     # without a separate build.
     # ============================================================
-    comptime if with_row_scales:
+    comptime if test_direct_inplace:
+        comptime assert match_bf16 and not with_row_scales
+        comptime config = BlockScaledMatmulConfig[
+            a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
+        ](
+            scaling_kind=UMMAKind.KIND_MXF4NVF4,
+            cluster_shape=Index(1, 1, 1),
+            mma_shape=Index(128, 8, 32),
+            block_swizzle_size=8,
+            cta_group=1,
+            AB_swapped=True,
+            k_group_size=1,
+            num_pipeline_stages=6,
+            num_accum_pipeline_stages=2,
+            is_gmm=True,
+            gemm_kind=GEMMKind.GMM,
+        )
+        comptime assert config.block_tile_shape[0] == 128
+        comptime assert config.output_tile_shape[0] == 8
+        comptime assert config.output_tile_shape[1] == 128
+        comptime assert config.num_epilogue_warpgroups == 1
+        comptime assert NVFP4_SF_VECTOR_SIZE == 16
+
+        var swiglu_out = RealSwiGLUOutput[
+            packed_H,
+            k_groups_swiglu,
+            scales_dtype,
+            NVFP4_SF_VECTOR_SIZE,
+            activation,
+        ](
+            O_test_tensor.as_unsafe_any_origin().unsafe_ptr(),
+            S_test_tensor.as_unsafe_any_origin().unsafe_ptr(),
+            input_scales_tensor.as_imm().as_unsafe_any_origin().unsafe_ptr(),
+        )
+        grouped_matmul_block_scaled[
+            transpose_b=transpose_b,
+            config=config,
+            fuse_swiglu=True,
+            SwiGLUOutputT=type_of(swiglu_out),
+            swiglu_match_bf16=True,
+            swiglu_use_inplace=True,
+            swiglu_inplace_token_per_lane=token_per_lane,
+        ](
+            c_ref_tensor,
+            a_tensor,
+            a_offsets_tensor,
+            a_scale_offsets_tensor,
+            b_perm_tensor,
+            expert_ids_tensor,
+            a_scales_tt,
+            b_scales_perm_tt,
+            expert_scales_tt,
+            num_active_experts,
+            ctx,
+            swiglu_out,
+        )
+    elif with_row_scales:
         grouped_matmul_swiglu_nvfp4_dispatch[
             transpose_b=transpose_b,
             match_bf16=match_bf16,
@@ -883,8 +956,49 @@ def _test_swiglu_dispatch[
     _ = S_test_device^
 
 
+@inline(.always)
+def _tokenwise_custom_activation(gate: Float32, up: Float32) -> Float32:
+    return Float32(2.0) * gate + Float32(0.5) * up + Float32(1.0)
+
+
+def _test_token_per_lane_activations(ctx: DeviceContext) raises:
+    var shared = _build_shared_b[2, 256, 512](ctx)
+    comptime for mode in range(2):
+        comptime token_per_lane = mode == 1
+        print("  token-per-lane=", token_per_lane, " activation=plain")
+        _test_swiglu_dispatch[
+            2,
+            256,
+            512,
+            test_direct_inplace=True,
+            token_per_lane=token_per_lane,
+            activation=swiglu[0.0],
+        ]([2, 3], [1, 0], shared, ctx)
+
+        print("  token-per-lane=", token_per_lane, " activation=clamped")
+        _test_swiglu_dispatch[
+            2,
+            256,
+            512,
+            test_direct_inplace=True,
+            token_per_lane=token_per_lane,
+            activation=swigluoai[1.702, 7.0],
+        ]([2, 3], [1, 0], shared, ctx)
+
+        print("  token-per-lane=", token_per_lane, " activation=custom")
+        _test_swiglu_dispatch[
+            2,
+            256,
+            512,
+            test_direct_inplace=True,
+            token_per_lane=token_per_lane,
+            activation=_tokenwise_custom_activation,
+        ]([2, 3], [1, 0], shared, ctx)
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        _test_token_per_lane_activations(ctx)
         # Kimi K2.5 gate-up-proj: N=4096, K=7168 → H=2048. All cases share
         # `_test_swiglu_dispatch[49, 4096, 7168, match_bf16]`; the kernel
         # chain compiles twice (once per `match_bf16` value).

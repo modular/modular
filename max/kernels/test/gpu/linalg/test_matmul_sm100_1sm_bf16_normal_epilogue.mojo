@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import argv, size_of
-import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from linalg.utils import elementwise_epilogue_type
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -170,33 +168,35 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
     )
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_tensor)
     def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = 1,
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor.store[alignment=alignment * size_of[c_type](),](
-            Coord(idx), rebind[SIMD[c_type, width]](val)
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c_tensor.store[alignment=alignment * size_of[c_type]()](
+            idx, rebind[SIMD[c_type, width]](val)
         )
 
-    comptime epi = Optional[elementwise_epilogue_type](
-        epilogue_fn
-    ) if normal_epilogue else None
-
-    blackwell_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        config=matmul_config,
-        elementwise_lambda_fn=epi,
-    ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        ctx,
-    )
+    comptime if normal_epilogue:
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](
+            IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+            a_tensor,
+            b_tensor,
+            epilogue_fn,
+            ctx,
+        )
+    else:
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            ctx,
+        )
 
     comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"

@@ -150,12 +150,12 @@ def test(ctx: DeviceContext) raises:
 
 
 def _raster_order_rank(order: RasterOrder) -> Int:
-    """Returns the 0-based case index selected by `__match`.
+    """Returns the 0-based case index selected by `match`.
 
     Every case is named so the match fails to compile if `_enum_case_names`
     drifts from the comptime case constants.
     """
-    __match order:
+    match order:
         case .AlongN:
             return 0
         case .AlongM:

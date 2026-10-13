@@ -29,7 +29,7 @@ from max.gpu.host import DeviceContext
 from std.memory import alloc
 from internal_utils import assert_almost_equal, assert_equal
 from std.random import rand
-from layout import Coord, TileTensor, row_major, Idx
+from layout import TileTensor, row_major, Idx
 from linalg.gemv import GEMVAlgorithm
 from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     matmul_dispatch_sm100,

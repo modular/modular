@@ -14,16 +14,18 @@
 from std.collections.string.string_span import _get_kgen_string
 from std.utils.index import IndexList
 from std._plugin.selector import Plugin
+from std.sys.info import CompilationTarget
 
 from max.gpu import PDLLevel
 from max.gpu.host import DeviceContext
 
 
-trait MaxPluginHooks(Plugin):
-    """Defines compile-time hooks for target-specific MAX behavior."""
+trait MaxPlugin(Plugin):
+    comptime HookFor[target: CompilationTarget]: MaxPluginHooks
 
-    comptime name: __mlir_type.`!kgen.string`
-    """The stable plugin identifier used by the target selector."""
+
+trait MaxPluginHooks:
+    """Defines compile-time hooks for target-specific MAX behavior."""
 
     @staticmethod
     def elementwise_fn[
@@ -61,7 +63,12 @@ trait MaxPluginHooks(Plugin):
     """Whether this plugin overrides MAX elementwise dispatch."""
 
 
-struct DefaultMaxPlugin(MaxPluginHooks):
+struct DefaultMaxPlugin(MaxPlugin):
     """Provides the default MAX plugin behavior."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
+    comptime HookFor[target: CompilationTarget] = DefaultMaxPluginHooks[target]
+
+
+struct DefaultMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
+    pass

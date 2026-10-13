@@ -86,7 +86,7 @@ def causal_conv1d_channel_first_fwd_cpu[
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, C, L)
     bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (C,)
     silu_activation: Bool,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU implementation of causal conv1d for channel-first layout with bias.
 
@@ -193,7 +193,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
     weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (C, W)
     output: TileTensor[mut=True, output_dtype, ...],  # Shape (B, C, L)
     silu_activation: Bool,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU implementation of causal conv1d for channel-first layout without bias.
 
@@ -618,22 +618,23 @@ def causal_conv1d_channel_first_fwd_gpu[
     var w2: Scalar[x_dtype] = 0
     var w_single: Scalar[x_dtype] = 0  # For _width 1
 
-    if kWidth == 1:
-        w_single = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
-    elif kWidth == 2:
-        var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
-        var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
-        W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
-    elif kWidth == 4:
-        var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
-        var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
-        var w2_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
-        var w3_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 3)))
-        W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
-    else:
-        w0 = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
-        w1 = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
-        w2 = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
+    comptime match kWidth:
+        case 1:
+            w_single = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+        case 2:
+            var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
+        case 4:
+            var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            var w2_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
+            var w3_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 3)))
+            W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
+        case _:
+            w0 = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            w1 = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            w2 = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
@@ -651,55 +652,56 @@ def causal_conv1d_channel_first_fwd_gpu[
         # This avoids SIMD slice issues while maintaining correctness
         var conv_result: Scalar[x_dtype] = 0
 
-        comptime if kWidth == 1:
-            if seq_idx >= 0 and seq_idx < nSeqLen:
-                var x_val = Scalar[x_dtype](
-                    x.load[width=1]((batch_id, channel_id, seq_idx))
-                )
-                conv_result = w_single * x_val
-        elif kWidth == 2:
-            var input_window: SIMD[x_dtype, 2] = 0
-
-            comptime for w in range(2):
-                var input_l: Int = seq_idx - (1 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    input_window[w] = Scalar[x_dtype](
-                        x.load[width=1]((batch_id, channel_id, input_l))
+        comptime match kWidth:
+            case 1:
+                if seq_idx >= 0 and seq_idx < nSeqLen:
+                    var x_val = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, seq_idx))
                     )
-            var tmp: SIMD[x_dtype, 2] = W_2 * input_window
-            conv_result = tmp.reduce_add[1]()
-        elif kWidth == 4:
-            var input_window: SIMD[x_dtype, 4] = 0
+                    conv_result = w_single * x_val
+            case 2:
+                var input_window: SIMD[x_dtype, 2] = 0
 
-            comptime for w in range(4):
-                var input_l: Int = seq_idx - (3 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    input_window[w] = Scalar[x_dtype](
-                        x.load[width=1]((batch_id, channel_id, input_l))
+                comptime for w in range(2):
+                    var input_l: Int = seq_idx - (1 - w)
+                    if input_l >= 0 and input_l < nSeqLen:
+                        input_window[w] = Scalar[x_dtype](
+                            x.load[width=1]((batch_id, channel_id, input_l))
+                        )
+                var tmp: SIMD[x_dtype, 2] = W_2 * input_window
+                conv_result = tmp.reduce_add[1]()
+            case 4:
+                var input_window: SIMD[x_dtype, 4] = 0
+
+                comptime for w in range(4):
+                    var input_l: Int = seq_idx - (3 - w)
+                    if input_l >= 0 and input_l < nSeqLen:
+                        input_window[w] = Scalar[x_dtype](
+                            x.load[width=1]((batch_id, channel_id, input_l))
+                        )
+                var tmp: SIMD[x_dtype, 4] = W_4 * input_window
+                conv_result = tmp.reduce_add[1]()
+            case _:
+                # kWidth == 3 case
+                var x0: Scalar[x_dtype] = 0
+                var x1: Scalar[x_dtype] = 0
+                var x2: Scalar[x_dtype] = 0
+                var input_l0: Int = seq_idx - 2
+                var input_l1: Int = seq_idx - 1
+                var input_l2: Int = seq_idx
+                if input_l0 >= 0 and input_l0 < nSeqLen:
+                    x0 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l0))
                     )
-            var tmp: SIMD[x_dtype, 4] = W_4 * input_window
-            conv_result = tmp.reduce_add[1]()
-        else:
-            # kWidth == 3 case
-            var x0: Scalar[x_dtype] = 0
-            var x1: Scalar[x_dtype] = 0
-            var x2: Scalar[x_dtype] = 0
-            var input_l0: Int = seq_idx - 2
-            var input_l1: Int = seq_idx - 1
-            var input_l2: Int = seq_idx
-            if input_l0 >= 0 and input_l0 < nSeqLen:
-                x0 = Scalar[x_dtype](
-                    x.load[width=1]((batch_id, channel_id, input_l0))
-                )
-            if input_l1 >= 0 and input_l1 < nSeqLen:
-                x1 = Scalar[x_dtype](
-                    x.load[width=1]((batch_id, channel_id, input_l1))
-                )
-            if input_l2 >= 0 and input_l2 < nSeqLen:
-                x2 = Scalar[x_dtype](
-                    x.load[width=1]((batch_id, channel_id, input_l2))
-                )
-            conv_result = w0 * x0 + w1 * x1 + w2 * x2
+                if input_l1 >= 0 and input_l1 < nSeqLen:
+                    x1 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l1))
+                    )
+                if input_l2 >= 0 and input_l2 < nSeqLen:
+                    x2 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l2))
+                    )
+                conv_result = w0 * x0 + w1 * x1 + w2 * x2
 
         var out_val: Scalar[output_dtype] = Scalar[output_dtype](
             cur_bias
@@ -816,22 +818,23 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
     var w2: Scalar[x_dtype] = 0
     var w_single: Scalar[x_dtype] = 0
 
-    if kWidth == 1:
-        w_single = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
-    elif kWidth == 2:
-        var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
-        var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
-        W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
-    elif kWidth == 4:
-        var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
-        var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
-        var w2_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
-        var w3_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 3)))
-        W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
-    else:
-        w0 = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
-        w1 = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
-        w2 = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
+    comptime match kWidth:
+        case 1:
+            w_single = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+        case 2:
+            var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            W_2 = SIMD[x_dtype, 2](w0_val, w1_val)
+        case 4:
+            var w0_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            var w1_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            var w2_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
+            var w3_val = Scalar[x_dtype](weight.load[width=1]((channel_id, 3)))
+            W_4 = SIMD[x_dtype, 4](w0_val, w1_val, w2_val, w3_val)
+        case _:
+            w0 = Scalar[x_dtype](weight.load[width=1]((channel_id, 0)))
+            w1 = Scalar[x_dtype](weight.load[width=1]((channel_id, 1)))
+            w2 = Scalar[x_dtype](weight.load[width=1]((channel_id, 2)))
 
     var seq_start: Int = chunk_id * kChunkSize * kNElts + tidx * kNElts
     var seq_end: Int = min(seq_start + kNElts, nSeqLen)
@@ -848,55 +851,56 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
         # Build input window by loading directly from memory
         var conv_result: Scalar[x_dtype] = 0
 
-        comptime if kWidth == 1:
-            if seq_idx >= 0 and seq_idx < nSeqLen:
-                var x_val = Scalar[x_dtype](
-                    x.load[width=1]((batch_id, channel_id, seq_idx))
-                )
-                conv_result = w_single * x_val
-        elif kWidth == 2:
-            var input_window: SIMD[x_dtype, 2] = 0
-
-            comptime for w in range(2):
-                var input_l: Int = seq_idx - (1 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    input_window[w] = Scalar[x_dtype](
-                        x.load[width=1]((batch_id, channel_id, input_l))
+        comptime match kWidth:
+            case 1:
+                if seq_idx >= 0 and seq_idx < nSeqLen:
+                    var x_val = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, seq_idx))
                     )
-            var tmp: SIMD[x_dtype, 2] = W_2 * input_window
-            conv_result = tmp.reduce_add[1]()
-        elif kWidth == 4:
-            var input_window: SIMD[x_dtype, 4] = 0
+                    conv_result = w_single * x_val
+            case 2:
+                var input_window: SIMD[x_dtype, 2] = 0
 
-            comptime for w in range(4):
-                var input_l: Int = seq_idx - (3 - w)
-                if input_l >= 0 and input_l < nSeqLen:
-                    input_window[w] = Scalar[x_dtype](
-                        x.load[width=1]((batch_id, channel_id, input_l))
+                comptime for w in range(2):
+                    var input_l: Int = seq_idx - (1 - w)
+                    if input_l >= 0 and input_l < nSeqLen:
+                        input_window[w] = Scalar[x_dtype](
+                            x.load[width=1]((batch_id, channel_id, input_l))
+                        )
+                var tmp: SIMD[x_dtype, 2] = W_2 * input_window
+                conv_result = tmp.reduce_add[1]()
+            case 4:
+                var input_window: SIMD[x_dtype, 4] = 0
+
+                comptime for w in range(4):
+                    var input_l: Int = seq_idx - (3 - w)
+                    if input_l >= 0 and input_l < nSeqLen:
+                        input_window[w] = Scalar[x_dtype](
+                            x.load[width=1]((batch_id, channel_id, input_l))
+                        )
+                var tmp: SIMD[x_dtype, 4] = W_4 * input_window
+                conv_result = tmp.reduce_add[1]()
+            case _:
+                # kWidth == 3 case
+                var x0: Scalar[x_dtype] = 0
+                var x1: Scalar[x_dtype] = 0
+                var x2: Scalar[x_dtype] = 0
+                var input_l0: Int = seq_idx - 2
+                var input_l1: Int = seq_idx - 1
+                var input_l2: Int = seq_idx
+                if input_l0 >= 0 and input_l0 < nSeqLen:
+                    x0 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l0))
                     )
-            var tmp: SIMD[x_dtype, 4] = W_4 * input_window
-            conv_result = tmp.reduce_add[1]()
-        else:
-            # kWidth == 3 case
-            var x0: Scalar[x_dtype] = 0
-            var x1: Scalar[x_dtype] = 0
-            var x2: Scalar[x_dtype] = 0
-            var input_l0: Int = seq_idx - 2
-            var input_l1: Int = seq_idx - 1
-            var input_l2: Int = seq_idx
-            if input_l0 >= 0 and input_l0 < nSeqLen:
-                x0 = Scalar[x_dtype](
-                    x.load[width=1]((batch_id, channel_id, input_l0))
-                )
-            if input_l1 >= 0 and input_l1 < nSeqLen:
-                x1 = Scalar[x_dtype](
-                    x.load[width=1]((batch_id, channel_id, input_l1))
-                )
-            if input_l2 >= 0 and input_l2 < nSeqLen:
-                x2 = Scalar[x_dtype](
-                    x.load[width=1]((batch_id, channel_id, input_l2))
-                )
-            conv_result = w0 * x0 + w1 * x1 + w2 * x2
+                if input_l1 >= 0 and input_l1 < nSeqLen:
+                    x1 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l1))
+                    )
+                if input_l2 >= 0 and input_l2 < nSeqLen:
+                    x2 = Scalar[x_dtype](
+                        x.load[width=1]((batch_id, channel_id, input_l2))
+                    )
+                conv_result = w0 * x0 + w1 * x1 + w2 * x2
 
         var out_val: Scalar[x_dtype] = conv_result
         if silu_active:
@@ -1358,129 +1362,130 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
             var conv_sum: Scalar[output_dtype] = cur_bias
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            comptime if kWidth == 1:
-                var input_l: Int = seq_pos
-                if input_l >= 0 and input_l < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l)
+            comptime match kWidth:
+                case 1:
+                    var input_l: Int = seq_pos
+                    if input_l >= 0 and input_l < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l)
+                        )
+                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
+                        if input_seq_idx == cur_seq_idx:
+                            var x_val = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l, c_idx))
+                            )
+                            conv_sum += Scalar[output_dtype](
+                                Scalar[output_dtype](x_val)
+                                * Scalar[output_dtype](w0)
+                            )
+                case 2:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 1
+                    var input_l1: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
                     )
-                    var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                    if input_seq_idx == cur_seq_idx:
-                        var x_val = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l, c_idx))
+                case 3:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 2
+                    var input_l1: Int = seq_pos - 1
+                    var input_l2: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        conv_sum += Scalar[output_dtype](
-                            Scalar[output_dtype](x_val)
-                            * Scalar[output_dtype](w0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
                         )
-            elif kWidth == 2:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 1
-                var input_l1: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l2, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
                     )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l0, c_idx))
+                case _:  # kWidth == 4
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var x3: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 3
+                    var input_l1: Int = seq_pos - 2
+                    var input_l2: Int = seq_pos - 1
+                    var input_l3: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l2, c_idx))
+                            )
+                    if input_l3 >= 0 and input_l3 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l3)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x3 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l3, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
+                        + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
                     )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l1, c_idx))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                )
-            elif kWidth == 3:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 2
-                var input_l1: Int = seq_pos - 1
-                var input_l2: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l0, c_idx))
-                        )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l1, c_idx))
-                        )
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l2)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x2 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l2, c_idx))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                )
-            else:  # kWidth == 4
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var x3: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 3
-                var input_l1: Int = seq_pos - 2
-                var input_l2: Int = seq_pos - 1
-                var input_l3: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l0, c_idx))
-                        )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l1, c_idx))
-                        )
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l2)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x2 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l2, c_idx))
-                        )
-                if input_l3 >= 0 and input_l3 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l3)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x3 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l3, c_idx))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                    + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
-                )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
                 comptime if output_dtype.is_floating_point():
@@ -1615,129 +1620,130 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
             var conv_sum: Scalar[output_dtype] = 0.0
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            comptime if kWidth == 1:
-                var input_l: Int = seq_pos
-                if input_l >= 0 and input_l < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l)
+            comptime match kWidth:
+                case 1:
+                    var input_l: Int = seq_pos
+                    if input_l >= 0 and input_l < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l)
+                        )
+                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
+                        if input_seq_idx == cur_seq_idx:
+                            var x_val = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l, c_idx))
+                            )
+                            conv_sum += Scalar[output_dtype](
+                                Scalar[output_dtype](x_val)
+                                * Scalar[output_dtype](w0)
+                            )
+                case 2:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 1
+                    var input_l1: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
                     )
-                    var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                    if input_seq_idx == cur_seq_idx:
-                        var x_val = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l, c_idx))
+                case 3:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 2
+                    var input_l1: Int = seq_pos - 1
+                    var input_l2: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        conv_sum += Scalar[output_dtype](
-                            Scalar[output_dtype](x_val)
-                            * Scalar[output_dtype](w0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
                         )
-            elif kWidth == 2:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 1
-                var input_l1: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l2, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
                     )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l0, c_idx))
+                case _:  # kWidth == 4
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var x3: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 3
+                    var input_l1: Int = seq_pos - 2
+                    var input_l2: Int = seq_pos - 1
+                    var input_l3: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l0, c_idx))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l1, c_idx))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l2, c_idx))
+                            )
+                    if input_l3 >= 0 and input_l3 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l3)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x3 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, input_l3, c_idx))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
+                        + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
                     )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l1, c_idx))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                )
-            elif kWidth == 3:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 2
-                var input_l1: Int = seq_pos - 1
-                var input_l2: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l0, c_idx))
-                        )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l1, c_idx))
-                        )
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l2)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x2 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l2, c_idx))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                )
-            else:  # kWidth == 4
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var x3: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 3
-                var input_l1: Int = seq_pos - 2
-                var input_l2: Int = seq_pos - 1
-                var input_l3: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l0, c_idx))
-                        )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l1, c_idx))
-                        )
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l2)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x2 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l2, c_idx))
-                        )
-                if input_l3 >= 0 and input_l3 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l3)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x3 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, input_l3, c_idx))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                    + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
-                )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
                 comptime if output_dtype.is_floating_point():
@@ -1888,129 +1894,130 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
             var conv_sum: Scalar[output_dtype] = cur_bias
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            comptime if kWidth == 1:
-                var input_l: Int = seq_pos
-                if input_l >= 0 and input_l < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l)
+            comptime match kWidth:
+                case 1:
+                    var input_l: Int = seq_pos
+                    if input_l >= 0 and input_l < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l)
+                        )
+                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
+                        if input_seq_idx == cur_seq_idx:
+                            var x_val = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l))
+                            )
+                            conv_sum += Scalar[output_dtype](
+                                Scalar[output_dtype](x_val)
+                                * Scalar[output_dtype](w0)
+                            )
+                case 2:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 1
+                    var input_l1: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
                     )
-                    var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                    if input_seq_idx == cur_seq_idx:
-                        var x_val = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l))
+                case 3:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 2
+                    var input_l1: Int = seq_pos - 1
+                    var input_l2: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        conv_sum += Scalar[output_dtype](
-                            Scalar[output_dtype](x_val)
-                            * Scalar[output_dtype](w0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
                         )
-            elif kWidth == 2:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 1
-                var input_l1: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l2))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
                     )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l0))
+                case _:  # kWidth == 4
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var x3: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 3
+                    var input_l1: Int = seq_pos - 2
+                    var input_l2: Int = seq_pos - 1
+                    var input_l3: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l2))
+                            )
+                    if input_l3 >= 0 and input_l3 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l3)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x3 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l3))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
+                        + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
                     )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l1))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                )
-            elif kWidth == 3:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 2
-                var input_l1: Int = seq_pos - 1
-                var input_l2: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l0))
-                        )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l1))
-                        )
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l2)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x2 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l2))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                )
-            else:  # kWidth == 4
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var x3: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 3
-                var input_l1: Int = seq_pos - 2
-                var input_l2: Int = seq_pos - 1
-                var input_l3: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l0))
-                        )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l1))
-                        )
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l2)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x2 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l2))
-                        )
-                if input_l3 >= 0 and input_l3 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l3)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x3 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l3))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                    + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
-                )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
                 comptime if output_dtype.is_floating_point():
@@ -2137,129 +2144,130 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
             var conv_sum: Scalar[output_dtype] = 0.0
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            comptime if kWidth == 1:
-                var input_l: Int = seq_pos
-                if input_l >= 0 and input_l < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l)
+            comptime match kWidth:
+                case 1:
+                    var input_l: Int = seq_pos
+                    if input_l >= 0 and input_l < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l)
+                        )
+                        var input_seq_idx: Int32 = Int32(input_seq_idx_val)
+                        if input_seq_idx == cur_seq_idx:
+                            var x_val = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l))
+                            )
+                            conv_sum += Scalar[output_dtype](
+                                Scalar[output_dtype](x_val)
+                                * Scalar[output_dtype](w0)
+                            )
+                case 2:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 1
+                    var input_l1: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
                     )
-                    var input_seq_idx: Int32 = Int32(input_seq_idx_val)
-                    if input_seq_idx == cur_seq_idx:
-                        var x_val = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l))
+                case 3:
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 2
+                    var input_l1: Int = seq_pos - 1
+                    var input_l2: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                        conv_sum += Scalar[output_dtype](
-                            Scalar[output_dtype](x_val)
-                            * Scalar[output_dtype](w0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
                         )
-            elif kWidth == 2:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 1
-                var input_l1: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l2))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
                     )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l0))
+                case _:  # kWidth == 4
+                    var x0: Scalar[x_dtype] = 0
+                    var x1: Scalar[x_dtype] = 0
+                    var x2: Scalar[x_dtype] = 0
+                    var x3: Scalar[x_dtype] = 0
+                    var input_l0: Int = seq_pos - 3
+                    var input_l1: Int = seq_pos - 2
+                    var input_l2: Int = seq_pos - 1
+                    var input_l3: Int = seq_pos
+                    if input_l0 >= 0 and input_l0 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l0)
                         )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x0 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l0))
+                            )
+                    if input_l1 >= 0 and input_l1 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l1)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x1 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l1))
+                            )
+                    if input_l2 >= 0 and input_l2 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l2)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x2 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l2))
+                            )
+                    if input_l3 >= 0 and input_l3 < nSeqLen:
+                        var input_seq_idx_val = seq_idx.load[width=1](
+                            (batch_id, input_l3)
+                        )
+                        if Int32(input_seq_idx_val) == cur_seq_idx:
+                            x3 = Scalar[x_dtype](
+                                x.load[width=1]((batch_id, c_idx, input_l3))
+                            )
+                    conv_sum += Scalar[output_dtype](
+                        Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
+                        + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
+                        + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
+                        + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
                     )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l1))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                )
-            elif kWidth == 3:
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 2
-                var input_l1: Int = seq_pos - 1
-                var input_l2: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l0))
-                        )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l1))
-                        )
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l2)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x2 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l2))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                )
-            else:  # kWidth == 4
-                var x0: Scalar[x_dtype] = 0
-                var x1: Scalar[x_dtype] = 0
-                var x2: Scalar[x_dtype] = 0
-                var x3: Scalar[x_dtype] = 0
-                var input_l0: Int = seq_pos - 3
-                var input_l1: Int = seq_pos - 2
-                var input_l2: Int = seq_pos - 1
-                var input_l3: Int = seq_pos
-                if input_l0 >= 0 and input_l0 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l0)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x0 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l0))
-                        )
-                if input_l1 >= 0 and input_l1 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l1)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x1 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l1))
-                        )
-                if input_l2 >= 0 and input_l2 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l2)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x2 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l2))
-                        )
-                if input_l3 >= 0 and input_l3 < nSeqLen:
-                    var input_seq_idx_val = seq_idx.load[width=1](
-                        (batch_id, input_l3)
-                    )
-                    if Int32(input_seq_idx_val) == cur_seq_idx:
-                        x3 = Scalar[x_dtype](
-                            x.load[width=1]((batch_id, c_idx, input_l3))
-                        )
-                conv_sum += Scalar[output_dtype](
-                    Scalar[output_dtype](w0) * Scalar[output_dtype](x0)
-                    + Scalar[output_dtype](w1) * Scalar[output_dtype](x1)
-                    + Scalar[output_dtype](w2) * Scalar[output_dtype](x2)
-                    + Scalar[output_dtype](w3) * Scalar[output_dtype](x3)
-                )
             var out_val: Scalar[output_dtype] = conv_sum
             if silu_active:
                 comptime if output_dtype.is_floating_point():

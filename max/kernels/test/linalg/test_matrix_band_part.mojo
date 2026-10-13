@@ -52,11 +52,8 @@ def matrix_band_part[
     comptime rank = input.flat_rank
     var input_shape = IndexList[rank](Int(input.dim(0)), Int(input.dim(1)))
 
-    def input_fn[
-        width: Int,
-        _rank: Int,
-    ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
-        return input.load[width=width](Coord(rebind[IndexList[rank]](coords)))
+    def input_fn[width: Int](coords: Coord) {var input} -> SIMD[dtype, width]:
+        return input.load[width=width](coords)
 
     _matrix_band_part[
         dtype,

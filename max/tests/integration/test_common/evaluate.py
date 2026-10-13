@@ -41,6 +41,7 @@ from max.pipelines.context import (
     SamplingParams,
 )
 from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.generate import Batch
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     PixelGenerationInputs,
@@ -187,7 +188,13 @@ def run_model(
             reference_by_id,
             logits_processors,
         )
-        outputs = pipeline.generate(batch)
+        contexts = [
+            asyncio.run(pipeline.tokenizer.new_context(request))
+            for request in batch
+        ]
+        with Batch.from_contexts(pipeline, contexts) as generation:
+            while not generation.done:
+                generation.step()
         if print_outputs:
             for j in range(len(batch)):
                 request = requests_in_batch[j]
@@ -201,7 +208,10 @@ def run_model(
                 print(
                     "Output:",
                     tokenizer.delegate.decode(
-                        outputs[j].tokens, skip_special_tokens=True
+                        generation.sequences[j][
+                            contexts[j].tokens.prompt_length :
+                        ],
+                        skip_special_tokens=True,
                     ),
                 )
 

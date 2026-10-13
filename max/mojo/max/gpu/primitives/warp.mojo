@@ -39,14 +39,9 @@ from std.sys import (
     is_nvidia_gpu,
     llvm_intrinsic,
     size_of,
-    _RegisterPackType,
 )
 from std.sys._assembly import inlined_assembly
-from std.sys.info import (
-    _cdna_4_or_newer,
-    _cdna_5_or_newer,
-    _is_sm_100x_or_newer,
-)
+from std.sys.info import _cdna_4_or_newer, _cdna_5_or_newer
 from std.sys.intrinsics import readfirstlane
 
 from std.bit import log2_floor

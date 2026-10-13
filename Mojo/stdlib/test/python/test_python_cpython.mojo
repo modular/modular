@@ -21,8 +21,6 @@ from std.python._cpython import (
     PyModuleDef,
     PyObject,
     PyObjectPtr,
-    Py_TPFLAGS_LONG_SUBCLASS,
-    Py_TPFLAGS_LIST_SUBCLASS,
 )
 from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.testing import (

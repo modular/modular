@@ -19,26 +19,18 @@ DTYPE-BRANCHES on the operand element type: packed `uint8` activations ->
 that fuses the MoE gate/up grouped matmul + SwiGLU + re-quant (L1) and the down
 projection (L2) into one launch (one phase pipelined across SMs).  The graph
 compiler emits this composite when the MegaFFN fusion fires (SM100,
-`num_experts <= 64` per device, single-use intermediate, shared routing, bf16
+`num_experts <= 128` per device, single-use intermediate, shared routing, bf16
 out); the fusion + composite op are dtype-agnostic, so the same op carries
 NVFP4 (uint8) or MXFP8 (e4m3) data and this binding selects the dispatch.
 
-Clamped-SwiGLU (`swigluoai`) status: the activation SELECTOR
-`clamp_activation` is plumbed end-to-end as a `Bool` op attribute (the
-emitter sets it, the MegaFFN fusion copies it from the L1 leg, and MOGG
-binds it to the comptime `clamp_activation` param here).  When the
-selector is set, this binding supplies `swigluoai`'s canonical clamp
-constants (alpha=1.702, limit=7.0) to `mega_ffn_{nvfp4,mxfp8}_dispatch`,
-so the standard `swigluoai` activation is numerically CORRECT through the
-fusion; `clamp_activation=False` (plain SwiGLU, the default) is also
-correct.  The alpha/limit VALUES are supplied here rather than carried on
-the op because MOGG cannot bind an f32 kernel arg from an op attribute
-(comptime params forward only Integer/Bool/String attributes; runtime
-kernel args bind only from operands).  A model whose clamp uses
-NON-standard alpha/limit would need those values carried as host f32
-scalar-tensor OPERANDS on the composite ops (mirroring the
-`masked_flash_attention` `scale` operand) -- a `.td` operand addition
-tracked as a follow-up.
+The L1 gated activation is selected by three string op attributes,
+`activation`, `swiglu_alpha` and `swiglu_limit`.  The emitter sets them on
+the L1 leg, the MegaFFN fusion copies them onto the fused op, and MOGG
+binds them to the same-named comptime params here, which build the
+dispatch's comptime `activation` with `get_swiglu_activation`.  The
+constants are decimal strings parsed at compile time because the
+activation is a comptime thin function and MOGG forwards only
+Integer/Bool/String attributes as comptime params.
 
 Per-expert scaling is applied PER LEG: the composite op exposes two
 scale arrays -- `gate_up_expert_scales` (L1) and `down_expert_scales`
@@ -121,6 +113,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
     GEMMKind,
 )
+from linalg.swiglu_activation import comptime_atof, get_swiglu_activation
 from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
     P3_MAX_RANKS,
 )
@@ -161,10 +154,9 @@ struct Struct_mega_ffn_nvfp4:
 
     Lowers the `mo.composite.mega_ffn_nvfp4` composite op (gate/up GMM +
     SwiGLU + NVFP4 re-quant fused with the down GMM, all in one launch)
-    to `mega_ffn_nvfp4_dispatch` on SM100 GPUs.  The clamped-SwiGLU
-    activation selector `clamp_activation` is bound from the same-named
-    `Bool` op attribute; the alpha/limit values are a follow-up (see the
-    module docstring).
+    to `mega_ffn_nvfp4_dispatch` on SM100 GPUs.  The L1 activation is
+    bound from the op's `activation` / `swiglu_alpha` / `swiglu_limit`
+    string attributes (see the module docstring).
     """
 
     @inline(.always)
@@ -176,7 +168,9 @@ struct Struct_mega_ffn_nvfp4:
         scales_type: DType,
         row_scales_type: DType,
         //,
-        clamp_activation: Bool,
+        activation: StaticString,
+        swiglu_alpha: StaticString,
+        swiglu_limit: StaticString,
         has_gate_up_a_row_scales: Bool,
         target: StaticString,
     ](
@@ -207,9 +201,9 @@ struct Struct_mega_ffn_nvfp4:
         both weights, and the down intermediate are NVFP4 (4-bit packed as
         uint8); scales are `float8_e4m3fn` in tcgen05 layout.
 
-        The clamped-SwiGLU selector `clamp_activation` is forwarded to the
-        dispatch (its alpha/limit values are a follow-up; see the module
-        docstring).  Both per-leg scale arrays are forwarded:
+        The `activation` / `swiglu_alpha` / `swiglu_limit` params pick the
+        dispatch's comptime `activation` (see the module docstring).  Both
+        per-leg scale arrays are forwarded:
         `gate_up_expert_scales` drives the L1 SwiGLU store and
         `down_expert_scales` drives the L2 final-output store.  The
         on-chip `c_packed` / `c_swiglu_scales` scratch is allocated per call
@@ -228,10 +222,11 @@ struct Struct_mega_ffn_nvfp4:
                 NVFP4, `float8_e8m0fnu` for MXFP8).
             row_scales_type: The L1 per-row input scale dtype (`bfloat16`
                 when `has_gate_up_a_row_scales`).
-            clamp_activation: Activation flavor for the fused L1 SwiGLU
-                epilogue. `False` = plain SwiGLU; `True` = clamped
-                (`swigluoai`). Bound from the op's `clamp_activation`
-                attribute.
+            activation: Activation name, bound from the op's same-named
+                attribute; the activation is built at compile time.
+            swiglu_alpha: Activation constant as a decimal string (graph ops
+                cannot carry float parameters).
+            swiglu_limit: Activation constant as a decimal string.
             has_gate_up_a_row_scales: Whether `gate_up_a_row_scales` holds
                 per-row input scales for the L1 leg. Constraints: NVFP4
                 only.
@@ -401,18 +396,11 @@ struct Struct_mega_ffn_nvfp4:
         # is safe.
         var arrival_count_ptr = arrival_count.unsafe_ptr()
 
-        # The clamped-SwiGLU (`swigluoai`) runtime alpha/limit cannot ride as op
-        # attributes (MOGG binds f32 kernel args only from operands), so for the
-        # standard `swigluoai` activation this binding supplies its canonical
-        # constants directly when the `clamp_activation` selector is set. A model
-        # whose clamp uses non-standard alpha/limit would need host f32 scalar
-        # operands on the composite op (a follow-up; see the module docstring).
-        comptime swiglu_alpha = Float32(1.702) if clamp_activation else Float32(
-            0.0
-        )
-        comptime swiglu_limit = Float32(7.0) if clamp_activation else Float32(
-            0.0
-        )
+        comptime act = get_swiglu_activation[
+            activation,
+            comptime_atof[swiglu_alpha](),
+            comptime_atof[swiglu_limit](),
+        ]
 
         comptime if is_mxfp8:
             comptime assert (
@@ -425,7 +413,7 @@ struct Struct_mega_ffn_nvfp4:
             mega_ffn_mxfp8_dispatch[
                 num_experts=num_experts,
                 transpose_b=True,
-                clamp_activation=clamp_activation,
+                activation=act,
             ](
                 output.to_tile_tensor[.int64](),
                 c_packed,
@@ -445,8 +433,6 @@ struct Struct_mega_ffn_nvfp4:
                 Int(estimated_total_m),
                 context,
                 arrival_count_ptr,
-                swiglu_alpha=swiglu_alpha,
-                swiglu_limit=swiglu_limit,
             )
         elif has_gate_up_a_row_scales:
             comptime assert (
@@ -455,7 +441,7 @@ struct Struct_mega_ffn_nvfp4:
             mega_ffn_nvfp4_dispatch[
                 num_experts=num_experts,
                 transpose_b=True,
-                clamp_activation=clamp_activation,
+                activation=act,
                 RowScalesT=RealRowScales,
             ](
                 output.to_tile_tensor[.int64](),
@@ -477,8 +463,6 @@ struct Struct_mega_ffn_nvfp4:
                 Int(estimated_total_m),
                 context,
                 arrival_count_ptr,
-                swiglu_alpha=swiglu_alpha,
-                swiglu_limit=swiglu_limit,
                 a_row_scales=RealRowScales(
                     rebind[Pointer[BFloat16, ImmutAnyOrigin]](
                         gate_up_a_row_scales.unsafe_ptr()
@@ -490,7 +474,7 @@ struct Struct_mega_ffn_nvfp4:
             mega_ffn_nvfp4_dispatch[
                 num_experts=num_experts,
                 transpose_b=True,
-                clamp_activation=clamp_activation,
+                activation=act,
             ](
                 output.to_tile_tensor[.int64](),
                 c_packed,
@@ -511,8 +495,6 @@ struct Struct_mega_ffn_nvfp4:
                 Int(estimated_total_m),
                 context,
                 arrival_count_ptr,
-                swiglu_alpha=swiglu_alpha,
-                swiglu_limit=swiglu_limit,
             )
 
         # Keep the on-chip scratch buffers alive until the launch is enqueued
@@ -562,7 +544,9 @@ struct Struct_mega_ffn_ep_combine_send:
         max_token_per_rank: Int,
         n_gpus_per_node: Int,
         n_nodes: Int,
-        clamp_activation: Bool,
+        activation: StaticString,
+        swiglu_alpha: StaticString,
+        swiglu_limit: StaticString,
         target: StaticString,
     ](
         arrival_count: MutableInputTensor[dtype=DType.uint32, rank=1, ...],
@@ -605,8 +589,11 @@ struct Struct_mega_ffn_ep_combine_send:
             n_gpus_per_node: GPUs per node; the number of live pointer-table
                 entries.
             n_nodes: Physical node count.
-            clamp_activation: `True` selects the clamped (`swigluoai`) L1
-                activation; the dispatch supplies its canonical constants.
+            activation: Activation name, bound from the op's same-named
+                attribute; the activation is built at compile time.
+            swiglu_alpha: Activation constant as a decimal string (graph ops
+                cannot carry float parameters).
+            swiglu_limit: Activation constant as a decimal string.
             target: Target GPU device.
 
         Args:
@@ -654,15 +641,27 @@ struct Struct_mega_ffn_ep_combine_send:
         # side, because a graph cannot read a Mojo comptime. Nothing keeps the
         # two in step, and a stride that disagrees silently corrupts the pool
         # rather than failing, so check the shape the kernel actually needs.
+        # The per-expert words are indexed by LOCAL expert (the weights'
+        # expert dim), as the Python allocator sizes them; the GLOBAL
+        # `n_experts` would refuse a valid buffer at EP8 below 28 tokens per
+        # rank.
+        comptime n_local_experts = Int(
+            gate_up_weight.static_spec.shape_tuple[0]
+        )
         var arrival_words = Int(arrival_count.dim_size[0]())
-        if (
-            arrival_words % ATOMIC_PAD != 0
-            or arrival_words < (n_experts + 1) * ATOMIC_PAD
-        ):
+        comptime required_words = (n_local_experts + 1) * ATOMIC_PAD
+        if arrival_words % ATOMIC_PAD != 0 or arrival_words < required_words:
             raise Error(
-                "arrival_count must be a whole number of ATOMIC_PAD-word pool"
-                " slots and hold at least n_experts + 1 of them, since the"
-                " send keeps its per-expert words in slot padding"
+                "arrival_count has ",
+                arrival_words,
+                " words; it must be a whole number of ",
+                ATOMIC_PAD,
+                "-word pool slots and hold at least ",
+                required_words,
+                (
+                    " (one slot per local expert, plus one), since the send"
+                    " keeps its per-expert words in slot padding"
+                ),
             )
 
         var num_active = Int(num_active_experts)
@@ -782,12 +781,11 @@ struct Struct_mega_ffn_ep_combine_send:
         comptime n_ranks = n_gpus_per_node * n_nodes
         comptime msg_bytes = size_of[combine_dtype]() * hidden_size
 
-        comptime swiglu_alpha = Float32(1.702) if clamp_activation else Float32(
-            0.0
-        )
-        comptime swiglu_limit = Float32(7.0) if clamp_activation else Float32(
-            0.0
-        )
+        comptime act = get_swiglu_activation[
+            activation,
+            comptime_atof[swiglu_alpha](),
+            comptime_atof[swiglu_limit](),
+        ]
 
         var ep_send = EPCombineSendOperands(
             control=0,
@@ -815,7 +813,7 @@ struct Struct_mega_ffn_ep_combine_send:
         mega_ffn_nvfp4_dispatch[
             num_experts=num_experts,
             transpose_b=True,
-            clamp_activation=clamp_activation,
+            activation=act,
             p5_direct_scatter=True,
             p4_signal=True,
             emit_ffn_done=True,
@@ -839,8 +837,6 @@ struct Struct_mega_ffn_ep_combine_send:
             Int(estimated_total_m),
             context,
             arrival_count.unsafe_ptr(),
-            swiglu_alpha=swiglu_alpha,
-            swiglu_limit=swiglu_limit,
             ep_send=ep_send,
         )
 
@@ -1527,6 +1523,9 @@ struct Struct_mega_ffn_ep_fused:
         n_gpus_per_node: Int,
         n_nodes: Int,
         target: StaticString,
+        activation: StaticString = "silu",
+        swiglu_alpha: StaticString = "0.0",
+        swiglu_limit: StaticString = "0.0",
     ](
         output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
         atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
@@ -1558,6 +1557,11 @@ struct Struct_mega_ffn_ep_fused:
             n_gpus_per_node: GPUs per node (the EP world).
             n_nodes: Must be 1 (P2P only).
             target: Target GPU device.
+            activation: The gate-up leg's gated activation, built at compile
+                time with `swiglu_alpha` and `swiglu_limit`; the constants are
+                decimal strings because kernel parameters cannot be floats.
+            swiglu_alpha: The activation's alpha.
+            swiglu_limit: The activation's clamp limit.
 
         Args:
             output: Token-indexed routed output `(T, hidden)` BF16.
@@ -1580,10 +1584,14 @@ struct Struct_mega_ffn_ep_fused:
             context: Device context.
         """
         comptime assert is_gpu[target](), "the fused EP MoE only supports GPUs"
+        comptime act = get_swiglu_activation[
+            activation,
+            comptime_atof[swiglu_alpha](),
+            comptime_atof[swiglu_limit](),
+        ]
         comptime n_ranks = n_gpus_per_node
         # The format and MoE width follow from the weights; the decision and
         # geometry come from the same plan `mega_ffn.ep_fused_init` used.
-        comptime nvfp4 = b_type == DType.uint8
         comptime P = _FusedEPPlan[
             b_type,
             hidden_size,
@@ -1819,7 +1827,7 @@ struct Struct_mega_ffn_ep_fused:
             ),
             row_major[G.n_local](),
         )
-        var swiglu_out = RealSwiGLUOutput[G.k2, G.k2g, G.sfdt, G.sfv, False](
+        var swiglu_out = RealSwiGLUOutput[G.k2, G.k2g, G.sfdt, G.sfv, act](
             UnsafePointer[UInt8, MutAnyOrigin](
                 unsafe_from_address=bases[me] + G.OFF_INTER
             ),
@@ -1914,11 +1922,11 @@ struct Struct_mega_ffn_ep_fused:
             p4_direct_pair_release=True,
             p4_one_signal=True,
             p4_poll_fence=True,
-            # MXFP8 at token block 32 only, the measured configuration and the
-            # one its gates cover; NVFP4 and token block 8 keep the release at
-            # the first k-group.
-            ep_late_full_release=(not nvfp4 and G.token_block == 32),
-            ep_coop_src_info=(not nvfp4 and G.token_block == 32),
+            # Token block 32 (either format), the configuration the FULL
+            # correctness tests cover; token block 8 keeps the release at the
+            # first k-group and the elected-lane `src_info` writer.
+            ep_late_full_release=(G.token_block == 32),
+            ep_coop_src_info=(G.token_block == 32),
             ep_fused_full=True,
             ep_fused_full_verify=False,
             ep_input_scales_wrapper=in_scale_fn,

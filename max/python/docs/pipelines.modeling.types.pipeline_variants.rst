@@ -20,6 +20,7 @@ Text generation
    :template: autosummary/class.rst
 
    BatchType
+   CompletedBatchStats
    ImageContentPart
    MessageContent
    TextContentPart

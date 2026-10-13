@@ -92,7 +92,7 @@ class TestReduceRule:
 
 
 class TestLinearReduceRule:
-    """Tests for linear_reduce_rule (sum, cumsum)."""
+    """Tests for linear_reduce_rule (sum; cumsum uses reduce_rule)."""
 
     def test_partial_passthrough(self) -> None:
         """Linear reduce: Partial passes through (not resolved)."""

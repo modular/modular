@@ -20,7 +20,6 @@ re-exec'd child and checks that the child crashed with the expected message.
 from std.ffi import _Global
 from std.os import abort, remove
 from std.os.env import getenv, setenv, unsetenv
-from std.os.path import exists
 from std.os.process import Process, ProcessStatus
 from std.reflection import call_location, SourceLocation
 from std.sys import argv
@@ -147,8 +146,8 @@ def _run(f: Some[def() raises]) raises:
     with open(getenv(_OUTPUT_ENV), "w") as out_file:
         var fd = Int32(out_file._get_raw_fd())
         # redirect stdout/stderr to the output file
-        _ = dup2(fd, Int32(stdout.value))
-        _ = dup2(fd, Int32(stderr.value))
+        _ = dup2(fd, stdout.value)
+        _ = dup2(fd, stderr.value)
     f()
 
 
@@ -233,8 +232,7 @@ def _spawn_and_check(
             t"assert_aborts: expected the process to abort, but it exited"
             t" normally{note}.\nCaptured output:\n{captured}"
         )
-    if contains:
-        var message = contains.value()
+    if case .Some(message) = contains:
         if message not in captured:
             raise Error(
                 t"assert_aborts: the process aborted, but the captured output"

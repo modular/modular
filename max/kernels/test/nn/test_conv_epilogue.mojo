@@ -147,7 +147,7 @@ def test[
     comptime conv_attr = ConvInfoStatic[rank]()
 
     @inline(.always)
-    def null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
+    def null_epilogue(coords: Coord, f_size: Int):
         pass
 
     comptime if filter_packed:
@@ -197,18 +197,17 @@ def test[
     # Test epilogue
     @inline(.always)
     @__parameter
-    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
+    def epilogue(coords: Coord, f_size: Int):
         @inline(.always)
         def body1[width: Int](idx: Int) {imm}:
-            var curr_coords = rebind[IndexList[rank + 2]](coords)
-            curr_coords[rank + 1] += idx
+            var f = Int(coords[rank + 1].value()) + idx
+            var curr_coords = coords
+            curr_coords.replace_dynamic[rank + 1](f)
 
-            var vec = output.load[width=width](Coord(curr_coords))
+            var vec = output.load[width=width](curr_coords)
 
             output.store(
-                Coord(curr_coords),
-                10.0
-                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
+                curr_coords, 10.0 * (vec + bias_ptr.load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)

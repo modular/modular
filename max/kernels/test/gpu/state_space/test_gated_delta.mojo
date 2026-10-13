@@ -15,11 +15,7 @@ import std.math
 from std.math import sqrt
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from max.gpu.host import DeviceBuffer
 from std.random import rand, random_float64, seed
 from state_space.gated_delta import gated_delta_recurrence_fwd_gpu

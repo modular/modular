@@ -53,7 +53,7 @@ from max.gpu.host.info import MI355X
 from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.sync import schedule_barrier, s_waitcnt
 
-from layout import TensorLayout, TensorEngine, TileTensor
+from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
@@ -62,7 +62,6 @@ from pipeline.config import ScheduleConfig, SchedulingStrategy
 from pipeline.geometry import KernelGeometry
 from pipeline.pipeline_dsl import ScheduleEntry
 from pipeline.program_builder import derive_safe_max_globals
-from pipeline.types import _Ops
 
 from structured_kernels.amd_tile_io import RegTileEpilogue, TileLoaderLDS
 from structured_kernels.amd_tile_io_conv import TileLoaderLDSIm2col
@@ -77,11 +76,7 @@ from ....utils import (
 )
 from .amd_target import mi355x_target
 from .amd_4wave_schedule import (
-    LOAD_A,
-    LOAD_B,
-    MMA_LOAD_A,
-    MMA_LOAD_B,
-    MMA,
+    FourWaveOps,
     build_schedule,
 )
 from .matmul_mma import QuadrantMmaOp
@@ -1122,8 +1117,7 @@ struct AMD4WaveMatmul[
         )
 
         @inline(.always)
-        @__parameter
-        def load_a[stage: Int, which: Int](k: Int):
+        def load_a[stage: Int, which: Int](k: Int) {imm}:
             a_loader.load_tile(
                 a_load_tiles[stage][which],
                 m_offset=which * half_BM,
@@ -1131,8 +1125,7 @@ struct AMD4WaveMatmul[
             )
 
         @inline(.always)
-        @__parameter
-        def load_b[stage: Int, which: Int](k: Int):
+        def load_b[stage: Int, which: Int](k: Int) {imm}:
             b_loader.load_tile(
                 b_load_tiles[stage][which],
                 m_offset=which * half_BN,
@@ -1152,9 +1145,8 @@ struct AMD4WaveMatmul[
         # ====================================================
         # Body: framework-driven via Pipeline4Wave.
         # ====================================================
-        @__parameter
         @inline(.always)
-        def _emit_framework_body():
+        def _emit_framework_body() {imm}:
             # `Pipeline4Wave.__init__` forces IDENTITY +
             # minimal_barriers + omit_mma_set_prio; the ScheduleConfig
             # we pass here only contributes `sched_barrier_mask` and
@@ -1211,41 +1203,42 @@ struct AMD4WaveMatmul[
                 sched_config, target
             )
 
-            @__parameter
             @inline(.always)
-            def _bind[entry: ScheduleEntry](k_base: Int):
+            def _bind[entry: ScheduleEntry](k_base: Int) {imm}:
                 # Framework-level infrastructure tags (BARRIER / WAIT_* /
                 # SET_PRIO / SCHEDULE_BARRIER) emit AMD intrinsics
                 # directly; kernel-specific data tags (LOAD_A / LOAD_B /
                 # MMA_LOAD_* / MMA) call the kernel's own loaders.
-                comptime if entry.op.tag == _Ops.BARRIER.value:
-                    llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-                elif entry.op.tag == _Ops.WAIT_VM.value:
-                    s_waitcnt[vmcnt=UInt32(entry.op.wait_value)]()
-                elif entry.op.tag == _Ops.WAIT_LGKM.value:
-                    s_waitcnt[lgkmcnt=UInt32(entry.op.wait_value)]()
-                elif entry.op.tag == _Ops.SET_PRIO.value:
-                    llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](
-                        Int16(entry.op.wait_value)
-                    )
-                elif entry.op.tag == _Ops.SCHEDULE_BARRIER.value:
-                    schedule_barrier()
-                else:
-                    comptime k_off = entry.op.k_offset.signed_bk_multiple()
-                    var k = k_base + k_off * BK
-                    comptime if entry.op.tag == LOAD_A:
+                # `FourWaveOps` names both sets, so one match covers them.
+                comptime k_off = entry.op.k_offset.signed_bk_multiple()
+                var k = k_base + k_off * BK
+                comptime op = FourWaveOps(entry.op.tag)
+                comptime match op:
+                    case .BARRIER:
+                        llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
+                    case .WAIT_VM:
+                        s_waitcnt[vmcnt=UInt32(entry.op.wait_value)]()
+                    case .WAIT_LGKM:
+                        s_waitcnt[lgkmcnt=UInt32(entry.op.wait_value)]()
+                    case .SET_PRIO:
+                        llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](
+                            Int16(entry.op.wait_value)
+                        )
+                    case .SCHEDULE_BARRIER:
+                        schedule_barrier()
+                    case .LOAD_A:
                         load_a[entry.op.stage, entry.op.subtile](k)
-                    elif entry.op.tag == LOAD_B:
+                    case .LOAD_B:
                         load_b[entry.op.stage, entry.op.subtile](k)
-                    elif entry.op.tag == MMA_LOAD_A:
+                    case .MMA_LOAD_A:
                         mma_op.load_a_quadrant[entry.op.subtile](
                             a_mma_tiles[entry.op.stage][entry.op.subtile]
                         )
-                    elif entry.op.tag == MMA_LOAD_B:
+                    case .MMA_LOAD_B:
                         mma_op.load_b_quadrant[entry.op.subtile](
                             b_mma_tiles[entry.op.stage][entry.op.subtile]
                         )
-                    elif entry.op.tag == MMA:
+                    case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
 
             # Prologue. The schedule overrides `warp_stagger=none()`
@@ -1379,7 +1372,7 @@ struct AMD4WaveMatmul[
         # Pre-residual fused compute lambda (SM100 reference:
         # `D = lambda(Conv(A,B)) + beta * C`). Fires on the post-cast
         # `c_type` MMA output, BEFORE the residual FMA. Signature
-        # `(IndexList[2], SIMD) capturing -> SIMD`. Use for bias / ReLU /
+        # `(Coord, SIMD) capturing -> SIMD`. Use for bias / ReLU /
         # SiLU / GELU fusion. The post-residual store-site lambda is
         # the existing struct-level `Self.elementwise_lambda_fn` and
         # fires after the residual FMA (or directly on the MMA output
@@ -1434,7 +1427,7 @@ struct AMD4WaveMatmul[
                 output BEFORE the residual FMA, matching the SM100
                 `D = lambda(Conv(A,B)) + beta * C` ordering. Use for
                 bias / ReLU / SiLU / GELU fusion. Signature
-                `(IndexList[2], SIMD) capturing -> SIMD`. When unset,
+                `(Coord, SIMD) capturing -> SIMD`. When unset,
                 the comptime branch dead-code-eliminates.
 
         Args:
@@ -1736,8 +1729,7 @@ struct AMD4WaveMatmul[
         )
 
         @inline(.always)
-        @__parameter
-        def load_a[stage: Int, which: Int](k: Int):
+        def load_a[stage: Int, which: Int](k: Int) {imm}:
             # `m_anchor=pid_m*BM` baked into the loader at construction;
             # callsite only carries the within-block `which*half_BM`
             # offset — same shape as the matmul's load_a / load_b.
@@ -1748,8 +1740,7 @@ struct AMD4WaveMatmul[
             )
 
         @inline(.always)
-        @__parameter
-        def load_b[stage: Int, which: Int](k: Int):
+        def load_b[stage: Int, which: Int](k: Int) {imm}:
             b_loader.load_tile(
                 b_load_tiles[stage][which],
                 m_offset=which * half_BN,
@@ -1769,9 +1760,8 @@ struct AMD4WaveMatmul[
         # ====================================================
         # Body: framework-driven via Pipeline4Wave.
         # ====================================================
-        @__parameter
         @inline(.always)
-        def _emit_framework_body():
+        def _emit_framework_body() {imm}:
             # `Pipeline4Wave.__init__` forces IDENTITY +
             # minimal_barriers + omit_mma_set_prio; the ScheduleConfig
             # we pass here only contributes `sched_barrier_mask` and
@@ -1814,41 +1804,42 @@ struct AMD4WaveMatmul[
                 sched_config, target
             )
 
-            @__parameter
             @inline(.always)
-            def _bind[entry: ScheduleEntry](k_base: Int):
+            def _bind[entry: ScheduleEntry](k_base: Int) {imm}:
                 # Framework-level infrastructure tags (BARRIER / WAIT_* /
                 # SET_PRIO / SCHEDULE_BARRIER) emit AMD intrinsics
                 # directly; kernel-specific data tags (LOAD_A / LOAD_B /
                 # MMA_LOAD_* / MMA) call the kernel's own loaders.
-                comptime if entry.op.tag == _Ops.BARRIER.value:
-                    llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-                elif entry.op.tag == _Ops.WAIT_VM.value:
-                    s_waitcnt[vmcnt=UInt32(entry.op.wait_value)]()
-                elif entry.op.tag == _Ops.WAIT_LGKM.value:
-                    s_waitcnt[lgkmcnt=UInt32(entry.op.wait_value)]()
-                elif entry.op.tag == _Ops.SET_PRIO.value:
-                    llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](
-                        Int16(entry.op.wait_value)
-                    )
-                elif entry.op.tag == _Ops.SCHEDULE_BARRIER.value:
-                    schedule_barrier()
-                else:
-                    comptime k_off = entry.op.k_offset.signed_bk_multiple()
-                    var k = k_base + k_off * BK
-                    comptime if entry.op.tag == LOAD_A:
+                # `FourWaveOps` names both sets, so one match covers them.
+                comptime k_off = entry.op.k_offset.signed_bk_multiple()
+                var k = k_base + k_off * BK
+                comptime op = FourWaveOps(entry.op.tag)
+                comptime match op:
+                    case .BARRIER:
+                        llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
+                    case .WAIT_VM:
+                        s_waitcnt[vmcnt=UInt32(entry.op.wait_value)]()
+                    case .WAIT_LGKM:
+                        s_waitcnt[lgkmcnt=UInt32(entry.op.wait_value)]()
+                    case .SET_PRIO:
+                        llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](
+                            Int16(entry.op.wait_value)
+                        )
+                    case .SCHEDULE_BARRIER:
+                        schedule_barrier()
+                    case .LOAD_A:
                         load_a[entry.op.stage, entry.op.subtile](k)
-                    elif entry.op.tag == LOAD_B:
+                    case .LOAD_B:
                         load_b[entry.op.stage, entry.op.subtile](k)
-                    elif entry.op.tag == MMA_LOAD_A:
+                    case .MMA_LOAD_A:
                         mma_op.load_a_quadrant[entry.op.subtile](
                             a_mma_tiles[entry.op.stage][entry.op.subtile]
                         )
-                    elif entry.op.tag == MMA_LOAD_B:
+                    case .MMA_LOAD_B:
                         mma_op.load_b_quadrant[entry.op.subtile](
                             b_mma_tiles[entry.op.stage][entry.op.subtile]
                         )
-                    elif entry.op.tag == MMA:
+                    case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
 
             # Prologue. The schedule overrides `warp_stagger=none()`
@@ -2021,10 +2012,9 @@ struct AMD4WaveMatmul[
                         # semantics. Fires on the post-cast `c_type`
                         # MMA output (use cases: bias / ReLU / SiLU /
                         # GELU before the skip add).
-                        comptime if elementwise_compute_lambda_fn:
-                            comptime _compute_fn = (
-                                elementwise_compute_lambda_fn.value()
-                            )
+                        comptime if case .Some(
+                            _compute_fn
+                        ) = elementwise_compute_lambda_fn:
                             v = _compute_fn[
                                 alignment=align_of[
                                     SIMD[Self.c_type, c_frag_size]

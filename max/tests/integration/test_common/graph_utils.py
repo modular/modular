@@ -35,6 +35,11 @@ def is_b100_b200() -> bool:
     return accelerator_architecture_name().startswith("sm_100")
 
 
+def is_gfx950() -> bool:
+    """Checks if this is a gfx950 (MI350/MI355) GPU."""
+    return accelerator_architecture_name().startswith("gfx950")
+
+
 def is_nvidia_gpu() -> bool:
     """Checks if the GPU is an NVIDIA GPU."""
     return accelerator_api() == "cuda"

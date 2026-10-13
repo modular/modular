@@ -41,7 +41,6 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
-   RejectionSamplingStrategy
    SpeculativeConfig
    SpeculativeMethod
    VerifyWidthRange

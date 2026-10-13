@@ -107,6 +107,7 @@ modular_py_test(
     per_test_tags = {
         "tests/test_vision_model.py": ["manual"],  # MODELS-1422: Test timing out in CI
     },
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",

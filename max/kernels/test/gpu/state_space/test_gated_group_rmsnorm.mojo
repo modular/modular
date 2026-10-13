@@ -24,7 +24,7 @@ pointer arithmetic, no shared memory).
 from std.math import rsqrt
 from std.sys import size_of
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from std.testing import TestSuite, assert_almost_equal
 
 from nn.activations import silu

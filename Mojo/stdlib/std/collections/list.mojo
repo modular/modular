@@ -1302,11 +1302,11 @@ struct List[T: AnyType, /](
         var start_normalized = start
 
         var stop_normalized: Int
-        if stop is None:
+        if case .Some(stop_value) = stop:
+            stop_normalized = stop_value
+        else:
             # Default end
             stop_normalized = len(self)
-        else:
-            stop_normalized = stop.value()
 
         if start_normalized < 0:
             start_normalized += len(self)

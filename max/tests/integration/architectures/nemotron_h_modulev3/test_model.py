@@ -253,7 +253,7 @@ def test_each_sharded_mixer_reduces_once(
     monkeypatch: pytest.MonkeyPatch, n: int
 ) -> None:
     """Attention, the MoE and the Mamba mixer each end in one allreduce,
-    and nothing else moves activations between devices.
+    while the LM head gathers the vocabulary before sampling.
 
     The routed experts and the shared expert both return partial sums, which
     the residual add reduces together. The three Mamba layers share one
@@ -279,6 +279,21 @@ def test_quantized_mixers_reduce_once(
     )
     assert allreduces == 3
     assert peer_copies == []
+
+
+@pytest.mark.parametrize("n", [1, 2, 4, 8])
+def test_lm_head_shards_the_vocabulary(n: int) -> None:
+    """Each device holds an equal share of the vocabulary, whose order the
+    allgather in ``_logits`` restores before sampling.
+
+    Building the logits graph is covered on real devices by the serving
+    smoke tests, which run this architecture at TP=2.
+    """
+    config = model_config(TINY_LAYERS, WIDE, n_devices=n)
+    model = _model_on_devices(config)
+    weight = model.lm_head.weight
+    assert weight.placements == ((Sharded(0),) if n > 1 else (Replicated(),))
+    assert int(weight.local_shards[0].shape[0]) == config.vocab_size // n
 
 
 def test_each_device_holds_a_whole_kv_head() -> None:
@@ -395,7 +410,7 @@ def test_nvfp4_linears_are_placed_like_bf16_ones() -> None:
     for module, placement in (
         (f"{shared}.up_proj", Sharded(0)),
         (f"{shared}.down_proj", Sharded(1)),
-        ("lm_head", Replicated()),
+        ("lm_head", Sharded(0)),
     ):
         in_dim, out_dim = config.linear_shape(module)
         weight = weights[f"{module}.weight"]
@@ -534,6 +549,7 @@ def test_w4a4_selects_the_moe_mixers_with_nvfp4_experts() -> None:
 @pytest.mark.parametrize(
     "field, value, n_devices, sharded",
     [
+        ("vocab_size", 65, 2, "65 vocabulary entries"),
         ("num_attention_heads", 3, 2, "3 attention heads"),
         ("moe_intermediate_size", 15, 2, "15 routed expert channels"),
         ("moe_shared_expert_intermediate_size", 25, 2, "25 shared expert"),

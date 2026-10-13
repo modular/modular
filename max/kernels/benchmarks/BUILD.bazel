@@ -15,6 +15,11 @@ _RUN_BENCHMARKS = [
 
 _EXTRA_DEPS = {
     "algorithm/parallelize_overhead.mojo": ["//max:max_mojo"],
+    "gpu/nn/bench_argmax.mojo": ["//max:builtin_kernels"],
+    "gpu/nn/bench_normalization.mojo": ["//max:builtin_kernels"],
+    "gpu/nn/bench_rms_norm_fused_residual_add.mojo": ["//max:builtin_kernels"],
+    "gpu/nn/bench_rms_norm_rope.mojo": ["//max:builtin_kernels"],
+    "gpu/nn/bench_softmax.mojo": ["//max:builtin_kernels"],
     "linalg/bench_layout_tensor.mojo": ["//max:max_mojo"],
 }
 
@@ -89,10 +94,7 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: KERN-2317
-    "gpu/nn/bench_mla_decode_sparse_fp8.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # TODO(KERN-3469): flareMLA_decoding supports only Nvidia and AMD GPUs
+    "gpu/nn/bench_mla_decode_sparse_fp8.mojo": ["//:b200_gpu"],  # SM100-only sparse MLA decode; the kernel asserts on other GPUs
     "gpu/linalg/bench_blockwise_fp8_1d2d.mojo": ["//:b200_gpu"],  # SM100-specific blockwise FP8
     "gpu/linalg/bench_mma_throughput_sm100.mojo": ["//:b200_gpu"],  # SM100 tcgen05 MMA tile-size microbench
     "gpu/linalg/profile_grouped_matmul_swiglu_nvfp4.mojo": ["//:b200_gpu"],  # SM100-specific grouped block-scaled matmul
@@ -277,7 +279,7 @@ mojo_binary(
             "//max:shmem",
             "//max:structured_kernels",
             "@mojo//:std",
-        ],
+        ] + _EXTRA_DEPS.get(src, []),
     )
     for src in glob(
         ["gpu/**/*.mojo"],
@@ -298,6 +300,11 @@ mojo_binary(
             # Dedicated target below: the Qwen3.8 prod shape is carried in
             # `-D` defines, which the generic glob cannot pass.
             "gpu/nn/bench_qwen38_decode_attn.mojo",
+            # Dedicated `mojo_test` below: it calls the registered graph ops
+            # (needs `builtin_kernels`) and is timed on remote B200.
+            "gpu/bench_squeeze_shape.mojo",
+            # Same reason: dedicated `mojo_test` below for the tile op.
+            "gpu/bench_tile.mojo",
         ],
     )
 ]
@@ -327,9 +334,66 @@ mojo_binary(
             # Dedicated target below: the Qwen3.8 prod shape is carried in
             # `-D` defines, which the generic glob cannot pass.
             "gpu/nn/bench_qwen38_decode_attn.mojo",
+            # Dedicated `mojo_test` below: it calls the registered graph ops
+            # (needs `builtin_kernels`) and is timed on remote B200.
+            "gpu/bench_squeeze_shape.mojo",
+            # Same reason: dedicated `mojo_test` below for the tile op.
+            "gpu/bench_tile.mojo",
         ],
     )
 ]
+
+# `mo.squeeze_shape` / `mo.unsqueeze_shape` through their registered
+# `execute` entry points (gather_scatter.mojo). A `mojo_test` so it can be
+# timed on remote B200 (`bazel test --config=remote-b200`); pass
+# `--test_arg=--nsys` for the fixed-count launch mode used under nsys.
+mojo_test(
+    name = "gpu/bench_squeeze_shape.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/bench_squeeze_shape.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:extensibility",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/bench_squeeze_shape.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/bench_squeeze_shape.mojo.run"],
+)
+
+# `mo.tile` through its registered `Tile.execute` entry point
+# (gather_scatter.mojo). A `mojo_test` so it can be timed on remote B200
+# (`bazel test --config=remote-b200`); pass `--test_arg=--nsys` for the
+# fixed-count launch mode used under nsys/ncu.
+mojo_test(
+    name = "gpu/bench_tile.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/bench_tile.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:extensibility",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
 
 # MlaPrefillV2 device-timed TFLOPS bench.
 # Delegates numeric steps to the gated MlaPrefillV2Core FP32-scores / reference-cadence
@@ -546,7 +610,7 @@ _FA4_WS_DEPS = [
             "gpu",
             "manual",
         ],
-        deps = _FA4_WS_DEPS,
+        deps = _FA4_WS_DEPS + ["//max:builtin_kernels"],
     )
     for rows in [
         16,

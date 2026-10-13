@@ -1418,10 +1418,22 @@ DebugInfo::DIScopeAttr StructDeclOp::getLocScope() {
   return getTopLevelScope(*this);
 }
 
-/// Verify that there are no duplicate field names.
+/// Verify that there are no duplicate field or enum case names.
 LogicalResult StructDeclOp::verifyRegions() {
   SmallDenseMap<StringAttr, StructFieldOp, 8> seenFields;
+  SmallDenseMap<StringAttr, EnumCaseOp, 8> seenCases;
   for (Operation &op : getFields().front()) {
+    if (auto enumCase = dyn_cast<EnumCaseOp>(&op)) {
+      auto [it, inserted] =
+          seenCases.try_emplace(enumCase.getNameAttr(), enumCase);
+      if (!inserted) {
+        auto diag = enumCase.emitError("duplicate enum case ")
+                    << enumCase.getNameAttr();
+        diag.attachNote(it->second.getLoc()) << "see previous declaration here";
+        return failure();
+      }
+      continue;
+    }
     auto field = dyn_cast<StructFieldOp>(&op);
     if (!field)
       continue;
@@ -1448,8 +1460,21 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         /*docString=*/{}, /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
         /*minAlignment=*/{}, /*convention=*/{},
-        /*registerPassableConstraint=*/{}, /*annotations=*/{});
+        /*registerPassableConstraint=*/{}, /*annotations=*/{},
+        /*isEnum=*/{});
   result.regions[0]->push_back(new Block());
+}
+
+//===----------------------------------------------------------------------===//
+// EnumCaseOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult EnumCaseOp::verify() {
+  if (!cast<StructDeclOp>((*this)->getParentOp()).isEnum())
+    return emitOpError("expected to be in the body of an enum");
+  if (getName().empty())
+    return emitOpError("expected a non-empty case name");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

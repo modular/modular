@@ -107,11 +107,46 @@ def _run_test_multi_function(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             )
 
 
+def test_cross_context_stream_event() raises:
+    var ctx1 = create_test_device_context()
+    var ctx2 = create_test_device_context()
+    comptime length = 1 << 20
+
+    var src = ctx1.enqueue_create_buffer[.float32](length)
+    var dst = ctx2.enqueue_create_buffer[.float32](length)
+    dst.enqueue_fill(0.0)
+    src.enqueue_fill(7.0)
+
+    var ev = ctx1.create_event()
+    ctx1.stream().record_event(ev)
+    ctx2.stream().enqueue_wait_for(ev)
+    ctx2.enqueue_copy(dst, src)
+
+    var out = ctx2.enqueue_create_buffer[.float32](length)
+    var func = ctx2.compile_function[vec_func]()
+    var block_dim = 256
+    ctx2.stream().enqueue_function(
+        func,
+        dst,
+        dst,
+        out,
+        Int32(length),
+        grid_dim=(length // block_dim),
+        block_dim=block_dim,
+    )
+
+    with dst.map_to_host() as dst_host, out.map_to_host() as out_host:
+        for i in range(length):
+            assert_equal(dst_host[i], Float32(7.0), String("at index ", i))
+            assert_equal(out_host[i], Float32(14.0), String("at index ", i))
+
+
 def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_multi_function]()
+    suite.test[test_cross_context_stream_event]()
 
     suite^.run()

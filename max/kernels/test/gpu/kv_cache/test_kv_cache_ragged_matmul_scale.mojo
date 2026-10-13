@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.math.uutils import udivmod
 from std.random import random_ui64, seed
 
 from max.gpu.host import DeviceBuffer, DeviceContext

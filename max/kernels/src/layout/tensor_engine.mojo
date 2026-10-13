@@ -385,30 +385,6 @@ trait TensorEngine:
         """
         OtherEngine.copy_from(other, storage)
 
-    @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
-    ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the scalar-element distance from `other` to `storage`.
-
-        Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' `AddressSpace`.
-
-        Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The number of scalar elements separating the two handles. The
-            value is positive when `storage` is ahead of `other` and negative
-            when it precedes `other`.
-        """
-        ...
-
 
 @inline(.always)
 def _copy_from[
@@ -2064,30 +2040,6 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         ).bitcast[SIMD[offset_dtype, Self.element_width]]()
 
     @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
-    ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the scalar-element distance from `other` to `storage`.
-
-        Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' `AddressSpace`.
-
-        Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The number of scalar elements separating the two handles. The
-            value is positive when `storage` is ahead of `other` and negative
-            when it precedes `other`.
-        """
-        return (Int(storage) - Int(other)) // size_of[dtype]()
-
-    @staticmethod
     @inline(.always)
     def copy_from[
         SelfLayoutType: TensorLayout,
@@ -3665,37 +3617,6 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
                 abort(String("DevicePointerEngine.offset: ", e))
 
     @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
-    ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the scalar-element distance from `other` to `storage`.
-
-        Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' `AddressSpace`.
-
-        Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The number of scalar elements separating the two handles. The
-            value is positive when `storage` is ahead of `other` and negative
-            when it precedes `other`.
-        """
-        comptime if is_gpu():
-            return (
-                Int(_device_leaf_ptr(storage)) - Int(_device_leaf_ptr(other))
-            ) // size_of[dtype]()
-        else:
-            # The element offsets are available on host without dereferencing;
-            # their difference is the scalar-element distance (element_size 1).
-            return storage.offset() - other.offset()
-
-    @staticmethod
     @inline(.always)
     def copy_from[
         SelfLayoutType: TensorLayout,
@@ -5186,33 +5107,6 @@ struct StaticOffsetEngine[*, static_offset: Int, element_width: Int = 1](
                 _offset_elements(offset_coord)
             )
         ).unsafe_bitcast[SIMD[offset_dtype, Self.element_width]]()
-
-    @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
-    ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the scalar-element distance from `other` to `storage`.
-
-        Both handles carry the same static offset, so it cancels out of the
-        distance.
-
-        Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' `AddressSpace`.
-
-        Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The number of scalar elements separating the two handles. The
-            value is positive when `storage` is ahead of `other` and negative
-            when it precedes `other`.
-        """
-        return (Int(storage) - Int(other)) // size_of[dtype]()
 
     @staticmethod
     @inline(.always)

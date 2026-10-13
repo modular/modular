@@ -25,7 +25,7 @@ def test_write_to() raises:
     assert_equal(String(Endian.big), "Endian.big")
     assert_equal(String(Endian.little), "Endian.little")
 
-    __match Endian.native():
+    match Endian.native():
         case .big:
             assert_equal(String(Endian.native()), "Endian.big")
         case .little:

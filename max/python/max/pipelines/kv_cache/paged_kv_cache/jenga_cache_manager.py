@@ -56,7 +56,7 @@ from max.support import to_human_readable_bytes
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
-from .cache_manager import (
+from ._common import (
     KV_CACHE_LENGTHS,
     cache_valid_length_for_context,
     prompt_tokens_for_context,
@@ -560,7 +560,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         cache_lengths_np = cache_lengths_host.to_numpy()
         cache_lengths_np.fill(0)
 
-        plans: dict[str, list[list[int]]] = {}
+        plans: dict[str, list[Sequence[int]]] = {}
         for group in self._groups.values():
             plans.update(group.forward_blocks(batch, num_blocks))
 

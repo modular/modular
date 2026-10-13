@@ -21,6 +21,7 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn.activation import GatedActivation
 from max.nn.kernels import (
     block_scales_interleave,
     grouped_matmul_block_scaled,
@@ -144,6 +145,8 @@ def build_graph(
     clamp: bool = False,
     row_scales: bool = False,
     keep_intermediate: bool = False,
+    swiglu_alpha: float = 1.702,
+    swiglu_limit: float = 7.0,
 ) -> Graph:
     """Build the chained L1 -> L2 NVFP4 MoE FFN graph.
 
@@ -240,14 +243,14 @@ def build_graph(
             usage_stats_t,
             expert_scales=es13_t,
             c_input_scales=inv_input_scales,
-            # The emitter sets `clamp_activation` as a Bool op attribute; the
-            # fusion copies it onto the fused op and the registration binds it
-            # (supplying swigluoai's canonical alpha/limit to the dispatch). The
-            # alpha/limit passed here are dropped by the emitter (carried only as
-            # the selector), but the leg API requires them non-zero when clamping.
-            clamp_activation=clamp,
-            swiglu_alpha=1.702,
-            swiglu_limit=7.0,
+            # The emitter sets the activation and its alpha/limit as string op
+            # attributes; the fusion copies them onto the fused op and the
+            # registration builds the kernel's activation from them.
+            activation=GatedActivation(
+                "swigluoai", alpha=swiglu_alpha, limit=swiglu_limit
+            )
+            if clamp
+            else None,
             a_row_scales=row_scales_t,
         )
 
@@ -373,9 +376,8 @@ def build_graph_mxfp8(
         )
 
         # L1: the emitter's e4m3 (MXFP8) branch produces the e4m3 intermediate +
-        # an E8M0 scale tile. clamp_activation rides as a Bool op attribute ->
-        # fusion -> registration (which supplies swigluoai's canonical
-        # alpha/limit to mega_ffn_mxfp8_dispatch).
+        # an E8M0 scale tile. The activation rides as string op attributes ->
+        # fusion -> registration -> mega_ffn_mxfp8_dispatch.
         packed_b, sf_b = grouped_matmul_blocked_swiglu(
             hidden_t,
             w13_t,
@@ -387,9 +389,9 @@ def build_graph_mxfp8(
             usage_stats_t,
             expert_scales=es13_t,
             c_input_scales=inv_input_scales,
-            clamp_activation=clamp,
-            swiglu_alpha=1.702,
-            swiglu_limit=7.0,
+            activation=GatedActivation("swigluoai", alpha=1.702, limit=7.0)
+            if clamp
+            else None,
         )
 
         out = grouped_matmul_block_scaled(

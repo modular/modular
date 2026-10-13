@@ -38,7 +38,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 @fieldwise_init
-struct MaskName(Equatable, Writable):
+struct MaskName(EnumLike, Equatable, Writable):
     """A canonical string name identifying a mask type."""
 
     var name: String
@@ -52,11 +52,61 @@ struct MaskName(Equatable, Writable):
     comptime CHUNKED_CAUSAL = Self("chunked_causal")
     comptime CAUSAL_PADDING = Self("causal_padding")
 
+    # `MaskName` accepts arbitrary strings, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "NULL".value,
+        "CAUSAL".value,
+        "CHUNKED".value,
+        "SLIDING_WINDOW_CAUSAL".value,
+        "SLIDING_WINDOW_NONCAUSAL".value,
+        "MATERIALIZED".value,
+        "CHUNKED_CAUSAL".value,
+        "CAUSAL_PADDING".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        """Return the active case index."""
+        match self.name:
+            case "null":
+                return 0
+            case "causal":
+                return 1
+            case "chunked":
+                return 2
+            case "sliding_window_causal":
+                return 3
+            case "sliding_window_noncausal":
+                return 4
+            case "materialized":
+                return 5
+            case "chunked_causal":
+                return 6
+            case "causal_padding":
+                return 7
+            case _:
+                return -1
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Return the payload of case `id`. MaskName cases carry no payload."""
+        comptime assert False, "MaskName has no payload"
+
     def write_to(self, mut writer: Some[Writer]):
         """Writes the mask name.
 
         Args:
-            writer: The writer to write to.
+            writer: The writer to write_to.
         """
         writer.write_string(self.name)
 
@@ -1889,6 +1939,172 @@ struct CausalPaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
 
 
 # ===-----------------------------------------------------------------------===#
+# PaddingMask
+# ===-----------------------------------------------------------------------===#
+
+
+struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
+    MHAMask, TrivialRegisterPassable
+):
+    """Padding-only mask: a position (seq_id, head, q, k) is visible iff
+    `k < valid_lengths[seq_id]`. No causal (q >= k) restriction is applied.
+
+    Unlike `CausalPaddingMask`, this does not assume key column order
+    reflects key recency, so it is the right choice for an attention call
+    over a gathered/reordered key buffer (e.g. a top-k sparse selection
+    copied into a dense scratch) where causality is already enforced by
+    the selection step itself and a causal check against the column index
+    would be meaningless.
+
+    `valid_lengths` is a tensor of shape [num_seqs] with one uint32 value per
+    sequence indicating the number of valid (non-padding) tokens.
+    """
+
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = is_nvidia_gpu()
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
+
+    var valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_]
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "PaddingMask"
+
+    @staticmethod
+    def name() -> String:
+        return "PaddingMask"
+
+    def __init__(
+        out self,
+        valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_],
+    ):
+        self.valid_lengths = valid_lengths
+
+    @always_inline
+    def mask[
+        dtype: DType,
+        width: SIMDLength,
+        //,
+        *,
+        element_type: DType = .uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        comptime index_type = coord.element_type
+        var k_idx = coord[3]
+        var valid_len = Scalar[index_type](
+            Int(self.valid_lengths[Int(coord[0])])
+        )
+        var k_positions = iota[index_type, width](Scalar[index_type](k_idx))
+
+        return k_positions.lt(valid_len).select(score_vec, MASK_VALUE)
+
+    @always_inline
+    def status[
+        *, element_type: DType = .uint32
+    ](
+        self,
+        seq_id: UInt32,
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
+    ) -> TileMaskStatus:
+        var valid_len = Scalar[element_type](
+            Int(self.valid_lengths[Int(seq_id)])
+        )
+
+        # Tile fully masked when its first column is already past valid_len.
+        if tile_offset.data[1] >= valid_len:
+            return TileMaskStatus.FULL_MASK
+
+        if tile_offset.data[1] + tile_size.data[1] <= valid_len:
+            return TileMaskStatus.NO_MASK
+
+        return TileMaskStatus.PARTIAL_MASK
+
+    @always_inline
+    def start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32) -> UInt32:
+        # No causal restriction: every batch starts at column 0.
+        return 0
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        return BN
+
+    @always_inline
+    def total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        var valid_len = UInt32(Int(self.valid_lengths[Int(seq_id)]))
+        var effective = min(num_cols, valid_len)
+        return ceildiv(effective, UInt32(BN))
+
+    @staticmethod
+    def count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 2
+
+    @always_inline
+    def last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+
+    @always_inline
+    def masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        var valid_len = UInt32(Int(self.valid_lengths[Int(seq_id)]))
+        var effective = min(num_cols, valid_len)
+        var num_unmasked = effective // UInt32(BN)
+        var total = self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+        return {num_unmasked, total}
+
+    @staticmethod
+    def nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.NO_MASK, TileMaskStatus.PARTIAL_MASK}
+
+    @staticmethod
+    def mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.NO_MASK, MaskStrategy.BITMASK}
+
+    @always_inline
+    def mask_bits(
+        self,
+        seq_id: UInt32,
+        score_row: Int32,
+        col_start: Int32,
+        num_keys: Int32,
+    ) -> UInt32:
+        # Padding-only: low `n_valid_pad` bits set, no causal component.
+        var valid_len: Int32 = Int32(Int(self.valid_lengths[Int(seq_id)]))
+        var n_valid_pad: Int32 = max(valid_len - col_start, 0)
+        return (
+            (UInt32(1) << UInt32(n_valid_pad)) - UInt32(1)
+        ) if n_valid_pad < 32 else UInt32(0xFFFF_FFFF)
+
+    @staticmethod
+    def sliding_window_size() -> Int:
+        return 0
+
+
+# ===-----------------------------------------------------------------------===#
 # MaterializedMask
 # ===-----------------------------------------------------------------------===#
 
@@ -2034,8 +2250,8 @@ struct MaterializedMask[
 
     @inline(.always)
     def get_start_pos(self, batch_idx: Int) -> Int:
-        if self.start_pos:
-            return Int(self.start_pos.value()[batch_idx])
+        if case .Some(start_pos) = self.start_pos:
+            return Int(start_pos[batch_idx])
         else:
             return Int(self.mask_tensor.dim[Self.layout_.rank - 1]()) - Int(
                 self.mask_tensor.dim[Self.layout_.rank - 2]()

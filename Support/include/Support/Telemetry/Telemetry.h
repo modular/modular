@@ -15,6 +15,7 @@
 #define SUPPORT_TELEMETRY_H
 
 #include "Support/Configuration.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Common.h"
 #include "Support/Telemetry/Instruments.h"
@@ -30,6 +31,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -333,20 +335,43 @@ private:
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
 // later if needed.
 
+/// `machineid.source` values; the warehouse and the crash forwarder pin them.
+inline constexpr llvm::StringLiteral kMachineSourceInstallId = "install-id";
+inline constexpr llvm::StringLiteral kMachineSourceNone = "none";
+inline constexpr llvm::StringLiteral kMachineSourceCorrupted = "corrupted";
+
+/// The machineid or sessionid sent when there is none; motel inserts the same
+/// sentinel for a missing attribute.
+inline constexpr llvm::StringLiteral kUnknownId = "unknown";
+
 /// Local identifiers reported alongside telemetry events.
 struct LocalIDs {
-  /// Invariant within a given container.
+  /// The persisted install id, or `kUnknownId` when there is none.
   std::string machine;
   /// Invariant within a given process.
   std::string session;
+  /// One of the `kMachineSource*` values.
+  std::string machineSource;
 };
 
-/// createLocalIDs creates the local machineid/sessionid pair.
+/// createLocalIDs creates the local machine, session and source identifiers.
 ///
 /// The result is computed once and memoized (it may be quite expensive), so
 /// every caller in the process observes identical values. The crash reporting
 /// and usage telemetry lanes rely on this to carry the same IDs.
 const LocalIDs &createLocalIDs();
+
+/// The folder holding `installId`: `$TEST_TMPDIR/.modular`, else the XDG state
+/// directory (`$XDG_STATE_HOME/modular`, default `~/.local/state/modular`).
+ErrorOr<std::filesystem::path> getInstallIdFolder();
+
+/// Reads `dataFolder/installId`, creating it with a fresh random id when it is
+/// missing, and returns the id with its `machineid.source`. An existing file
+/// that holds no valid id is left alone and reported as
+/// `kMachineSourceCorrupted`; any other failure is `kMachineSourceNone`. Both
+/// failures return `kUnknownId`.
+std::pair<std::string, llvm::StringRef>
+readOrCreateInstallId(const std::filesystem::path &dataFolder);
 
 /// Reports whether the usage telemetry lane is enabled,
 /// Users opt out, so this defaults to enabled for production builds.
@@ -478,7 +503,6 @@ public:
 private:
   /// Configured telemetry level for this telemetry context.
   Level telemetryLevel;
-  StringRef machineId;
   // Metrics.
   std::unique_ptr<opentelemetry::metrics::MeterProvider> userMetricsProvider;
   std::shared_ptr<opentelemetry::metrics::Meter> userMeter;

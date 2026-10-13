@@ -21,10 +21,11 @@ from std.sys import (
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, coord_to_index_list, row_major
-from nn.softmax import softmax, softmax_inline, softmax_with_temperature
+from nn.softmax import softmax_inline, softmax_with_temperature
+from builtin_kernels.rowwise_softmax import softmax
 
 from std.utils.coord import ComptimeInt
 from std.utils.index import IndexList
@@ -59,7 +60,7 @@ def bench_softmax_gpu[
     def kernel_launch(ctx: DeviceContext) raises {mut out_buf, mut data_d, imm}:
         softmax_inline[
             dtype,
-            simd_width_of[dtype, target=get_gpu_target()](),
+            simd_width_of[dtype, target=ctx.target](),
             rank,
             input_fn,
             target="gpu",

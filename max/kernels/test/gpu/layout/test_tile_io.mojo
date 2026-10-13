@@ -15,7 +15,7 @@
 Each kernel moves a source tile through one or more intermediate address
 spaces (SHARED, LOCAL) and back out to a destination DRAM tile, using
 only `TileTensor` and the concrete `TileCopier` structs (no
-`LayoutTensor` / `ManagedLayoutTensor`). The host verifies that the
+`LayoutTensor`). The host verifies that the
 destination tile matches the source.
 
 Coverage:

@@ -560,3 +560,17 @@ kgen.generator @bind_params_discharged_mask_size() {
                             #kgen.type<i64> : !kgen.type,
                             #kgen<simd 1> : !kgen.scalar<index>>
 } : () -> ()
+
+// -----
+
+// A literal target whose payload type can never match the requested type is
+// diagnosed rather than left unresolved.
+kgen.generator @get_target_plugin_type_mismatch() {
+  // expected-error @+2 {{target 'opaque_plugin' has type '!kgen.param_list<index>'; expected a value of type '!kgen.param_list<type>'}}
+  kgen.param.constant: !kgen.param_list<!kgen.type> =
+    <#kgen.get_target_plugin<#kgen.target<triple = "unknown", arch = "",
+      opaque_plugin = #kgen.param_list<1, 2> : !kgen.param_list<index>>
+      : !kgen.target, :!kgen.param_list<!kgen.type> #kgen.param_list<f16>>
+      : !kgen.param_list<!kgen.type>>
+  hlcf.return
+}

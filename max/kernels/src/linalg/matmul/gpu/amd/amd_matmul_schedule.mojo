@@ -75,7 +75,7 @@ from .amd_target import (
 
 
 @fieldwise_init
-struct DefaultMatmulOps(ScheduleOps):
+struct DefaultMatmulOps(EnumLike, ScheduleOps):
     """Op tags for the default single-buffer matmul kernel.
 
     Kernel-specific data ops in the 0-127 range; framework infrastructure ops
@@ -88,6 +88,53 @@ struct DefaultMatmulOps(ScheduleOps):
     comptime STORE_SMEM = Self(1)
     comptime LOAD_FRAG = Self(2)
     comptime COMPUTE = Self(3)
+
+    # Op tags are open-ended Ints (`OpDesc.tag` interchange): schedules can
+    # carry tags this struct does not name, so the enum is not exhaustive
+    # and unknown tags map to discriminant -1 (never a valid case index).
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "LOAD_DRAM".value,
+        "STORE_SMEM".value,
+        "LOAD_FRAG".value,
+        "COMPUTE".value,
+        "BARRIER".value,
+        "SCHEDULE_BARRIER".value,
+        "SCHED_GROUP_BARRIER".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        match self.value:
+            case Self.LOAD_DRAM.value:
+                return 0
+            case Self.STORE_SMEM.value:
+                return 1
+            case Self.LOAD_FRAG.value:
+                return 2
+            case Self.COMPUTE.value:
+                return 3
+            case Self.BARRIER.value:
+                return 4
+            case Self.SCHEDULE_BARRIER.value:
+                return 5
+            case Self.SCHED_GROUP_BARRIER.value:
+                return 6
+            case _:
+                return -1
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "DefaultMatmulOps has no payload"
 
 
 # Convenience aliases (Int values) for use in op factories and external imports.

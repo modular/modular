@@ -30,7 +30,7 @@ against host references (full-H divisor, multiply-before-cast, bf16 last):
 from std.sys import simd_width_of, size_of
 
 from std.math.uutils import ualign_down
-from std.math import align_down, rsqrt
+from std.math import rsqrt
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type

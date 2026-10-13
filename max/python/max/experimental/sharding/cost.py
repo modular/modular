@@ -29,7 +29,6 @@ from .placements import (
     Partial,
     Placement,
     Replicated,
-    ShardingError,
     Unknown,
 )
 from .types import TensorLayout
@@ -151,12 +150,19 @@ def action_is_feasible(
     A row is infeasible when it would empty a shard or ask for a placement
     no collective can reach.
     """
+    # Detect feasibility of rows that name Unknown. An Unknown input has no
+    # global tensor, so no collective can move it: such a row must take every
+    # input as placed, and one-device inputs must still be Replicated.
+    if any(isinstance(p, Unknown) for p in axs.needed_inputs):
+        return tuple(axs.needed_inputs) == tuple(actuals) and all(
+            isinstance(p, (Replicated, Unknown))
+            for i, p in enumerate(axs.needed_inputs)
+            if ctx.layouts[i].mapping.mesh.num_devices == 1
+        )
     for i, p in enumerate(axs.needed_inputs):
         actual = actuals[i]
         if ctx.layouts[i].mapping.mesh.num_devices == 1 and p != R:
             return False
-        # A row may only ask for a placement the operand can reach, which
-        # also keeps rows off an Unknown operand.
         if actual.transition_to(p) is Collective.INFEASIBLE:
             return False
     for i, p in enumerate(axs.needed_inputs):
@@ -235,15 +241,11 @@ def feasible_rows_at_axis(
     mesh_axis: int,
     per_input_placements: Sequence[tuple[Placement, ...]],
 ) -> tuple[AxisAssignment, ...]:
-    """Rows feasible at ``mesh_axis``."""
+    """Returns the rows that can run at ``mesh_axis``.
+
+    Only a row that names :class:`Unknown` for an input can take it.
+    """
     actuals = input_placements_at_axis(per_input_placements, mesh_axis)
-    if any(isinstance(placement, Unknown) for placement in actuals):
-        if any(isinstance(placement, Partial) for placement in actuals):
-            raise ShardingError(
-                "Resolve Partial inputs before mixing them with Unknown inputs, "
-                "or rebind them as Unknown."
-            )
-        return (AxisAssignment(actuals, (Unknown(),) * len(rows[0].outputs)),)
     ctx = _FeasibilityContext(
         layouts=layouts,
         mesh=mesh,

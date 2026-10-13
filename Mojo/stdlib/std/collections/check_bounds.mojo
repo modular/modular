@@ -13,7 +13,6 @@
 """Contains bounds checks which are on by default for CPU and off by default for GPU.
 """
 
-from . import OptionalReg
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.debug_assert import _assert_enabled
 from std.reflection import SourceLocation

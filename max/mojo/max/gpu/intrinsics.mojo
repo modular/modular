@@ -924,7 +924,7 @@ def _raw_ptr_buffer_load_lds[
 
 
 def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
-    comptime __match bytes:
+    comptime match bytes:
         case 1:
             return DType.uint8
         case 2:

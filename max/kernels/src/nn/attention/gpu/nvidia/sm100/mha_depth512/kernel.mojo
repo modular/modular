@@ -27,28 +27,20 @@ Warp assignment (384 threads = 12 warps, 3 warp groups of 128):
     Warps 10-11: Spare (no-op)
 """
 
-from std.math import align_up, ceildiv, min
-from std.sys import size_of
+from std.math import min
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     thread_idx,
     warp_id,
 )
-from max.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from max.gpu.memory import external_memory, fence_mbarrier_init
+from max.gpu.memory import fence_mbarrier_init
 from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout import Coord
-from layout.tma_async import (
-    SharedMemBarrier,
-    RaggedTMA3DTile,
-    TMATensorTile,
-)
+from layout.tma_async import RaggedTMA3DTile, TMATensorTile
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     attn_tmem_addr,
-    SharedMemPointer,
-    MBarType,
     elect,
     kv_sub_tile_rows,
     o_store_tma_blocks_per_op,
@@ -269,7 +261,7 @@ struct SM100MHADepth512[
         # ---- Initialization (per-CTA, then cluster sync) ----------------
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        __match warp_idx:
+        match warp_idx:
             case 0:
                 # Initialize all barriers.
                 Depth512MBars[Self.config.num_kv_stages, Self.config.split_o](

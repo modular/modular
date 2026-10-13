@@ -30,7 +30,7 @@ from std.math import ceildiv, sqrt
 from std.random import random_ui64, randn, seed
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import (
     KVCacheStaticParams,

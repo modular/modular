@@ -246,54 +246,54 @@ class Module(Layer, ABC):
         once rather than once per repetition, which significantly reduces compile
         time for models with many identical layers.
 
-        Examples:
+        For example, define a small layer, build a subgraph from a
+        representative input, then call it once per repetition with a
+        layer-specific weight ``prefix``:
 
-            Define a small layer, build a subgraph from a representative input,
-            then call it once per repetition with a layer-specific weight
-            ``prefix``:
+        .. code-block:: python
 
-            .. code-block:: python
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+            from max.nn.layer import Module
 
-                from max.dtype import DType
-                from max.graph import DeviceRef, Graph, TensorType, Weight, ops
-                from max.nn.layer import Module
-
-                class Linear(Module):
-                    def __init__(self, in_dims, out_dims):
-                        super().__init__()
-                        self.weight = Weight(
-                            "weight",
-                            DType.float32,
-                            (in_dims, out_dims),
-                            DeviceRef.CPU(),
-                        )
-
-                    def __call__(self, x):
-                        return x @ self.weight.T
-
-                num_layers = 3
-                layer = Linear(4, 4)
-                with Graph(
-                    "build_subgraph_example",
-                    input_types=(
-                        TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
-                    ),
-                ) as graph:
-                    h = graph.inputs[0].tensor
-
-                    # Build the subgraph once from a representative input.
-                    subgraph = layer.build_subgraph(
-                        "linear_block",
-                        inputs=[h],
-                        weight_prefix="layers.0.",
+            class Linear(Module):
+                def __init__(self, in_dims, out_dims, weight_name):
+                    super().__init__()
+                    self.weight = Weight(
+                        weight_name,
+                        DType.float32,
+                        (in_dims, out_dims),
+                        DeviceRef.CPU(),
                     )
 
-                    # Call it once per layer with the correct weight prefix.
-                    for idx in range(num_layers):
-                        outputs = ops.call(subgraph, h, prefix=f"layers.{idx}.")
-                        h = outputs[0].tensor
+                def __call__(self, x):
+                    return x @ self.weight.T
 
-                    graph.output(h)
+            num_layers = 3
+            # Name the representative layer's weight with the first layer's
+            # prefix so build_subgraph() turns it into a placeholder.
+            layer = Linear(4, 4, weight_name="layers.0.weight")
+            with Graph(
+                "build_subgraph_example",
+                input_types=(
+                    TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
+                ),
+            ) as graph:
+                h = graph.inputs[0].tensor
+
+                # Build the subgraph once from a representative input.
+                subgraph = layer.build_subgraph(
+                    "linear_block",
+                    inputs=[h],
+                    weight_prefix="layers.0.",
+                )
+
+                # Call it once per layer with the correct weight prefix.
+                for idx in range(num_layers):
+                    outputs = ops.call(subgraph, h, prefix=f"layers.{idx}.")
+                    h = outputs[0].tensor
+
+                graph.output(h)
 
         Args:
             name: The name of the subgraph. Must be unique within the containing

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ._trait import DefaultPlugin, PluginHooks
+from ._trait import DefaultPlugin
 from .selector import PluginSelector
 from .cuda import CUDAPlugin
 from .hip import HIPPlugin
-from .metal import MetalPlugin
+from .metal import MetalPlugin, MetalTargets
 
 from std._gpu.host.info import TargetAcceleratorCollection
 from std._gpu.host._builtin_targets import BuiltinTargets
@@ -25,5 +25,7 @@ comptime STD_PLUGINS = PluginSelector[
 ]
 
 comptime TARGETS = TypeList.of[
-    Trait=TargetAcceleratorCollection, BuiltinTargets
+    Trait=TargetAcceleratorCollection,
+    BuiltinTargets,
+    MetalTargets,
 ]()

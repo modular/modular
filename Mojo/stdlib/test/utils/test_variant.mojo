@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.ffi import _Global
-from std.memory import MaybeUninit
 from std.os import abort
 from std.traits import (
     IsTriviallyCopyable,
@@ -35,7 +34,6 @@ from test_utils import (
     check_write_to,
 )
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
-from std.benchmark import keep
 
 from std.utils import Variant
 from std.utils._nicheable import UnsafeNicheable

@@ -23,8 +23,7 @@ unified_dspark_deepseekV4_speculator = Speculator(
     name="UnifiedDSparkDeepseekV4ForCausalLM",
     base=deepseekV4_arch,
     draft_arch=None,
-    # The block-draft method, as for the Gemma4 DSpark drafts.
-    method="dflash",
+    method="dspark",
     pipeline_model=UnifiedDSparkDeepseekV4Model,
     batching=UnifiedDSparkDeepseekV4BatchProcessor,
     weight_adapters={

@@ -123,17 +123,11 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from std.bit import next_power_of_two
 from std.math import align_down, align_up, ceildiv, clamp, lcm
-from std.sys import (
-    get_defined_bool,
-    get_defined_dtype,
-    get_defined_int,
-    size_of,
-)
+from std.sys import get_defined_dtype, get_defined_int, size_of
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from layout import (
-    Coord,
     DefaultEngine,
     TensorLayout,
     TensorEngine,
@@ -194,6 +188,39 @@ comptime KSTMATileT[ks_dtype: DType, KS_BOX: Int] = TMATensorTile[
 comptime QSTMATileT[N_TOKENS: Int, num_heads: Int] = TMATensorTile[
     DType.float32, coord[N_TOKENS, num_heads]
 ]
+
+
+def _k_box_rows[BM_key: Int, page_size: Int, pool_row_tokens: Int]() -> Int:
+    """Keys one K TMA copy stages.
+
+    A copy cannot cross a page, and a page holds `page_size // pool_row_tokens`
+    keys, so a page holding fewer than `BM_key` keys takes one copy per page.
+    """
+    if page_size == 0:
+        return BM_key
+    return min(BM_key, page_size // pool_row_tokens)
+
+
+def _k_tile_fits_pages[
+    BM_key: Int, page_size: Int, pool_row_tokens: Int
+]() -> Bool:
+    """Whether a `BM_key`-key tile maps onto whole pages of this cache.
+
+    A page must still hold a whole number of `BM_key`-token tiles, which keeps
+    `pool_row_tokens == 1` on exactly its old route and bounds a pooled cache's
+    k-scale copies (one per `BM_key` token rows) inside a page. A pooled page
+    then holds `page_size // pool_row_tokens` keys, so a tile may span several
+    pages, one K copy each; each copy has to start on a 128B-swizzle atom (8
+    rows of the 128-byte K row).
+    """
+    if page_size == 0:
+        return pool_row_tokens == 1
+    if page_size % BM_key != 0 or page_size % pool_row_tokens != 0:
+        return False
+    var keys_per_page = page_size // pool_row_tokens
+    if keys_per_page % BM_key == 0:
+        return True
+    return BM_key % keys_per_page == 0 and keys_per_page % 8 == 0
 
 
 # WG0 (warps 0-3) = 128 epilogue/score consumers; the epilogue drains one TMEM
@@ -439,9 +466,42 @@ def _ctas_per_sm[MMA_N: Int, force: Int = -1]() -> Int:
 # Keys a slot COSTS, padded so every slot base keeps the 128-byte alignment TMA
 # needs of a shared-memory destination.
 @inline(.always)
-def _ks_slot_elems[ks_dtype: DType, BM_key: Int]() -> Int:
+def _ks_copy_keys[ks_dtype: DType, BM_key: Int, pool_row_tokens: Int]() -> Int:
+    """Keys one k-scale TMA copy covers.
+
+    A pooled key's scale sits on each of its `pool_row_tokens` token rows, so a
+    copy covering `k` keys stages `k * pool_row_tokens` scales plus one
+    alignment unit, and a TMA box is at most 256 elements on a side.
+    """
+    var keys = BM_key
+    while keys > 1 and (
+        keys * pool_row_tokens + scale_align_elems[ks_dtype]() > 256
+    ):
+        keys //= 2
+    return keys
+
+
+def _ks_copy_stride_elems[
+    ks_dtype: DType, BM_key: Int, pool_row_tokens: Int
+]() -> Int:
+    """Scales between consecutive k-scale copies in a slot, 128-byte aligned."""
     comptime esize = size_of[Scalar[ks_dtype]]()
-    return align_up(flat_scale_window[ks_dtype, BM_key]() * esize, 128) // esize
+    comptime keys = _ks_copy_keys[ks_dtype, BM_key, pool_row_tokens]()
+    return (
+        align_up(
+            flat_scale_window[ks_dtype, keys * pool_row_tokens]() * esize, 128
+        )
+        // esize
+    )
+
+
+def _ks_slot_elems[
+    ks_dtype: DType, BM_key: Int, pool_row_tokens: Int = 1
+]() -> Int:
+    comptime keys = _ks_copy_keys[ks_dtype, BM_key, pool_row_tokens]()
+    return (BM_key // keys) * _ks_copy_stride_elems[
+        ks_dtype, BM_key, pool_row_tokens
+    ]()
 
 
 # ===== Consumer register cap =====
@@ -465,6 +525,7 @@ struct IndexPrefillConfig[
     BM_key: Int,
     mma_n: Int,
     num_heads: Int,
+    pool_row_tokens: Int = 1,
 ](TrivialRegisterPassable):
     """Every derived quantity of one prefill instantiation, in one object.
 
@@ -490,6 +551,8 @@ struct IndexPrefillConfig[
         BM_key: Keys per K tile.
         mma_n: The N tile, `n_tokens * num_heads`.
         num_heads: Index heads.
+        pool_row_tokens: Token rows one key spans in the cache; sizes the
+            k-scale slot, which stages every row of a pooled key's span.
     """
 
     var ctas_per_sm: Int
@@ -604,7 +667,7 @@ struct IndexPrefillConfig[
         #
         self.k_stage_bytes = (
             Self.BM_key * Self.depth * size_of[Scalar[Self.dtype]]()
-            + _ks_slot_elems[Self.ks_dtype, Self.BM_key]()
+            + _ks_slot_elems[Self.ks_dtype, Self.BM_key, Self.pool_row_tokens]()
             * size_of[Scalar[Self.ks_dtype]]()
             + Self.stage_mbars * size_of[SharedMemBarrier]()
         )
@@ -845,6 +908,7 @@ def _decode_item[
                 BM_key,
                 N_TOKENS * num_heads,
                 num_heads,
+                pool_row_tokens,
             ]().nthreads
         )
     )
@@ -861,6 +925,7 @@ def _decode_item[
             BM_key,
             N_TOKENS * num_heads,
             num_heads,
+            pool_row_tokens,
         ]().ctas_per_sm
     )
 )
@@ -878,16 +943,17 @@ def _fp8_index_score_prefill_kernel_sm100[
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
+    ks_box: Int = flat_scale_window[KSOperand.dtype, BM_key](),
     *,
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
-    k_tma: KTMATileT[dtype, BM_key, depth],
-    ks_tma: KSTMATileT[
-        KSOperand.dtype, flat_scale_window[KSOperand.dtype, BM_key]()
-    ],
+    k_tma: KTMATileT[dtype, k_box_rows, depth],
+    ks_tma: KSTMATileT[KSOperand.dtype, ks_box],
     qs_tma: QSTMATileT[N_TOKENS, num_heads],
     k_operand: KOperand,
     ks_operand: KSOperand,
@@ -914,6 +980,7 @@ def _fp8_index_score_prefill_kernel_sm100[
         BM_key,
         N_TOKENS * num_heads,
         num_heads,
+        pool_row_tokens,
     ]()
     # Two producer warps are the floor: the MMA and TMA roles are separate warps
     # because each spins on its own mbarrier.
@@ -945,8 +1012,25 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime SW = _INDEX_SWIZZLE
     comptime KS_DTYPE = KSOperand.dtype
     comptime KS_ALIGN = scale_align_elems[KS_DTYPE]()
-    comptime KS_BOX = flat_scale_window[KS_DTYPE, BM_key]()
-    comptime KS_SLOT = _ks_slot_elems[KS_DTYPE, BM_key]()
+    # A key spans `pool_row_tokens` token rows. K stages one copy per page the
+    # tile spans; the scales, one per token row, stage one copy per
+    # `KS_KEYS` keys and the consumer reads each key's first row.
+    comptime assert (
+        k_box_rows == _k_box_rows[BM_key, KOperand.page_size, pool_row_tokens]()
+    ), "k_box_rows must be the rows one K TMA copy stages for this cache"
+    comptime K_BOX = k_box_rows
+    comptime KS_KEYS = _ks_copy_keys[KS_DTYPE, BM_key, pool_row_tokens]()
+    comptime KS_COPIES = BM_key // KS_KEYS
+    comptime KS_BOX = flat_scale_window[KS_DTYPE, KS_KEYS * pool_row_tokens]()
+    comptime assert ks_box == KS_BOX, "ks_box must be one k-scale copy's window"
+    comptime KS_STRIDE = _ks_copy_stride_elems[
+        KS_DTYPE, BM_key, pool_row_tokens
+    ]()
+    comptime KS_SLOT = _ks_slot_elems[KS_DTYPE, BM_key, pool_row_tokens]()
+    comptime assert pool_row_tokens == 1 or (
+        KSOperand.page_size > 0
+        and KSOperand.page_size % (KS_KEYS * pool_row_tokens) == 0
+    ), "a pooled k-scale copy must not straddle a page"
     comptime NSTAGE = CFG.k_stages
     comptime N_S = _S_TMEM_STAGES
     comptime CTAS_PER_SM = _ctas_per_sm[MMA_N]()
@@ -1158,6 +1242,7 @@ def _fp8_index_score_prefill_kernel_sm100[
 
     comptime q_flat_layout = tt_row_major[q_elems]()
     comptime k_flat_layout = tt_row_major[k_elems]()
+    comptime k_box_layout = tt_row_major[K_BOX * depth]()
     comptime ks_flat_layout = tt_row_major[KS_BOX]()
     comptime qs_flat_layout = tt_row_major[MMA_N]()
 
@@ -1341,7 +1426,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime k_bytes = k_elems * size_of[dtype]()
     comptime q_bytes = q_elems * size_of[dtype]()
     comptime qs_bytes = MMA_N * size_of[Float32]()
-    comptime ks_bytes = KS_BOX * size_of[KS_DTYPE]()
+    comptime ks_bytes = KS_COPIES * KS_BOX * size_of[KS_DTYPE]()
 
     if wid < CONS_WARPS:
         warpgroup_reg_alloc[CFG.reg_consumer]()
@@ -1433,9 +1518,8 @@ def _fp8_index_score_prefill_kernel_sm100[
         # One item per pass: each item is read off its slot's metadata, its
         # q-scales re-hoisted, then the slot freed for the load warp. Every ring
         # cursor carries over.
-        @__parameter
         @inline(.always)
-        def consume_item():
+        def consume_item() {mut c_state, mut k_state, mut qs_reg, imm}:
             # `n_tiles_local` is `Int32`, so `range` yields an `Int32` induction
             # variable directly (`range.mojo:495`) -- the whole key-index chain
             # stays 32-bit with no per-iteration cast, which is what the narrowing
@@ -1460,8 +1544,17 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # loop) -- without it the TMA can land the slot's next tile before
                 # this read returns.
                 var ks = k_state.index()
+                var ks_idx: Int32
+                comptime if pool_row_tokens == 1:
+                    ks_idx = ks_off + row
+                else:
+                    ks_idx = (
+                        row // Int32(KS_KEYS) * Int32(KS_STRIDE)
+                        + ks_off
+                        + row % Int32(KS_KEYS) * Int32(pool_row_tokens)
+                    )
                 var k_scale = ks_smem[
-                    ks * UInt32(KS_SLOT) + UInt32(ks_off + row)
+                    ks * UInt32(KS_SLOT) + UInt32(ks_idx)
                 ].cast[.float32]()
                 _ = k_empty[ks].arrive()
 
@@ -1554,14 +1647,10 @@ def _fp8_index_score_prefill_kernel_sm100[
                             # keys up to cache_len + tok_local, so forbidden slots
                             # are left unwritten and the separate mask pass is
                             # skipped. What carries the mask downstream is the
-                            # top-k's per-row bound, not a sentinel:
-                            # `topk_row_bounds_kernel` computes this same
-                            # `indexer_key_bound` and the bounded top-k pads past
-                            # it in-register, so the buffer is left
-                            # uninitialized. The `topk_gpu` arm (top_k > 2048) is
-                            # the exception -- it scans the whole row behind the
-                            # caller's -Float32.MAX fill, so an over-range write
-                            # there WOULD be selected.
+                            # top-k's per-row bound, not a sentinel: the top-k
+                            # computes this same `indexer_key_bound` and pads
+                            # past it in-register, so the buffer is left
+                            # uninitialized.
                             # The liveness half is memory safety rather than
                             # masking -- a dead token's row belongs to the NEXT
                             # batch entry.
@@ -1793,19 +1882,39 @@ def _fp8_index_score_prefill_kernel_sm100[
             @inline(.always)
             def issue_k(it: Int32, state: PipelineState[NSTAGE]) {imm}:
                 var s = state.index()
+                var num_rows = num_keys // Int32(kpool)
+                expect_bytes_pred(k_full + s, Int32(k_bytes + ks_bytes), e)
+                # One copy per page the tile spans. A copy past this batch's
+                # last key re-reads the last key's page instead of looking up a
+                # page the batch does not own; the store guard drops its scores.
+                #
                 # Split rather than folded: the fold spans the whole shared
                 # slab and leaves the signed 32-bit TMA coordinate on a large
                 # pool. See `MHAOperand.kv_tma_coords`.
-                var k_row0, k_block = k_operand.kv_tma_coords(
-                    UInt32(b), UInt32(it * Int32(BM_key))
-                )
-                var k_dst = TileTensor[
-                    dtype, type_of(k_flat_layout), address_space=.SHARED
-                ](k_smem + s * UInt32(k_elems), k_flat_layout)
-                expect_bytes_pred(k_full + s, Int32(k_bytes + ks_bytes), e)
-                k_tma.async_copy_4d_elect(
-                    k_dst, k_full[s], (0, 0, Int(k_row0), Int(k_block)), e
-                )
+                comptime for c in range(BM_key // K_BOX):
+                    var key_row = it * Int32(BM_key) + Int32(c * K_BOX)
+                    comptime if c > 0:
+                        key_row = min(
+                            key_row,
+                            (num_rows - 1) // Int32(K_BOX) * Int32(K_BOX),
+                        )
+                    var k_row0, k_block = k_operand.kv_tma_coords(
+                        UInt32(b), UInt32(key_row * Int32(pool_row_tokens))
+                    )
+                    var k_dst = TileTensor[
+                        dtype, type_of(k_box_layout), address_space=.SHARED
+                    ](
+                        k_smem
+                        + s * UInt32(k_elems)
+                        + UInt32(c * K_BOX * depth),
+                        k_box_layout,
+                    )
+                    k_tma.async_copy_4d_elect(
+                        k_dst,
+                        k_full[s],
+                        (0, 0, Int(k_row0) // pool_row_tokens, Int(k_block)),
+                        e,
+                    )
                 # The scales ride the K tile's barrier: the bytes are summed
                 # into the one `expect_tx`, so the slot opens when the last byte
                 # of either copy lands and the consumer needs no wait of its own
@@ -1822,17 +1931,27 @@ def _fp8_index_score_prefill_kernel_sm100[
                 # not. The window is `KS_ALIGN` keys wider to cover the shift and
                 # the consumer skips the residual. (`k_row0` needs no such fix --
                 # a K row is a whole `depth`-wide key, so it is always aligned.)
-                var ks_row0, ks_blk = ks_operand.scale_tma_coords(
-                    UInt32(b), UInt32(it * Int32(BM_key))
-                )
-                var ks_dst = TileTensor[
-                    KS_DTYPE,
-                    type_of(ks_flat_layout),
-                    address_space=.SHARED,
-                ](ks_smem + s * UInt32(KS_SLOT), ks_flat_layout)
-                ks_tma.async_copy_elect(
-                    ks_dst, k_full[s], (Int(ks_row0), Int(ks_blk)), e
-                )
+                comptime for c in range(KS_COPIES):
+                    var ks_key = it * Int32(BM_key) + Int32(c * KS_KEYS)
+                    comptime if c > 0:
+                        ks_key = min(
+                            ks_key,
+                            (num_rows - 1) // Int32(KS_KEYS) * Int32(KS_KEYS),
+                        )
+                    var ks_row0, ks_blk = ks_operand.scale_tma_coords(
+                        UInt32(b), UInt32(ks_key * Int32(pool_row_tokens))
+                    )
+                    var ks_dst = TileTensor[
+                        KS_DTYPE,
+                        type_of(ks_flat_layout),
+                        address_space=.SHARED,
+                    ](
+                        ks_smem + s * UInt32(KS_SLOT) + UInt32(c * KS_STRIDE),
+                        ks_flat_layout,
+                    )
+                    ks_tma.async_copy_elect(
+                        ks_dst, k_full[s], (Int(ks_row0), Int(ks_blk)), e
+                    )
 
             # Item stream: publish the item into the next Q slot, stream its K
             # tiles, steal the next one. A zero-tile sentinel ends the stream for
@@ -1852,7 +1971,8 @@ def _fp8_index_score_prefill_kernel_sm100[
                 fence_async_view_proxy()
                 var ks_off = Int32(
                     ks_operand.row_idx(
-                        UInt32(b), UInt32(tile_begin * Int32(BM_key))
+                        UInt32(b),
+                        UInt32(tile_begin * Int32(BM_key * pool_row_tokens)),
                     )
                     & UInt32(KS_ALIGN - 1)
                 )
@@ -2099,6 +2219,8 @@ def fp8_index_score_sm100_prefill[
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
     *,
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
@@ -2106,7 +2228,7 @@ def fp8_index_score_sm100_prefill[
 ](
     q_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     num_q_tokens: Int,
-    k_tma: KTMATileT[dtype, BM_key, depth],
+    k_tma: KTMATileT[dtype, k_box_rows, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
     valid_length: TileTensor[mut=False, .uint32, ..., Engine=VLEngine],
@@ -2150,6 +2272,7 @@ def fp8_index_score_sm100_prefill[
         BM_key,
         MMA_N,
         num_heads,
+        pool_row_tokens,
     ]()
     comptime CTA_TOKEN_STRIDE = CFG.cta_token_stride
     var token_blocks = ceildiv(min(max_seq_len, out_rows), CTA_TOKEN_STRIDE)
@@ -2195,6 +2318,12 @@ def fp8_index_score_sm100_prefill[
         split_shape, key_tiles, (CTAS_PER_SM * sm_count) // base_ctas
     )
 
+    comptime KS_KEYS_E = _ks_copy_keys[
+        KSOperand.dtype, BM_key, pool_row_tokens
+    ]()
+    comptime KS_BOX_E = flat_scale_window[
+        KSOperand.dtype, KS_KEYS_E * pool_row_tokens
+    ]()
     comptime kernel = _fp8_index_score_prefill_kernel_sm100[
         dtype,
         KOperand,
@@ -2209,6 +2338,9 @@ def fp8_index_score_sm100_prefill[
         N_TOKENS,
         _is_cache_length_accurate,
         kpool,
+        pool_row_tokens=pool_row_tokens,
+        k_box_rows=k_box_rows,
+        ks_box=KS_BOX_E,
         VLEngine=type_of(valid_length.as_imm()).Engine,
         QSEngine=q_s.Engine,
         OutEngine=output.Engine,
@@ -2266,7 +2398,11 @@ def fp8_index_score_sm100_prefill[
     )
     # Built here, not beside `k_tma` in `fp8_index_score_sm100`: the K-resident
     # scorer needs no scale descriptor, and this is host work paid per launch.
-    var ks_tma = ks_operand.create_index_scale_tma_tile[BM_key](ctx)
+    # A pooled cache's scales are one per token row, so a copy covering
+    # `KS_KEYS_E` keys spans `KS_KEYS_E * pool_row_tokens` of them.
+    var ks_tma = rebind[KSTMATileT[KSOperand.dtype, KS_BOX_E]](
+        ks_operand.create_index_scale_tma_tile[KS_KEYS_E * pool_row_tokens](ctx)
+    )
     var q_tma = _create_prefill_q_tma[num_heads, depth, N_TOKENS](
         ctx, q_ptr, num_q_tokens
     )

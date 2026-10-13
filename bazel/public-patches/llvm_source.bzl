@@ -4,9 +4,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "a83a3a4ebd64653dbe6a85819996b3bcfd6753ec"
+LLVM_COMMIT = "8d4fc8f1d17e64e1826346a0230a87b50ec371e4"
 
-LLVM_SHA = "c26cddd8981c07cd562d05ef2baa58c2b30e0dd3537b8c42971463680d54dc1f"
+LLVM_SHA = "49ee2a64a7e1111ff00218981d39e00ac1314170624aeafbef5645b598abb792"
 # END_GENERATED
 
 PATCHES = [
@@ -47,6 +47,10 @@ PATCHES = [
     # target, so lldb:ConfigHeader fails to see llvm_libxml2_auto. Let the
     # three members inherit the package's public default.
     "//bazel/public-patches:llvm-libxml2-config-setting-visibility.patch",
+    # Default the overlay's feature flags to what every build wants, so no rc
+    # flag names an @llvm-project label. Parsing such a flag fetches the LLVM
+    # source before analysis can start.
+    "//bazel/public-patches:llvm-flag-defaults.patch",
 ]
 
 def _llvm_source_impl(module_ctx):

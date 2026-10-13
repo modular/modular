@@ -28,6 +28,7 @@ from typing import ClassVar
 
 import numpy as np
 import pytest
+from _test_helpers import assert_no_shadowed_tests
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental.functional import (
@@ -408,7 +409,7 @@ class _Split:
         np.testing.assert_allclose(parts[0].to_numpy(), t_np[:, :3], rtol=1e-5)
         np.testing.assert_allclose(parts[1].to_numpy(), t_np[:, 3:], rtol=1e-5)
 
-    def test_along_sharded(self) -> None:
+    def test_split_along_sharded(self) -> None:
         """Split along sharded axis — per-device shard sizes correct."""
         t_np = np.arange(16, dtype=np.float32).reshape(4, 4)
         t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),)))
@@ -416,6 +417,19 @@ class _Split:
         assert len(parts) == 2
         for p in parts:
             assert p.placements == (Sharded(1),)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="MXF-836: split along a sharded axis splits each device's "
+        "piece, so the parts hold permuted columns",
+    )
+    def test_split_along_sharded_values(self) -> None:
+        """Split along a sharded axis gives the same values as a local split."""
+        t_np = np.arange(16, dtype=np.float32).reshape(4, 4)
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),)))
+        parts = self._split(t, [2, 2], axis=1)
+        np.testing.assert_allclose(parts[0].to_numpy(), t_np[:, :2])
+        np.testing.assert_allclose(parts[1].to_numpy(), t_np[:, 2:])
 
     def test_2d_split_along_sharded(self) -> None:
         """2D mesh split along sharded axis — both mesh-axis placements correct."""
@@ -468,7 +482,7 @@ class _Squeeze:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
-    def test_shifts_sharded(self) -> None:
+    def test_squeeze_shifts_sharded(self) -> None:
         """Squeeze before sharded axis shifts it down, values preserved."""
         t_np = np.arange(8, dtype=np.float32).reshape(1, 4, 2)
         t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),)))
@@ -538,13 +552,19 @@ class _BroadcastTo:
             result.to_numpy(), np.broadcast_to(t_np, (4, 3, 2)), rtol=1e-5
         )
 
-    def test_partial_passthrough(self) -> None:
+    def test_broadcast_to_partial_passthrough(self) -> None:
         """Partial placement preserved through broadcast."""
-        data = np.ones((1, 4), dtype=np.float32)
+        data = np.arange(1, 5, dtype=np.float32).reshape(1, 4)
         dt = self.partial_fn(data, self.MESH_1D, (Partial(),))
         result = broadcast_to(dt, shape=(3, 4))
         assert any(isinstance(p, Partial) for p in result.placements)
         assert list(result.shape) == [3, 4]
+        # partial_fn gives every device a copy, so the Partial sums to
+        # num_devices * data.
+        n = self.MESH_1D.num_devices
+        np.testing.assert_allclose(
+            result.to_numpy(), np.broadcast_to(data, (3, 4)) * n
+        )
 
     def test_size_mismatch_raises(self) -> None:
         """Input dim that's neither 1 nor equal to the target — rejected."""
@@ -589,12 +609,14 @@ class _Flatten:
             result.to_numpy(), t_np.reshape(4, 6, 2), rtol=1e-5
         )
 
-    def test_partial_passthrough(self) -> None:
+    def test_flatten_partial_passthrough(self) -> None:
         """Partial placement preserved through flatten."""
-        data = np.ones((2, 3, 4), dtype=np.float32)
+        data = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         dt = self.partial_fn(data, self.MESH_1D, (Partial(),))
         result = flatten(dt, start_dim=0, end_dim=-1)
         assert any(isinstance(p, Partial) for p in result.placements)
+        n = self.MESH_1D.num_devices
+        np.testing.assert_allclose(result.to_numpy(), data.reshape(-1) * n)
 
 
 # ── Combined base class ─────────────────────────────────────────────
@@ -640,6 +662,9 @@ class _Stack:
 class _Argsort:
     MESH_2: ClassVar[DeviceMesh]
 
+    @pytest.mark.compile_on_gpu(
+        "mx.argsort is staged as an undeclared custom op the interpreter can't bind"
+    )
     def test_argsort_replicated(self) -> None:
         """Argsort on replicated 1D tensor — placement preserved."""
         t_np = np.array([3, 1, 2, 0], dtype=np.float32)
@@ -718,13 +743,8 @@ class _RepeatInterleave:
 class _Tile:
     MESH_2: ClassVar[DeviceMesh]
 
-    def _skip_if_gpu(self) -> None:
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("Tile Mojo kernel is MO_HostOnly (CPU-only)")
-
     def test_tile_replicated(self) -> None:
         """Tile a replicated tensor — placement preserved."""
-        self._skip_if_gpu()
         t_np = np.arange(6, dtype=np.float32).reshape(2, 3)
         t = transfer_to(
             Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
@@ -738,7 +758,6 @@ class _Tile:
 
     def test_tile_sharded(self) -> None:
         """Tile on batch-sharded tensor — placement preserved."""
-        self._skip_if_gpu()
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
         t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = tile(t, [1, 3])
@@ -752,13 +771,13 @@ class _Tile:
 class _Pad:
     MESH_2: ClassVar[DeviceMesh]
 
-    def _skip_if_gpu(self) -> None:
+    def _skip_pad_if_gpu(self) -> None:
         if not isinstance(self.MESH_2.devices[0], CPU):
             pytest.skip("PadConstant Mojo kernel GPU has Array capture bug")
 
     def test_pad_replicated(self) -> None:
         """Pad a replicated tensor — placement preserved."""
-        self._skip_if_gpu()
+        self._skip_pad_if_gpu()
         t_np = np.arange(6, dtype=np.float32).reshape(2, 3)
         t = transfer_to(
             Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
@@ -770,7 +789,7 @@ class _Pad:
 
     def test_pad_sharded_non_padded(self) -> None:
         """Pad non-sharded dim on a sharded tensor."""
-        self._skip_if_gpu()
+        self._skip_pad_if_gpu()
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
         t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         # Pad dim 1 only
@@ -1170,3 +1189,6 @@ class ShapeTests(
     _SliceStore,
 ):
     """Aggregates all shape test classes for thin subclassing."""
+
+
+assert_no_shadowed_tests(ShapeTests)

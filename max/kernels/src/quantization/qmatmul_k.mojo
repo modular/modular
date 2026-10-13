@@ -42,8 +42,6 @@ from std.memory.alloc import Layout as AllocLayout
 
 from max.runtime.asyncrt import parallelism_level
 
-from std.utils.index import Index
-
 from ._utils import roundeven_to_int32
 
 
@@ -226,12 +224,13 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         """Packs the supplied external buffer to local storage."""
         comptime assert (Self._packed_stride % Self._simd_width) == 0
 
-        comptime if Self.bit_width == 4:
-            return self._pack_int4(src_ptr)
-        elif Self.bit_width == 6:
-            return self._pack_int6(src_ptr)
-        else:
-            comptime assert False, "unsupported bit width"
+        comptime match Self.bit_width:
+            case 4:
+                return self._pack_int4(src_ptr)
+            case 6:
+                return self._pack_int6(src_ptr)
+            case _:
+                comptime assert False, "unsupported bit width"
 
     @inline(.always)
     def unpack[
@@ -240,13 +239,14 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         """Unpacks the local storage to the supplied external buffer."""
         comptime assert (Self._packed_stride % Self._simd_width) == 0
 
-        comptime if Self.bit_width == 4:
-            comptime assert zero_point == 0, "zero point not implemented"
-            return self._unpack_int4(dst_ptr)
-        elif Self.bit_width == 6:
-            return self._unpack_int6[zero_point](dst_ptr)
-        else:
-            comptime assert False, "unsupported bit width"
+        comptime match Self.bit_width:
+            case 4:
+                comptime assert zero_point == 0, "zero point not implemented"
+                return self._unpack_int4(dst_ptr)
+            case 6:
+                return self._unpack_int6[zero_point](dst_ptr)
+            case _:
+                comptime assert False, "unsupported bit width"
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
@@ -959,19 +959,13 @@ def _accumulate_and_store[
 
     c_float.store(c_ptr, N)
 
-    comptime if elementwise_lambda_fn:
-        comptime func = elementwise_lambda_fn.value()
-
+    comptime if case .Some(func) = elementwise_lambda_fn:
         if is_last_k_iter:
             comptime for mm in range(tile_m):
                 comptime for nn in range(tile_n):
                     var val = c_float[mm, nn]
                     func[.float32, simd_width](
-                        Index(
-                            m + mm,
-                            n + nn * simd_width,
-                        ),
-                        val,
+                        (m + mm, n + nn * simd_width), val
                     )
 
 
@@ -1472,7 +1466,7 @@ def _matmul_Qb_K[
     a: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1569,7 +1563,7 @@ def matmul_Q4_K[
     a_tt: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     c_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes a matrix multiplication with Q4_K block-quantized weights.
 
@@ -1604,7 +1598,7 @@ def matmul_Q6_K[
     a_tt: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     c_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes a matrix multiplication with Q6_K block-quantized weights.
 

@@ -40,7 +40,7 @@ from std.math import ceildiv
 from std.sys import size_of
 from layout import Coord, TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from layout.tma_async import SharedMemBarrier, TMATensorTile
+from layout.tma_async import TMATensorTile
 from .config import Depth512SM100Config
 from .smem import Depth512AttentionSMem
 from .barriers import Depth512MBars
@@ -51,7 +51,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     StagedPipeline,
     PagedRowIndices,
     kv_sub_tile_rows,
-    kv_num_sub_tiles,
     kv_tma_fold_chunks,
 )
 from nn.attention.gpu.nvidia.common import (

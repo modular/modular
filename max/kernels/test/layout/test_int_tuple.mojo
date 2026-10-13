@@ -452,17 +452,17 @@ def test_iter() raises:
     var it = iter(a)
 
     assert_equal(it.bounds()[0], 2)
-    assert_equal(it.bounds()[1].value(), 2)
+    assert_equal(it.bounds()[1], Optional(2))
 
     assert_equal(Int(next(it)), 2)
 
     assert_equal(it.bounds()[0], 1)
-    assert_equal(it.bounds()[1].value(), 1)
+    assert_equal(it.bounds()[1], Optional(1))
 
     assert_equal(Int(next(it)), 3)
 
     assert_equal(it.bounds()[0], 0)
-    assert_equal(it.bounds()[1].value(), 0)
+    assert_equal(it.bounds()[1], Optional(0))
 
     with assert_raises():
         _ = next(it)  # raises StopIteration

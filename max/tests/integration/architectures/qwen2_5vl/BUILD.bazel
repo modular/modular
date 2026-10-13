@@ -71,6 +71,7 @@ modular_py_test(
         requirement("torchvision"),  # needed by qwenvl_utils
     ],
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
         "manual",

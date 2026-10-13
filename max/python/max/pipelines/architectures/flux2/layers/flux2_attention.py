@@ -60,9 +60,8 @@ def _apply_flux2_qk_rope(
         dtype=DType.uint32,
         device=query.device,
     )
-    # broadcast_to instead of tile: tile has no GPU kernel and forces a
-    # CPU round-trip. broadcast_to expands [1, seq_len] -> [batch_size, seq_len]
-    # entirely on GPU.
+    # Keep this a broadcast: downstream kernels consume the expanded
+    # [batch_size, seq_len] view without materializing batch_size copies.
     position_ids = ops.broadcast_to(
         ops.unsqueeze(position_ids, 0), [batch_size, seq_len]
     )

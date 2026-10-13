@@ -16,7 +16,7 @@ from std.sys import simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
 from layout.tile_layout import Layout
 from linalg.bmm import (
@@ -26,7 +26,6 @@ from linalg.bmm import (
 
 from std.random import rand
 from std.testing import assert_almost_equal
-from std.utils import IndexList
 
 comptime epilogue_func_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -123,17 +122,13 @@ def run_bmm_and_check_result[
     def epilogue_fn[
         dtype: DType,
         width: SIMDLength,
-        rank: Int,
         *,
         alignment: Int = 1,
-    ](idx0: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
-        comptime assert rank == c_device.rank
+    ](coord: Coord, val: SIMD[dtype, width],) capturing -> None:
+        comptime assert coord.rank == c_device.rank
         comptime func = lambda_fn.value()
         var update_val = func(val)
-        c_device.store_linear[width=width](
-            rebind[IndexList[c_device.rank]](idx0),
-            update_val.cast[c_device.dtype](),
-        )
+        c_device.store(coord, update_val.cast[c_device.dtype]())
 
     comptime if lambda_fn:
         _batched_matmul_gpu[
@@ -199,7 +194,7 @@ def run_bmm_and_check_result[
                 transpose_b=transpose_b,
             )
 
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](coord: Coord) {var}:

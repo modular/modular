@@ -35,7 +35,6 @@ from layout.tma_async import (
     TMATensorTileIm2col,
     create_tensor_tile_im2col,
 )
-from std.memory import alloc
 
 
 # ============================================================================

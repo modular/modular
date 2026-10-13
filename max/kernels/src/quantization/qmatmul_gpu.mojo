@@ -465,13 +465,11 @@ def multistage_mma_q[
                             var dst = scales_native_ring.tile[1, BN](
                                 (scales_stage, 0)
                             )
-                            var src = TileTensor[
-                                linear_idx_type=scales_native_src.linear_idx_type
-                            ](
-                                scales_native_src.unsafe_ptr()
-                                + native_scale_group
-                                * scales_native_src.static_stride[0],
-                                scales_native_src.layout,
+                            # Row `native_scale_group` of the [1, BN] tile:
+                            # tiling past the one-row tile with the parent's
+                            # stride, same offset the pointer form computed.
+                            var src = scales_native_src.tile[1, BN](
+                                (native_scale_group, 0)
                             )
                             _copy_quantized_scale_tile(dst, src)
                         native_scale_group += 1
@@ -765,13 +763,12 @@ def multistage_mma_q[
                                     var dst = scales_native_ring.tile[1, BN](
                                         (stage, 0)
                                     )
-                                    var src = TileTensor[
-                                        linear_idx_type=scales_native_src.linear_idx_type
-                                    ](
-                                        scales_native_src.unsafe_ptr()
-                                        + native_scale_group
-                                        * scales_native_src.static_stride[0],
-                                        scales_native_src.layout,
+                                    # Row `native_scale_group` of the [1, BN]
+                                    # tile: tiling past the one-row tile with
+                                    # the parent's stride, same offset the
+                                    # pointer form computed.
+                                    var src = scales_native_src.tile[1, BN](
+                                        (native_scale_group, 0)
                                     )
                                     _copy_quantized_scale_tile(dst, src)
                                 native_scale_group += 1
@@ -1179,8 +1176,7 @@ def multistage_qgemm_kernel[
 
         # The local-to-shared copy has already cast the accumulators to half
         # precision. Read the staged values in vectors for 16-byte global stores.
-        comptime if elementwise_lambda_fn:
-            comptime epilogue = elementwise_lambda_fn.value()
+        comptime if case .Some(epilogue) = elementwise_lambda_fn:
             comptime warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // WN, WN // simd_size
             )
@@ -2533,7 +2529,7 @@ def gpu_qint4_repack_GPTQ[
 
     var smem_usage: Int = BN * 2 * group_bytes
 
-    if perm_idx:
+    if case .Some(perm_idx) = perm_idx:
         comptime repack = repack_GPTQ_for_sm8x[
             b.LayoutType,
             b_packed.LayoutType,
@@ -2545,7 +2541,7 @@ def gpu_qint4_repack_GPTQ[
         cuda_ctx.enqueue_function[repack](
             b,
             b_packed,
-            perm_idx.value(),
+            perm_idx,
             grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
             block_dim=(128, 1, 1),
         )

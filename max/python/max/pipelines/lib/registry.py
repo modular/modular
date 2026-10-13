@@ -129,7 +129,7 @@ def get_pipeline_for_task(
         if (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
-            or pipeline_config.speculative.is_dflash()
+            or pipeline_config.speculative.is_block_draft()
         ):
             return OverlapTextGenerationPipeline[TextContext]
         else:

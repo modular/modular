@@ -39,7 +39,10 @@ modular_nanobind_extension(
 
 modular_generate_stubfiles(
     name = "_mlir",
-    srcs = [":py_srcs"],
+    srcs = [
+        "_site_initialize_0.py",
+        ":py_srcs",
+    ],
     extension = ":_mlir.bindings",
     full_name = "max._mlir._mlir_libs._mlir",
     generated_pyi_srcs = [

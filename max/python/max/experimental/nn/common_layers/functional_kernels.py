@@ -28,6 +28,7 @@ from max.experimental.sharding.cost import P, R
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn.activation import GatedActivation
 from max.nn.comm.ep.ep_kernels import (
     fused_silu as _fused_silu,
 )
@@ -202,12 +203,16 @@ store_k_scale_cache_ragged = F.functional(_store_k_scale_cache_ragged)
 
 
 def fused_silu_rule(
-    x: TensorLayout, row_offsets: TensorLayout
+    x: TensorLayout,
+    row_offsets: TensorLayout,
+    activation: GatedActivation | None = None,
+    interleaved: bool = False,
 ) -> list[AxisAssignment]:
     """Strategies for ``fused_silu``: preserves every input axis (nonlinear).
 
     ``row_offsets`` is the small per-call expert boundary tensor; it is
-    always ``Replicated``. No ``Partial`` row: SiLU is nonlinear.
+    always ``Replicated``. No ``Partial`` row: the gated activation is
+    nonlinear, whichever one ``activation`` selects.
     """
     rows = [AxisAssignment((R, R), (R,))]
     rows += [

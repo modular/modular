@@ -20,7 +20,12 @@ from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm import unswitch
 from linalg.utils import partial_simd_load
-from layout import Coord, DefaultEngine, Idx, TensorEngine, TileTensor
+from layout import (
+    Coord,
+    DefaultEngine,
+    TensorEngine,
+    TileTensor,
+)
 from layout.coord import DynamicCoord
 from layout.tile_layout import RowMajorLayout
 from layout.tile_tensor import stack_allocation as tt_stack_allocation

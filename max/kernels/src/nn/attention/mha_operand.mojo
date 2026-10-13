@@ -45,7 +45,6 @@ from layout.tile_layout import (
 )
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
-    SharedMemBarrier,
     _gather4_box_width,
     create_split_tma,
     TMATensorTile,
@@ -274,6 +273,26 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         the encoded index unchanged.
         """
         ...
+
+    @inline(.always)
+    def sparse_tma_row(self, batch_idx: UInt32, logical_index: Int32) -> Int32:
+        """Returns the TMA row of a sparse selection's logical token, or `-1`.
+
+        Default: `row_idx`, with a negative (unused) slot staying `-1`.
+        Cache-backed operands forward to `KVCacheT.sparse_tma_row`, which on a
+        paged cache also maps an unallocated page to `-1`.
+
+        Args:
+            batch_idx: Batch entry the selection belongs to.
+            logical_index: Token position within the entry, or `-1`.
+
+        Returns:
+            The row `get_tma_row` would return for the slot's physical index,
+            or `-1`.
+        """
+        if logical_index < 0:
+            return -1
+        return Int32(self.row_idx(batch_idx, UInt32(logical_index)))
 
     @inline(.always)
     def create_tma_tile[
@@ -644,6 +663,16 @@ struct KVCacheMHAOperand[
         return self.cache.get_tma_row(encoded_index)
 
     @inline(.always)
+    def sparse_tma_row(self, batch_idx: UInt32, logical_index: Int32) -> Int32:
+        """Forwards to the cache, which knows its own paging.
+
+        Args:
+            batch_idx: Batch entry the selection belongs to.
+            logical_index: Token position within the entry, or `-1`.
+        """
+        return self.cache.sparse_tma_row(batch_idx, logical_index)
+
+    @inline(.always)
     def create_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -1008,6 +1037,16 @@ struct KVCacheScalesMHAOperand[
     def get_tma_row(self, encoded_index: Int32) -> Int32:
         """Convert an encoded sparse index to a physical TMA row."""
         return self.cache.get_tma_row(encoded_index)
+
+    @inline(.always)
+    def sparse_tma_row(self, batch_idx: UInt32, logical_index: Int32) -> Int32:
+        """Forwards to the cache, in the same value-pool space as `get_tma_row`.
+
+        Args:
+            batch_idx: Batch entry the selection belongs to.
+            logical_index: Token position within the entry, or `-1`.
+        """
+        return self.cache.sparse_tma_row(batch_idx, logical_index)
 
     @inline(.always)
     def create_tma_tile[

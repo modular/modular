@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Exercises runtime `__match` on the stdlib's enum-like structs.
+"""Exercises runtime `match` on the stdlib's enum-like structs.
 
 Each helper names every case so the match fails to compile if
 `_enum_case_names` drifts from the comptime case constants.
@@ -23,7 +23,7 @@ from std.testing.suite import TestResult
 
 
 def _fast_math_rank(flag: FastMathFlag) -> Int:
-    __match flag:
+    match flag:
         case .NONE:
             return 0
         case .NNAN:
@@ -45,7 +45,7 @@ def _fast_math_rank(flag: FastMathFlag) -> Int:
 
 
 def _test_result_rank(result: TestResult) -> Int:
-    __match result:
+    match result:
         case .PASS:
             return 0
         case .FAIL:

@@ -13,7 +13,6 @@
 """Implements the `StringSpan` type and related utilities for efficient string operations."""
 
 from std.builtin.builtin_slice import ContiguousSlice
-from std.builtin.format_int import _write_int
 from std.reflection import call_location
 from std.collections import check_bounds, check_slice_bounds, Span
 from std.collections.string._unicode import (
@@ -48,11 +47,7 @@ from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
-from std.memory import (
-    unsafe_memcmp,
-    unsafe_memcpy,
-    pack_bits,
-)
+from std.memory import unsafe_memcmp, pack_bits
 from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 

@@ -648,9 +648,10 @@ mojo_test(
     ],
 )
 
-# Target: the algorithm.reductions entry points over the rowwise GPU scaffolder
-# (written-contract + numerical ref oracle). The reduced axis is drawn from 0 —
-# an empty axis is in the contract and must still write the monoid identity.
+# Target: the builtin_kernels.rowwise_reductions entry points over the rowwise
+# GPU scaffolder (written-contract + numerical ref oracle). The reduced axis is
+# drawn from 0 — an empty axis is in the contract and must still write the
+# monoid identity.
 mojo_test(
     name = "fuzz_reductions.mojo.test",
     size = "large",
@@ -670,6 +671,7 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:algorithm",
+        "//max:builtin_kernels",
         "//max:layout",
         "@mojo//:std",
     ],
@@ -748,6 +750,7 @@ mojo_test(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:builtin_kernels",
         "//max:internal_utils",
         "//max:nn",
         "@mojo//:std",

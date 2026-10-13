@@ -20,7 +20,10 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import moe_router_group_limited
+from max.nn.kernels import (
+    moe_router_group_limited,
+    moe_router_single_group_eplb,
+)
 from torch.utils.dlpack import from_dlpack
 
 TOPK = 8
@@ -116,3 +119,107 @@ def test_single_group_router_with_fused_scores(
         want_indices,
         _reference_weights(scores, want_indices),
     )
+
+
+@pytest.mark.parametrize("num_tokens", [1, 7, 64])
+def test_group_limited_router_with_fused_scores(
+    gpu_session: InferenceSession, num_tokens: int
+) -> None:
+    n_experts, n_groups, topk_group = 256, 8, 4
+    logits, bias = _inputs(num_tokens, n_experts)
+
+    compiled = gpu_session.load(
+        _build_group_limited_graph(n_experts, n_groups, topk_group)
+    )
+    got_indices, got_weights = (
+        from_dlpack(t) for t in compiled.execute(logits, bias)
+    )
+
+    scores = torch.sigmoid(logits)
+    biased = scores + bias
+    group_scores = (
+        biased.view(num_tokens, n_groups, -1).topk(2, dim=-1).values.sum(-1)
+    )
+    top_groups = group_scores.topk(topk_group, dim=-1).indices
+    group_mask = torch.zeros_like(group_scores, dtype=torch.bool)
+    group_mask.scatter_(-1, top_groups, True)
+    expert_mask = group_mask.repeat_interleave(n_experts // n_groups, dim=-1)
+    want_indices = (
+        biased.masked_fill(~expert_mask, float("-inf"))
+        .topk(TOPK, dim=-1)
+        .indices
+    )
+    _assert_same_routing(
+        got_indices,
+        got_weights,
+        want_indices,
+        _reference_weights(scores, want_indices),
+    )
+
+
+@pytest.mark.parametrize("num_tokens", [1, 7, 64])
+def test_single_group_router_eplb_with_fused_scores(
+    gpu_session: InferenceSession, num_tokens: int
+) -> None:
+    n_experts, num_layers, layer = 384, 2, 1
+    logits, bias = _inputs(num_tokens, n_experts)
+    # One replica per logical expert, so the remap is a per-layer permutation.
+    log2phy = torch.stack(
+        [torch.randperm(n_experts) for _ in range(num_layers)]
+    ).to(device="cuda", dtype=torch.int32)
+    logcnt = torch.ones(num_layers, n_experts, device="cuda", dtype=torch.int32)
+    layer_idx = torch.tensor([layer], device="cuda", dtype=torch.int32)
+
+    with Graph(
+        "moe_router_single_group_eplb",
+        input_types=(
+            _scores_type(n_experts),
+            _bias_type(n_experts),
+            TensorType(
+                DType.int32, [num_layers, n_experts], device=DeviceRef.GPU()
+            ),
+            TensorType(
+                DType.int32,
+                [num_layers, n_experts, 1],
+                device=DeviceRef.GPU(),
+            ),
+            TensorType(DType.int32, [1], device=DeviceRef.GPU()),
+        ),
+    ) as graph:
+        g_logits, g_bias, g_logcnt, g_log2phy, g_layer = (
+            v.tensor for v in graph.inputs
+        )
+        graph.output(
+            *moe_router_single_group_eplb(
+                ops.sigmoid(g_logits),
+                g_bias,
+                g_logcnt,
+                g_log2phy,
+                g_layer,
+                n_routed_experts=n_experts,
+                n_experts_per_tok=TOPK,
+                norm_weights=True,
+                num_log=n_experts,
+                max_replicas=1,
+                hash_decorrelate=False,
+                routed_scaling_factor=SCALE,
+            )
+        )
+
+    compiled = gpu_session.load(graph)
+    got_phy, got_log, got_weights = (
+        from_dlpack(t)
+        for t in compiled.execute(
+            logits, bias, logcnt, log2phy.unsqueeze(-1), layer_idx
+        )
+    )
+
+    scores = torch.sigmoid(logits)
+    want_log = torch.topk(scores + bias, TOPK, dim=-1).indices
+    _assert_same_routing(
+        got_log,
+        got_weights,
+        want_log,
+        _reference_weights(scores, want_log),
+    )
+    torch.testing.assert_close(got_phy, log2phy[layer][got_log.long()])

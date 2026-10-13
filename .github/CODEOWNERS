@@ -10,6 +10,7 @@
 /.bazel* @modular/sdlc
 /bazel* @modular/sdlc
 /BUILD.bazel @modular/sdlc
+/bazel/internal/rules_rust_extra_exec_triple.patch @modular/sdlc
 /bazel/public-patches/llvm-elf-extractor-local-copy.patch @modular/sdlc
 /bazel/public-patches/llvm-machinefunction-sti-ref-to-ptr.patch @modular/sdlc
 /bazel/public-patches/llvm-revert-lldb-elf-section-name-string.patch @modular/sdlc
@@ -24,6 +25,7 @@
 /bazel/public-patches/grpc-no-macos-x86.patch @modular/sdlc
 /bazel/public-patches/grpc-warnings.patch @modular/sdlc
 /bazel/public-patches/llvm-config-musl-select.patch @modular/sdlc
+/bazel/public-patches/llvm-flag-defaults.patch @modular/sdlc
 /bazel/public-patches/llvm-libxml2-config-setting-visibility.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc
 /bazel/public-patches/protobuf-dev-dep.patch @modular/sdlc
@@ -41,6 +43,7 @@
 /bazel/public-patches/nixl-libfabric-rail-ep-lock.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-release-inflight.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-vmm-cuda-ctx.patch @modular/runtime
+/bazel/public-patches/nixl-libfabric-src-addr-peer-limit.patch @modular/runtime
 /bazel/public-patches/llvm-fix-lldb-dap-console.patch @modular/mojo-tooling
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
 /bazel/public-patches/xgrammar.patch @modular/max-serve
@@ -101,30 +104,30 @@
 /Mojo/**/MojoTooling @modular/mojo-tooling
 /Mojo/**/ToolCommon @modular/mojo-lang @modular/mojo-tooling
 /max/BUILD.bazel @modular/sdlc
-/max/mojo/max/__init__.mojo @modular/stdlib @modular/kernels @modular/driver
+/max/mojo/max/__init__.mojo @modular/stdlib @modular/kernels @copilot-pull-request-reviewer @modular/driver
 /max/mojo/max/_category_.json @modular/mojo-docs
 /max/mojo/max/BUILD.bazel @modular/stdlib
-/max/mojo/max/algorithm/ @modular/stdlib @modular/gpu-abstractions
-/max/mojo/max/benchmark/ @modular/stdlib
-/max/mojo/max/gpu/ @modular/stdlib @modular/gpu-abstractions
-/max/mojo/max/gpu/host @modular/stdlib @modular/kernels @modular/driver
-/max/mojo/max/runtime @modular/stdlib @modular/mojo-lang
-/max/mojo/max/_plugin/ @modular/stdlib @modular/gpu-abstractions
-/max/mojo/test/atomic/ @modular/stdlib
-/max/mojo/test/algorithm/ @modular/stdlib @modular/gpu-abstractions
-/max/mojo/test/asyncrt/ @modular/stdlib @modular/kernels @modular/runtime
-/max/mojo/test/benchmark/ @modular/stdlib
-/max/mojo/test/compile/ @modular/stdlib
-/max/mojo/test/gpu/ @modular/stdlib @modular/gpu-abstractions
-/max/mojo/test/math/ @modular/stdlib
-/max/mojo/test/runtime/ @modular/stdlib
+/max/mojo/max/algorithm/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
+/max/mojo/max/benchmark/ @modular/stdlib @copilot-pull-request-reviewer
+/max/mojo/max/gpu/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
+/max/mojo/max/gpu/host @modular/stdlib @modular/kernels @modular/driver @copilot-pull-request-reviewer
+/max/mojo/max/runtime @modular/stdlib @modular/mojo-lang @copilot-pull-request-reviewer
+/max/mojo/max/_plugin/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
+/max/mojo/test/atomic/ @modular/stdlib @copilot-pull-request-reviewer
+/max/mojo/test/algorithm/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
+/max/mojo/test/asyncrt/ @modular/stdlib @modular/kernels @modular/runtime @copilot-pull-request-reviewer
+/max/mojo/test/benchmark/ @modular/stdlib @copilot-pull-request-reviewer
+/max/mojo/test/compile/ @modular/stdlib @copilot-pull-request-reviewer
+/max/mojo/test/gpu/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
+/max/mojo/test/math/ @modular/stdlib @copilot-pull-request-reviewer
+/max/mojo/test/runtime/ @modular/stdlib @copilot-pull-request-reviewer
 /max/include/ @modular/GraphExecution
-/max/kernels @modular/kernels
-/max/kernels/benchmarks/autotune @modular/max-sdk @modular/kernels
-/max/kernels/src/graph_compiler @modular/runtime
-/max/kernels/src/layout @modular/gpu-abstractions @modular/kernels
-/max/kernels/test/gpu/layout @modular/gpu-abstractions @modular/kernels
-/max/kernels/test/layout @modular/gpu-abstractions @modular/kernels
+/max/kernels @modular/kernels @copilot-pull-request-reviewer
+/max/kernels/benchmarks/autotune @modular/max-sdk @modular/kernels @copilot-pull-request-reviewer
+/max/kernels/src/graph_compiler @modular/runtime @copilot-pull-request-reviewer
+/max/kernels/src/layout @modular/gpu-abstractions @modular/kernels @copilot-pull-request-reviewer
+/max/kernels/test/gpu/layout @modular/gpu-abstractions @modular/kernels @copilot-pull-request-reviewer
+/max/kernels/test/layout @modular/gpu-abstractions @modular/kernels @copilot-pull-request-reviewer
 /max/python/docs/ @modular/mojo-docs
 /max/python/layer_benchmarks/ @modular/max-sdk @modular/max-serve
 /max/python/max/BUILD.bazel @modular/runtime
@@ -195,6 +198,7 @@
 /max/tests/tests/compile_pool_parent_exit_subprocess.py @modular/max-sdk
 /max/tests/tests/test_compilation.py @modular/max-sdk
 /max/tests/tests/test_compile_pool.py @modular/max-sdk
+/max/tests/tests/test_compile_pool_gpu.py @modular/max-sdk
 /max/tests/tests/test_compile_serialization.py @modular/max-sdk
 /max/tests/tests/test_dim_substitute.py @modular/max-sdk
 /max/tests/tests/test_eager_cold_start_policy.py @modular/max-sdk

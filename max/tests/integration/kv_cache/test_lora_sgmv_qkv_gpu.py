@@ -290,11 +290,6 @@ def run_sgmv_qkv_lora_kernel(
         devices=[device_ref],
     )
 
-    # The cache starts zeroed, which the comparison below relies on.
-    kv_runtime_inputs = paged_kv_cache_inputs(
-        kv_params, seq_lens, total_num_pages=32
-    )
-
     kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
 
     with Graph(
@@ -357,6 +352,13 @@ def run_sgmv_qkv_lora_kernel(
         graph.output(q_out)
 
     compiled = session.load(graph)
+
+    # Allocated after the load: a precompile record run compiles the graph in
+    # a CPU build action and stops at the first device allocation. The cache
+    # starts zeroed, which the comparison below relies on.
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, seq_lens, total_num_pages=32
+    )
 
     # Prepare lora_end_idx array
     lora_end_idx_arr = np.zeros(lora_end_idx, dtype=np.int64)

@@ -16,8 +16,8 @@ import std.math as math
 from std.math import rsqrt
 from std.sys import simd_width_of
 
-from max.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor, row_major
+from max.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.normalization import *
 from std.testing import assert_almost_equal, assert_true
 
@@ -161,7 +161,7 @@ def run_group_norm_gpu[
 def main() raises:
     with DeviceContext() as ctx:
         comptime default_simd = simd_width_of[
-            DType.float32, target=get_gpu_target()
+            DType.float32, target=ctx.target
         ]()
 
         # === Warp-Tiling Kernel Dispatch (SIMD-aligned, fits warp strategy) ===

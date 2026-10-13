@@ -19,7 +19,7 @@ from std.sys.info import CompilationTarget, align_of, simd_width_of
 from max.algorithm.functional import elementwise
 from std.utils.numerics import get_accum_type
 from std.complex import ComplexSIMD
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheT, KVCollectionT
@@ -27,16 +27,12 @@ from layout import (
     Coord,
     CoordLike,
     DefaultEngine,
-    Idx,
     RowMajorLayout,
     TensorEngine,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
-
-from std.utils import IndexList
 
 
 @inline(.always)
@@ -423,9 +419,7 @@ def fused_qk_rope_ragged[
     # parameter-closure overload until cache captures in unified closures are
     # supported.
     @inline(.always)
-    @__parameter
-    @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
-    def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
+    def rope_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 3, "Invalid rank passed to rope kernel"
 
         comptime if width == 1:
@@ -446,25 +440,23 @@ def fused_qk_rope_ragged[
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
             var position_ids_idx = post_seq_idx
-            if position_ids:
-                comptime PIdTensor = type_of(position_ids.value())
+            if case .Some(position_ids) = position_ids:
+                comptime PIdTensor = type_of(position_ids)
                 comptime assert PIdTensor.flat_rank == 2
 
-                comptime if mrope_section:
+                comptime if case .Some(sections) = mrope_section:
                     var section_idx = 0
 
-                    comptime for i in range(len(mrope_section.value())):
-                        comptime val = Int(mrope_section.value()[i].value())
+                    comptime for i in range(len(sections)):
+                        comptime val = Int(sections[i].value())
                         if head_dim_idx < val:
                             section_idx = i
                             break
                     position_ids_idx = Int(
-                        position_ids.value()[section_idx, global_token_idx]
+                        position_ids[section_idx, global_token_idx]
                     )
                 else:
-                    position_ids_idx = Int(
-                        position_ids.value()[0, global_token_idx]
-                    )
+                    position_ids_idx = Int(position_ids[0, global_token_idx])
 
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
@@ -540,21 +532,20 @@ def fused_qk_rope_ragged[
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
             target
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+        ]() else simd_width_of[dtype, target=context.target]()
     )
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    comptime if mrope_section:
-        comptime for i in range(len(mrope_section.value())):
+    comptime if case .Some(sections) = mrope_section:
+        comptime for i in range(len(sections)):
             comptime assert (
-                Int(mrope_section.value()[i].value()) % kernel_simd_width == 0
+                Int(sections[i].value()) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
     elementwise[
-        func=rope_fn,
         simd_width=kernel_simd_width,
         target=target,
         _trace_description="fused_qk_rope_ragged",
-    ](launch_shape, context)
+    ](rope_fn, launch_shape, context)

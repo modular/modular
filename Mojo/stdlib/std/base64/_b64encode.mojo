@@ -29,7 +29,6 @@ from std.math import iota, ceildiv
 from std.sys import llvm_intrinsic, simd_byte_width
 
 from std.memory import bitcast, unsafe_memcpy
-from std.collections import Span
 
 from std.utils import IndexList
 

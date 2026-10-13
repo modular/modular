@@ -19,15 +19,12 @@ traversal. The implementation includes iterator support for forward and reverse
 traversal.
 """
 
-from std.builtin.rebind import downcast, rebind_var
+from std.builtin.rebind import downcast
 from std.collections import check_bounds
 from std.reflection import call_location
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
-from std.os import abort
-
-from std.sys import align_of, size_of
 
 
 @explicit_destroy(
@@ -82,8 +79,8 @@ struct Node[
             next: Optional pointer to the next node.
         """
         self.value = value^
-        self._prev = prev.value() if prev else Self._PointerType()
-        self._next = next.value() if next else Self._PointerType()
+        self._prev = prev.or_else(Self._PointerType())
+        self._next = next.or_else(Self._PointerType())
 
     def _into_value(deinit self) -> Self.T:
         return self.value^
@@ -316,9 +313,9 @@ struct LinkedList[ElementType: Movable](
         """
         self = Self()
         var curr = copy._head
-        while curr:
-            self.append(curr.value()[].value.copy())
-            curr = curr.value()[].next()
+        while case .Some(nn) = curr:
+            self.append(nn[].value.copy())
+            curr = nn[].next()
 
     def _delete_list_elements(
         mut self, destroy_func: Some[def(var Self.ElementType)]
@@ -338,8 +335,7 @@ struct LinkedList[ElementType: Movable](
             Time Complexity: O(n) in len(self).
         """
         var curr = self._head
-        while curr:
-            var nn = curr.value()
+        while case .Some(nn) = curr:
             var next = nn[].next()
             destroy_func(nn.unsafe_take_pointee()._into_value())
             dealloc(
@@ -391,8 +387,8 @@ struct LinkedList[ElementType: Movable](
         value_ptr.unsafe_write(value^)
         addr[].prev() = self._tail
         addr[].next() = Self._NodePointer()
-        if self._tail:
-            self._tail.value()[].next() = addr
+        if case .Some(tail) = self._tail:
+            tail[].next() = addr
         else:
             self._head = addr
         self._tail = addr
@@ -427,8 +423,7 @@ struct LinkedList[ElementType: Movable](
         """
         var prev = Self._NodePointer()
         var curr = self._head
-        while curr:
-            var nn = curr.value()
+        while case .Some(nn) = curr:
             var next = nn[].next()
             nn[].next() = prev
             nn[].prev() = next
@@ -490,15 +485,14 @@ struct LinkedList[ElementType: Movable](
         var idx = index(i)
         var current = self._get_node_ptr(idx)
 
-        if current:
-            var nn = current.value()
+        if case .Some(nn) = current:
             var node = nn.unsafe_take_pointee()
-            if node.prev():
-                node.prev().value()[].next() = node.next()
+            if case .Some(prev_node) = node.prev():
+                prev_node[].next() = node.next()
             else:
                 self._head = node.next()
-            if node.next():
-                node.next().value()[].prev() = node.prev()
+            if case .Some(next_node) = node.next():
+                next_node[].prev() = node.prev()
             else:
                 self._tail = node.prev()
 
@@ -557,17 +551,14 @@ struct LinkedList[ElementType: Movable](
         """
         var current = self._get_node_ptr(index(i))
 
-        if not current:
-            return Optional[Self.ElementType]()
-        else:
-            var nn = current.value()
+        if case .Some(nn) = current:
             var node = nn.unsafe_take_pointee()
-            if node.prev():
-                node.prev().value()[].next() = node.next()
+            if case .Some(prev_node) = node.prev():
+                prev_node[].next() = node.next()
             else:
                 self._head = node.next()
-            if node.next():
-                node.next().value()[].prev() = node.prev()
+            if case .Some(next_node) = node.next():
+                next_node[].prev() = node.prev()
             else:
                 self._tail = node.prev()
 
@@ -578,6 +569,8 @@ struct LinkedList[ElementType: Movable](
             )
             self._size -= 1
             return Optional[Self.ElementType](node^._into_value())
+        else:
+            return Optional[Self.ElementType]()
 
     def clear(
         mut self,
@@ -588,8 +581,7 @@ struct LinkedList[ElementType: Movable](
             Time Complexity: O(n) in len(self).
         """
         var current = self._head
-        while current:
-            var nn = current.value()
+        while case .Some(var nn) = current:
             current = nn[].next()
             nn.unsafe_deinit_pointee()
             dealloc(
@@ -632,9 +624,9 @@ struct LinkedList[ElementType: Movable](
                 )
             )
 
-            if self._head:
+            if case .Some(head) = self._head:
                 node[].next() = self._head
-                self._head.value()[].prev() = node
+                head[].prev() = node
 
             self._head = node
 
@@ -657,8 +649,8 @@ struct LinkedList[ElementType: Movable](
         data.unsafe_write(elem^)
         node[].next() = next
         node[].prev() = current
-        if next:
-            next.value()[].prev() = node
+        if case .Some(next) = next:
+            next[].prev() = node
         curr_nn[].next() = node
         if node[].next() == Self._NodePointer():
             self._tail = node
@@ -675,10 +667,10 @@ struct LinkedList[ElementType: Movable](
         Notes:
             Time Complexity: O(1).
         """
-        if self._tail:
-            self._tail.value()[].next() = other._head
-            if other._head:
-                other._head.value()[].prev() = self._tail
+        if case .Some(tail) = self._tail:
+            tail[].next() = other._head
+            if case .Some(head) = other._head:
+                head[].prev() = self._tail
             if other._tail:
                 self._tail = other._tail
 
@@ -704,11 +696,11 @@ struct LinkedList[ElementType: Movable](
         """
         var current = self._head
         var count = 0
-        while current:
-            if current.value()[].value == elem:
+        while case .Some(nn) = current:
+            if nn[].value == elem:
                 count += 1
 
-            current = current.value()[].next()
+            current = nn[].next()
 
         return count
 
@@ -735,10 +727,10 @@ struct LinkedList[ElementType: Movable](
         """
         var current = self._head
         var i = 0
-        while current:
-            if current.unsafe_value()[].value == value:
+        while case .Some(nn) = current:
+            if nn[].value == value:
                 return i
-            current = current.unsafe_value()[].next()
+            current = nn[].next()
             i += 1
 
         raise "ValueError: Given element is not in linked list"
@@ -758,10 +750,10 @@ struct LinkedList[ElementType: Movable](
             Time Complexity: O(n) in len(self) compares.
         """
         var current = self._head
-        while current:
-            if current.value()[].value == value:
+        while case .Some(nn) = current:
+            if nn[].value == value:
                 return True
-            current = current.value()[].next()
+            current = nn[].next()
 
         return False
 
@@ -786,11 +778,11 @@ struct LinkedList[ElementType: Movable](
         var self_curr = self._head
         var other_curr = other._head
 
-        while self_curr:
-            if self_curr.value()[].value != other_curr.value()[].value:
+        while case .Some(self_nn) = self_curr:
+            if self_nn[].value != other_curr.value()[].value:
                 return False
 
-            self_curr = self_curr.value()[].next()
+            self_curr = self_nn[].next()
             other_curr = other_curr.value()[].next()
 
         return True
@@ -804,9 +796,9 @@ struct LinkedList[ElementType: Movable](
             hasher: The hasher instance.
         """
         var curr = self._head
-        while curr:
-            curr.value()[].value.__hash__(hasher)
-            curr = curr.value()[].next()
+        while case .Some(nn) = curr:
+            nn[].value.__hash__(hasher)
+            curr = nn[].next()
 
     @__unsafe_nested_origins_read_only
     @inline(.always)

@@ -33,7 +33,6 @@ from typing import cast
 import numpy as np
 import pytest
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import KVHashAlgo
 from max.pipelines.modeling.types import RequestID
@@ -71,7 +70,6 @@ def _make_block_manager(
     return BlockManager(
         total_num_blocks=total_blocks,
         block_size=block_size,
-        connector=cast(object, NullConnector()),  # type: ignore[arg-type]
         enable_prefix_caching=True,
         kv_hash_algo=kv_hash_algo,
         kv_hash_seed=kv_hash_seed,

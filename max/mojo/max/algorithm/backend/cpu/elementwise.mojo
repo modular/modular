@@ -35,7 +35,7 @@ def _elementwise_impl_cpu[
     FuncType: def[width: Int, alignment: Int = 1](Coord) -> None,
     *,
     trace_description: StaticString,
-](func: FuncType, *, shape: Coord, ctx: Optional[DeviceContext] = None,):
+](func: FuncType, *, shape: Coord, ctx: Optional[DeviceContext.CPU] = None,):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
 
@@ -58,7 +58,7 @@ def _elementwise_impl_cpu[
 def _elementwise_impl_cpu_1d[
     simd_width: Int,
     FuncType: def[width: Int, alignment: Int = 1](Coord) -> None,
-](func: FuncType, shape: Coord, ctx: Optional[DeviceContext] = None,):
+](func: FuncType, shape: Coord, ctx: Optional[DeviceContext.CPU] = None,):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -103,7 +103,7 @@ def _elementwise_impl_cpu_1d[
 def _elementwise_impl_cpu_nd[
     simd_width: Int,
     FuncType: def[width: Int, alignment: Int = 1](Coord) -> None,
-](func: FuncType, shape: Coord, ctx: Optional[DeviceContext] = None,):
+](func: FuncType, shape: Coord, ctx: Optional[DeviceContext.CPU] = None,):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns
     when all sub-tasks have completed.

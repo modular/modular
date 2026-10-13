@@ -1153,6 +1153,46 @@ def testTransferWarning():
   # expected-warning @+1 {{transfer from an owned value has no effect}}
   consume(MemoryOnlyInt()^)
 
+struct ConsumingCM(Movable):
+  def __init__(out self): pass
+  def __enter__(self): pass
+  def __exit__(self): pass
+
+struct ConsumingSetter:
+  def __init__(out self): pass
+  def __getitem__(self, idx: Int) -> MemoryOnlyInt: return MemoryOnlyInt()
+  def __setitem__(mut self, idx: Int, var value: MemoryOnlyInt): pass
+
+def consume_list(var *elts: MemoryOnlyInt): pass
+def consume_pack[*Ts: Movable](var *elts: *Ts): pass
+
+# Transfers that look like borrows but consume the value don't warn.
+# CHECK-LABEL: lit.fn @"transfer_into_consumers
+def transfer_into_consumers():
+  # The setter takes the value as `var`.
+  var setter = ConsumingSetter()
+  var a = MemoryOnlyInt()
+  setter[0] = a^
+
+  # The walrus borrows the value to copy it into the setter, then moves it into
+  # the result.
+  var b = MemoryOnlyInt()
+  var result = (setter[0] := b^)
+
+  # The context manager is moved into the `with` statement's own variable.
+  var cm = ConsumingCM()
+  with cm^:
+    pass
+
+# Forwarding a whole variadic list or pack passes ownership along.
+# CHECK-LABEL: lit.fn @"forward_var_list
+def forward_var_list(var *list: MemoryOnlyInt):
+  consume_list(*list^)
+
+# CHECK-LABEL: lit.fn @"forward_var_pack
+def forward_var_pack[*Ts: Movable](var *pack: *Ts):
+  consume_pack(*pack^)
+
 
 ##===----------------------------------------------------------------------===##
 # Test nonmaterializable IntLiteral beyond Int bounds.

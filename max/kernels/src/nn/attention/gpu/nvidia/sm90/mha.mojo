@@ -766,10 +766,8 @@ def _mha_sm90_kv_input_row_offset_dispatch[
 ) raises:
     comptime KVRowOffsetsNonNull = NonNullPointer[.uint32]
     comptime KVRowOffsetsNull = NullPointer[.uint32]
-    if kv_input_row_offsets:
-        var kv_row_offsets: KVRowOffsetsNonNull = {
-            kv_input_row_offsets.value().ptr
-        }
+    if case .Some(kv_input_row_offsets) = kv_input_row_offsets:
+        var kv_row_offsets: KVRowOffsetsNonNull = {kv_input_row_offsets.ptr}
         _mha_sm90_valid_length_dispatch[
             q_tile_shape,
             q_desc_shape,
@@ -1400,8 +1398,8 @@ def _mha_sm90[
         if not initial_seq_info.is_valid():
             comptime if persistent:
                 var seq_info = advance[True, MHASchedulerSynchronization.ALL](1)
-                if seq_info:
-                    initial_seq_info = seq_info.value()
+                if case .Some(seq_info) = seq_info:
+                    initial_seq_info = seq_info
                 else:
                     return
             else:
@@ -1583,10 +1581,7 @@ def _mha_sm90[
             address_space=.LOCAL,
             alignment=align_of[kv_type](),
         ](p_reg_tile_layout)
-        var p_frag = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
-            p_frag_buffer.ptr.unsafe_origin_cast[MutAnyOrigin](),
-            p_frag_buffer.layout,
-        ).to_layout_tensor()
+        var p_frag = p_frag_buffer.as_unsafe_any_origin().to_layout_tensor()
 
         # Nested TileTensor views over the flat register tiles: the
         # hand-built nested layouts mirror the legacy `p_vec_output_layout`
@@ -1683,19 +1678,13 @@ def _mha_sm90[
             address_space=.LOCAL,
             alignment=align_of[accum_type](),
         ](row_major[num_rows_per_warp]())
-        var rowmax = TileTensor[address_space=.LOCAL](
-            rowmax_buffer.ptr.unsafe_origin_cast[MutAnyOrigin](),
-            rowmax_buffer.layout,
-        )
+        var rowmax = rowmax_buffer.as_unsafe_any_origin()
         var rowsum_buffer = stack_allocation[
             dtype=accum_type,
             address_space=.LOCAL,
             alignment=align_of[accum_type](),
         ](row_major[num_rows_per_warp]())
-        var rowsum = TileTensor[address_space=.LOCAL](
-            rowsum_buffer.ptr.unsafe_origin_cast[MutAnyOrigin](),
-            rowsum_buffer.layout,
-        )
+        var rowsum = rowsum_buffer.as_unsafe_any_origin()
 
         # Mask global memory iterator.
         var mask_warp_row = warp_y * UInt32(WM)

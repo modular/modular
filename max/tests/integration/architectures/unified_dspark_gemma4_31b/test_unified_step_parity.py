@@ -328,7 +328,7 @@ class _StepHarness:
             draft=draft_config,
             draft_kv_params=draft_kv_params,
             speculative_config=SpeculativeConfig(
-                speculative_method="dflash",
+                speculative_method="dspark",
                 num_speculative_tokens=NUM_DRAFTS,
             ),
             target_layer_ids=list(draft_config.target_layer_ids),

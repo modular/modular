@@ -195,10 +195,11 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime assert c_tensor.flat_rank >= 2
         c_tensor.store[alignment=alignment](
-            Coord(idx[0], idx[1]),
+            idx,
             rebind[SIMD[c_type, width]](val),
         )
 

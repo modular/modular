@@ -41,7 +41,7 @@ from std.collections import check_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
 from std.hashlib.hasher import Hasher
-from std.sys import is_gpu, size_of
+from std.sys import size_of
 from std.memory import (
     MaybeUninit,
     forget_deinit,

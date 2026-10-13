@@ -6466,7 +6466,7 @@ index f0175ba..aa11492 100644
  }  // namespace xgrammar
 
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
-index 4f1cc65..fc159f2 100644
+index 4f1cc65..467104f 100644
 --- a/cpp/json_schema_converter_ext.cc
 +++ b/cpp/json_schema_converter_ext.cc
 @@ -5,10 +5,20 @@
@@ -7357,7 +7357,7 @@ index 4f1cc65..fc159f2 100644
    }
    return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
  }
-@@ -259,16 +833,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -259,16 +833,20 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
      const std::string& rule_name_suffix
  ) {
    if (nested_object_level_ <= 1) {
@@ -7370,8 +7370,12 @@ index 4f1cc65..fc159f2 100644
 +    std::string key_open;
 +    std::string key_close;
 +    if (xml_wrapper_.key_is_tag) {
-+      key_open = OpenTag(key_pattern);
-+      key_close = CloseTag(key_pattern);
++      // key_pattern is a rule, not a name, so it is spliced in where
++      // OpenTag/CloseTag would quote one. The close cannot backreference the
++      // opened key, so it accepts any key the pattern does.
++      std::string prefix = xml_tag_prefix_.empty() ? "" : xml_tag_prefix_literal_ + " ";
++      key_open = prefix + "\"<\" " + key_pattern + " \">\"";
++      key_close = prefix + "\"</\" " + key_pattern + " \">\"";
 +    } else {
 +      key_open = EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) + " " + key_pattern + " " +
 +                 EmitMarker(kKeyClose, xml_wrapper_.key_wrapper_suffix);
@@ -7383,7 +7387,7 @@ index 4f1cc65..fc159f2 100644
    }
    return JSONSchemaConverter::FormatOtherProperty(
        key_pattern, value_rule, rule_name, rule_name_suffix
-@@ -276,12 +850,86 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -276,12 +854,95 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
  }
 
  std::string XMLToolCallingConverter::GenerateObject(
@@ -7442,11 +7446,20 @@ index 4f1cc65..fc159f2 100644
 +    // key, so additional/pattern/propertyNames are dropped before the base
 +    // required/optional cascade runs. A tag-key !xml_all_depths style bumps the
 +    // level so nested objects render as inner JSON, not tag-key.
++    //
++    // The exception is a minProperties the declared keys cannot reach: without
++    // undeclared keys no output is valid, and the cascade would collapse to an
++    // empty body. Those keep additional/unevaluated properties, framed by
++    // FormatOtherProperty.
++    bool keep_undeclared = spec.min_properties > static_cast<int>(spec.properties.size());
 +    ObjectSpec declared_only = spec;
-+    declared_only.allow_additional_properties = false;
-+    declared_only.allow_unevaluated_properties = false;
-+    declared_only.additional_properties_schema = nullptr;
-+    declared_only.unevaluated_properties_schema = nullptr;
++    declared_only.allow_additional_properties = keep_undeclared && spec.allow_additional_properties;
++    declared_only.allow_unevaluated_properties =
++        keep_undeclared && spec.allow_unevaluated_properties;
++    declared_only.additional_properties_schema =
++        keep_undeclared ? spec.additional_properties_schema : nullptr;
++    declared_only.unevaluated_properties_schema =
++        keep_undeclared ? spec.unevaluated_properties_schema : nullptr;
 +    declared_only.pattern_properties.clear();
 +    declared_only.property_names = nullptr;
 +    if (!xml_wrapper_.xml_all_depths) {
@@ -7474,7 +7487,7 @@ index 4f1cc65..fc159f2 100644
    return result;
  }
 
-@@ -289,14 +937,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +950,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }

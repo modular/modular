@@ -41,7 +41,7 @@ from nn.rope_split_store import (
     _rope_split_store_ragged_with_position_ids,
 )
 
-from std.utils import Index, IndexList
+from std.utils import IndexList
 
 
 def execute_test[

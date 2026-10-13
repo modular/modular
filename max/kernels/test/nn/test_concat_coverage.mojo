@@ -243,27 +243,27 @@ def test_fused_concat_cpu() raises:
     # Input lambda: generates data based on input index
     @inline(.always)
     def input_fn[
-        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-    ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+        input_index: Int, width: Int, alignment: Int = 1
+    ](coords: Coord) -> SIMD[dtype, width]:
+        var flat = (
+            Int(coords[0].value()) * 100
+            + Int(coords[1].value()) * 10
+            + Int(coords[2].value())
+        )
         comptime if input_index == 0:
-            return SIMD[dtype, width](
-                Float32(indices[0] * 100 + indices[1] * 10 + indices[2])
-            )
+            return SIMD[dtype, width](Float32(flat))
         else:
-            return SIMD[dtype, width](
-                Float32(1000 + indices[0] * 100 + indices[1] * 10 + indices[2])
-            )
+            return SIMD[dtype, width](Float32(1000 + flat))
 
     # Output epilogue: multiply by 2
     @__parameter
     @inline(.always)
     @__copy_capture(output)
     def output_fn[
-        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
-        var coord = Coord(indices)
-        comptime assert output.flat_rank >= coord.flat_rank
-        output.store[width=width](coord, rebind[SIMD[dtype, width]](val * 2))
+        c_type: DType, width: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[c_type, width]):
+        comptime assert output.flat_rank >= coords.flat_rank
+        output.store[width=width](coords, rebind[SIMD[dtype, width]](val * 2))
 
     var output_dyn = output.make_dynamic[.int64]()
 
@@ -374,11 +374,10 @@ def test_concat_with_epilogue() raises:
 
     @inline(.always)
     def epilogue_add_10[
-        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output}:
-        var coord = Coord(indices)
-        comptime assert output.flat_rank >= coord.flat_rank
-        output.store[width=width](coord, rebind[SIMD[dtype, width]](val + 10))
+        c_type: DType, width: SIMDLength, *, alignment: Int
+    ](coords: Coord, val: SIMD[c_type, width]) {var output}:
+        comptime assert output.flat_rank >= coords.flat_rank
+        output.store[width=width](coords, rebind[SIMD[dtype, width]](val + 10))
 
     concat[dtype](
         output.make_dynamic[.int64]().as_unsafe_any_origin(),

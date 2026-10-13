@@ -153,7 +153,9 @@ def test_kv_cache_buffer_sharded_single_shard_valid() -> None:
         values=[_uint8_buffer(4, 256)],
         replicates_kv_across_tp=False,
     )
-    assert kv_buffer.total_num_pages == 4
+    assert [
+        unit.total_num_pages for unit in kv_buffer.to_memory().values()
+    ] == [4]
     assert kv_buffer.all_buffers == kv_buffer.values
 
 
@@ -192,7 +194,9 @@ def test_kv_cache_buffer_with_scales_valid() -> None:
         replicates_kv_across_tp=False,
     )
     assert kv_buffer.scales is not None
-    assert kv_buffer.total_num_pages == 4
+    assert [
+        unit.total_num_pages for unit in kv_buffer.to_memory().values()
+    ] == [4, 4]
     assert kv_buffer.all_buffers == [*kv_buffer.values, *kv_buffer.scales]
 
 
@@ -255,14 +259,14 @@ def test_kv_cache_buffer_mismatched_scale_shapes_fails() -> None:
         )
 
 
-def test_kv_cache_buffer_value_scale_page_count_mismatch_fails() -> None:
-    """Values and scales with differing page counts raise ValueError."""
-    with pytest.raises(
-        ValueError, match="Values and scales must have the same number of pages"
-    ):
-        KVCacheBuffer(
-            leaf_id="full_group",
-            values=[_buffer(4, 256, dtype=DType.uint8)],
-            scales=[_buffer(8, 8, dtype=DType.float32)],
-            replicates_kv_across_tp=False,
-        )
+def test_kv_cache_buffer_values_and_scales_keep_own_page_counts() -> None:
+    """Values and scales may hold different page counts, as under Jenga."""
+    kv_buffer = KVCacheBuffer(
+        leaf_id="full_group",
+        values=[_buffer(4, 256, dtype=DType.uint8)],
+        scales=[_buffer(8, 8, dtype=DType.float32)],
+        replicates_kv_across_tp=False,
+    )
+
+    memory = kv_buffer.to_memory()
+    assert [unit.total_num_pages for unit in memory.values()] == [4, 8]

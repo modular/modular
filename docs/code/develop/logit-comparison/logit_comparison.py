@@ -14,21 +14,23 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 from max.pipelines import (
     PIPELINE_REGISTRY,
-    GenerateMixin,
     PipelineArgs,
     PipelineConfig,
+    TextGenerationPipelineInterface,
 )
 from max.pipelines.context import (
     ProcessorInputs,
     SamplingParams,
     TextContext,
 )
+from max.pipelines.lib.generate import Batch
 from max.pipelines.modeling.types import RequestID, TextGenerationRequest
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -84,7 +86,7 @@ class CaptureGeneratedLogits:
 
 def max_logits_for(
     prompt: str,
-    pipeline: GenerateMixin[TextContext, TextGenerationRequest],
+    pipeline: TextGenerationPipelineInterface[TextContext],
 ) -> np.ndarray:
     capture = CaptureGeneratedLogits(NUM_STEPS)
     request = TextGenerationRequest(
@@ -98,7 +100,10 @@ def max_logits_for(
             logits_processors=[capture],
         ),
     )
-    pipeline.generate([request])
+    context = asyncio.run(pipeline.tokenizer.new_context(request))
+    with Batch.from_contexts(pipeline, [context]) as batch:
+        while not batch.done:
+            batch.step()
     return np.stack(capture.captured[request.request_id]).astype(np.float64)
 
 
@@ -130,7 +135,7 @@ def torch_logits_for(prompt: str, max_logits: np.ndarray) -> np.ndarray:
 
 def compare_prompt(
     prompt: str,
-    pipeline: GenerateMixin[TextContext, TextGenerationRequest],
+    pipeline: TextGenerationPipelineInterface[TextContext],
 ) -> LogitComparison:
     max_logits = max_logits_for(prompt, pipeline)
     hf_logits = torch_logits_for(prompt, max_logits)
@@ -170,7 +175,7 @@ pipeline_config = PipelineArgs.from_flat_kwargs(
 _, retrieved_pipeline = PIPELINE_REGISTRY.retrieve(
     PipelineConfig.from_args(pipeline_config)
 )
-assert isinstance(retrieved_pipeline, GenerateMixin)
+assert isinstance(retrieved_pipeline, TextGenerationPipelineInterface)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 hf_tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 hf_model = AutoModelForCausalLM.from_pretrained(

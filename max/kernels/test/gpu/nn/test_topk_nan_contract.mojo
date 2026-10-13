@@ -28,7 +28,7 @@ is full. Any NaN-unaware eviction rule silently drops the maximum there.
 
 from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.topk import topk_gpu
 from std.sys.info import default_accelerator
 from std.testing import assert_equal

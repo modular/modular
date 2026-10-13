@@ -808,7 +808,7 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
                  declRef.getName().value_or(StringRef())),
       decl(declRef), isGlobalAlias(isGlobalAliasDecl(declRef)),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())) {
-  auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
+  LIT::AliasDeclOp aliasOp = cast<LIT::AliasASTDecl>(&*declRef)->getOp();
 
   auto &shared = *declRef.getShared();
 

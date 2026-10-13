@@ -57,8 +57,7 @@ preloaded once and reused across all rows in the loop.
 """
 
 from std.builtin.device_passable import DevicePassable
-from std.collections import Array, Optional
-from std.collections._conditional import _ComptimeConditional
+from std.collections import Array
 from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
@@ -75,7 +74,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from layout import (
     Coord,
@@ -96,7 +95,6 @@ from .rms_norm_fp8 import rms_norm_fused_fp8
 
 from .allreduce import (
     allreduce,
-    elementwise_epilogue_type,
     allreduce_tuning_table,
 )
 from .device_query import get_sm_version, dispatch_select_comm_config
@@ -1028,10 +1026,9 @@ def _launch_split_allreduce_rmsnorm_fp8[
             rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]()),
         )
 
-    allreduce[
-        ngpus=ngpus,
-        output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
-    ](input_buffers, residual_output, rank_sigs, ctx)
+    allreduce[ngpus=ngpus, output_lambda=add_epilogue](
+        input_buffers, residual_output.layout, rank_sigs, ctx
+    )
 
     # Step 2: Fused RMSNorm + FP8 on residual_output (kernel already compiled).
     rms_norm_fused_fp8[in_dtype, out_dtype, scales_dtype, 2, input_fn](
@@ -1098,9 +1095,7 @@ def _dispatch_fused_kernel[
 
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
-    comptime base_simd_width = simd_width_of[
-        in_dtype, target=get_gpu_target()
-    ]()
+    comptime base_simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime sw1 = base_simd_width
     comptime sw2 = base_simd_width * 2
 
@@ -1203,47 +1198,48 @@ def _dispatch_fused_kernel[
 
     var use_2stage: Bool
     var use_split: Bool = False
-    comptime if force_stage == 1:
-        use_2stage = False
-    elif force_stage == 2:
-        use_2stage = True
-    elif force_stage == 3:
-        # Force split (2-kernel) path (FP8/quantizing residual only).
-        use_2stage = False
-        comptime if has_residual and quantize:
-            use_split = True
-    else:
-        comptime if has_residual and quantize:
-            comptime if ctx.target.is_amd_gpu():
-                # MI355: 2-stage fused beats split for cols <= 8192,
-                # split beats 2-stage for wider columns (16384+).
-                if per_rank_bytes >= threshold:
-                    if cols > 8192:
+    comptime match force_stage:
+        case 1:
+            use_2stage = False
+        case 2:
+            use_2stage = True
+        case 3:
+            # Force split (2-kernel) path (FP8/quantizing residual only).
+            use_2stage = False
+            comptime if has_residual and quantize:
+                use_split = True
+        case _:
+            comptime if has_residual and quantize:
+                comptime if ctx.target.is_amd_gpu():
+                    # MI355: 2-stage fused beats split for cols <= 8192,
+                    # split beats 2-stage for wider columns (16384+).
+                    if per_rank_bytes >= threshold:
+                        if cols > 8192:
+                            use_split = True
+                            use_2stage = False
+                        else:
+                            use_2stage = True
+                    else:
+                        use_2stage = False
+                else:
+                    # NVIDIA residual dispatch.  For 8 GPUs split_threshold
+                    # == threshold, so the elif is unreachable and the
+                    # 2-stage residual path is intentionally skipped (see
+                    # _rank_8_split_thresh comment).  For 4 GPUs the two
+                    # thresholds differ and all three paths are reachable.
+                    if per_rank_bytes >= split_threshold:
                         use_split = True
                         use_2stage = False
-                    else:
+                    elif per_rank_bytes >= threshold:
                         use_2stage = True
-                else:
-                    use_2stage = False
+                    else:
+                        use_2stage = False
+            elif has_residual:
+                # Non-quant residual: the split path is FP8-only, so pick between
+                # the 1-stage and 2-stage fused kernels by per-rank payload only.
+                use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
             else:
-                # NVIDIA residual dispatch.  For 8 GPUs split_threshold
-                # == threshold, so the elif is unreachable and the
-                # 2-stage residual path is intentionally skipped (see
-                # _rank_8_split_thresh comment).  For 4 GPUs the two
-                # thresholds differ and all three paths are reachable.
-                if per_rank_bytes >= split_threshold:
-                    use_split = True
-                    use_2stage = False
-                elif per_rank_bytes >= threshold:
-                    use_2stage = True
-                else:
-                    use_2stage = False
-        elif has_residual:
-            # Non-quant residual: the split path is FP8-only, so pick between
-            # the 1-stage and 2-stage fused kernels by per-rank payload only.
-            use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
-        else:
-            use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
+                use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
 
     def launch_1stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch[

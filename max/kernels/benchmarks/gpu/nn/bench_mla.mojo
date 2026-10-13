@@ -47,8 +47,6 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
 
-from std.utils.index import Index
-
 
 def bench_decode[
     qkv_type: DType,

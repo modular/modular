@@ -30,7 +30,7 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
     Replica D [0,8,16]  -> GPU 6, GPU 7
 """
 
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from std.collections import Array
 from std.math import ceildiv
 from std.sys import size_of

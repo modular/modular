@@ -976,7 +976,6 @@ def main() raises:
     m.dump_report()
 
 
-from std.benchmark import BenchConfig
 from nn.topk import fused_token_sampling_gpu, gumbel_sampling_fused_gpu
 
 

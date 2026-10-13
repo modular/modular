@@ -26,7 +26,7 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from std.collections.optional import Optional, OptionalReg
+from std.collections.optional import Optional
 from std.collections.string import StaticString
 from std.collections.string.string_span import (
     _get_kgen_string,
@@ -554,23 +554,24 @@ def _mark_eviction[
             - Non-zero handle for fractional L2 eviction policy.
     """
 
-    comptime if eviction_policy == CacheEviction.EVICT_NORMAL:
-        return 0
-    elif eviction_policy == CacheEviction.EVICT_LAST:
-        return inlined_assembly[
-            "createpolicy.fractional.L2::evict_last.b64 $0;",
-            UInt64,
-            constraints="=l",
-        ]()
-    else:
-        comptime assert (
-            eviction_policy == CacheEviction.EVICT_FIRST
-        ), "invalid eviction policy, only support normal, first, and last"
-        return inlined_assembly[
-            "createpolicy.fractional.L2::evict_first.b64 $0;",
-            UInt64,
-            constraints="=l",
-        ]()
+    comptime match eviction_policy:
+        case == CacheEviction.EVICT_NORMAL:
+            return 0
+        case == CacheEviction.EVICT_LAST:
+            return inlined_assembly[
+                "createpolicy.fractional.L2::evict_last.b64 $0;",
+                UInt64,
+                constraints="=l",
+            ]()
+        case _:
+            comptime assert (
+                eviction_policy == CacheEviction.EVICT_FIRST
+            ), "invalid eviction policy, only support normal, first, and last"
+            return inlined_assembly[
+                "createpolicy.fractional.L2::evict_first.b64 $0;",
+                UInt64,
+                constraints="=l",
+            ]()
 
 
 @inline(.nodebug)
@@ -631,11 +632,11 @@ def async_copy[
         comptime n_scalars = size // size_of[dtype]()
         var n_src_scalars = src_size // Int32(size_of[dtype]())
 
-        comptime if fill:
+        comptime if case .Some(fill_value) = fill:
             for i in range(n_src_scalars):
                 dst.unsafe_store(i, src.unsafe_load(i))
             for i in range(Int(n_src_scalars), n_scalars):
-                dst.unsafe_store(i, fill.value())
+                dst.unsafe_store(i, fill_value)
         else:
             comptime for i in range(n_scalars):
                 dst.unsafe_store(i, src.unsafe_load(i))
@@ -2773,8 +2774,8 @@ def _load_impl[
         comptime assert read_only == False
         return ptr.unsafe_load[width=width]()
 
-    comptime if prefetch_size:
-        comptime assert prefetch_size.value() in (64, 128, 256)
+    comptime if case .Some(prefetch_bytes) = prefetch_size:
+        comptime assert prefetch_bytes in (64, 128, 256)
 
     comptime bytes_to_load = size_of[dtype]() * width
     comptime dtype_bitwidth = bit_width_of[dtype]()
@@ -3521,7 +3522,7 @@ def _get_type_mnemonic[dtype: DType]() -> StaticString:
     This internal utility function converts floating point DTypes into their
     corresponding string mnemonics used in GPU assembly instructions.
     """
-    __match dtype:
+    match dtype:
         case .float32:
             return "f32"
         case .float16:

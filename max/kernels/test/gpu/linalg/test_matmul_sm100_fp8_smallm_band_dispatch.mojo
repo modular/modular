@@ -41,19 +41,17 @@
 # against cuBLASLt. A tuned row and the heuristic both return DISPATCH_HIT, so
 # that case guards the row's numerics, not that the dispatcher selects it.
 
-from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand, seed
-from layout import TileTensor, Coord, row_major, Idx
+from layout import Coord, TileTensor, row_major, Idx
 from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     matmul_dispatch_sm100_fp8,
     matmul_dispatch_sm100_bf16,
     DISPATCH_HIT,
 )
 from linalg.utils import identity_compute_fn, no_epilogue_fn
-from std.utils.index import IndexList
 from std.testing import assert_equal
 
 
@@ -123,9 +121,8 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
 
     def scaled_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var scale} -> SIMD[
-        dtype, width
-    ]:
+    ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # Mirror MatmulStaticScaledFloat8's SM100 compute lambda: accumulate
         # in fp32, apply the scalar scale, cast back to output dtype (bf16).
         var scaled = val.cast[.float32]() * scale

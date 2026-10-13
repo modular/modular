@@ -23,6 +23,7 @@ from max.driver import is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     KVCacheParamInterface,
+    KVConnectorType,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     estimated_memory_size,
@@ -36,6 +37,15 @@ from .paged_kv_cache.jenga_cache_manager import JengaKVCacheManager
 logger = logging.getLogger("max.pipelines")
 
 
+def jenga_supports_di(params: KVCacheParamInterface) -> bool:
+    """Whether disaggregated serving can transfer this cache under Jenga.
+
+    A sliding window leaf nulls the pages its window slid past, so its block
+    ids are not the contiguous prefix a transfer moves.
+    """
+    return all(leaf.group_id.is_full() for leaf in params.leaves().values())
+
+
 def _use_jenga_kv_cache(
     params: KVCacheParamInterface, is_di_enabled: bool, model_name: str
 ) -> bool:
@@ -45,20 +55,43 @@ def _use_jenga_kv_cache(
     Jenga, so it overrides the legacy opt-out.
     `MODULAR_USE_LEGACY_KV_CACHE=1` otherwise forces the legacy KV cache.
 
+    Raises:
+        ValueError: If no manager can serve the configuration. The legacy
+            manager supports neither disaggregated inference nor a KV
+            connector, and disaggregated inference on Jenga supports only full
+            attention caches.
+
     TODO: temporary flag for the Jenga cutover. Delete once the transition is complete.
     """
-    if recurrent_leaf(params) is not None:
-        return True
     prefer_legacy = os.getenv("MODULAR_USE_LEGACY_KV_CACHE", "0").lower() in (
         "1",
         "true",
         "yes",
         "y",
     )
-    if prefer_legacy:
+    if prefer_legacy and recurrent_leaf(params) is None:
+        if is_di_enabled:
+            raise ValueError(
+                "Disaggregated inference is incompatible with the legacy KV"
+                " manager selected by MODULAR_USE_LEGACY_KV_CACHE. Unset"
+                " MODULAR_USE_LEGACY_KV_CACHE."
+            )
+        connector = params.kv_connector_config.type
+        if connector != KVConnectorType.null:
+            raise ValueError(
+                f"The '{connector.value}' KV connector is incompatible with"
+                " the legacy KV manager selected by"
+                " MODULAR_USE_LEGACY_KV_CACHE. Unset"
+                " MODULAR_USE_LEGACY_KV_CACHE."
+            )
         return False
-    # TODO(SERVOPT-1590): Jenga is incompatible with Disaggregated Inference.
-    return not is_di_enabled
+    if is_di_enabled and not jenga_supports_di(params):
+        raise ValueError(
+            "Disaggregated inference supports only full-attention KV caches,"
+            " but this model has a sliding-window, recurrent or scratch KV"
+            " cache leaf."
+        )
+    return True
 
 
 def max_seq_len_fitting_in_cache(

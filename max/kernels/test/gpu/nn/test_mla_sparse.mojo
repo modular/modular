@@ -31,53 +31,28 @@ This test:
 """
 
 from std.math import ceildiv, exp
-from std.memory import alloc, bitcast
+from std.memory import bitcast
 from std.random import randn, seed
-from std.sys import argv, size_of
+from std.sys import argv
 
 from max.gpu import *
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
-from layout.tma_async import (
-    SplitLastDimTMATensorTile,
-    TMATensorTile,
-    _gather4_box_width,
-    create_split_tma,
-    create_tma_tile_gather4,
-)
-from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.mha_mask import CausalMask, NullMask
-from nn.attention.mha_operand import (
-    KVCacheMHAOperand,
-    MHAOperand,
-)
+from layout import Idx, TileTensor, row_major
+from nn.attention.mha_mask import NullMask
+from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
 from nn.attention.gpu.mla import flare_mla_decoding
-from nn.attention.gpu.nvidia.sm90.attention import KVTMATile
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     compute_mla_dispatch_scalars,
 )
-from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
-    MLA_SM100_Decode_Config,
-    MLA_Decode_Pack,
-    QOTMATile,
-    tma_tile_qo,
-)
 from nn.attention.gpu.nvidia.sm100.mla_decode_sparse import (
     MLA_SM100_Decode_Sparse,
 )
-from nn.attention.gpu.nvidia.sm90.attention import NullPointer
 from std.testing import assert_almost_equal
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.numerics import min_or_neg_inf
 
 

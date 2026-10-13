@@ -42,7 +42,6 @@ from std.testing import assert_true
 from std.utils import StaticTuple
 
 from layout import (
-    Coord,
     Idx,
     TensorLayout,
     TensorEngine,

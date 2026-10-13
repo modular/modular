@@ -147,7 +147,7 @@ struct Conv2dFpropKernel[
         config: Kernel configuration.
         cluster_shape: CUDA cluster dimensions.
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(Coord, SIMD) -> None`.
         register_based_epilogue: Whether to apply the lambda in registers.
     """
 

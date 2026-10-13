@@ -46,7 +46,7 @@ from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import (
     flash_attention,
     get_mha_decoding_num_partitions,

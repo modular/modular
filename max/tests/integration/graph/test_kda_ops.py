@@ -879,6 +879,9 @@ def test_kda_chunk_amd_strided_views(
     )
 
 
+@pytest.mark.compile_on_gpu(
+    "asserts on the error its compile raises, which only compiling reproduces"
+)
 @pytest.mark.skipif(
     not _is_gfx950_gpu(), reason="AMD kda_chunk path is gfx950-only"
 )
@@ -1141,6 +1144,62 @@ def test_kda_decode_wrapper_rejects_split_dtype_groups() -> None:
                 indices,
                 output_dtype=DType.float32,
             )
+
+        graph.output()
+
+
+def test_kda_wrapper_rejects_slots_too_large_for_32bit_strides() -> None:
+    """One slot must fit the kernels' 32-bit strides.
+
+    The pool is indexed at 64 bits, but a slot's extent is passed as a 32-bit
+    stride, so a slot of 2**32 or more elements would wrap. Only the static
+    head extents are checked; the slot count is a runtime dim.
+
+    The dtypes are the ones the AMD ``kda_chunk`` contract accepts, so on
+    gfx950 that contract passes and the shape check is what rejects the graph.
+    """
+    gpu = DeviceRef.GPU()
+    t, h, kd, vd = 4, 2**18, 128, 128
+    with Graph(
+        "kda_wrapper_slot_size",
+        input_types=[
+            TensorType(DType.bfloat16, [t, h, kd], device=gpu),
+            TensorType(DType.bfloat16, [t, h, vd], device=gpu),
+            TensorType(DType.float32, [t, h, kd], device=gpu),
+            TensorType(DType.float32, [t, h], device=gpu),
+            TensorType(DType.float32, [h], device=gpu),
+            TensorType(DType.float32, [h, kd], device=gpu),
+            TensorType(DType.int32, [2], device=gpu),
+            BufferType(DType.float32, ["slots", h, kd, vd], device=gpu),
+            TensorType(DType.int32, [1], device=gpu),
+        ],
+    ) as graph:
+        q = graph.inputs[0].tensor
+        v = graph.inputs[1].tensor
+        raw_gate = graph.inputs[2].tensor
+        beta_logits = graph.inputs[3].tensor
+        a_log = graph.inputs[4].tensor
+        dt_bias = graph.inputs[5].tensor
+        cu_seqlens = graph.inputs[6].tensor
+        pool = graph.inputs[7].buffer
+        indices = graph.inputs[8].tensor
+
+        for op in (kda_decode, kda_chunk):
+            with pytest.raises(ValueError, match="fewer than 2\\*\\*32"):
+                op(
+                    q,
+                    q,
+                    v,
+                    raw_gate,
+                    beta_logits,
+                    a_log,
+                    dt_bias,
+                    cu_seqlens,
+                    pool,
+                    indices,
+                    output_dtype=DType.bfloat16,
+                    gate_mode="safe",
+                )
 
         graph.output()
 

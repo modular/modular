@@ -33,7 +33,6 @@ from std.math import align_up
 from std.os import abort
 from std.pathlib import Path
 from std.ffi import (
-    c_char,
     c_int,
     c_uint,
     c_size_t,
@@ -50,10 +49,7 @@ from std.sys import (
     size_of,
 )
 from std.sys.compile import DebugLevel, OptimizationLevel
-from std.sys.info import (
-    CompilationTarget,
-    is_triple,
-)
+from std.sys.info import CompilationTarget
 from std.sys.defines import _is_bool_like
 
 from std.reflection import call_location, SourceLocation
@@ -67,7 +63,6 @@ from std.reflection import reflect, reflect_fn
 from std.memory import Pointer, unsafe_memcpy, unsafe_stack_allocation
 from std.memory import alloc, dealloc, ThinAllocation, Layout, MaybeUninit
 from std.memory.unsafe import bitcast
-from std.builtin.rebind import downcast
 
 from std.builtin._coroutine import (
     AnyCoroutine,
@@ -81,7 +76,7 @@ from std.utils.static_tuple import StaticTuple
 
 from std._gpu.host import get_gpu_target
 from .info import _device_type_encoder_target
-from std._gpu.host.info import TargetAccelerator, GPUInfo, TargetAcceleratorType
+from std._gpu.host.info import GPUInfo
 
 from .compile import (
     _compile_code,
@@ -224,8 +219,8 @@ comptime _DumpPath = Variant[Bool, Path, StaticString, def() capturing -> Path]
 
 def _string_from_owned_charptr(c_str: _CString) -> String:
     var result = String()
-    if c_str:
-        result = String(unsafe_from_utf8_ptr=c_str.unsafe_value().ptr())
+    if case .Some(c_str) = c_str:
+        result = String(unsafe_from_utf8_ptr=c_str.ptr())
     # void AsyncRT_DeviceContext_strfree(const char* ptr)
     external_call["AsyncRT_DeviceContext_strfree", NoneType](c_str)
     return result^
@@ -2864,14 +2859,6 @@ struct DeviceEvent(ImplicitlyCopyable):
         )
 
 
-def _is_nvidia_gpu[target: CompilationTarget]() -> Bool:
-    return target.is_triple["nvptx64-nvidia-cuda"]()
-
-
-def _is_apple_gpu[target: CompilationTarget]() -> Bool:
-    return target.is_triple["air64-apple-macosx"]()
-
-
 def _max_dynamic_shared_bytes_for_load[
     target: CompilationTarget
 ](func_attribute: OptionalReg[FuncAttribute]) raises -> Int32:
@@ -2889,7 +2876,7 @@ def _max_dynamic_shared_bytes_for_load[
         )
     # Only CUDA has a per-function cap; elsewhere the value would only split
     # the function cache.
-    comptime if _is_nvidia_gpu[target]():
+    comptime if target.is_nvidia_gpu():
         return func_attribute.value().value
     else:
         return -1
@@ -2994,7 +2981,7 @@ struct DeviceFunction[
 
     # emit asm if cross compiling for nvidia gpus.
     comptime _emission_kind = "asm" if (
-        _cross_compilation() and _is_nvidia_gpu[Self.target]()
+        _cross_compilation() and Self.target.is_nvidia_gpu()
     ) else "object"
     var _handle: _DeviceFunctionPtr[mut=True]
     """Internal handle to the compiled device function."""
@@ -3200,8 +3187,7 @@ struct DeviceFunction[
         """
 
         # Get ASM - either from the pre-compiled func_impl or by compiling now
-        @__parameter
-        def get_asm() -> StaticString:
+        def get_asm() {imm} -> StaticString:
             comptime if Self._emission_kind == "asm":
                 return self._func_impl.asm
             return _compile_code[
@@ -3357,10 +3343,8 @@ struct DeviceFunction[
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
 
-        if cluster_dim:
-            attributes.append(
-                LaunchAttribute.from_cluster_dim(cluster_dim.value())
-            )
+        if case .Some(cluster_dim) = cluster_dim:
+            attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))
 
         for i in range(len(constant_memory)):
             self._copy_to_constant_memory(constant_memory[i])
@@ -3380,7 +3364,7 @@ struct DeviceFunction[
                 ]().as_unsafe_any_origin()
             )
 
-        comptime if _is_apple_gpu[Self.target]():
+        comptime if Self.target.is_apple_gpu():
             # Drop zero-sized captures so the packed slots (and their sizes)
             # match the device kernel's declared parameter order; see
             # `_compact_zero_sized_capture_slots` for why.
@@ -3596,10 +3580,8 @@ struct DeviceFunction[
 
         # Launch attributes and constant-memory copies are independent of the
         # arg-encoding scheme, so apply them once before branching on backend.
-        if cluster_dim:
-            attributes.append(
-                LaunchAttribute.from_cluster_dim(cluster_dim.value())
-            )
+        if case .Some(cluster_dim) = cluster_dim:
+            attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))
 
         if constant_memory:
             for i in range(len(constant_memory)):
@@ -3640,7 +3622,7 @@ struct DeviceFunction[
                 ]().as_unsafe_any_origin()
             )
 
-        comptime if _is_apple_gpu[Self.target]():
+        comptime if Self.target.is_apple_gpu():
             # `num_passed_args` sizes the offsets array, which covers encoded
             # args only, so it stays `num_encoded`; `extra_host_count` sizes
             # the extra per-slot entries the host arguments occupy.
@@ -3713,31 +3695,26 @@ struct DeviceFunction[
                     ] = first_word_addr.as_unsafe_any_origin()
                     translated_arg_idx += 1
 
-            if extra_host_count >= 1 and host0:
-                dense_args_addrs[
-                    unsafe_offset=translated_arg_idx
-                ] = host0.value()
-                translated_arg_idx += 1
-            if extra_host_count >= 2 and host1:
-                dense_args_addrs[
-                    unsafe_offset=translated_arg_idx
-                ] = host1.value()
-                translated_arg_idx += 1
-            if extra_host_count >= 3 and host2:
-                dense_args_addrs[
-                    unsafe_offset=translated_arg_idx
-                ] = host2.value()
-                translated_arg_idx += 1
-            if extra_host_count >= 4 and host3:
-                dense_args_addrs[
-                    unsafe_offset=translated_arg_idx
-                ] = host3.value()
-                translated_arg_idx += 1
-            if extra_host_count >= 5 and host4:
-                dense_args_addrs[
-                    unsafe_offset=translated_arg_idx
-                ] = host4.value()
-                translated_arg_idx += 1
+            if extra_host_count >= 1:
+                if case .Some(addr) = host0:
+                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
+                    translated_arg_idx += 1
+            if extra_host_count >= 2:
+                if case .Some(addr) = host1:
+                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
+                    translated_arg_idx += 1
+            if extra_host_count >= 3:
+                if case .Some(addr) = host2:
+                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
+                    translated_arg_idx += 1
+            if extra_host_count >= 4:
+                if case .Some(addr) = host3:
+                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
+                    translated_arg_idx += 1
+            if extra_host_count >= 5:
+                if case .Some(addr) = host4:
+                    dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
+                    translated_arg_idx += 1
 
             comptime func_name = reflect_fn[Self.func].display_name()
             _enqueue_packed_checked(
@@ -3803,7 +3780,7 @@ struct DeviceFunction[
         self._call_with_pack_checked[*Encoded, extra_host_count=1](
             ctx,
             *encoded_args,
-            host0=host0^,
+            host0=host0,
             host0_size=size_of[Host, target=Self.target](),
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -3857,8 +3834,8 @@ struct DeviceFunction[
         self._call_with_pack_checked[*Encoded, extra_host_count=2](
             ctx,
             *encoded_args,
-            host0=host0^,
-            host1=host1^,
+            host0=host0,
+            host1=host1,
             host0_size=size_of[Host0, target=Self.target](),
             host1_size=size_of[Host1, target=Self.target](),
             grid_dim=grid_dim,
@@ -3925,9 +3902,9 @@ struct DeviceFunction[
         self._call_with_pack_checked[*Encoded, extra_host_count=3](
             ctx,
             *encoded_args,
-            host0=host0^,
-            host1=host1^,
-            host2=host2^,
+            host0=host0,
+            host1=host1,
+            host2=host2,
             host0_size=size_of[Host0, target=Self.target](),
             host1_size=size_of[Host1, target=Self.target](),
             host2_size=size_of[Host2, target=Self.target](),
@@ -4006,10 +3983,10 @@ struct DeviceFunction[
         self._call_with_pack_checked[*Encoded, extra_host_count=4](
             ctx,
             *encoded_args,
-            host0=host0^,
-            host1=host1^,
-            host2=host2^,
-            host3=host3^,
+            host0=host0,
+            host1=host1,
+            host2=host2,
+            host3=host3,
             host0_size=size_of[Host0, target=Self.target](),
             host1_size=size_of[Host1, target=Self.target](),
             host2_size=size_of[Host2, target=Self.target](),
@@ -4100,11 +4077,11 @@ struct DeviceFunction[
         self._call_with_pack_checked[*Encoded, extra_host_count=5](
             ctx,
             *encoded_args,
-            host0=host0^,
-            host1=host1^,
-            host2=host2^,
-            host3=host3^,
-            host4=host4^,
+            host0=host0,
+            host1=host1,
+            host2=host2,
+            host3=host3,
+            host4=host4,
             host0_size=size_of[Host0, target=Self.target](),
             host1_size=size_of[Host1, target=Self.target](),
             host2_size=size_of[Host2, target=Self.target](),
@@ -4476,6 +4453,10 @@ struct DeviceContextBase[
     parameterized by compilation target.
     """
 
+    # DeviceContext is only usable on hosts so `current()` will always be a CPU.
+    comptime CPU = DeviceContextBase[CompilationTarget.current()]
+    """DeviceContext type for the current CPU target."""
+
     comptime default_device_info = GPUInfo.from_target[Self.target]()
     """`GPUInfo` object for the default accelerator."""
 
@@ -4661,6 +4642,53 @@ struct DeviceContextBase[
             NoneType,
             _DeviceContextPtr[mut=True],
         ](self._handle)
+
+    @staticmethod
+    def cpu() -> DeviceContext.CPU:
+        """Creates a CPU `DeviceContext`.
+
+        Returns:
+            A new CPU `DeviceContext`.
+        """
+        try:
+            return DeviceContext.CPU(api="cpu")
+        except e:
+            abort(t"unable to create CPU DeviceContext: {e}")
+
+    @inline(.always)
+    def assert_cpu_target(var self) -> DeviceContext.CPU:
+        """Temporary function to assert and cast this DeviceContext to the CPU
+        target.
+
+        This method will be removed once all uses have migrated to static CPU
+        DeviceContext target types.
+
+        The check is performed at runtime on the context's API, since the
+        static `target` of a plain `DeviceContext` is always the default
+        accelerator, even for contexts created with `api="cpu"`.
+
+        Returns:
+            This device context cast to the CPU target.
+        """
+        if self.api() != "cpu":
+            abort(
+                String(
+                    t"using DeviceContext with non-CPU target is not supported"
+                    t" from: {call_location()}"
+                )
+            )
+        return rebind_var[DeviceContext.CPU](self)
+
+    # FIXME: The more obvious spelling of this currently crashes the compiler:
+    #    context.map(DeviceContext.assert_cpu_target)
+    @staticmethod
+    def _map_assert_cpu_target(
+        ctx: Optional[DeviceContext],
+    ) -> Optional[DeviceContext.CPU]:
+        var cpu_ctx = Optional[DeviceContext.CPU]()
+        if ctx:
+            cpu_ctx = ctx.value().assert_cpu_target()
+        return cpu_ctx^
 
     # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
     @inline(.always)
@@ -5052,13 +5080,14 @@ struct DeviceContextBase[
         """
         self._check_supports_default_compile_function()
 
-        assert (
-            not func_attribute
-            or func_attribute.value().attribute
-            != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-            or func_attribute.value().value
-            <= Int32(self.default_device_info.shared_memory_per_multiprocessor)
-        ), "Requested more than available shared memory."
+        if case .Some(attr) = func_attribute:
+            assert (
+                attr.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+                or attr.value
+                <= Int32(
+                    self.default_device_info.shared_memory_per_multiprocessor
+                )
+            ), "Requested more than available shared memory."
         comptime result_type = type_of(result)
         result = result_type(
             self,
@@ -6443,7 +6472,7 @@ struct DeviceContextBase[
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        comptime __match bitwidth:
+        comptime match bitwidth:
             case 8:
                 value = UInt64(Int(bitcast[.uint8, 1](val)))
             case 16:
@@ -6492,7 +6521,7 @@ struct DeviceContextBase[
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        comptime __match bitwidth:
+        comptime match bitwidth:
             case 8:
                 value = UInt64(Int(bitcast[.uint8, 1](val)))
             case 16:
@@ -7422,6 +7451,21 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
 
     var device_contexts: Array[DeviceContext, Self.length]
     """The underlying storage for the per-device contexts."""
+
+    def __init__(out self) raises:
+        """Initialize with DeviceContext(device_id=id) for id in [0, length).
+
+        Raises:
+            If creating any device context fails.
+        """
+        var scratch = Array[Optional[DeviceContext], Self.length]()
+
+        for i in range(Self.length):
+            scratch[i] = DeviceContext(device_id=i)
+
+        self.device_contexts = Array[DeviceContext, Self.length](
+            fill_with=lambda (i: Int) {ref} -> DeviceContext: scratch[i].take()
+        )
 
     @inline(.always)
     def __init__(

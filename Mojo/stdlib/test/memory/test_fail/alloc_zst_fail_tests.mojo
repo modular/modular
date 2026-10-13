@@ -14,16 +14,10 @@
 # RUN: not %mojo -Dtest=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
 
 from std.memory.alloc import alloc, dealloc, Layout, ThinAllocation
-from std.sys import align_of, size_of
+from std.sys import size_of
 from std.sys.defines import get_defined_int
 
-from std.testing import (
-    assert_equal,
-    assert_not_equal,
-    assert_false,
-    assert_true,
-    TestSuite,
-)
+from std.testing import assert_equal
 
 
 def test_alloc_zst_count_negative_fails() raises:

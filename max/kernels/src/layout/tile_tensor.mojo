@@ -24,7 +24,6 @@ from std.builtin.int import index as _index
 from std.collections._conditional import _ComptimeConditional
 from std.memory import unsafe_stack_allocation as _std_stack_allocation
 from std.memory.unsafe_pointer import unsafe_cast
-from std.reflection import call_location
 from max.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer
 from max.gpu.memory import CacheEviction, Fill, async_copy
 from layout._fillers import BATCH_SIZE
@@ -77,15 +76,16 @@ def _default_invariant[mut: Bool]() -> Bool:
 def _async_fill_value[dtype: DType, fill: Fill]() -> Optional[Scalar[dtype]]:
     """Returns the value written to the bytes a masked async copy skips, or
     `None` when `Fill.NONE` asks for those bytes to be left as they are."""
-    comptime if fill == Fill.NONE:
-        return None
-    elif fill == Fill.NAN:
-        comptime assert (
-            dtype.is_floating_point()
-        ), "Fill.NAN requires a floating-point dtype"
-        return nan[dtype]()
-    else:
-        return Scalar[dtype](0)
+    comptime match fill:
+        case .NONE:
+            return None
+        case .NAN:
+            comptime assert (
+                dtype.is_floating_point()
+            ), "Fill.NAN requires a floating-point dtype"
+            return nan[dtype]()
+        case _:
+            return Scalar[dtype](0)
 
 
 struct _IndexOrSlice[static: Int = -1](
@@ -247,7 +247,7 @@ def _count_slice_dims[
     """Returns the number of `ContiguousSlice` (rank-preserving) arguments."""
     var count = 0
     comptime for i in range(slices.size):
-        __match slices[i]:
+        match slices[i]:
             case .slice:
                 count += 1
             case .index:
@@ -268,10 +268,10 @@ def _kept_slice_axis_for_output[
     """
     var kept_axes_seen = 0
     comptime for axis in range(slices.size):
-        __match slices[axis]:
+        match slices[axis]:
+            case .slice if kept_axes_seen == out_axis:
+                return axis
             case .slice:
-                if kept_axes_seen == out_axis:
-                    return axis
                 kept_axes_seen += 1
             case .index:
                 pass
@@ -307,7 +307,7 @@ def _slice_start[
 ]() -> Int:
     """Returns the first element of `axis` that the view selects: a slice's
     start, or the index a rank-reducing (`Int`) argument fixes the axis to."""
-    __match slices[axis]:
+    match slices[axis]:
         case .slice:
             return slices[axis].unsafe_get_slice().start.or_else(0)
         case .index:
@@ -1324,15 +1324,13 @@ struct TileTensor[
     @inline(.nodebug)
     def __setitem__[
         *IndexTypes: Indexer & Copyable
-    ](self, *items: *IndexTypes, value: Self.ElementType) where (
-        IndexTypes.length == Self.flat_rank
-    ) & Self.mut:
+    ](self, *items: *IndexTypes, value: Self.ElementType) where Self.mut:
         """Sets a single element in the tensor at the specified indices.
 
-        Uses flat indexing based on flat_rank. For non-nested layouts,
-        flat_rank == rank, so tensor[i, j, k] = value works normally. For
-        nested layouts (e.g., from blocked_product), use all flat_rank indices:
-        tensor[i0, i1, i2, i3] = value for a tensor with flat_rank == 4.
+        Takes one index per mode, which `crd2idx` splits across a nested
+        mode's leaves, or one index per leaf (`flat_rank` indices). The count
+        is checked when the tensor's layout is concrete, so generic code can
+        index a tile whose layout it can't see.
 
         Parameters:
             IndexTypes: The types of the indices (must implement Indexer).
@@ -1342,6 +1340,12 @@ struct TileTensor[
             value: The value to store.
         """
         comptime arg_count = IndexTypes.length
+        comptime assert (
+            arg_count == Self.rank or arg_count == Self.flat_rank
+        ), String(
+            t"__setitem__ takes {Self.rank} indices (one per mode) or"
+            t" {Self.flat_rank} (one per leaf); got {arg_count}"
+        )
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
         comptime for i in range(arg_count):
@@ -1705,16 +1709,13 @@ struct TileTensor[
     def num_elements(self) -> Int:
         """Returns the total number of elements in the tensor.
 
-        Computes the product of all shape dimensions.
+        Computes the product of all shape dimensions, including those inside
+        nested modes.
 
         Returns:
             The total element count.
         """
-        var result = 1
-
-        comptime for i in range(Self.rank):
-            result *= Int(self.layout.shape[i]().value())
-        return result
+        return self.layout.product()
 
     @inline(.nodebug)
     def copy_from(self, other: TileTensor) where Self.mut:
@@ -1911,10 +1912,8 @@ struct TileTensor[
         # hand-rolled `Swizzle(bits, base, shift)` with
         # `base < log2_floor(element_size)` would silently produce misaligned
         # offsets and trigger CUDA_ERROR_MISALIGNED_ADDRESS.
-        comptime if swizzle:
-            comptime assert swizzle.value().base >= log2_floor(
-                Self.element_size
-            ), (
+        comptime if case .Some(swizzle_fn) = swizzle:
+            comptime assert swizzle_fn.base >= log2_floor(Self.element_size), (
                 "swizzle.base is too small for the requested element_size:"
                 " cp.async would receive misaligned offsets. Construct the"
                 " swizzle with `make_swizzle[..., access_size=element_size]`"
@@ -1956,8 +1955,7 @@ struct TileTensor[
             )
 
             var swizzled_idx: Scalar[Self.linear_idx_type]
-            comptime if swizzle:
-                comptime swizzle_fn = swizzle.value()
+            comptime if case .Some(swizzle_fn) = swizzle:
                 # The destination address is swizzled in absolute tile
                 # coordinates (`base_offset` + the in-window position), then
                 # rebased back onto the fragment. Only the in-window position
@@ -2051,10 +2049,8 @@ struct TileTensor[
         # (e.g. offset-derived) `Engine`, so reinterpret its handle as
         # `self`'s before measuring the scalar-element distance.
         return Scalar[Self.linear_idx_type](
-            Self.Engine.distance(
-                self._storage,
-                rebind[type_of(self._storage)](other._storage),
-            )
+            (Int(self.unsafe_ptr()) - Int(other.unsafe_ptr()))
+            // size_of[Self.dtype]()
         )
 
     def write_to(self, mut w: Some[Writer]):
@@ -4010,16 +4006,13 @@ struct NullableTileTensor[
     def num_elements(self) -> Int:
         """Returns the total number of elements in the tensor.
 
-        Computes the product of all shape dimensions.
+        Computes the product of all shape dimensions, including those inside
+        nested modes.
 
         Returns:
             The total element count.
         """
-        var result = 1
-
-        comptime for i in range(Self.rank):
-            result *= Int(self.layout.shape[i]().value())
-        return result
+        return self.layout.product()
 
     @inline(.nodebug)
     def to_layout_tensor(
@@ -4226,8 +4219,7 @@ def _distribute[
     # widen at that boundary and narrow back after.
     var swizzled_offset = offset
 
-    comptime if swizzle:
-        comptime swizzle_fn = swizzle.value()
+    comptime if case .Some(swizzle_fn) = swizzle:
         comptime element_size = data_layout_tensor.element_size
         swizzled_offset = Scalar[data_layout_tensor.linear_idx_type](
             swizzle_fn(Int(offset) // element_size) * element_size
@@ -4326,8 +4318,7 @@ def _distribute_with_offset[
     # the former is the unit in distribution.
     var swizzled_offset = offset
 
-    comptime if swizzle:
-        comptime swizzle_fn = swizzle.value()
+    comptime if case .Some(swizzle_fn) = swizzle:
         comptime element_size = data_layout_tensor.element_size
         swizzled_offset = swizzle_fn(offset // element_size) * element_size
 
@@ -5107,7 +5098,7 @@ def flatten_leading[
 # lt_to_tt -- Convert a LayoutTensor to a TileTensor
 # ============================================================================
 
-from .int_tuple import IntTuple as _IntTuple, product_each as _product_each
+from .int_tuple import product_each as _product_each
 from .layout import Layout as _LegacyLayout
 from .layout_tensor import LayoutTensor as _LayoutTensor
 

@@ -40,7 +40,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVTransfer,
 )
 
-from .block_manager import PrefixCacheHits
+from ._common import PrefixCacheHits
 
 
 class PagedKVCacheManagerInterface(ABC):

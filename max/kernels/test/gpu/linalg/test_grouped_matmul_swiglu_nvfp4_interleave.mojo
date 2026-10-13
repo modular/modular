@@ -31,36 +31,14 @@ branches is the column ordering of W and the matching load pattern in the
 SwiGLU kernel; the matmul reduces over K independently per output cell so
 no FP-noise is expected.
 """
-from std.math import align_up, ceildiv, exp, recip
-from std.math.uutils import udivmod
+from std.math import align_up, ceildiv
 from max.gpu.host import DeviceContext
 from std.memory import alloc
-from std.memory.unsafe import bitcast
 from std.random import random_ui64, seed, rand
 from std.simd import _convert_f32_to_float8_scalar
-from max.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
-    thread_idx,
-    block_idx,
-    lane_id,
-    warp_id,
-)
-from max.gpu.primitives.grid_controls import (
-    PDL,
-    PDLLevel,
-    pdl_launch_attributes,
-)
-import max.gpu.primitives.warp as warp
-from std.utils.index import StaticTuple
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 
-from layout import (
-    Coord,
-    Idx,
-    TensorLayout,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
@@ -70,7 +48,6 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
-    cast_fp32_to_fp4e2m1,
     get_scale_factor,
     set_scale_factor,
 )

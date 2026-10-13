@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -67,6 +68,55 @@ def resolve_indexer_types(
         "full" if (max(i - offset + 1, 0) % freq) == 0 else "shared"
         for i in range(num_hidden_layers)
     ]
+
+
+def indexer_cache_layer_map(
+    indexer_types: Sequence[str], num_layers: int
+) -> list[int]:
+    """Maps each decoder layer to its slot in the indexer K cache.
+
+    Only ``"full"`` layers run the indexer, so only they get a slot; slots are
+    numbered in layer order. ``"shared"`` layers never touch the indexer cache
+    and map to slot 0. An empty schedule means every layer is full.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        The indexer cache slot of each of the first ``num_layers`` layers.
+    """
+    if not indexer_types:
+        return list(range(num_layers))
+    slots: list[int] = []
+    next_slot = 0
+    for layer_type in indexer_types[:num_layers]:
+        if layer_type == "full":
+            slots.append(next_slot)
+            next_slot += 1
+        else:
+            slots.append(0)
+    return slots
+
+
+def num_indexer_cache_layers(
+    indexer_types: Sequence[str], num_layers: int
+) -> int:
+    """Returns how many layers the indexer K cache needs to hold.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        The number of ``"full"`` layers among the first ``num_layers``, or
+        ``num_layers`` when the schedule is empty.
+    """
+    if not indexer_types:
+        return num_layers
+    return sum(t == "full" for t in indexer_types[:num_layers])
 
 
 @dataclass(kw_only=True)
@@ -142,7 +192,12 @@ class DeepseekV3_2Config(DeepseekV3Config):
             # Similar to MLA, the indexer's k-cache uses a single KV head.
             n_kv_heads=1,
             head_dim=indexer_head_dim,
-            num_layers=mla_kv_params.num_layers,
+            num_layers=num_indexer_cache_layers(
+                resolve_indexer_types(
+                    huggingface_config, mla_kv_params.num_layers
+                ),
+                mla_kv_params.num_layers,
+            ),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             # Set to True because there is only a key-cache, and one KV head.

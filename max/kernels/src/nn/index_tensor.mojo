@@ -20,7 +20,7 @@ from nn.reshape import reshape
 from max.algorithm import elementwise, sync_parallelize
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu
-from layout import Coord, Idx, TileTensor, coord_to_index_list
+from layout import Coord, TileTensor, coord_to_index_list
 from max.runtime.asyncrt import parallelism_level
 
 from std.utils import IndexList
@@ -174,7 +174,7 @@ def index_tensor[
         return _index_tensor_1d[
             batch_dims,
             target=target,
-        ](data, indices, output, Optional[DeviceContext](ctx))
+        ](data, indices, output, Optional(ctx.assert_cpu_target()))
     else:
         return _index_tensor_impl[
             batch_dims,
@@ -195,7 +195,7 @@ def _index_tensor_1d[
     data: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, indices_type, ...],
     output: TileTensor[mut=True, dtype, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime assert (
         data.flat_rank >= 2 and indices.flat_rank == 2
@@ -531,7 +531,7 @@ def advanced_indexing_getitem[
         simd_width_of[
             input_type, target=CompilationTarget.current()
         ]() if is_cpu[target]() else simd_width_of[
-            input_type, target=get_gpu_target()
+            input_type, target=ctx.target
         ]()
     )
     var use_simd = _advanced_indexing_use_simd[
@@ -755,7 +755,7 @@ def advanced_indexing_setitem_inplace[
         simd_width_of[
             input_type, target=CompilationTarget.current()
         ]() if is_cpu[target]() else simd_width_of[
-            input_type, target=get_gpu_target()
+            input_type, target=ctx.target
         ]()
     )
     var use_simd = _advanced_indexing_use_simd[

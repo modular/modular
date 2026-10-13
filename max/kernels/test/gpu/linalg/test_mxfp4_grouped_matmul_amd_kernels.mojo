@@ -41,12 +41,12 @@ Usage:
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from max.gpu.host.info import MI355X
 from max.gpu.memory import CacheOperation
-from std.math import align_up, ceildiv
+from std.math import align_up
 from std.memory import bitcast
 from std.random import random_ui64, seed
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import (
     PreShuffledBGroupedGEMM,

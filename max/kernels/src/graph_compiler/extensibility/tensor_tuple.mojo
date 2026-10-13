@@ -17,12 +17,20 @@ from std.builtin.rebind import downcast
 from std.math import align_up
 from std.sys import CompilationTarget, align_of, size_of
 
+from .tensor_arg_traits import UnsafeFusedView, unsafe_fused_view
+
 
 comptime _DeviceTypeOf[T: AnyType]: AnyType = downcast[
     T, DevicePassable
 ].device_type if conforms_to(T, DevicePassable) else T
 """The device representation of a tuple element: its `device_type` when it is
 `DevicePassable`, otherwise the element type itself."""
+
+comptime _FusedViewOf[T: AnyType]: TrivialRegisterPassable = downcast[
+    T, UnsafeFusedView
+].FusedViewType
+"""The access-enabled view of a fused tuple element, `unsafe_fused_view`'s
+result type."""
 
 
 struct TensorTuple[*Ts: AnyType](
@@ -142,6 +150,49 @@ struct TensorTuple[*Ts: AnyType](
         )
         comptime for i in range(Self.Ts.length):
             Pointer(to=self[i]).unsafe_write_move_from(Pointer(to=move[i]))
+
+    # TODO(GEX-4372): Remove once the builtin kernels taking fused variadic
+    # tensors take a `TensorTuple` directly. Only those kernels may call this.
+    @doc_hidden
+    @staticmethod
+    @inline(.always)
+    def _fused_view[
+        *ElementTs: AnyType
+    ](
+        fused: TensorTuple[*ElementTs],
+        out result: TensorTuple[*ElementTs.map[_FusedViewOf]()],
+    ):
+        """Projects every element of a fused tuple to its access-enabled view.
+
+        Element-wise `unsafe_fused_view`: a host-built closure can capture the
+        result and load through element `k` on the device, which the proxies
+        in `fused` refuse. `FusedViewType` is `device_type` on every conformer,
+        so the result is `fused`'s `device_type`, on the host.
+
+        Temporary (TODO(GEX-4372)): only the builtin kernels that still take
+        fused variadic tensors may call this, and it goes away once they take a
+        `TensorTuple` directly. A kernel that launches a device function should
+        pass the tuple itself, which the launch projects to its `device_type`;
+        see `trait_tensor_tuple_fused_concat` in
+        `GraphCompiler/test/kernels/testing_kernels.mojo`.
+
+        Parameters:
+            ElementTs: The element types of `fused`, each an `UnsafeFusedView`.
+
+        Args:
+            fused: The tuple of fused tensor arguments to project.
+
+        Returns:
+            The tuple of the elements' views.
+        """
+        __mlir_op.`lit.ownership.mark_initialized`(
+            __get_mvalue_as_litref(result)
+        )
+        comptime for i in range(len(ElementTs)):
+            comptime assert conforms_to(type_of(fused[i]), UnsafeFusedView)
+            Pointer(to=result[i]).unsafe_write(
+                copy=rebind[type_of(result[i])](unsafe_fused_view(fused[i]))
+            )
 
     def __deinit__(deinit self):
         """Destroys each element.

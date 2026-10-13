@@ -461,21 +461,27 @@ class AttentionBlock(Module):
 
 
 class Upsample2d(Module):
-    """Nearest-neighbor 2D upsample by factor 2."""
+    """Nearest-neighbor 2D upsample by factor 2.
+
+    Delegates to ``ops.resize_nearest`` with the asymmetric transform and
+    floor rounding, which at an exact 2x scale maps each output coordinate
+    to ``out_coord // 2`` -- the same replication the old hand-rolled
+    reshape + concat expansion produced. The resize kernel's integer-scale
+    fast path makes this as cheap as the concat trick.
+    """
 
     def __init__(self) -> None:
         super().__init__()
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        n = x.shape[0]
-        c = x.shape[1]
-        h = x.shape[2]
-        w = x.shape[3]
+        n, c, h, w = x.shape
         # Nearest-neighbor 2x upsample: [N,C,H,W] → [N,C,H*2,W*2]
-        x = ops.reshape(x, [n, c, h, 1, w, 1])
-        x = ops.concat([x, x], axis=3)  # [N, C, H, 2, W, 1]
-        x = ops.concat([x, x], axis=5)  # [N, C, H, 2, W, 2]
-        return ops.reshape(x, [n, c, h * 2, w * 2])
+        return ops.resize_nearest(
+            x,
+            [n, c, h * 2, w * 2],
+            coordinate_transform_mode=2,
+            round_mode=2,
+        )
 
 
 class Resample(Module):

@@ -433,8 +433,9 @@ class QuantizedSparseLatentAttentionWithRope(QuantizedLatentAttention):
         # selection: there the reused list is the single shared MTP top-k, so
         # every folded q position attends one gathered pass. ``skip_topk``
         # (cross-layer) reuse keeps a per-position list, so it must stay on the
-        # unfolded path.
-        index_share = reuse_prev_topk and not self.skip_topk
+        # unfolded path. Only the FP8 kernel implements the fold; the graph-API
+        # bf16 class never requests it either.
+        index_share = self.quantized and reuse_prev_topk and not self.skip_topk
         attn_out = self._mla_impl(
             xq,
             kv,

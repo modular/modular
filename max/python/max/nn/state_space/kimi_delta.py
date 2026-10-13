@@ -274,6 +274,24 @@ def _check_shapes(
                 f"and {num_key_heads}"
             )
 
+    # The kernels index the pool at 64 bits but take its strides as 32-bit
+    # values, so one slot (every head of one request) must stay below 2**32
+    # elements. The slot count is a runtime dim; the slab binding in
+    # max.nn.kv_cache.cache_params bounds it.
+    if all(
+        isinstance(d, StaticDim)
+        for d in (num_value_heads, key_head_dim, value_head_dim)
+    ):
+        slot_elements = (
+            int(num_value_heads) * int(key_head_dim) * int(value_head_dim)
+        )
+        if slot_elements >= 2**32:
+            raise ValueError(
+                f"{op_name}: a state_pool slot holds {slot_elements} "
+                "elements, but the kernel addresses a slot with 32-bit "
+                "strides, so it must hold fewer than 2**32"
+            )
+
     if isinstance(key_head_dim, StaticDim) and isinstance(
         value_head_dim, StaticDim
     ):

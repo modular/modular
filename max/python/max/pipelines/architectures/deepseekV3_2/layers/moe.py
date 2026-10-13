@@ -173,12 +173,13 @@ class DeepseekV3_2MoE(MoEQuantized):
         # V3.2: Cast to float32 at the silu
         # https://github.com/deepseek-ai/DeepSeek-V3.2-Exp/blob/87e509a2e5a100d221c97df52c6e8be7835f0057/inference/model.py#L744
         gate_up_projs = gate_up_projs.cast(DType.float32)
-        if self.gated_activation_fn is not None:
-            gate_up_projs = self.gated_activation_fn(
-                gate_up_projs, self.moe_dim
-            )
+        gated_activation_fn = self.activation.gated_activation_fn
+        if gated_activation_fn is not None:
+            gate_up_projs = gated_activation_fn(gate_up_projs, self.moe_dim)
         else:
-            gate_up_projs = fused_silu(gate_up_projs, expert_start)
+            gate_up_projs = fused_silu(
+                gate_up_projs, expert_start, activation=self.activation
+            )
         if nvfp4:
             assert scales_offset is not None
             gate_up_quant, gate_up_scales = strategy.grouped_quantize(

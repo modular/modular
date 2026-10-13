@@ -27,7 +27,7 @@ Currently MI355X-only.
 
 from max.gpu.host import DeviceContext, HostBuffer
 from max.gpu.host.info import MI355X
-from std.math import align_up, ceildiv, exp, exp2
+from std.math import align_up, exp, exp2
 from std.random import random_ui64, seed
 
 from layout import Coord, Idx, TileTensor, row_major
@@ -37,6 +37,7 @@ from linalg.matmul.gpu.amd import (
     Shuffler,
     block_scaled_grouped_matmul_amd_preb,
 )
+from linalg.swiglu_activation import swigluoai
 
 comptime SWIGLU_ALPHA = Float32(1.702)
 comptime SWIGLU_LIMIT = Float32(7.0)
@@ -331,6 +332,7 @@ def _run_case[
         WN=WN,
         persistent=persistent,
         fuse_swiglu_mxfp8=True,
+        activation=swigluoai[SWIGLU_ALPHA, SWIGLU_LIMIT],
     ](
         TileTensor(c_q_d, row_major(Coord(total_tokens, Idx[OUT_N]))),
         a_tt,
@@ -549,7 +551,10 @@ def _run_dispatch_case[
         ctx,
     )
 
-    block_scaled_grouped_matmul_amd_preb[fuse_swiglu_mxfp8=True](
+    block_scaled_grouped_matmul_amd_preb[
+        fuse_swiglu_mxfp8=True,
+        activation=swigluoai[SWIGLU_ALPHA, SWIGLU_LIMIT],
+    ](
         TileTensor(c_q_d, row_major(Coord(total_tokens, Idx[OUT_N]))),
         a_tt,
         b_pre_tt,

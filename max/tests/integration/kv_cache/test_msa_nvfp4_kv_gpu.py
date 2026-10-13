@@ -78,6 +78,16 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _copy_host_input(
+    destination: Buffer, values: npt.NDArray[np.uint32]
+) -> None:
+    # CPU buffer copies are queued. Keep the source alive and finish the copy
+    # before the model's host dispatch reads the updated scalar.
+    source = Buffer.from_numpy(values)
+    destination.inplace_copy_from(source)
+    destination.stream.synchronize()
+
+
 def _e4m3(x: npt.NDArray[np.float32]) -> torch.Tensor:
     return torch.from_numpy(np.ascontiguousarray(x)).to(torch.float8_e4m3fn)
 
@@ -521,7 +531,7 @@ def test_msa_attention_nvfp4_matches_fp8(
     iro_np[1:] = np.cumsum(q_lens)
     cro_np = np.zeros(batch + 1, dtype=np.uint32)
     cro_np[1:] = np.cumsum(keys)
-    ref, got = model.execute(
+    inputs = [
         Buffer.from_dlpack(q_h.view(torch.uint8))
         .view(DType.float8_e4m3fn)
         .to(device),
@@ -546,13 +556,51 @@ def test_msa_attention_nvfp4_matches_fp8(
             device
         ),
         Buffer.from_numpy(d_idx).to(device),
-    )
+    ]
+    ref, got = model.execute(*inputs)
     assert isinstance(ref, Buffer)
     assert isinstance(got, Buffer)
     ref_bits = ref.view(DType.uint16).to_numpy()
     got_bits = got.view(DType.uint16).to_numpy()
     assert int(np.count_nonzero(ref_bits)) > ref_bits.size // 2
     np.testing.assert_array_equal(got_bits, ref_bits)
+
+    if max(q_lens) == 1:
+        key = 0x4D5342
+        captured = model.capture(key, *inputs)
+        try:
+            for short in (True, False, True):
+                live = [1] * batch if short else cache_lens
+                selected = d_idx.copy()
+                if short:
+                    selected.fill(-1)
+                    selected[:, :, 0] = 0
+                live_keys = np.array(live, dtype=np.uint32) + 1
+                live_offsets = np.zeros(batch + 1, dtype=np.uint32)
+                live_offsets[1:] = np.cumsum(live_keys)
+                for slot, values in (
+                    (2, live_offsets),
+                    (7, np.array(live, dtype=np.uint32)),
+                    (13, selected),
+                ):
+                    inputs[slot].inplace_copy_from(
+                        Buffer.from_numpy(values).to(device)
+                    )
+                _copy_host_input(
+                    inputs[3], np.array([sum(live_keys)], dtype=np.uint32)
+                )
+                eager = [
+                    out.view(DType.uint16).to_numpy().copy()
+                    for out in model.execute(*inputs)
+                ]
+                model.debug_verify_replay(key, *inputs)
+                model.replay(key, *inputs)
+                for out, want in zip(captured, eager, strict=True):
+                    np.testing.assert_array_equal(
+                        out.view(DType.uint16).to_numpy(), want
+                    )
+        finally:
+            model.release_captured_graph(key)
 
 
 @pytest.mark.parametrize("nvfp4_index", [False, True])
@@ -820,6 +868,10 @@ def indexer_model() -> tuple[Accelerator, Model]:
         ([1, 1, 1], [5, 130, 400], 0, True),
         # Graph-capture replay slack on max_cache_length.
         ([1, 1, 1], [700, 2047, 33], 300, True),
+        # Production capacity: 2048 live blocks plus the indexer's one-token
+        # host-bound slack. Exercise split-K versus monolithic selection.
+        ([1, 1, 1], [262143, 127, 33], 0, True),
+        ([1, 1, 1], [262015, 127, 33], 0, False),
         # MTP decode at every width that fits the m16 fragment (4 heads).
         *[([n] * 3, [4091, 900, 61], 0, n % 2 == 0) for n in (2, 3, 4)],
         # DSpark verify (8 tokens): too wide for the fragment, so prefill.
@@ -882,7 +934,7 @@ def test_msa_indexer_nvfp4_matches_bf16(
     # tokens), so the scratch covers the replay slack too.
     scratch_blocks = -(-(max(keys) + extra_cache + max(q_lens)) // _PAGE_SIZE)
     score_init = np.zeros((_INDEX_HEADS, rows, scratch_blocks), np.float32)
-    ref, got = model.execute(
+    inputs = [
         Buffer.from_dlpack(q_fp8.to(torch.bfloat16)).to(device),
         Buffer.from_dlpack(q_fp8.view(torch.uint8))
         .view(DType.float8_e4m3fn)
@@ -903,7 +955,8 @@ def test_msa_indexer_nvfp4_matches_bf16(
         ),
         Buffer.from_numpy(score_init).to(device),
         Buffer.from_numpy(score_init).to(device),
-    )
+    ]
+    ref, got = model.execute(*inputs)
     assert isinstance(ref, Buffer)
     assert isinstance(got, Buffer)
     ref_idx = ref.to_numpy()
@@ -918,6 +971,49 @@ def test_msa_indexer_nvfp4_matches_bf16(
             agree += len(want & have)
             total += max(len(want), len(have))
     assert agree / total > 0.99, f"block agreement {agree}/{total}"
+
+    if max(q_lens) == 1:
+        # Capture short rows, then grow and shrink the live contexts while
+        # keeping every input address and the scratch capacity unchanged.
+        key = 0x4D5341
+        inputs[3].inplace_copy_from(
+            Buffer.from_numpy(np.ones(batch, dtype=np.uint32)).to(device)
+        )
+        inputs[11].inplace_copy_from(
+            Buffer.from_numpy(np.array([batch, 2], dtype=np.int64)).to(device)
+        )
+        captured = model.capture(key, *inputs)
+        try:
+            for live in (cache_lens, [1] * batch, cache_lens):
+                inputs[3].inplace_copy_from(
+                    Buffer.from_numpy(np.array(live, dtype=np.uint32)).to(
+                        device
+                    )
+                )
+                _copy_host_input(
+                    inputs[10], np.array([max(live) + 1], dtype=np.uint32)
+                )
+                inputs[11].inplace_copy_from(
+                    Buffer.from_numpy(
+                        np.array([batch, max(live) + 1], dtype=np.int64)
+                    ).to(device)
+                )
+                eager = [
+                    out.to_numpy().copy() for out in model.execute(*inputs)
+                ]
+                _copy_host_input(
+                    inputs[10],
+                    np.array([max(keys) + extra_cache], dtype=np.uint32),
+                )
+                model.debug_verify_replay(key, *inputs)
+                _copy_host_input(
+                    inputs[10], np.array([max(live) + 1], dtype=np.uint32)
+                )
+                model.replay(key, *inputs)
+                for out, want in zip(captured, eager, strict=True):
+                    np.testing.assert_array_equal(out.to_numpy(), want)
+        finally:
+            model.release_captured_graph(key)
 
 
 def test_msa_indexer_nvfp4_validates_its_inputs() -> None:

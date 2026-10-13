@@ -165,7 +165,7 @@ modular_py_test(
     },
     env_inherit = ["HF_TOKEN"],
     exec_properties = {
-        "test.resources:gpu-memory": "20",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = [
         "//:has_gpu",
@@ -269,9 +269,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "9",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -296,9 +297,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -322,9 +324,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -349,9 +352,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -373,9 +377,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "9",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -421,7 +426,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
     tags = [
@@ -451,9 +456,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "9",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -477,9 +483,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "9",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -502,9 +509,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "9",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -527,9 +535,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -553,9 +562,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -578,9 +588,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -603,9 +614,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -628,9 +640,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -654,9 +667,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -679,9 +693,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -707,9 +722,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -735,9 +751,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -764,9 +781,10 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "8",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",

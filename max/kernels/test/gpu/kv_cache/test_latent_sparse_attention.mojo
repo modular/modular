@@ -28,7 +28,7 @@ from std.utils.numerics import min_or_neg_inf
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.latent_sparse_attention import (
     latent_sparse_attention_ragged_paged,

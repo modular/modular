@@ -1068,3 +1068,58 @@ def test_memory_size_raises_when_the_budget_holds_no_block() -> None:
         JengaKVCacheManager.memory_size(
             params, 1, max_batch_size=1, max_seq_len=4
         )
+
+
+def test_derived_row_state_matches_a_full_walk_of_the_rows() -> None:
+    """The block ids a forward reads and the commit scan start are cached.
+
+    Two requests with the same prompt run side by side, so the second finds
+    each of its blocks already published and swaps in the first's twin. That,
+    the window sliding and the checkpoints moving must all leave the ids the
+    forward reads equal to a fresh walk of the rows, and must leave no
+    committable block behind what the commit scan skips.
+    """
+    full = make_leaf(n_kv_heads=1, page_size=4)
+    sliding = make_leaf(n_kv_heads=1, page_size=4, window_size=8)
+    for leaf in (full, sliding):
+        leaf.enable_prefix_caching = True
+    state = RecurrentStateParams(
+        devices=full.devices,
+        data_parallel_degree=1,
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=STATE_LEAF,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+            ),
+        ),
+    )
+    params = MultiKVCacheParams.from_params(
+        {"full": full, "sliding": sliding, "state": state}
+    )
+    mgr = create_manager(params, 400, 4, max_seq_len=64)
+    ctxs = [make_ctx(num_tokens=18), make_ctx(num_tokens=18)]
+    for ctx in ctxs:
+        mgr.claim(ctx)
+
+    for _ in range(14):
+        for ctx in ctxs:
+            mgr.alloc(ctx)
+        mgr.runtime_inputs([ctxs])
+        for ctx in ctxs:
+            ctx.update(7)
+            mgr.step(ctx)
+
+        for ctx in ctxs:
+            filled = mgr._num_filled_blocks(ctx)
+            for group in mgr._groups.values():
+                row = group.rows[ctx.request_id][group.leaf_id]
+                assert not any(
+                    group._is_committable(ctx.request_id, row, idx)
+                    for idx in range(min(filled, len(row)))
+                ), f"{group.leaf_id} left a block unpublished"
+                if group.group_id.is_recurrent():
+                    continue
+                (plan,) = group.forward_blocks([ctx], [len(row)])[group.leaf_id]
+                assert list(plan) == [block.bid for block in row]

@@ -31,103 +31,27 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from std.math import sqrt
-from layout import (
-    Coord,
-    Idx,
-    TensorLayout,
-    TileTensor,
-    coord_to_index_list,
-    row_major,
-)
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_tensor import stack_allocation
-from layout.tile_layout import Layout as _NewLayout
-from layout.tile_io import LocalToGenericTileCopier, GenericToLocalTileCopier
-from std.collections import OptionalReg
 from std.utils import IndexList
-from linalg.utils import (
-    NullTileConsumer,
-    TileConsumer,
-    is_valid_epilogue,
-)
+from linalg.utils import TileConsumer
 from extensibility import (
     InputTensor,
-    OutputFusionTile,
     _FusedOutputTileTensor,
     get_kernel_tile_shape,
 )
 
-
-@fieldwise_init
-struct _OutputFusionTileConsumer[
-    FusionType: OutputFusionTile,
-    //,
-](TileConsumer):
-    """Terminal `TileConsumer` adapter over `mo.reduce.rms_norm`'s output
-    store-fusion epilogue.
-
-    The store analog of `_ComputeFusionTileOp` in `_naive_tile_matmul.mojo`:
-    holds the fused-output `OutputFusionTile` struct and forwards the
-    per-tile epilogue to its `store`. Unlike `_ComputeFusionTileOp` (whose
-    `compute` transforms and returns the tile for the primary kernel to
-    store), `store` OWNS the store, so once this consumer is bound the
-    driver does nothing further with the fragment.
-
-    Transitional scaffolding for the tile-codegen bring-up (see GEX-3919).
-    """
-
-    comptime src_address_space = AddressSpace.GENERIC
-
-    var fusion: Self.FusionType
-
-    @inline(.always)
-    def __call__[
-        dtype: DType,
-        LayoutType: TensorLayout,
-    ](
-        ref self,
-        tile_coord: Coord,
-        tile: TileTensor[
-            dtype, LayoutType, ..., address_space=Self.src_address_space
-        ],
-        thread_layout: _NewLayout,
-    ) -> None:
-        comptime assert type_of(
-            thread_layout
-        ).all_dims_known, "TileConsumer thread_layout must be statically known"
-        comptime assert tile_coord.is_flat, "Tile coordinate must be flat."
-
-        var copier = GenericToLocalTileCopier[type_of(thread_layout)()]()
-        var store_copier = LocalToGenericTileCopier[type_of(thread_layout)()]()
-        comptime TM = type_of(thread_layout).static_shape[0]
-        comptime TN = type_of(thread_layout).static_shape[1]
-        var elem = rebind[IndexList[2]](coord_to_index_list(tile_coord))
-        var ridx = IndexList[2](elem[0] // TM, elem[1] // TN)
-        self.fusion.store[
-            dtype, 2, LayoutType, type_of(copier), type_of(store_copier)
-        ](
-            ridx,
-            copier,
-            store_copier,
-            rebind[
-                TileTensor[
-                    dtype,
-                    LayoutType,
-                    MutAnyOrigin,
-                    address_space=Self.src_address_space,
-                ]
-            ](tile),
-        )
+from ._tile_fusion import _tile_store_consumer
 
 
 @fieldwise_init
 struct _NaiveRMSNormTileAdapter[
     dtype: DType,
-    OutLayout: TensorLayout,
     InLayout: TensorLayout,
     GammaLayout: TensorLayout,
+    TileConsumerType: TileConsumer,
     //,
     tile_shape: IndexList[2],
-    TileConsumerType: TileConsumer = NullTileConsumer,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Naive per-tile RMSNorm driver for the tile programming model (GPU).
 
@@ -141,9 +65,7 @@ struct _NaiveRMSNormTileAdapter[
     TODO(GEX-3919): O(n_dim) redundant work per element is a correctness-only
     shortcut; a real kernel would compute the row reduction once (e.g. one
     block-row pass with a shared-memory or warp reduction) and broadcast it.
-    The per-thread fragment is routed through the injected `TileConsumer`
-    epilogue (store fusion) when bound; otherwise the driver stores directly
-    via the same store copier the matmul driver uses.
+    The bound `TileConsumer` owns the store of each per-thread fragment.
 
     Transitional scaffolding for the tile-codegen bring-up; expected to be
     removed once the tile path is productionized (see GEX-3919).
@@ -153,13 +75,12 @@ struct _NaiveRMSNormTileAdapter[
         Idx[Self.tile_shape[0]], Idx[Self.tile_shape[1]]
     )
 
-    var output: TileTensor[Self.dtype, Self.OutLayout, MutUntrackedOrigin]
     var input: TileTensor[Self.dtype, Self.InLayout, MutUntrackedOrigin]
     var gamma: TileTensor[Self.dtype, Self.GammaLayout, MutUntrackedOrigin]
     var n_dim: Int
     var epsilon: Float32
     var weight_offset: Scalar[Self.dtype]
-    var tile_consumer: OptionalReg[Self.TileConsumerType]
+    var tile_consumer: Self.TileConsumerType
 
     @inline(.always)
     def __call__(self) capturing:
@@ -201,24 +122,14 @@ struct _NaiveRMSNormTileAdapter[
         )
         dst.store[width=1](Coord(0, 0), y.cast[Self.dtype]())
 
-        # Terminal store. A bound `TileConsumer` OWNS the store (the fusion's
-        # `store` performs the final `LocalToGenericTileCopier` copy itself);
-        # otherwise the adapter stores the fragment directly.
-        var dst_local_view = dst.address_space_cast[.LOCAL]()
-        comptime if is_valid_epilogue[Self.TileConsumerType]():
-            var consumer = self.tile_consumer.value()
-            consumer(
-                Coord(tile_row * TM, tile_col * TN),
-                dst_local_view.address_space_cast[
-                    Self.TileConsumerType.src_address_space
-                ](),
-                Self.thread_layout,
-            )
-        else:
-            var out_tile = self.output.tile[TM, TN](Coord(tile_row, tile_col))
-            LocalToGenericTileCopier[Self.thread_layout]().copy(
-                out_tile, dst_local_view
-            )
+        var consumer = self.tile_consumer
+        consumer(
+            Coord(tile_row * TM, tile_col * TN),
+            dst.address_space_cast[.LOCAL]().address_space_cast[
+                Self.TileConsumerType.src_address_space
+            ](),
+            Self.thread_layout,
+        )
 
 
 # Transitional tile-codegen scaffolding (remove per GEX-3941): a SEPARATE,
@@ -282,40 +193,16 @@ struct RMSNormTileSM100:
             "tile-codegen rms_norm requires tile-divisible output shapes",
         )
 
-        var out_tt = output.to_tile_tensor()
-        var in_tt = input.to_tile_tensor()
-        var gamma_tt = gamma.to_tile_tensor()
-
-        comptime if output._has_output_fusion_tile:
-            var cons = _OutputFusionTileConsumer(output.output_fusion_tile)
-            var adapter = _NaiveRMSNormTileAdapter[
-                tile_shape=tile_shape, TileConsumerType=type_of(cons)
-            ](
-                out_tt,
-                in_tt,
-                gamma_tt,
-                n_dim,
-                epsilon,
-                weight_offset,
-                OptionalReg(cons),
-            )
-            ctx.enqueue_function(
-                adapter,
-                grid_dim=(n_dim // TN, m_dim // TM),
-                block_dim=(TM * TN),
-            )
-        else:
-            var adapter = _NaiveRMSNormTileAdapter[tile_shape=tile_shape](
-                out_tt,
-                in_tt,
-                gamma_tt,
-                n_dim,
-                epsilon,
-                weight_offset,
-                OptionalReg[NullTileConsumer](),
-            )
-            ctx.enqueue_function(
-                adapter,
-                grid_dim=(n_dim // TN, m_dim // TM),
-                block_dim=(TM * TN),
-            )
+        var adapter = _NaiveRMSNormTileAdapter[tile_shape=tile_shape](
+            input.to_tile_tensor(),
+            gamma.to_tile_tensor(),
+            n_dim,
+            epsilon,
+            weight_offset,
+            _tile_store_consumer(output),
+        )
+        ctx.enqueue_function(
+            adapter,
+            grid_dim=(n_dim // TN, m_dim // TM),
+            block_dim=(TM * TN),
+        )

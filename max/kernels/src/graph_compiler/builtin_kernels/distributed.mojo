@@ -305,14 +305,14 @@ struct DistributedAllReduceSum:
             imm dev_ctxs_input,
             imm outputs,
         }:
-            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
+            var out_layout = outputs[index].runtime_layout()
             allreduce[
                 ngpus=num_devices,
                 group_size=effective_group_size,
                 output_lambda=output_lambda[output_index=index, ...],
             ](
                 in_tensors,
-                out_buf,
+                out_layout,
                 rank_sigs,
                 dev_ctxs_input[index],
                 my_rank=index,
@@ -403,18 +403,18 @@ struct DistributedReduceScatterSum:
                 .as_imm()
             )
 
-        # World-view output tensors, indexed by GLOBAL device rank; built once
-        # since the actual write always happens through `output_lambda` below
-        # (this array only supplies layout metadata to `reducescatter`).
-        comptime OutputTensorType = type_of(
-            outputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]()
+        # World-view output layouts, indexed by GLOBAL device rank; built once.
+        # Every write goes through `output_lambda` below, so `reducescatter`
+        # needs only each output's geometry.
+        comptime OutputLayoutType = type_of(
+            outputs[0].runtime_layout().make_dynamic[.int64]()
         )
-        var out_tensors = Array[OutputTensorType, num_devices](
+        var out_layouts = Array[OutputLayoutType, num_devices](
             uninitialized=True
         )
         comptime for i in range(num_devices):
-            out_tensors[i] = rebind[OutputTensorType](
-                outputs[i].to_tile_tensor[.int64]().make_dynamic[.int64]()
+            out_layouts[i] = rebind[OutputLayoutType](
+                outputs[i].runtime_layout().make_dynamic[.int64]()
             )
 
         @inline(.always)
@@ -439,7 +439,7 @@ struct DistributedReduceScatterSum:
             index: Int
         ]() raises {
             imm in_tensors,
-            imm out_tensors,
+            imm out_layouts,
             imm rank_sigs,
             imm dev_ctxs_input,
         }:
@@ -450,7 +450,7 @@ struct DistributedReduceScatterSum:
                 axis=axis,
             ](
                 in_tensors,
-                out_tensors,
+                out_layouts,
                 rank_sigs,
                 dev_ctxs_input[index],
                 my_rank=index,
@@ -2201,9 +2201,12 @@ struct DistributedMatmulReduceScatterSum:
         @inline(.always)
         def residual_add_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: IndexList[2], val: SIMD[_dtype, _width]) {
-            var residual
-        } -> SIMD[_dtype, _width]:
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var residual} -> SIMD[
+            _dtype, _width
+        ]:
+            comptime assert (
+                coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             return val + rebind[SIMD[_dtype, _width]](
                 residual.load[width=_width, element_alignment=alignment](coords)
             )

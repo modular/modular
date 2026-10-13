@@ -37,7 +37,7 @@ shape whose output count comes entirely from the empty product in
 excluded), and it is what `ops.sum` on a whole empty tensor lowers to.
 """
 
-from algorithm.reductions import (
+from builtin_kernels.rowwise_reductions import (
     reduce_argmax,
     reduce_max,
     reduce_mean,

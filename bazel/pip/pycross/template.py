@@ -124,6 +124,7 @@ def targets():
     native.alias(
         name = "click@multiple",
         actual = select({{
+            "@@//:use_aiperf_setting": ":click@8.5.0",
             "@@//:use_sglang_setting": ":click@8.5.0",
             "@@//:use_vllm_setting": ":click@8.5.0",
             "//conditions:default": ":click@8.1.7",
@@ -142,6 +143,7 @@ def targets():
     native.alias(
         name = "idna@multiple",
         actual = select({{
+            "@@//:use_aiperf_setting": ":idna@3.20",
             "@@//:use_sglang_setting": ":idna@3.8",
             "@@//:use_vllm_setting": ":idna@3.20",
             "//conditions:default": ":idna@3.8",
@@ -169,6 +171,7 @@ def targets():
     native.alias(
         name = "hf-xet@multiple",
         actual = select({{
+            "@@//:use_aiperf_setting": ":hf-xet@1.6.0",
             "@@//:use_sglang_setting": ":hf-xet@1.6.0",
             "@@//:use_vllm_setting": ":hf-xet@1.6.0",
             "//conditions:default": ":hf-xet@1.4.2",
@@ -178,6 +181,7 @@ def targets():
     native.alias(
         name = "huggingface-hub@multiple",
         actual = select({{
+            "@@//:use_aiperf_setting": ":huggingface-hub@1.33.0",
             "@@//:use_sglang_setting": ":huggingface-hub@1.33.0",
             "@@//:use_vllm_setting": ":huggingface-hub@1.33.0",
             "//conditions:default": ":huggingface-hub@1.8.0",
@@ -295,6 +299,55 @@ def targets():
             # vllm 0.24.0 caps fastapi below what the default group resolves to
             "@@//:use_vllm_setting": ":fastapi@0.136.3",
             "//conditions:default": ":fastapi@0.139.2",
+        }}),
+    )
+
+    native.alias(
+        name = "datasets@multiple",
+        actual = select({{
+            "@@//:use_aiperf_setting": ":datasets@5.1.0",
+            "//conditions:default": ":datasets@2.21.0",
+        }}),
+    )
+
+    native.alias(
+        name = "mteb@multiple",
+        testonly = True,
+        actual = select({{
+            "@@//:use_aiperf_setting": ":mteb@2.24.3",
+            "//conditions:default": ":mteb@1.29.12",
+        }}),
+    )
+
+    native.alias(
+        name = "plotly@multiple",
+        actual = select({{
+            "@@//:use_aiperf_setting": ":plotly@6.4.0",
+            "//conditions:default": ":plotly@6.0.1",
+        }}),
+    )
+
+    native.alias(
+        name = "pyzmq@multiple",
+        actual = select({{
+            "@@//:use_aiperf_setting": ":pyzmq@26.4.0",
+            "//conditions:default": ":pyzmq@27.1.0",
+        }}),
+    )
+
+    native.alias(
+        name = "rich@multiple",
+        actual = select({{
+            "@@//:use_aiperf_setting": ":rich@14.1.0",
+            "//conditions:default": ":rich@13.7.1",
+        }}),
+    )
+
+    native.alias(
+        name = "tqdm@multiple",
+        actual = select({{
+            "@@//:use_aiperf_setting": ":tqdm@4.70.1",
+            "//conditions:default": ":tqdm@4.66.5",
         }}),
     )
 
@@ -485,6 +538,26 @@ def targets():
         testonly = True,
         actual = ":vllm@0.30.0",
         target_compatible_with = ["@@//:nvidia_gpu"],
+    )
+
+    native.alias(
+        name = "aiperf@multiple",
+        actual = ":aiperf@0.12.0",
+        # aiperf's natively supported matrix: every dependency has a wheel
+        # only on these platforms/Python versions (crick has no Linux
+        # aarch64 wheel; pyzmq 26.4.0 has no 3.14 wheel).
+        target_compatible_with = select({{
+            "@@//:use_aiperf_setting": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }}) + select({{
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": [],
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": [],
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": [],
+            ":_env_python_3.11_aarch64-apple-darwin": [],
+            ":_env_python_3.12_aarch64-apple-darwin": [],
+            ":_env_python_3.13_aarch64-apple-darwin": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }}),
     )
 
     native.alias(

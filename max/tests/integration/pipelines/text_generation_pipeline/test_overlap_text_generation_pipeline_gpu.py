@@ -461,6 +461,8 @@ def fake_cpu_pre_or_post_processing() -> None:
     time.sleep(CPU_SECONDS)
 
 
+# Call after building the pipeline: its graphs are compiled in a CPU build
+# action (`precompile_mefs`), which stops at the first device allocation.
 def prime_host_buffer_cache() -> None:
     t = Buffer(
         shape=[1024 * 1024],
@@ -505,11 +507,10 @@ def test_overlap_execution(
     expected_duration: float,
 ) -> None:
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
-    prime_host_buffer_cache()
-
     pipeline = create_overlap_pipeline(
         enable_overlap_scheduler=enable_overlap_scheduler
     )
+    prime_host_buffer_cache()
 
     num_trials = 3
     for _trial in range(num_trials):
@@ -608,9 +609,8 @@ def test_overlap_execution_with_preemption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
-    prime_host_buffer_cache()
-
     pipeline = create_overlap_pipeline(enable_overlap_scheduler=True)
+    prime_host_buffer_cache()
     context = create_context(isl=17, offset=100)
     req_id = context.request_id
 
@@ -645,12 +645,11 @@ def test_disable_overlap_returns_outputs_immediately(
     """Verify runtime.disable_overlap=True returns current-batch outputs in the
     same execute() call, never deferring them to the next iteration."""
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
-    prime_host_buffer_cache()
-
     pipeline = create_overlap_pipeline(
         enable_overlap_scheduler=True,
         disable_overlap=True,
     )
+    prime_host_buffer_cache()
     assert not pipeline.overlap_active
 
     def create_inputs(
@@ -696,9 +695,8 @@ def test_overlap_reuses_generated_tokens_pinned_buffer(
     written. If that ordering broke, the token sequences below would corrupt.
     """
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
-    prime_host_buffer_cache()
-
     pipeline = create_overlap_pipeline(enable_overlap_scheduler=True)
+    prime_host_buffer_cache()
 
     # Two requests of different output lengths so the decode batch shrinks
     # (2 -> 1) mid-run, exercising the ``[:batch_size]`` slice of the reused

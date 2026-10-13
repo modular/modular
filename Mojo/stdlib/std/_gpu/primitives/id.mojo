@@ -21,8 +21,6 @@ Most functionality is architecture-agnostic, with some NVIDIA-specific features 
 The module is designed to work seamlessly across different GPU architectures while providing
 optimal performance through hardware-specific optimizations where applicable."""
 
-import std.math
-
 from std.math.uutils import ufloordiv
 from std.sys import llvm_intrinsic
 from std.sys.info import (
@@ -33,7 +31,6 @@ from std.sys.info import (
     is_gpu,
     is_nvidia_gpu,
 )
-from std.memory import AddressSpace
 
 
 # ===-----------------------------------------------------------------------===#
@@ -244,7 +241,7 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
         elif is_amd_gpu():
 
             def _get_offset() -> Int:
-                comptime __match dim:
+                comptime match dim:
                     case "x":
                         return 6
                     case "y":
@@ -298,7 +295,7 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
         elif is_amd_gpu():
 
             def _get_offset() -> Int:
-                comptime __match dim:
+                comptime match dim:
                     case "x":
                         return 0
                     case "y":

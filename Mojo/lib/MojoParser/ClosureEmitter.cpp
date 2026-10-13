@@ -1590,10 +1590,10 @@ static FailureOr<ASTType> getDeviceType(ASTType hostType, ASTDecl &scope,
   if (aliasDecls.empty())
     return failure();
 
-  auto aliasOp =
-      dyn_cast_or_null<AliasDeclOp>(aliasDecls.front()->getIfOperation());
-  if (!aliasOp || !aliasOp.getType())
+  auto *aliasDecl = dyn_cast<AliasASTDecl>(aliasDecls.front());
+  if (!aliasDecl || !aliasDecl->getOp().getType())
     return failure();
+  AliasDeclOp aliasOp = aliasDecl->getOp();
 
   MLIRContext *ctx = shared.getContext();
   auto traitSymbol = TraitSymbolAttr::get(devicePassableDecl->getSymbolRef());
@@ -2813,7 +2813,7 @@ static AliasDeclOp getDeviceTypeAlias(SharedState &shared, llvm::SMLoc loc) {
       StringAttr::get(shared.getContext(), kDeviceType));
   assert(aliasDecls.size() == 1 &&
          "DevicePassable trait should define one device_type alias");
-  return cast<AliasDeclOp>(aliasDecls.front()->getIfOperation());
+  return cast<AliasASTDecl>(aliasDecls.front())->getOp();
 }
 
 void ClosureEmitter::addConformanceToDevicePassable(

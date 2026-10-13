@@ -52,13 +52,13 @@ from structured_kernels.tile_types import (
     create_tma_tile,
 )
 from layout import TileTensor, coord
-from layout.tile_layout import Coord, row_major
+from layout.tile_layout import row_major
 from linalg.utils import (
     ElementwiseComputeFn,
     elementwise_epilogue_type,
     identity_compute_fn,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from .conv_config import Conv2dConfig, Conv2dProblemShape
@@ -114,7 +114,7 @@ def conv2d_fprop[
         out_type: Data type of the output tensor.
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(Coord, SIMD) -> None`.
         register_based_epilogue: If True, apply lambda in registers (faster).
             If False, apply lambda after SMEM write (more flexible).
 
@@ -177,7 +177,7 @@ def conv2d_fprop[
         problem: Convolution problem shape specification.
         compute_fn: Element-wise epilogue (bias add, activation, etc.)
             applied to each output value. Signature:
-            `def[dtype, width, *, alignment](IndexList[2], SIMD) -> SIMD`,
+            `def[dtype, width, *, alignment](Coord, SIMD) -> SIMD`,
             with coordinates in the [M, N] GEMM view of the output.
         ctx: Device context for kernel launch.
 
@@ -459,7 +459,7 @@ def conv2d_fprop_with_residual[
         out_type: Data type of the output tensor.
         config: Kernel configuration (tile sizes, pipeline stages, etc.).
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(Coord, SIMD) -> None`.
         register_based_epilogue: If True, apply lambda in registers (faster).
         has_residual: If True, apply residual add. If False, source is ignored.
 

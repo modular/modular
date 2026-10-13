@@ -66,7 +66,6 @@ from std.sys.info import is_nvidia_gpu
 import max.gpu.primitives.warp as warp
 from max.gpu import (
     WARP_SIZE,
-    block_dim,
     block_idx,
     lane_id,
     thread_idx,

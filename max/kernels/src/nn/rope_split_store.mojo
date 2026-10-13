@@ -546,10 +546,10 @@ def _rope_split_store_ragged_with_position_ids[
         ]() else simd_width_of[dtype, target=get_gpu_target()]()
     )
     comptime kernel_simd_width = gcd(target_simd_width, head_size)
-    comptime if mrope_section:
-        comptime for i in range(len(mrope_section.value())):
+    comptime if case .Some(sections) = mrope_section:
+        comptime for i in range(len(sections)):
             comptime assert (
-                Int(mrope_section.value()[i].value()) % kernel_simd_width == 0
+                Int(sections[i].value()) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     var pos_ids_ptr = position_ids.ptr
@@ -558,10 +558,10 @@ def _rope_split_store_ragged_with_position_ids[
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
     ) {var pos_ids_ptr, var pos_ids_stride} -> Int:
-        comptime if mrope_section:
+        comptime if case .Some(sections) = mrope_section:
             var section_idx = 0
-            comptime for i in range(len(mrope_section.value())):
-                comptime val = Int(mrope_section.value()[i].value())
+            comptime for i in range(len(sections)):
+                comptime val = Int(sections[i].value())
                 if dim_idx < val:
                     section_idx = i
                     break

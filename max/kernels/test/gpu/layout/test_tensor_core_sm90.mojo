@@ -50,10 +50,9 @@ def load_and_mma_16x8x32[
 
     comptime assert out_type == .float32
     var mma = TensorCore[out_type, in_type, (16, 8, 32), False]()
-    # NVIDIA register loaders still require legacy fragment-layout views.
-    var a_reg_tile = mma.load_a(mat_a.to_layout_tensor())
-    var b_reg_tile = mma.load_b(mat_b.to_layout_tensor())
-    var c_reg_tile = mma.load_c(mat_c.to_layout_tensor())
+    var a_reg_tile = mma.load_a(mat_a)
+    var b_reg_tile = mma.load_b(mat_b)
+    var c_reg_tile = mma.load_c(mat_c)
     var d_reg_tile = mma.mma_op(a_reg_tile, b_reg_tile, c_reg_tile)
     mma.store_d(mat_c, d_reg_tile)
 

@@ -30,7 +30,6 @@ from max.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
 from max.gpu.sync import syncwarp
 from layout import (
     Coord,
-    Idx,
     DefaultEngine,
     TensorLayout,
     TensorEngine,

@@ -17,11 +17,11 @@ import os
 import queue
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import (
-    JengaKVCacheManager,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManagerInterface,
@@ -46,7 +46,7 @@ from max.serve.scheduler.base import (
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
-    shared_block_ids,
+    check_di_supports,
 )
 from max.serve.scheduler.interface import Scheduler
 from max.serve.telemetry.metrics import METRICS
@@ -69,10 +69,38 @@ logger = logging.getLogger("max.serve")
 _DI_LATENCY_PING_ENABLED = os.getenv("MAX_SERVE_DI_LATENCY_PING", "0") == "1"
 
 
+def _pages_to_transfer(
+    src_blocks: Mapping[str, list[int]], dst_blocks: Mapping[str, list[int]]
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Pairs each leaf's pages with decode's, skipping ones decode holds.
+
+    Decode marks the pages its prefix cache already holds with ``-1``.
+    """
+    if src_blocks.keys() != dst_blocks.keys():
+        raise ValueError(
+            f"Prefill leaves {list(src_blocks)} do not match decode leaves "
+            f"{list(dst_blocks)}"
+        )
+    src_idxs: dict[str, list[int]] = {}
+    dst_idxs: dict[str, list[int]] = {}
+    for leaf_id, dst in dst_blocks.items():
+        src = src_blocks[leaf_id]
+        if len(src) != len(dst):
+            raise ValueError(
+                f"Leaf {leaf_id!r} holds {len(src)} pages on prefill but "
+                f"{len(dst)} on decode"
+            )
+        num_cached = dst.count(-1)
+        src_idxs[leaf_id] = src[num_cached:]
+        dst_idxs[leaf_id] = dst[num_cached:]
+        assert -1 not in dst_idxs[leaf_id]
+    return src_idxs, dst_idxs
+
+
 @dataclass
 class TransferDest:
     engine_name: str
-    dst_block_ids: list[int]
+    dst_block_ids: dict[str, list[int]]
     dst_replica_idx: int
 
 
@@ -95,10 +123,7 @@ class PrefillScheduler(Scheduler):
         kv_cache: PagedKVCacheManagerInterface,
         dispatcher: PrefillDispatcherServer,
     ) -> None:
-        # TODO(SERVOPT-1590): remove once Jenga supports DI.
-        assert not isinstance(kv_cache, JengaKVCacheManager), (
-            "Jenga KV cache is incompatible with Disaggregated Inference"
-        )
+        check_di_supports(kv_cache)
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
         self.kv_cache = kv_cache
@@ -277,25 +302,15 @@ class PrefillScheduler(Scheduler):
             transfer_dest.engine_name
         ]
 
-        # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = shared_block_ids(
-            self.kv_cache.get_req_blocks_per_leaf(context)
+        src_idxs, dst_idxs = _pages_to_transfer(
+            self.kv_cache.get_req_blocks_per_leaf(context),
+            transfer_dest.dst_block_ids,
         )
-        dst_idxs = transfer_dest.dst_block_ids
-        assert len(src_idxs) == len(dst_idxs)
-
-        # Transfer only the blocks that are not already on decode node.
-        num_already_cached_blocks = dst_idxs.count(-1)
-        src_idxs = src_idxs[num_already_cached_blocks:]
-        dst_idxs = dst_idxs[num_already_cached_blocks:]
-        assert dst_idxs.count(-1) == 0
-
-        leaf_ids = self.transfer_engine.leaf_ids
         transfer_data = self.transfer_engine.initiate_send_transfer(
             remote_metadata,
-            {leaf_id: list(src_idxs) for leaf_id in leaf_ids},
-            {leaf_id: list(dst_idxs) for leaf_id in leaf_ids},
+            src_idxs,
+            dst_idxs,
             src_replica_idx=src_replica_idx,
             dst_replica_idx=transfer_dest.dst_replica_idx,
         )

@@ -888,9 +888,8 @@ def simd_store_into_managed_tensor_slice[
     ].static_value
 
     # Stride = 1
-    @__parameter
     @inline(.always)
-    def store_stride1():
+    def store_stride1() {imm}:
         comptime if dtype == .bool:
             var v = value.cast[.uint8]()
             tensor._ptr.unsafe_bitcast[UInt8]().unsafe_store(flat_index, v)
@@ -898,9 +897,8 @@ def simd_store_into_managed_tensor_slice[
             tensor._ptr.unsafe_store[alignment=max_alignment](flat_index, value)
 
     # Stride > 1
-    @__parameter
     @inline(.always)
-    def store_strided(stride: Int):
+    def store_strided(stride: Int) {imm}:
         comptime if dtype == .bool:
             var v = value.cast[.uint8]()
             strided_store(
@@ -916,20 +914,22 @@ def simd_store_into_managed_tensor_slice[
     comptime if not _last_stride_is_static:
         var stride = tensor.stride_length[rank - 1]()
         # Dynamic stride
-        if stride == 0:
-            tensor._ptr.unsafe_store[alignment=max_alignment](0, value)
-        elif stride == 1:
-            store_stride1()
-        else:
-            store_strided(stride)
+        match stride:
+            case 0:
+                tensor._ptr.unsafe_store[alignment=max_alignment](0, value)
+            case 1:
+                store_stride1()
+            case _:
+                store_strided(stride)
     else:
         # static stride
-        comptime if _last_stride_value == 0:
-            tensor._ptr.unsafe_store[alignment=max_alignment](0, value)
-        elif _last_stride_value == 1:
-            store_stride1()
-        else:
-            store_strided(_last_stride_value)
+        comptime match _last_stride_value:
+            case 0:
+                tensor._ptr.unsafe_store[alignment=max_alignment](0, value)
+            case 1:
+                store_stride1()
+            case _:
+                store_strided(_last_stride_value)
 
 
 @doc_hidden
@@ -1057,9 +1057,8 @@ def simd_load_from_managed_tensor_slice[
     comptime invariant = not tensor.io_spec.mut
 
     # Stride = 1
-    @__parameter
     @inline(.always)
-    def load_stride1() -> SIMD[dtype, simd_width]:
+    def load_stride1() {imm} -> SIMD[dtype, simd_width]:
         comptime if dtype == .bool:
             var v = tensor._ptr.unsafe_bitcast[UInt8]().unsafe_load[
                 width=simd_width,
@@ -1072,9 +1071,8 @@ def simd_load_from_managed_tensor_slice[
             ](flat_index)
 
     # Stride > 1
-    @__parameter
     @inline(.always)
-    def load_strided(stride: Int) -> SIMD[dtype, simd_width]:
+    def load_strided(stride: Int) {imm} -> SIMD[dtype, simd_width]:
         comptime if dtype == .bool:
             var v = strided_load[simd_width, invariant=invariant](
                 tensor._ptr.unsafe_bitcast[UInt8]().unsafe_offset(flat_index),
@@ -1089,20 +1087,22 @@ def simd_load_from_managed_tensor_slice[
     comptime if not _last_stride_is_static:
         var stride = tensor.stride_length[rank - 1]()
         # Dynamic stride
-        if stride == 0:
-            return tensor._ptr.unsafe_load[invariant=invariant](flat_index)
-        elif stride == 1:
-            return load_stride1()
-        else:
-            return load_strided(stride)
+        match stride:
+            case 0:
+                return tensor._ptr.unsafe_load[invariant=invariant](flat_index)
+            case 1:
+                return load_stride1()
+            case _:
+                return load_strided(stride)
     else:
         # Static stride
-        comptime if _last_stride_value == 0:
-            return tensor._ptr.unsafe_load[invariant=invariant](flat_index)
-        elif _last_stride_value == 1:
-            return load_stride1()
-        else:
-            return load_strided(_last_stride_value)
+        comptime match _last_stride_value:
+            case 0:
+                return tensor._ptr.unsafe_load[invariant=invariant](flat_index)
+            case 1:
+                return load_stride1()
+            case _:
+                return load_strided(_last_stride_value)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2715,53 +2715,6 @@ def get_kernel_tile_shape[dtype: DType, target: StaticString]() -> IndexList[2]:
         return IndexList[2](16, 16)
 
     return IndexList[2](8, 8)
-
-
-def foreach[
-    dtype: DType,
-    rank: Int,
-    //,
-    func: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _trace_name: StaticString = "mogg.for_each",
-](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
-) raises:
-    """Apply the function `func` to each element of the tensor slice.
-
-    The `func` body receives the element index as a `Coord`. Use
-    `coord_to_index_list` to convert it to an `IndexList` if integer index
-    arithmetic is needed.
-
-    Parameters:
-        dtype: The data type of the elements in the tensor slice.
-        rank: The rank of the tensor slice.
-        func: The function to apply to each element of the tensor slice.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        simd_width: The SIMD width for the target (usually leave this as its default value).
-        _trace_name: Name of the executed operation displayed in the trace_description.
-
-    Args:
-        tensor: The output tensor slice which receives the return values from `func`.
-        ctx: The call context (forward this from the custom operation).
-    """
-
-    @inline(.always)
-    def elementwise_fn_wrapper[
-        width: Int,
-        alignment: Int = 1,
-    ](index: Coord) {var}:
-        var val = func[width](index)
-        tensor._fused_store[element_alignment=alignment](index, val)
-
-    elementwise[
-        simd_width,
-        target=target,
-        _trace_description=_trace_name,
-    ](elementwise_fn_wrapper, tensor.shape_coord(), ctx)
 
 
 def foreach[

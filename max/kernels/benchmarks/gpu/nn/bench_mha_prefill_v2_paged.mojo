@@ -49,7 +49,7 @@ GQA Llama 3.1:   `num_heads=32 group=4`  (8 KV heads)
 from std.collections import Set
 from std.math import ceildiv
 from std.random import random_ui64, seed
-from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
+from std.sys import get_defined_dtype, get_defined_int
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
@@ -61,7 +61,6 @@ from std.benchmark import (
 )
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from std.utils import StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType

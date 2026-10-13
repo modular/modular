@@ -41,14 +41,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.gpu import (
-    block_idx,
-    grid_dim as gpu_grid_dim,
-    thread_idx,
-    warp_id,
-)
+from max.gpu import block_idx, grid_dim as gpu_grid_dim, warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,

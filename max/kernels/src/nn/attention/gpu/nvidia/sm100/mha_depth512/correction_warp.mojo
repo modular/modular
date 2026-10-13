@@ -38,10 +38,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
 from max.gpu import thread_idx
-from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SharedMemPointer,
-    mul_ftz,
-)
+from nn.attention.gpu.nvidia.sm100.attention_utils import mul_ftz
 from nn.attention.mha_mask import MHAMask
 from .barriers import Depth512MBars
 from .config import Depth512SM100Config

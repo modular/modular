@@ -307,6 +307,14 @@ def whitespace(
             # `*expr` is always unary unpacking, no space after `*`.
             return NO
 
+        elif (
+            prevp.type == token.EQEQUAL
+            and prevp.parent
+            and prevp.parent.type == syms.factor
+        ):
+            # Explicit value patterns use `== value`.
+            return SPACE
+
         elif prevp.type in VARARGS_SPECIALS:
             if is_vararg(prevp, within=VARARGS_PARENTS | UNPACKING_PARENTS):
                 return NO
@@ -517,6 +525,10 @@ def whitespace(
                 prevp.type == token.EQUAL and prevp_parent.type == syms.argument
             ):
                 return NO
+
+        elif prev and prev.type == token.EQEQUAL:
+            # Explicit value patterns use `== value`.
+            return SPACE
 
         elif t in {token.NAME, token.NUMBER, token.STRING}:
             return NO

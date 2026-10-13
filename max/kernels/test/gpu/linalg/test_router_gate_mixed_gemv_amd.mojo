@@ -32,7 +32,7 @@ from std.sys import default_accelerator
 from std.testing import assert_equal, assert_false, assert_true
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
 from max.gpu.host import DeviceContext
 

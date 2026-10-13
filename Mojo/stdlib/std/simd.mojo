@@ -2610,6 +2610,64 @@ struct SIMD[dtype: DType, length: SIMDLength](
             .unsafe_take_pointee()
         )
 
+    def to_endian[endian: Endian](self) -> Self:
+        """Returns the value whose in-memory bytes are `self` encoded in
+        `endian` byte order.
+
+        Parameters:
+            endian: The byte order to encode in.
+
+        Returns:
+            The value whose bytes in memory are `self` in `endian` order.
+
+        Constraints:
+            The element type must be integral.
+
+        Examples:
+
+        ```mojo
+        var wire = UInt16(8080).to_endian[.big]()
+        print(wire.as_bytes())  # [31, 144], that is [0x1F, 0x90]
+        ```
+        """
+        comptime assert (
+            Self.dtype.is_integral()
+        ), "SIMD.to/from_endian requires an integral type"
+
+        comptime if endian != .native():
+            return byte_swap(self)
+        return self
+
+    @staticmethod
+    def from_endian[endian: Endian](value: Self) -> Self:
+        """Returns the value encoded in `endian` byte order by the in-memory
+        bytes of `value`.
+
+        The inverse of `to_endian()`: each element's bytes are reversed when
+        `endian` differs from the target's byte order and left unchanged
+        otherwise.
+
+        Parameters:
+            endian: The byte order `value` is encoded in.
+
+        Args:
+            value: A value whose bytes in memory hold an `endian` encoding.
+
+        Returns:
+            The decoded value.
+
+        Constraints:
+            The element type must be integral.
+
+        Examples:
+
+        ```mojo
+        var wire = UInt16.from_bytes([0x1F, 0x90])  # big-endian 8080
+        print(UInt16.from_endian[.big](wire))  # 8080
+        ```
+        """
+        return value.to_endian[endian]()
+
     def clamp(self, lower_bound: Self, upper_bound: Self) -> Self:
         """Clamps the values in a SIMD vector to be in a certain range.
 
@@ -4421,7 +4479,7 @@ def _scalar_repr_alias[dtype: DType]() -> Optional[StaticString]:
         The scalar type alias name for `dtype`, or `None` when the `dtype` has
         no scalar alias.
     """
-    comptime __match dtype:
+    comptime match dtype:
         case .int:
             return StaticString("Int")
         case .uint:

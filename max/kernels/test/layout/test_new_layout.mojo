@@ -14,7 +14,6 @@
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
     TileTensor,
     col_major,

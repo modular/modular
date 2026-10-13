@@ -24,6 +24,7 @@ modular_cc_binary(
         "//conditions:default": [],
     }),
     deps = [
+        "//:accel_registration",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Config",

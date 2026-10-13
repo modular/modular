@@ -55,8 +55,7 @@ from std.random import random_ui64, seed
 from std.testing import assert_equal, assert_true
 
 from layout import TileTensor
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout.coord import Idx
 from layout.tile_layout import row_major
 from max.gpu.host import DeviceContext
 

@@ -36,17 +36,12 @@ modular_eager_py_test(
         # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
         "MAX_EAGER_EXECUTOR": "fallback-internal",
     },
-    ignore_extra_deps = [
-        # lazy import
-        "//max/python/max/_interpreter_ops",
-    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
     deps = [
         "//max/python/max:tree",
-        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
@@ -181,6 +176,59 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_auto_model",
+    size = "large",
+    srcs = ["test_auto_model.py"],
+    ignore_extra_deps = [
+        # Resolve SmolLM and its EAGLE draft by name at runtime.
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_model_graph_capture_gpu",
+    size = "large",
+    srcs = ["test_auto_model_graph_capture_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Resolves SmolLM2 by name at runtime.
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "tests",
     size = "large",
     srcs = glob(
@@ -197,6 +245,7 @@ modular_py_test(
             "test_pipeline_config_resolve.py",
             "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",
+            "test_auto_model.py",
             "test_video.py",
             "test_weight_loader.py",
         ],
@@ -292,6 +341,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -339,6 +389,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],

@@ -21,11 +21,15 @@ print(CompilationTarget.is_x86())
 ```
 """
 
+from std.builtin.rebind import downcast
 from std.builtin.variadics import _MLIR
 from std.collections.string.string_span import _get_kgen_string
 from std.ffi import _external_call_const, external_call
 
 from std._gpu.host.info import GPUInfo, get_gpu_target, TargetAccelerator
+
+from std._plugin.selector import TargetPluginSelector
+from std._plugin import StdPlugin, DefaultPlugin, PluginHooks
 
 comptime _TargetType = __mlir_type.`!kgen.target`
 
@@ -224,7 +228,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             note: Optional additional note to print.
         """
 
-        comptime note_text = String(" Note: ", note.value() if note else "")
+        comptime note_text = String(" Note: ", note.or_else(""))
         comptime msg = "Current compilation target does not support"
         comptime op_text = String(
             " operation: ", operation.value(), "."
@@ -263,6 +267,10 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             _get_kgen_string[name](),
             `> : i1`,
         ]
+
+    # ===----------------------------------------------------------------------=== #
+    # Target attribute getters
+    # ===----------------------------------------------------------------------=== #
 
     @inline(.nodebug)
     @staticmethod
@@ -383,6 +391,33 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             `> : !kgen.string`,
         ]
         return StaticString(res)
+
+    # ===----------------------------------------------------------------------=== #
+    # Plugin attribute access
+    # ===----------------------------------------------------------------------=== #
+
+    comptime _first_conforming_plugin[
+        Trait: type_of(AnyType), *, default: Trait
+    ] = TargetPluginSelector[
+        Self(),
+        default,
+    ].selected
+    """The first conforming plugin implementing `Trait` set on this target, or
+    `default` if no such plugin is set.
+
+    Parameters:
+        Trait: The plugin trait to look for.
+        default: The default implementation of `Trait` to use if no conforming plugin is set.
+    """
+
+    comptime stdlib_plugin: PluginHooks = Self._first_conforming_plugin[
+        StdPlugin, default=DefaultPlugin
+    ].HookFor[Self()]
+    """The stdlib plugin to use for this target."""
+
+    # ===----------------------------------------------------------------------=== #
+    # Predicates
+    # ===----------------------------------------------------------------------=== #
 
     @inline(.nodebug)
     @staticmethod
@@ -837,6 +872,33 @@ def platform_map[
         CompilationTarget.unsupported_target_error[operation=operation]()
 
 
+struct _UnsupportedTarget[name: StaticString]:
+    pass
+
+
+comptime platform_type_map[
+    Trait: type_of(AnyType) = AnyType,
+    *,
+    linux: AnyType = _UnsupportedTarget["linux"],
+    macos: AnyType = _UnsupportedTarget["macos"],
+] = downcast[
+    # fmt: off
+    linux if CompilationTarget.is_linux() else
+    macos if CompilationTarget.is_macos() else
+    _UnsupportedTarget[CompilationTarget._os()],
+    # fmt: on
+    Trait,
+]
+"""Selects a type for the current compilation target, the type-level
+counterpart of `platform_map`.
+
+Parameters:
+    Trait: The trait every given type conforms to.
+    linux: The type to use on Linux.
+    macos: The type to use on macOS.
+"""
+
+
 @inline(.nodebug)
 def _accelerator_arch() -> StaticString:
     """Returns the accelerator architecture string for the current target
@@ -881,7 +943,7 @@ def _is_nvidia_gpu_any[archs: List[StaticString]]() -> Bool:
 
 @inline(.nodebug)
 def _has_nvidia_gpu_any[archs: List[StaticString]]() -> Bool:
-    comptime if not has_nvidia_gpu_accelerator():
+    comptime if not _has_nvidia_gpu_accelerator():
         return False
 
     comptime for arch in archs:
@@ -1847,16 +1909,6 @@ def has_accelerator() -> Bool:
 
 
 @inline(.nodebug)
-def has_amd_gpu_accelerator() -> Bool:
-    """Returns True if the host system has an AMD GPU and False otherwise.
-
-    Returns:
-        True if the host system has an AMD GPU.
-    """
-    return is_amd_gpu() or CompilationTarget.default_accelerator().is_amd_gpu()
-
-
-@inline(.nodebug)
 def has_amd_rdna_gpu_accelerator() -> Bool:
     """Returns True if the host system has an AMD RDNA GPU and False otherwise.
 
@@ -1870,7 +1922,7 @@ def has_amd_rdna_gpu_accelerator() -> Bool:
 
 
 @inline(.nodebug)
-def has_nvidia_gpu_accelerator() -> Bool:
+def _has_nvidia_gpu_accelerator() -> Bool:
     """Returns True if the host system has an NVIDIA GPU and False otherwise.
 
     Returns:
@@ -1879,46 +1931,4 @@ def has_nvidia_gpu_accelerator() -> Bool:
     return (
         is_nvidia_gpu()
         or CompilationTarget.default_accelerator().is_nvidia_gpu()
-    )
-
-
-@inline(.nodebug)
-def has_nvidia_gpu_accelerator[subarch: String]() -> Bool:
-    """Returns True if the host system has an NVIDIA GPU of the specified
-    sub-architecture and False otherwise.
-
-    Parameters:
-        subarch: The NVIDIA GPU sub-architecture to check for (e.g., "sm_80").
-
-    Returns:
-        True if the host system has an NVIDIA GPU of the specified
-        sub-architecture and False otherwise.
-    """
-    return is_nvidia_gpu[subarch]() or subarch in _accelerator_arch()
-
-
-@inline(.nodebug)
-def has_nvidia_gpu_accelerator[subarchs: List[StaticString]]() -> Bool:
-    """Returns True if the host system has an NVIDIA GPU of the specified
-    sub-architecture and False otherwise.
-
-    Parameters:
-        subarchs: The NVIDIA GPU sub-architectures to check for (e.g., ["sm_80", "sm_86"]).
-
-    Returns:
-        True if the host system has an NVIDIA GPU of the specified
-        sub-architecture and False otherwise.
-    """
-    return _is_nvidia_gpu_any[subarchs]() or _has_nvidia_gpu_any[subarchs]()
-
-
-@inline(.nodebug)
-def has_apple_gpu_accelerator() -> Bool:
-    """Returns True if the host system has a Metal GPU and False otherwise.
-
-    Returns:
-        True if the host system has a Metal GPU.
-    """
-    return (
-        is_apple_gpu() or CompilationTarget.default_accelerator().is_apple_gpu()
     )

@@ -123,6 +123,8 @@ from nn.attention.gpu.sparse_index_fp8_sm100_prefill import (
     _PREFILL_MIN_TOKEN_TILES,
     _ctas_per_sm,
     _is_keysplit_shape,
+    _k_box_rows,
+    _k_tile_fits_pages,
     fp8_index_score_sm100_prefill,
 )
 
@@ -231,6 +233,8 @@ def _fp8_index_body[
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
     epilogue_chunk: Int = _EPILOGUE_CHUNK,
     *,
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
@@ -238,7 +242,7 @@ def _fp8_index_body[
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
-    k_tma: KTMATileT[dtype, BM_key, depth],
+    k_tma: KTMATileT[dtype, k_box_rows, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
@@ -362,6 +366,11 @@ def _fp8_index_body[
     var q1_smem = smem + _Q1SmemOffset[dtype, BM_key, MMA_N, depth]
 
     comptime k_flat_layout = tt_row_major[k_elems]()
+    comptime assert (
+        k_box_rows == _k_box_rows[BM_key, KOperand.page_size, pool_row_tokens]()
+    ), "k_box_rows must be the rows one K TMA copy stages for this cache"
+    comptime K_BOX = k_box_rows
+    comptime k_box_layout = tt_row_major[K_BOX * depth]()
     comptime q_flat_layout = tt_row_major[q_elems]()
 
     if tid == 0:
@@ -393,14 +402,27 @@ def _fp8_index_body[
     comptime k_bytes = k_elems * size_of[dtype]()
     comptime q_bytes = q_elems * size_of[dtype]()
     if tid == 0:
-        var k_row0, k_block = k_operand.kv_tma_coords(
-            UInt32(b), UInt32(key_start)
-        )
-        var k_dst = TileTensor[
-            dtype, type_of(k_flat_layout), address_space=.SHARED
-        ](k_smem, k_flat_layout)
         k_mbar[0].expect_bytes(Int32(k_bytes))
-        k_tma.async_copy_4d(k_dst, k_mbar[0], (0, 0, Int(k_row0), Int(k_block)))
+        # One copy per page the tile spans. A key is `pool_row_tokens` token
+        # rows, so its token is `pool_row_tokens * key` and the descriptor's
+        # row is that token's page row over `pool_row_tokens`. A copy past this
+        # batch's last key re-reads the last key's page instead of looking up a
+        # page the batch does not own; the epilogue guard drops those scores.
+        comptime for c in range(BM_key // K_BOX):
+            var key_row = key_start + c * K_BOX
+            comptime if c > 0:
+                key_row = min(key_row, (num_rows - 1) // K_BOX * K_BOX)
+            var k_tok, k_block = k_operand.kv_tma_coords(
+                UInt32(b), UInt32(key_row * pool_row_tokens)
+            )
+            var k_dst = TileTensor[
+                dtype, type_of(k_box_layout), address_space=.SHARED
+            ](k_smem + c * K_BOX * depth, k_box_layout)
+            k_tma.async_copy_4d(
+                k_dst,
+                k_mbar[0],
+                (0, 0, Int(k_tok) // pool_row_tokens, Int(k_block)),
+            )
         # The first token tile's Q TMA is independent of K, so it rides
         # alongside the K TMA instead of stalling behind the k_mbar wait. This
         # prologue arm is the sole producer of q_mbar[0]'s first completion;
@@ -422,7 +444,10 @@ def _fp8_index_body[
         var key_local = key_start + Int(tid)
         if key_local < num_rows:
             var ks_ptr = ks_operand.block_paged_ptr[1](
-                UInt32(b), UInt32(key_local), UInt32(0), UInt32(0)
+                UInt32(b),
+                UInt32(key_local * pool_row_tokens),
+                UInt32(0),
+                UInt32(0),
             )
             ks_smem[tid] = ks_ptr[0].cast[.float32]()
         else:
@@ -630,13 +655,15 @@ def _fp8_index_score_kernel_sm100[
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
     *,
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
-    k_tma: KTMATileT[dtype, BM_key, depth],
+    k_tma: KTMATileT[dtype, k_box_rows, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
@@ -686,6 +713,8 @@ def _fp8_index_score_kernel_sm100[
         N_TOKENS,
         _is_cache_length_accurate,
         kpool,
+        pool_row_tokens=pool_row_tokens,
+        k_box_rows=k_box_rows,
         VLEngine=VLEngine,
         QSEngine=QSEngine,
         OutEngine=OutEngine,
@@ -726,13 +755,15 @@ def _fp8_index_score_kernel_sm100_split[
     N_TOKENS: Int,
     _is_cache_length_accurate: Bool,
     kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = BM_key,
     *,
     VLEngine: TensorEngine = DefaultEngine[element_width=1],
     QSEngine: TensorEngine = DefaultEngine[element_width=1],
     OutEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_tma: QTMATileT[dtype, N_TOKENS * num_heads, depth],
-    k_tma: KTMATileT[dtype, BM_key, depth],
+    k_tma: KTMATileT[dtype, k_box_rows, depth],
     k_operand: KOperand,
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
@@ -788,6 +819,8 @@ def _fp8_index_score_kernel_sm100_split[
         N_TOKENS,
         _is_cache_length_accurate,
         kpool,
+        pool_row_tokens=pool_row_tokens,
+        k_box_rows=k_box_rows,
         VLEngine=VLEngine,
         QSEngine=QSEngine,
         OutEngine=OutEngine,
@@ -824,13 +857,15 @@ def fp8_index_score_sm100[
     _is_cache_length_accurate: Bool,
     N_TOKENS_ALT: Int = 0,
     kpool: Int = 1,
+    pool_row_tokens: Int = 1,
+    k_box_rows: Int = _BM_KEY,
 ](
     output: MutTileTensor[out_dtype, output_layout, _],
     q: ImmTileTensor[dtype, q_layout, _],
     q_s: ImmTileTensor[.float32, qs_layout, _],
     k_operand: KOperand,
     ks_operand: KSOperand,
-    k_tma: KTMATileT[dtype, _BM_KEY, depth],
+    k_tma: KTMATileT[dtype, k_box_rows, depth],
     valid_length: ImmTileTensor[.uint32, vl_layout, _],
     batch_size: Int,
     max_seq_len: Int,
@@ -845,8 +880,7 @@ def fp8_index_score_sm100[
     same `[total_seq, max_num_keys]` score buffer as the scalar
     `nn.index_fp8.fp8_index_kernel`. Out-of-range keys are left untouched --
     the bounded top-k derives the same per-row bound and never reads past it,
-    so the buffer needs no fill; only the unbounded `topk_gpu` arm relies on
-    the caller's `-inf` fill.
+    so the buffer needs no fill.
 
     Parameters:
         out_dtype: Element type of the score buffer, f32 or bf16 (inferred).
@@ -874,6 +908,13 @@ def fp8_index_score_sm100[
             `k > 1` scores one pooled key per `k` consecutive tokens, so
             every candidate count and the caller's `top_k` are
             pool-granular.
+        pool_row_tokens: Token rows one key spans in the cache. `1` when
+            the cache holds one row per key; `kpool` for GLM-5.3-Flash, whose
+            cache stores each pooled key over its tokens' `depth / kpool`-wide
+            rows. Key `p` then starts at token `kpool * p`.
+        k_box_rows: Key rows per `k_tma` copy. One copy covers a whole key
+            tile unless a pooled page holds fewer keys, in which case the
+            tile is staged one page at a time.
 
     Args:
         output: Score buffer `[total_seq, max_num_keys]`, f32 or bf16.
@@ -914,18 +955,21 @@ def fp8_index_score_sm100[
         depth == 128
     ), "SM100 FP8 indexer scorer requires depth == 128"
     comptime BM_key = _BM_KEY
-    # The K tile is staged with ONE TMA copy of BM_key contiguous physical rows
-    # at row_idx(b, key_start), which is only correct when BM_key virtual key
-    # rows never straddle a page boundary: page_size must be 0 (contiguous /
-    # ragged) or a multiple of BM_key. The dispatch sites (index_fp8 /
-    # mla_index_fp8) route any other page_size to the scalar kernel; this is the
-    # backstop so a future caller cannot reintroduce the wrong-page read.
-    comptime assert (
-        KOperand.page_size == 0 or KOperand.page_size % BM_key == 0
-    ), (
-        "SM100 FP8 indexer scorer requires K-cache page_size == 0 or a multiple"
-        " of BM_key"
+    # The K tile is staged one TMA copy per page it spans, and a copy cannot
+    # cross a page, so a tile must be whole pages or sit inside one page (or
+    # the cache is contiguous). The dispatch sites (index_fp8 / mla_index_fp8)
+    # route any other page_size to the scalar kernel; this is the backstop so a
+    # future caller cannot reintroduce the wrong-page read.
+    comptime assert _k_tile_fits_pages[
+        BM_key, KOperand.page_size, pool_row_tokens
+    ](), (
+        "SM100 FP8 indexer scorer requires the K tile to cover whole pages or"
+        " sit inside one"
     )
+    comptime assert (
+        k_box_rows == _k_box_rows[BM_key, KOperand.page_size, pool_row_tokens]()
+    ), "k_box_rows must be the rows one K TMA copy stages for this cache"
+    comptime K_BOX = k_box_rows
     comptime MMA_N = 128
     comptime N_TOKENS = MMA_N // num_heads
 
@@ -1075,10 +1119,12 @@ def fp8_index_score_sm100[
                         N_ALT,
                         _is_cache_length_accurate,
                         kpool,
+                        pool_row_tokens=pool_row_tokens,
+                        k_box_rows=K_BOX,
                     ](
                         q_ptr,
                         num_q_tokens,
-                        rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
+                        rebind[KTMATileT[dtype, K_BOX, depth]](k_tma),
                         k_operand,
                         ks_operand,
                         valid_length,
@@ -1102,10 +1148,12 @@ def fp8_index_score_sm100[
                 N_TOKENS,
                 _is_cache_length_accurate,
                 kpool,
+                pool_row_tokens=pool_row_tokens,
+                k_box_rows=K_BOX,
             ](
                 q_ptr,
                 num_q_tokens,
-                rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
+                rebind[KTMATileT[dtype, K_BOX, depth]](k_tma),
                 k_operand,
                 ks_operand,
                 valid_length,
@@ -1151,6 +1199,8 @@ def fp8_index_score_sm100[
             N_TOKENS,
             _is_cache_length_accurate,
             kpool,
+            pool_row_tokens=pool_row_tokens,
+            k_box_rows=K_BOX,
         ]
         comptime kernel_split = _fp8_index_score_kernel_sm100_split[
             dtype,
@@ -1166,6 +1216,8 @@ def fp8_index_score_sm100[
             N_TOKENS,
             _is_cache_length_accurate,
             kpool,
+            pool_row_tokens=pool_row_tokens,
+            k_box_rows=K_BOX,
         ]
 
         comptime q1_offset = _Q1SmemOffset[dtype, BM_key, MMA_N, depth]
@@ -1202,7 +1254,7 @@ def fp8_index_score_sm100[
         if num_slices > 1:
             ctx.enqueue_function[kernel_split](
                 rebind[QTMATileT[dtype, MMA_N, depth]](q_tma_tile),
-                rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
+                rebind[KTMATileT[dtype, K_BOX, depth]](k_tma),
                 k_operand,
                 ks_operand,
                 valid_length,
@@ -1226,7 +1278,7 @@ def fp8_index_score_sm100[
         else:
             ctx.enqueue_function[kernel_flat](
                 rebind[QTMATileT[dtype, MMA_N, depth]](q_tma_tile),
-                rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
+                rebind[KTMATileT[dtype, K_BOX, depth]](k_tma),
                 k_operand,
                 ks_operand,
                 valid_length,

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -27,6 +27,11 @@ _EP8_TESTS = [
 # 2-GPU (EP2) runtime gate of the fused EP MoE under CUDA-graph replay; run by hand.
 _FUSED_EP2_TESTS = [
     "test_ep_moe_fused_megaffn_ep2.py",
+]
+
+# 4-GPU (EP4) runtime tests of the fused EP MoE on devices 0-3; run by hand.
+_FUSED_EP4_TESTS = [
+    "test_ep_moe_fused_megaffn_ep4.py",
 ]
 
 _COMMON_ENV = select({
@@ -67,7 +72,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["test_*.py"],
-        exclude = _QUANTIZED_TESTS + _TRACED_TESTS + _EP8_TESTS + _FUSED_EP2_TESTS,
+        exclude = _QUANTIZED_TESTS + _TRACED_TESTS + _EP8_TESTS + _FUSED_EP2_TESTS + _FUSED_EP4_TESTS,
     ) + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
@@ -110,9 +115,9 @@ modular_py_test(
     ],
     tags = [
         "gpu",
-        # Postsubmit rather than presubmit: it holds two GPUs for two full EP
-        # compiles to check a runtime property few changes touch.
-        "postsubmit",
+        # TODO(GEX-4366): side-stream work seems to launch after the main
+        # stream on AMD. Manual until the flake is fixed.
+        "manual",
         "requires-network",
     ],
     deps = [
@@ -152,15 +157,42 @@ modular_py_test(
     deps = _COMMON_DEPS,
 )
 
-# One-launch fused EP MoE (`mega_ffn.ep_fused`) vs the shipping NVFP4 chain at
-# GLM-5.3 MoE geometry, EP8. Needs 8 GPUs; skips itself below that.
+# The EP8 and EP4 fused tests' shared helpers.
+modular_py_library(
+    name = "fused_megaffn_gates",
+    testonly = True,
+    srcs = ["fused_megaffn_gates.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("pytest"),
+        requirement("torch"),
+    ],
+)
+
+# One-launch fused EP MoE (`mega_ffn.ep_fused`) at GLM-5.3 MoE geometry, EP8,
+# both formats, against the shipping chain: production allocation/lowering,
+# CUDA-graph capture replayed across generations, two workspaces, the
+# capacity and backend refusals, the fail-closed host checks, a shared EP
+# instance, and the optional real GLM-5.3 layer (GLM53_NVFP4_SNAPSHOT). Needs
+# 8 GPUs (devices 0-7); skips itself below that.
 modular_py_test(
     name = "ep_fused_megaffn_tests",
     size = "large",
     srcs = _EP8_TESTS + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
-        "test.resources:gpu-memory": "12",
+        # MAX gets 40% of (this - 0.6) GiB per GPU, torch the rest. The MXFP8
+        # weights of all 256 experts take 9.3 GiB on cuda:0 before they move
+        # to the host (torch). The MXFP8 graph-replay case holds a shipping
+        # and two fused models at once, and MAX peaks at 7.8 GiB while the
+        # second fused model initializes; 23 leaves about 1.2 GiB above that
+        # for fragmentation in the allocator's 256 MiB pages.
+        "test.resources:gpu-memory": "23",
     },
     gpu_constraints = [
         "//:has_multi_gpu",
@@ -175,7 +207,10 @@ modular_py_test(
         "requires-network",
     ],
     # safetensors: the real-layer replay reads one layer from a local snapshot.
-    deps = _COMMON_DEPS + [requirement("safetensors")],
+    deps = _COMMON_DEPS + [
+        ":fused_megaffn_gates",
+        requirement("safetensors"),
+    ],
 )
 
 # One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP2, both formats, top-k 8: production
@@ -204,4 +239,30 @@ modular_py_test(
         "requires-network",
     ],
     deps = _COMMON_DEPS,
+)
+
+# One-launch fused EP MoE (`mega_ffn.ep_fused`) at EP4 (devices 0-3), 8 local
+# experts, both formats: a balanced and a ragged cell under CUDA-graph replay,
+# the capacity refusals, and GLM-5.3's 256 experts refused at EP4 (64 local).
+modular_py_test(
+    name = "ep_fused_megaffn_ep4_tests",
+    size = "large",
+    srcs = _FUSED_EP4_TESTS + ["conftest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "12",
+    },
+    gpu_constraints = [
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+        "requires-network",
+    ],
+    deps = _COMMON_DEPS + [":fused_megaffn_gates"],
 )

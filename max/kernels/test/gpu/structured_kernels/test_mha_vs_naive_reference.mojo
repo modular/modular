@@ -40,11 +40,8 @@ from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import TileTensor
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout.coord import Idx
 from layout.tile_layout import row_major
-
-from std.utils.index import Index
 
 from nn.attention.gpu.amd_structured.mha_mma_op import MhaConfigV2
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import MhaPrefillV2

@@ -309,6 +309,13 @@ def _join(
         ]
         devices = tuple(shard.device for shard in shards)
         if devices != mapping.mesh.devices:
+            if not all(isinstance(device, CPU) for device in devices):
+                raise ShardingError(
+                    f"call_on_mesh: results landed on {devices}, not the "
+                    f"mesh's devices {mapping.mesh.devices}. Each call must "
+                    "report its own device, not one fixed before dispatch "
+                    "(e.g. a reused out_type)."
+                )
             # A result can live on other devices than its mesh, for example
             # a count the kernel writes to host memory.
             mapping = DeviceMapping(

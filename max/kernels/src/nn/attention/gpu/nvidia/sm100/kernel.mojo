@@ -34,7 +34,6 @@ from max.gpu.memory import fence_mbarrier_init
 from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout import Coord
 from layout.tma_async import RaggedTMA3DTile, TMATensorTile
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     attn_tmem_addr,

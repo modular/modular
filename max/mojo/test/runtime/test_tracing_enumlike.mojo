@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Exercises runtime `__match` on `TraceCategory` and `TraceLevel`.
+"""Exercises runtime `match` on `TraceCategory` and `TraceLevel`.
 
 Each helper names every case so the match fails to compile if
 `_enum_case_names` drifts from the comptime case constants.
@@ -22,7 +22,7 @@ from max.runtime.tracing import TraceCategory, TraceLevel
 
 
 def _category_rank(category: TraceCategory) -> Int:
-    __match category:
+    match category:
         case .OTHER:
             return 0
         case .ASYNCRT:
@@ -36,7 +36,7 @@ def _category_rank(category: TraceCategory) -> Int:
 
 
 def _level_rank(level: TraceLevel) -> Int:
-    __match level:
+    match level:
         case .ALWAYS:
             return 0
         case .OP:

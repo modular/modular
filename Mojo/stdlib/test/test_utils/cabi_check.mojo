@@ -152,7 +152,7 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
         # Enable field-type checks for 8-bit types
         comptime if T == UInt8 or T == Int8:
             return None
-        __match _c_scalar_name[T]():
+        match _c_scalar_name[T]():
             case .Some(scalar_name):
                 return String(t"{scalar_name} *ptr")
             case .None:
@@ -164,7 +164,7 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
         # Enable field-type checks for 8-bit types
         comptime if ElementType == UInt8 or ElementType == Int8:
             return None
-        __match _c_scalar_name[ElementType]():
+        match _c_scalar_name[ElementType]():
             case .Some(scalar_name):
                 return String(t"{scalar_name} (*ptr)[{T._cabi_length}]")
             case .None:
@@ -198,7 +198,7 @@ def struct_checks[T: AnyType]() raises -> String:
         out += String(
             t"\nMOJO_CHECK_CABI_FIELD({name}, struct {name}, {field})"
         )
-        __match _c_field_decl[types[i]]():
+        match _c_field_decl[types[i]]():
             case .Some(decl):
                 out += String(
                     t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"

@@ -435,6 +435,7 @@ class TestSpeculativeArchitectureOverride:
         speculative: bool = True,
         is_dflash: bool = False,
         is_dflash2: bool = False,
+        is_dspark: bool = False,
         draft_arch: str | None = None,
     ) -> SimpleNamespace:
         """Build a minimal stand-in exposing the attrs the method reads.
@@ -449,10 +450,21 @@ class TestSpeculativeArchitectureOverride:
             draft_model = SimpleNamespace(
                 huggingface_config=SimpleNamespace(architectures=[draft_arch])
             )
+        method = (
+            "dspark"
+            if is_dspark
+            else "dflash2"
+            if is_dflash2
+            else "dflash"
+            if is_dflash
+            else "eagle"
+        )
         spec = (
             SimpleNamespace(
+                speculative_method=method,
                 is_dflash=lambda: is_dflash or is_dflash2,
                 is_dflash2=lambda: is_dflash2,
+                is_dspark=lambda: is_dspark,
                 is_mtp=lambda: False,
             )
             if speculative
@@ -500,7 +512,7 @@ class TestSpeculativeArchitectureOverride:
     def test_gemma4_unified_dspark(self) -> None:
         cfg = self._make_config(
             "Gemma4UnifiedForConditionalGeneration",
-            is_dflash=True,
+            is_dspark=True,
             draft_arch="Gemma4DSparkModel",
         )
         assert self._resolved_arch(cfg) == "UnifiedDSparkGemma4_12BForCausalLM"
@@ -516,7 +528,7 @@ class TestSpeculativeArchitectureOverride:
     def test_minimax_m3_dspark(self) -> None:
         cfg = self._make_config(
             "MiniMaxM3SparseForConditionalGeneration",
-            is_dflash=True,
+            is_dspark=True,
             draft_arch="DSparkMiniMaxDraftModel",
         )
         assert (
@@ -525,14 +537,14 @@ class TestSpeculativeArchitectureOverride:
         )
 
     def test_minimax_m3_dspark_rejects_other_methods(self) -> None:
-        """The DSpark graph only runs under the v1 dflash harness."""
-        for kwargs in ({}, {"is_dflash2": True}):
+        """The DSpark graph only runs a DSpark draft step."""
+        for kwargs in ({}, {"is_dflash": True}, {"is_dflash2": True}):
             cfg = self._make_config(
                 "MiniMaxM3SparseForConditionalGeneration",
                 draft_arch="DSparkMiniMaxDraftModel",
                 **kwargs,
             )
-            with pytest.raises(ValueError, match="dflash"):
+            with pytest.raises(ValueError, match="dspark"):
                 self._resolved_arch(cfg)
 
     def test_no_speculative_is_noop(self) -> None:

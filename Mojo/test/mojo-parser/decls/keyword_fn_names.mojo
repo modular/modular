@@ -253,6 +253,10 @@ def __is_run_in_comptime_interpreter():
 def __match():
     pass
 
+# expected-error @+1 {{'__enum' cannot be used as a function name in this context}}
+def __enum():
+    pass
+
 
 # Nested free functions are rejected too.
 def outer():

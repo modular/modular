@@ -12,11 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """Shared compile-time plugin registration and selection utilities."""
 
-from std.sys.info import _TargetType, _current_target
+from std.builtin.rebind import downcast
+from std.builtin.variadics import TypeList
+from std.sys.info import CompilationTarget, _TargetType, _current_target
 
 
 trait Plugin:
-    """Defines the identity required by a compile-time plugin registry."""
+    """Defines the identity required by a compile-time plugin registry.
+
+    Each plugin system refines this trait with a parametric member
+    `comptime HookFor[target: CompilationTarget]: <Hooks>` naming the hooks it
+    uses for `target`. Traits can't take parameters, so this indirection is how
+    a plugin's hook trait gets specialized per target: the plugin is a plain
+    struct that selects a backend by `name`, and `HookFor[target]` is a
+    separate struct parameterized on the target that implements the actual
+    hooks.
+    """
 
     comptime name: __mlir_type.`!kgen.string`
     """The stable identifier matched against a target's plugin field."""
@@ -27,6 +38,15 @@ struct PluginSelector[
     //,
     *PluginTypes: Trait,
 ]:
+    """Selects one of `PluginTypes` by matching a target's `stdlib_plugin`
+    field against each plugin's `name`.
+
+    The selected plugin is not yet specialized to a target; callers apply it
+    with `HookFor`, for example
+    `SELECTOR.current.HookFor[CompilationTarget.current()]` or
+    `SELECTOR.for_target[target].HookFor[CompilationTarget[_mlir_value=target]()]`.
+    """
+
     comptime index_for_target[
         target: _TargetType
     ]: __mlir_type.index = Self._find[target, __mlir_attr.`0 : index`]()
@@ -39,15 +59,7 @@ struct PluginSelector[
         Self.PluginTypes._get_type_at_index[Self.index_for_target[target]]
     )
 
-    # Avoid `TypeList.length` to keep selection in raw parameter space so it is
-    # safe during stdlib bootstrap, before `Int` and `SIMDLength` are available.
-    comptime _length = __mlir_attr[
-        `#kgen.param_list.size<:`,
-        Self.PluginTypes._mlir_type,
-        ` `,
-        +Self.PluginTypes.values,
-        `> : index`,
-    ]
+    comptime _length = Self.PluginTypes._raw_length
 
     @staticmethod
     def _matches[target: _TargetType, idx: __mlir_type.index]() -> Bool:
@@ -83,6 +95,66 @@ struct PluginSelector[
                     idx,
                     `, 1 : index> : index`,
                 ],
+            ]()
+
+
+# TODO: Inline this logic onto CompilationTarget
+struct TargetPluginSelector[
+    Trait: type_of(AnyType),
+    //,
+    target: CompilationTarget,
+    Default: Trait,
+]:
+    """Selects the first plugin accepted by `conforms_to(P, Trait)`.
+
+    The implementation takes care to minimize use of standard library types like
+    `Int`, to avoid recursive resolution issues when resolving standard library
+    types that themselves depend on resolving the current standard library
+    plugin.
+    """
+
+    comptime _plugin_list_mlir_type = TypeList[Trait=AnyType]._mlir_type
+
+    comptime selected: Self.Trait = (
+        Self.Default if not _index_lt[
+            Self._index, Self.Plugins._raw_length
+        ]() else downcast[
+            Self.Plugins._get_type_at_index[Self._index], Self.Trait
+        ]
+    )
+    """Yields the matching plugin implementation of `Trait` for `target` if one
+    is defined, otherwise yields `Default`."""
+
+    comptime Plugins = TypeList[
+        Trait=AnyType,
+        __mlir_attr[
+            `#kgen.get_target_plugin<`,
+            Self.target._mlir_value,
+            `, :`,
+            +Self._plugin_list_mlir_type,
+            ` `,
+            TypeList.of[Trait=AnyType, Self.Default]().values,
+            `> : `,
+            +Self._plugin_list_mlir_type,
+        ],
+    ]()
+
+    comptime _index = Self._find[__mlir_attr.`0 : index`]()
+
+    @staticmethod
+    def _find[idx: __mlir_type.index]() -> __mlir_type.index:
+        comptime if not _index_lt[idx, Self.Plugins._raw_length]():
+            __mlir_op.`llvm.intr.trap`()
+            return idx
+        elif conforms_to(Self.Plugins._get_type_at_index[idx], Self.Trait):
+            return idx
+        else:
+            return Self._find[
+                __mlir_attr[
+                    `#kgen.param.expr<add,`,
+                    idx,
+                    `, 1 : index> : index`,
+                ]
             ]()
 
 

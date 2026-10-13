@@ -10,13 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.abc import Mapping
 from enum import Enum
 from typing import Generic, Literal, TypeVar
 
 import msgspec
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import TransferReqData
+from max.pipelines.kv_cache import (
+    JengaKVCacheManager,
+    PagedKVCacheManagerInterface,
+    TransferReqData,
+)
+from max.pipelines.kv_cache.registry import jenga_supports_di
 from max.pipelines.modeling.types import RequestID
 
 ContextType = TypeVar("ContextType", bound=TextContext)
@@ -56,8 +60,9 @@ class PrefillRequest(
     """The input context containing the request data and state."""
     transfer_engine_name: str
     """Name of the transfer engine to use for KV cache transfers."""
-    dst_block_ids: list[int]
-    """List of block IDs allocated for KV cache storage on Decode."""
+    dst_block_ids: dict[str, list[int]]
+    """Block IDs allocated for KV cache storage on Decode, keyed by leaf id.
+    ``-1`` marks a page decode already holds from its prefix cache."""
     dst_replica_idx: int
     """The replica the request is on Decode."""
 
@@ -127,19 +132,19 @@ class CancelRequest(msgspec.Struct, tag=True, omit_defaults=True, kw_only=True):
     """Unique identifier of the request to cancel."""
 
 
-def shared_block_ids(blocks_per_leaf: Mapping[str, list[int]]) -> list[int]:
-    """Returns the one block id row every leaf shares.
+def check_di_supports(kv_cache: PagedKVCacheManagerInterface) -> None:
+    """Raises if disaggregated serving cannot transfer this KV cache.
 
-    The DI transfer addresses every leaf with the same page indices, which
-    only holds when the leaves share one block space.
-
-    Raises:
-        ValueError: If the leaves hold different block ids.
+    Only the Jenga manager can serve disaggregated inference, and only for full
+    attention leaves, because a sliding-window leaf nulls the pages its window
+    slid past and so has no contiguous prefix of block ids to transfer.
     """
-    rows = list(blocks_per_leaf.values())
-    if any(row != rows[0] for row in rows[1:]):
-        raise ValueError(
-            "DI transfers need every KV leaf to share block ids, got "
-            f"{dict(blocks_per_leaf)}"
+    if not isinstance(kv_cache, JengaKVCacheManager):
+        raise NotImplementedError(
+            "Disaggregated inference is incompatible with the legacy KV"
+            " manager; unset MODULAR_USE_LEGACY_KV_CACHE."
         )
-    return rows[0] if rows else []
+    if not jenga_supports_di(kv_cache.params):
+        raise NotImplementedError(
+            "Disaggregated inference supports only full-attention KV caches."
+        )

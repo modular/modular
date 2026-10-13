@@ -30,7 +30,7 @@ from linalg.bmm import (
     batched_matmul_dynamic_scaled_fp8,
     batched_matmul_dynamic_scaled_fp8_naive,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 # fp8 values accumulate in f32 then cast to bf16, so tolerate a few

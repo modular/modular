@@ -30,7 +30,6 @@ SMEM layout (BN_QK=64, 5 stages):
   barriers:   (6N+11) fixed + output barriers
 """
 
-from std.collections import OptionalReg
 from std.math import ceildiv, exp2, log2, recip
 from std.math.constants import log2e
 from std.sys import size_of
@@ -61,7 +60,6 @@ from layout.tma_async import (
 )
 from layout import (
     ComptimeInt,
-    CoordLike,
     Layout,
     RowMajorLayout,
     TensorEngine,

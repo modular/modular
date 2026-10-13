@@ -25,7 +25,6 @@ type results in undefined behavior, just like in C. Prefer `Variant` for safe,
 type-checked sum types.
 """
 
-from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.traits import (
     IsTriviallyCopyable,

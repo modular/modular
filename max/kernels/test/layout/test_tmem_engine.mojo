@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Host-side tests for `TMemEngine`.
 
-Exercises the operations that do not touch hardware: `offset`, `distance`,
+Exercises the operations that do not touch hardware: `offset`,
 `unsafe_cast`, and the address arithmetic a `TileTensor` over the engine
 performs when tiling an accumulator down to a warp's quadrant and a thread's
 row. Layouts are positions on the lane-by-column grid, so these tests check
@@ -77,18 +77,6 @@ def test_offset_encodes_lane_and_column() raises:
     assert_equal(same_col.addr, _addr(BASE_LANE + 5, BASE_COL))
     var same_lane = tile._offset_storage(5 * TMEM_NUM_LANES)
     assert_equal(same_lane.addr, _addr(BASE_LANE, BASE_COL + 5))
-
-
-def test_distance_is_signed_grid_delta() raises:
-    var a = AccumTile(AccumStorage(BASE_ADDR), ACCUM_LAYOUT)
-    # Seven columns over is seven grid columns, not the raw address delta.
-    var b = AccumTile(AccumStorage(BASE_ADDR + 7), ACCUM_LAYOUT)
-    assert_equal(Int(b.as_imm()._distance(a.as_imm())), 7 * TMEM_NUM_LANES)
-    assert_equal(Int(a.as_imm()._distance(b.as_imm())), -7 * TMEM_NUM_LANES)
-    var c = AccumTile(
-        AccumStorage(_addr(BASE_LANE + 2, BASE_COL)), ACCUM_LAYOUT
-    )
-    assert_equal(Int(c.as_imm()._distance(a.as_imm())), 2)
 
 
 def test_unsafe_cast_keeps_address() raises:

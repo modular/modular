@@ -13,7 +13,6 @@
 
 from std.math import exp2
 from std.pathlib import Path
-from std.sys import CompilationTarget
 from std.sys._assembly import inlined_assembly
 
 from max.gpu import thread_idx

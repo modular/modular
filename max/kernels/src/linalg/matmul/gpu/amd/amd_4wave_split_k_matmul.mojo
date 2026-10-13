@@ -33,7 +33,7 @@ only the one reduce launch on top.
 
 from std.math import ceildiv
 from std.sys import align_of
-from std.utils import Index, IndexList
+from std.utils import Index
 
 from max.gpu import block_dim, global_idx, grid_dim
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -200,7 +200,7 @@ def _split_k_reduce_impl[
                 elementwise_lambda_fn, alignment=align_of[Scalar[c_type]]()
             ](
                 epilogue_fn,
-                IndexList[2](m, n),
+                (m, n),
                 SIMD[c_type, 1](acc.cast[c_type]()),
             )
         else:
@@ -208,7 +208,7 @@ def _split_k_reduce_impl[
             comptime if has_compute_fn:
                 var m = tid // _n_dim
                 out = compute_fn[c_type, 1, alignment=1](
-                    IndexList[2](m, tid - m * _n_dim), out
+                    (m, tid - m * _n_dim), out
                 )
             c_ptr[tid] = out
         tid += stride

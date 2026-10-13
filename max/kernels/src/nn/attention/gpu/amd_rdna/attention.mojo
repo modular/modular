@@ -47,7 +47,6 @@ from .buffers import (
     QRegisterBufferRDNA,
     OutputRegisterBufferRDNA,
     PRegisterBufferRDNA,
-    RDNA_AB_FRAG_SIZE,
     RDNA_CD_FRAG_SIZE,
 )
 from .config import (

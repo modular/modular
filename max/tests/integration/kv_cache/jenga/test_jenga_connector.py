@@ -94,6 +94,7 @@ class FakeConnector:
         self,
         leaves: Mapping[str, KVCacheGroupId] | Sequence[str],
         asynchronous: bool = True,
+        skips_held: bool = False,
     ) -> None:
         self.leaves = (
             dict(leaves)
@@ -107,6 +108,9 @@ class FakeConnector:
         # Whether the next load's transfer fails on its very first poll.
         self.fail_on_first_poll = False
         self.asynchronous = asynchronous
+        # Whether an offload skips the hashes a leaf already holds, as the
+        # real connectors do, and so reports only the blocks it took.
+        self.skips_held = skips_held
         self.lookups: list[tuple[list[bytes], int, bytes | None]] = []
         self.loads: list[
             tuple[dict[str, list[int]], dict[str, list[bytes]], int]
@@ -190,11 +194,19 @@ class FakeConnector:
                 {leaf: list(hs) for leaf, hs in block_hashes.items()},
             )
         )
+        taken = {
+            leaf_id: [
+                bid
+                for bid, block_hash in zip(
+                    ids, block_hashes[leaf_id], strict=True
+                )
+                if not (self.skips_held and block_hash in self.held[leaf_id])
+            ]
+            for leaf_id, ids in block_ids.items()
+        }
         for leaf_id, hashes in block_hashes.items():
             self.held[leaf_id].update(hashes)
-        transfer = FakeTransfer(
-            {leaf: list(ids) for leaf, ids in block_ids.items()},
-        )
+        transfer = FakeTransfer(taken)
         if not self.asynchronous:
             transfer.done = True
         self.transfers.append(transfer)
@@ -706,6 +718,50 @@ def test_the_drain_settles_offloads_rather_than_step() -> None:
     assert [block.ref_cnt for block in sources] == [n - 1 for n in pinned], (
         "a settled write has to hand its source pages back"
     )
+
+
+def test_an_offload_pins_only_the_blocks_the_connector_took() -> None:
+    """A hash the connector already holds is skipped, so its page is not pinned.
+
+    The connector reports what it took in ``g0_blocks_per_leaf``; pinning
+    everything handed over would hold pages no copy reads until the transfer
+    lands.
+    """
+    connector = FakeConnector([FULL], skips_held=True)
+    manager = make_manager(connector)
+
+    tokens = [1, 2, 3, 4]
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    assert not connector.offloads, "step leaves the run for the offload call"
+
+    pool = manager.pools[0]
+    rows = manager.get_req_blocks_per_leaf(ctx)[FULL]
+    committed = [b for b in rows if pool.block(FULL, b).block_hash is not None]
+    assert len(committed) > 1
+    held_hash = pool.block(FULL, committed[0]).block_hash
+    assert held_hash is not None
+    connector.held[FULL].add(held_hash)
+    before = {bid: pool.block(FULL, bid).ref_cnt for bid in committed}
+
+    manager.offload(0)
+
+    posted = connector.transfers[-1]
+    assert posted.g0_blocks_per_leaf[FULL] == committed[1:]
+    after = {bid: pool.block(FULL, bid).ref_cnt for bid in committed}
+    assert after[committed[0]] == before[committed[0]], (
+        "a block the connector skipped must not be pinned"
+    )
+    assert all(after[b] == before[b] + 1 for b in committed[1:]), (
+        "every block the connector took is pinned until its copy lands"
+    )
+
+    posted.synchronize()
+    manager.poll_transfers()
+    assert {bid: pool.block(FULL, bid).ref_cnt for bid in committed} == before
 
 
 def test_a_failed_poll_unpins_without_publishing() -> None:

@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, from_numpy, row_major, to_numpy
-from layout.coord import Coord, Idx
-from std.python import Python, PythonObject
+from layout.coord import Idx
+from std.python import Python
 from std.testing import (
     assert_almost_equal,
     assert_equal,

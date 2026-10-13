@@ -20,10 +20,14 @@ leaves every hook at its default value.
 
 from ._trait import PluginHooks
 from ._overlay import STD_PLUGINS
-from std.sys.info import _TargetType
+from std.sys.info import CompilationTarget, _TargetType
 
-comptime CurrentPlugin: PluginHooks = STD_PLUGINS.current
+comptime CurrentPlugin: PluginHooks = STD_PLUGINS.current.HookFor[
+    CompilationTarget.current()
+]
 """The active `PluginHooks`."""
 
-comptime PluginForTarget[Target: _TargetType] = STD_PLUGINS.for_target[Target]
+comptime PluginForTarget[Target: _TargetType] = STD_PLUGINS.for_target[
+    Target
+].HookFor[CompilationTarget[_mlir_value=Target]()]
 """The `PluginHooks` to use for the specified kgen.target."""

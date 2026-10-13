@@ -378,23 +378,23 @@ def TopKTopPMaskedProbsClusterKernel[
     launch_dependent_grids()
 
     var k = Int(top_k_val)
-    if top_k_arr:
-        k = Int(top_k_arr.unsafe_value().load(bx))
+    if case .Some(top_k_arr) = top_k_arr:
+        k = Int(top_k_arr.load(bx))
     if k <= 0 or k > _d:
         k = _d
 
     var p = top_p_val
-    if top_p_arr:
-        p = top_p_arr.unsafe_value()[bx]
+    if case .Some(top_p_arr) = top_p_arr:
+        p = top_p_arr[bx]
     p = p.clamp(Float32(0.0), Float32(1.0))
 
     var temp_val = Float32(1.0)
-    if temperature:
-        temp_val = temperature.unsafe_value()[bx]
+    if case .Some(temperature) = temperature:
+        temp_val = temperature[bx]
     # Clamp so a greedy (T=0) row cannot divide by zero.
     var inv_temp = 1.0 / max(temp_val, Float32(1e-6))
 
-    var logits_row = TileTensor(logits.ptr + bx * _d, row_major(Idx[1], _d))
+    var logits_row = logits[bx : bx + 1, :]
 
     # Row max, combined across the cluster in rank order so every CTA holds
     # the same bits. Every value below derives from it, so one disagreeing
@@ -599,18 +599,18 @@ def topk_topp_masked_probs_cluster[
         var vec_size = gcd(8, d)
 
         var top_k_ptr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]] = None
-        if top_k_arr:
-            top_k_ptr = top_k_arr.unsafe_value().ptr
+        if case .Some(top_k_arr) = top_k_arr:
+            top_k_ptr = top_k_arr.ptr
 
         var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
-        if top_p_arr:
-            top_p_ptr = top_p_arr.unsafe_value().ptr
+        if case .Some(top_p_arr) = top_p_arr:
+            top_p_ptr = top_p_arr.ptr
 
         var temperature_ptr: Optional[
             UnsafePointer[Float32, ImmutAnyOrigin]
         ] = None
-        if temperature:
-            temperature_ptr = temperature.unsafe_value().ptr
+        if case .Some(temperature) = temperature:
+            temperature_ptr = temperature.ptr
 
         # A row takes the narrowest cluster whose slice fits the staging
         # budget: one CTA for small vocabularies (staged, no cluster
@@ -1077,12 +1077,12 @@ def TopKTopPSamplingEmitDistClusterKernel[
     launch_dependent_grids()
 
     var row_idx = bx
-    if indices:
-        row_idx = Int(indices.unsafe_value().load(bx))
+    if case .Some(indices) = indices:
+        row_idx = Int(indices.load(bx))
 
     var seed_val = UInt64(0)
-    if rng_seed:
-        seed_val = rng_seed.unsafe_value()[row_idx]
+    if case .Some(rng_seed) = rng_seed:
+        seed_val = rng_seed[row_idx]
 
     # The per-row seed is the only thing that separates rows: it carries a
     # per-request key, so mixing an index in here would tie the draw to the
@@ -1090,28 +1090,28 @@ def TopKTopPSamplingEmitDistClusterKernel[
     var generator = Random(seed=seed_val, offset=rng_offset)
 
     var k = Int(top_k_val)
-    if top_k_arr:
-        k = Int(top_k_arr.unsafe_value().load(row_idx))
+    if case .Some(top_k_arr) = top_k_arr:
+        k = Int(top_k_arr.load(row_idx))
     if k == -1:
         k = Int(top_k_val)
     if k <= 0 or k > _d:
         k = _d
 
     var p = top_p_val
-    if top_p_arr:
-        p = top_p_arr.unsafe_value()[row_idx]
+    if case .Some(top_p_arr) = top_p_arr:
+        p = top_p_arr[row_idx]
 
     var temp_val = Float32(1.0)
-    if temperature:
-        temp_val = temperature.unsafe_value()[row_idx]
+    if case .Some(temperature) = temperature:
+        temp_val = temperature[row_idx]
     # Clamp so a greedy (T=0) row cannot divide by zero.
     var inv_temp = 1.0 / max(temp_val, Float32(1e-6))
 
     var min_p_thresh = Float32(0.0)
-    if min_p:
-        min_p_thresh = min_p.unsafe_value()[row_idx]
+    if case .Some(min_p) = min_p:
+        min_p_thresh = min_p[row_idx]
 
-    var probs_row = TileTensor(probs.ptr + row_idx * _d, row_major(Idx[1], _d))
+    var probs_row = probs[row_idx : row_idx + 1, :]
 
     # Row max, combined across the cluster in rank order so every CTA holds
     # the same bits. Every value below derives from it, so one disagreeing
@@ -1431,32 +1431,32 @@ def topk_topp_sampling_from_prob_cluster[
         var indices_ptr: Optional[
             UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]
         ] = None
-        if indices:
-            indices_ptr = indices.unsafe_value().ptr
+        if case .Some(indices) = indices:
+            indices_ptr = indices.ptr
 
         var top_k_ptr: Optional[
             UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]
         ] = None
-        if top_k_arr:
-            top_k_ptr = top_k_arr.unsafe_value().ptr
+        if case .Some(top_k_arr) = top_k_arr:
+            top_k_ptr = top_k_arr.ptr
 
         var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
-        if top_p_arr:
-            top_p_ptr = top_p_arr.unsafe_value().ptr
+        if case .Some(top_p_arr) = top_p_arr:
+            top_p_ptr = top_p_arr.ptr
 
         var seed_ptr: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]] = None
-        if rng_seed:
-            seed_ptr = rng_seed.unsafe_value().ptr
+        if case .Some(rng_seed) = rng_seed:
+            seed_ptr = rng_seed.ptr
 
         var temperature_ptr: Optional[
             UnsafePointer[Float32, ImmutAnyOrigin]
         ] = None
-        if temperature:
-            temperature_ptr = temperature.unsafe_value().ptr
+        if case .Some(temperature) = temperature:
+            temperature_ptr = temperature.ptr
 
         var min_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
-        if min_p:
-            min_p_ptr = min_p.unsafe_value().ptr
+        if case .Some(min_p) = min_p:
+            min_p_ptr = min_p.ptr
 
         var dist_ptr: Optional[
             UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]
@@ -1492,10 +1492,9 @@ def topk_topp_sampling_from_prob_cluster[
                 ):
                     cluster_size = c
 
-        @__parameter
         def launch_cluster[
             vec_size: Int, deterministic: Bool, cluster_size: Int
-        ]() raises:
+        ]() raises {imm}:
             comptime if emit_dist and from_logits:
                 comptime kernel = TopKTopPSamplingEmitDistClusterKernel[
                     probs.LayoutType,
@@ -1537,8 +1536,7 @@ def topk_topp_sampling_from_prob_cluster[
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
 
-        @__parameter
-        def launch_single[vec_size: Int, deterministic: Bool]() raises:
+        def launch_single[vec_size: Int, deterministic: Bool]() raises {imm}:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmOrigin(probs.origin),
@@ -1576,8 +1574,7 @@ def topk_topp_sampling_from_prob_cluster[
             )
 
         # `vec_size = gcd(8, d)`, so 8 is the widest case.
-        @__parameter
-        def dispatch_vec_size[deterministic: Bool]() raises:
+        def dispatch_vec_size[deterministic: Bool]() raises {imm}:
             comptime for param_vec_size in [8, 4, 2, 1]:
                 if vec_size == param_vec_size:
                     comptime for param_cluster in [1, 2, _MAX_CUTOFF_CLUSTER]:

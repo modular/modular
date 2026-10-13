@@ -65,7 +65,6 @@ from max.gpu import *
 from max.gpu.host import DeviceContext
 
 from internal_utils import CacheBustingBuffer, arg_parse
-from internal_utils._utils import InitializationType
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 
@@ -74,8 +73,6 @@ from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from std.random import random_float64, seed
 from std.testing import assert_almost_equal
-
-from std.utils.numerics import min_or_neg_inf
 
 
 def _build_tag_space_qk[

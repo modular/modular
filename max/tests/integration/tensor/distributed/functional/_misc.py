@@ -298,6 +298,9 @@ class _Cond:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_non_distributed_true(self) -> None:
         """Happy path: cond true branch using DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -312,6 +315,9 @@ class _Cond:
         )
         np.testing.assert_allclose(result[0].to_numpy(), [4.0, 6.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_non_distributed_false(self) -> None:
         """Happy path: cond false branch using DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -352,6 +358,9 @@ class _WhileLoop:
         )
         np.testing.assert_allclose(result[1].to_numpy(), [4.0, 5.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_while_loop_chained_result(self) -> None:
         """While_loop result feeds into further DF ops."""
         counter = Tensor.full([], 0, dtype=DType.float32, device=CPU())
@@ -370,6 +379,9 @@ class _WhileLoop:
         )
         np.testing.assert_allclose(doubled.to_numpy(), [6.0, 6.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_result_chained(self) -> None:
         """Cond result feeds into further DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -386,6 +398,9 @@ class _WhileLoop:
         squared = F.mul(result[0], result[0])
         np.testing.assert_allclose(squared.to_numpy(), [9.0, 16.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_new_tensor_in_branch(self) -> None:
         """Branch creates a NEW tensor (not just captured outer ones)."""
         device = DeviceRef.from_device(CPU())
@@ -400,6 +415,9 @@ class _WhileLoop:
             result[0].to_numpy(), [1.0, 1.0, 1.0], rtol=1e-5
         )
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_multiple_outputs(self) -> None:
         """Cond with two output tensors."""
         device = DeviceRef.from_device(CPU())

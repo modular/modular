@@ -166,6 +166,9 @@ class Glm5_2MTPProposer:
             batch.ep_inputs,
             prev_topk_indices=draft_input.reuse,
             reuse_prev_topk=True,
+            # Every step reuses step 0's selection, made for the token one
+            # position before step 1's.
+            selection_lag=index,
             split_prefix=f"{self.split_prefix}_draft_step{index}",
         )
         return Proposed(

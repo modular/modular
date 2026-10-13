@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_up, ceildiv
+from std.math import align_up
 from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
 from std.sys import (
     align_of,
@@ -62,6 +62,7 @@ from layout.layout_tensor import (
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tile_layout import Layout as TileLayout
 from layout.tile_tensor import lt_to_tt, stack_allocation
+from layout.tile_io import copy_local_to_shared as tile_io_copy_local_to_shared
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 
 from std.utils import StaticTuple
@@ -123,7 +124,6 @@ def warp_split_k_reduction[
     comptime assert c_reg_tile.static_shape[1] > 0
     comptime assert c_reg_tile.static_stride[1] == 1
     comptime assert c_reg_tile.static_stride[0] == c_reg_tile.static_shape[1]
-    comptime red_layout = Layout.row_major(1, num_threads_per_warp_k_part)
     comptime red_layout_native = row_major[1, num_threads_per_warp_k_part]()
 
     comptime num_mmas = c_layout.static_shape[0]
@@ -142,9 +142,9 @@ def warp_split_k_reduction[
             row_major[1, BM * BN](),
         )
         if i_red <= warp_k_part_id < 2 * i_red:
-            copy_local_to_shared[thread_layout=red_layout](
-                red_tb_smem.to_layout_tensor().vectorize[1, c_frag_size](),
-                c_reg_tile.to_layout_tensor().vectorize[1, c_frag_size](),
+            tile_io_copy_local_to_shared[thread_layout=red_layout_native](
+                red_tb_smem.vectorize[1, c_frag_size](),
+                c_reg_tile.vectorize[1, c_frag_size](),
             )
         barrier()
         if warp_k_part_id < i_red:
@@ -370,11 +370,9 @@ def multistage_mma[
                     b_smem_iter.linear_uint_type(stage)
                 )[]
 
-                if num_b_rows:
-                    var num_rows_bound = (
-                        num_b_rows.value() if transpose_b else max(
-                            0, num_b_rows.value() - stage * BK
-                        )
+                if case .Some(num_b_rows) = num_b_rows:
+                    var num_rows_bound = num_b_rows if transpose_b else max(
+                        0, num_b_rows - stage * BK
                     )
                     var b_tensor = _mask_tensor_row(b_iter[], num_rows_bound)
                     _copy_tensor_to_sram[async_copy_b_layout, swizzle_b](
@@ -494,11 +492,12 @@ def multistage_mma[
                                     )[]
                                 )
 
-                                if num_b_rows:
-                                    var num_rows_bound = num_b_rows.value() if transpose_b else max(
-                                        0,
-                                        num_b_rows.value()
-                                        - prefetch_tile_id * BK,
+                                if case .Some(num_b_rows) = num_b_rows:
+                                    var num_rows_bound = (
+                                        num_b_rows if transpose_b else max(
+                                            0,
+                                            num_b_rows - prefetch_tile_id * BK,
+                                        )
                                     )
                                     var b_tensor = _mask_tensor_row(
                                         b_iter[], num_rows_bound
@@ -616,12 +615,11 @@ def multistage_mma[
                                 )
                             )[]
 
-                            if num_b_rows:
+                            if case .Some(num_b_rows) = num_b_rows:
                                 var num_rows_bound = (
-                                    num_b_rows.value() if transpose_b else max(
+                                    num_b_rows if transpose_b else max(
                                         0,
-                                        num_b_rows.value()
-                                        - prefetch_tile_id * BK,
+                                        num_b_rows - prefetch_tile_id * BK,
                                     )
                                 )
                                 var b_tensor = _mask_tensor_row(
@@ -656,12 +654,14 @@ def multistage_mma[
                                 transpose_b_next or b_type.is_half_float()
                             ) and is_nvidia_gpu()
 
-                            if num_b_rows:
+                            if case .Some(num_b_rows) = num_b_rows:
                                 # TODO: can we guard at compile time num_b_rows is set here?
-                                var num_rows_bound = num_b_rows.value() if transpose_b_next else max(
-                                    0,
-                                    num_b_rows.value()
-                                    - (prefetch_tile_id - num_iters) * BK,
+                                var num_rows_bound = (
+                                    num_b_rows if transpose_b_next else max(
+                                        0,
+                                        num_b_rows
+                                        - (prefetch_tile_id - num_iters) * BK,
+                                    )
                                 )
 
                                 var b_tensor = _mask_tensor_row(
@@ -1150,12 +1150,12 @@ def _multistage_gemm_kernel_impl[
         comptime if has_compute_fn:
             var out = compute_fn[
                 c_type, width, alignment=alignment // size_of[c_type]()
-            ](Index(m, n), vec.cast[c_type]())
+            ]((m, n), vec.cast[c_type]())
             c_tt.store_linear[alignment=alignment](Index(m, n), out)
         else:
             apply_elementwise_epilogue[
                 elementwise_lambda_fn, alignment=alignment
-            ](epilogue_fn, Index(m, n), vec)
+            ](epilogue_fn, (m, n), vec)
 
     @inline(.always)
     def apply_epilogue() {imm}:
@@ -1417,7 +1417,6 @@ def multistage_gemm_split_k_kernel[
     b_linear_idx_type: DType,
     workspace_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[c_type, CLT, MutAnyOrigin, linear_idx_type=c_linear_idx_type],
     a: TileTensor[

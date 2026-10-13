@@ -25,7 +25,7 @@ from std.sys import size_of
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
 
@@ -151,7 +151,7 @@ def dispatch_sm100_conv2d[
         output_type: Data type of the output tensor.
         filter_is_fcrs: If True, filter is FCRS layout; otherwise RSCF.
         elementwise_lambda_fn: Optional void epilogue lambda applied after
-            output write. Signature: `def(IndexList[2], SIMD) -> None`.
+            output write. Signature: `def(Coord, SIMD) -> None`.
         has_residual: If True, fuse residual add D = Conv(A,B) + beta*C.
 
     Args:

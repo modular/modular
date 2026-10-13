@@ -15,8 +15,11 @@
 Implements FA2 and FA3 flash-attention for NVIDIA and AMD GPUs, a naive
 two-BMM reference path, split-K decode partitioning, and the host-side
 dispatch layer (`flash_attention_dispatch`) that selects among them based
-on dtype, head depth, and target architecture. Dispatch uses `TileTensor`
-operands; the legacy FA2 kernels still use `LayoutTensor` iterators.
+on dtype, head depth, and target architecture. Dispatch, register tiles,
+and softmax/MMA fragments are `TileTensor`-native; the residual
+`LayoutTensor` use is the iterator-driven pipeline (gmem/smem
+`LayoutTensorIter`s) and the legacy fp32->half downcast copies, which
+have no TileTensor equivalent yet.
 """
 
 from std.math import ceildiv, recip
@@ -28,7 +31,6 @@ from std.sys import (
     CompilationTarget,
     align_of,
     get_defined_bool,
-    get_defined_int,
     has_amd_rdna_gpu_accelerator,
     default_accelerator,
     is_amd_gpu,
@@ -44,7 +46,6 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from max.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from std.bit import next_power_of_two
 from max.gpu import (
@@ -69,7 +70,6 @@ from max.gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
-    lt_to_tt_idx,
     Coord,
     Idx,
     IntTuple,
@@ -84,6 +84,8 @@ from layout import (
     coord_to_index_list,
 )
 from layout.layout import *
+from layout.tile_io import copy_local_to_dram as copy_local_to_dram_native
+from layout.tile_layout import Layout as TileLayout
 from layout.layout_tensor import (
     LayoutTensorIter,
     copy_dram_to_sram_async,
@@ -177,7 +179,6 @@ from nn.softmax import (
     _online_softmax_iter_for_mma_output,
     _online_softmax_iter_for_mma_output_split_warp_reduce,
     _softmax_gpu,
-    softmax_inline,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -664,10 +665,10 @@ def _flash_attention_kv_cache[
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
 
-        if q_max_seq_len:
-            max_prompt_len = q_max_seq_len.value()
-        elif decode_dispatch_metadata:
-            max_prompt_len = decode_dispatch_metadata.value().q_max_seq_len
+        if case .Some(q_max_seq_len) = q_max_seq_len:
+            max_prompt_len = q_max_seq_len
+        elif case .Some(decode_dispatch_metadata) = decode_dispatch_metadata:
+            max_prompt_len = decode_dispatch_metadata.q_max_seq_len
         else:
             max_prompt_len = Int(k.max_prompt_length())
 
@@ -1030,18 +1031,16 @@ def flash_attention_dispatch[
             # keeps prefill on the raw argument.
             var fa4_max_cache_len = max_cache_valid_length
             if is_token_generation:
-                if decode_dispatch_metadata:
-                    fa4_max_cache_len = (
-                        decode_dispatch_metadata.value().max_cache_valid_length
-                    )
+                if case .Some(decode_metadata) = decode_dispatch_metadata:
+                    fa4_max_cache_len = decode_metadata.max_cache_valid_length
             # An explicit `num_partitions` is forwarded verbatim as FA4's exact
             # partition count (`0` == auto), not snapped to the `_bucket_ws`
             # ladder; honoring it forces a BM < 256 route, since the 2Q config
             # has no split-K mechanism. `dispatch_metadata.num_partitions` is
             # unused here -- FA4 sizes its own auto P.
             var fa4_num_partitions: Int = 0
-            if num_partitions:
-                fa4_num_partitions = num_partitions.value()
+            if case .Some(num_partitions) = num_partitions:
+                fa4_num_partitions = num_partitions
             # d256/d512 large-prefill carveout: a long prompt goes to the
             # pair-CTA `mha_sm100_depth512_dispatch`; short prefill and all
             # decode fall through to FA4 below. The `comptime if` is
@@ -1319,7 +1318,7 @@ def flash_attention_dispatch[
                                     .as_unsafe_any_origin()
                                     .ptr
                                 )
-                                if kv_input_row_offsets:
+                                if case .Some(offsets) = kv_input_row_offsets:
                                     mha_prefill_v2_ragged[
                                         config=v2_config,
                                         cross_attention=True,
@@ -1332,9 +1331,7 @@ def flash_attention_dispatch[
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
-                                        kv_input_row_offsets.value()
-                                        .as_unsafe_any_origin()
-                                        .ptr,
+                                        offsets.as_unsafe_any_origin().ptr,
                                         max_prompt_len,
                                         batch_size,
                                         ctx,
@@ -1358,7 +1355,7 @@ def flash_attention_dispatch[
                                         sw_ptr,
                                     )
                             else:
-                                if kv_input_row_offsets:
+                                if case .Some(offsets) = kv_input_row_offsets:
                                     mha_prefill_v2_ragged[
                                         config=v2_config, cross_attention=True
                                     ](
@@ -1369,9 +1366,7 @@ def flash_attention_dispatch[
                                         mask_functor,
                                         scale,
                                         q_off_ptr,
-                                        kv_input_row_offsets.value()
-                                        .as_unsafe_any_origin()
-                                        .ptr,
+                                        offsets.as_unsafe_any_origin().ptr,
                                         max_prompt_len,
                                         batch_size,
                                         ctx,
@@ -1554,8 +1549,8 @@ def flash_attention_dispatch[
                 var num_q_rows = q_num_matrix_view_rows(q)
 
                 var dispatch_metadata: MHADecodeDispatchMetadata
-                if decode_dispatch_metadata:
-                    dispatch_metadata = decode_dispatch_metadata.value()
+                if case .Some(decode_metadata) = decode_dispatch_metadata:
+                    dispatch_metadata = decode_metadata
                 else:
                     dispatch_metadata = (
                         MHADecodeDispatchMetadata.from_runtime_values[
@@ -1602,8 +1597,8 @@ def flash_attention_dispatch[
                 # For explicit/override partition counts we do not over-launch,
                 # so max == actual.
                 var max_num_partitions_value: Int
-                if num_partitions:
-                    num_partitions_value = num_partitions.value()
+                if case .Some(num_partitions) = num_partitions:
+                    num_partitions_value = num_partitions
                     max_num_partitions_value = num_partitions_value
                 elif (
                     dispatch_metadata.num_partitions > 0
@@ -2675,8 +2670,7 @@ def mha[
 
         # this is used for cross attention where we get the num_keys
         # from kv_input_row_offsets. This is when num_keys != seq_len
-        if kv_input_row_offsets:
-            var kv_row_offsets = kv_input_row_offsets.value()
+        if case .Some(kv_row_offsets) = kv_input_row_offsets:
             var kv_seq_start = Int(kv_row_offsets[batch_idx])
             var kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
             var cur_kv_len = kv_seq_end - kv_seq_start
@@ -3020,17 +3014,12 @@ def mha_single_batch[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile_native = stack_allocation[
+    var p_reg_tile = stack_allocation[
         accum_type, address_space=.LOCAL, alignment=p_frag_align
     ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
-    var output_reg_tile_native = stack_allocation[
+    var output_reg_tile = stack_allocation[
         accum_type, address_space=.LOCAL, alignment=p_frag_align
     ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0)
-    # Copy helpers still require these legacy scalar views.
-    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
-    var output_reg_tile = (
-        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
-    )
 
     # Rowwise max and sum for online softmax
     comptime row_alignment = align_of[
@@ -3263,9 +3252,7 @@ def mha_single_batch[
             static_num_iters=ufloordiv(depth, BK),
             k_group_size=config.k_group_size,
         ](
-            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                p_reg_tile
-            ),
+            p_reg_tile,
             q_smem_iter,
             k_smem_iter,
             q_smem_iter,
@@ -3360,9 +3347,9 @@ def mha_single_batch[
         # Increment mask to next BM x BN block.
         mask_warp_col += UInt32(BN)
 
-        comptime reg_layout_by_mma_unit = Layout.row_major(
+        comptime reg_layout_by_mma_unit = row_major[
             2 * num_m_mmas * num_n_mmas, 2
-        )
+        ]()
         _online_softmax_iter_for_mma_output[
             accum_type,
             # score layout by mma unit
@@ -3373,11 +3360,11 @@ def mha_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                output_reg_tile.reshape[reg_layout_by_mma_unit]()
+            output_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
+                reg_layout_by_mma_unit
             ).vectorize[1, 2](),
-            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            p_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
+                reg_layout_by_mma_unit
             ).vectorize[1, 2](),
             warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
@@ -3449,9 +3436,7 @@ def mha_single_batch[
                 static_num_iters=ufloordiv(BN, BK),
                 k_group_size=config.k_group_size,
             ](
-                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                    output_reg_tile
-                ),
+                output_reg_tile,
                 p_smem_iter,
                 v_smem_iter,
                 p_smem_iter,
@@ -3462,7 +3447,9 @@ def mha_single_batch[
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
             # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-            var p_reg_iter = p_reg_tile.tiled_iterator[
+            # Retained legacy: multistage_mma takes a LayoutTensorIter for
+            # its A operand; there is no TileTensor iterator equivalent yet.
+            var p_reg_iter = p_reg_tile.to_layout_tensor().tiled_iterator[
                 MMA_K // MMA_N * num_m_mmas, p_frag_size
             ](0, 0)
 
@@ -3483,9 +3470,7 @@ def mha_single_batch[
                 static_num_iters=ufloordiv(BN, BK),
                 k_group_size=config.k_group_size,
             ](
-                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                    output_reg_tile
-                ),
+                output_reg_tile,
                 p_reg_iter,
                 v_smem_iter,
                 p_smem_iter,
@@ -3531,6 +3516,9 @@ def mha_single_batch[
         Int(warp_y), Int(warp_x)
     )
 
+    # The FP32 -> half downcast copy still lives on the legacy path.
+    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
+
     # Write to global memory.
     comptime if output_type.is_half_float():
         comptime swizzle = make_swizzle[
@@ -3550,7 +3538,7 @@ def mha_single_batch[
             thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.vectorize[1, 2]().transpose(),
+            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
         )
 
         # Guard writing to shared memory.
@@ -3570,10 +3558,59 @@ def mha_single_batch[
             accum_smem_tile.vectorize[1, simd_size](),
         )
     else:
-        copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
-            output_gmem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.vectorize[1, 2]().transpose(),
-        )
+        var native_output_written = False
+        comptime if (
+            is_nvidia_gpu()
+            and q_type == .float32
+            and output_type == .float32
+            and accum_type == .float32
+            and MMA_M == 16
+            and MMA_N == 8
+            and p_frag_size == 4
+            and BM > 0
+            and WM > 0
+            and WN > 0
+            and depth > 0
+            and num_heads > 0
+            and WM % 16 == 0
+            and WN % 8 == 0
+            and depth % 2 == 0
+            and BM == num_warps_m * WM
+            and depth == num_warps_n * WN
+            and num_heads * depth <= 2147483647 // (BM + 1)
+        ):
+            var warp_row = Int(warp_y) * WM
+            var warp_col = Int(warp_x) * WN
+            # Keep the original vector-alignment admission contract.
+            if Int(output_ptr) % align_of[SIMD[output_type, 2]]() == 0:
+                var output_native_layout = TileLayout(
+                    Coord(Idx[WM], Idx[WN]),
+                    Coord(Int32(num_heads * depth), Idx[1]),
+                )
+                var output_native_tile = TileTensor[
+                    output_type,
+                    type_of(output_native_layout),
+                    MutAnyOrigin,
+                    linear_idx_type=.int32,
+                ](
+                    output_ptr
+                    + Int(q_offset)
+                    + warp_row * (num_heads * depth)
+                    + warp_col,
+                    output_native_layout,
+                )
+                copy_local_to_dram_native[row_major[8, 4]()](
+                    output_native_tile.vectorize[1, 2](),
+                    output_reg_tile.vectorize[1, 2]().transpose(),
+                    Int(q_tile_num_rows) - warp_row,
+                )
+                native_output_written = True
+
+        if not native_output_written:
+            copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
+                output_gmem_warp_tile.vectorize[1, 2](),
+                output_reg_tile_legacy.vectorize[1, 2]().transpose(),
+            )
 
 
 @__llvm_metadata(
@@ -3768,17 +3805,12 @@ def mha_single_batch_pipelined[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile_native = stack_allocation[
+    var p_reg_tile = stack_allocation[
         accum_type, address_space=.LOCAL, alignment=p_frag_align
     ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
-    var output_reg_tile_native = stack_allocation[
+    var output_reg_tile = stack_allocation[
         accum_type, address_space=.LOCAL, alignment=p_frag_align
     ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0)
-    # MMA and softmax helpers retain their legacy scalar views.
-    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
-    var output_reg_tile = (
-        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
-    )
 
     # Rowwise max and sum for online softmax
     comptime row_alignment = align_of[
@@ -3958,9 +3990,7 @@ def mha_single_batch_pipelined[
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
                 k_group_size=config.k_group_size,
             ](
-                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                    p_reg_tile
-                ),
+                p_reg_tile,
                 q_gmem_iter,
                 k_gmem_iter,
                 q_smem_iter,
@@ -3991,9 +4021,7 @@ def mha_single_batch_pipelined[
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
                 k_group_size=config.k_group_size,
             ](
-                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                    p_reg_tile
-                ),
+                p_reg_tile,
                 # Pass shared memory iterator to hint not loading from global memory.
                 q_smem_iter,
                 k_gmem_iter,
@@ -4100,9 +4128,9 @@ def mha_single_batch_pipelined[
         # Increment mask to next BM x BN block.
         mask_warp_col += UInt32(BN)
 
-        comptime reg_layout_by_mma_unit = Layout.row_major(
-            2 * num_m_mmas * num_n_mmas, 2
-        )
+        comptime reg_layout_by_mma_unit = row_major[
+            2 * num_m_mmas * num_n_mmas, p_frag_simdwidth
+        ]()
 
         _online_softmax_iter_for_mma_output[
             accum_type,
@@ -4114,11 +4142,11 @@ def mha_single_batch_pipelined[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                output_reg_tile.reshape[reg_layout_by_mma_unit]()
+            output_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
+                reg_layout_by_mma_unit
             ).vectorize[1, p_frag_simdwidth](),
-            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            p_reg_tile.reshape[type_of(reg_layout_by_mma_unit)](
+                reg_layout_by_mma_unit
             ).vectorize[1, p_frag_simdwidth](),
             warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
@@ -4157,9 +4185,7 @@ def mha_single_batch_pipelined[
                 prefetch_init=False,
                 k_group_size=config.k_group_size,
             ](
-                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                    output_reg_tile
-                ),
+                output_reg_tile,
                 p_smem_iter,
                 v_gmem_iter,
                 p_smem_iter,
@@ -4170,7 +4196,9 @@ def mha_single_batch_pipelined[
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
             # The num_n_mmas dim becomes "num_k_mmas" for 2nd mma.
-            var p_reg_iter = p_reg_tile.tiled_iterator[
+            # Retained legacy: multistage_mma takes a LayoutTensorIter for
+            # its A operand; there is no TileTensor iterator equivalent yet.
+            var p_reg_iter = p_reg_tile.to_layout_tensor().tiled_iterator[
                 MMA_K // MMA_N * num_m_mmas, p_frag_size
             ](0, 0)
 
@@ -4188,9 +4216,7 @@ def mha_single_batch_pipelined[
                 prefetch_init=False,
                 k_group_size=config.k_group_size,
             ](
-                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                    output_reg_tile
-                ),
+                output_reg_tile,
                 p_reg_iter,
                 v_gmem_iter,
                 p_smem_iter,
@@ -4235,6 +4261,8 @@ def mha_single_batch_pipelined[
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
         Int(warp_y), Int(warp_x)
     )
+    # The FP32 -> half downcast copy still lives on the legacy path.
+    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
 
     # Write to global memory.
     comptime if output_type.is_half_float():
@@ -4256,7 +4284,7 @@ def mha_single_batch_pipelined[
             thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.vectorize[1, 2]().transpose(),
+            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
         )
         barrier()
         copy_sram_to_dram[
@@ -4281,7 +4309,7 @@ def mha_single_batch_pipelined[
     else:
         copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
             output_gmem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.vectorize[1, 2]().transpose(),
+            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
         )
 
 
@@ -4668,7 +4696,7 @@ def scale_and_mask_helper[
     warp: Int,
     mask: mask_t,
     kv_tile_start_row: Int,
-):
+) where (p_reg_tile.rank == 2) & (p_reg_tile.flat_rank == 2):
     """Apply softmax scaling and masking to one P = Q·Kᵀ MMA result tile in registers.
 
     Multiplies each element by `scale_log2e` and then applies `mask` to
@@ -4676,9 +4704,6 @@ def scale_and_mask_helper[
     carry meaningful data; other threads return immediately. Designed for the
     decode inner loop where P is a 1-D column-vector across the key dimension.
     """
-    # The masking body still indexes through the legacy scalar view.
-    var p_reg_tile_legacy = p_reg_tile.to_layout_tensor()
-
     # Apply mask and scale to mma result. Only the first row (lane 0-3) has
     # meaningful data, other fragments are zero. The mask is an 1D vector.
     # The dimension of mask are assumed dynamic here so still using index calculation.
@@ -4714,26 +4739,23 @@ def scale_and_mask_helper[
                     kv_tile_start_row + key_offset + frag_lane_col + i
                 )
 
-                p_reg_tile_legacy[n_mma, i + i_group * simd_width] = mask.mask(
+                p_reg_tile[n_mma, i + i_group * simd_width] = mask.mask(
                     Index(
                         block_idx.z,
                         q_head_idx,
                         score_row,
                         score_col,
                     ),
-                    p_reg_tile_legacy[n_mma, i + i_group * simd_width]
+                    p_reg_tile[n_mma, i + i_group * simd_width]
                     * scale_log2e.cast[p_type](),
                 )
 
                 comptime if mask_t.apply_log2e_after_mask:
-                    p_reg_tile_legacy[n_mma, i + i_group * simd_width] = (
-                        p_reg_tile_legacy[n_mma, i + i_group * simd_width]
-                        * log2e
+                    p_reg_tile[n_mma, i + i_group * simd_width] = (
+                        p_reg_tile[n_mma, i + i_group * simd_width] * log2e
                     )
 
-                p_reg_tile_legacy[
-                    n_mma, i + i_group * simd_width
-                ] = _kernel_mask(
+                p_reg_tile[n_mma, i + i_group * simd_width] = _kernel_mask(
                     Index(score_row, score_col),
                     Index(
                         batch_cache_valid_length + 1,
@@ -4745,7 +4767,7 @@ def scale_and_mask_helper[
                         # led to correct output.
                         kv_tile_start_row + bound,
                     ),
-                    p_reg_tile_legacy[n_mma, i + i_group * simd_width],
+                    p_reg_tile[n_mma, i + i_group * simd_width],
                 )
 
 
@@ -5629,17 +5651,12 @@ def mha_decoding_single_batch_pipelined[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile_native = stack_allocation[
+    var p_reg_tile = stack_allocation[
         accum_type, address_space=.LOCAL, alignment=p_frag_align
     ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
-    var output_reg_tile_native = stack_allocation[
+    var output_reg_tile = stack_allocation[
         accum_type, address_space=.LOCAL, alignment=p_frag_align
     ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0.0)
-    # MMA and softmax helpers retain their legacy scalar views.
-    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
-    var output_reg_tile = (
-        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
-    )
 
     # Account for group query.
     comptime kv_num_heads = num_heads // group
@@ -5778,9 +5795,7 @@ def mha_decoding_single_batch_pipelined[
                 True,  # transpose_b
                 swizzle_a=True,
             ](
-                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                    p_reg_tile
-                ),
+                p_reg_tile,
                 q_gmem_iter,
                 k_gmem_iter,
                 q_smem_iter,
@@ -5800,9 +5815,7 @@ def mha_decoding_single_batch_pipelined[
                 True,  # transpose_b
                 swizzle_a=True,
             ](
-                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                    p_reg_tile
-                ),
+                p_reg_tile,
                 q_smem_iter,
                 k_gmem_iter,
                 q_smem_iter,
@@ -5818,9 +5831,7 @@ def mha_decoding_single_batch_pipelined[
             simd_width=p_frag_simdwidth,
             group=group,
         ](
-            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                p_reg_tile
-            ),
+            p_reg_tile,
             scale_log2e,
             num_keys,
             kv_tile_num_rows,
@@ -5840,13 +5851,11 @@ def mha_decoding_single_batch_pipelined[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                output_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
-                    0, 0
-                )
+            output_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
+                0, 0
             ).vectorize[1, p_frag_size // 2](),
-            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                p_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](0, 0)
+            p_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
+                0, 0
             ).vectorize[1, p_frag_size // 2](),
             warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
             rowmax,
@@ -5891,9 +5900,7 @@ def mha_decoding_single_batch_pipelined[
             False,  # transpose_b
             swizzle_a=True,
         ](
-            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                output_reg_tile
-            ),
+            output_reg_tile,
             p_smem_iter,
             v_gmem_iter,
             p_smem_iter,
@@ -5931,9 +5938,11 @@ def mha_decoding_single_batch_pipelined[
     comptime swizzle = make_swizzle[
         num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
+    # The FP32 -> half downcast copy still lives on the legacy path.
+    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
     copy_local_to_shared[thread_layout=Layout.row_major(8, 4), swizzle=swizzle](
         accum_smem_warp_tile.vectorize[1, 2](),
-        output_reg_tile.vectorize[1, 2]().transpose(),
+        output_reg_tile_legacy.vectorize[1, 2]().transpose(),
     )
     # Guard writing to shared memory.
     barrier()

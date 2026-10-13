@@ -37,10 +37,6 @@ modular_eager_py_test(
         "MODULAR_CUSTOM_OP_DEF_KERNELS_PATH": "$(rootpath //max/tests/integration/tensor/testdata/custom_op_def_kernels)",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
-    ignore_extra_deps = [
-        # lazy import
-        "//max/python/max/_interpreter_ops",
-    ],
     imports = ["."],
     per_test_shard_count = {
         "test_custom_op_def.py": 2,
@@ -58,7 +54,6 @@ modular_eager_py_test(
         "//max/python/max:_core",
         "//max/python/max:interpreter",
         "//max/python/max:tensor",
-        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -71,7 +66,7 @@ modular_eager_py_test(
     ],
 )
 
-# These test the default composite executor itself, so no executor override.
+# These test the composite executor itself.
 modular_eager_py_test(
     name = "tests_composite_executor",
     size = "large",
@@ -82,12 +77,9 @@ modular_eager_py_test(
     cpu_only = True,
     data = ["//max/tests/integration/Inputs/kernel_verification_ops"],
     env = {
+        "MAX_EAGER_EXECUTOR": "composite",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
-    ignore_extra_deps = [
-        # lazy import
-        "//max/python/max/_interpreter_ops",
-    ],
     imports = ["."],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
@@ -96,7 +88,6 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
@@ -150,9 +141,6 @@ modular_eager_py_test(
         "//conditions:default": ["//max/kernels/test/gpu/device_context:vec_add_cubin_sm80"],
     }),
     env = {
-        # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem),
-        # matching the sibling CPU suite above.
-        "MAX_EAGER_EXECUTOR": "fallback-internal",
         "MODULAR_CUSTOM_OP_DEF_KERNELS_PATH": "$(rootpath //max/tests/integration/tensor/testdata/custom_op_def_kernels)",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     } | select({
@@ -172,7 +160,6 @@ modular_eager_py_test(
     deps = [
         "//max/python/max:_core",
         "//max/python/max:tensor",
-        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -206,6 +193,7 @@ modular_py_test(
     srcs = ["test_reduce_add_rmsnorm_fusion.py"],
     gpu_constraints = ["//:b200_gpu"],
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -248,6 +236,7 @@ modular_py_test(
     srcs = ["test_cond_symbolic_dim_gpu.py"],
     gpu_constraints = ["//:b200_gpu"],
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-mypy",

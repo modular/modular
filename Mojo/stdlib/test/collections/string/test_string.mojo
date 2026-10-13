@@ -19,7 +19,7 @@ from std.collections.string.string_span import _to_string_list
 from std.math import isinf, isnan
 
 from std.memory import unsafe_memcpy
-from std.python import Python, PythonObject
+from std.python import Python
 from std.testing import (
     assert_equal,
     assert_false,

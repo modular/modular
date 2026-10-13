@@ -144,6 +144,10 @@ modular_py_test(
     per_test_tags = {
         "test_epilogue_fusion.py": ["postsubmit"],
     },
+    precompile_mefs = True,
+    precompile_shards = {
+        "test_resize_nearest.py": 8,
+    },
     tags = [
         "gpu",
     ],
@@ -235,6 +239,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     shard_count = 4,
     tags = [
         "gpu",
@@ -266,6 +271,7 @@ modular_py_test(
     # transitively through its own lazy internals; optional at runtime, like
     # the experimental package's own ignore_extra_deps for the same target.
     ignore_unresolved_imports = ["max.engine.InferenceSession"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -387,6 +393,7 @@ modular_py_test(
         "test.resources:gpu-memory": "1",
     },
     gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         ":buffer_create_init_shared",
@@ -498,6 +505,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -521,6 +529,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -545,6 +554,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
@@ -590,6 +600,14 @@ modular_py_test(
     ],
     # The checks read the IR dump a compile writes, which a cache hit skips.
     env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    # The checks target a virtual device, so the host CPU doesn't matter; run
+    # them on m7i only.
+    # TODO(SDLC-4684): run on asan in a scheduled tier once CI supports one.
+    tags = [
+        "skip-ci-asan",
+        "skip-ci-m7g",
+        "skip-ci-ubsan",
+    ],
     # The virtual CUDA (sm_100a) graphs need the NVPTX compiler to elaborate
     # kernels, which is Linux-only (CUDACompilationDevice).
     target_compatible_with = select({
@@ -661,6 +679,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2743
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -693,6 +712,7 @@ modular_py_test(
         "//:amd_gpu": ["@platforms//:incompatible"],  # ROCm aborts on GPU trap
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
@@ -822,6 +842,7 @@ modular_py_test(
         "//:amd_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",

@@ -612,8 +612,8 @@ struct _FlashAttention[
 
         var sink_logit: Scalar[Self.dtype] = 0
         var do_sink = sink_weight is not None
-        if do_sink:
-            sink_logit = sink_weight.value()
+        if case .Some(weight) = sink_weight:
+            sink_logit = weight
 
         for m in range(count_m):
             var qk_row = TileTensor(qk_row_ptr, row_major(Int64(kv_seq_cnt)))
@@ -708,7 +708,7 @@ struct _FlashAttention[
         max_seq_len: Int,
         scale: Float32,
         sink_weights: OptionalReg[ImmutTileTensor1D[Self.dtype]] = None,
-        ctx: Optional[DeviceContext] = None,
+        ctx: Optional[DeviceContext.CPU] = None,
     ):
         var kv_group_count = num_heads // num_kv_heads
 
@@ -803,12 +803,12 @@ struct _FlashAttention[
                 if m >= seq_len:
                     continue
 
-                @__parameter
-                @__copy_capture(batch, batch_head, kv_head, head)
                 @inline(.always)
                 def get_nd_index[
                     is_kv: Bool = False
-                ](x: Int, y: Int) -> IndexList[Self.rank]:
+                ](x: Int, y: Int) {
+                    var batch, var kv_head, var head
+                } -> IndexList[Self.rank]:
                     comptime if Self.rank == 4:
                         return IndexList[Self.rank](
                             batch, x, kv_head if is_kv else head, y
@@ -816,20 +816,19 @@ struct _FlashAttention[
                     else:
                         return IndexList[Self.rank](batch, x, y)
 
-                @__parameter
-                @__copy_capture(batch, head)
                 @inline(.always)
                 def get_mask_nd_index(
                     x: Int, y: Int
-                ) -> IndexList[Self.mask_rank]:
-                    comptime if Self.mask_rank == 4:
-                        return IndexList[Self.mask_rank](batch, head, x, y)
-                    elif Self.mask_rank == 3:
-                        return IndexList[Self.mask_rank](batch, x, y)
-                    elif Self.mask_rank == 2:
-                        return IndexList[Self.mask_rank](x, y)
-                    else:
-                        return IndexList[Self.mask_rank]()
+                ) {var batch, var head} -> IndexList[Self.mask_rank]:
+                    comptime match Self.mask_rank:
+                        case 4:
+                            return IndexList[Self.mask_rank](batch, head, x, y)
+                        case 3:
+                            return IndexList[Self.mask_rank](batch, x, y)
+                        case 2:
+                            return IndexList[Self.mask_rank](x, y)
+                        case _:
+                            return IndexList[Self.mask_rank]()
 
                 var count_m = min(Self._config.block_m, seq_len - m)
                 var count_n = min(Self._config.o_block_n, depth_dim - n)
@@ -890,8 +889,8 @@ struct _FlashAttention[
                         )
 
                     var sink_weight: Optional[Scalar[Self.dtype]] = None
-                    if sink_weights:
-                        sink_weight = sink_weights.value()[head][0]
+                    if case .Some(sink_weights) = sink_weights:
+                        sink_weight = sink_weights[head][0]
 
                     Self._online_softmax[mask_2d_fn](
                         qk_block_ptr,
@@ -990,7 +989,7 @@ def _flash_attention[
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime assert q.rank == q.flat_rank == rank
     comptime assert output.rank == output.flat_rank == rank
@@ -1099,7 +1098,7 @@ def flash_attention[
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes scaled dot-product flash attention on CPU for the given query, key, value, and mask accessors.
 
@@ -1173,7 +1172,7 @@ def flash_attention_split_kv[
     mask_shape: IndexList[mask_rank],
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     scale: Float32,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Variant of flash attention that takes the previous KV cache
     `input_{k,v}_cache_fn` and the current KV tensors `input_k_fn` and
@@ -1257,7 +1256,6 @@ def flash_attention_split_kv[
 
         @inline(.always)
         @__copy_capture(kv_cache_len)
-        @__parameter
         def load_from_split_cache[
             curr_fn: def[simd_width: Int, rank: Int](
                 IndexList[rank]
@@ -1267,7 +1265,7 @@ def flash_attention_split_kv[
             ) capturing -> SIMD[dtype, simd_width],
             rank: Int,
             simd_width: Int,
-        ](idx: IndexList[rank]) -> SIMD[dtype, simd_width]:
+        ](idx: IndexList[rank]) {imm} -> SIMD[dtype, simd_width]:
             # Load directly from either `curr_fn` or `cache_fn` depending on the
             # sequence index.
             # Boundary condition handling is done by the caller since

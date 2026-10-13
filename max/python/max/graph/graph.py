@@ -558,7 +558,8 @@ class Module:
     same ``module=`` argument adds each graph as a top-level op in this
     module.
 
-    Example:
+    For example, build two graphs into a shared module, load them in one
+    compilation unit, then execute both:
 
     .. code-block:: python
 
@@ -966,28 +967,27 @@ class Graph:
         :meth:`~max.nn.Module.build_subgraph`, which handles weight prefixes
         automatically.
 
-        Examples:
-            Define a subgraph that adds 1 to every element, then call it on a
-            graph input:
+        For example, define a subgraph that adds 1 to every element, then
+        call it on a graph input:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                from max.dtype import DType
-                from max.graph import Graph, ops
-                from max.graph.type import TensorType, DeviceRef
+            from max.dtype import DType
+            from max.graph import Graph, ops
+            from max.graph.type import TensorType, DeviceRef
 
-                input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
+            input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
 
-                with Graph("main", input_types=[input_type]) as graph:
-                    with graph.add_subgraph(
-                        "add_one", input_types=[input_type]
-                    ) as sub:
-                        x = sub.inputs[0].tensor
-                        one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
-                        sub.output(ops.elementwise.add(x, one))
+            with Graph("main", input_types=[input_type]) as graph:
+                with graph.add_subgraph(
+                    "add_one", input_types=[input_type]
+                ) as sub:
+                    x = sub.inputs[0].tensor
+                    one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
+                    sub.output(ops.elementwise.add(x, one))
 
-                    result = ops.call(sub, graph.inputs[0])
-                    graph.output(*result)
+                result = ops.call(sub, graph.inputs[0])
+                graph.output(*result)
 
         Args:
             name: The name identifier for the subgraph. Must be unique within
@@ -1388,21 +1388,21 @@ class Graph:
         until ``output()`` has been called. Subsequent calls to
         :attr:`output_types` read back the types of the values passed here.
 
-        Examples:
-            Build a graph that doubles its input and set the output:
+        For example, build a graph that doubles its input and set the
+        output:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                from max.dtype import DType
-                from max.graph import DeviceRef, Graph, ops
-                from max.graph.type import TensorType
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, ops
+            from max.graph.type import TensorType
 
-                input_type = TensorType(DType.float32, [4], DeviceRef.CPU())
+            input_type = TensorType(DType.float32, [4], DeviceRef.CPU())
 
-                with Graph("double", input_types=[input_type]) as graph:
-                    x = graph.inputs[0].tensor
-                    two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
-                    graph.output(ops.elementwise.mul(x, two))
+            with Graph("double", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+                two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
+                graph.output(ops.elementwise.mul(x, two))
 
         Args:
             outputs: The output values of the graph. Each value may be a

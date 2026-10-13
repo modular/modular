@@ -26,7 +26,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.moe.moe import ClampedSwiGLU
+from max.nn.activation import GatedActivation
+from max.nn.moe.quant_strategy import _gated_activation_ops
 from max.pipelines.architectures.glm5_next.layers.clamped_swiglu import (
     clamped_swiglu,
 )
@@ -72,7 +73,7 @@ def activation_then_clamp(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
 def gpt_oss_variant(
     gate: torch.Tensor, up: torch.Tensor, alpha: float = 1.702
 ) -> torch.Tensor:
-    """What ``_swigluoai_activation`` does: an ``alpha`` and a ``+1`` bias."""
+    """What ``swigluoai`` does: an ``alpha`` and a ``+1`` bias."""
     gate_c = torch.clamp(gate, max=LIMIT)
     up_c = torch.clamp(up, min=-LIMIT, max=LIMIT)
     return gate_c * torch.sigmoid(alpha * gate_c) * (up_c + 1.0)
@@ -155,30 +156,24 @@ def test_max_implementation_matches_the_reference(
     )
 
 
-def test_glm_clamped_swiglu_matches_the_reference(
+def test_moe_activation_matches_the_reference(
     halves: tuple[torch.Tensor, torch.Tensor],
 ) -> None:
-    """``ClampedSwiGLU`` (the MoE's declarative activation marker) against
-    the transcribed reference, on the concatenated ``[gate | up]`` layout the
-    non-fused MoE paths call it with (`moe_fp8.py`'s ``_expert_matmuls`` and
-    ``_local_ep_compute`` fallback branch, `moe.py`'s base-class paths).
-
-    This is the object `Glm5NextMoE` now sets as ``gated_activation_fn``
-    instead of the ad hoc closure this module used to build; it must agree
-    with the same oracle, including past the clamp bound.
+    """The MoE's fused ``silu`` activation with a ``limit``, as the FP8 expert
+    path builds it from graph ops on ``[gate | up]`` rows, against the
+    transcribed reference, including past the clamp bound.
     """
     gate, up = halves
-    moe_dim = GATE.shape[1]
     gate_up = torch.cat([gate, up], dim=1)
 
-    activation = ClampedSwiGLU(LIMIT)
+    activation = GatedActivation("silu", limit=LIMIT)
     device = DeviceRef.CPU()
     spec = TensorType(
         DType.float32, shape=(gate_up.shape[0], gate_up.shape[1]), device=device
     )
     with Graph("glm_clamped_swiglu", input_types=[spec]) as graph:
         (x,) = graph.inputs
-        graph.output(activation(x.tensor, moe_dim))
+        graph.output(_gated_activation_ops(x.tensor, activation))
 
     session = InferenceSession(devices=[CPU()])
     model = session.load(graph)

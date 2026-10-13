@@ -778,3 +778,145 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 8. By copying, installing or otherwise using Python, Licensee agrees
    to be bound by the terms and conditions of this License Agreement.
+
+19. Licensee's use of a derivative work of FreeBSD msun (Sun Microsystems fdlibm) is subject to the following terms and conditions.
+   All third-party software packages are copyright by their respective authors.
+   The Mojo standard library math module (std.math) contains code derived from FreeBSD msun (Sun Microsystems fdlibm).
+
+   From FreeBSD msun s_erf.c:
+   Portions of the Mojo standard library math module are derived from FreeBSD
+   msun (Sun Microsystems fdlibm), which carries the following notices.
+
+   ====================================================
+   Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+   Developed at SunSoft, a Sun Microsystems, Inc. business.
+   Permission to use, copy, modify, and distribute this
+   software is freely granted, provided that this notice
+   is preserved.
+   ====================================================
+
+   ====================================================
+   Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+   Developed at SunPro, a Sun Microsystems, Inc. business.
+   Permission to use, copy, modify, and distribute this
+   software is freely granted, provided that this notice
+   is preserved.
+   ====================================================
+
+   From FreeBSD msun e_exp.c:
+   ====================================================
+   Copyright 2004 Sun Microsystems, Inc.  All Rights Reserved.
+
+   Permission to use, copy, modify, and distribute this
+   software is freely granted, provided that this notice
+   is preserved.
+   ====================================================
+
+   ====================================================
+   Copyright (C) 2004 by Sun Microsystems, Inc. All rights reserved.
+
+   Permission to use, copy, modify, and distribute this
+   software is freely granted, provided that this notice
+   is preserved.
+   ====================================================
+
+   The float versions add: "Conversion to float by Ian Lance Taylor, Cygnus
+   Support, ian@cygnus.com."
+   The derived portions also carry these historical credits:
+
+   Conversion to float by Ian Lance Taylor, Cygnus Support,
+   ian@cygnus.com.
+
+   Conversion to float fixed By Steven G. Kargl.
+
+   Optimized by Bruce D. Evans.
+
+   Debugged and optimized by Bruce D. Evans.
+
+20. Licensee's use of a derivative work of musl is subject to the terms and conditions of the MIT license.
+   All third-party software packages are copyright by their respective authors.
+   The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
+   The Mojo standard library math module (std.math) contains code derived from musl (https://musl.libc.org/).
+
+   The MIT License (MIT)
+
+   Copyright © 2005-2020 Rich Felker, et al.
+
+   Permission is hereby granted, free of charge, to any person obtaining
+   a copy of this software and associated documentation files (the
+   "Software"), to deal in the Software without restriction, including
+   without limitation the rights to use, copy, modify, merge, publish,
+   distribute, sublicense, and/or sell copies of the Software, and to
+   permit persons to whom the Software is furnished to do so, subject to
+   the following conditions:
+
+   The above copyright notice and this permission notice shall be
+   included in all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+21. Licensee's use of a derivative work of SLEEF is subject to the terms and conditions of the Boost Software License 1.0.
+   All third-party software packages are copyright by their respective authors.
+   The Boost Software License 1.0 terms and conditions are hereby incorporated into the Agreement by this reference.
+   Used in the Mojo standard library math module.
+
+   Copyright Naoki Shibata and contributors 2010 - 2025.
+   Distributed under the Boost Software License, Version 1.0.
+
+   Boost Software License - Version 1.0 - August 17th, 2003
+
+   Permission is hereby granted, free of charge, to any person or organization
+   obtaining a copy of the software and accompanying documentation covered by
+   this license (the "Software") to use, reproduce, display, distribute,
+   execute, and transmit the Software, and to prepare derivative works of the
+   Software, and to permit third-parties to whom the Software is furnished to
+   do so, all subject to the following:
+
+   The copyright notices in the Software and this entire statement, including
+   the above license grant, this restriction and the following disclaimer,
+   must be included in all copies of the Software, in whole or in part, and
+   all derivative works of the Software, unless such copies or derivative
+   works are solely in the form of machine-executable object code generated by
+   a source language processor.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
+   SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
+   FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.
+
+22. Licensee's use of a derivative work of the Cephes Mathematical Library is subject to the following terms and conditions.
+   All third-party software packages are copyright by their respective authors.
+   Portions of the Mojo standard library math module are derived from the
+   Cephes Mathematical Library by Stephen L. Moshier
+   (https://www.netlib.org/cephes/).
+
+   Cephes Math Library Release 2.2:  June, 1992
+   Copyright 1985, 1987, 1988, 1992 by Stephen L. Moshier
+   Direct inquiries to 30 Frost Street, Cambridge, MA 02140
+
+   Cephes Math Library Release 2.8:  June, 2000
+   Copyright 1984, 1995, 2000 by Stephen L. Moshier
+
+   From the Cephes readme (https://www.netlib.org/cephes/readme):
+
+   Some software in this archive may be from the book _Methods and
+   Programs for Mathematical Functions_ (Prentice-Hall or Simon & Schuster
+   International, 1989) or from the Cephes Mathematical Library, a
+   commercial product. In either event, it is copyrighted by the author.
+   What you see here may be used freely but it comes with no support or
+   guarantee.
+
+   Stephen L. Moshier
+   moshier@na-net.ornl.gov

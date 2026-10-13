@@ -18,7 +18,7 @@
 # pivot). Memory-safety oracle (memcheck / redzone); values are irrelevant.
 
 from std.math import exp
-from std.random import rand, random_ui64, seed
+from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext

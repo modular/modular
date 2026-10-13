@@ -21,7 +21,7 @@ from std.math.uutils import umod, ufloordiv
 
 
 trait CoordLike(
-    Defaultable, ImplicitlyCopyable, TrivialRegisterPassable, Writable
+    Defaultable, ImplicitlyCopyable, Intable, TrivialRegisterPassable, Writable
 ):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
@@ -84,8 +84,17 @@ trait CoordLike(
         """
         ...
 
+    @inline(.always)
+    def __int__(self) -> Int:
+        """Convert this coordinate to an `Int`.
 
-struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
+        Returns:
+            The coordinate's scalar value as an `Int`.
+        """
+        return Int(self.value())
+
+
+struct ComptimeInt[val: Int](CoordLike):
     """Compile-time known index value.
 
     Parameters:
@@ -854,9 +863,10 @@ def crd2idx[
     """Calculate the linear index from a coordinate tuple.
 
     The dot product is computed at `out_type` precision (each `coord * stride`
-    term is evaluated after narrowing both operands to `out_type`). Callers
-    that pick a narrow `out_type` (e.g. `uint32`) are responsible for ensuring
-    every per-dim product and their sum fit in that type. The default
+    term is evaluated after narrowing both operands to `out_type`), and so is
+    splitting a scalar coordinate across a mode's sub-modes. Callers that pick
+    a narrow `out_type` (e.g. `uint32`) are responsible for ensuring the
+    coordinate, every per-dim product and their sum fit in that type. The default
     `DType.int64` is wide enough for realistic layouts. See `_crd2idx_flat`.
 
     Parameters:
@@ -900,25 +910,29 @@ def crd2idx[
 
             return result
         else:  # "int" tuple tuple
-            var crd_int: Int
+            # Split in `out_type`, like the dot product: an `Int` divide would
+            # widen every narrow index to 64 bits.
+            var crd_val: Scalar[out_type]
 
             comptime if Index.is_tuple:
-                crd_int = 0 if crd_len == 0 else Int(crd.tuple()[0].value())
+                crd_val = 0 if crd_len == 0 else Scalar[out_type](
+                    crd.tuple()[0].value()
+                )
             else:
-                crd_int = 0 if crd_len == 0 else Int(crd.value())
+                crd_val = 0 if crd_len == 0 else Scalar[out_type](crd.value())
 
             comptime last_elem_idx = shape_len - 1
 
             comptime for i in range(last_elem_idx):
                 var quotient, remainder = divmod(
-                    crd_int, Int(shape_t[i].product())
+                    crd_val, Scalar[out_type](shape_t[i].product())
                 )
                 result += crd2idx[out_type=out_type](
                     remainder, shape_t[i], stride_t[i]
                 )
-                crd_int = quotient
+                crd_val = quotient
             return result + crd2idx[out_type=out_type](
-                crd_int, shape_t[last_elem_idx], stride_t[last_elem_idx]
+                crd_val, shape_t[last_elem_idx], stride_t[last_elem_idx]
             )
     else:
         comptime if crd_len > 1:

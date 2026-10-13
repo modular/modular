@@ -13,7 +13,7 @@
 
 
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 
 from nn.argsort import argsort
 from std.testing import assert_equal, assert_false, assert_true

@@ -15,8 +15,7 @@
 Exercises every operation `DefaultEngine` provides against a host
 `Array` buffer: scalar and vectorized load/store round-trips through the
 pointer `unsafe_ptr` returns (with and without an element offset), `offset`,
-`distance`, `unsafe_cast` reinterpretation, and `unsafe_ptr` scalar-pointer
-extraction.
+`unsafe_cast` reinterpretation, and `unsafe_ptr` scalar-pointer extraction.
 """
 
 from std.testing import assert_equal, TestSuite
@@ -104,39 +103,10 @@ def test_unsafe_ptr_offset_load_store() raises:
     )
 
 
-def test_distance() raises:
-    var buf = Array[Float32, 8](fill=0.0)
-    var storage = buf.unsafe_ptr()
-    var offset_storage = DefaultEngine[element_width=1].offset(
-        storage, Coord(Int(3))
-    )
-
-    assert_equal(
-        DefaultEngine[element_width=1].distance(offset_storage, storage), 3
-    )
-    assert_equal(
-        DefaultEngine[element_width=1].distance(storage, offset_storage), -3
-    )
-    assert_equal(DefaultEngine[element_width=1].distance(storage, storage), 0)
-
-
-def test_distance_offset_round_trip() raises:
-    var buf = Array[Float32, 16](fill=0.0)
-    var storage = buf.unsafe_ptr()
-
-    for n in range(16):
-        var advanced = DefaultEngine[element_width=1].offset(
-            storage, Coord(Int(n))
-        )
-        assert_equal(
-            DefaultEngine[element_width=1].distance(advanced, storage), n
-        )
-
-
 def test_unsafe_cast() raises:
     var buf = Array[Float32, 2](fill=0.0)
     var storage: MutPointer[Float32, origin_of(buf)] = buf.unsafe_ptr()
-    storage.store(Float32(1.5))
+    storage.unsafe_store(Float32(1.5))
 
     # Reinterpret the float32 storage as uint32. No element conversion happens.
     var as_u32 = DefaultEngine[element_width=1].unsafe_cast[
@@ -145,11 +115,11 @@ def test_unsafe_cast() raises:
 
     # An independent pointer bitcast lands at the same address (distance 0)
     # and observes the same raw bits.
-    var expected = storage.bitcast[UInt32]()
-    assert_equal(DefaultEngine[element_width=1].distance(as_u32, expected), 0)
+    var expected = storage.unsafe_bitcast[UInt32]()
+    assert_equal(Int(as_u32) - Int(expected), 0)
     assert_equal(
-        DefaultEngine[element_width=1].unsafe_ptr(as_u32).load(),
-        expected.load(),
+        DefaultEngine[element_width=1].unsafe_ptr(as_u32).unsafe_load(),
+        expected.unsafe_load(),
     )
 
 

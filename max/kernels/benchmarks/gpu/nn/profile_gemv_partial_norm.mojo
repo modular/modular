@@ -41,14 +41,13 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.memory import alloc
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from internal_utils import assert_almost_equal
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from std.math import sqrt
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from internal_utils._cache_busting import CacheBustingBuffer
 from internal_utils._utils import InitializationType

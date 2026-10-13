@@ -18,7 +18,7 @@ from std.runtime import parallelism_level as std_parallelism_level
 from max.gpu.host import DeviceContext
 
 
-def parallelism_level(ctx: Optional[DeviceContext]) -> Int:
+def parallelism_level(ctx: Optional[DeviceContext.CPU]) -> Int:
     """Gets the parallelism level from a DeviceContext.
 
     For CPU contexts this returns the number of worker threads in the
@@ -33,9 +33,9 @@ def parallelism_level(ctx: Optional[DeviceContext]) -> Int:
     """
     from max.gpu.host import DeviceAttribute
 
-    if ctx:
+    if case .Some(ctx) = ctx:
         try:
-            return ctx.value().get_attribute(DeviceAttribute.PARALLELISM_LEVEL)
+            return ctx.get_attribute(DeviceAttribute.PARALLELISM_LEVEL)
         except:
             pass
     return std_parallelism_level()

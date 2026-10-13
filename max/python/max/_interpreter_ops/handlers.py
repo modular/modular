@@ -884,9 +884,10 @@ def _handle_squeeze_shape(
 ) -> Sequence[Buffer]:
     """Handle mo.squeeze_shape - computes shape with specified dimensions removed.
 
-    This is a CPU-side shape metadata operation. Given an input shape vector
-    and a list of indices, returns a new shape vector with the indicated
-    dimensions removed. The indicated dimensions must have size 1.
+    Given an input shape vector and a list of indices, returns a new shape
+    vector with the indicated dimensions removed. The indicated dimensions
+    must have size 1. The shape is computed on the host and the result is
+    placed on the op's target device.
 
     Args:
         op: The squeeze shape operation.
@@ -894,12 +895,14 @@ def _handle_squeeze_shape(
             indices tensor specifying which dimensions to remove.
 
     Returns:
-        List containing the new shape vector as a 1D si64 buffer.
+        List containing the new shape vector as a 1D buffer with the input
+        shape's dtype.
     """
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
 
-    input_shape = inputs[0].to_numpy().tolist()
+    input_np = inputs[0].to_numpy()
+    input_shape = input_np.tolist()
     remove_indices = inputs[1].to_numpy().tolist()
 
     rank = len(input_shape)
@@ -915,8 +918,8 @@ def _handle_squeeze_shape(
     result_shape = [
         dim for i, dim in enumerate(input_shape) if i not in normalized
     ]
-    result_np = np.array(result_shape, dtype=np.int64)
-    return [Buffer.from_numpy(result_np)]
+    result_np = np.array(result_shape, dtype=input_np.dtype)
+    return [Buffer.from_numpy(result_np).to(_get_target_device(op))]
 
 
 @register_op_handler(mo.UnsqueezeShapeOp)
@@ -926,10 +929,10 @@ def _handle_unsqueeze_shape(
 ) -> Sequence[Buffer]:
     """Handle mo.unsqueeze_shape - computes shape with size-1 dimensions inserted.
 
-    This is a CPU-side shape metadata operation. Given an input shape vector
-    of rank N and a list of M indices, returns a new shape vector of rank N+M
-    where the indicated positions are filled with 1 and the original dimensions
-    fill the remaining positions.
+    Given an input shape vector of rank N and a list of M indices, returns a
+    new shape vector of rank N+M where the indicated positions are filled with
+    1 and the original dimensions fill the remaining positions. The shape is
+    computed on the host and the result is placed on the op's target device.
 
     Args:
         op: The unsqueeze shape operation.
@@ -937,12 +940,14 @@ def _handle_unsqueeze_shape(
             padding indices tensor specifying where to insert size-1 dims.
 
     Returns:
-        List containing the new shape vector as a 1D si64 buffer.
+        List containing the new shape vector as a 1D buffer with the input
+        shape's dtype.
     """
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
 
-    input_shape = inputs[0].to_numpy().tolist()
+    input_np = inputs[0].to_numpy()
+    input_shape = input_np.tolist()
     padding_indices = inputs[1].to_numpy().tolist()
 
     new_rank = len(input_shape) + len(padding_indices)
@@ -964,8 +969,8 @@ def _handle_unsqueeze_shape(
             result_shape.append(int(input_shape[input_idx]))
             input_idx += 1
 
-    result_np = np.array(result_shape, dtype=np.int64)
-    return [Buffer.from_numpy(result_np)]
+    result_np = np.array(result_shape, dtype=input_np.dtype)
+    return [Buffer.from_numpy(result_np).to(_get_target_device(op))]
 
 
 @register_op_handler(mo.TransposeOp)
@@ -1941,13 +1946,12 @@ def _handle_max_pool(
 def _handle_tile(
     op: mo.TileOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.tile via rmo.MoTileOp with runtime repeats. CPU-only.
+    """Handle mo.tile via rmo.MoTileOp with runtime repeats.
 
-    Operands: input (device tensor), repeats (host int64 rank-1). Output
+    Operands: input (any device), repeats (host int64 rank-1;
+    ``to_numpy`` syncs a device-resident repeats to the host). Output
     shape[i] = input shape[i] * repeats[i].
     """
-    target_device = _get_target_device(op)
-    _check_cpu_only(op, target_device)
     assert isinstance(inputs[0], Buffer)
     assert isinstance(inputs[1], Buffer)
     input_buffer = inputs[0]
@@ -2055,11 +2059,12 @@ def _handle_roi_align(
 ) -> Sequence[Buffer]:
     """Dispatches eager roi_align to its GC model.
 
-    ``MO_HostOnly`` keeps every operand on CPU. ``aligned`` and ``mode`` are
-    MLIR attributes the GC kernel takes as comptime params, so they join
-    dtype in the model cache key (see ``roi_align_gc``'s module docstring);
-    the four numeric scalars stay ordinary runtime operands, re-materialized
-    at the dtypes the graph declares.
+    ``input``/``rois`` and the result live on the device inferred from the
+    first device operand; the four numeric scalars stay host-side. ``aligned``
+    and ``mode`` are MLIR attributes the GC kernel takes as comptime params, so
+    they join dtype in the model cache key (see ``roi_align_gc``'s module
+    docstring); the scalars stay ordinary runtime operands, re-materialized at
+    the dtypes the graph declares.
 
     Args:
         op: The roi_align operation.
@@ -2102,7 +2107,7 @@ def _handle_roi_align(
         )
 
     model = roi_align_gc.roi_align_model(
-        input_buffer.dtype, bool(op.aligned), mode_str
+        input_buffer.device, input_buffer.dtype, bool(op.aligned), mode_str
     )
     # Re-materialized at the dtypes the graph declares: one compiled graph
     # fixes int64 + float32.
@@ -2188,12 +2193,9 @@ def _handle_arg_nonzero(
 ) -> Sequence[Buffer]:
     """Dispatches eager arg_nonzero to its GC model.
 
-    ``MO_HostOnly`` keeps the input on CPU. The compiled graph is canonicalized
-    to rank 1: the handler flattens the input, runs the flat model, and unravels
-    the resulting flat indices back into ``[nnz, rank]`` row-major coordinates
-    against the input's real shape with ``np.unravel_index`` -- the op's shape
-    function computes the exact nonzero count, so the model sizes its own flat
-    output and the handler neither counts nor allocates.
+    The compiled graph preserves rank and uses symbolic dimensions, so the
+    kernel writes final ``[nnz, rank]`` coordinates directly on the input
+    device. The op's shape function computes the exact nonzero count.
 
     Args:
         op: The arg_nonzero operation.
@@ -2221,16 +2223,9 @@ def _handle_arg_nonzero(
     graph_dtype = (
         dtype if dtype.is_float() else gc_compile.uint_view_dtype(dtype)
     )
-    flat = input_buffer.view(graph_dtype, (prod(shape),))
-
-    model = nonzero_gc.nonzero_model(graph_dtype)
-    (flat_idx,) = model(flat)
-    flat_np = flat_idx.to_numpy().reshape(-1)
-    # np.unravel_index already returns int64, so astype would otherwise copy.
-    coords_np = np.stack(np.unravel_index(flat_np, shape), axis=-1).astype(
-        np.int64, copy=False
-    )
-    return [Buffer.from_numpy(coords_np)]
+    model = nonzero_gc.nonzero_model(input_buffer.device, graph_dtype, rank)
+    (coordinates,) = model(input_buffer.view(graph_dtype, shape))
+    return [coordinates]
 
 
 # Padding operations
@@ -2279,8 +2274,7 @@ def _handle_pad_constant(
 def _handle_pad_reflect(
     op: mo.PadReflectOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.reflect via rmo.MoPadReflectOp (CPU-only)."""
-    _check_cpu_only(op, _get_target_device(op))
+    """Handle mo.pad.reflect via rmo.MoPadReflectOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadReflectOp)
 
 
@@ -2288,8 +2282,7 @@ def _handle_pad_reflect(
 def _handle_pad_repeat(
     op: mo.PadRepeatOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.pad.repeat (edge pad) via rmo.MoPadRepeatOp (CPU-only)."""
-    _check_cpu_only(op, _get_target_device(op))
+    """Handle mo.pad.repeat (edge pad) via rmo.MoPadRepeatOp (CPU + GPU)."""
     return _handle_pad_via_gc(op, inputs, mo.PadRepeatOp)
 
 
@@ -2297,7 +2290,7 @@ def _handle_pad_repeat(
 def _handle_resize_linear(
     op: mo.ResizeLinearOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.resize.linear (CPU-only).
+    """Handle mo.resize.linear.
 
     Args:
         op: The resize-linear operation.
@@ -2326,7 +2319,9 @@ def _handle_resize_linear(
 def _handle_resize_nearest(
     op: mo.ResizeNearestOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.resize.nearest (CPU-only).
+    """Handle mo.resize.nearest.
+
+    Nearest runs on the input's device (CPU or accelerator).
 
     Args:
         op: The resize-nearest operation.
@@ -2351,14 +2346,29 @@ def _handle_resize_nearest(
     return model(input_buffer, size_buffer)
 
 
-# TODO(GEX-3990): GraphCompiler has no shape-fallback registration for
-# MO::ResizeBicubicOp (unlike Linear/Nearest); resize_ops.mojo has been
-# deleted rather than kept as a fallback that can't be reached.
 @register_op_handler(mo.ResizeBicubicOp)
 def _handle_resize_bicubic(
     op: mo.ResizeBicubicOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    raise NotImplementedError("resize_bicubic is not yet supported")
+    """Handle mo.resize.bicubic.
+
+    Runs on the input's device like nearest (single-device MO op with a
+    host ``size`` operand); the kernel is rank-4 only. Bicubic has no
+    variant attrs, so the cache key carries the empty variant.
+    """
+    input_buffer, size_buffer = inputs
+    assert isinstance(input_buffer, Buffer)
+    assert isinstance(size_buffer, Buffer)
+
+    rank = len(input_buffer.shape)
+    model = resize_gc.resize_model(
+        mo.ResizeBicubicOp,
+        input_buffer.device,
+        input_buffer.dtype,
+        rank,
+        resize_gc._NO_VARIANT,
+    )
+    return model(input_buffer, size_buffer)
 
 
 # Distributed operations

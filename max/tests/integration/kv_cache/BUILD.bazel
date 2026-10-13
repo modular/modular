@@ -116,6 +116,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -137,6 +138,14 @@ modular_py_test(
 modular_py_test(
     name = "test_chunked_staging_region_gpu",
     srcs = ["test_chunked_staging_region_gpu.py"],
+    env = {
+        # The HIP runtime backs pinned host allocations with movable user
+        # pages unless this is set, so without it the driver_alloc cases
+        # fail their startup check rather than exercising it. Harmless on
+        # NVIDIA/Apple, where nothing reads this variable, and the
+        # registered-path tests are unaffected either way.
+        "HSA_USERPTR_FOR_PAGED_MEM": "0",
+    },
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -144,7 +153,10 @@ modular_py_test(
     tags = [
         "gpu",
     ],
-    deps = ["//max/python/max/driver"],
+    deps = [
+        "//max/python/max/driver",
+        requirement("numpy"),
+    ],
 )
 
 # No kernels in the path, so this runs on Apple GPUs too.
@@ -171,10 +183,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max:tree",
         "//max/python/max/driver",
@@ -224,10 +237,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max:tree",
         "//max/python/max/driver",
@@ -251,10 +265,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
         "//max/python/max:tree",
         "//max/python/max/driver",
@@ -319,10 +334,11 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = _LORA_TEST_DEPS,
 )
 
@@ -336,9 +352,10 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
-    target_compatible_with = ["//:b200_gpu"],
     deps = _LORA_TEST_DEPS,
 )

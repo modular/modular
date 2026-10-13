@@ -696,7 +696,7 @@ struct _Accumulator[
 
         for l in range(length):
             # prefetch
-            comptime if prefetch_offset:
+            comptime if case .Some(prefetch_distance) = prefetch_offset:
                 comptime for j in range(Self.num_cols):
                     prefetch[
                         PrefetchOptions()
@@ -705,7 +705,7 @@ struct _Accumulator[
                         .to_data_cache()
                     ](
                         b_ptr
-                        + prefetch_offset.value() * kernel_width
+                        + prefetch_distance * kernel_width
                         + j * Self.simd_width
                     )
 
@@ -760,7 +760,7 @@ struct _Accumulator[
 
         for l in range(length):
             # prefetch
-            comptime if prefetch_offset:
+            comptime if case .Some(prefetch_distance) = prefetch_offset:
                 comptime for j in range(Self.num_cols):
                     prefetch[
                         PrefetchOptions()
@@ -769,7 +769,7 @@ struct _Accumulator[
                         .to_data_cache()
                     ](
                         b_ptr
-                        + prefetch_offset.value() * kernel_width
+                        + prefetch_distance * kernel_width
                         + j * Self.simd_width
                     )
 

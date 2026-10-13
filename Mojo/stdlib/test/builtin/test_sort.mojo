@@ -13,7 +13,12 @@
 
 from std.collections.string.string_span import _to_string_list
 from std.pathlib import _dir_of_current_file
-from std.random import rand, random_float64, random_si64, random_ui64, seed
+from std.random import (
+    random_float64,
+    random_si64,
+    random_ui64,
+    seed,
+)
 
 from std.builtin.sort import (
     _heap_sort,

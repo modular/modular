@@ -75,15 +75,18 @@ struct TypeList[
     comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
     """The low-level MLIR type of the type list."""
 
-    comptime length = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param_list.size<:`,
-            Self._mlir_type,
-            ` `,
-            +Self.values,
-            `> : index`,
-        ]
-    )
+    # Raw MLIR value for stdlib bootstrap users that cannot construct `Int` or
+    # `SIMDLength` yet.
+    comptime _raw_length: __mlir_type.index = __mlir_attr[
+        `#kgen.param_list.size<:`,
+        Self._mlir_type,
+        ` `,
+        +Self.values,
+        `> : index`,
+    ]
+    """The number of types as a raw `!kgen.index`."""
+
+    comptime length = Int(mlir_value=Self._raw_length)
     """The number of types in the list."""
 
     comptime __getitem_param__[idx: SIMDLength] = __mlir_attr[

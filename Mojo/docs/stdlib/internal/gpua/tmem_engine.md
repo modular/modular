@@ -198,18 +198,36 @@ hold at most `TMEM_NUM_COLS` elements. A view spanning more than one lane
 fails the first test. The row-0 view is the
 only per-thread handle kernels should hold.
 
-### The load shape follows the element type
+### The load shape follows the view's layout
 
 The engine has no parameters. The `tcgen05` access shape is derived where
-an instruction is issued: its lane count is always 32, one thread per lane,
-which is what makes a copy mean "this thread's row" and matches the trait
-directly; its bits per lane are the element type's width, so a float32 tile
-moves in `32x32b`. A TMEM allocation always has 128 lanes with 32 visible
-to each warp, so there is nothing for a lane-count parameter to vary, and a
-bits parameter would only restate the dtype. `16x256b` changes the thread
-mapping and the register layout, and the existing epilogues depend on that
-layout for `st_matrix`; it is a different engine, not a parameter of this
-one.
+an instruction is issued, from the layout of the TMEM operand, and each
+shape has one view whose storage is the collective base the instruction
+takes:
+
+- The row view, row 0 of a warp's `(32, N)` tile, selects `32x32b`. Its
+  lane count is 32, one thread per lane, which is what makes the copy mean
+  "this thread's row" and matches the trait directly; its bits per lane are
+  the element type's width.
+- The `16x256b` view, `tmem_16x256b(block)` over a `(16, N)` half of a
+  warp's tile, selects `16x256b`. Its layout, `TMem16x256bLayout[N]`, is
+  a column pair by two lanes 8 apart, repeated every 8 columns, relative to
+  the block base plus the lane `t // 4` and column `2 * (t % 4)` the
+  hardware adds for thread `t`. Its flat order is the register order the
+  instruction fills, which is the MMA accumulator fragment order the SM100
+  epilogues feed to `st_matrix`, so a register tile with the same shape
+  addresses a register by the coordinate of its cell. `tmem_cell` maps a
+  view coordinate back to the lane and column this thread's element holds,
+  and is the one place the per-thread placement is written down.
+
+`_access_shape_for_layout` selects a `TMemAccessShape` case from the view's
+layout. The engine looks up the instruction dimensions by that case. The
+table currently has `32x32b` and `16x256b`; another view and case can add
+`16x128b` without changing the copy path's shape calculations.
+
+A TMEM allocation always has 128 lanes with 32 visible to each warp, so
+there is nothing for a lane-count parameter to vary, and a bits parameter
+would only restate the dtype or the view.
 
 ### Copies are batched behind one wait, 64 columns at a time
 
@@ -414,11 +432,14 @@ Each step has its own verification. All GPU steps run on a remote B200:
    The test compiles it on the device and asserts the function reports no
    local memory and stayed under the budget.
 
-5. **Bridges and one consumer.** Add `as_tile_tensor()` to `TmemTensor` and
-   `TMemTile`. Port one epilogue path, the non-transposed `output_writer`
-   path or the attention softmax warp reading the S accumulator, and run the
-   existing SM100 smoke tests. The epilogue port requires a `16x256b`
-   engine.
+5. **The `16x256b` view and one consumer.** Done: `tmem_16x256b` selects
+   `16x256b`, with codegen and round-trip tests against the row view. The
+   first consumer is the blockwise FP8 grouped matmul, whose
+   `promote_accumulators` reads each accumulator stage through the fragment
+   views of the two `(16, stageN)` halves of its warp's tile instead of
+   hand-coding `16 << 16` and the four fragment coordinates. Bridges from
+   `TmemTensor` and `TMemTile` (`as_tile_tensor()`) and the `output_writer`
+   port remain.
 
 6. **Fusion.** On the fusion graph branch, `GpuEngine.load_into()` already
    calls `tensor.load[width](coord)`, so TMEM leaves work once

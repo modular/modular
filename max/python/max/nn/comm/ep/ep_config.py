@@ -159,15 +159,6 @@ class EPConfig:
     model's first __init__ pass (no re-shard needed).
     """
 
-    mxfp4_a_scales_preshuffled: bool = False
-    """When True (KS224 up-proj fusion, MXFP4 preshuffled-B path on
-    AMD), the dispatch-wait kernel writes the per-token E8M0 activation scale
-    directly into the up-proj grouped-matmul's per-expert fixed-stride
-    ``scale_4d`` slot layout, so the standalone preshuffle kernel is dropped from
-    the decode critical path. The dispatch scales output is then slot-sized
-    (``n_local_experts * align_up(max_recv_tokens_per_expert, 32)`` rows)
-    instead of ``max_recv_tokens`` rows. Set by ``MoEQuantized`` when the MXFP4
-    strategy uses preshuffled B. Only valid for MXFP4 dispatch."""
     # In EPConfig, alongside n_experts / num_moe_layers / max_replicas:
 
     num_logical_experts: int = 0
@@ -218,6 +209,17 @@ class EPConfig:
             return self.max_tokens_per_rank * min(
                 self.n_experts, n_ranks * self.top_k
             )
+
+    def _max_recv_tokens_per_expert(self, alignment: int = 32) -> int:
+        """Returns the most tokens one local expert can receive, rounded up to
+        a multiple of ``alignment``: every rank can route all of its tokens to
+        it. The default alignment gives the per-expert A-scale slot stride of
+        the MX grouped matmul, which the MX dispatch ops derive the same way
+        from their EP geometry."""
+        n_ranks = self.n_gpus_per_node * self.n_nodes
+        return (
+            ceildiv(self.max_tokens_per_rank * n_ranks, alignment) * alignment
+        )
 
     def __post_init__(self):
         if self.num_logical_experts == 0:

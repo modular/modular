@@ -24,7 +24,7 @@ from linalg.matmul.gpu import (
 from linalg.utils_gpu import MatmulConfig
 from std.testing import assert_equal
 
-from std.utils import Index, IndexList
+from std.utils import Index
 
 
 def test_epilogue_fn[
@@ -59,8 +59,8 @@ def test_epilogue_fn[
 
     def store_doubled[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var c_out}:
-        c_out.store(Coord(idx[0], idx[1]), rebind[SIMD[c_type, width]](val * 2))
+    ](idx: Coord, val: SIMD[dtype, width]) {var c_out}:
+        c_out.store(idx, rebind[SIMD[c_type, width]](val * 2))
 
     comptime if config.num_k_partitions > 1:
         multistage_gemm[transpose_b=True, config=config](
@@ -129,10 +129,9 @@ def test_compute_fn[
 
     def scale_odd_rows_negated[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var scale} -> SIMD[
-        dtype, width
-    ]:
-        var row_scale = -scale if idx[0] % 2 == 1 else scale
+    ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row_scale = -scale if Int(idx[0].value()) % 2 == 1 else scale
         return val * SIMD[dtype, width](row_scale)
 
     comptime if config.num_k_partitions > 1:

@@ -67,6 +67,9 @@ This version is still a work in progress.
   NVFP4 checkpoint can't run on eight GPUs, where each GPU's share of an
   expert would split an NVFP4 block. On MI355 GPUs, or on eight GPUs, use
   the BF16 checkpoint (`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`).
+- The Gemma 4, DiffusionGemma, and Inkling MoE layers compute their gated
+  activation in a fused kernel instead of separate graph ops, as do
+  `max.nn.moe.MoE` layers that use `swigluoai`.
 
 - Kimi K2.5 MXFP4 checkpoints, such as `amd/Kimi-K2.5-MXFP4`, start up
   faster on AMD MI355 GPUs. A warm start on eight GPUs dropped from about
@@ -318,6 +321,14 @@ This version is still a work in progress.
   requests whose payload carried an image (including images resent with a
   session's earlier turns), and `lora_request_rate`, the share routed to a LoRA
   adapter. Existing top-level keys in the result JSON are unchanged.
+- Added `--workload-stats-json` to `max benchmark`, which writes the
+  statistics of the requests a workload would send as JSON. With `--dry-run`
+  it needs no server, only the tokenizer. Input length is split into first
+  and later turns and reports the share of requests above 128k, 192k and
+  256k tokens. The tool-calling, image and structured-output shares are
+  included, as are any turns a session drops at the context limit. Warm-up
+  prefix turns, which are never sent, are left out. `--print-workload-stats`
+  and `--dry-run` print the same figures in a new "Requests Sent" section.
 - Added a `Cat(v1:w1, v2:w2, ...)` categorical distribution for every
   `max benchmark` config field that accepts a distribution string (for
   example `--image-long-side`, `--image-count`, `--random-input-len`), so an
@@ -343,6 +354,21 @@ This version is still a work in progress.
   Float32, GPU-only.
 
 ### Inference server
+
+- The tiered KV connector can allocate its pinned host staging region from
+  the GPU driver instead of registering ordinary host memory, with
+  `"host_staging_alloc": "driver"` in `--kv-connector-config`. The default is
+  unchanged. On AMD, registered host memory stays movable: when the kernel
+  compacts memory it migrates those pages, which makes the driver evict the
+  process's GPU queues and revalidate the whole registration before they
+  resume. At a large host tier that takes tens of seconds, long enough to
+  fail a health check. Driver-allocated memory cannot be migrated. It needs
+  `HSA_USERPTR_FOR_PAGED_MEM=0` in the environment before the server starts,
+  because the HIP runtime otherwise backs the allocation with movable pages
+  anyway; the server refuses to start rather than run unprotected. The
+  memory counts against the GPU driver's system memory limit, which every
+  process on the node shares, and it is not charged to the server's memory
+  cgroup.
 
 - A model with recurrent state, such as Qwen3.5 and the other hybrid
   architectures on the recurrent cache group, can now use a KV connector.
@@ -572,6 +598,16 @@ This version is still a work in progress.
 
 ### `max` CLI
 
+- `max generate` with speculative decoding now verifies drafts on decode
+  steps, as serving does. Before, it generated one token per step without
+  verification.
+
+- `max generate` now runs with device graph capture off unless you pass
+  `--device-graph-capture`, which it then warms up so decode steps replay.
+  Before, capture could turn on by itself but never replayed. It also plans
+  for a batch of one unless you pass `--max-batch-size`, since it runs one
+  prompt.
+
 ### Python API
 
 - Added `max.experimental.custom.declare`, which declares a custom op's
@@ -614,10 +650,114 @@ This version is still a work in progress.
   reductions apply duplicate indices atomically in an unspecified order, and
   `ops.scatter` keeps an unspecified winner among duplicates. On Apple silicon
   GPUs, the reductions support only 32-bit dtypes.
+- `ops.tile` now runs on GPU. It previously copied a GPU input to the CPU,
+  tiled it there, and copied the result back, so it also works under
+  `strict_device_placement=DevicePlacementPolicy.Error` now. Repeats remain
+  host metadata: the public API still accepts constant or symbolic repeat
+  counts, and a data-dependent output size is computed from a host copy of
+  the repeats, which blocks device-graph capture for such graphs.
+- `max.nn.moe.MoE` takes `interleaved_gate_up=True` for gate/up projections
+  stored as `[gate_0, up_0, gate_1, up_1, ...]`, and runs its fused activation
+  on them; `max.nn.comm.ep.ep_kernels.fused_silu` takes `interleaved=True` to
+  read that layout. Under expert parallelism, an interleaved `MoEQuantized`
+  layer needs the fused NVFP4 or MXFP8 grouped-matmul SwiGLU path, since the
+  fused SiLU quantize kernels read only `[gate | up]`.
+- Added `AutoModel` and `AutoTokenizer` to `max.pipelines` for generating
+  with a model in-process.
+  `model.generate(**tokenizer(prompts), max_new_tokens=16)` runs exactly the
+  batch you pass, takes the same sampling arguments as `max generate`, and can
+  return each token's logits and log probabilities. `model.batch()` returns a
+  `Batch` from `max.pipelines.lib.generate` that runs one forward pass per
+  step. Asking for a feature that only serving supports raises an error with
+  the matching `max serve` command.
+- `OverlapTextGenerationPipeline` has a new `graph_capture_ready` property.
 
 ### C API
 
 ## Kernels and GPU programming
+
+- Added GPU support for `ops.resize_linear` / `mo.resize.linear` in graphs
+  and eager mode. The op was host-only; `resize_linear_gpu` now runs one
+  pass per resized axis through device scratch buffers with the same
+  per-point interpolation as the CPU kernel. Interpolation accumulates in
+  float32 (float64 for float64), so bfloat16 and float16 inputs no longer
+  round at every tap. The eager resize family sweeps accelerators for
+  every resize op.
+- Added GPU support for the fused `mo.gather_sum` (gather on axis 0 + sum
+  reduction on axis 1, the multi-hot embedding sum used by DLRM-style
+  models). The op was host-only, so a device-resident embedding table was
+  round-tripped through the CPU on every call; it is now single-device and
+  executes on the gather's device. The gather+reduce fusion that produces
+  the op was also revived — its pattern still matched the reduce axis as
+  an operand, but `mo.reduce.add` carries `axis` as an attribute, so
+  `gather_sum` had been unreachable in compiled graphs. Measured on an
+  M-series GPU (fused kernel vs the previous device-to-host-to-device
+  round-trip, batch 1024, 64 multi-hot ids, embedding dim 128/512,
+  float32), the fused op runs 24-37x faster.
+- Added GPU support for `ops.resize_nearest` / `mo.resize.nearest`. The op
+  was host-only; its kernel is a pure gather, so it now launches on the
+  input's device (the op is single-device with a host `size` operand, like
+HEAD
+  bicubic). The eager resize family sweeps accelerators for all three
+  modes; new Metal-verified GPU kernel tests cover up/downsampling and
+  both coordinate modes, plus an eager GPU-residency test.
+
+- Trimmed the eager resize family's accelerator warm to rank 4. The
+  GPU warm action (`warm_accel_resize`) swept all five ranks for
+  `resize.nearest`/`resize.linear` across every dtype and variant, which
+  alone made the action compile 363 graphs per virtual accelerator and
+  put it among the slowest warm fragments. The warm now builds only the
+  image-shaped rank-4 graphs per accelerator (75 per slot, a 4.8x drop in
+  compile count and artifact size); CPU keeps the full 1..5 sweep. A
+  rank outside the warm is not unsupported — it lazy-compiles on first
+  dispatch and is cached, now covered by a GPU test.
+
+- `mo.resize.nearest` skips the coordinate arithmetic when every axis
+  scales by an exact integer of at least 1 and the modes reduce to floor
+  division (asymmetric + floor, half_pixel + half_down, half_pixel +
+  half_up), gathering from `out_coord // scale` (a shift when the scale is
+  a power of two) instead. On the benchmark's vision-encoder shape
+  (float32, 224x224 -> 448x448) this is 1.66x faster than the generic
+  path (22.9us vs 38.2us median). The VAE and diffusion 2x-upsample
+  helpers in `max.pipelines.architectures` (autoencoders, flux,
+  qwen_image and their ModuleV3 ports) now delegate to
+  `ops.resize_nearest` instead of hand-rolling reshape + broadcast /
+  concat expansions; output is bit-identical at 2x.
+- Added GPU support for `mo.roi_align` / `ops.roi_align`. The op previously
+  ran only on the host, so every ROI-align call on a GPU tensor copied the
+  input and ROIs to the host and back. It now runs on the input's device
+  (one thread per pooled output element, bilinearly sampling the region's
+  bin, mirroring the CPU loop bit-for-bit), the op is now single-device with
+  host-side scalar operands instead of host-only, and `ops.roi_align` no
+  longer inserts the host round-trip. The eager interpreter family now
+  sweeps accelerators directly.
+
+- Added GPU support for `ops.repeat_interleave` with both scalar and
+  per-element repeats. The op previously rejected accelerator inputs
+  outright, forcing callers (e.g. Llama4 attention-scale construction)
+  to round-trip data through the CPU. Scalar repeats now run natively on
+  the input's device, with the source index decoded arithmetically from
+  the output index; per-element `TensorValue` repeats build the
+  output->input offset map on the device (a chunked block-wide exclusive
+  scan over the repeats, then a per-element gather), so no repeats value
+  is read on the host.
+
+- Replaced the stack+reshape `repeat_interleave` workarounds in the
+  FLUX.2 / Z-Image RoPE embeddings with `ops.repeat_interleave` now that
+  scalar repeats run on GPU, and refreshed stale `cumsum`-is-CPU-only
+  comments (the GPU path landed with KERN-1095) in the DeepSeek V4
+  ragged helpers, Qwen experimental PLE, and Kimi-K3 state rollback.
+
+- Added GPU support for `mo.arg_nonzero` / `ops.nonzero`. The op previously
+  ran only on the host, so every nonzero call on a GPU tensor copied the
+  input to the host and back. It now runs on the input's device (a
+  multi-block GPU pipeline gathers the row-major coordinates, preserving the
+  stable CPU ordering), the op is now single-device instead of host-only,
+  and `ops.nonzero` no longer inserts the host round-trip. The output row
+  count is data-dependent, so only that count is still computed on the
+  host: the shape-function fallback copies data-dependent inputs to the
+  host first, and the eager interpreter family sweeps accelerators
+  directly.
 
 - Reworked the `gated_delta_conv1d_fwd` GPU kernel (Gated DeltaNet
   causal conv, Qwen3.5/3.8 and GLM-5/Kimi-Delta prefill pass 1) from
@@ -743,6 +883,20 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- DSpark speculative decoding now has its own method: serve a DSpark draft
+  with `--speculative-method dspark` instead of `dflash`. DSpark drafts a
+  block at a time like DFlash but runs a different draft step, so a DSpark
+  draft under any other method now fails at startup with a message naming
+  the method to use.
+
+- Removed `max.pipelines.GenerateMixin` and the `generate()` and
+  `generate_async()` methods it gave text generation pipelines. Build
+  contexts with `pipeline.tokenizer.new_context()` and run them with
+  `Batch.from_contexts()`, or pass token ids to
+  `max.pipelines.lib.generate.generate()`. `TextGenerationPipelineInterface`
+  now declares `pipeline_config` and `tokenizer` as abstract properties, so
+  custom subclasses must implement them.
+
 - `max.gpu.primitives.warp.reduce()` and `lane_group_reduce()` now take the
   reduction function as a runtime closure argument instead of a compile-time
   `capturing` parameter. The shuffle function stays a compile-time parameter:
@@ -754,6 +908,19 @@ This version is still a work in progress.
       return x + y
 
   warp.reduce[shuffle_down](val, add)  # was: warp.reduce[shuffle_down, add](val)
+  ```
+
+- The reduction callbacks in the `max.algorithm` package now take a `Coord`
+  instead of an `IndexList[rank]`, and no longer carry a `rank` parameter.
+  This changes the `input_fn` and `output_fn` contracts of `sum()`, `min()`,
+  `max()`, `mean()` and `product()`, along with `row_reduce()` and
+  `reduce_launch()` in the GPU backend. The coordinate holds the same values
+  as before, so results are unchanged:
+
+  ```mojo
+  # was: def input_fn[width: Int, rank: Int](idx: IndexList[rank]) -> ...
+  def input_fn[width: Int](idx: Coord) -> SIMD[dtype, width]:
+      return input.load[width=width](idx)
   ```
 
 - Text generation now stops on every `eos_token_id` in a model's
@@ -799,6 +966,18 @@ This version is still a work in progress.
   `dkv_peer_attach_failures`, `dkv_peers_dropped`, `dkv_peer_loads`,
   `dkv_peer_load_failures`, and `dkv_hints_rejected`. They are zero unless the
   external KV-cache connector is in use.
+
+- `max.nn.moe.MoE` and `MoEQuantized` take the expert activation as one
+  `activation=` argument, a `GatedActivation` from `max.nn.activation`, in
+  place of `use_swigluoai`, `swiglu_alpha`, `swiglu_limit`, and
+  `gated_activation_fn`. Replace `use_swigluoai=True, swiglu_alpha=a,
+  swiglu_limit=l` with `activation=GatedActivation("swigluoai", alpha=a,
+  limit=l)`, and `gated_activation_fn=fn` with
+  `activation=GatedActivation(gated_activation_fn=fn)`. The fused SwiGLU
+  kernel wrappers `max.nn.kernels.grouped_matmul_blocked_swiglu` and
+  `grouped_dynamic_block_scaled_matmul_amd_swiglu_quant`, and
+  `max.nn.comm.ep.ep_kernels.fused_silu` and `fused_silu_quantized`, take the
+  same `activation=` argument.
 
 - `max.driver.DevicePinnedBuffer` is removed. Allocate
   `Buffer(dtype, shape, device=gpu, usage=Usage.STAGING | Usage.UNTRACKED)`

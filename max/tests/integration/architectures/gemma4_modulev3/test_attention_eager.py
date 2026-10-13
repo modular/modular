@@ -142,6 +142,7 @@ def attention_weights_global(
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.compile_on_gpu("the interpreter has no bfloat16 cast on CPU")
 @pytest.mark.parametrize(
     ("layer_idx", "weights_fixture"),
     [(0, "attention_weights_local"), (5, "attention_weights_global")],

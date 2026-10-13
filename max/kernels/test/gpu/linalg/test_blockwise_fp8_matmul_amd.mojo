@@ -37,7 +37,7 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
     blockwise_scaled_fp8_matmul_amd,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def test_blockwise_fp8_matmul_amd[

@@ -42,7 +42,7 @@
 #       Generate + run a batch in-process (standalone convenience).
 
 from std.math import align_up, ceildiv, max, min
-from std.random import rand, randn, random_ui64, seed
+from std.random import randn, random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer

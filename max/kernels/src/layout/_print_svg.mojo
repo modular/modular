@@ -46,8 +46,8 @@ def print_svg[
     _print_svg_impl[swizzle, memory_bank, element_layout](
         tensor_base, tensors, s, color_map
     )
-    if file_path:
-        file_path.value().write_text(s)
+    if case .Some(file_path) = file_path:
+        file_path.write_text(s)
     else:
         print(s)
 
@@ -149,8 +149,8 @@ def _print_svg_impl[
             var idx = Int(tensor_base.layout(Coord(i, j)))
             var non_swizzled_idx = idx
 
-            comptime if swizzle:
-                idx = swizzle.value()(idx)
+            comptime if case .Some(swizzle_fn) = swizzle:
+                idx = swizzle_fn(idx)
 
             map[idx] = (i, j)
             var x = margin + text_margin + j * cell_size
@@ -190,14 +190,10 @@ def _print_svg_impl[
                 idx,
             )
 
-            comptime if memory_bank:
+            comptime if case .Some(bank) = memory_bank:
                 writer.write(
                     " b=",
-                    (
-                        (idx * size_of[tensor_base.dtype]())
-                        // memory_bank.value()[0]
-                    )
-                    % memory_bank.value()[1],
+                    ((idx * size_of[tensor_base.dtype]()) // bank[0]) % bank[1],
                 )
             writer.write("</text>\n")
             if swizzle:

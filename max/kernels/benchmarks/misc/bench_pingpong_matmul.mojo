@@ -37,7 +37,6 @@ from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
     amd_ping_pong_matmul as ping_pong_matmul,
 )
-from std.utils import IndexList
 
 
 def _get_run_name[
@@ -147,9 +146,12 @@ def bench_matmul[
                 width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 # FIXME(mojo-compiler): restore the comptime-assert below
                 # once the Mojo `Int.__ge__` comptime-cycle bug is fixed.
                 # The assert is always true here (tensor_c is the 2D output
@@ -164,7 +166,7 @@ def bench_matmul[
                 # only `>=` in this comptime + parametric-capturing-closure
                 # combination does. See commit e65f549ada3 for the audit.
                 # comptime assert tensor_c.flat_rank >= 2
-                var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
+                var x = tensor_c.load[width=width](idx).cast[_dtype]()
                 var y = val * x
                 return y
 

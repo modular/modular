@@ -15,7 +15,6 @@ from std.logger import Logger
 from std.math import fma, gcd
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
-from std.sys.intrinsics import strided_load, strided_store
 
 from max.algorithm.functional import elementwise
 
@@ -23,7 +22,6 @@ from extensibility import StaticTensorSpec
 from extensibility import (
     ComputeOutputFusion,
     ComputeOutputFusionTile,
-    ElementwiseFusion,
     ElementwiseFusionTile,
     InputFusion,
     OutputFusion,
@@ -40,9 +38,9 @@ from max.gpu.host import (
     DeviceGraphInput,
     StableAddr,
 )
-from max.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
+from max.gpu.host.device_context import _DeviceContextPtr
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
-from std.memory import OwnedPointer, MaybeUninit, alloc, dealloc
+from std.memory import OwnedPointer, MaybeUninit, alloc
 from std.os import abort
 from layout import (
     Coord,
@@ -61,12 +59,10 @@ from layout.tile_io import (
 )
 from layout.tile_tensor import stack_allocation
 from std.memory import unsafe_memcpy
-from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
 from nn.reshape import reshape
 from nn.slice import slice_as_view
-from layout.coord import DynamicCoord
 from layout.int_tuple import _IntTupleToCoordLike, UNKNOWN_VALUE
 from layout.tile_layout import Layout as TileLayout
 from extensibility import register_internal
@@ -82,13 +78,12 @@ from extensibility import (
     get_kernel_simd_width,
     simd_load_from_managed_tensor_slice,
 )
-from extensibility.managed_tensor_slice import _gcd_pow2
 
 from std.utils import Index, IndexList, StaticTuple
 
 from max.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
 
-from .buffer_plan import BufferPlanState, BufferPlanStats
+from .buffer_plan import BufferPlanState
 
 comptime MutByteBuffer = DynamicTensor[.int8, 1]
 comptime ImmutByteBuffer = DynamicTensor[.int8, 1]
@@ -611,9 +606,11 @@ def mgp_device_graph_stable_tensor[
     replay. The slot belongs to the `DeviceGraphCache` for the model's
     lifetime, so the tensor carries no storage handle.
     """
-    var ptr = addr.ptr.unsafe_bitcast[Scalar[dtype]]().unsafe_origin_cast[
-        MutAnyOrigin
-    ]()
+    var ptr = (
+        addr.ptr.unsafe_bitcast[Scalar[dtype]]()
+        .unsafe_origin_cast[MutAnyOrigin]()
+        .unsafe_mut_cast[target_mut=True]()
+    )
     comptime if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
@@ -1128,7 +1125,7 @@ def mgp_buffer_memset[
     """
     # `cast` to the matching-width unsigned int truncates to the low N bits,
     # which is exactly the little-endian low-byte pattern.
-    __match elem_size:
+    match elem_size:
         case 1:
             _memset_buffer[.uint8, bDevice](
                 buffer, value_bits.cast[.uint8](), dev_context
@@ -2349,54 +2346,6 @@ def simd_select[
 # ===-----------------------------------------------------------------------===#
 # MOGG elementwise / view primitives
 # ===-----------------------------------------------------------------------===#
-
-
-@register_internal("mogg.elemwise_for_each")
-@inline(.never)
-def foreach[
-    dtype: DType,
-    rank: Int,
-    //,
-    func: def[width: Int, element_alignment: Int](
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _trace_name: StaticString = "mogg.for_each",
-](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
-) raises:
-    """Apply the function `func` to each element of the tensor slice.
-
-    Parameters:
-        dtype: The data type of the elements in the tensor slice.
-        rank: The rank of the tensor slice.
-        func: The function to apply to each element of the tensor slice.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        simd_width: The SIMD width for the target (usually leave this as its default value).
-        _trace_name: Name of the executed operation displayed in the trace_description.
-
-    Args:
-        tensor: The output tensor slice which receives the return values from `func`.
-        ctx: The call context (forward this from the custom operation).
-    """
-
-    @inline(.always)
-    def elementwise_fn_wrapper[
-        width: Int,
-        alignment: Int = 1,
-    ](index: Coord) {var}:
-        var idx = coord_to_index_list(index)
-        var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
-        tensor._fused_store[element_alignment=alignment](index, val)
-
-    elementwise[
-        simd_width,
-        target=target,
-        _trace_description=_trace_name,
-    ](elementwise_fn_wrapper, tensor.shape_coord(), ctx)
 
 
 @register_internal("mogg.elemwise_for_each")

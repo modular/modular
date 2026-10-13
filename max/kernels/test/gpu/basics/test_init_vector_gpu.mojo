@@ -20,7 +20,7 @@ from internal_utils import InitializationType, Timer, init_vector_launch
 
 from std.testing import assert_equal
 
-from layout import TileTensor, Idx, row_major
+from layout import TileTensor, row_major
 
 
 @inline(.never)

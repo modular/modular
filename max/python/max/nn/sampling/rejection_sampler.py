@@ -712,11 +712,7 @@ class AcceptanceSampler:
 
     @property
     def acceptance_rule(self) -> Literal["synthetic", "stochastic", "greedy"]:
-        """The rule :meth:`__call__` dispatches to, in its precedence order.
-
-        This is the only place the acceptance rule in effect is decided:
-        ``SpeculativeConfig.rejection_sampling_strategy`` is read by nothing.
-        """
+        """The rule :meth:`__call__` dispatches to, in its precedence order."""
         if self._base_rate is not None:
             return "synthetic"
         if self._use_stochastic:

@@ -14,13 +14,7 @@
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext
-from layout import (
-    TileTensor,
-    Coord,
-    Idx,
-    row_major,
-    coord_to_index_list,
-)
+from layout import TileTensor, Coord, row_major
 from nn.arange import arange, arange_shape
 
 from std.utils.index import IndexList

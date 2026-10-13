@@ -15,7 +15,8 @@
 The shapes cover each store path of `multistage_gemm_kernel`: the bf16 output
 staged through shared memory, the aligned fp32 output, and the scalar store
 for an odd fp32 N. M is not a multiple of the block tile, so the last row of
-blocks is partial.
+blocks is partial. A nonzero `num_k_partitions` runs the runtime-config
+overloads instead, which take the split-K path when it is above one.
 """
 
 from std.random import rand
@@ -23,18 +24,30 @@ from std.random import rand
 from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import multistage_gemm
-from linalg.utils_gpu import MatmulKernels
+from linalg.utils_gpu import MatmulConfig, MatmulKernels
 from std.testing import assert_equal
 
-from std.utils import IndexList
+
+def _runtime_config[
+    a_type: DType, c_type: DType
+](num_k_partitions: Int) -> MatmulConfig[a_type, a_type, c_type, True]:
+    comptime base = MatmulKernels[
+        a_type, a_type, c_type, True
+    ]().ampere_256x64_4
+    return MatmulConfig[a_type, a_type, c_type, True](
+        block_tile_shape=base.block_tile_shape,
+        warp_tile_shape=base.warp_tile_shape,
+        num_pipeline_stages=base.num_pipeline_stages,
+        num_k_partitions=num_k_partitions,
+    )
 
 
 def test_compute_fn[
-    a_type: DType, c_type: DType, N: Int, K: Int
+    a_type: DType, c_type: DType, N: Int, K: Int, *, num_k_partitions: Int = 0
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that a compute closure's result is what the kernel stores
     into `c`, at the index the closure was given."""
-    print("compute:", a_type, "->", c_type, m, "x", N, "x", K)
+    print("compute:", a_type, "->", c_type, m, "x", N, "x", K, num_k_partitions)
     comptime config = MatmulKernels[
         a_type, a_type, c_type, True
     ]().ampere_256x64_4
@@ -59,16 +72,24 @@ def test_compute_fn[
 
     def scale_odd_rows_negated[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var scale} -> SIMD[
-        dtype, width
-    ]:
-        var row_scale = -scale if idx[0] % 2 == 1 else scale
+    ](idx: Coord, val: SIMD[dtype, width]) {var scale} -> SIMD[dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row_scale = -scale if Int(idx[0].value()) % 2 == 1 else scale
         return val * SIMD[dtype, width](row_scale)
 
-    multistage_gemm[transpose_b=True, config=config](c_ref, a, b, ctx)
-    multistage_gemm[transpose_b=True, config=config](
-        c, a, b, scale_odd_rows_negated, ctx
-    )
+    comptime if num_k_partitions > 0:
+        var runtime_config = _runtime_config[a_type, c_type](num_k_partitions)
+        multistage_gemm[transpose_b=True, config=config](
+            c_ref, a, b, runtime_config, ctx
+        )
+        multistage_gemm[transpose_b=True, config=config](
+            c, a, b, runtime_config, scale_odd_rows_negated, ctx
+        )
+    else:
+        multistage_gemm[transpose_b=True, config=config](c_ref, a, b, ctx)
+        multistage_gemm[transpose_b=True, config=config](
+            c, a, b, scale_odd_rows_negated, ctx
+        )
 
     with c_ref_dev.map_to_host() as h_ref, c_dev.map_to_host() as h_c:
         for i in range(m * N):
@@ -77,11 +98,13 @@ def test_compute_fn[
 
 
 def test_epilogue_fn[
-    a_type: DType, c_type: DType, N: Int, K: Int
+    a_type: DType, c_type: DType, N: Int, K: Int, *, num_k_partitions: Int = 0
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that a store closure receives each output at its index and that
     the kernel itself leaves `c` untouched."""
-    print("epilogue:", a_type, "->", c_type, m, "x", N, "x", K)
+    print(
+        "epilogue:", a_type, "->", c_type, m, "x", N, "x", K, num_k_partitions
+    )
     comptime config = MatmulKernels[
         a_type, a_type, c_type, True
     ]().ampere_256x64_4
@@ -107,17 +130,27 @@ def test_epilogue_fn[
 
     def store_odd_rows_negated[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var d}:
-        var row_scale = -2 if idx[0] % 2 == 1 else 2
+    ](idx: Coord, val: SIMD[dtype, width]) {var d}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row_scale = -2 if Int(idx[0].value()) % 2 == 1 else 2
         d.store[width=width](
-            Coord(idx),
+            idx,
             (val * SIMD[dtype, width](row_scale)).cast[c_type](),
         )
 
-    multistage_gemm[transpose_b=True, config=config](c_ref, a, b, ctx)
-    multistage_gemm[transpose_b=True, config=config](
-        c, a, b, store_odd_rows_negated, ctx
-    )
+    comptime if num_k_partitions > 0:
+        var runtime_config = _runtime_config[a_type, c_type](num_k_partitions)
+        multistage_gemm[transpose_b=True, config=config](
+            c_ref, a, b, runtime_config, ctx
+        )
+        multistage_gemm[transpose_b=True, config=config](
+            c, a, b, runtime_config, store_odd_rows_negated, ctx
+        )
+    else:
+        multistage_gemm[transpose_b=True, config=config](c_ref, a, b, ctx)
+        multistage_gemm[transpose_b=True, config=config](
+            c, a, b, store_odd_rows_negated, ctx
+        )
 
     with c_ref_dev.map_to_host() as h_ref, c_dev.map_to_host() as h_c, d_dev.map_to_host() as h_d:
         for i in range(m * N):
@@ -134,3 +167,24 @@ def main() raises:
         test_epilogue_fn[.bfloat16, .bfloat16, 512, 512](ctx, 130)
         test_epilogue_fn[.float32, .float32, 512, 512](ctx, 130)
         test_epilogue_fn[.float32, .float32, 257, 512](ctx, 130)
+        comptime for num_k_partitions in [1, 2]:
+            test_compute_fn[
+                .bfloat16,
+                .bfloat16,
+                512,
+                512,
+                num_k_partitions=num_k_partitions,
+            ](ctx, 130)
+            test_epilogue_fn[
+                .bfloat16,
+                .bfloat16,
+                512,
+                512,
+                num_k_partitions=num_k_partitions,
+            ](ctx, 130)
+            test_compute_fn[
+                .float32, .float32, 512, 512, num_k_partitions=num_k_partitions
+            ](ctx, 130)
+            test_epilogue_fn[
+                .float32, .float32, 512, 512, num_k_partitions=num_k_partitions
+            ](ctx, 130)

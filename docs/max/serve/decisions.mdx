@@ -128,7 +128,7 @@ was reused.
 | `temperature`             | Divides label scores before the softmax. Default `1.0`.                                               |
 | `chat_template_kwargs`    | Extra chat template arguments. Thinking is off by default and may not be turned on.                   |
 | `prompt_format_version`   | Pins the prompt wording; a different served version is rejected. Currently `1` (`2` for decider).     |
-| `return_prompt_token_ids` | Returns the exact prompt and label token ids scored, for reproducing a result offline.                |
+| `return_prompt_token_ids` | Returns the exact prompt and label token IDs scored, for reproducing a result offline.                |
 | `model`                   | The model to use.                                                                                     |
 
 ## How a question is scored
@@ -171,17 +171,16 @@ Decision Index `http` engine can point at a MAX server.
 }
 ```
 
-Answers come back keyed by your question ids: `noul` (the probability of yes),
+Answers come back keyed by your question IDs: `noul` (the probability of yes),
 `choice` with `confidence` and `probabilities`, and `score` with `confidence`,
-a `legend` and `probabilities`. Each also carries `x_label_mass`, the
+a `legend`, and `probabilities`. Each also carries `x_label_mass`, the
 full-vocabulary probability of the answer labels. `usage` reports
 `input_tokens` and `output_tokens` (always `0`).
 
-Prompts, label checks and probabilities are the same as for `/v1/decisions`
+Prompts, label checks, and probabilities are the same as for `/v1/decisions`
 with the model's default temperature. `state` may be empty when the questions
-carry everything. Schema errors return `422`, and requests MAX can't
-answer (unknown model, unsupported server features, labels that aren't single
-tokens)
+carry everything. Schema errors return `422`, and requests MAX can't answer
+(unknown model, unsupported server features, labels that aren't single tokens)
 return `400`. Fields that only `/v1/decisions` has (`temperature`,
 `prompt_format_version`, `return_prompt_token_ids`) are refused with a `422`.
 Choice questions take up to 26 options.

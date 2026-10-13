@@ -21,7 +21,7 @@ from std.random import seed
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection

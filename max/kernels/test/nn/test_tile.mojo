@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from nn.tile import tile
+from nn.tile import tile, tile_shape
 from std.testing import assert_equal
 
 
@@ -734,7 +734,26 @@ def test_tile_1d() raises:
         assert_equal(output[i], expected[i])
 
 
+def test_tile_shape_rejects_negative_repeats() raises:
+    """A negative repeat would size a negative output dim; must raise."""
+    comptime type_repeats = DType.int64
+    var input_stack: Array[Scalar[DType.int64], 2] = [1, 2]
+    var input = TileTensor(input_stack, row_major[2]())
+    var repeats_stack = Array[Scalar[type_repeats], 1](fill=-1)
+    var repeats = TileTensor(repeats_stack, row_major[1]())
+
+    var raised = False
+    try:
+        _ = tile_shape[DType.int64, type_repeats](
+            input.make_dynamic[.int64](), repeats.make_dynamic[.int64]()
+        )
+    except:
+        raised = True
+    assert_equal(raised, True, msg="negative repeats must raise")
+
+
 def main() raises:
+    test_tile_shape_rejects_negative_repeats()
     test_tile_1d()
     test_tile_eg1()
     test_tile_eg2()

@@ -17,10 +17,12 @@ from ._trait import MaxPluginHooks
 from std.sys.info import CompilationTarget
 
 
-comptime CurrentMaxPlugin: MaxPluginHooks = MAX_PLUGINS.current
+comptime CurrentMaxPlugin: MaxPluginHooks = MAX_PLUGINS.current.HookFor[
+    CompilationTarget.current()
+]
 """The active MAX plugin."""
 
 comptime MaxPluginForTarget[target: CompilationTarget] = MAX_PLUGINS.for_target[
     target._mlir_value
-]
+].HookFor[target]
 """The MAX plugin selected for the specified target."""

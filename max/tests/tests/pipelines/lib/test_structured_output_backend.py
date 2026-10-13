@@ -441,20 +441,32 @@ def test_container_enum_compiles_for_every_tool_format(
     )
 
 
-def test_container_enum_is_refused_where_it_has_no_wire_form() -> None:
+def test_container_enum_constrains_the_nested_tag_spelling() -> None:
     """A tag-keyed style spells an object as nested tags at every depth.
 
-    There is no JSON form to fall back on there, so the literal is refused with
-    an explicit message rather than silently constrained to a spelling the
-    model's own format never produces.
+    There is no JSON form to fall back on there, so the M3 tool grammar pins
+    each member of the literal to its own tag instead, which is the spelling
+    the model's format produces for any nested object.
     """
-    with pytest.raises(RuntimeError, match="no wire form"):
-        _tool_matcher(
+    p = "]<]minimax[>["
+
+    def consumes_whole(preset: str) -> bool:
+        wire = _xml_tool_wire(
+            "minimax_m3", "apply_preset", [("preset", preset)]
+        )
+        matcher = _tool_matcher(
             _make_helper("xgrammar", "minimax_m3"),
             "minimax_m3",
             "apply_preset",
             _CONTAINER_ENUM_SCHEMA,
         )
+        return _consume_wire(matcher, "minimax_m3", wire) == len(wire)
+
+    assert consumes_whole(f"{p}<mode>fast{p}</mode>{p}<threads>4{p}</threads>")
+    assert not consumes_whole(
+        f"{p}<mode>slow{p}</mode>{p}<threads>9{p}</threads>"
+    )
+    assert not consumes_whole('{"mode":"fast","threads":4}')
 
 
 @pytest.mark.parametrize(

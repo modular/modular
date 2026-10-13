@@ -33,11 +33,10 @@ struct Grayscale:
         img_in: InputTensor[dtype=.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[.uint8, simd_width]:
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
             var col = idx_l[1]
@@ -54,7 +53,7 @@ struct Grayscale:
 
             return gray_f32.clamp(0, 255).cast[.uint8]()
 
-        foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
+        foreach[target=target, simd_width=1](color_to_grayscale, img_out, ctx)
 
 
 @extensibility.register("brightness")
@@ -68,18 +67,17 @@ struct Brightness:
         brightness: Float32,
         ctx: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)  # Added for consistency
         def brighten[
             simd_width: Int  # Renamed 'width' to 'simd_width'
-        ](idx: Coord) -> SIMD[.uint8, simd_width]:
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
             var pixels_f32 = img_in.load[simd_width](idx).cast[.float32]()
 
             var brightened_f32 = pixels_f32 * brightness
 
             return brightened_f32.clamp(0, 255).cast[.uint8]()
 
-        foreach[brighten, target=target](img_out, ctx)
+        foreach[target=target](brighten, img_out, ctx)
 
 
 @extensibility.register("blur")
@@ -93,11 +91,10 @@ struct Blur:
         blur_size: Int64,
         ctx: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
         def blur_kernel[
             simd_width: Int
-        ](idx: Coord) -> SIMD[.uint8, simd_width]:
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
             """
             Computes the blurred value for a SIMD vector of pixels.
             """
@@ -126,4 +123,4 @@ struct Blur:
             return UInt8(max(min(pix_val_accum // pixel_count, 255), 0))
 
         # Apply the kernel to each pixel in the output tensor
-        foreach[blur_kernel, target=target, simd_width=1](img_out, ctx)
+        foreach[target=target, simd_width=1](blur_kernel, img_out, ctx)

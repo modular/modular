@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implementations of unswitch and tile_and_unswitch functions."""
 
-from .tile import Static1DTileUnitFunc, tile
+from .tile import tile
 
 
 # ===-----------------------------------------------------------------------===#

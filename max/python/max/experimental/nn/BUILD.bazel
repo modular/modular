@@ -1,15 +1,14 @@
 load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "nn",
     srcs = glob(["**/*.py"]),
-    # See the experimental target: eager examples need the optional
-    # _interpreter_ops kernels in the test runfiles.
-    docstring_example_deps = ["//max/python/max/_interpreter_ops"],
     # Several examples compile models; shard to stay under the 800s CI clamp.
     docstring_example_shard_count = 4,
+    docstring_example_test_rule = modular_eager_py_test,
     # numpy, engine, and support are used transitively through max.nn,
     # not directly imported in experimental/nn files.
     ignore_extra_deps = [

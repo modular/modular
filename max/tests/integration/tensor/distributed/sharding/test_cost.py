@@ -254,9 +254,9 @@ class TestTransitionCost:
 
 
 class TestUnknownOperand:
-    """An Unknown operand skips the rule on its mesh axis."""
+    """A rule takes an Unknown operand only through a row that names it."""
 
-    def test_only_the_unknown_row_is_feasible(self) -> None:
+    def test_a_row_not_naming_unknown_is_infeasible(self) -> None:
         mesh = mesh_1d(2)
         unknown = layout(mesh, (8, 8), (Unknown(),))
         rows = feasible_rows_at_axis(
@@ -266,17 +266,63 @@ class TestUnknownOperand:
             0,
             [unknown.placements],
         )
-        assert rows == (AxisAssignment((Unknown(),), (Unknown(),)),)
+        assert rows == ()
 
-    def test_partial_meeting_unknown_raises(self) -> None:
+    def test_a_row_naming_unknown_takes_it(self) -> None:
         mesh = mesh_1d(2)
-        unknown = layout(mesh, (8, 8), (Unknown(),))
-        partial = layout(mesh, (8, 8), (Partial(),))
-        with pytest.raises(ShardingError, match="Resolve Partial"):
-            feasible_rows_at_axis(
-                [AxisAssignment((R, R), (R,))],
-                (unknown, partial),
+        rows_by_device = layout(mesh, (8, 8), (Sharded(0),))
+        offsets = layout(mesh, (8,), (Unknown(),))
+        named = AxisAssignment((Sharded(0), Unknown()), (Sharded(0),))
+        rows = feasible_rows_at_axis(
+            [AxisAssignment((R, R), (R,)), named],
+            (rows_by_device, offsets),
+            mesh,
+            0,
+            [rows_by_device.placements, offsets.placements],
+        )
+        assert rows == (named,)
+
+    def test_a_row_naming_unknown_moves_no_operand(self) -> None:
+        mesh = mesh_1d(2)
+        rows_whole = layout(mesh, (8, 8), (R,))
+        offsets = layout(mesh, (8,), (Unknown(),))
+        rows = feasible_rows_at_axis(
+            [AxisAssignment((Sharded(0), Unknown()), (Sharded(0),))],
+            (rows_whole, offsets),
+            mesh,
+            0,
+            [rows_whole.placements, offsets.placements],
+        )
+        assert rows == ()
+
+    def test_a_row_naming_unknown_keeps_one_device_whole(self) -> None:
+        mesh = DeviceMesh.single(CPU())
+        split = layout(mesh, (8, 8), (Sharded(0),))
+        whole = layout(mesh, (8, 8), (R,))
+        offsets = layout(mesh, (8,), (Unknown(),))
+
+        def feasible(
+            row: AxisAssignment, rows_layout: TensorLayout
+        ) -> tuple[AxisAssignment, ...]:
+            return feasible_rows_at_axis(
+                [row],
+                (rows_layout, offsets),
                 mesh,
                 0,
-                [unknown.placements, partial.placements],
+                [rows_layout.placements, offsets.placements],
             )
+
+        assert (
+            feasible(
+                AxisAssignment((Sharded(0), Unknown()), (Sharded(0),)), split
+            )
+            == ()
+        )
+        whole_row = AxisAssignment((R, Unknown()), (R,))
+        assert feasible(whole_row, whole) == (whole_row,)
+
+    def test_no_row_naming_unknown_raises(self) -> None:
+        mesh = mesh_1d(2)
+        unknown = layout(mesh, (8, 8), (Unknown(),))
+        with pytest.raises(ShardingError, match="no feasible plan"):
+            pick([AxisAssignment((R,), (R,))], (unknown,))

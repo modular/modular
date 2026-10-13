@@ -42,7 +42,6 @@ from .device_context import (
     _DeviceFunctionPtr,
     _DeviceContextPtr,
     _FunctionEnqueuer,
-    _is_apple_gpu,
     _max_dynamic_shared_bytes_for_load,
 )
 
@@ -239,10 +238,8 @@ __extension DeviceExternalFunction:
                 .as_unsafe_any_origin()
             )
 
-        if cluster_dim:
-            attributes.append(
-                LaunchAttribute.from_cluster_dim(cluster_dim.value())
-            )
+        if case .Some(cluster_dim) = cluster_dim:
+            attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))
 
         if constant_memory:
             for i in range(len(constant_memory)):
@@ -252,7 +249,7 @@ __extension DeviceExternalFunction:
         # sizes are passed to the enqueuer (matching the previous direct call).
         var no_arg_sizes = OptionalPointer[UInt64, MutAnyOrigin](None)
 
-        comptime if _is_apple_gpu[Self.target]():
+        comptime if Self.target.is_apple_gpu():
             # Metal takes the launch payload via `args[0]`; see
             # `MetalDeviceContext::enqueueFunctionExecDirect`.
             var dense_args_sizes = Array[UInt64, num_args](fill=0)

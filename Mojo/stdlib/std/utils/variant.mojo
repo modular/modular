@@ -25,12 +25,7 @@ from std.traits import (
     IsTriviallyDeinitable,
     IsTriviallyMovable,
 )
-from ._nicheable import (
-    UnsafeNicheable,
-    NicheIndex,
-    NicheStorageTraits,
-    UnsafeCustomNicheStorage,
-)
+from ._nicheable import UnsafeNicheable, NicheIndex, UnsafeCustomNicheStorage
 from std.os import abort
 from std.sys import align_of, size_of
 

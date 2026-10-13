@@ -473,10 +473,11 @@ def test_quantized[
             width: SIMDLength,
             *,
             alignment: Int = align_of[SIMD[value_type, width]](),
-        ](idx: IndexList[2], value: SIMD[value_type, width]) capturing -> None:
-            c_dev_tt.store[alignment=alignment](
-                Coord(idx), value.cast[a_type]()
-            )
+        ](idx: Coord, value: SIMD[value_type, width]) capturing -> None:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            c_dev_tt.store[alignment=alignment](idx, value.cast[a_type]())
 
         # The helper supplies a null output view; only the epilogue may write.
         _qmatmul_common[

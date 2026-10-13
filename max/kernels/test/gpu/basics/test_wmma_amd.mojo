@@ -13,7 +13,7 @@
 
 from std._gpu import lane_id
 from std.math import align_up, ceildiv, isclose
-from std.math.uutils import umod, udivmod
+from std.math.uutils import udivmod
 from std.random import rand
 from std.utils import IndexList
 

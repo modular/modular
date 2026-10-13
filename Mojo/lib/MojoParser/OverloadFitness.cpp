@@ -250,7 +250,8 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   DeclResolver &resolver = *callable.getShared().declResolver;
   FnTypeGeneratorType signature = candidate->getDeclFullSignature();
 
-  if (auto witness = candidate->getIfWitness(); witness && selfPValue) {
+  if (auto *witness = dyn_cast<WitnessASTDecl>(candidate);
+      witness && selfPValue) {
     // TODO(MOCO-1259): Support static methods with associated aliases
     signature = substituteTraitAliasesIntoSignature(
         resolver, witness->traitSymbol, signature, selfPValue);
@@ -318,7 +319,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     if (auto selfCValue = operands[0].ir.getIfCValue()) {
       if (auto selfPValue = PValue(selfCValue.getRValueType().mlirType)) {
         // TODO(MOCO-1259): Support static methods with associated aliases
-        if (WitnessDecl *witness = funcIfDirect->getIfWitness();
+        if (auto *witness = dyn_cast<WitnessASTDecl>(funcIfDirect);
             witness &&
             isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType)) {
           signature = substituteTraitAliasesIntoSignature(

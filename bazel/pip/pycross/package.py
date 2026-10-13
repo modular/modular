@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import defaultdict
+from collections.abc import Collection
 from typing import Any
 
 from dependency import Dependency
@@ -22,7 +23,12 @@ from utils import assert_keys
 
 
 class Package:
-    def __init__(self, blob: dict[str, Any], all_versions: dict[str, str]):
+    def __init__(
+        self,
+        blob: dict[str, Any],
+        all_versions: dict[str, str],
+        skip_optional_deps: Collection[tuple[str, str]] = (),
+    ):
         assert_keys(
             blob,
             required={"name", "version"},
@@ -64,6 +70,7 @@ class Package:
             Dependency(dep, all_versions)
             for deps in blob.get("optional-dependencies", {}).values()
             for dep in deps
+            if (self.name, dep["name"]) not in skip_optional_deps
         ]
         unique_dependencies: dict[str, Dependency] = {}
         for dep in all_dependencies:

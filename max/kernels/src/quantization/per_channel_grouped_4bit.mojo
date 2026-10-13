@@ -174,7 +174,15 @@ struct Q4sym[
 
         # TODO: add warning if we overflow/underflow
         var f16_scale = f_scale.cast[.float16]()
-        self.scale = _to_StaticTuple(bitcast[.uint8, 2](f16_scale))
+        # Avoid the direct f16 -> 2xui8 bitcast: code generation for it is
+        # unsupported off-GPU (see the mirrored comment in `decode_scale`).
+        # Round-trip through uint16 and split the bytes explicitly.
+        var scale_u16 = bitcast[.uint16, 1](f16_scale)
+        self.scale = _to_StaticTuple(
+            (scale_u16 & 0xFF)
+            .cast[.uint8]()
+            .join(((scale_u16 >> 8) & 0xFF).cast[.uint8]())
+        )
         self.bits = _to_StaticTuple(self._encode_bits(qdata))
         self._check_constraints()
 

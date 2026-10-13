@@ -19,7 +19,8 @@ from std.math import align_down, align_up, ceil, ceildiv, floor
 
 from max.algorithm.functional import elementwise
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import is_gpu
 from layout import (
     Coord,
     Idx,
@@ -73,9 +74,14 @@ def coord_transform[
     Returns:
         The corresponding input coordinate as a floating-point value.
     """
+    # This is the shared coordinate transform of the nearest and linear
+    # modes. resize_cubic maps coordinates itself, in `_half_pixel_center`:
+    # it multiplies by the input-to-output ratio to match torch's CPU
+    # bicubic, and dividing by the inverse ratio here would round
+    # differently.
     var out_coord_f32 = Float32(out_coord)
 
-    comptime __match mode:
+    comptime match mode:
         case .HalfPixel:
             # note: coordinates are for the CENTER of the pixel
             # - 0.5 term at the end is so that when we round to the nearest integer
@@ -124,10 +130,124 @@ struct RoundMode(ImplicitlyCopyable):
         return self.value == other.value
 
 
+def _check_resize_shapes[
+    in_dtype: DType, out_dtype: DType, //
+](input: TileTensor[in_dtype, ...], output: TileTensor[out_dtype, ...],):
+    """Checks the shape relationship every resize mode requires.
+
+    Every resize writes an output of the same rank as its input, and an
+    empty input can only resize to an empty output: each output element
+    reads the input at a coordinate derived from its own, so a non-empty
+    output of an empty input would read out of bounds. The rank check is
+    compile time, and the empty-input check is a debug assertion.
+
+    Args:
+        input: The input to be resized.
+        output: The output containing the resized input.
+    """
+    comptime assert (
+        input.rank == output.rank
+    ), "input rank must match output rank"
+    debug_assert(
+        input.num_elements() != 0 or output.num_elements() == 0,
+        "cannot resize an empty input to a non-empty output",
+    )
+
+
+@inline(.always)
+def _axis_scale(in_dim: Int, out_dim: Int) -> Float32:
+    """Returns the scale of one resize axis: its output size over its input
+    size.
+
+    The division runs in float64 and narrows to float32, so the nearest and
+    linear modes derive the same scale value for the same axis.
+
+    Args:
+        in_dim: The size of the input dimension.
+        out_dim: The size of the output dimension.
+
+    Returns:
+        The ratio of output size to input size, as float32.
+    """
+    return (Float64(out_dim) / Float64(in_dim)).cast[.float32]()
+
+
+@inline(.always)
+def _round_coordinate[
+    round_mode: RoundMode, dtype: DType
+](val: Scalar[dtype]) -> Scalar[dtype]:
+    """Rounds a fractional coordinate to an integer index the way
+    `round_mode` selects. This is the one implementation of `RoundMode`
+    semantics that resize consumes.
+
+    Parameters:
+        round_mode: How to round fractional input coordinates to integer indices.
+        dtype: The type of the coordinate.
+
+    Args:
+        val: The fractional coordinate to round.
+
+    Returns:
+        The rounded coordinate, of the same type as `val`.
+    """
+    comptime match round_mode:
+        case .HalfDown:
+            return ceil(val - 0.5)
+        case .HalfUp:
+            return floor(val + 0.5)
+        case .Floor:
+            return floor(val)
+        case .Ceil:
+            return ceil(val)
+        case _:
+            comptime assert False, "round_mode not implemented"
+
+
+@inline(.always)
+def _nearest_source_index[
+    coordinate_transformation_mode: CoordinateTransformationMode,
+    round_mode: RoundMode,
+](out_coord: Int, in_dim: Int, out_dim: Int, scale: Float32) -> Int:
+    """Returns the input index that nearest-neighbor resize gathers for
+    `out_coord`: `coord_transform` maps the output coordinate into the
+    input by `coordinate_transformation_mode`, `_round_coordinate` rounds
+    it by `round_mode`, and the result is clamped to the input.
+
+    Parameters:
+        coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
+        round_mode: How to round fractional input coordinates to integer indices.
+
+    Args:
+        out_coord: The output coordinate to map.
+        in_dim: The size of the input dimension.
+        out_dim: The size of the output dimension.
+        scale: The ratio of output dimension size to input dimension size.
+
+    Returns:
+        The input index to gather, within `[0, in_dim)`.
+    """
+    # Floor with half_pixel maps the first output coordinate of an
+    # upsample below zero, so clamp both ends.
+    return min(
+        max(
+            Int(
+                _round_coordinate[round_mode](
+                    coord_transform[coordinate_transformation_mode](
+                        out_coord, in_dim, out_dim, scale
+                    )
+                )
+            ),
+            0,
+        ),
+        in_dim - 1,
+    )
+
+
 def resize_nearest_neighbor[
     coordinate_transformation_mode: CoordinateTransformationMode,
     round_mode: RoundMode,
     dtype: DType,
+    target: StaticString = "cpu",
 ](
     input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
@@ -135,28 +255,156 @@ def resize_nearest_neighbor[
 ) raises:
     """Resizes input to output shape using nearest-neighbor interpolation.
 
+    When every axis scales by an exact integer factor and the transform
+    and round modes collapse to floor division at whole factors
+    (asymmetric + floor, half_pixel + half_down, half_pixel + half_up),
+    the kernel skips the coordinate arithmetic entirely and gathers from
+    ``out_coord // scale``. Models used to hand-roll this case with
+    reshape + broadcast to avoid the coordinate math; the fast path makes
+    the standard op just as cheap.
+
     Parameters:
         coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
         round_mode: How to round fractional input coordinates to integer indices.
         dtype: Type of input and output.
+        target: The target backend to execute on, such as "cpu" or "gpu".
 
     Args:
         input: The input to be resized.
         output: The output containing the resized input.
         ctx: The device context used to launch the kernel.
     """
-    comptime assert (
-        input.rank == output.rank
-    ), "input rank must match output rank"
+    _check_resize_shapes(input, output)
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
-        scales[i] = (Float64(output.dim(i)) / Float64(input.dim(i))).cast[
-            .float32
-        ]()
+        scales[i] = _axis_scale(Int(input.dim(i)), Int(output.dim(i)))
+
+    # At an exact integer scale of at least 1 on every axis, these mode
+    # combinations reduce the coordinate math to floor division:
+    # - asymmetric + floor maps out_coord / scale, floored.
+    # - half_pixel + half_down / half_up: (out + 0.5) / scale - 0.5 always
+    #   lands strictly between floor(out / scale) - 1 and its next integer,
+    #   so both half roundings pick floor(out / scale).
+    # Other combinations (align_corners, half_pixel + floor/ceil) distribute
+    # output coordinates unevenly, so they keep the generic path.
+    #
+    # The generic path maps coordinates in Float32, which is exact only for
+    # integers below 2**24. The fast path's integer division is exact for all
+    # coordinates, so it would diverge from the generic path once an output
+    # axis reaches 2**24. Restrict the fast path to axes below that bound so
+    # the two paths stay bit-identical.
+    comptime floor_divides = (
+        coordinate_transformation_mode
+        == CoordinateTransformationMode.Asymmetric
+        and round_mode == RoundMode.Floor
+    ) or (
+        coordinate_transformation_mode == CoordinateTransformationMode.HalfPixel
+        and (round_mode == RoundMode.HalfDown or round_mode == RoundMode.HalfUp)
+    )
+
+    comptime if floor_divides:
+        # TileTensor dims are launch-time values even for dynamic graph
+        # shapes, so runtime checks per launch keep one registration for
+        # both paths.
+        var exact_integer_scale = True
+        comptime last = input.rank - 1
+        var int_scales = StaticTuple[Int, input.rank](1)
+        var shift_scales = StaticTuple[Int, input.rank](0)
+        var pow2_scales = StaticTuple[Int, input.rank](0)
+        for i in range(input.rank):
+            var in_dim = Int(input.dim(i))
+            var out_dim = Int(output.dim(i))
+            if in_dim <= 0 or out_dim % in_dim != 0 or out_dim >= 1 << 24:
+                exact_integer_scale = False
+            else:
+                var scale = out_dim // in_dim
+                int_scales[i] = scale
+                # A power-of-two scale shifts; any other exact integer
+                # scale divides. Both amounts are launch-time values.
+                if (scale & (scale - 1)) == 0:
+                    pow2_scales[i] = 1
+                    var s = 0
+                    var v = scale
+                    while v > 1:
+                        v >>= 1
+                        s += 1
+                    shift_scales[i] = s
+
+        if exact_integer_scale:
+            # Index math reduces to floor division. No clamping is needed
+            # because out_dim == in_dim * scale bounds the index to
+            # [0, in_dim). Host code picks one body per launch, so the
+            # kernel runs either pure shifts or pure divisions, never an
+            # in-kernel mix of both.
+            comptime all_pow2 = True
+            var all_pow2_runtime = True
+            for i in range(input.rank):
+                if pow2_scales[i] == 0:
+                    all_pow2_runtime = False
+
+            comptime width = (
+                simd_width_of[dtype, target=get_gpu_target()]() if is_gpu[
+                    target
+                ]() else simd_width_of[dtype]()
+            )
+
+            if all_pow2_runtime:
+
+                def nn_shift[
+                    simd_width: Int, alignment: Int = 1
+                ](out_coords: Coord) {var}:
+                    var in_coords = IndexList[input.rank](0)
+
+                    comptime for i in range(last):
+                        in_coords[i] = (
+                            Int(out_coords[i].value()) >> shift_scales[i]
+                        )
+
+                    var out_last = Int(out_coords[last].value())
+                    var values = SIMD[dtype, simd_width]()
+                    comptime for lane in range(simd_width):
+                        in_coords[last] = (out_last + lane) >> shift_scales[
+                            last
+                        ]
+                        values[lane] = input.ptr[input.layout(Coord(in_coords))]
+
+                    output.raw_store[width=simd_width, alignment=alignment](
+                        output.layout(out_coords), values
+                    )
+
+                elementwise[width, target=target](
+                    nn_shift, output.layout.shape_coord(), ctx
+                )
+            else:
+
+                def nn_div[
+                    simd_width: Int, alignment: Int = 1
+                ](out_coords: Coord) {var}:
+                    var in_coords = IndexList[input.rank](0)
+
+                    comptime for i in range(last):
+                        in_coords[i] = (
+                            Int(out_coords[i].value()) // int_scales[i]
+                        )
+
+                    var out_last = Int(out_coords[last].value())
+                    var values = SIMD[dtype, simd_width]()
+                    comptime for lane in range(simd_width):
+                        in_coords[last] = (out_last + lane) // int_scales[last]
+                        values[lane] = input.ptr[input.layout(Coord(in_coords))]
+
+                    output.raw_store[width=simd_width, alignment=alignment](
+                        output.layout(out_coords), values
+                    )
+
+                elementwise[width, target=target](
+                    nn_div, output.layout.shape_coord(), ctx
+                )
+            return
 
     @inline(.always)
     def round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
-        comptime __match round_mode:
+        comptime match round_mode:
             case .HalfDown:
                 return ceil(val - 0.5)
             case .HalfUp:
@@ -168,33 +416,68 @@ def resize_nearest_neighbor[
             case _:
                 comptime assert False, "round_mode not implemented"
 
-    def nn_interpolate[
-        simd_width: Int, alignment: Int = 1
-    ](out_coords: Coord) {var}:
-        var in_coords = IndexList[input.rank](0)
-
-        comptime for i in range(input.rank):
-            in_coords[i] = min(
+    @inline(.always)
+    def source_index(
+        out_coord: Int, in_dim: Int, out_dim: Int, scale: Float32
+    ) -> Int:
+        # Floor with half_pixel maps the first output coordinate of an
+        # upsample below zero, so clamp both ends.
+        return min(
+            max(
                 Int(
                     round(
                         coord_transform[coordinate_transformation_mode](
-                            Int(out_coords[i].value()),
-                            Int(input.dim(i)),
-                            Int(output.dim(i)),
-                            scales[i],
+                            out_coord, in_dim, out_dim, scale
                         )
                     )
                 ),
-                Int(input.dim(i)) - 1,
+                0,
+            ),
+            in_dim - 1,
+        )
+
+    # Every lane of a vector shares its outer coordinates, so the outer source
+    # indices are computed once per vector and only the innermost axis is
+    # gathered per lane. The innermost output axis is contiguous.
+    def nn_interpolate[
+        simd_width: Int, alignment: Int = 1
+    ](out_coords: Coord) {var}:
+        comptime last = input.rank - 1
+        var in_coords = IndexList[input.rank](0)
+
+        comptime for i in range(last):
+            in_coords[i] = _nearest_source_index[
+                coordinate_transformation_mode, round_mode
+            ](
+                Int(out_coords[i].value()),
+                Int(input.dim(i)),
+                Int(output.dim(i)),
+                scales[i],
             )
 
-        var in_idx = input.layout(Coord(in_coords))
-        var out_idx = output.layout(out_coords)
+        var out_last = Int(out_coords[last].value())
+        var values = SIMD[dtype, simd_width]()
+        comptime for lane in range(simd_width):
+            in_coords[last] = _nearest_source_index[
+                coordinate_transformation_mode, round_mode
+            ](
+                out_last + lane,
+                Int(input.dim(last)),
+                Int(output.dim(last)),
+                scales[last],
+            )
+            values[lane] = input.ptr[input.layout(Coord(in_coords))]
 
-        output.raw_store(out_idx, input.ptr[in_idx])
+        output.raw_store[width=simd_width, alignment=alignment](
+            output.layout(out_coords), values
+        )
 
-    # TODO (#21439): can use unsafe_memcpy when scale on inner dimension is 1
-    elementwise[1](nn_interpolate, output.layout.shape_coord(), ctx)
+    comptime width = (
+        16 // size_of[dtype]() if is_gpu[target]() else simd_width_of[dtype]()
+    )
+    elementwise[width, target=target](
+        nn_interpolate, output.layout.shape_coord(), ctx
+    )
 
 
 @inline(.always)
@@ -282,23 +565,25 @@ def interpolate_point_1d[
     var xmin = max(Int(center - filter_scale + 0.5), 0)
     var xmax = min(Int(input.dim(dim)), Int(center + filter_scale + 0.5))
     var in_coords = out_coords
-    var sum = Scalar[dtype](0)
-    var acc = Scalar[dtype](0)
+    # Accumulate in float32 so 16-bit dtypes don't round every tap.
+    comptime acc_dtype = DType.float64 if dtype == .float64 else DType.float32
+    var sum = Scalar[acc_dtype](0)
+    var acc = Scalar[acc_dtype](0)
     var ss = 1 / filter_scale
     for k in range(xmax - xmin):
         in_coords[dim] = k + xmin
         var dist_from_center = (
             (Float32(k + xmin) + Float32(0.5)) - center
         ) * ss
-        var filter_coeff = linear_filter(dist_from_center).cast[dtype]()
+        var filter_coeff = linear_filter(dist_from_center).cast[acc_dtype]()
         var in_idx = input.layout(Coord(in_coords))
-        acc += input.raw_load(in_idx) * filter_coeff
+        acc += input.raw_load(in_idx).cast[acc_dtype]() * filter_coeff
         sum += filter_coeff
 
     # normalize to handle cases near image boundary where only 1 point is used
     # for interpolation
     var out_idx = output.layout(Coord(out_coords))
-    output.raw_store(out_idx, acc / sum)
+    output.raw_store(out_idx, (acc / sum).cast[dtype]())
 
 
 def resize_linear[
@@ -321,9 +606,7 @@ def resize_linear[
         input: The input to be resized.
         output: The output containing the resized input.
     """
-    comptime assert (
-        input.rank == output.rank
-    ), "input rank must match output rank"
+    _check_resize_shapes(input, output)
 
     if rebind[IndexList[input.rank]](
         coord_to_index_list(input.layout.shape_coord())
@@ -339,9 +622,7 @@ def resize_linear[
     for i in range(input.rank):
         # need to consider output dims when upsampling and input dims when downsampling
         tmp_dims[i] = max(Int(input.dim(i)), Int(output.dim(i)))
-        scales[i] = (Float64(output.dim(i)) / Float64(input.dim(i))).cast[
-            .float32
-        ]()
+        scales[i] = _axis_scale(Int(input.dim(i)), Int(output.dim(i)))
         if Int(input.dim(i)) != Int(output.dim(i)):
             resize_dims.append(i)
 
@@ -414,6 +695,100 @@ def resize_linear[
     _ = tmp_buffer2^
 
 
+def resize_linear_gpu[
+    coordinate_transformation_mode: CoordinateTransformationMode,
+    antialias: Bool,
+    dtype: DType,
+](
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    ctx: DeviceContext,
+) raises:
+    """Resizes input to output shape using linear interpolation on the GPU.
+
+    Interpolation is separable, so this runs one pass per resized axis, the
+    same as `resize_linear`, with each pass writing into a scratch buffer
+    until the last, which writes the output.
+
+    Parameters:
+        coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
+        antialias: Whether to stretch the linear filter by 1 / scale when
+            downsampling, which reads more input points to avoid aliasing.
+        dtype: Type of input and output.
+
+    Args:
+        input: The input to be resized, on the device.
+        output: The output containing the resized input, on the device.
+        ctx: The device context used to launch the kernels.
+    """
+    _check_resize_shapes(input, output)
+    comptime rank = input.rank
+
+    var in_shape = coord_to_index_list(input.layout.shape_coord())
+    var out_shape = in_shape
+    var final_shape = coord_to_index_list(output.layout.shape_coord())
+    var scales = StaticTuple[Float32, rank]()
+    var resize_dims = List[Int](capacity=rank)
+    for i in range(rank):
+        scales[i] = _axis_scale(in_shape[i], final_shape[i])
+        if in_shape[i] != final_shape[i]:
+            resize_dims.append(i)
+
+    if len(resize_dims) == 0:
+
+        def copy[simd_width: Int, alignment: Int = 1](coords: Coord) {var}:
+            output.raw_store(
+                output.layout(coords), input.raw_load(input.layout(coords))
+            )
+
+        elementwise[1, target="gpu"](copy, output.layout.shape_coord(), ctx)
+        return
+
+    var scratch = List[DeviceBuffer[dtype]]()
+    var in_ptr = input.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
+    for dim_idx in range(len(resize_dims)):
+        var resize_dim = resize_dims[dim_idx]
+        out_shape[resize_dim] = final_shape[resize_dim]
+
+        var out_ptr = output.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
+        if dim_idx != len(resize_dims) - 1:
+            var buffer = ctx.enqueue_create_buffer[dtype](
+                out_shape.flattened_length()
+            )
+            out_ptr = buffer.unsafe_ptr().unsafe_origin_cast[
+                MutUntrackedOrigin
+            ]()
+            scratch.append(buffer^)
+
+        var in_buf = TileTensor(in_ptr, row_major(Coord(in_shape)))
+        var out_buf = TileTensor(out_ptr, row_major(Coord(out_shape)))
+        var scale = scales[resize_dim]
+
+        def interpolate[
+            simd_width: Int, alignment: Int = 1
+        ](coords: Coord) {var}:
+            interpolate_point_1d[
+                InputLayoutType=in_buf.LayoutType,
+                coordinate_transformation_mode,
+                antialias,
+            ](
+                resize_dim,
+                rebind[IndexList[in_buf.rank]](coord_to_index_list(coords)),
+                scale,
+                in_buf,
+                out_buf,
+            )
+
+        elementwise[1, target="gpu"](
+            interpolate, out_buf.layout.shape_coord(), ctx
+        )
+
+        in_shape = out_shape
+        in_ptr = out_ptr
+
+    _ = scratch^
+
+
 def resize_cubic[
     in_dtype: DType, //
 ](input: ImmTileTensor[in_dtype, ...], output: MutTileTensor[.float32, ...],):
@@ -445,6 +820,7 @@ def resize_cubic[
     Constraints:
         Both tensors are rank 4. The input is float32 or an integer type.
     """
+    _check_resize_shapes(input, output)
     comptime assert (
         input.rank == 4 and output.rank == 4
     ), "input and output must be [outer, H, W, inner]"
@@ -463,10 +839,6 @@ def resize_cubic[
         "outer and inner sizes must match",
     )
     if input.num_elements() == 0 or output.num_elements() == 0:
-        debug_assert(
-            output.num_elements() == 0,
-            "cannot resize an empty input to a non-empty output",
-        )
         return
     var outer = in_shape[0]
     var inner = in_shape[3]

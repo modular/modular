@@ -130,7 +130,7 @@ from max.pipelines.graph_input_stager import (
     InputDescriptor,
 )
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
-from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
+from max.pipelines.kv_cache.paged_kv_cache._common import (
     cache_valid_length_for_context,
     prompt_tokens_for_context,
 )
@@ -2132,6 +2132,15 @@ class OverlapTextGenerationPipeline(
         current one.
         """
         return not self._disable_overlap
+
+    @property
+    def graph_capture_ready(self) -> bool:
+        """Whether :meth:`warmup_graph_capture` has run.
+
+        Once it has, pure-decode steps with at most the capture batch size per
+        replica replay captured graphs, and every other step runs eagerly.
+        """
+        return self._graph_capture_runner is not None
 
     @property
     def pipeline_config(self) -> PipelineConfig:

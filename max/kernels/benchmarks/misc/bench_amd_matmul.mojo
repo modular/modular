@@ -66,13 +66,7 @@ Example (prefill sweep at N=K=4096):
        max/kernels/benchmarks/misc/bench_amd_matmul.mojo
 """
 
-from std.collections import Optional
-from std.sys import (
-    get_defined_bool,
-    get_defined_dtype,
-    get_defined_int,
-    align_of,
-)
+from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.benchmark import bencher_iter_custom

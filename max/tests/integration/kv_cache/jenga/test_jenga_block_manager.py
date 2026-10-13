@@ -26,7 +26,7 @@ from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnector
-from max.pipelines.kv_cache.paged_kv_cache.block_manager import PrefixCacheHits
+from max.pipelines.kv_cache.paged_kv_cache._common import PrefixCacheHits
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,
     KVLeafInfo,
@@ -556,6 +556,31 @@ def test_swa_frees_the_blocks_it_slid_past_with_block_size_larger_than_1() -> (
     bm.step(ctx)
     assert bm.get_req_blocks_per_leaf(ctx)[SLIDING] == [0, 0, 3]
     assert bm.huge_block_count().free == 8
+
+
+def test_swa_reserves_every_page_a_decoding_request_holds() -> None:
+    """A window that starts mid-page spans one more page than it fills.
+
+    A window of 12 tokens over pages of 4 is 3 pages wide, but the query at
+    token 12 attends back to token 1, which is still on page 0, while it writes
+    page 3. So a decoding request holds 4 pages, and the reserve has to say so.
+    """
+    bm = make_manager(
+        {SLIDING: sliding(ratio=1, window=12)},
+        block_size=4,
+        num_huge_blocks=10,
+    )
+    ctx = make_ctx(num_tokens=12)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+    ctx.update(42)
+    bm.step(ctx)
+
+    bm.alloc(ctx)
+
+    held = [b for b in bm.get_req_blocks_per_leaf(ctx)[SLIDING] if b != 0]
+    assert len(held) == 4
+    assert bm._blocks_to_reserve(4096)[SLIDING] == len(held)
 
 
 def test_swa_reuses_the_blocks_it_freed() -> None:

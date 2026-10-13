@@ -27,6 +27,7 @@ from max.pipelines.weights.hf_utils import download_weight_files
 
 from .architectures import register_all_models
 from .diffusion.pipeline import PixelGenerationPipeline
+from .lib.auto_model import AutoModel, AutoTokenizer
 from .lib.config import (
     KVCacheConfig,
     LoRAConfig,
@@ -49,7 +50,6 @@ from .lib.config import (
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .lib.interfaces import (
-    GenerateMixin,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
@@ -80,11 +80,12 @@ register_all_models()
 __all__ = [
     "ADAPTER_CONFIG_FILE",
     "PIPELINE_REGISTRY",
+    "AutoModel",
+    "AutoTokenizer",
     "EagerUsageValidator",
     "EagerValidatorMode",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
-    "GenerateMixin",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "LoRAConfig",

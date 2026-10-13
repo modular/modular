@@ -691,7 +691,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
     b_fn: BFn,
     c_fn: CFn,
     slot_fn: SlotFn,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """CPU reference: Mamba-2 SSD varlen scan with an in-place state pool.
 

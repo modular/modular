@@ -656,9 +656,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
 
         Chunked prefill cuts a CE batch at ``max_batch_input_tokens``, which is
         also what a request has to be allocated for. Without it a prompt is
-        admitted in full, so nothing bounds the allocation.
+        admitted in full, so nothing bounds the allocation. A decode worker
+        encodes no prompt: it receives the whole prompt's KV from prefill in
+        one transfer, so it must hold every page up front.
         """
-        if not self.enable_chunked_prefill:
+        if (
+            not self.enable_chunked_prefill
+            or self.pipeline_role == "decode_only"
+        ):
             return None
         return self.max_batch_input_tokens
 

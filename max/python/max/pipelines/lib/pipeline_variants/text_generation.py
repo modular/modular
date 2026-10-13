@@ -91,7 +91,6 @@ from ..interfaces import (
     PipelineModel,
     PipelineModelWithKVCache,
 )
-from ..interfaces.generate import GenerateMixin
 from ..memory_estimation import MemoryPlan
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
@@ -114,7 +113,6 @@ class TextGenerationPipelineInterface(
     Pipeline[
         TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
     ],
-    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
     Generic[TextGenerationContextType],
 ):
     """Interface for text generation pipelines."""
@@ -127,6 +125,24 @@ class TextGenerationPipelineInterface(
     @abstractmethod
     def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
+        ...
+
+    @property
+    @abstractmethod
+    def pipeline_config(self) -> PipelineConfig:
+        """Returns the pipeline configuration."""
+        ...
+
+    @property
+    @abstractmethod
+    def tokenizer(
+        self,
+    ) -> PipelineTokenizer[
+        TextGenerationContextType,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ]:
+        """Returns the tokenizer for this pipeline."""
         ...
 
 

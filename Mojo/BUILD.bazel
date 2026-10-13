@@ -1,18 +1,5 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load(
-    "//bazel:api.bzl",
-    "copy_files",
-    "dialect_checksum",
-    "gentbl_cc_library",
-    "gentbl_mlir_dialect",
-    "gentbl_modular_passes",
-    "mlir_nanobind",
-    "modular_cc_library",
-    "modular_py_binary",
-    "modular_shared_library",
-    "pkg_files",
-    "td_library",
-)
+load("//bazel:api.bzl", "copy_files", "dialect_checksum", "modular_cc_library", "modular_py_binary", "modular_shared_library", "pkg_files")
 load(
     "//bazel:config.bzl",
     "ALLOW_UNUSED_TAG",
@@ -21,6 +8,7 @@ load(
     "KERNEL_PROFILING_LOCAL_DEFINES",
     "TOP_LEVEL_TAG",
 )
+load("//bazel:tablegen.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "mlir_nanobind", "td_library")
 
 # gazelle:default_visibility //Mojo:consumers
 
@@ -40,7 +28,7 @@ package_group(
         "//max/tests/internal/API/c/...",  # Only when testing internally
         "//oss/modular/bazel/...",
         "//oss/modular/docs/...",
-        "//oss/modular/max/python/max/_core/mcl/...",  # Only when testing internally
+        "//oss/modular/max/python/max/_core/max_license/...",  # Only when testing internally
         "//plugins/...",
         "//utils/...",
     ],
@@ -1045,7 +1033,7 @@ modular_shared_library(
     visibility = [
         "//Mojo:consumers",
         "//Mojo/stdlib/std:__pkg__",
-        "//Mojo/test/mcl/profiling:__pkg__",
+        "//Mojo/test/max_license/profiling:__pkg__",
         "//Mojo/test/tracy:__pkg__",
         "//mojo/stdlib/std:__pkg__",
     ],
@@ -1453,6 +1441,7 @@ modular_cc_library(
         ":DepGraphDialect",
         ":DialectChecksum",
         ":ToolCommon",
+        "//Support:Base",
     ],
 )
 

@@ -30,6 +30,7 @@ file descriptor errors — see test_send_recv.py). The BUILD target sets
 
 from __future__ import annotations
 
+import gc
 import os
 from pathlib import Path
 from queue import Queue
@@ -200,6 +201,72 @@ def test_read_transfer_dram() -> None:
     assert np.array_equal(blocks_1.to_numpy(), expected_blocks_1)
     assert np.array_equal(blocks_2.to_numpy(), expected_blocks_2)
 
+    engine_2.cleanup()
+    engine_1.cleanup()
+
+
+def test_engine_keeps_registered_buffers_alive_dram() -> None:
+    """Transfers stay correct when the engine holds the only buffer refs.
+
+    NIXL registers raw addresses, so a buffer the engine drops is freed while
+    still registered. engine_1 and engine_2 own their buffers outright; the
+    pages relay through both into engine_3, whose buffer the test keeps.
+    """
+    total_num_pages = 4
+    elts_per_page = 64
+    num_elts = total_num_pages * elts_per_page
+
+    engine_1 = KVTransferEngine(
+        "engine_1",
+        [
+            [
+                kv_memory(
+                    Buffer.from_numpy(np.arange(num_elts, dtype=np.int16)),
+                    total_num_pages,
+                )
+            ]
+        ],
+    )
+    engine_2 = KVTransferEngine(
+        "engine_2",
+        [
+            [
+                kv_memory(
+                    Buffer.from_numpy(np.zeros(num_elts, dtype=np.int16)),
+                    total_num_pages,
+                )
+            ]
+        ],
+    )
+    blocks_3 = Buffer.from_numpy(np.zeros(num_elts, dtype=np.int16))
+    engine_3 = KVTransferEngine(
+        "engine_3", [[kv_memory(blocks_3, total_num_pages)]]
+    )
+
+    # Refill any freed allocations so a dangling registration reads -1s.
+    gc.collect()
+    _churn = [np.full(num_elts, -1, dtype=np.int16) for _ in range(4096)]
+
+    engine_1.connect(engine_2.metadata)
+    engine_2.connect(engine_1.metadata)
+    engine_2.connect(engine_3.metadata)
+    engine_3.connect(engine_2.metadata)
+
+    page_idxs = list(range(total_num_pages))
+    for src, dst in ((engine_1, engine_2), (engine_2, engine_3)):
+        queue: Queue[TransferReqData] = Queue()
+        sender = Thread(
+            target=_sender_routine,
+            args=(src, dst.metadata, queue, page_idxs, page_idxs),
+        )
+        receiver = Thread(target=_peer_routine, args=(dst, queue))
+        _run_transfer_pair(sender, receiver)
+
+    assert np.array_equal(
+        blocks_3.to_numpy(), np.arange(num_elts, dtype=np.int16)
+    )
+
+    engine_3.cleanup()
     engine_2.cleanup()
     engine_1.cleanup()
 
@@ -473,6 +540,67 @@ def test_connect_rejects_leaf_id_mismatch_dram() -> None:
 
     with pytest.raises(ValueError, match="Leaf mismatch"):
         engine_1.connect(engine_2.metadata)
+
+    engine_2.cleanup()
+    engine_1.cleanup()
+
+
+def test_shared_slab_registers_once_dram() -> None:
+    """Leaves that view one slab share a single NIXL registration.
+
+    NIXL refuses remote metadata that lists the same (addr, len, dev) twice
+    with different backend keys. libfabric keys every registration
+    differently, so registering the slab once per leaf failed connect(). The
+    CPU UCX plugin packs identical keys and does not hit that error, so this
+    checks the registration count directly, then moves pages for every leaf.
+    """
+    slab_1 = Buffer.from_numpy(np.arange(24, dtype=np.int16) + 100)
+    slab_2 = Buffer.from_numpy(np.zeros(24, dtype=np.int16))
+    draft_1 = Buffer.from_numpy(np.arange(16, dtype=np.int16) + 500)
+    draft_2 = Buffer.from_numpy(np.zeros(16, dtype=np.int16))
+    leaf_ids = ["full", "full/scales", "draft"]
+
+    def make_engine(name: str, slab: Buffer, draft: Buffer) -> KVTransferEngine:
+        return KVTransferEngine(
+            name,
+            [[kv_memory(slab, 3), kv_memory(slab, 12), kv_memory(draft, 4)]],
+            leaf_ids=leaf_ids,
+        )
+
+    engine_1 = make_engine("engine_1", slab_1, draft_1)
+    engine_2 = make_engine("engine_2", slab_2, draft_2)
+    for engine in (engine_1, engine_2):
+        (agent,) = engine.tensor_agents[0]
+        assert len(agent.base_addrs) == 3
+        assert len(agent.reg_dlists) == 2
+
+    engine_1.connect(engine_2.metadata)
+    engine_2.connect(engine_1.metadata)
+
+    src_idxs = {**_SRC_IDXS, "draft": [3]}
+    dst_idxs = {**_DST_IDXS, "draft": [0]}
+    queue: Queue[TransferReqData] = Queue()
+
+    def send() -> None:
+        transfer_req = engine_1.initiate_send_transfer(
+            engine_2.metadata,
+            src_idxs,
+            dst_idxs,
+            src_replica_idx=0,
+            dst_replica_idx=0,
+        )
+        queue.put(transfer_req)
+        engine_1.sync_and_release(transfer_req)
+
+    _run_transfer_pair(
+        Thread(target=send),
+        Thread(target=_peer_routine, args=(engine_2, queue)),
+    )
+
+    assert np.array_equal(slab_2.to_numpy(), _expected_destination())
+    expected_draft = np.zeros(16, dtype=np.int16)
+    expected_draft[0:4] = np.arange(12, 16, dtype=np.int16) + 500
+    assert np.array_equal(draft_2.to_numpy(), expected_draft)
 
     engine_2.cleanup()
     engine_1.cleanup()

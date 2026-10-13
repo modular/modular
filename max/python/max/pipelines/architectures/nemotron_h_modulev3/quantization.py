@@ -60,7 +60,7 @@ _LINEAR_PARALLELISM: dict[str, Parallelism] = {
     ".mixer.out_proj": Parallelism.ROW,
     ".shared_experts.up_proj": Parallelism.COLUMN,
     ".shared_experts.down_proj": Parallelism.ROW,
-    # The MLP mixers and the LM head are replicated.
+    # The MLP mixers are replicated.
     ".mixer.up_proj": Parallelism.REPLICATED,
     ".mixer.down_proj": Parallelism.REPLICATED,
 }
@@ -77,7 +77,7 @@ def linear_parallelism(module: str) -> Parallelism:
             linear layer, such as an attention projection.
     """
     if module == "lm_head":
-        return Parallelism.REPLICATED
+        return Parallelism.COLUMN
     for suffix, parallelism in _LINEAR_PARALLELISM.items():
         if module.endswith(suffix):
             return parallelism

@@ -288,7 +288,7 @@ void M::KGEN::LIT::checkStableTraitMemberImplementation(
   }
   // Determine member kind from the trait member's operation type.
   StringRef memberKind =
-      isa<AliasDeclOp>(traitMemberDecl.getIfOperation()) ? "alias" : "method";
+      isa<AliasASTDecl>(traitMemberDecl) ? "alias" : "method";
 
   // Error: stable struct implements stable trait member with unstable member.
   StringRef memberName = getDeclName(traitMemberDecl);

@@ -17,6 +17,7 @@ import queue
 import time
 import uuid
 from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum, auto
 
@@ -27,7 +28,6 @@ from max.pipelines.context import (
 )
 from max.pipelines.kv_cache import (
     InsufficientBlocksError,
-    JengaKVCacheManager,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManagerInterface,
@@ -58,7 +58,7 @@ from max.serve.scheduler.base import (
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
-    shared_block_ids,
+    check_di_supports,
 )
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
 from max.serve.scheduler.interface import Scheduler
@@ -92,6 +92,15 @@ class DecodeRequestPhase(Enum):
 
 
 _KV_HOLD_LOG_INTERVAL_S = 5.0
+
+
+def _logged_block_ids(blocks_per_leaf: Mapping[str, list[int]]) -> list[int]:
+    """Returns the first leaf's block ids, the unit the KV hold log counts.
+
+    The legacy cache gives every leaf the same row. Under Jenga each leaf
+    allocates on its own, so the first leaf stands in for the request.
+    """
+    return next(iter(blocks_per_leaf.values()), [])
 
 
 @dataclass
@@ -161,10 +170,7 @@ class DecodeScheduler(Scheduler):
         dispatcher: DecodeDispatcherClient,
         dp_padder: DPBatchPadder | None = None,
     ) -> None:
-        # TODO(SERVOPT-1590): remove once Jenga supports DI.
-        assert not isinstance(kv_cache, JengaKVCacheManager), (
-            "Jenga KV cache is incompatible with Disaggregated Inference"
-        )
+        check_di_supports(kv_cache)
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -323,7 +329,7 @@ class DecodeScheduler(Scheduler):
                     or not self.kv_cache.contains(pending.context)
                 ):
                     continue
-                blocks = shared_block_ids(
+                blocks = _logged_block_ids(
                     self.kv_cache.get_req_blocks_per_leaf(pending.context)
                 )
                 if pending.phase is DecodeRequestPhase.TRANSFERRING:
@@ -337,7 +343,7 @@ class DecodeScheduler(Scheduler):
             for ctx in (*replica.tg_reqs.values(), *replica.ce_reqs.values()):
                 if self.kv_cache.contains(ctx):
                     decoding.update(
-                        shared_block_ids(
+                        _logged_block_ids(
                             self.kv_cache.get_req_blocks_per_leaf(ctx)
                         )
                     )
@@ -515,7 +521,7 @@ class DecodeScheduler(Scheduler):
         self,
         request_id: RequestID,
         data: TextContext,
-        dst_idxs: list[int],
+        dst_idxs: dict[str, list[int]],
         dst_replica_idx: int,
     ) -> None:
         """Pushes a request to the prefill socket.
@@ -523,7 +529,8 @@ class DecodeScheduler(Scheduler):
         Args:
             request_id: The ID of the request to send
             data: The context containing the request data
-            dst_idxs: The destination block indices for the request
+            dst_idxs: The destination block indices for the request, keyed
+                by leaf id
             replica_idx: The replica the request is on for Decode
 
         Raises:
@@ -551,10 +558,11 @@ class DecodeScheduler(Scheduler):
         # page_size to convert to blocks. dst_idxs is already per-replica
         # (get_req_blocks_per_leaf returns blocks on the replica the request
         # was claimed on), so no further scaling by data-parallel degree.
-        for i in range(
+        num_cached = (
             data.tokens.processed_length // self.kv_cache.params.page_size
-        ):
-            dst_idxs[i] = -1
+        )
+        for blocks in dst_idxs.values():
+            blocks[:num_cached] = [-1] * num_cached
 
         # Struct construction + msgspec serialization + ZMQ enqueue,
         # decode-local -- no network transit included.
@@ -587,9 +595,7 @@ class DecodeScheduler(Scheduler):
         to complete before this request can join a TG batch or release
         its blocks; see ``check_for_completed_transfers``.
         """
-        dst_idxs = shared_block_ids(
-            self.kv_cache.get_req_blocks_per_leaf(context)
-        )
+        dst_idxs = self.kv_cache.get_req_blocks_per_leaf(context)
         self.requests[req_id] = PendingDecodeRequest(
             context=context,
             replica_idx=replica_idx,

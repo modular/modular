@@ -20,11 +20,7 @@ from comm import Signal
 from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from std.testing import assert_equal, assert_true
 
 

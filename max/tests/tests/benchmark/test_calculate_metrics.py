@@ -1224,6 +1224,66 @@ def test_build_text_generation_result_not_detected_falls_back_to_trim() -> None:
     assert result.text_data.completed == 3
 
 
+def _outputs_with_completion_tokens(
+    counts: list[int],
+) -> list[RequestFuncOutput]:
+    outputs = []
+    for count in counts:
+        output = _make_request_func_output()
+        output.server_token_stats = ServerTokenStats(completion_tokens=count)
+        outputs.append(output)
+    return outputs
+
+
+def test_build_text_generation_result_attaches_aggregate_server_stats() -> None:
+    """Without sessions, server stats are attached flat in output order."""
+    outputs = _outputs_with_completion_tokens([3, 1, 2])
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert result.session_server_stats is None
+    assert result.aggregate_server_stats == [
+        o.server_token_stats for o in outputs
+    ]
+
+
+def test_build_text_generation_result_attaches_session_server_stats() -> None:
+    """With sessions, server stats are grouped per session."""
+    a, b, c, d = _outputs_with_completion_tokens([1, 2, 3, 4])
+    by_session = {"10": [a], "anon": [b], "2": [c, d]}
+    result = build_text_generation_result(
+        outputs=[a, b, c, d],
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        outputs_by_session=by_session,
+    )
+
+    assert result.aggregate_server_stats is None
+    assert result.session_server_stats is not None
+    assert list(result.session_server_stats) == ["2", "10", "anon"]
+    assert result.session_server_stats["2"] == [
+        c.server_token_stats,
+        d.server_token_stats,
+    ]
+
+
 def test_build_text_generation_result_all_failed_suppresses_ss_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

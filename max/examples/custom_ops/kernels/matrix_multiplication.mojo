@@ -42,6 +42,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
+from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 from layout.tile_io import GenericToSharedAsyncTileCopier, copy_dram_to_sram
 
@@ -61,62 +62,7 @@ comptime OPTIMIZED_BLOCK_SIZE = 16 if default_accelerator().is_amd_gpu() else 32
 
 
 # ===-----------------------------------------------------------------------=== #
-# Outer-product accumulator for `TileTensor`
-# ===-----------------------------------------------------------------------=== #
 
-
-@always_inline
-def outer_product_acc(
-    res: TileTensor[mut=True, ...],
-    lhs: TileTensor,
-    rhs: TileTensor,
-) where (
-    type_of(res).flat_rank == 2
-    and type_of(lhs).flat_rank == 1
-    and type_of(rhs).flat_rank == 1
-    and type_of(res).shape_known
-    and type_of(lhs).shape_known
-    and type_of(rhs).shape_known
-):
-    """Updates result tensor with the outer product of two vectors.
-
-    Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
-    `res` is a matrix. This is a `TileTensor` mirror of
-    `layout.math.outer_product_acc`, used so the block-tiled kernels operate
-    entirely on native `TileTensor`s.
-
-    Constraints:
-
-        All tensors must have statically known shapes.
-        `res` must be rank 2.
-        `lhs` and `rhs` must be rank 1.
-        `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
-
-    Args:
-        res: The result matrix to accumulate into, shape (M, N).
-        lhs: The left-hand side vector, shape (M,).
-        rhs: The right-hand side vector, shape (N,).
-    """
-    comptime dtype = res.dtype
-
-    comptime M = type_of(res).LayoutType.static_shape[0]
-    comptime N = type_of(res).LayoutType.static_shape[1]
-
-    comptime assert (
-        type_of(lhs).LayoutType.static_shape[0] == M
-    ), "lhs shape mismatch"
-    comptime assert (
-        type_of(rhs).LayoutType.static_shape[0] == N
-    ), "rhs shape mismatch"
-
-    comptime for i in range(M):
-        comptime for j in range(N):
-            res[i, j] += rebind[res.ElementType](lhs[i].cast[dtype]()) * rebind[
-                res.ElementType
-            ](rhs[j].cast[dtype]())
-
-
-# ===-----------------------------------------------------------------------=== #
 
 # Naive matrix multiplication (CPU)
 # ===-----------------------------------------------------------------------=== #
@@ -176,7 +122,10 @@ def naive_matrix_multiplication[
     This kernel uses a simple for loop structure to compute the matrix
     multiplication. Each thread computes a single element of the output matrix
     C by accumulating the dot product of the corresponding row of A and column
-    of B.
+    of B. The thread mapping deliberately assigns adjacent threads to
+    different rows of the output, so global accesses stay strided: this
+    kernel is the un-optimized baseline that the coalescing kernel improves
+    on.
 
     The kernel assumes that the input matrices A and B are compatible for
     matrix multiplication, i.e., the number of columns in A equals the number
@@ -190,7 +139,9 @@ def naive_matrix_multiplication[
     var N = Int(b.dim[1]())
     var K = Int(b.dim[0]())
 
-    # Calculate the column and row indices for each thread.
+    # Calculate the column and row indices for each thread. Mapping the
+    # x axis to rows keeps this kernel un-coalesced: adjacent threads in
+    # a warp touch rows of `a` that are a full row-stride apart.
     var row = block_dim.x * block_idx.x + thread_idx.x
     var col = block_dim.y * block_idx.y + thread_idx.y
 
@@ -203,8 +154,8 @@ def naive_matrix_multiplication[
             # Multiply the elements and accumulate the result.
             dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
 
-    # Write the final accumulated result to the output matrix.
-    c[row, col] = dst_reg
+        # Write only the output element owned by this in-bounds thread.
+        c[row, col] = dst_reg
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -270,14 +221,14 @@ def coalescing_matrix_multiplication[
     # Initialize a register to accumulate the result for this thread.
     var dst_reg: c.ElementType = 0
 
-    # Iterate over the K dimension to compute the dot product.
+    # Iterate over the K dimension and write only the in-bounds element.
     if row < M and col < N:
         for k_index in range(K):
             # Multiply the elements and accumulate the result.
             dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
 
-    # Write the final accumulated result to the output matrix.
-    c[row, col] = dst_reg
+        # Write the final accumulated result to the output matrix.
+        c[row, col] = dst_reg
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -762,9 +713,9 @@ def block_tiled_vectorized_matrix_multiplication[
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
 def tensor_core_matrix_multiplication[
     dtype: DType,
-    a_layout: TensorLayout,
-    b_layout: TensorLayout,
-    c_layout: TensorLayout,
+    layout_a: TensorLayout,
+    layout_b: TensorLayout,
+    layout_c: TensorLayout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -774,9 +725,9 @@ def tensor_core_matrix_multiplication[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: TileTensor[dtype, a_layout, MutAnyOrigin],
-    B: TileTensor[dtype, b_layout, MutAnyOrigin],
-    C: TileTensor[dtype, c_layout, MutAnyOrigin],
+    A: TileTensor[dtype, layout_a, MutAnyOrigin],
+    B: TileTensor[dtype, layout_b, MutAnyOrigin],
+    C: TileTensor[mut=True, dtype, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -784,9 +735,9 @@ def tensor_core_matrix_multiplication[
 
     Parameters:
         dtype: The data type of the input and output tensors.
-        a_layout: The layout of the input tensor A.
-        b_layout: The layout of the input tensor B.
-        c_layout: The layout of the output tensor C.
+        layout_a: The layout of the input tensor A.
+        layout_b: The layout of the input tensor B.
+        layout_c: The layout of the output tensor C.
         BM: The block size in the M dimension.
         BN: The block size in the N dimension.
         BK: The block size in the K dimension.
@@ -832,14 +783,15 @@ def tensor_core_matrix_multiplication[
     var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    var A_sram_tile = stack_allocation[dtype, address_space=.SHARED](
+    var A_sram_tile = stack_allocation[A.dtype, address_space=.SHARED](
         row_major[BM, BK]()
     )
-    var B_sram_tile = stack_allocation[dtype, address_space=.SHARED](
+    var B_sram_tile = stack_allocation[B.dtype, address_space=.SHARED](
         row_major[BK, BN]()
     )
 
-    var c_reg = stack_allocation[dtype, address_space=.LOCAL](
+    # Allocate register storage in the tensor-core accumulator order.
+    var c_reg = stack_allocation[C.dtype, address_space=.LOCAL](
         row_major[WM // MMA_M, (WN * 4) // MMA_N]()
     ).fill(0)
 
@@ -976,8 +928,8 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     a_tt,
                     b_tt,
                     out_tt,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
-                    block_dim=(BN, BM),
+                    grid_dim=(ceildiv(M, BM), ceildiv(N, BN)),
+                    block_dim=(BM, BN),
                 )
             elif Self.algorithm == "coalescing":
                 comptime BM = OPTIMIZED_BLOCK_SIZE
@@ -1110,9 +1062,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     comptime NUM_WARPS = (BM // WM) * (BN // WN)
                     comptime tensor_core_matmul_kernel = tensor_core_matrix_multiplication[
                         output.dtype,
-                        a_tt.LayoutType,
-                        b_tt.LayoutType,
-                        out_tt.LayoutType,
+                        type_of(a_tt).LayoutType,
+                        type_of(b_tt).LayoutType,
+                        type_of(out_tt).LayoutType,
                         BM,
                         BN,
                         BK,

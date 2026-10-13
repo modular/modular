@@ -27,7 +27,7 @@ prefill, `num_simdgroups=16`) against the fp32 reference for every shape/mask.
 from std.collections import OptionalReg
 from max.gpu.host import DeviceContext
 from std.math import exp, isinf, isnan, sqrt
-from std.random import rand, seed
+from std.random import seed
 from std.sys.info import _accelerator_arch
 
 from layout import (
@@ -48,8 +48,6 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
 )
 from nn.attention.mha_operand import TileTensorMHAOperand
-
-from std.utils.index import Index
 
 
 # ===-------------------------------------------------------------------=== #

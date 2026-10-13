@@ -32,7 +32,7 @@ Both checks poison the output buffers before the launch, so an unwritten tail
 fails deterministically instead of depending on what the allocator recycled.
 """
 
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from nn.topk import topk_gpu

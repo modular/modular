@@ -193,6 +193,15 @@ bool haveProfiler() noexcept {
   return Detail::acquire(Detail::SinkRequest::Attach) != nullptr;
 }
 
+bool requestBurst(StringRef reason) {
+  if (!isEnabled())
+    return false;
+  if (const Detail::RangeSink *sink =
+          Detail::acquire(Detail::SinkRequest::Observe))
+    return sink->requestBurst(reason);
+  return false;
+}
+
 bool canRecord() {
   if (const Detail::RangeSink *sink =
           Detail::acquire(Detail::SinkRequest::Attach))

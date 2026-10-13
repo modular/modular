@@ -20,8 +20,6 @@ from std.sys.info import CompilationTarget
 from std.compile import CompiledFunctionInfo, compile_info
 from std._gpu.host import get_gpu_target
 
-from .info import GPUInfo
-
 # ===-----------------------------------------------------------------------===#
 # Compilation
 # ===-----------------------------------------------------------------------===#

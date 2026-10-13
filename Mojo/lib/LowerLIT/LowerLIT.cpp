@@ -480,7 +480,7 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
            structDecl.getFields().front().getOperations())) {
     if (isa<StructFieldOp>(member))
       continue; // Already lowered field.
-    if (isa<AliasDeclOp>(member)) {
+    if (isa<AliasDeclOp, EnumCaseOp>(member)) {
       member.erase();
       continue;
     }

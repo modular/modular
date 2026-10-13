@@ -131,12 +131,6 @@ private:
   /// corresponding defaults array.
   SmallVector<PogMetadataAttr> ctadPogs;
 
-  /// FIXME: When parameterization is rebuilt remove this field.
-  /// The number of parameters declared for a type, if these are bindings for an
-  /// overload set on a method.
-  size_t numPosCtadParams = 0;
-  size_t numKwOnlyCtadParams = 0;
-
   /// This is a list of additional constraints that need to be satisfied by the
   /// bindings, consider:
   /// ```

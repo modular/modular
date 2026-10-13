@@ -222,6 +222,14 @@ def _Model_debug_verify_replay(
     execution by running the model and comparing kernel launch sequences
     against a previously captured device graph.
 
+    For example, capture a graph, verify its replay, then replay it:
+
+    .. code-block:: python
+
+        model.capture([1, 1], input_tensor)
+        model.debug_verify_replay([1, 1], input_tensor)
+        model.replay([1, 1], input_tensor)
+
     Args:
         self: The model to debug/verify
         graph_keys: Caller-provided graph key or per-device keys identifying
@@ -235,11 +243,6 @@ def _Model_debug_verify_replay(
         ValueError: If no input buffers are provided.
         RuntimeError: If no graph has been captured for ``graph_keys``.
         RuntimeError: If the eager execution trace doesn't match the captured graph.
-
-    Example:
-        >>> model.capture([1, 1], input_tensor)
-        >>> model.debug_verify_replay([1, 1], input_tensor)  # Validates capture
-        >>> model.replay([1, 1], input_tensor)  # Safe to use optimized replay
     """
     if not inputs:
         raise ValueError("Model.debug_verify_replay requires input buffers.")
@@ -262,6 +265,16 @@ def _Model_release_captured_graph(
     :meth:`Model.capture` call. Those buffers reference device memory that
     the runtime cannot reclaim while Python references remain.
 
+    For example, capture a graph, drop the output handles, then release the
+    captured graph:
+
+    .. code-block:: python
+
+        outputs = model.capture(42, input_tensor)
+        model.replay(42, input_tensor)
+        del outputs  # Drop Python-side handles first.
+        model.release_captured_graph(42)
+
     Args:
         self: The model whose captured graph should be released.
         graph_keys: Caller-provided graph key or per-device keys identifying
@@ -270,12 +283,6 @@ def _Model_release_captured_graph(
     Raises:
         TypeError: If ``graph_keys`` is neither an int nor a sequence of ints.
         ValueError: If any key in ``graph_keys`` is out of uint64 range.
-
-    Example:
-        >>> outputs = model.capture(42, input_tensor)
-        >>> model.replay(42, input_tensor)
-        >>> del outputs  # Drop Python-side handles first.
-        >>> model.release_captured_graph(42)
     """
     normalized_keys = _normalize_graph_keys(graph_keys)
     self._release_captured_graph(normalized_keys)

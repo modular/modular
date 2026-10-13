@@ -60,6 +60,14 @@ _EXTRA_TAGS = {
     "test_mha_prefill_v2_lazy_rescale_crossrow_canary.mojo": ["manual"],
     # https://linear.app/modularml/issue/KERN-3610
     "test_mha_vs_naive_reference.mojo": ["manual"],
+    # Flaky due to a K/V DMA race in `MhaPrefillV2` (KERN-3053).
+    "test_mha_i2i_random_ref.mojo": ["manual"],
+    "test_mha_i2i_repro.mojo": ["manual"],
+    "test_mha_prefill_v2.mojo": ["manual"],
+    "test_mha_prefill_v2_causal.mojo": ["manual"],
+    "test_mha_prefill_v2_gqa.mojo": ["manual"],
+    "test_mha_prefill_v2_paged.mojo": ["manual"],
+    "test_mha_prefill_v2_rescale.mojo": ["manual"],
 }
 
 [

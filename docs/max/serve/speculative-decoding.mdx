@@ -29,13 +29,14 @@ information, see [System requirements](/packages#system-requirements).
 ## Supported methods
 
 MAX supports common speculative-decoding methods like EAGLE, EAGLE3,
-MTP, and DFlash.
+MTP, DFlash, and DSpark.
 
 | Method   | Draft source                                                                                | Supported targets and hardware                                                                |
 |----------|---------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
 | `eagle`  | A trained EAGLE or EAGLE3 draft that shares the target's embedding and `lm_head`            | Llama 3 (1 GPU), Kimi K2.5 and K2.6 (8× B200).                                                |
 | `mtp`    | A multi-token prediction head, either inside the target checkpoint or as an assistant draft | DeepSeek V3 and derivatives (8× B200), GLM-5.2 (8× B200), Gemma 4 (1 GPU), Inkling (8× B200). |
-| `dflash` | A trained block draft (DFlash or DSpark) paired with the target                             | Llama 3 (1 GPU), Gemma 4 (1 GPU), Kimi K2.5 (8× B200).                                        |
+| `dflash` | A trained DFlash block draft paired with the target                                         | Llama 3 (1 GPU), Gemma 4 (1 GPU), Kimi K2.5 (8× B200).                                        |
+| `dspark` | A trained DSpark block draft paired with the target                                         | Gemma 4 (1 GPU).                                                                              |
 
 ## Serve with speculative decoding
 
@@ -158,7 +159,9 @@ block size. If you pass a different value, MAX overrides it and logs
 a warning such as `DFlash draft was trained at block_size=10, so
 num_speculative_tokens is being overridden from 2 to 9`.
 
-DSpark drafts use the same serving path.
+DSpark drafts are block drafts too. Serve them with
+`--speculative-method dspark`, and MAX sets the width from the draft
+checkpoint the same way.
 
 The endpoint is ready when you see this message printed in your terminal:
 

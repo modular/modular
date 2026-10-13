@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin._closure import __ownership_keepalive
 from std.math import ceildiv
 from std.sys import argv, size_of
 

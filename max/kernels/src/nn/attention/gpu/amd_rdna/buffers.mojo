@@ -396,7 +396,7 @@ struct VBufferRDNA[
         self.gmem_tile = gmem_tile
         self.strip_idx = 0
         self.current_stage = 0
-        self.remaining_rows = total_rows.value() if total_rows else Int.MAX
+        self.remaining_rows = total_rows.or_else(Int.MAX)
 
     @inline(.always)
     @staticmethod

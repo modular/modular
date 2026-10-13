@@ -46,7 +46,7 @@ from std.sys import simd_width_of, size_of
 from std.itertools import product
 from std.utils.coord import _coerce_dynamic
 
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from layout.coord import DynamicCoord
 from std.collections import Array, Optional
 from comm import Signal, MAX_GPUS

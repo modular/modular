@@ -49,14 +49,12 @@ from layout import (
     TileTensor,
     Idx,
     Coord,
-    RowMajorLayout,
     row_major,
 )
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
 )
-from std.utils import IndexList
 
 
 # ---------------------------------------------------------------------------
@@ -252,28 +250,27 @@ def bench_matmul_1d_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(tensor_c, bias_tile)
             def epilogue_lambda[
                 _dtype: DType,
                 width: SIMDLength,
                 *,
-                alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+                alignment: Int,
+            ](idx: Coord, val: SIMD[_dtype, width]) {var} -> SIMD[
                 _dtype, width
             ]:
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 # 1D bias: broadcast bias[j] across all M rows.
                 var epi_val = bias_tile.load[width=width](Coord(idx[1])).cast[
                     _dtype
                 ]()
                 return val + epi_val
 
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                elementwise_compute_lambda_fn=epilogue_lambda,
-            ](tensor_c, tensor_a, tensor_b, ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+                tensor_c, tensor_a, tensor_b, epilogue_lambda, ctx
+            )
 
         else:  # "tma_bias"
             # Wrap 1D bias as a (1, N) TileTensor to match the 2D epilogue
@@ -364,27 +361,26 @@ def bench_matmul_1d_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @__parameter
             @inline(.always)
-            @__copy_capture(bias_ver_nd)
             def ver_epilogue_lambda[
                 _dtype: DType,
                 width: SIMDLength,
                 *,
-                alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+                alignment: Int,
+            ](idx: Coord, val: SIMD[_dtype, width]) {var} -> SIMD[
                 _dtype, width
             ]:
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 var epi_val = bias_ver_nd.load[width=width](Coord(idx[1])).cast[
                     _dtype
                 ]()
                 return val + epi_val
 
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=transpose_b,
-                elementwise_compute_lambda_fn=ver_epilogue_lambda,
-            ](c_kernel_nd, a_ver_nd, b_ver_nd, ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
+                c_kernel_nd, a_ver_nd, b_ver_nd, ver_epilogue_lambda, ctx
+            )
 
         else:
             var ver_epi_1 = Int64(1)

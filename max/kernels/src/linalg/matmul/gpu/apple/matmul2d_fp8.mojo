@@ -61,7 +61,7 @@ register-cliff optimum (KB `apple-m5-gpu-perf-model`); do NOT exceed 4
 accumulators.
 """
 
-from max.gpu import WARP_SIZE, block_idx, thread_idx, warp_id
+from max.gpu import WARP_SIZE, block_idx, warp_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of
@@ -411,13 +411,12 @@ struct Matmul2dFp8[
         `c` instead, and with `has_compute_fn`, `compute_fn` maps each output
         before it is stored.
 
-        The per-group base views use a base-pointer offset (`a.ptr + a_start*K`,
-        `b.ptr + expert*N*K`) -- the ragged-group addressing idiom shared by every
-        grouped matmul kernel in the tree (`naive_grouped_matmul_kernel`,
-        `grouped_matmul_amd_kernel_launcher`); TileTensor has no runtime-offset
-        ragged-slice primitive that keeps the inner `(., K)` dims static. All
-        element access inside `_gemm_body` is TileTensor-indexed (MMA fragment
-        loaders + guarded `c.store`).
+        The per-group base views are ragged row slices of `a`/`c` at this
+        group's `a_offsets` window and the expert slab of `b` (index clamped
+        when the LoRA group is inactive) -- the ragged-group addressing idiom
+        shared by every grouped matmul kernel in the tree. All element access
+        inside `_gemm_body` is TileTensor-indexed (MMA fragment loaders +
+        guarded `c.store`).
         """
         var N = Int(N_arg)
         var K = Int(K_arg)
@@ -430,18 +429,9 @@ struct Matmul2dFp8[
         # base view is not built from a negative offset.
         var w_expert = max(expert, 0)
 
-        var c_group = TileTensor(
-            c.ptr + Int64(a_start) * Int64(N),
-            Layout(Coord(M, N), Coord(N, Idx[1])),
-        )
-        var a_group = TileTensor(
-            a.ptr + Int64(a_start) * Int64(K),
-            Layout(Coord(M, K), Coord(K, Idx[1])),
-        )
-        var w_group = TileTensor(
-            b.ptr + Int64(w_expert) * Int64(N) * Int64(K),
-            Layout(Coord(N, K), Coord(K, Idx[1])),
-        )
+        var c_group = c[a_start : a_start + M, :]
+        var a_group = a[a_start : a_start + M, :]
+        var w_group = b[w_expert, :, :]
         # `c_group` indexes this group's rows from 0; the epilogues take rows
         # of all of `c`.
         var c_ptr = c.ptr
@@ -449,12 +439,17 @@ struct Matmul2dFp8[
         @inline(.always)
         def group_epilogue_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: IndexList[2], val: SIMD[dtype, width]) {
+        ](idx: Coord, val: SIMD[dtype, width]) {
             var epilogue_fn, var compute_fn, var c_ptr, var a_start, var N
         }:
-            var row_idx: IndexList[2] = (a_start + idx[0], idx[1])
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var row = a_start + Int(idx[0].value())
+            var col = Int(idx[1].value())
+            var row_idx = Coord(row, col)
             comptime if has_compute_fn:
-                (c_ptr + row_idx[0] * N + idx[1]).store[alignment=alignment](
+                (c_ptr + row * N + col).store[alignment=alignment](
                     rebind[SIMD[Self.c_type, width]](
                         compute_fn[dtype, width, alignment=alignment](
                             row_idx, val

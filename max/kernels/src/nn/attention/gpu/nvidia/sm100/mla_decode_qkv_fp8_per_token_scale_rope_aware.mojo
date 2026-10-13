@@ -82,7 +82,6 @@ from layout.tma_async import (
 )
 from layout import (
     ComptimeInt,
-    CoordLike,
     Layout,
     RowMajorLayout,
     TensorEngine,

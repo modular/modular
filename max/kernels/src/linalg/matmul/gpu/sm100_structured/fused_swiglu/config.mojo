@@ -199,8 +199,8 @@ struct FusedSwiGLUMatmulConfig[
             b200_smem - output_smem - clc_smem - mma_output_smem - extra
         ) // AB_smem_per_stage
 
-        if num_pipeline_stages:
-            self.num_pipeline_stages = num_pipeline_stages.value()
+        if case .Some(num_pipeline_stages) = num_pipeline_stages:
+            self.num_pipeline_stages = num_pipeline_stages
         else:
             self.num_pipeline_stages = align_down(max_stages, k_group_size)
 

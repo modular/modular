@@ -210,16 +210,17 @@ def blockwise_scaled_fp8_grouped_matmul_amd_kernel[
 
     # Per-expert sub-tiles: C/A gathered at this expert's row offset, B and its
     # scales by expert id; `a_scales` stays whole, read at `a_start_row + m`.
-    var c_tile = TileTensor(
-        c.ptr + a_start_row * N, row_major(Coord(M, Idx[N]))
+    # The slices carry runtime extents, so reshape restores the static N/K
+    # extents the tile kernel derives from `static_shape`.
+    var c_tile = c[a_start_row : a_start_row + M, :].reshape(
+        row_major(Coord(M, Idx[N]))
     )
-    var a_tile = TileTensor(
-        a.ptr + a_start_row * K, row_major(Coord(M, Idx[K]))
+    var a_tile = a[a_start_row : a_start_row + M, :].reshape(
+        row_major(Coord(M, Idx[K]))
     )
-    var b_tile = TileTensor(b.ptr + expert_id * N * K, row_major[N, K]())
-    var b_scale_tile = TileTensor(
-        b_scales.ptr + expert_id * N_SCALES * K_SCALES,
-        row_major[N_SCALES, K_SCALES](),
+    var b_tile = b[expert_id, :, :].reshape(row_major[N, K]())
+    var b_scale_tile = b_scales[expert_id, :, :].reshape(
+        row_major[N_SCALES, K_SCALES]()
     )
 
     # M-tile stride loop: this CTA strides its expert's M-tiles by grid_dim.y,

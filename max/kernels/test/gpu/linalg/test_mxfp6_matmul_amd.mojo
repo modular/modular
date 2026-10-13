@@ -55,20 +55,14 @@ from std.memory import bitcast
 from std.random import random_ui64, seed
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
-from std.testing import assert_true
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from std.utils import StaticTuple
-from layout import Coord, Idx, TileTensor
+from layout import Idx, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.matmul.gpu.amd import Shuffler
-from linalg.fp6_utils import (
-    FP6Format,
-    decode_fp6_to_f32,
-    fp6_reference_table,
-    unpack_fp6_x32,
-)
+from linalg.fp6_utils import FP6Format, decode_fp6_to_f32, unpack_fp6_x32
 from linalg.fp6_quantization import quantize_mxfp6_amd
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     mxfp6_block_scaled_matmul_amd,

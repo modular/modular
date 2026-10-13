@@ -163,8 +163,7 @@ class _ShapeRearrangeFamily(gc_compile.GCFamilySpec):
         self, device: Device, module: Module | None = None
     ) -> Module:
         """Per-slot counterpart of :meth:`build_module`: one *device* only.
-        A ``CPU_ONLY`` op (such as ``Tile``) is skipped below via
-        :func:`_devices_for`."""
+        A ``CPU_ONLY`` op is skipped below via :func:`_devices_for`."""
         if module is None:
             module = Module()
         for op_type, spec in _REARRANGE_OPS.items():
@@ -335,9 +334,9 @@ _register_spec(
     mo.TileOp,
     RearrangeSpec(
         build_graph=_build_tile_graph,
-        devices=DeviceClass.CPU_ONLY,
+        devices=DeviceClass.ALL,
         rank_keyed=True,
-        max_rank=4,  # GC tile kernel supports up to rank 4.
+        max_rank=4,  # The tile kernel supports up to rank 4 on every target.
     ),
 )
 
@@ -409,11 +408,11 @@ _register_spec(
 )
 _register_spec(
     mo.PadReflectOp,
-    _pad_spec(mo.PadReflectOp, rmo.MoPadReflectOp, False, DeviceClass.CPU_ONLY),
+    _pad_spec(mo.PadReflectOp, rmo.MoPadReflectOp, False, DeviceClass.ALL),
 )
 _register_spec(
     mo.PadRepeatOp,
-    _pad_spec(mo.PadRepeatOp, rmo.MoPadRepeatOp, False, DeviceClass.CPU_ONLY),
+    _pad_spec(mo.PadRepeatOp, rmo.MoPadRepeatOp, False, DeviceClass.ALL),
 )
 
 

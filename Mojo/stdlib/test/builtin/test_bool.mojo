@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.python import PythonObject
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 

@@ -541,9 +541,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_module_init(gpu_kernel)
 
         var block_size = block_dim[0] * block_dim[1] * block_dim[2]
-        var shared_mem_bytes_val = (
-            shared_mem_bytes.value() if shared_mem_bytes else 0
-        )
+        var shared_mem_bytes_val = shared_mem_bytes.or_else(0)
         var max_blocks_sm = (
             gpu_kernel.occupancy_max_active_blocks_per_multiprocessor(
                 block_size, shared_mem_bytes_val

@@ -36,10 +36,8 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from nn.normalization import (
-    rms_norm_fused_quantize_dynamic_scaled_fp8,
-    rms_norm_quantize_dynamic_scaled_fp8,
-)
+from nn.normalization import rms_norm_quantize_dynamic_scaled_fp8
+from .rowwise_normalization import rms_norm_fused_quantize_dynamic_scaled_fp8
 from std.utils.coord import ComptimeInt
 from std.utils.index import IndexList
 from linalg.fp8_quantization import (
@@ -67,6 +65,7 @@ from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
     resize_linear,
+    resize_linear_gpu,
     resize_nearest_neighbor,
 )
 from quantization import (
@@ -299,6 +298,8 @@ struct ResizeNearest:
         round_mode: Int,
         rank: Int,
         dtype: DType,
+        //,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
@@ -308,6 +309,7 @@ struct ResizeNearest:
         resize_nearest_neighbor[
             CoordinateTransformationMode(coordinate_transform_mode),
             RoundMode(round_mode),
+            target=target,
         ](
             input.to_tile_tensor[.int64](),
             output.to_tile_tensor[.int64](),
@@ -339,17 +341,30 @@ struct ResizeLinear:
         antialias: Bool,
         rank: Int,
         dtype: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         size: InputTensor[rank=1, ...],
-    ):
-        resize_linear[
-            CoordinateTransformationMode(coordinate_transform_mode), antialias
-        ](
-            input.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
-        )
+        ctx: DeviceContext,
+    ) raises:
+        comptime if is_cpu[target]():
+            resize_linear[
+                CoordinateTransformationMode(coordinate_transform_mode),
+                antialias,
+            ](
+                input.to_tile_tensor[.int64](),
+                output.to_tile_tensor[.int64](),
+            )
+        else:
+            resize_linear_gpu[
+                CoordinateTransformationMode(coordinate_transform_mode),
+                antialias,
+            ](
+                input.to_tile_tensor[.int64](),
+                output.to_tile_tensor[.int64](),
+                ctx,
+            )
 
 
 @extensibility.register_shape_function("mo.resize.linear")
@@ -457,7 +472,7 @@ struct VroomQ40Matmul:
             a.to_tile_tensor[.int64](),
             b.to_tile_tensor[.int64](),
             c.to_tile_tensor[.int64](),
-            Optional[DeviceContext](ctx),
+            Optional(ctx.assert_cpu_target()),
         )
 
 
@@ -562,7 +577,7 @@ struct VroomQ4KMatmul:
             a.to_tile_tensor[.int64](),
             b.to_tile_tensor[.int64](),
             c.to_tile_tensor[.int64](),
-            Optional[DeviceContext](ctx),
+            Optional(ctx.assert_cpu_target()),
         )
 
 
@@ -670,7 +685,7 @@ struct VroomQ6KMatmul:
             a.to_tile_tensor[.int64](),
             b.to_tile_tensor[.int64](),
             c.to_tile_tensor[.int64](),
-            Optional[DeviceContext](ctx),
+            Optional(ctx.assert_cpu_target()),
         )
 
 

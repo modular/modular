@@ -50,7 +50,8 @@ from std.sys import align_of, size_of
 from max.gpu.host import DeviceContext, HostBuffer
 from layout import Coord, TileTensor, row_major
 from nn.normalization import *
-from nn.softmax import softmax
+from builtin_kernels.rowwise_normalization import layer_norm, rms_norm
+from builtin_kernels.rowwise_softmax import softmax
 from std.utils.coord import ComptimeInt
 from std.utils.index import Index
 

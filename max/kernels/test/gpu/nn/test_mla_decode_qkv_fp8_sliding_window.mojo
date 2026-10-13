@@ -35,16 +35,10 @@ Dispatch logic relevant to coverage (from mla_decode_dispatch.mojo):
 """
 
 from std.random import randn
-from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.mha_mask import SlidingWindowCausalMask
@@ -54,7 +48,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index
 
 
 @inline(.always)

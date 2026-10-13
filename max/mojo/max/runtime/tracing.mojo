@@ -673,10 +673,10 @@ struct Trace[
             self._name_value = _name_value^
             self.detail = detail
 
-            comptime if Self.target:
+            comptime if case .Some(target_name) = Self.target:
                 if self.detail:
                     self.detail += ";"
-                self.detail += String("target=", Self.target.value())
+                self.detail += String("target=", target_name)
             self.int_payload = task_id
         else:
             self._name_value = _name_value^
@@ -880,7 +880,7 @@ struct Trace[
                 self.detail.byte_length(),
                 self.parent_id,
             )
-        elif self.int_payload:
+        elif case .Some(int_payload) = self.int_payload:
             # 2. If there is a task id, use the profiler API to create task:id
             #    labels without copying.
             self.event_id = external_call[
@@ -889,7 +889,7 @@ struct Trace[
                 name_str_ptr,
                 name_str_len,
                 self.parent_id,
-                self.int_payload.value(),
+                int_payload,
             )
         else:
             # 3. In the common case without a task id or detail string, create
@@ -1037,8 +1037,8 @@ struct Trace[
         Emit a log message for op tracing to stderr.
         """
         var detail = self.detail
-        if self.int_payload:
-            detail += String(":", self.int_payload.value())
+        if case .Some(int_payload) = self.int_payload:
+            detail += String(":", int_payload)
         log.info(
             op_name,
             " ",

@@ -17,7 +17,6 @@ from std.random import rand, seed
 
 from layout import (
     Coord,
-    Idx,
     DefaultEngine,
     TileTensor,
     coord_to_index_list,

@@ -14,7 +14,9 @@
 
 
 @fieldwise_init
-struct SimplePoint(Equatable, Hashable, ImplicitlyCopyable, Writable):
+struct SimplePoint(
+    Defaultable, Equatable, Hashable, ImplicitlyCopyable, Writable
+):
     """A simple struct using default reflection-based for traits."""
 
     var x: Int
@@ -22,13 +24,16 @@ struct SimplePoint(Equatable, Hashable, ImplicitlyCopyable, Writable):
     var y: Int
     """The y coordinate."""
 
+    # Uses default reflection-based __init__ from Defaultable trait
     # Uses default reflection-based write_to from Writable trait
     # Uses default reflection-based __eq__ from Equatable trait
     # Uses default reflection-based __hash__ from Hashable trait
 
 
 @fieldwise_init
-struct NestedStruct(Equatable, Hashable, ImplicitlyCopyable, Writable):
+struct NestedStruct(
+    Defaultable, Equatable, Hashable, ImplicitlyCopyable, Writable
+):
     """A struct with nested fields using default reflection-based for traits."""
 
     var point: SimplePoint
@@ -37,13 +42,16 @@ struct NestedStruct(Equatable, Hashable, ImplicitlyCopyable, Writable):
     var name: String
     """Another nested field."""
 
+    # Uses default reflection-based __init__ from Defaultable trait
     # Uses default reflection-based write_to from Writable trait
     # Uses default reflection-based __eq__ from Equatable trait
     # Uses default reflection-based __hash__ from Hashable trait
 
 
 @fieldwise_init
-struct EmptyStruct(Equatable, Hashable, ImplicitlyCopyable, Writable):
+struct EmptyStruct(
+    Defaultable, Equatable, Hashable, ImplicitlyCopyable, Writable
+):
     """A struct with no fields using default reflection-based for traits."""
 
     pass

@@ -36,6 +36,15 @@ class EagerLazyCompileDisallowed(RuntimeError):
     """Raised when a process forbidden from compiling needs an eager op model."""
 
 
+class UnsupportedOpVariant(KeyError):
+    """Raised when an op's device or dtypes are outside its family's supported set.
+
+    This is a refusal, found at dispatch rather than up front, and the eager
+    executors treat it as one. It subclasses ``KeyError`` because a family's
+    model lookup raises it for a key outside the set.
+    """
+
+
 def allow_lazy_compile() -> bool:
     """Returns whether this process may compile one eager op model on demand.
 

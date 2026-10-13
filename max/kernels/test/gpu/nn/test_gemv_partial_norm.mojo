@@ -19,13 +19,17 @@
 # reference.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import rsqrt, sqrt
-from std.memory import alloc
+from std.math import sqrt
 from std.random import rand
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from layout import TileTensor, Coord, CoordLike, Idx, row_major
+from layout import (
+    TileTensor,
+    CoordLike,
+    Idx,
+    row_major,
+)
 
 from internal_utils import assert_almost_equal
 from nn.gemv_partial_norm import gemv_and_partial_norm

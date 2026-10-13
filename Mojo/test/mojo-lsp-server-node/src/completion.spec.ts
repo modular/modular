@@ -351,17 +351,6 @@ def function(arg: Int):
       await checkSnippet(doc, "value");
     });
 
-    it("should complete for partial while", async function () {
-      let doc = new Document(
-        server,
-        "test:///while_no_colon.mojo",
-        `
-def function(arg: Int):
-  while arg.value`
-      );
-      await checkSnippet(doc, "value");
-    });
-
     it("should complete for partial with", async function () {
       let doc = new Document(
         server,

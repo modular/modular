@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import max.gpu.primitives.warp as warp
 from max.gpu import global_idx
 from max.gpu.sync import barrier
 from max.gpu.globals import WARP_SIZE

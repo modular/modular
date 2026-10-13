@@ -67,6 +67,7 @@ def test_kv_metadata_extends_with_kv_fields() -> None:
     assert kv_fields - base_fields == {
         "leaf_ids",
         "num_pages_per_group",
+        "bytes_per_page",
         "bytes_per_group",
         "replicated_per_group",
     }
@@ -87,6 +88,7 @@ def test_kv_metadata_roundtrip_all_fields() -> None:
         agents_meta=[[_agent_meta()]],
         leaf_ids=["full", "full/scales"],
         num_pages_per_group=[17, 68],
+        bytes_per_page=800,
         bytes_per_group=[784, 16],
         replicated_per_group=[True, True],
     )

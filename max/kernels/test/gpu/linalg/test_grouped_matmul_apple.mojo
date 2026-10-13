@@ -171,10 +171,11 @@ def _run_case[
     @inline(.always)
     def epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var epi_ptr}:
+    ](idx: Coord, val: SIMD[dtype, width]) {var epi_ptr}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var out = val.cast[.float32]() * 2 + 1
         epi_ptr.unsafe_store[width=width](
-            idx[0] * N + idx[1], out.cast[out_type]()
+            Int(idx[0].value()) * N + Int(idx[1].value()), out.cast[out_type]()
         )
 
     grouped_matmul[has_epilogue_fn=True](

@@ -451,12 +451,9 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                             )
                         )
 
-                        comptime if elementwise_lambda_fn:
+                        comptime if case .Some(ep) = elementwise_lambda_fn:
                             comptime alignment = align_of[SIMD[c_type, 2]]()
-                            comptime epilogue = elementwise_lambda_fn.value()
-                            epilogue[alignment=alignment](
-                                (Int(m), Int(n)), c_mn
-                            )
+                            ep[alignment=alignment]((Int(m), Int(n)), c_mn)
                         else:
                             c_gmem_frag[m_vec, n_vec] = c_mn
 

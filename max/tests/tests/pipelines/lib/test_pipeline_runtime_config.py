@@ -110,6 +110,25 @@ def test_is_disaggregated(pipeline_role: PipelineRole, expected: bool) -> None:
     assert runtime.is_disaggregated is expected
 
 
+@pytest.mark.parametrize(
+    ("pipeline_role", "expected"),
+    [
+        ("prefill_and_decode", 1024),
+        ("prefill_only", 1024),
+        ("decode_only", None),
+    ],
+)
+def test_max_num_input_tokens_uncapped_on_decode(
+    pipeline_role: PipelineRole, expected: int | None
+) -> None:
+    runtime = PipelineRuntimeConfig(
+        pipeline_role=pipeline_role,
+        enable_chunked_prefill=True,
+        max_batch_input_tokens=1024,
+    )
+    assert runtime.max_num_input_tokens == expected
+
+
 @pytest.mark.parametrize("utilization", [-0.01, -1, 1.01, 2, 100])
 def test_vision_cache_utilization_rejects_out_of_range_values(
     utilization: float,

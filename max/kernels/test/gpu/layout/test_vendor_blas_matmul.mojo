@@ -18,7 +18,7 @@ from std.sys import default_accelerator
 from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
 

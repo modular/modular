@@ -15,27 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from std.collections.interval import IntervalElement
-from std.collections.string.string import (
-    _calc_initial_buffer_size_int32,
-    _calc_initial_buffer_size_int64,
-)
-from std.hashlib.hasher import Hasher
-from std.math import Ceilable, CeilDivable, Floorable, Truncable
-from std.sys.info import is_32bit
-from std.sys.info import bit_width_of
-
-from std.math import Absable, DivModable, Powable
-from std.python import (
-    ConvertibleFromPython,
-    Python,
-    PythonObject,
-)
-
-from std.utils._select import _select_register_value as select
-from std.utils._visualizers import lldb_formatter_wrapping_type
-from std.utils.coord import Coord, CoordLike
-
 # ===----------------------------------------------------------------------=== #
 #  Indexer
 # ===----------------------------------------------------------------------=== #

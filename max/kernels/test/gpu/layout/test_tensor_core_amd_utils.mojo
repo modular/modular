@@ -15,7 +15,6 @@ from max.gpu import WARP_SIZE, lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI300X
 from layout import (
-    Coord,
     Idx,
     TensorLayout,
     TileTensor,

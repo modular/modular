@@ -29,7 +29,10 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/SourceMgr.h"
+
+#define DEBUG_TYPE "mojo-parser"
 
 using namespace M;
 using namespace KGEN;
@@ -417,6 +420,13 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
         // Build the package.
         return sharedState.createPackage(path, packageName);
       });
+  LLVM_DEBUG(
+      llvm::dbgs()
+      << "Parser allocators for package '" << packageName
+      << "': persistent=" << sharedState.persistentAllocator.getTotalMemory()
+      << " bytes in " << sharedState.persistentAllocator.getNumSlabs()
+      << " slabs, statements=" << sharedState.stmtAllocator.getTotalMemory()
+      << " bytes in " << sharedState.stmtAllocator.getNumSlabs() << " slabs\n");
   if (!module)
     return {};
   return {std::move(module),
@@ -505,3 +515,6 @@ void ParserListener::onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
 void ParserListener::onParameterBinding(ArrayRef<ASTDecl *> decls,
                                         llvm::SMLoc rsquareLoc,
                                         ArrayRef<ExprNode *> parameters) {}
+void ParserListener::onMatchMissingCases(llvm::SMRange matchRange,
+                                         llvm::SMLoc insertLoc,
+                                         StringRef arms) {}

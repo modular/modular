@@ -17,7 +17,7 @@
 
 from std.sys.info import CompilationTarget
 
-from layout import Coord, Idx, TileTensor
+from layout import TileTensor
 from layout.tile_layout import row_major
 from linalg.matmul import matmul
 from linalg.matmul.cpu import matmul as _matmul_cpu

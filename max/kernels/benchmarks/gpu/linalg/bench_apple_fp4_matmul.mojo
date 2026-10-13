@@ -32,7 +32,6 @@ Warmup + hot timing loops, mirroring `bench_apple_gpu_matmul.mojo`.
 
 from std.sys.info import _accelerator_arch
 from max.gpu.host import DeviceContext
-from std.os import getenv
 from std.time import perf_counter
 
 from layout import TileTensor

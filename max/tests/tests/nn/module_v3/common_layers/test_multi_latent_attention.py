@@ -259,15 +259,14 @@ def test_data_parallel_layer(
             kv_params, batch_size, n_pages, mesh
         )
 
-        # Each replica attends over its own requests, so along ``dp`` the
-        # rows belong to no one tensor.
+        # Each replica's row offsets index its own rows.
         per_replica = DeviceMapping(mesh, (Unknown(),))
         out = layer(
-            x.rebind_mapping(per_replica),
+            x,
             kv_collection,
             freqs_cis,
             input_row_offsets.rebind_mapping(per_replica),
-        ).rebind_mapping(data_parallel_mapping)
+        )
 
     assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
     assert out.mapping == data_parallel_mapping
@@ -305,15 +304,14 @@ def test_data_parallel_layer_symbolic(
             kv_params, "dynamic_batch", n_pages, mesh
         )
 
-        # Each replica attends over its own requests, so along ``dp`` the
-        # rows belong to no one tensor.
+        # Each replica's row offsets index its own rows.
         per_replica = DeviceMapping(mesh, (Unknown(),))
         out = layer(
-            x.rebind_mapping(per_replica),
+            x,
             kv_collection,
             freqs_cis,
             input_row_offsets.rebind_mapping(per_replica),
-        ).rebind_mapping(data_parallel_mapping)
+        )
 
     assert out.shape == x.shape
     assert out.mapping == data_parallel_mapping

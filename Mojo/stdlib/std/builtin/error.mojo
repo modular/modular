@@ -23,7 +23,6 @@ from std.memory import (
 from std.ffi import CStringSpan, c_char, external_call
 import std.format._utils as fmt
 from std.sys import is_gpu
-from std.sys.info import size_of, align_of
 
 
 # ===-----------------------------------------------------------------------===#
@@ -236,8 +235,8 @@ struct Error(
             collected, or `None` if stack trace collection was disabled
             or unavailable.
         """
-        if self._stack_trace:
-            return String(self._stack_trace.value())
+        if case .Some(stack_trace) = self._stack_trace:
+            return String(stack_trace)
         return None
 
 

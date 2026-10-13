@@ -14,7 +14,7 @@
 """Implement UTF-8 utils."""
 
 from std.base64._b64encode import _sub_with_saturation
-from std.sys import simd_width_of, simd_byte_width
+from std.sys import simd_byte_width
 from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros

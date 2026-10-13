@@ -1031,15 +1031,15 @@ paths:
             logits.
         '422':
           description: |
-            The body does not match the schema, for example a blank input, an
-            unknown field, or more than 64 questions.
+            The body does not match the schema (for example, a blank input, an
+            unknown field, or more than 64 questions).
 
   /v1/systemone:
     post:
       operationId: createSystemOne
       summary: Create System One answers
       description: |
-        Answers System One `noul` (yes/no), `choice` and `score` questions with
+        Answers System One `noul` (yes/no), `choice`, and `score` questions with
         the same label scorer as `/v1/decisions`, so System One clients can
         point at a MAX server. Any text generation model serves this endpoint.
         Fields that exist only on `/v1/decisions`
@@ -1066,9 +1066,9 @@ paths:
             variable logits.
         '422':
           description: |
-            The body does not match the schema, for example an unknown
+            The body does not match the schema (for example, an unknown
             question type, too many options or levels, or more than 64
-            questions.
+            questions).
 
   /v1/audio/speech:
     post:
@@ -1855,7 +1855,7 @@ components:
       properties:
         input:
           description: |
-            The text (a string, object or array) the questions are about.
+            The text (a string, object, or array) the questions are about.
             Objects and arrays are rendered into the prompt as compact JSON.
           oneOf:
             - type: string
@@ -1901,7 +1901,7 @@ components:
           type: boolean
           default: false
           description: |
-            Return the exact prompt and label token ids scored for each answer.
+            Returns the exact prompt and label token IDs scored for each answer.
         model:
           type: string
           description: ID of the model to use.
@@ -1913,7 +1913,7 @@ components:
         id: {type: string}
         type: {type: string, enum: [choice]}
         question:
-          description: The question text (string, object or array).
+          description: The question text (string, object, or array).
         options:
           type: array
           minItems: 2
@@ -1932,7 +1932,7 @@ components:
         id: {type: string}
         type: {type: string, enum: [score]}
         question:
-          description: The question text (string, object or array).
+          description: The question text (string, object, or array).
         levels:
           type: array
           minItems: 2
@@ -1946,7 +1946,7 @@ components:
         id: {type: string}
         type: {type: string, enum: [yes_no]}
         question:
-          description: The question text (string, object or array).
+          description: The question text (string, object, or array).
         yes:
           description: Optional description of the yes answer.
         "no":
@@ -1958,7 +1958,7 @@ components:
       properties:
         state:
           description: |
-            The text (a string, object or array) the questions are about. It
+            The text (a string, object, or array) the questions are about. It
             may be empty.
         model:
           type: string
@@ -1967,7 +1967,7 @@ components:
           type: object
           minProperties: 1
           maxProperties: 64
-          description: Questions keyed by their id.
+          description: Questions keyed by their ID.
           additionalProperties:
             oneOf:
               - $ref: '#/components/schemas/SystemOneNoulQuestion'
@@ -2009,7 +2009,8 @@ components:
           type: object
           minProperties: 1
           maxProperties: 26
-          description: Option name to its description, in label order A-Z.
+          description: |
+            Maps each option name to its description, in label order A-Z.
           additionalProperties: {}
 
     SystemOneScoreQuestion:
@@ -2033,10 +2034,10 @@ components:
         answers:
           type: object
           description: |
-            Answers keyed by question id. A `noul` answer has `noul` (the
-            probability of yes), a `choice` answer has `choice`, `confidence`
+            Answers keyed by question ID. A `noul` answer has `noul` (the
+            probability of yes), a `choice` answer has `choice`, `confidence`,
             and `probabilities`, and a `score` answer has `score`,
-            `confidence`, `legend` and `probabilities`. Each also has
+            `confidence`, `legend`, and `probabilities`. Each also has
             `x_label_mass`, the full-vocabulary probability of the labels.
           additionalProperties:
             type: object
