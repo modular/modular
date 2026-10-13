@@ -1944,14 +1944,14 @@ struct CPython(Defaultable, Movable):
             ](Py_CONSTANT_TRUE)
         else:
             self._Py_True = PyObjectPtr(
-                upcast_from=self.lib.get_symbol[PyObject](
-                    "_Py_TrueStruct"
-                ).value()
+                upcast_from=_untracked_symbol[PyObject](
+                    self.lib, "_Py_TrueStruct"
+                )
             )
             self._Py_False = PyObjectPtr(
-                upcast_from=self.lib.get_symbol[PyObject](
-                    "_Py_FalseStruct"
-                ).value()
+                upcast_from=_untracked_symbol[PyObject](
+                    self.lib, "_Py_FalseStruct"
+                )
             )
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
