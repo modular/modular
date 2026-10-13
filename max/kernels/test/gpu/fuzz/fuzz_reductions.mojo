@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-# Fuzz target: the `algorithm.reductions` entry points (`reduce_sum`,
+# Fuzz target: the `builtin_kernels.rowwise_reductions` entry points (`reduce_sum`,
 # `reduce_max`, `reduce_min`, `reduce_mean`, `reduce_argmax`, `reduce_argmin`)
 # over the `rowwise` GPU scaffolder.
 #
@@ -44,7 +44,7 @@ from std.random import random_ui64, seed
 from std.sys import align_of
 from std.sys.defines import get_defined_int
 
-from algorithm.reductions import (
+from builtin_kernels.rowwise_reductions import (
     reduce_argmax,
     reduce_argmin,
     reduce_max,

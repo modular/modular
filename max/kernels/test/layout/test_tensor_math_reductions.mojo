@@ -14,6 +14,7 @@ from layout import Coord, TileTensor, coord, row_major, stack_allocation
 from layout.tile_layout import Layout
 from layout.math import max, sum
 from std.testing import assert_equal
+from std.math import inf, nan
 
 
 def test_strided_mixed_dtype() raises:
@@ -109,7 +110,112 @@ def test_nested_outer_dimensions() raises:
         assert_equal(cols_max[i], expected_cols_max[i])
 
 
+def test_elementwise_max_strided() raises:
+    var x_storage = Array[Float32, 14](fill=-99)
+    var y_storage = Array[Float32, 14](fill=-77)
+    comptime shape = Layout(coord[2, 3], coord[1, 5])
+    var x = TileTensor(x_storage.unsafe_ptr() + 1, shape)
+    var y = TileTensor(y_storage.unsafe_ptr() + 1, shape)
+    for i in range(2):
+        for j in range(3):
+            var value = Float32(15 * i + 2 * j - 9)
+            x[i, j] = value
+            y[i, j] = value + Float32(5 if (i + j) % 2 == 0 else -3)
+    var result = max(x.as_imm(), y.as_imm())
+    comptime assert result.LayoutType == type_of(shape)
+    for i in range(2):
+        for j in range(3):
+            var value = Float32(15 * i + 2 * j - 9)
+            assert_equal(
+                result[i, j], value + Float32(5 if (i + j) % 2 == 0 else 0)
+            )
+            assert_equal(x[i, j], value)
+            assert_equal(
+                y[i, j], value + Float32(5 if (i + j) % 2 == 0 else -3)
+            )
+    result[0, 0] = 123
+    assert_equal(x[0, 0], Float32(-9))
+    assert_equal(y[0, 0], Float32(-4))
+    for i in [0, 3, 4, 5, 8, 9, 10, 13]:
+        assert_equal(x_storage[i], Float32(-99))
+        assert_equal(y_storage[i], Float32(-77))
+
+
+def test_elementwise_max_vector_elements() raises:
+    var x_storage = Array[Float32, 28](fill=-99)
+    var y_storage = Array[Float32, 28](fill=-77)
+    comptime shape = Layout(coord[2, 12], coord[13, 1])
+    var x = TileTensor(x_storage.unsafe_ptr() + 1, shape).vectorize[1, 4]()
+    var y = TileTensor(y_storage.unsafe_ptr() + 1, shape).vectorize[1, 4]()
+    for i in range(2):
+        for j in range(12):
+            var value = Float32(20 * i + j - 30)
+            x_storage[1 + 13 * i + j] = value
+            y_storage[1 + 13 * i + j] = value + Float32(7 if j % 2 == 0 else -5)
+    var result = max(x.as_imm(), y.as_imm())
+    comptime assert result.element_size == 4
+    for i in range(2):
+        for j in range(3):
+            for lane in range(4):
+                var col = 4 * j + lane
+                var value = Float32(20 * i + col - 30)
+                assert_equal(
+                    result[i, j][lane],
+                    value + Float32(7 if col % 2 == 0 else 0),
+                )
+                assert_equal(x_storage[1 + 13 * i + col], value)
+                assert_equal(
+                    y_storage[1 + 13 * i + col],
+                    value + Float32(7 if col % 2 == 0 else -5),
+                )
+    for i in [0, 13, 26, 27]:
+        assert_equal(x_storage[i], Float32(-99))
+        assert_equal(y_storage[i], Float32(-77))
+
+
+def test_elementwise_max_rank_three() raises:
+    var x_storage = Array[Int32, 12](fill=0)
+    var y_storage = Array[Int32, 12](fill=0)
+    var x = TileTensor(x_storage, row_major[2, 2, 3]())
+    var y = TileTensor(y_storage, row_major[2, 2, 3]())
+    for i in range(2):
+        for j in range(2):
+            for k in range(3):
+                x[i, j, k] = Int32(-20 + 7 * i + 3 * j + k)
+                y[i, j, k] = Int32(-12)
+    var result = max(x.as_imm(), y.as_imm())
+    for i in range(2):
+        for j in range(2):
+            for k in range(3):
+                var value = -20 + 7 * i + 3 * j + k
+                assert_equal(
+                    result[i, j, k], Int32(-12 if value < -12 else value)
+                )
+
+
+def test_elementwise_max_special_values() raises:
+    var x_storage: Array[Float32, 6] = [
+        nan[.float32](),
+        2,
+        -inf[.float32](),
+        inf[.float32](),
+        -0.0,
+        0.0,
+    ]
+    var y_storage: Array[Float32, 6] = [3, nan[.float32](), -4, 8, 0.0, -0.0]
+    var x = TileTensor(x_storage, row_major[6]())
+    var y = TileTensor(y_storage, row_major[6]())
+    var result = max(x.as_imm(), y.as_imm())
+    var expected: Array[Float32, 6] = [3, 2, -4, inf[.float32](), 0, 0]
+    for i in range(6):
+        assert_equal(result[i], expected[i])
+
+
 def main() raises:
     test_strided_mixed_dtype()
     test_vector_elements()
     test_nested_outer_dimensions()
+    test_elementwise_max_strided()
+    test_elementwise_max_vector_elements()
+    test_elementwise_max_rank_three()
+    test_elementwise_max_special_values()

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.format.tstring import _encode_format_string
-from std.testing import assert_equal, assert_raises, assert_true, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
 
 @fieldwise_init

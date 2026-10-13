@@ -17,7 +17,6 @@ from std.sys import align_of, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
@@ -118,9 +117,10 @@ def test_matmul_sm100_fallback[
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         c_tensor.store[alignment=alignment](
-            Coord(idx), rebind[SIMD[c_type, width]](val)
+            idx, rebind[SIMD[c_type, width]](val)
         )
 
     # Initialize matmul operands

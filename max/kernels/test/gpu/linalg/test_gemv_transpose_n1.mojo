@@ -24,7 +24,6 @@ from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import GEMVAlgorithm, gemv_gpu_dispatch
 from linalg.matmul.gpu import _matmul_gpu
 from std.testing import assert_equal
-from std.utils import IndexList
 
 
 def test[
@@ -40,7 +39,8 @@ def test[
 ](ctx: DeviceContext) raises:
     """Compare matmul or a forced GEMV dispatch against a host dot product.
 
-    epilogue=0 stores directly, 1 uses a legacy lambda, 2 uses a value closure.
+    epilogue=0 stores directly, 1 stores through an epilogue closure into a
+    separate buffer, 2 stores a compute closure's result into c.
     Small signed integers keep float32 accumulation exact; the reference is
     cast to the output dtype before comparison.
     """
@@ -78,8 +78,12 @@ def test[
                         .float32
                     ]()
                 )
-            comptime if epilogue:
+            comptime if epilogue == 1:
                 expected[i * extent + j] = dot.cast[dtype]() + Scalar[dtype](
+                    2 * i + 3 * j
+                )
+            elif epilogue == 2:
+                expected[i * N + j] = dot.cast[dtype]() + Scalar[dtype](
                     2 * i + 3 * j
                 )
             else:
@@ -111,37 +115,28 @@ def test[
         )
         var c_out = epilogue_tensor.reshape(epilogue_tensor.layout)
 
-        @__parameter
-        @__copy_capture(c_out)
-        def legacy_store[
-            out_type: DType, width: SIMDLength, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[out_type, width]):
+        def epilogue_store[
+            out_type: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[out_type, width]) {var c_out}:
+            var offset = 2 * Int(idx[0].value()) + 3 * Int(idx[1].value())
             c_out.store(
-                Coord(idx),
-                rebind[SIMD[dtype, width]](
-                    val + SIMD[out_type, width](2 * idx[0] + 3 * idx[1])
-                ),
+                idx,
+                rebind[SIMD[dtype, width]](val + SIMD[out_type, width](offset)),
             )
 
-        def value_store[
+        def compute_offset[
             out_type: DType, width: SIMDLength, *, alignment: Int
-        ](idx: IndexList[2], val: SIMD[out_type, width]) {var c_out}:
-            c_out.store(
-                Coord(idx),
-                rebind[SIMD[dtype, width]](
-                    val + SIMD[out_type, width](2 * idx[0] + 3 * idx[1])
-                ),
-            )
+        ](idx: Coord, val: SIMD[out_type, width]) -> SIMD[out_type, width]:
+            var offset = 2 * Int(idx[0].value()) + 3 * Int(idx[1].value())
+            return val + SIMD[out_type, width](offset)
 
         comptime if epilogue == 1:
-            gemv_gpu_dispatch[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=legacy_store,
-                pdl_level=PDLLevel.OFF,
-            ](algorithm, c_dynamic, a_dynamic, b_dynamic, ctx)
+            gemv_gpu_dispatch[transpose_b=transpose_b, pdl_level=PDLLevel.OFF](
+                algorithm, c_dynamic, a_dynamic, b_dynamic, epilogue_store, ctx
+            )
         elif epilogue == 2:
             gemv_gpu_dispatch[transpose_b=transpose_b, pdl_level=PDLLevel.OFF](
-                algorithm, c_dynamic, a_dynamic, b_dynamic, value_store, ctx
+                algorithm, c_dynamic, a_dynamic, b_dynamic, compute_offset, ctx
             )
         else:
             gemv_gpu_dispatch[transpose_b=transpose_b, pdl_level=PDLLevel.OFF](
@@ -154,7 +149,7 @@ def test[
     ctx.enqueue_copy(c_host, c_dev)
     ctx.synchronize()
 
-    comptime if epilogue:
+    comptime if epilogue == 1:
         # An epilogue owns the store; the nominal output must be untouched.
         for i in range(c_size):
             assert_equal(c_host[i], Scalar[dtype](-8192))

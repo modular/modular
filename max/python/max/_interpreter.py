@@ -30,6 +30,7 @@ Example usage:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Sequence
 from typing import Any, cast
 
@@ -157,7 +158,31 @@ def _is_interpretable_custom(op: _core.Operation) -> bool:
 def can_execute(graph: Graph, max_ops: int | None = None) -> bool:
     """Check whether the interpreter can handle this graph.
 
-    Scans the graph for ops that require compilation (e.g. a custom op
+    Args:
+        graph: The graph to check.
+        max_ops: If set, the maximum number of dispatchable ops the
+            interpreter will accept.  ``None`` means no limit.
+
+    Returns:
+        True if the interpreter can handle the graph, False otherwise.
+    """
+    return refusal(graph, max_ops) is None
+
+
+def _describe(op: _core.Operation) -> str:
+    """Names an op by its MLIR name, which an op with no Python class lacks
+    from its type."""
+    asm = op.asm(
+        print_generic_op_form=True, skip_regions=True, assume_verified=True
+    )
+    match = re.search(r'"([\w.]+)"\(', asm)
+    return match.group(1) if match else type(op).__name__
+
+
+def refusal(graph: Graph, max_ops: int | None = None) -> str | None:
+    """Says why the interpreter refuses this graph, if it does.
+
+    Scans the graph for ops that require compilation (such as a custom op
     that mutates an operand buffer in place) and for ops without a
     registered handler. Optionally enforces a maximum dispatchable-op
     count so that large graphs still get compiler fusion.
@@ -166,33 +191,38 @@ def can_execute(graph: Graph, max_ops: int | None = None) -> bool:
         graph: The graph to check.
         max_ops: If set, the maximum number of dispatchable ops the
             interpreter will accept.  Graphs exceeding this threshold
-            return ``False`` so the graph compiler can apply fusion
+            are refused so the graph compiler can apply fusion
             optimizations.  ``None`` means no limit.
 
     Returns:
-        True if the interpreter can handle the graph, False otherwise.
+        The first refused op and why, or ``None`` if the interpreter can
+        handle the graph.
     """
     module = graph._module
     dispatchable_count = 0
     for op in _walk_ops(module):
         if isinstance(op, mo.OutputOp):
             continue
-        if type(op).__name__ in _COMPILATION_REQUIRED_OP_NAMES:
-            return False
+        name = type(op).__name__
+        if name in _COMPILATION_REQUIRED_OP_NAMES:
+            return f"{_describe(op)} requires compilation"
         # Must mirror register_op_handler's automatic "Mo"-prefix aliasing:
         # without the prefixed spelling, a Mo-named variant would still find
         # its handler through the name fallback but skip this predicate.
-        if type(op).__name__ in (
-            "CustomOp",
-            "MoCustomOp",
-        ) and not _is_interpretable_custom(op):
-            return False
+        if name in ("CustomOp", "MoCustomOp") and not _is_interpretable_custom(
+            op
+        ):
+            symbol = cast(mo.CustomOp, op).symbol
+            return (
+                f"custom op {symbol!r} mutates an operand in place, has no "
+                "custom.declare declaration, or spans devices"
+            )
         if lookup_handler(op) is None:
-            return False
+            return f"{_describe(op)} has no interpreter handler"
         dispatchable_count += 1
         if max_ops is not None and dispatchable_count > max_ops:
-            return False
-    return True
+            return f"more than {max_ops} dispatchable ops"
+    return None
 
 
 def execute(

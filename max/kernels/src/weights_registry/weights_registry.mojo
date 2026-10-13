@@ -30,7 +30,7 @@ struct WeightsRegistry(ImplicitlyCopyable):
         self, name: String
     ) raises -> OpaquePointer[ImmUntrackedOrigin]:
         var lookup = self.dict.get(name)
-        if lookup:
-            return lookup.value()
+        if case .Some(lookup) = lookup:
+            return lookup
 
         raise Error("no weight called " + name + " in weights registry")

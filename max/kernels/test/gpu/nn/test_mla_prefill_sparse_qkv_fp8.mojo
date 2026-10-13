@@ -34,18 +34,12 @@ from std.math import ceildiv, exp2, sqrt
 from std.math.constants import log2e
 from std.memory import UnsafePointer, alloc
 from std.random import randn, seed
-from std.sys import size_of
 
 from max.gpu import *
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
 )
@@ -53,7 +47,6 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_qkv_fp8 import (
     mla_prefill_sparse_qkv_fp8,
 )
 from std.testing import assert_equal
-from std.utils.index import Index, IndexList
 from std.utils.numerics import isnan, min_or_neg_inf
 
 

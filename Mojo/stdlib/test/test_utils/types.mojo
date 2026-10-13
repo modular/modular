@@ -750,8 +750,8 @@ struct Observable[
         self._copies = copy._copies.copy()
         self._moves = copy._moves.copy()
         self._dels = copy._dels.copy()
-        if self._copies:
-            self._copies.value()[] += 1
+        if case .Some(copies) = self._copies:
+            copies[] += 1
 
     def __init__(out self, *, deinit move: Self):
         """Move initialize the Observable and increment the move count.
@@ -763,13 +763,13 @@ struct Observable[
         self._copies = move._copies^
         self._moves = move._moves^
         self._dels = move._dels^
-        if self._moves:
-            self._moves.value()[] += 1
+        if case .Some(moves) = self._moves:
+            moves[] += 1
 
     def __deinit__(deinit self):
         """Destroy the Observable and increment the deinit count."""
-        if self._dels:
-            self._dels.value()[] += 1
+        if case .Some(dels) = self._dels:
+            dels[] += 1
 
     @staticmethod
     def niche_count() -> Int where Self.opt_into_unsafe_niche:

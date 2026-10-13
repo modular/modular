@@ -27,34 +27,42 @@ comptime ParametricTargetWithIntPlugin[T: Int]: _TargetType = __mlir_attr[
     `#kgen.target<triple = "", `,
     `arch = "", `,
     `simd_bit_width = 0, `,
-    `opaque_plugin = `, T,
+    `opaque_plugin = `,
+    T,
     `> : !kgen.target`,
 ]
 
 # CHECK: lit.alias.decl *"ParametricTargetWithTypeListPlugin
 # CHECK-SAME: opaque_plugin = #kgen.param.index.ref<0, 0> : !kgen.param_list<!AnyType>
-comptime ParametricTargetWithTypeListPlugin[Ts: TypeList[Trait=AnyType, ...]]: _TargetType = __mlir_attr[
+comptime ParametricTargetWithTypeListPlugin[
+    Ts: TypeList[Trait=AnyType, ...]
+]: _TargetType = __mlir_attr[
     `#kgen.target<triple = "", `,
     `arch = "", `,
     `simd_bit_width = 0, `,
-    `opaque_plugin = `, Ts.values,
+    `opaque_plugin = `,
+    Ts.values,
     `> : !kgen.target`,
 ]
 
 # CHECK: lit.alias.decl *"GetTargetPlugin
-# CHECK-SAME: !lit.generator<<"T": !AnyType, "Target": target>!kgen.param<:!AnyType *(0,0)>>
-# CHECK-SAME: = <#kgen.gen<#kgen.get_target_plugin<*(0,1)>>>
-comptime GetTargetPlugin[T: AnyType, Target: _TargetType]: T = __mlir_attr[
-    `#kgen.get_target_plugin<`, Target, `> : `, +T
+# CHECK-SAME: = <#kgen.gen<#kgen.get_target_plugin<*(0,1), :!kgen.param<:!AnyType *(0,0)> *(0,2)>>>
+comptime GetTargetPlugin[
+    T: AnyType, Target: _TargetType, default: T
+]: T = __mlir_attr[
+    `#kgen.get_target_plugin<`, Target, `, :`, +T, ` `, default, `> : `, +T
 ]
 
 # CHECK: lit.alias.decl *"IntPlugin
 # CHECK-SAME: !Int = <{:scalar<index> 56}>
-comptime IntPlugin = GetTargetPlugin[Int, ParametricTargetWithIntPlugin[56]]
+comptime IntPlugin = GetTargetPlugin[
+    Int, ParametricTargetWithIntPlugin[56], 0
+]
 
 # CHECK: lit.alias.decl *"ListPlugin
 # CHECK-SAME: param_list<!AnyType> = <[!Scalar_si32, !Scalar_ui32, !Bool]>
 comptime ListPlugin = GetTargetPlugin[
     _MLIR.KGENParamListType[AnyType],
-    ParametricTargetWithTypeListPlugin[TypeList.of[Int32, UInt32, Bool]()]
+    ParametricTargetWithTypeListPlugin[TypeList.of[Int32, UInt32, Bool]()],
+    TypeList.of[Trait=AnyType]().values,
 ]

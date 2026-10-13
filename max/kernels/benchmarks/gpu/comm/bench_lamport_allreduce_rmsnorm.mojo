@@ -64,7 +64,6 @@ from internal_utils import CacheBustingBuffer, arg_parse, assert_almost_equal
 from layout import Coord, TileTensor, row_major
 from nn.normalization import rms_norm_gpu
 
-from std.utils import IndexList
 from std.utils.index import Index
 
 

@@ -22,6 +22,8 @@ The traits fall into three groups:
   Exactly one role applies to each argument.
 - The `Fused` marker declares that the operand participates in prologue or
   epilogue fusion.
+- The `Stable` marker declares that the argument's storage is a stable address
+  slot, read through `StableAddrEngine` (device only).
 - Metadata and access traits describe what the kernel can read off the argument
   (`Tensor`, `DenseTensor`) and how it touches individual elements.
 
@@ -132,6 +134,23 @@ def unsafe_fused_view[
         reflect[T.FusedViewType].field_types()
     ), "fused view rebind: proxy and view no longer share field types"
     return rebind[T.FusedViewType](t)
+
+
+# ===----------------------------------------------------------------------=== #
+# Storage marker
+# ===----------------------------------------------------------------------=== #
+
+
+trait Stable:
+    """Marker trait: the argument's data pointer lives in a stable address slot.
+
+    The graph compiler hands the kernel the slot's address (a `StableAddr`)
+    rather than the data pointer, and the argument's `Engine` is
+    `StableAddrEngine`, so every `TileTensor` projected from it reads the data
+    pointer out of the slot at the point of use.
+    """
+
+    pass
 
 
 # ===----------------------------------------------------------------------=== #

@@ -42,6 +42,7 @@ from max.experimental.realization_context import (
 )
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.sharding.mappings import as_device_mapping
+from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import (
     GraphValue,
     Tensor,
@@ -96,7 +97,8 @@ class _ExternalWeight(Tensor):
 
     name: str | None
 
-    #: The layout the weight has in the checkpoint, set by ``shard_checkpoint``.
+    #: The layout the weight has in the checkpoint: whole on the host until
+    #: ``shard_checkpoint`` records the layout of the entry it loads.
     #: The external constant is declared with this layout and then transferred
     #: to ``_mapping`` inside the graph, so no resharding happens on the host.
     source: _ExternalWeight | None
@@ -134,11 +136,26 @@ class _ExternalWeight(Tensor):
     ) -> _ExternalWeight:
         """Creates a weight with the shape, dtype and placement of ``tensor``.
 
-        Returns ``tensor`` itself if it is already a weight.
+        A distributed weight arrives whole on the host, as a checkpoint holds
+        it, until ``shard_checkpoint`` records the layout it actually arrives
+        in. Returns ``tensor`` itself if it is already a weight.
         """
         if isinstance(tensor, _ExternalWeight):
             return tensor
-        return cls(tensor.shape, tensor.dtype, tensor._mapping, name=name)
+        source = None
+        if tensor.is_distributed:
+            source = cls(
+                Shape(global_dim(dim) for dim in tensor.shape),
+                tensor.dtype,
+                CPU(),
+            )
+        return cls(
+            tensor.shape,
+            tensor.dtype,
+            tensor._mapping,
+            name=name,
+            source=source,
+        )
 
     @property
     def real(self) -> bool:

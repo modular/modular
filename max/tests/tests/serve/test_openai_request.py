@@ -28,11 +28,15 @@ bazel+mypy complain about this import not being available even though it is part
 Explicitly importing //max/python/max/serve/schemas in the test's BUILD file hasn't worked either.
 """
 
+import base64
+import io
 import json
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import av
+import numpy as np
 import pytest
 from max.pipelines.request.open_responses import (
     ReasoningEffortEnum,
@@ -40,6 +44,32 @@ from max.pipelines.request.open_responses import (
 )
 from max.serve.schemas.openai import CreateChatCompletionRequest
 from pydantic import AnyUrl, ValidationError
+
+
+def _mp4_data_uri(num_frames: int = 2) -> str:
+    """A tiny valid H.264 MP4 as a ``data:`` URI.
+
+    The router decodes a frame of every video to validate it, so a placeholder
+    payload is rejected before the assertions under test are reached.
+    """
+    buf = io.BytesIO()
+    container = av.open(buf, mode="w", format="mp4")
+    stream = container.add_stream("libx264", rate=24)
+    assert isinstance(stream, av.VideoStream)
+    stream.width = 32
+    stream.height = 32
+    stream.pix_fmt = "yuv420p"
+    for i in range(num_frames):
+        arr = np.full((32, 32, 3), fill_value=i * 30, dtype=np.uint8)
+        for packet in stream.encode(
+            av.VideoFrame.from_ndarray(arr, format="rgb24")
+        ):
+            container.mux(packet)
+    for packet in stream.encode():
+        container.mux(packet)
+    container.close()
+    encoded = base64.b64encode(buf.getvalue()).decode()
+    return "data:video/mp4;base64," + encoded
 
 
 @pytest.mark.skip
@@ -70,6 +100,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 2
     assert len(images) == 0
@@ -82,6 +113,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, True, settings)
     assert len(messages) == 2
     assert len(images) == 0
@@ -107,6 +139,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request,
         False,
@@ -125,6 +158,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request,
         True,
@@ -155,6 +189,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         CreateChatCompletionRequest(
             model="test", messages=[system_message, user_message_image_two_urls]
@@ -189,6 +224,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert len(images) == 2
@@ -200,6 +236,7 @@ async def test_openai_extract_image_from_requests() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, True, settings)
     assert len(messages) == 1
     assert len(images) == 2
@@ -226,6 +263,7 @@ async def test_openai_user_message_with_null_content() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert messages[0].role == "user"
@@ -243,6 +281,7 @@ async def test_openai_user_message_with_null_content() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     assert len(messages) == 1
     assert messages[0].role == "user"
@@ -274,6 +313,7 @@ async def test_openai_parse_normalizes_developer_role_to_system() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
@@ -362,6 +402,7 @@ async def test_openai_parse_forwards_tool_call_metadata() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
@@ -412,6 +453,7 @@ async def test_openai_parse_drops_empty_tool_calls() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
@@ -511,6 +553,7 @@ async def test_openai_parse_coerces_empty_tool_call_arguments() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=settings
     )
@@ -838,7 +881,7 @@ def test_openai_image_url_accepts_non_string_sizing_hints() -> None:
                     {
                         "type": "video_url",
                         "video_url": {
-                            "url": "data:video/mp4;base64,AAAA",
+                            "url": _mp4_data_uri(),
                             "fps": 2.0,
                             "max_long_side_pixel": 1008,
                         },
@@ -882,7 +925,7 @@ async def test_openai_wrap_content_carries_detail_hint() -> None:
                         {
                             "type": "video_url",
                             "video_url": {
-                                "url": "data:video/mp4;base64,AAAA",
+                                "url": _mp4_data_uri(),
                                 "detail": "low",
                             },
                         },
@@ -920,6 +963,7 @@ async def test_openai_root_role_accepted_and_passed_through() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(request, False, settings)
     # ``root`` survives normalization unchanged and stays first.
     assert messages[0].role == "root"
@@ -1465,6 +1509,7 @@ async def test_openai_accepts_complete_tool_call_replies() -> None:
         _images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=False, settings=Settings()
     )
@@ -1541,6 +1586,7 @@ async def test_openai_accepts_image_count_at_limit() -> None:
         images,
         _videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request,
         wrap_content=True,
@@ -1565,6 +1611,7 @@ async def test_openai_accepts_64mb_request_body() -> None:
         images,
         videos,
         _decoded,
+        _max_decoded_bytes,
     ) = await openai_parse_chat_completion_request(
         request, wrap_content=True, settings=Settings()
     )

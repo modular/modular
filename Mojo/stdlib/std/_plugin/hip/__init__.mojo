@@ -11,4 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .hip_plugin import HIPPlugin
+from .hip_plugin import HIPPlugin, HIPPluginHooks

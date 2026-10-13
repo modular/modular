@@ -44,7 +44,6 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import make_interleaved_gated_activation_fn
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import (
@@ -160,9 +159,7 @@ class InklingDecoderLayer(Module):
                 # is what keeps the sinks unquantized in max.nn.moe.
                 dtype=DType.uint8 if routed_quant is not None else dtype,
                 shared_experts_dtype=dtype,
-                gated_activation_fn=make_interleaved_gated_activation_fn(
-                    ops.silu
-                ),
+                interleaved_gate_up=True,
                 quant_config=routed_quant,
             )
         else:

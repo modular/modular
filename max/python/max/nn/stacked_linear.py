@@ -33,10 +33,10 @@ class StackedLinear(Module):
     Supports two modes:
 
     - **Stacked** (``stacked=True``): Holds a single pre-stacked weight tensor.
-      Use when the checkpoint already stores a fused weight (e.g. ``qkv_proj.weight``).
+      Use when the checkpoint already stores a fused weight (such as ``qkv_proj.weight``).
     - **Unfused** (``stacked=False``): Holds N child :class:`~max.nn.Linear`
       modules whose weights are concatenated at graph-build time.
-      Use when the checkpoint stores separate projections (e.g. ``q_proj``,
+      Use when the checkpoint stores separate projections (such as ``q_proj``,
       ``k_proj``, ``v_proj``).
 
     In **unfused** mode (``stacked=False``), the module sets
@@ -54,7 +54,7 @@ class StackedLinear(Module):
     omitted: the single fused ``weight``/``bias`` would otherwise lose
     all namespace context and collide with sibling attributes.
     Stacked-mode weights remain at ``<attr>.weight`` / ``<attr>.bias``
-    (e.g. ``self_attn.qkv_proj.weight``) and weight adapters must
+    (such as ``self_attn.qkv_proj.weight``) and weight adapters must
     continue to map fused checkpoint names into that namespace.
     """
 
@@ -77,7 +77,7 @@ class StackedLinear(Module):
         Args:
             in_dim: The input dimension shared by all projections.
             out_dims: Output dimension for each projection.
-            names: Attribute name for each child (e.g.
+            names: Attribute name for each child (such as
                 ``["q_proj", "k_proj", "v_proj"]``). In unfused mode these
                 names are also the FQNs the children's weights are exposed
                 under (see class docstring on

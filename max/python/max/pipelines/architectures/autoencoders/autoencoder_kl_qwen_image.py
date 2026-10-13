@@ -53,7 +53,14 @@ def _interpolate_2d_nearest(
     *,
     scale_factor: int = 2,
 ) -> TensorValue:
-    """Upsample an NCHW tensor using nearest-neighbor expansion."""
+    """Upsample an NCHW tensor using nearest-neighbor expansion.
+
+    Delegates to ``ops.resize_nearest`` with the asymmetric transform and
+    floor rounding, which at an exact 2x scale maps each output coordinate
+    to ``out_coord // 2`` -- the same replication the old hand-rolled
+    reshape + broadcast expansion produced. The resize kernel's
+    integer-scale fast path makes this as cheap as the broadcast trick.
+    """
     if x.rank != 4:
         raise ValueError(f"Input tensor must have rank 4, got {x.rank}")
     if scale_factor != 2:
@@ -62,13 +69,12 @@ def _interpolate_2d_nearest(
         )
 
     n, c, h, w = x.shape
-    x_reshaped = ops.reshape(x, [n, c, h, 1, w, 1])
-    ones = ops.broadcast_to(
-        ops.constant(1.0, dtype=x.dtype, device=x.device),
-        [1, 1, 1, scale_factor, 1, scale_factor],
+    return ops.resize_nearest(
+        x,
+        [n, c, h * scale_factor, w * scale_factor],
+        coordinate_transform_mode=2,
+        round_mode=2,
     )
-    x_expanded = x_reshaped * ones
-    return ops.reshape(x_expanded, [n, c, h * scale_factor, w * scale_factor])
 
 
 class NCHWRMSNorm(Module):

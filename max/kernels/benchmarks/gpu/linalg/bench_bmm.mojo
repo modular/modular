@@ -29,15 +29,13 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
     init_vector_launch,
 )
 from linalg.bmm import _batched_matmul_gpu
-
-from std.utils import IndexList
 
 
 def _ri(v: Int) -> Int64:
@@ -160,15 +158,14 @@ def bench_bmm[
     def epilogue_fn[
         dtype: DType,
         width: SIMDLength,
-        rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[dtype, width]) capturing -> None:
         comptime func = lambda_fn.value()
         var update_val = func(val)
-        c_device.store_linear(idx, update_val.cast[c_device.dtype]())
+        c_device.store(idx, update_val.cast[c_device.dtype]())
 
-    comptime pack_size = simd_width_of[c_type, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[c_type, target=ctx.target]()
 
     @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:

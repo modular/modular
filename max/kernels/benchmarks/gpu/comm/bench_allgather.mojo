@@ -31,7 +31,7 @@ from max.benchmark import (
     bench_multicontext,
     bencher_iter_custom,
 )
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allgather import allgather
 from comm import Signal

@@ -40,13 +40,11 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.math import align_up, ceildiv
-from std.memory import AddressSpace
 from std.sys import simd_width_of
 from std.utils import StaticTuple
 
 from layout import (
     Coord,
-    Idx,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -59,7 +57,6 @@ from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
 )
-from structured_kernels.amd_tile_io import RegTileLoader
 
 from .block_scaled_preshuffle_loaders import (
     PreshuffledBLoader,

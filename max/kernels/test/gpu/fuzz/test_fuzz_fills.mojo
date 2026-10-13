@@ -22,7 +22,6 @@ from std.utils.numerics import isinf, isnan, nan
 
 from _fuzz import (
     NUM_VALUE_DISTS,
-    VD_SPECIALS,
     boundary_int,
     fill_all_equal,
     fill_by_dist,

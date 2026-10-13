@@ -16,7 +16,6 @@ These tests explore incrementally more complex scenarios for using
 __async def ... raises with the async runtime.
 """
 
-from std.memory import alloc
 from std.runtime._asyncrt import create_task, create_raising_task
 from std.testing import assert_equal, assert_true
 

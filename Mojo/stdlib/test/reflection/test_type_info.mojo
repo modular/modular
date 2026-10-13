@@ -14,7 +14,7 @@
 
 from std.sys.info import CompilationTarget, _current_target, is_64bit
 
-from std.collections import List, Optional
+from std.collections import List
 
 from std.reflection import (
     get_linkage_name,
@@ -22,7 +22,7 @@ from std.reflection import (
     reflect,
 )
 from std.reflection.type_info import _unqualified_type_name
-from std.testing import assert_equal, assert_true, assert_false
+from std.testing import assert_equal
 from std.testing import TestSuite
 
 

@@ -100,7 +100,7 @@ class UnifiedDflashGemma4_31BInputs(UnifiedSpecDecodeInputs):
 class UnifiedDflashGemma4_31BModel(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedDflashGemma4_31BConfig],
 ):
     """Unified DFlash Gemma4: target + draft in one compiled graph."""
 
@@ -255,10 +255,9 @@ class UnifiedDflashGemma4_31BModel(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedDflashGemma4_31BConfig,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDflashGemma4_31BConfig)
 
         nn_model = UnifiedDflashGemma4_31BModule(
             model_config,

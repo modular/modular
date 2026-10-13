@@ -16,7 +16,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PatternMatchIR.h"
+#include "ExprPatterns.h"
 
 #include "ExprNodes.h"
 #include "IREmitter.h"
@@ -29,6 +29,7 @@
 #include "Mojo/POPDialect/POPAttrs.h"
 #include "Mojo/Support/TriBool.h"
 #include "MojoUtils.h"
+#include "OverloadSet.h"
 #include "ParserEvaluationContext.h"
 
 #include "mlir/Dialect/Index/IR/IndexAttrs.h"
@@ -46,8 +47,8 @@ using namespace M::KGEN::LIT;
 
 PatternMatchBuilder::PatternMatchBuilder(ASTDecl &declScope,
                                          ExprContext paramContext)
-    : declScope(declScope), paramContext(paramContext),
-      shared(declScope.getShared()) {}
+    : allocator(declScope.getShared().stmtAllocator), declScope(declScope),
+      paramContext(paramContext), shared(declScope.getShared()) {}
 
 IREmitter PatternMatchBuilder::getParamEmitter() {
   return IREmitter(declScope, paramContext);
@@ -100,6 +101,15 @@ void PatternPath::print(raw_ostream &os) const {
     case EnumPayload:
       os << "#payload(" << p->index << ")";
       break;
+    case ListElement:
+      os << "[" << p->index << "]";
+      break;
+    case ListElementFromEnd:
+      os << "[-" << p->index << "]";
+      break;
+    case ListSlice:
+      os << "[" << p->index << ":-" << p->endOffset << "]";
+      break;
     }
   }
   os << " : " << type;
@@ -128,9 +138,18 @@ void PatternCommand::print(raw_ostream &os, unsigned indent) const {
       os << "<null-path>";
     os << " case=" << enumCaseIndex;
     break;
+  case ListLength:
+    os << "list_length ";
+    if (path)
+      path->print(os);
+    else
+      os << "<null-path>";
+    os << " minimum=" << listLengthData.minimumLength
+       << " exact=" << listLengthData.exactLength;
+    break;
   case Bind:
-    os << "bind " << stringifyPatternDeclKind(declKind) << " " << bindName
-       << " at ";
+    os << "bind " << stringifyPatternDeclKind(bindData.declKind) << " "
+       << bindData.bindName << " at ";
     if (path)
       path->print(os);
     else
@@ -173,7 +192,16 @@ LogicalResult
 ExprNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                          const PatternPath *path,
                          SmallVectorImpl<const PatternCommand *> &out) const {
-  builder.emitError(getLoc(), "expression is not a valid match pattern");
+  auto diag =
+      builder.emitError(getLoc(), "expression is not a valid match pattern; "
+                                  "use '==' to compare against its value");
+  diag << getRange();
+  if (isa<BinOpNode, IfElseOpNode, LambdaNode>(this)) {
+    diag << FixIt::insertBeforeToken(getRangeStart(), "== (")
+         << FixIt::insertAfterToken(getRangeEnd(), ")", builder.shared.diags);
+  } else {
+    diag << FixIt::insertBeforeToken(getRangeStart(), "== ");
+  }
   return failure();
 }
 
@@ -331,6 +359,19 @@ LogicalResult BinOpNode::buildAsCheckList(
 LogicalResult UnaryOpNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
+  // ==expr compares against the value of "expr" with == operator.
+  if (kind == kPrefixEQ) {
+    const ExprNode *value = subExpr->getWithoutParens();
+    if (isa<BoolLiteralNode, IntLiteralNode, FloatLiteralNode,
+            StringLiteralNode, SetInitLiteralNode>(value)) {
+      builder.emitWarning(getLoc())
+          << "'==' is redundant when matching a literal; remove it"
+          << FixIt::remove(getLoc());
+    }
+    out.push_back(builder.createEqual(path, this->subExpr));
+    return success();
+  }
+
   if (kind != kVarPat && kind != kRefPat)
     return ExprNode::buildCheckList(builder, subject, path, out);
 
@@ -385,6 +426,46 @@ TupleNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
   return success();
 }
 
+LogicalResult ListLiteralNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
+  ASTType subjectType = path->type;
+  auto sizedConformance =
+      subjectType
+          .conformsToBuiltinTrait(
+              "Sized", getLoc(), builder.shared,
+              ASTDecl::getAssumptionsFromScope(&builder.declScope))
+          .first;
+  if (!sizedConformance.isTrue()) {
+    auto diag = builder.emitError(getLoc());
+    if (sizedConformance.isUnknown())
+      diag << "cannot prove that value of type " << subjectType
+           << " conforms to 'Sized'";
+    else
+      diag << "value of type " << subjectType << " does not conform to 'Sized'";
+    diag << getRange();
+    return failure();
+  }
+
+  size_t minimumLength = exprs.size() - starIndex.has_value();
+  out.push_back(builder.createListLength(path, this, minimumLength,
+                                         /*exactLength=*/!starIndex));
+
+  for (auto [index, element] : llvm::enumerate(exprs)) {
+    const PatternPath *elementPath;
+    if (starIndex && index == *starIndex) {
+      elementPath = builder.getListSlice(path, index, exprs.size() - index - 1);
+    } else if (starIndex && index > *starIndex) {
+      elementPath = builder.getListElementFromEnd(path, exprs.size() - index);
+    } else {
+      elementPath = builder.getListElement(path, index);
+    }
+    if (failed(element->buildCheckList(builder, CValue(), elementPath, out)))
+      return failure();
+  }
+  return success();
+}
+
 LogicalResult
 CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
                          const PatternPath *path,
@@ -419,6 +500,14 @@ CallNode::buildCheckList(PatternMatchBuilder &builder, CValue subject,
     builder.emitError(getLoc(), "cannot match fields of ")
         << subjectType << getRange();
     return failure();
+  }
+
+  // Empty struct patterns like "case Pair()" are pointless and likely a bug.
+  // Warn the developer so they know that this isn't a comparison to a value.
+  if (operands.empty()) {
+    builder.emitWarning(getLoc()) << "struct pattern without subpatterns does "
+                                     "not test anything; replace it with '_'"
+                                  << getRange() << FixIt(getRange(), "_");
   }
 
   struct FieldPattern {
@@ -748,10 +837,8 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
     llvm_unreachable("handled above");
   case PatternPath::TupleElement: {
     // Emit `parent[idx]` as a subscript expression.
-    TypedAttr indexAttr =
-        IntegerAttr::get(IndexType::get(emitter.getContext()), path->index);
-    CValue intIndex = emitter.emitInt(
-        ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
+    CValue intIndex =
+        emitter.emitInt(path->index, expr->getLoc(), EC_CallParamValue);
     if (!intIndex)
       return {};
     SyntheticNode baseNode(expr->getLoc(), parent);
@@ -774,10 +861,9 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
     return pathValues[path] = fieldVal;
   }
   case PatternPath::EnumPayload: {
-    TypedAttr indexAttr =
-        IntegerAttr::get(IndexType::get(emitter.getContext()), path->index);
-    CValue caseIdxInt = emitter.emitInt(
-        ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
+    // Project out the payload.
+    CValue caseIdxInt =
+        emitter.emitInt(path->index, expr->getLoc(), EC_CallParamValue);
     if (!caseIdxInt)
       return {};
     SyntheticNode subjectNode(expr->getLoc(), parent);
@@ -795,25 +881,107 @@ CValue PatternEmitState::getPathValue(IREmitter &emitter,
       return {};
     return pathValues[path] = payload;
   }
+  case PatternPath::ListElement:
+  case PatternPath::ListElementFromEnd: {
+    // Elements before a * pattern use their absolute index. Elements after it
+    // are relative to the end, so compute `collection.__len__() - offset`.
+    CValue index;
+    if (path->kind == PatternPath::ListElement) {
+      index = emitter.emitInt(path->index, expr->getLoc(), EC_CallParamValue);
+    } else {
+      SyntheticNode parentNode(expr->getLoc(), parent);
+      AttributeRefNode lenAttr(&parentNode, expr->getLoc(), "__len__");
+      CallNode lenCall(&lenAttr, expr->getLoc(), /*operands=*/{},
+                       expr->getLoc());
+      CValue length = emitter.emitExprCValue(&lenCall, EC_MatchSubject);
+      CValue offset =
+          emitter.emitInt(path->index, expr->getLoc(), EC_CallParamValue);
+      if (!length || !offset)
+        return {};
+      SyntheticNode lengthNode(expr->getLoc(), length);
+      SyntheticNode offsetNode(expr->getLoc(), offset);
+      BinOpNode subtract(ExprNode::kSub, &lengthNode, expr->getLoc(),
+                         &offsetNode);
+      index = emitter.emitExprCValue(&subtract, EC_MatchSubject);
+    }
+    if (!index)
+      return {};
+
+    // Build `collection[index]` syntactically so normal subscript resolution
+    // determines the element type and access convention.
+    SyntheticNode parentNode(expr->getLoc(), parent);
+    SyntheticNode indexNode(expr->getLoc(), index);
+    Operand indexOperand(&indexNode, expr->getLoc(),
+                         ArgUnpackStyle::kPositional);
+    SubscriptNode subscript(&parentNode, expr->getLoc(), indexOperand,
+                            expr->getLoc());
+    CValue element = emitter.emitExprCValue(&subscript, EC_MatchSubject);
+    if (!element)
+      return {};
+    return pathValues[path] = element;
+  }
+  case PatternPath::ListSlice: {
+    // A * pattern captures everything between the fixed prefix and suffix.
+    // Omit the end bound when there is no suffix; otherwise compute it as
+    // `collection.__len__() - endOffset`.
+    CValue start =
+        emitter.emitInt(path->index, expr->getLoc(), EC_CallParamValue);
+    if (!start)
+      return {};
+    SyntheticNode startNode(expr->getLoc(), start);
+
+    std::optional<SyntheticNode> endNode;
+    if (path->endOffset != 0) {
+      SyntheticNode parentNode(expr->getLoc(), parent);
+      AttributeRefNode lenAttr(&parentNode, expr->getLoc(), "__len__");
+      CallNode lenCall(&lenAttr, expr->getLoc(), /*operands=*/{},
+                       expr->getLoc());
+      CValue length = emitter.emitExprCValue(&lenCall, EC_MatchSubject);
+      CValue offset =
+          emitter.emitInt(path->endOffset, expr->getLoc(), EC_CallParamValue);
+      if (!length || !offset)
+        return {};
+      SyntheticNode lengthNode(expr->getLoc(), length);
+      SyntheticNode offsetNode(expr->getLoc(), offset);
+      BinOpNode subtract(ExprNode::kSub, &lengthNode, expr->getLoc(),
+                         &offsetNode);
+      CValue end = emitter.emitExprCValue(&subtract, EC_MatchSubject);
+      if (!end)
+        return {};
+      endNode.emplace(expr->getLoc(), end);
+    }
+
+    // Build `collection[start:end]` syntactically so the collection controls
+    // its ContiguousSlice result type.
+    SliceLiteralNode slice(&startNode, expr->getLoc(),
+                           endNode ? &*endNode : nullptr, {}, nullptr);
+    Operand sliceOperand(&slice, expr->getLoc(), ArgUnpackStyle::kPositional);
+    SyntheticNode parentNode(expr->getLoc(), parent);
+    SubscriptNode subscript(&parentNode, expr->getLoc(), sliceOperand,
+                            expr->getLoc());
+    CValue result = emitter.emitExprCValue(&subscript, EC_MatchSubject);
+    if (!result)
+      return {};
+    return pathValues[path] = result;
+  }
   }
   llvm_unreachable("unknown PatternPath kind");
 }
 
-/// Emit `__eq__` of `value` against the literal or enum tag in `command`, as a
-/// scalar bool. `value` is the subject for `Equal` and the discriminant for
-/// `EnumTag`.
+/// Compare `value` against the value or enum tag in `command` and return a
+/// scalar bool. Explicit value patterns use normal `==` expression emission;
+/// literals and enum tags call `__eq__` directly.
 RValue PatternEmitState::emitTestForValue(IREmitter &emitter,
                                           const PatternCommand *command,
                                           CValue value) {
   assert(command->kind == PatternCommand::Equal ||
          command->kind == PatternCommand::EnumTag);
   const ExprNode *expr = command->expr;
+
   AnyValue rhs;
   if (command->kind == PatternCommand::EnumTag) {
-    TypedAttr indexAttr = IntegerAttr::get(IndexType::get(emitter.getContext()),
-                                           command->enumCaseIndex);
-    CValue caseIdxInt = emitter.emitInt(
-        ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
+    CValue caseIdxInt = emitter.emitInt(command->enumCaseIndex, expr->getLoc(),
+                                        EC_CallParamValue);
     if (!caseIdxInt)
       return {};
     rhs = caseIdxInt;
@@ -822,15 +990,52 @@ RValue PatternEmitState::emitTestForValue(IREmitter &emitter,
       rhs = emitter.emitExpr(expr, EC_MatchSubject, value.getRValueType());
     else
       rhs = emitter.emitExpr(expr, EC_MatchSubject);
-    if (!rhs)
-      return {};
   }
+  if (!rhs)
+    return {};
 
-  CValue eqResult = emitter.emitNamedMethodCall(
-      "__eq__",
-      CallOperands(CallSyntax::kMethodCall, expr, ExprDest(EC_BoolCondition),
-                   {{AnyValue(value), expr}, {rhs, expr}}));
-  return emitter.emitScalarBool({eqResult, expr}, EC_BoolCondition);
+  // Emit the comparison as an == node.
+  SyntheticNode subjectNode(expr->getLoc(), value);
+  SyntheticNode rhsValueNode(expr->getLoc(), rhs);
+  BinOpNode equality(ExprNode::kCmpEQ, &subjectNode, expr->getLoc(),
+                     &rhsValueNode);
+  CValue result = emitter.emitExprCValue(&equality, EC_BoolCondition);
+  return emitter.emitScalarBool({result, expr}, EC_BoolCondition);
+}
+
+RValue PatternEmitState::emitListLengthTest(IREmitter &emitter,
+                                            const PatternCommand *command) {
+  assert(command->kind == PatternCommand::ListLength);
+  const ExprNode *expr = command->expr;
+  CValue subject = getPathValue(emitter, command->path, expr);
+  CValue minimum = emitter.emitInt(command->listLengthData.minimumLength,
+                                   expr->getLoc(), EC_CallParamValue);
+  CValue exact = emitter.emitBool(
+      {SIMDAttr::getScalarBool(emitter.getContext(),
+                               command->listLengthData.exactLength),
+       expr},
+      EC_CallParamValue);
+  if (!subject || !minimum || !exact)
+    return {};
+
+  ArrayRef<ASTDecl *> functions = emitter.shared.getBuiltinFunction(
+      emitter.getDeclScope(), {"std", "builtin", "_stubs"},
+      "list_length_matches", expr->getLoc());
+  if (functions.empty())
+    return {};
+
+  CallOperands operands(CallSyntax::kDirectCall, expr, EC_MatchSubject);
+  operands.add({subject, expr});
+  operands.add({minimum, expr});
+  operands.add({exact, expr});
+
+  ParamBindings bindings(emitter.getDeclScope(), expr);
+  OverloadSet call("list_length_matches", functions, std::move(bindings),
+                   CallSyntax::kDirectCall);
+  CValue result = call.emitCall(std::move(operands), emitter);
+  if (!result)
+    return {};
+  return emitter.emitScalarBool({result, expr}, EC_BoolCondition);
 }
 
 /// Given an Equal/EnumTag command, emit the subject and (if an enum) extract
@@ -971,10 +1176,11 @@ FailureOr<TypedAttr> PatternEmitState::emitComptimeCondition(
     switch (cmd->kind) {
     case PatternCommand::Bind: {
       // Comptime match only supports bare (imm) name bindings as PValues.
-      if (cmd->declKind == PatternDeclKind::kVar ||
-          cmd->declKind == PatternDeclKind::kRef) {
+      if (cmd->bindData.declKind == PatternDeclKind::kVar ||
+          cmd->bindData.declKind == PatternDeclKind::kRef) {
         emitter.emitError(cmd->expr->getLoc())
-            << (cmd->declKind == PatternDeclKind::kVar ? "'var'" : "'ref'")
+            << (cmd->bindData.declKind == PatternDeclKind::kVar ? "'var'"
+                                                                : "'ref'")
             << " bindings are not supported in 'comptime match'"
             << cmd->expr->getRange();
         return failure();
@@ -982,7 +1188,8 @@ FailureOr<TypedAttr> PatternEmitState::emitComptimeCondition(
       CValue subject = getPathValue(emitter, cmd->path, cmd->expr);
       if (!subject)
         return failure();
-      bindings.push_back({cmd->bindName, subject, cmd->declKind});
+      bindings.push_back(
+          {cmd->bindData.bindName, subject, cmd->bindData.declKind});
       continue;
     }
     case PatternCommand::Or: {
@@ -991,6 +1198,20 @@ FailureOr<TypedAttr> PatternEmitState::emitComptimeCondition(
       if (failed(orCond))
         return failure();
       newTest = *orCond;
+      break;
+    }
+    case PatternCommand::ListLength: {
+      RValue matches = emitListLengthTest(emitter, cmd);
+      if (!matches)
+        return failure();
+      newTest = matches.getIfPValue();
+      if (!newTest) {
+        emitter.emitError(cmd->expr->getLoc())
+            << "'comptime match' list pattern must be evaluable at "
+               "compile-time"
+            << cmd->expr->getRange();
+        return failure();
+      }
       break;
     }
     case PatternCommand::Equal:
@@ -1033,6 +1254,27 @@ PatternEmitState::emitCommands(OpBuilder &builder,
   for (const PatternCommand *cmd : commands) {
     assert(cmd && "null pattern command");
     switch (cmd->kind) {
+    case PatternCommand::ListLength: {
+      RValue matchesR = emitListLengthTest(emitter, cmd);
+      SRValue matches = emitter.emitSRValue({AnyValue(matchesR), cmd->expr},
+                                            EC_BoolCondition);
+      if (!matches)
+        return failure();
+
+      Location loc =
+          curDeclScope.getShared().translateLocation(cmd->expr->getLoc());
+      HLCF::IfOp::create(
+          *emitter.builder, loc, TypeRange(), matches,
+          [&]() -> LogicalResult {
+            HLCF::YieldOp::create(*emitter.builder, loc);
+            return success();
+          },
+          [&]() -> LogicalResult {
+            HLCF::MatchNextOp::create(*emitter.builder, loc);
+            return success();
+          });
+      break;
+    }
     case PatternCommand::Equal:
     case PatternCommand::EnumTag: {
       CValue value = emitTestableValue(emitter, cmd);
@@ -1068,7 +1310,8 @@ PatternEmitState::emitCommands(OpBuilder &builder,
       CValue subject = getPathValue(emitter, cmd->path, cmd->expr);
       if (!subject)
         return failure();
-      bindings.push_back({cmd->bindName, subject, cmd->declKind});
+      bindings.push_back(
+          {cmd->bindData.bindName, subject, cmd->bindData.declKind});
       break;
     }
     case PatternCommand::Or:
@@ -1085,14 +1328,62 @@ PatternEmitState::emitCommands(OpBuilder &builder,
   return success();
 }
 
-/// Consider an "or" pattern like (1, x)|(x, 2).  This is handled by emitting
-/// temporary vardecls for the bound value, which is then initialized on each
-/// arm.  This sets up the temporary VarDecls to use for the intermediates.
+/// Consider an "or" pattern like (1, x)|(x, 2). This emits one VarDecl for
+/// each bound name before the nested match, then initializes it in every arm.
+using OrCaseBindings = SmallVector<PatternBoundName, 4>;
+
+/// Verify that each alternative binds the same names, kinds, and value types.
+static LogicalResult
+validateOrBindings(SMLoc loc, ArrayRef<PatternBoundName> firstBindings,
+                   ArrayRef<PatternBoundName> caseBindings,
+                   ASTDecl &curDeclScope) {
+  llvm::StringMap<const PatternBoundName *> caseByName;
+  for (const PatternBoundName &bn : caseBindings)
+    caseByName[bn.name] = &bn;
+
+  SharedState &shared = curDeclScope.getShared();
+  for (const PatternBoundName &bn : firstBindings) {
+    auto it = caseByName.find(bn.name);
+    if (it == caseByName.end()) {
+      shared.emitError(loc, "or-pattern alternatives must bind the same names")
+          << "; '" << bn.name << "' is bound in one alternative but not "
+          << "the other";
+      return failure();
+    }
+    const PatternBoundName &caseBN = *it->second;
+    if (bn.bindingKind != caseBN.bindingKind) {
+      shared.emitError(loc, "or-pattern binding '")
+          << bn.name
+          << "' must use the same 'var'/'ref' kind in each alternative";
+      return failure();
+    }
+    if (!bn.value.getRValueType().isEqualCanon(caseBN.value.getRValueType())) {
+      auto diag = shared.emitError(loc, "or-pattern binding '")
+                  << bn.name << "' has incompatible types across alternatives";
+      diag.attachNote(loc) << "first alternative has type "
+                           << bn.value.getRValueType()
+                           << ", this alternative has type "
+                           << caseBN.value.getRValueType();
+      return failure();
+    }
+    caseByName.erase(it);
+  }
+
+  if (!caseByName.empty()) {
+    shared.emitError(loc, "or-pattern alternatives must bind the same names")
+        << "; '" << caseByName.begin()->first()
+        << "' is bound in one alternative but not the other";
+    return failure();
+  }
+  return success();
+}
+
 static LogicalResult
 initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
                SmallVectorImpl<PatternBoundName> &aggregateBindings,
-               ArrayRef<PatternBoundName> caseBindings, ASTDecl &curDeclScope) {
-  if (caseBindings.empty())
+               ArrayRef<OrCaseBindings> alternativeBindings,
+               ASTDecl &curDeclScope) {
+  if (alternativeBindings.empty() || alternativeBindings.front().empty())
     return success();
 
   // Create one VarDecl per binding before the nested or-match so each
@@ -1102,7 +1393,7 @@ initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
   emitter.builder->setInsertionPoint(matchOp);
   Location mlirLoc = emitter.shared.translateLocation(loc);
 
-  for (const PatternBoundName &bn : caseBindings) {
+  for (const PatternBoundName &bn : alternativeBindings.front()) {
     ASTType varType = bn.value.getRValueType();
     bool isRefOrBind = bn.bindingKind == PatternDeclKind::kRef ||
                        bn.bindingKind == PatternDeclKind::kBind;
@@ -1122,13 +1413,41 @@ initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
       break;
     }
 
-    // Match DeclRefNode pattern bindings: ref/bind wrap with a placeholder
-    // origin replaced when the value is stored.
-    if (isRefOrBind)
-      varType = RefType::getAnyOrigin(varType, /*isMut=*/true);
+    if (isRefOrBind) {
+      bool allMValues = llvm::all_of(
+          alternativeBindings, [&](const OrCaseBindings &caseBindings) {
+            auto it = llvm::find_if(caseBindings,
+                                    [&](const PatternBoundName &caseBN) {
+                                      return caseBN.name == bn.name;
+                                    });
+            assert(it != caseBindings.end() && "bindings were validated");
+            return it->value.isMValue();
+          });
+      if (allMValues) {
+        RefType commonRefType = bn.value.getMValueType();
+        for (const OrCaseBindings &caseBindings :
+             llvm::drop_begin(alternativeBindings)) {
+          auto it =
+              llvm::find_if(caseBindings, [&](const PatternBoundName &caseBN) {
+                return caseBN.name == bn.name;
+              });
+          assert(it != caseBindings.end() && "bindings were validated");
+          commonRefType = IREmitter::getCommonRefType(
+              commonRefType, it->value.getMValueType());
+          if (!commonRefType) {
+            emitter.emitError(loc, "or-pattern binding '")
+                << bn.name
+                << "' has incompatible reference types across alternatives";
+            return failure();
+          }
+        }
+        varType = commonRefType;
+      } else {
+        varType = RefType::getAnyOrigin(varType, /*isMut=*/true);
+      }
+    }
 
-    // Temporary slots only — do not register in the AST scope. The enclosing
-    // match case materializes the user-visible bindings from these values.
+    // The caller installs this declaration after opening the case scope.
     VarDeclOp varDecl =
         emitter.emitVarDecl(bn.name, varType, mlirLoc, declKind);
     if (!varDecl)
@@ -1136,7 +1455,7 @@ initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
 
     CValue slot =
         isRefOrBind ? CValue(RLValue(varDecl)) : CValue(MLValue(varDecl));
-    aggregateBindings.push_back({bn.name, slot, bn.bindingKind});
+    aggregateBindings.push_back({bn.name, slot, bn.bindingKind, varDecl});
   }
   return success();
 }
@@ -1198,7 +1517,14 @@ static LogicalResult checkOrBindings(
     ExprDest storeDest(destLV, EC_VarInit);
     SyntheticNode locExpr(loc);
     IREmitter emitter(curDeclScope, builder);
-    if (!emitter.emitCResult(caseBN.value, &locExpr, storeDest))
+    CValue caseValue = caseBN.value;
+    ASTType aggregateValueType = bn.value.getRValueType();
+    if (caseValue.isMValue() && sugarIsa<RefType>(aggregateValueType)) {
+      Value reference = emitter.emitRebindOpIfNeeded(
+          caseValue.getMValueReference(), aggregateValueType, loc);
+      caseValue = CValue::getMValueForRef(reference);
+    }
+    if (!emitter.emitCResult(caseValue, &locExpr, storeDest))
       return failure();
     builder = *emitter.builder; // Keep builder in sync.
     caseByName.erase(it);
@@ -1229,23 +1555,39 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
       HLCF::MatchOp::create(builder, loc, TypeRange(),
                             /*caseRegionsCount=*/cmd.orAlternatives.size());
 
-  SmallVector<PatternBoundName, 4> aggregateBindings;
+  SmallVector<Block *, 2> alternativeBlocks;
+  SmallVector<OrCaseBindings, 2> alternativeBindings;
   for (auto [idx, alt] : llvm::enumerate(cmd.orAlternatives)) {
     Block &block = matchOp.getCaseRegions()[idx].emplaceBlock();
     builder.setInsertionPointToStart(&block);
+    alternativeBlocks.push_back(&block);
 
     ASTDecl &scope = createBindingScope(cmd.expr->getLoc());
     PatternEmitState altState{scope, rootSubject, rootPath, matchLocation,
-                              DenseMap<const PatternPath *, CValue>()};
-    SmallVector<PatternBoundName, 4> caseBindings;
+                              pathValues};
+    OrCaseBindings caseBindings;
     if (failed(altState.emitCommands(builder, alt, caseBindings)))
       return failure();
+    alternativeBindings.push_back(std::move(caseBindings));
+  }
 
-    if (idx == 0) {
-      if (failed(initOrBindings(builder, matchOp, cmd.expr->getLoc(),
-                                aggregateBindings, caseBindings, curDeclScope)))
-        return failure();
-    }
+  ArrayRef<PatternBoundName> firstBindings = alternativeBindings.front();
+  for (const OrCaseBindings &caseBindings :
+       llvm::drop_begin(alternativeBindings)) {
+    if (failed(validateOrBindings(cmd.expr->getLoc(), firstBindings,
+                                  caseBindings, curDeclScope)))
+      return failure();
+  }
+
+  SmallVector<PatternBoundName, 4> aggregateBindings;
+  if (failed(initOrBindings(builder, matchOp, cmd.expr->getLoc(),
+                            aggregateBindings, alternativeBindings,
+                            curDeclScope)))
+    return failure();
+
+  for (auto [block, caseBindings] :
+       llvm::zip_equal(alternativeBlocks, alternativeBindings)) {
+    builder.setInsertionPointToEnd(block);
     if (failed(checkOrBindings(builder, cmd.expr->getLoc(), aggregateBindings,
                                caseBindings, curDeclScope)))
       return failure();
@@ -1266,7 +1608,8 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
       Value refVal = RefLoadOp::create(builder, loc, rl);
       resultBinding = CValue::getMValueForRef(refVal);
     }
-    bindings.push_back({bn.name, resultBinding, bn.bindingKind});
+    bindings.push_back(
+        {bn.name, resultBinding, bn.bindingKind, bn.declaration});
   }
   return success();
 }
@@ -1334,7 +1677,6 @@ struct MatchCoveringSpace {
 
   // LiteralSet (open Equal-literal universe):
   CoveredLiteralNode *coveredLiterals = nullptr;
-  llvm::BumpPtrAllocator *allocator = nullptr;
 
   bool hasOpenCtor() const {
     if ((kind != Kind::FiniteCtors && kind != Kind::OpenCtors) || !remaining)
@@ -1381,11 +1723,10 @@ struct MatchCoveringSpace {
     return false;
   }
 
-  void coverLiteral(StringRef spelling) {
-    assert(kind == Kind::LiteralSet && allocator);
-    void *mem = allocator->Allocate(sizeof(CoveredLiteralNode),
-                                    alignof(CoveredLiteralNode));
-    coveredLiterals = new (mem) CoveredLiteralNode{spelling, coveredLiterals};
+  void coverLiteral(StringRef spelling, BumpAllocator &allocator) {
+    assert(kind == Kind::LiteralSet);
+    coveredLiterals =
+        allocator.create<CoveredLiteralNode>(spelling, coveredLiterals);
   }
 };
 
@@ -1485,7 +1826,7 @@ static bool collectFiniteDims(PatternMatchBuilder &builder,
 static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
                                                    const PatternPath *rootPath,
                                                    SMLoc matchLoc) {
-  auto *space = builder.create<MatchCoveringSpace>();
+  auto *space = builder.allocator.create<MatchCoveringSpace>();
   ASTType subjectType = rootPath->type;
 
   // EnumLike root → closed or open constructor space.
@@ -1509,7 +1850,7 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
                                         : MatchCoveringSpace::Kind::OpenCtors;
     space->numCtors = names->size();
     space->caseNames = *names;
-    space->remaining = builder.allocator.Allocate<bool>(space->numCtors);
+    space->remaining = builder.allocator.allocate<bool>(space->numCtors);
     std::fill(space->remaining, space->remaining + space->numCtors, true);
     return space;
   }
@@ -1533,11 +1874,11 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
 
     space->kind = MatchCoveringSpace::Kind::Product;
     space->numDims = dims.size();
-    space->dims = builder.allocator.Allocate<MatchCoveringDim>(dims.size());
+    space->dims = builder.allocator.allocate<MatchCoveringDim>(dims.size());
     for (size_t i = 0; i < dims.size(); ++i)
       space->dims[i] = dims[i];
     space->numCells = numCells;
-    space->cells = builder.allocator.Allocate<bool>(numCells);
+    space->cells = builder.allocator.allocate<bool>(numCells);
     std::fill(space->cells, space->cells + numCells, true);
     return space;
   }
@@ -1545,7 +1886,6 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
   // Everything else: open Equal-literal universe (Int, String, …). Track
   // covered spellings for duplicate / unreachability; never prove exhaustivity.
   space->kind = MatchCoveringSpace::Kind::LiteralSet;
-  space->allocator = &builder.allocator;
   return space;
 }
 
@@ -1562,21 +1902,17 @@ static bool isAncestorOrEqual(const PatternPath *ancestor,
   return false;
 }
 
-/// If these Or-free commands cover exactly one root constructor (EnumTag /
-/// Bool-style Equal), return that index. Payload refinements under that ctor
-/// (binds or nested tests) are ignored for tag-level credit — v1 treats the
-/// EnumLike tag set as the universe. Otherwise nullopt.
-static std::optional<size_t>
-getSimpleRootCtorCoverage(PatternCommandList commands,
-                          const PatternPath *rootPath,
-                          ArrayRef<TypedAttr> caseNames) {
+/// If these Or-free commands match within exactly one root constructor
+/// (EnumTag / Bool-style Equal), return that index. Nested payload tests narrow
+/// the match but do not change its root constructor.
+static std::optional<size_t> getRootCtorMatch(PatternCommandList commands,
+                                              const PatternPath *rootPath,
+                                              ArrayRef<TypedAttr> caseNames) {
   std::optional<size_t> ctor;
   for (const PatternCommand *cmd : commands) {
     assert(cmd->kind != PatternCommand::Or && "expand Or before covering");
     if (cmd->kind == PatternCommand::Bind)
       continue;
-    // Payload / nested refinements under the matched root ctor: ignore for
-    // tag-level FiniteCtors credit (`Some(0)` still covers `Some`).
     if (cmd->path != rootPath) {
       if (isAncestorOrEqual(rootPath, cmd->path))
         continue;
@@ -1599,6 +1935,22 @@ getSimpleRootCtorCoverage(PatternCommandList commands,
     }
     return std::nullopt;
   }
+  return ctor;
+}
+
+/// If these Or-free commands cover every value of exactly one root constructor,
+/// return that index. Irrefutable payload binds preserve coverage, but payload
+/// tests do not: `Some(_)` covers `Some`, while `Some(0)` does not.
+static std::optional<size_t>
+getSimpleRootCtorCoverage(PatternCommandList commands,
+                          const PatternPath *rootPath,
+                          ArrayRef<TypedAttr> caseNames) {
+  std::optional<size_t> ctor = getRootCtorMatch(commands, rootPath, caseNames);
+  if (!ctor)
+    return std::nullopt;
+  for (const PatternCommand *cmd : commands)
+    if (cmd->kind != PatternCommand::Bind && cmd->path != rootPath)
+      return std::nullopt;
   return ctor;
 }
 
@@ -1715,7 +2067,8 @@ getSimpleRootLiteralCoverage(PatternCommandList commands,
 /// was closed by a bind-only alternative.
 static bool coverLiteralCommands(MatchCoveringSpace &space,
                                  PatternCommandList commands,
-                                 const PatternPath *rootPath, bool &hitOpen) {
+                                 const PatternPath *rootPath,
+                                 BumpAllocator &allocator, bool &hitOpen) {
   hitOpen = false;
   assert(space.kind == MatchCoveringSpace::Kind::LiteralSet);
 
@@ -1734,7 +2087,7 @@ static bool coverLiteralCommands(MatchCoveringSpace &space,
     return false;
   if (space.isLiteralCovered(*literal))
     return true;
-  space.coverLiteral(*literal);
+  space.coverLiteral(*literal, allocator);
   hitOpen = true;
   return true;
 }
@@ -1768,14 +2121,16 @@ static bool coverFiniteCtorsCommands(MatchCoveringSpace &space,
     return true;
   }
 
-  std::optional<size_t> ctor =
-      getSimpleRootCtorCoverage(commands, rootPath, space.caseNames);
-  if (!ctor)
+  std::optional<size_t> matchedCtor =
+      getRootCtorMatch(commands, rootPath, space.caseNames);
+  if (!matchedCtor)
     return false;
-  if (space.isCtorOpen(*ctor)) {
-    space.coverCtor(*ctor);
-    hitOpen = true;
-  }
+  if (!space.isCtorOpen(*matchedCtor))
+    return true;
+
+  hitOpen = true;
+  if (getSimpleRootCtorCoverage(commands, rootPath, space.caseNames))
+    space.coverCtor(*matchedCtor);
   return true;
 }
 
@@ -1791,6 +2146,7 @@ static bool coverProductCommands(MatchCoveringSpace &space,
   // Per-dimension constraint: nullopt = wildcard, else required ctor index.
   SmallVector<std::optional<size_t>, 4> constraints(space.numDims,
                                                     std::nullopt);
+  bool hasRefinement = false;
 
   for (const PatternCommand *cmd : commands) {
     assert(cmd->kind != PatternCommand::Or && "expand Or before covering");
@@ -1832,19 +2188,18 @@ static bool coverProductCommands(MatchCoveringSpace &space,
       continue;
     }
 
-    // Payload refinements under a dim (`Some(0)` on an Optional leaf): ignore
-    // for tag-level product covering — the dim constraint already recorded the
-    // enum ctor.
-    bool underSomeDim = false;
-    for (size_t i = 0; i < space.numDims; ++i) {
-      if (isAncestorOrEqual(space.dims[i].path, cmd->path) &&
-          cmd->path != space.dims[i].path) {
-        underSomeDim = true;
-        break;
-      }
-    }
-    if (underSomeDim)
+    // A payload test such as `Some(0)` narrows the matching cells but cannot
+    // clear them in this tag-level product model.
+    bool underSomeDim =
+        llvm::any_of(ArrayRef<MatchCoveringDim>(space.dims, space.numDims),
+                     [&](const MatchCoveringDim &dim) {
+                       return isAncestorOrEqual(dim.path, cmd->path) &&
+                              cmd->path != dim.path;
+                     });
+    if (underSomeDim) {
+      hasRefinement = true;
       continue;
+    }
     return false;
   }
 
@@ -1858,8 +2213,9 @@ static bool coverProductCommands(MatchCoveringSpace &space,
   while (true) {
     size_t cell = encodeCell(space, indices);
     if (space.cells[cell]) {
-      space.cells[cell] = false;
       hitOpen = true;
+      if (!hasRefinement)
+        space.cells[cell] = false;
     }
 
     // Increment the first wildcard dimension (odometer over free dims).
@@ -1888,8 +2244,8 @@ static bool coverProductCommands(MatchCoveringSpace &space,
 /// case as unreachable — a complex alt might still match at runtime.
 static bool coverCommands(MatchCoveringSpace &space,
                           PatternCommandList commands,
-                          const PatternPath *rootPath, bool &hitOpen,
-                          bool &allAltsInterpreted) {
+                          const PatternPath *rootPath, BumpAllocator &allocator,
+                          bool &hitOpen, bool &allAltsInterpreted) {
   hitOpen = false;
   allAltsInterpreted = true;
 
@@ -1906,7 +2262,7 @@ static bool coverCommands(MatchCoveringSpace &space,
     else if (space.kind == MatchCoveringSpace::Kind::Product)
       ok = coverProductCommands(space, alt, altHit);
     else if (space.kind == MatchCoveringSpace::Kind::LiteralSet)
-      ok = coverLiteralCommands(space, alt, rootPath, altHit);
+      ok = coverLiteralCommands(space, alt, rootPath, allocator, altHit);
     else
       return false;
 
@@ -1920,11 +2276,152 @@ static bool coverCommands(MatchCoveringSpace &space,
   return anyInterpreted;
 }
 
+/// Whether `type` is the builtin `Bool`, whose cases are spelled as the bare
+/// literals `True` / `False` rather than as inferred members.
+static bool isBuiltinBool(PatternMatchBuilder &builder, ASTType type,
+                          SMLoc loc) {
+  ASTType boolType =
+      builder.shared.lookupBuiltinType("Bool", builder.declScope, loc);
+  return boolType &&
+         boolType.isEqualCanon(type.getWithoutParameters(builder.shared));
+}
+
+/// Spell case `ctor` of the enum at `path` as a pattern: `False` for a `Bool`,
+/// otherwise an inferred member such as `.Some`, which only tests the tag and
+/// so is valid whether or not the case carries a payload.
+static std::string spellCasePattern(PatternMatchBuilder &builder,
+                                    const PatternPath *path,
+                                    ArrayRef<TypedAttr> caseNames, size_t ctor,
+                                    SMLoc loc) {
+  StringRef name = caseNameSpelling(caseNames, ctor);
+  if (isBuiltinBool(builder, path->type, loc))
+    return name.str();
+  return ("." + name).str();
+}
+
+/// Spell the part of a product-cell pattern at `path` and below, where
+/// `indices` holds the cell's case per dimension: a leaf is its case pattern,
+/// a tuple `(a, b)`, and a struct `Type(f=a, g=b)`. The root tuple is spelled
+/// bare, since `case a, b:` needs no parentheses.
+static void spellProductCell(PatternMatchBuilder &builder,
+                             const MatchCoveringSpace &space,
+                             ArrayRef<size_t> indices, const PatternPath *path,
+                             SMLoc loc, bool parenthesize, raw_ostream &os) {
+  for (size_t d = 0; d < space.numDims; ++d) {
+    if (space.dims[d].path == path) {
+      os << spellCasePattern(builder, path, space.dims[d].caseNames, indices[d],
+                             loc);
+      return;
+    }
+  }
+
+  // The children of `path` in dimension order, which is declaration order
+  // for both tuple elements and struct fields.
+  SmallVector<const PatternPath *, 4> children;
+  for (size_t d = 0; d < space.numDims; ++d) {
+    const PatternPath *child = space.dims[d].path;
+    while (child && child->parent != path)
+      child = child->parent;
+    if (child && !llvm::is_contained(children, child))
+      children.push_back(child);
+  }
+
+  bool isStruct =
+      !children.empty() && children.front()->kind == PatternPath::StructField;
+  if (isStruct)
+    os << path->type.getAsString(ASTTypePrinterContext(&builder.shared)) << "(";
+  else if (parenthesize)
+    os << "(";
+  llvm::interleaveComma(children, os, [&](const PatternPath *child) {
+    if (child->kind == PatternPath::StructField)
+      os << child->fieldName.getValue() << "=";
+    spellProductCell(builder, space, indices, child, loc,
+                     /*parenthesize=*/true, os);
+  });
+  if (isStruct || parenthesize)
+    os << ")";
+}
+
+static std::string spellProductCell(PatternMatchBuilder &builder,
+                                    const MatchCoveringSpace &space,
+                                    size_t cell, const PatternPath *rootPath,
+                                    SMLoc loc) {
+  SmallVector<size_t, 4> indices;
+  decodeCell(space, cell, indices);
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  spellProductCell(builder, space, indices, rootPath, loc,
+                   /*parenthesize=*/false, os);
+  return result;
+}
+
 } // namespace
 
-void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
+void PatternMatchBuilder::spellSubjectPatterns(
+    const PatternPath *rootPath, SMLoc loc, SmallVectorImpl<std::string> &out) {
+  MatchCoveringSpace *space = createRootCoveringSpace(*this, rootPath, loc);
+  if (space->kind == MatchCoveringSpace::Kind::FiniteCtors) {
+    for (size_t ctor = 0;
+         ctor < space->numCtors && out.size() < kMaxSuggestedCases; ++ctor)
+      out.push_back(
+          spellCasePattern(*this, rootPath, space->caseNames, ctor, loc));
+  } else if (space->kind == MatchCoveringSpace::Kind::Product) {
+    for (size_t cell = 0;
+         cell < space->numCells && out.size() < kMaxSuggestedCases; ++cell)
+      out.push_back(spellProductCell(*this, *space, cell, rootPath, loc));
+  }
+}
+
+std::string PatternMatchBuilder::formatCaseArms(ArrayRef<std::string> patterns,
+                                                size_t caseIndent,
+                                                size_t bodyIndent) {
+  std::string arms;
+  llvm::raw_string_ostream os(arms);
+  for (const std::string &pattern : patterns)
+    os << "\n"
+       << std::string(caseIndent, ' ') << "case " << pattern << ":\n"
+       << std::string(bodyIndent, ' ') << "pass";
+  return arms;
+}
+
+/// Recompute coverage after emission removes a shared leading test. For
+/// `(.Some, .Some)` followed by `(.Some, .None)`, clustering the first
+/// `.Some` leaves `.Some` / `.None` residuals that conclude the second value.
+void PatternMatchBuilder::markResidualConcludingCase(
     MutableArrayRef<MatchCaseEntry> caseEntries, const PatternPath *rootPath,
     SMLoc matchLoc) {
+  MatchCoveringSpace *space =
+      createRootCoveringSpace(*this, rootPath, matchLoc);
+
+  for (MatchCaseEntry &entry : caseEntries) {
+    entry.isConcluding = false;
+    if (entry.alwaysMatches()) {
+      entry.isConcluding = true;
+      return;
+    }
+    if (entry.guardExpr)
+      continue;
+    if (space->kind != MatchCoveringSpace::Kind::FiniteCtors &&
+        space->kind != MatchCoveringSpace::Kind::OpenCtors &&
+        space->kind != MatchCoveringSpace::Kind::Product &&
+        space->kind != MatchCoveringSpace::Kind::LiteralSet)
+      continue;
+
+    bool hitOpen = false;
+    bool allAltsInterpreted = false;
+    if (!coverCommands(*space, entry.commandList, rootPath, allocator, hitOpen,
+                       allAltsInterpreted))
+      continue;
+    if (hitOpen && space->isFullyCovered()) {
+      entry.isConcluding = true;
+      return;
+    }
+  }
+}
+
+std::string PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
+    MutableArrayRef<MatchCaseEntry> caseEntries, const PatternPath *rootPath,
+    SMLoc matchLoc, bool offerMissingCases) {
   // Covering model (see MatchCoveringSpace):
   //   - Closed EnumLike root → FiniteCtors bitset.
   //   - Open EnumLike root → OpenCtors bitset for duplicate detection.
@@ -1968,7 +2465,7 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
 
     bool hitOpen = false;
     bool allAltsInterpreted = false;
-    if (!coverCommands(*space, entry.commandList, rootPath, hitOpen,
+    if (!coverCommands(*space, entry.commandList, rootPath, allocator, hitOpen,
                        allAltsInterpreted))
       continue;
 
@@ -1982,8 +2479,8 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
           });
       if (!hasOr && (space->kind == MatchCoveringSpace::Kind::FiniteCtors ||
                      space->kind == MatchCoveringSpace::Kind::OpenCtors)) {
-        if (auto ctor = getSimpleRootCtorCoverage(entry.commandList, rootPath,
-                                                  space->caseNames)) {
+        if (auto ctor = getRootCtorMatch(entry.commandList, rootPath,
+                                         space->caseNames)) {
           emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")
               << "'" << caseNameSpelling(space->caseNames, *ctor)
               << "' is already covered by a previous case"
@@ -2009,25 +2506,72 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     }
   }
 
-  if (space->kind == MatchCoveringSpace::Kind::FiniteCtors &&
-      space->hasOpenCtor()) {
-    size_t witness = 0;
-    while (witness < space->numCtors && !space->remaining[witness])
-      ++witness;
-    assert(witness < space->numCtors);
-    emitWarning(matchLoc, "'match' is not exhaustive; missing case for ")
-        << "'" << caseNameSpelling(space->caseNames, witness) << "'";
-  } else if (space->kind == MatchCoveringSpace::Kind::Product &&
-             space->hasOpenCell()) {
-    size_t witness = 0;
-    while (witness < space->numCells && !space->cells[witness])
-      ++witness;
-    assert(witness < space->numCells);
-    emitWarning(matchLoc, "'match' is not exhaustive; missing case for ")
-        << "'" << formatProductWitness(*space, witness) << "'";
-  } else if (space->kind == MatchCoveringSpace::Kind::TooComplex) {
+  if (space->kind == MatchCoveringSpace::Kind::TooComplex) {
     // A catch-all would have closed the space via alwaysMatches().
     emitWarning(matchLoc, "'match' is too complex to check for exhaustivity; "
                           "add a '_' case");
+    return {};
   }
+
+  // Keep warnings readable when a finite subject has many uncovered values.
+  SmallVector<std::string, 4> missingNames;
+  size_t missingCount = 0;
+  if (space->kind == MatchCoveringSpace::Kind::FiniteCtors) {
+    for (size_t ctor = 0; ctor < space->numCtors; ++ctor) {
+      if (!space->remaining[ctor])
+        continue;
+      ++missingCount;
+      if (missingNames.size() < kMaxSuggestedCases)
+        missingNames.push_back(caseNameSpelling(space->caseNames, ctor).str());
+    }
+  } else if (space->kind == MatchCoveringSpace::Kind::Product) {
+    for (size_t cell = 0; cell < space->numCells; ++cell) {
+      if (!space->cells[cell])
+        continue;
+      ++missingCount;
+      if (missingNames.size() < kMaxSuggestedCases)
+        missingNames.push_back(formatProductWitness(*space, cell));
+    }
+  }
+  if (missingCount == 0)
+    return {};
+
+  MojoInflightDiag diag =
+      emitWarning(matchLoc, "'match' is not exhaustive; missing case");
+  diag << (missingNames.size() == 1 ? " for " : "s for ");
+  for (auto [idx, name] : llvm::enumerate(missingNames)) {
+    if (idx != 0)
+      diag << (idx + 1 != missingNames.size() ||
+                       missingCount > missingNames.size()
+                   ? ", "
+               : missingNames.size() == 2 ? " and "
+                                          : ", and ");
+    diag << "'" << name << "'";
+  }
+  if (missingCount > missingNames.size())
+    diag << ", and " << missingCount - missingNames.size() << " more";
+
+  if (!offerMissingCases)
+    return {};
+
+  // One arm per still-open value, laid out like the arm before it; the
+  // parser offers them through its listener as a code action.
+  SmallVector<std::string, 4> missingPatterns;
+  if (space->kind == MatchCoveringSpace::Kind::FiniteCtors) {
+    for (size_t ctor = 0;
+         ctor < space->numCtors && missingPatterns.size() < kMaxSuggestedCases;
+         ++ctor)
+      if (space->remaining[ctor])
+        missingPatterns.push_back(spellCasePattern(
+            *this, rootPath, space->caseNames, ctor, matchLoc));
+  } else if (space->kind == MatchCoveringSpace::Kind::Product) {
+    for (size_t cell = 0;
+         cell < space->numCells && missingPatterns.size() < kMaxSuggestedCases;
+         ++cell)
+      if (space->cells[cell])
+        missingPatterns.push_back(
+            spellProductCell(*this, *space, cell, rootPath, matchLoc));
+  }
+  const MatchCaseEntry &last = caseEntries.back();
+  return formatCaseArms(missingPatterns, last.caseIndent, last.bodyIndent);
 }

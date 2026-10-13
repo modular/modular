@@ -246,19 +246,19 @@ def gated_delta_recurrence_fwd_gpu[
         state_dtype, recurrent_state_LT, MutUntrackedOrigin, Engine=Engine
     ],
     slot_idx: TileTensor[
-        .uint32, slot_idx_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, slot_idx_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     qkv_conv_output: TileTensor[
-        work_dtype, qkv_conv_output_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, qkv_conv_output_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     decay_per_token: TileTensor[
-        work_dtype, decay_per_token_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, decay_per_token_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     beta_per_token: TileTensor[
-        work_dtype, beta_per_token_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, beta_per_token_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     input_row_offsets: TileTensor[
-        .uint32, input_row_offsets_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, input_row_offsets_LT, ImmUntrackedOrigin, Engine=Engine
     ],
 ):
     """GPU kernel: slot-indexed gated delta rule recurrence, one CTA per head.
@@ -501,23 +501,23 @@ def gated_delta_recurrence_verify_ring_gpu[
         state_dtype, recurrent_state_LT, MutUntrackedOrigin, Engine=Engine
     ],
     slot_idx: TileTensor[
-        .uint32, slot_idx_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, slot_idx_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     qkv_conv_output: TileTensor[
-        work_dtype, qkv_conv_output_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, qkv_conv_output_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     decay_per_token: TileTensor[
-        work_dtype, decay_per_token_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, decay_per_token_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     beta_per_token: TileTensor[
-        work_dtype, beta_per_token_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, beta_per_token_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     input_row_offsets: TileTensor[
-        .uint32, input_row_offsets_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, input_row_offsets_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     ring: TileTensor[ring_dtype, ring_LT, MutUntrackedOrigin, Engine=Engine],
     ring_slot_idx: TileTensor[
-        .uint32, ring_slot_idx_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, ring_slot_idx_LT, ImmUntrackedOrigin, Engine=Engine
     ],
 ):
     """GPU kernel: runs the gated delta recurrence over a verify window and
@@ -720,13 +720,13 @@ def gated_delta_state_fold_gpu[
     recurrent_state: TileTensor[
         state_dtype, recurrent_state_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    row_ids: TileTensor[.uint32, row_ids_LT, MutUntrackedOrigin, Engine=Engine],
+    row_ids: TileTensor[.uint32, row_ids_LT, ImmUntrackedOrigin, Engine=Engine],
     ring: TileTensor[ring_dtype, ring_LT, MutUntrackedOrigin, Engine=Engine],
     ring_row_ids: TileTensor[
-        .uint32, ring_row_ids_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, ring_row_ids_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     num_accepted: TileTensor[
-        .uint32, num_accepted_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, num_accepted_LT, ImmUntrackedOrigin, Engine=Engine
     ],
 ):
     """GPU kernel: applies a verify's accepted records to the state pool.

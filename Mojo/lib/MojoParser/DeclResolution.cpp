@@ -455,11 +455,12 @@ LogicalResult Decorators::handleDocHidden(ExprNode *expr, ASTDecl &decl) {
   if (!declRef || declRef->spelling != "doc_hidden")
     return failure(); // Not our decorator.
 
-  Operation *op = decl.getIfOperation();
-  if (auto aliasOp = dyn_cast_if_present<AliasDeclOp>(op)) {
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(&decl)) {
+    AliasDeclOp aliasOp = aliasDecl->getOp();
     aliasOp.setHasDocHiddenDecoratorAttr(UnitAttr::get(aliasOp.getContext()));
     return success();
   }
+  Operation *op = decl.getIfOperation();
   if (auto fieldOp = dyn_cast_if_present<StructFieldOp>(op)) {
     fieldOp.setIsDocHiddenAttr(UnitAttr::get(fieldOp.getContext()));
     return success();
@@ -690,7 +691,6 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
 
       KGEN::kFnRegister,
       "elementwise",
-      "view_kernel",
       "mutable",
   };
 
@@ -1502,9 +1502,8 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
         return {};
       }
     }
-    if (auto aliasOp =
-            dyn_cast_or_null<AliasDeclOp>(nameDecls.back()->getIfOperation()))
-      return aliasOp;
+    if (auto *aliasDecl = dyn_cast<AliasASTDecl>(nameDecls.back()))
+      return aliasDecl->getOp();
 
     shared.emitError(funcDecl.getLoc(), "name '")
         << name << "' cannot be used in '@__llvm_metadata'";
@@ -2654,6 +2653,31 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
         return failure();
       }
     }
+  }
+
+  // An enum method whose body is only `...` is rejected. In a trait, `...`
+  // marks a requirement and `pass` a default implementation; a struct method
+  // still accepts `...` as `pass`, which is to be deprecated (MOCO-5076), so
+  // enums reject it from the start.
+  ASTDecl *structDecl = getStructOrTargetStruct(*decl.getParentDecl(), *this);
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(
+          structDecl ? structDecl->getIfOperation() : nullptr);
+      structOp && structOp.isEnum()) {
+    LexerCursor bodyCursor = lexer.getCursor();
+    ParserBase p(shared, lexer);
+    StringRef docString;
+    p.parseDocString(docString);
+    SMLoc ellipsisLoc;
+    if (p.consumeIf(Token::dot_dot_dot, &ellipsisLoc)) {
+      while (p.consumeIf(Token::semi) || p.consumeIf(Token::dot_dot_dot)) {
+      }
+      if (decl.isMatchingEndCursor(lexer.getCursor())) {
+        shared.emitError(ellipsisLoc,
+                         "enum methods must have a body; '...' is reserved");
+        return failure();
+      }
+    }
+    bodyCursor.restore(lexer);
   }
 
   // Set up information about value arguments, emitting before the lit.endfn.
@@ -3860,7 +3884,7 @@ static LogicalResult parseExplicitDestroyMessage(SharedState &shared,
 }
 
 /// structdef ::=
-///   [decorators] "struct" identifier [param_signature]
+///   [decorators] ("struct" | "__enum") identifier [param_signature]
 ///                ["(" conformance_list ")"] ("where" expression)* ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
@@ -3882,7 +3906,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<ParsedConformanceEntry> parsedConformances;
   SmallVector<ParsedTraitConstraint> parsedConstraints;
 
-  if (p.parseToken(Token::kw_struct,
+  if (p.parseToken(structOp.isEnum() ? Token::kw___enum : Token::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
@@ -3892,7 +3916,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
           /*allowConformanceConstraints=*/true) ||
       parsedParams.parseTrailingConstraintsIfPresent(
           p, sigDecl.getIndentation()) ||
-      p.parseToken(Token::colon, "expected ':' in struct definition") ||
+      p.parseToken(Token::colon, structOp.isEnum()
+                                     ? "expected ':' in enum definition"
+                                     : "expected ':' in struct definition") ||
       decl.isErroneous())
     return failure();
 
@@ -4307,6 +4333,39 @@ static void processRegisterPassableDecorator(
   }
 }
 
+void DeclResolver::resolveEnumCases(ASTDecl &structDecl,
+                                    ArrayRef<ASTDecl *> caseDecls) {
+  // Cases are not in the enum's name table, so duplicates are found here,
+  // before a case's line is re-read: a duplicate's payload types are never
+  // resolved.
+  SmallDenseMap<StringAttr, ASTDecl *, 8> firstByName;
+  bool hasBadCase = false;
+  for (ASTDecl *caseDecl : caseDecls) {
+    auto caseOp = cast<EnumCaseOp>(caseDecl->getIfOperation());
+    auto [previous, inserted] =
+        firstByName.try_emplace(caseOp.getNameAttr(), caseDecl);
+    if (!inserted) {
+      auto diag = emitError(caseDecl->getLoc())
+                  << "invalid redefinition of '" << caseOp.getName() << "'";
+      diag.attachNote(previous->second->getLoc()) << "previous definition here";
+      // Leave the decl as `resolve` leaves a malformed case, so that nothing
+      // resolves it.
+      caseOp.erase();
+      caseDecl->setIRValue(std::nullopt);
+      caseDecl->setErroneous();
+      caseDecl->resolvedness = DeclResolvedness::body;
+      hasBadCase = true;
+      continue;
+    }
+    if (failed(resolveSignature(*caseDecl, caseDecl->getLoc())))
+      hasBadCase = true;
+  }
+  // Any rejected case makes the enum erroneous, but only once every case is
+  // resolved: an erroneous enum silences the errors in later payload types.
+  if (hasBadCase)
+    structDecl.setErroneous();
+}
+
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
 
@@ -4326,8 +4385,18 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // Parse the body of the struct, which will give us all the methods and
   // fields, but without resolving their signatures or bodies.
+  size_t firstBodyDecl = parsedDeclList.size();
   if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
+
+  // An enum's cases are unlisted, so collect them from the decls the body
+  // created.
+  SmallVector<ASTDecl *> caseDecls;
+  if (structOp.isEnum())
+    for (ASTDecl *decl : ArrayRef(parsedDeclList).drop_front(firstBodyDecl))
+      if (decl->getParentDecl() == &structDecl &&
+          isa_and_nonnull<EnumCaseOp>(decl->getIfOperation()))
+        caseDecls.push_back(decl);
 
   // At this point, we have to mark the struct as body resolved... for very
   // unfortunate reasons. The issue is that we need nested declarations (e.g.
@@ -4367,6 +4436,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       structFields.push_back({fieldOp, decl});
     }
   }
+
+  if (structOp.isEnum())
+    resolveEnumCases(structDecl, caseDecls);
 
   // Determine if there is an explicit conformance to Deinitable.
   if (std::optional<ConstraintAttr> deinitableConstraint =
@@ -4505,9 +4577,10 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
         // defaulted alias with the same name, raise an error.
         for (ASTDecl *existingDecl :
              structDecl.lookupInCurrentScope(childName)) {
-          Operation *op = existingDecl->getIfOperation();
-          if (auto existingAlias = dyn_cast_or_null<AliasDeclOp>(op);
-              existingAlias && existingAlias.isDefaultedAssociatedAlias()) {
+          auto *existingAliasDecl = dyn_cast<AliasASTDecl>(existingDecl);
+          if (existingAliasDecl &&
+              existingAliasDecl->getOp().isDefaultedAssociatedAlias()) {
+            AliasDeclOp existingAlias = existingAliasDecl->getOp();
 
             SymbolRefAttr currentTraitRef = getFullyResolvedSymbolRef(
                 existingAlias->getParentOfType<TraitDeclOp>());
@@ -4677,6 +4750,84 @@ ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
       return failure();
     }
   }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// EnumCaseDecl implementation
+//===----------------------------------------------------------------------===//
+
+/// enum_case ::= "case" identifier ["(" expression ("," expression)* [","] ")"]
+///
+/// Every other spelling after `case` is reserved and rejected.
+LogicalResult DeclResolver::resolveSignature(EnumCaseOp caseOp, Lexer &lexer,
+                                             ASTDecl &decl) {
+  ParserBase p(shared, lexer);
+  size_t stmtIndent = decl.getIndentation();
+
+  // A malformed case declares no case.
+  auto removeCase = [&] {
+    caseOp.erase();
+    decl.setIRValue(std::nullopt);
+    return failure();
+  };
+  auto rejectCase = [&](SMLoc loc) {
+    p.emitError(loc) << "enum case must have the form 'case name' or "
+                        "'case name(T, ...)'";
+    return removeCase();
+  };
+
+  if (p.parseToken(Token::kw_case, "internal error: checked by stmt parser") ||
+      p.parseIdentifier("internal error: checked by stmt parser"))
+    return removeCase();
+
+  SmallVector<ExprNode *, 2> payload;
+  if (p.consumeIf(Token::l_paren)) {
+    if (p.getToken().is(Token::r_paren))
+      return rejectCase(p.getToken().getLoc());
+
+    auto parsePayloadType = [&]() -> ParseResult {
+      ExprNode *typeExpr = nullptr;
+      if (p.parseExpression(typeExpr))
+        return failure();
+      if (p.getToken().isAny(Token::colon, Token::equal)) {
+        p.emitError(typeExpr->getLoc())
+            << "labeled payloads in enum cases are not supported; use "
+               "positional types, e.g. 'case C(T, U)'"
+            << typeExpr->getRange();
+        return failure();
+      }
+      payload.push_back(typeExpr);
+      return success();
+    };
+    if (p.parseCommaSeparatedList(parsePayloadType, {Token::r_paren}))
+      return removeCase();
+    if (!p.consumeIf(Token::r_paren))
+      return rejectCase(p.getTokenLocOrEndOfPreviousLineIfOnNewLine());
+  }
+
+  // Reject extraneous tokens after the case.
+  if (p.getToken().isNot(Token::semi, Token::eof) &&
+      p.isTokenInCurrentStatement(stmtIndent))
+    return rejectCase(p.getToken().getLoc());
+
+  ASTDecl &enumDecl = *decl.getParentDecl();
+  SmallVector<Type> payloadTypes;
+  for (ExprNode *typeExpr : payload) {
+    IREmitter emitter(enumDecl, EC_Type);
+    ASTType type = emitter.emitExprType(typeExpr, /*allowUnbound=*/false);
+    if (!type)
+      return failure();
+    if (sugarIsa<TraitType>(type)) {
+      emitError(typeExpr->getLoc())
+          << "enum case payloads do not support trait types; " << type
+          << " is a trait, use a concrete type or compile-time generic";
+      return failure();
+    }
+    payloadTypes.push_back(type);
+  }
+  caseOp.setPayloadTypesAttr(
+      OpBuilder(caseOp.getContext()).getTypeArrayAttr(payloadTypes));
   return success();
 }
 
@@ -5130,6 +5281,15 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
   if (ParserBase(shared, lexer).parseSuite(extensionDecl))
     return failure();
 
+  // The conflict check below and the verification of the extension's
+  // conformances need the struct's members, so resolve the struct. Resolving it
+  // looks up its members, which resolves its extensions, including this one.
+  // Mark this extension resolved first, as structs do once their members are
+  // parsed, so that those lookups see its members rather than a cycle.
+  extensionDecl.resolvedness = DeclResolvedness::body;
+  if (failed(resolveBody(structAstDecl, extensionDecl.getLoc())))
+    return failure();
+
   // Now check for conflicts; things in the extension shouldn't already be in
   // the struct, unless they're both methods because overloading is fine.
   if (extensionDecl.declsInScope && structAstDecl.declsInScope) {
@@ -5257,25 +5417,25 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
 // Trait Composition Decl implementation
 //===----------------------------------------------------------------------===//
 
-ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
-                                           ASTDecl &decl) {
-  if (auto alias = dyn_cast<AliasDeclOp>(
-          witness->getDecls().front()->getIfOperation())) {
+ParseResult DeclResolver::resolveSignature(WitnessASTDecl &witness) {
+  if (auto *firstAliasDecl =
+          dyn_cast<AliasASTDecl>(witness.getDecls().front())) {
+    AliasDeclOp firstAlias = firstAliasDecl->getOp();
     Type mergedType;
     ASTDecl *mergedTypeDecl = nullptr;
 
     DenseSet<TraitType> traitTypesToMerge;
-    for (ASTDecl *curDecl : witness->getDecls()) {
+    for (ASTDecl *curDecl : witness.getDecls()) {
       if (failed(resolve(*curDecl, DeclResolvedness::signature,
                          curDecl->getLoc())))
         return failure();
 
-      auto alias = cast<AliasDeclOp>(curDecl->getIfOperation());
+      AliasDeclOp alias = cast<AliasASTDecl>(curDecl)->getOp();
       Type aliasType = alias.getType();
       std::optional<ParameterEvaluator> evaluatorOpt =
-          populateTraitBindingEvaluator(witness->traitSymbol, shared);
+          populateTraitBindingEvaluator(witness.traitSymbol, shared);
       if (evaluatorOpt) {
-        assert(shared.isUniversalParametricClosureTrait(witness->traitSymbol));
+        assert(shared.isUniversalParametricClosureTrait(witness.traitSymbol));
         aliasType = cast<FnTypeGeneratorType>(evaluatorOpt->replace(aliasType));
       }
 
@@ -5317,42 +5477,34 @@ ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
     // The merged entry is keyed by whichever trait the first alias came from;
     // all of them agree on the name, and conformance checking re-verifies the
     // merged bound against each.
-    WitnessDecl::ResolvedType resolved;
-    resolved.witnessName = alias.getDeclName();
+    WitnessASTDecl::ResolvedType resolved;
+    resolved.witnessName = firstAlias.getDeclName();
     resolved.witnessType = mergedType;
-    witness->storage = resolved;
+    witness.storage = resolved;
     return success();
   }
 
-  ASTDecl &onlyWitness = *witness->getDecls().front();
+  ASTDecl &onlyWitness = *witness.getDecls().front();
   if (failed(resolve(onlyWitness, DeclResolvedness::signature,
                      onlyWitness.getLoc())))
     return failure();
 
-  // Propagate the disabled state. Signature resolution is what disables an
-  // overridden method, so this has to be checked before touching the
-  // operation, which disabling clears.
-  if (onlyWitness.isDisabled()) {
-    decl.markDisabled();
-    return success();
-  }
-
   auto fnOp = cast<FnOp>(onlyWitness.getIfOperation());
 
-  WitnessDecl::ResolvedType resolved;
+  WitnessASTDecl::ResolvedType resolved;
   resolved.witnessName = fnOp.getSymNameAttr();
   resolved.witnessType = fnOp.getFullSignature();
   resolved.implicitConversion = fnOp.getImplicitConversion();
   resolved.isStaticMethod = fnOp.getIsStatic();
-  witness->storage = resolved;
+  witness.storage = resolved;
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(WitnessDecl *witness, ASTDecl &decl) {
+ParseResult DeclResolver::resolveBody(WitnessASTDecl &witness) {
   // We don't need to resolve the body of a witness, only need the type.
-  assert(witness->getWitnessEntry().witnessType &&
+  assert(witness.getWitnessEntry().witnessType &&
          "Witness type should be resolved");
-  decl.resolvedness = DeclResolvedness::body;
+  witness.resolvedness = DeclResolvedness::body;
   return success();
 }
 
@@ -5388,9 +5540,6 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
         Operation *memberOp = decl->getIfOperation();
-        // Skip disabled member and inherited decls.
-        if (decl->isDisabled())
-          continue;
         if (!isa<AliasDeclOp, FnOp>(memberOp)) {
           // If the decl is not a function or alias, it is an error.
           return emitError(parentDecl.getLoc(), "unexpected decl in trait")

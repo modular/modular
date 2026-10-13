@@ -18,7 +18,6 @@ formatted reporting. It includes support for colored output, timing statistics,
 and flexible test selection via CLI arguments.
 """
 
-from std.math import ceil, floor
 from std.os import sep
 from std.time import perf_counter_ns
 from std.utils._ansi import Color, Text
@@ -81,7 +80,7 @@ def _writeln[
 
 
 @fieldwise_init
-struct TestResult(Equatable, ImplicitlyCopyable, Writable):
+struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     """A test result code."""
 
     var _value: Int
@@ -94,6 +93,28 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
 
     comptime SKIP = Self(2)
     """The test was skipped."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "PASS".value,
+        "FAIL".value,
+        "SKIP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TestResult has no payload"
 
     def __eq__(self, rhs: Self) -> Bool:
         """Compare two test result codes for equality.
@@ -112,7 +133,7 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
         Args:
             writer: The writer to output the result code to.
         """
-        __match self:
+        match self:
             case .PASS:
                 writer.write(Text[Color.GREEN]("PASS"))
             case .FAIL:
@@ -128,7 +149,7 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer: The writer to output to.
         """
         writer.write_string("TestResult.")
-        __match self:
+        match self:
             case .PASS:
                 writer.write_string("PASS")
             case .FAIL:
@@ -660,7 +681,7 @@ struct TestSuite(not Deinitable, Movable):
         var report = self.generate_report(skip_all=skip_all)
 
         if report.failures > 0:
-            raise Error(report^)
+            raise Error(report)
         if not quiet:
             print(report)
 

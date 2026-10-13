@@ -14,18 +14,16 @@
 from std.math import ceildiv
 from std.random import randn, seed, random_float64
 
-import max.gpu.primitives.warp as warp
 from max.gpu import WARP_SIZE
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from std.sys import simd_width_of
 from linalg.gemv import gemv_kernel, gemv_split_k, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
 import linalg.matmul.vendor.blas as vendor_blas
 
-from std.utils import IndexList
 from internal_utils import assert_almost_equal
 
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, row_major
 from layout.tile_layout import Layout
 
 
@@ -218,9 +216,10 @@ def run_matvec_with_epilogue_fn(
     @__copy_capture(c_device_nd, const_val)
     def epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
+    ](idx: Coord, val: SIMD[dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         c_device_nd.store[width=width](
-            Coord(idx),
+            idx,
             rebind[SIMD[.float32, width]](val + SIMD[dtype, width](const_val)),
         )
 
@@ -358,7 +357,7 @@ def run_split_k_gemm[
     weight_non_temporal: Bool = True,
 ](*, ctx: DeviceContext) raises:
     comptime c_type = DType.float32
-    comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[c_type, target=ctx.target]()
     comptime check_bounds_n = N % tile_n != 0
     # The grid covers ceildiv(M, tile_m) * tile_m rows, so tile_m > 1 needs
     # the row guard (tile_m == 1 covers M exactly).
@@ -409,9 +408,12 @@ def run_split_k_gemm[
         @__copy_capture(c_nd)
         def epilogue_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]):
+        ](idx: Coord, val: SIMD[dtype, width]):
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             c_nd.store[width=width](
-                Coord(idx),
+                idx,
                 rebind[SIMD[c_type, width]](
                     val + SIMD[dtype, width](const_val)
                 ),
@@ -597,8 +599,7 @@ def main() raises:
         # FP32 router-GEMM dispatch shapes (small N, large K) with an epilogue,
         # at the dispatch's tile_m buckets (tile_n=1, 256 threads). Exercises
         # the split-K GEMV epilogue path that matmul_dispatch_sm100 now routes
-        # the FP32 router/gate GEMM to (the epilogue rides through as the
-        # elementwise_lambda_wrapper).
+        # the FP32 router/gate GEMM to.
         run_split_k_gemm[
             4,
             128,

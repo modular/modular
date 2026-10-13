@@ -737,13 +737,11 @@ TypedAttr FnOp::getFuncLiteralGenerator(
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
                                        fullSig.getParamListAttrs());
-  if (!bindings || llvm::all_of(bindings, [](TypedAttr binding) {
-        return isa<UnboundAttr>(binding);
-      })) {
+  if (!bindings || llvm::all_of(bindings, llvm::IsaPred<UnboundAttr>)) {
     // If all the provided bindings are unbound, return the original generator.
-    // FIXME: this is a hack to avoid the bug when UnboundAttr erased type
-    // dependencies, which results in BindParamsAttr being folded in a wrong
-    // way.
+    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
+    // type dependencies, which results in BindParamsAttr being folded in a
+    // wrong way.
     //
     // E.g.,
     //
@@ -1420,10 +1418,22 @@ DebugInfo::DIScopeAttr StructDeclOp::getLocScope() {
   return getTopLevelScope(*this);
 }
 
-/// Verify that there are no duplicate field names.
+/// Verify that there are no duplicate field or enum case names.
 LogicalResult StructDeclOp::verifyRegions() {
   SmallDenseMap<StringAttr, StructFieldOp, 8> seenFields;
+  SmallDenseMap<StringAttr, EnumCaseOp, 8> seenCases;
   for (Operation &op : getFields().front()) {
+    if (auto enumCase = dyn_cast<EnumCaseOp>(&op)) {
+      auto [it, inserted] =
+          seenCases.try_emplace(enumCase.getNameAttr(), enumCase);
+      if (!inserted) {
+        auto diag = enumCase.emitError("duplicate enum case ")
+                    << enumCase.getNameAttr();
+        diag.attachNote(it->second.getLoc()) << "see previous declaration here";
+        return failure();
+      }
+      continue;
+    }
     auto field = dyn_cast<StructFieldOp>(&op);
     if (!field)
       continue;
@@ -1450,8 +1460,21 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         /*docString=*/{}, /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
         /*minAlignment=*/{}, /*convention=*/{},
-        /*registerPassableConstraint=*/{}, /*annotations=*/{});
+        /*registerPassableConstraint=*/{}, /*annotations=*/{},
+        /*isEnum=*/{});
   result.regions[0]->push_back(new Block());
+}
+
+//===----------------------------------------------------------------------===//
+// EnumCaseOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult EnumCaseOp::verify() {
+  if (!cast<StructDeclOp>((*this)->getParentOp()).isEnum())
+    return emitOpError("expected to be in the body of an enum");
+  if (getName().empty())
+    return emitOpError("expected a non-empty case name");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

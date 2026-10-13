@@ -23,15 +23,7 @@ from max.gpu.host.info import (
     GPUInfo,
     _is_sm10x_gpu,
 )
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import (
     flash_attention,
     mha_gpu_naive,
@@ -39,8 +31,6 @@ from nn.attention.gpu.mha import (
 from nn.attention.mha_mask import NullMask
 from nn.attention.gpu.nvidia.common import immut_tile_tensor_1d
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -74,7 +64,7 @@ def test[
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "num_heads:",
         num_heads,
         "seq_len:",
@@ -224,7 +214,7 @@ def test[
     ctx.synchronize()
 
     def get_rtol() -> Float64:
-        return 2e-2 if num_partitions and num_partitions.value() >= 4 else 1e-2
+        return 2e-2 if num_partitions.or_else(0) >= 4 else 1e-2
 
     var rtol = get_rtol()
     for h in range(num_heads):
@@ -414,9 +404,7 @@ def test_decoding[
         ](1, 11, ctx, use_index_input=use_index_input)
 
         comptime if (
-            not is_sm8(ctx.default_device_info)
-            or num_partitions
-            and num_partitions.value() == 1
+            not is_sm8(ctx.default_device_info) or num_partitions == Optional(1)
         ):
             test[
                 qkv_type,

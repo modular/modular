@@ -59,7 +59,13 @@
 # dense RMSNorm'd query (`q_output`, self-contained) and the paged K cache read
 # back through its page table (the in-place-normalized K rows).
 
-from std.math import align_up, ceildiv, max, min, rsqrt, sqrt
+from std.math import (
+    align_up,
+    ceildiv,
+    max,
+    min,
+    rsqrt,
+)
 from std.random import randn, random_ui64, seed
 from std.sys.defines import get_defined_int
 

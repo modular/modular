@@ -14,6 +14,7 @@
 from std.collections import OptionalReg
 from std.reflection.location import SourceLocation
 
+from std.utils.coord import Coord
 from std.utils.index import IndexList
 from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
 from std.memory.stack_allocation import _StackAllocationPluginHookFnType
@@ -25,30 +26,42 @@ from std.collections.string.string_span import (
 from std.utils import StaticTuple
 
 from .selector import Plugin
+from std.sys.info import CompilationTarget
 
 comptime _ReduceGeneratorPluginHookFnType = (
     def[
         num_reductions: Int,
         init_type: DType,
-        input_0_fn: def[dtype: DType, width: Int, rank: Int](
-            IndexList[rank]
-        ) capturing[_] -> SIMD[dtype, width],
-        output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-            IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-        ) capturing[_] -> None,
-        reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
+        InputFnType: ImplicitlyCopyable
+        & RegisterPassable
+        & def[dtype: DType, width: Int](Coord) -> SIMD[dtype, width],
+        OutputFnType: ImplicitlyCopyable
+        & RegisterPassable
+        & def[dtype: DType, width: SIMDLength](
+            Coord, StaticTuple[SIMD[dtype, width], num_reductions]
+        ) -> None,
+        ReduceFnType: ImplicitlyCopyable
+        & RegisterPassable
+        & def[ty: DType, width: SIMDLength, reduction_idx: Int](
             SIMD[ty, width], SIMD[ty, width]
-        ) capturing[_] -> SIMD[ty, width],
+        ) -> SIMD[ty, width],
     ](
         shape: IndexList[_, element_type=DType.int64],
         init: StaticTuple[Scalar[init_type], num_reductions],
         reduce_dim: Int,
+        input_0_fn: InputFnType,
+        output_0_fn: OutputFnType,
+        reduce_function: ReduceFnType,
     ) thin
 )
 """Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
 
 
-trait PluginHooks(Plugin):
+trait StdPlugin(Plugin):
+    comptime HookFor[target: CompilationTarget]: PluginHooks
+
+
+trait PluginHooks:
     """Compile-time hook interface for pluggable stdlib behavior.
 
     Most hooks are `comptime OptionalReg[Callable]` fields; call sites invoke
@@ -61,9 +74,6 @@ trait PluginHooks(Plugin):
     path — an `OptionalReg` field would re-enter that template via its own
     `debug_assert` and deadlock comptime instantiation.
     """
-
-    comptime name: __mlir_type.`!kgen.string`
-    """Stable plugin identifier used by the selector to select this backend."""
 
     # ===------------------------------------------------------------------=== #
     # Math & Algorithm Operations
@@ -194,7 +204,7 @@ trait PluginHooks(Plugin):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DefaultPlugin(PluginHooks):
+struct DefaultPlugin(StdPlugin):
     """Default `PluginHooks` implementation used when no plugin is active.
 
     Every hook is left at its `PluginHooks` default, so the built-in stdlib
@@ -202,3 +212,8 @@ struct DefaultPlugin(PluginHooks):
     """
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["default"]()
+    comptime HookFor[target: CompilationTarget] = DefaultPluginHooks[target]
+
+
+struct DefaultPluginHooks[target: CompilationTarget](PluginHooks):
+    pass

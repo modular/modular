@@ -352,22 +352,6 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       return error(MatchFailure::Unclassified{});
   }
 
-  // Match the result. When implicit conversions are allowed we allow them here.
-  {
-    FailableScope failableScope(*this);
-    if (failed(matchTypes(actualResultType, expectedResultType))) {
-      if (!allowImplicitConversions)
-        return failure();
-
-      // TODO: Do this the right ParamMatcher way.
-      if (!IREmitter::canImplicitlyConvertToType(
-              {UnknownAttr::get(actualResultType), expr}, expectedResultType,
-              state.declScope))
-        return failure();
-      failableScope.revert();
-    }
-  }
-
   if (actualEffects != expectedEffects)
     return error(MatchFailure::Unclassified{});
 
@@ -511,6 +495,28 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     typeListType = IndexDepthAdjuster(/*adjustDepth=*/-1).replace(typeListType);
     typeListType = state.evaluator.getReboundType(typeListType);
     PROP(matchParams(LIT::getEmptyStructValue(typeListType), typeListParam));
+  }
+
+  // Match the result. When implicit conversions are allowed we allow them here.
+  {
+    FailableScope failableScope(*this);
+    if (failed(matchTypes(actualResultType, expectedResultType))) {
+      if (!allowImplicitConversions)
+        return failure();
+
+      // TODO: Do this the right ParamMatcher way.
+      //
+      // FIXME: we should not allow implicit conversion here, but we need it at
+      // the moment largely to bridge origin mismatch, the conversion below is
+      // the source of parser cycle to allow default implementation on __init__
+      // for trait like `Defaultable`, we do this at the last step s.t. we can
+      // filter out more candidates before testing result mismatch.
+      if (!IREmitter::canImplicitlyConvertToType(
+              {UnknownAttr::get(actualResultType), expr}, expectedResultType,
+              state.declScope))
+        return failure();
+      failableScope.revert();
+    }
   }
 
   // The function types are convertible.

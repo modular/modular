@@ -81,7 +81,7 @@ def _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 
 @fieldwise_init
-struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
+struct TraceCategory(EnumLike, Equatable, Intable, TrivialRegisterPassable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
@@ -98,6 +98,30 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
     var value: Int
     """The integer value representing the trace category. Used for bitwise operations
     when determining if profiling is enabled for a specific category."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "OTHER".value,
+        "ASYNCRT".value,
+        "MEM".value,
+        "Kernel".value,
+        "MAX".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self.value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TraceCategory has no payload"
 
     @inline(.nodebug)
     def __eq__(self, rhs: Self) -> Bool:
@@ -138,7 +162,7 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct TraceLevel(Comparable, TrivialRegisterPassable):
+struct TraceLevel(Comparable, EnumLike, TrivialRegisterPassable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
@@ -156,6 +180,28 @@ struct TraceLevel(Comparable, TrivialRegisterPassable):
     - 1 (OP): Operation-level tracing
     - 2 (THREAD): Thread-level tracing
     """
+
+    comptime _enum_case_names = ParameterList.of[
+        "ALWAYS".value,
+        "OP".value,
+        "THREAD".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self.value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TraceLevel has no payload"
 
     @inline(.always)
     def __init__(out self, value: Int):
@@ -627,10 +673,10 @@ struct Trace[
             self._name_value = _name_value^
             self.detail = detail
 
-            comptime if Self.target:
+            comptime if case .Some(target_name) = Self.target:
                 if self.detail:
                     self.detail += ";"
-                self.detail += String("target=", Self.target.value())
+                self.detail += String("target=", target_name)
             self.int_payload = task_id
         else:
             self._name_value = _name_value^
@@ -834,7 +880,7 @@ struct Trace[
                 self.detail.byte_length(),
                 self.parent_id,
             )
-        elif self.int_payload:
+        elif case .Some(int_payload) = self.int_payload:
             # 2. If there is a task id, use the profiler API to create task:id
             #    labels without copying.
             self.event_id = external_call[
@@ -843,7 +889,7 @@ struct Trace[
                 name_str_ptr,
                 name_str_len,
                 self.parent_id,
-                self.int_payload.value(),
+                int_payload,
             )
         else:
             # 3. In the common case without a task id or detail string, create
@@ -991,8 +1037,8 @@ struct Trace[
         Emit a log message for op tracing to stderr.
         """
         var detail = self.detail
-        if self.int_payload:
-            detail += String(":", self.int_payload.value())
+        if case .Some(int_payload) = self.int_payload:
+            detail += String(":", int_payload)
         log.info(
             op_name,
             " ",

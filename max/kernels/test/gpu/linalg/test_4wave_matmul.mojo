@@ -24,7 +24,7 @@ defaults to M=128 N=512 K=512.
 
 from std.sys import get_defined_int, get_defined_string
 
-from layout import Idx, Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal

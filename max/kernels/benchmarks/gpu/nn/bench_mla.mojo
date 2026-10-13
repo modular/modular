@@ -47,8 +47,6 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
 
-from std.utils.index import Index
-
 
 def bench_decode[
     qkv_type: DType,
@@ -100,12 +98,12 @@ def bench_decode[
         num_heads=num_heads,
         _is_cache_length_accurate=True,
     ](batch_size, num_keys, 1, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
 
     @inline(.always)
     def bench_func(
         mut b: Bencher,
-    ) {var cb_q, var cb_k, var cb_o, var scalar_args_buf_lt, imm,}:
+    ) {var cb_q, var cb_k, var cb_o, var scalar_args_tt, imm,}:
         @inline(.always)
         def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
@@ -120,10 +118,6 @@ def bench_decode[
                 cb_o.offset_ptr(iteration),
                 row_major(batch_size, seq_len, Idx[num_heads], Idx[v_depth]),
             )
-            var scalar_args_tt = TileTensor(
-                scalar_args_buf_lt.ptr, row_major[3]()
-            )
-
             flare_mla_decoding[
                 config=MHAConfig[qkv_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,

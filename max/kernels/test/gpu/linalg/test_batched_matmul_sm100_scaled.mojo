@@ -159,13 +159,13 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     def epilogue_fn[
         dtype: DType,
         width: SIMDLength,
-        rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[dtype, width],) capturing -> None:
+    ](coords: Coord, val: SIMD[dtype, width],) capturing -> None:
+        comptime assert coords.rank == 3
         comptime assert c_tensor.flat_rank >= 3
         c_tensor.store[alignment=alignment](
-            Coord(idx[0], idx[1], idx[2]),
+            coords,
             rebind[SIMD[c_type, width]](val),
         )
 
@@ -205,7 +205,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    batched_matmul_dynamic_scaled_fp8_naive[
+    _ = batched_matmul_dynamic_scaled_fp8_naive[
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
     ](
@@ -379,7 +379,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     ctx.synchronize()
 
-    batched_matmul_dynamic_scaled_fp8_naive[
+    _ = batched_matmul_dynamic_scaled_fp8_naive[
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
         transpose_b=transpose_b,
     ](

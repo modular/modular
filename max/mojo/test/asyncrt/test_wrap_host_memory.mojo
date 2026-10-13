@@ -88,8 +88,8 @@ def test_wrap_host_memory_leaves_pages_to_caller() raises:
 
 
 def _vec_add(
-    in0: Pointer[Float32, MutAnyOrigin],
-    in1: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):

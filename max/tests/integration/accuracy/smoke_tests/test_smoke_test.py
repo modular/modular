@@ -146,6 +146,21 @@ def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
     assert "--ep-size" not in cmd
 
 
+def test_max_enables_vmm_on_amd_up_to_4_gpus(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+
+    def vmm(gpu_spec: tuple[str, int]) -> str | None:
+        _, env = smoke_test.get_server_cmd(
+            "max", "Qwen/Qwen3-8B", gpu_spec=gpu_spec
+        )
+        return env.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM")
+
+    assert vmm(("AMD MI355X", 1)) == "1"
+    assert vmm(("AMD MI355X", 4)) == "1"
+    assert vmm(("AMD MI355X", 8)) is None
+    assert vmm(("NVIDIA B200", 4)) is None
+
+
 def test_vllm_minimax_keeps_flashinfer_workaround(
     monkeypatch: MonkeyPatch,
 ) -> None:

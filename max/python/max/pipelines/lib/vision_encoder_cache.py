@@ -386,7 +386,7 @@ class SupportsPooledVisionMetrics(Protocol):
 
     Most models encode images through :class:`SupportsVisionEncoding`, so the
     pipeline owns the :class:`VisionEncoderCache` and drains its metrics
-    directly. A model that instead builds and drives its own cache (e.g. to
+    directly. A model that instead builds and drives its own cache (such as to
     handle video, which :class:`SupportsVisionEncoding` doesn't cover)
     implements this protocol so the pipeline's ``batch_vision_metrics``/
     ``batch_video_metrics`` can still reach it.
@@ -1167,7 +1167,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         ``get_uncached_contexts`` scans ``ctx.images`` (all images) rather than
         ``next_images`` to decide which contexts are candidates, so a context
         can be a candidate solely because of an uncached image ahead of the
-        window (e.g. a later chunk's image) while every in-window image is a
+        window (such as a later chunk's image) while every in-window image is a
         cache hit. Such contexts have an empty miss set and are excluded from
         the returned selection: there is nothing to encode for them this
         iteration, and assembly reads their in-window hits from the cache and

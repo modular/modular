@@ -33,14 +33,12 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from max.gpu.host.info import B200, _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import B200, GPUInfo, MI355X, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
-    Layout,
     TileTensor,
-    lt_to_tt,
     row_major,
 )
 from layout.tile_layout import TensorLayout
@@ -54,6 +52,9 @@ from std.utils.index import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
 from .matmul import matmul
+from .matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
+    blockwise_scaled_fp8_matmul_amd,
+)
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
@@ -62,7 +63,11 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
     GEMMKind,
 )
-from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from internal_utils.fp8_utils import (
+    compute_dynamic_fp8_scale,
+    fp8_quantize,
+    guarded_inv_scale,
+)
 from max.gpu.primitives.grid_controls import PDLLevel
 
 comptime logger = Logger()
@@ -113,11 +118,9 @@ def quantize_static_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(out_tensor, in_tensor, scale)
     def scaled_fp8_quant[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+    ](idx: IndexList[rank]) {var}:
         comptime assert rank == 2, "rank should be equal to 2"
 
         var in_vec_f32 = in_tensor.load_linear[width](idx).cast[.float32]()
@@ -128,10 +131,12 @@ def quantize_static_scaled_fp8[
         )
 
     comptime target_simd_width = simd_width_of[
-        in_dtype, target=get_gpu_target()
+        in_dtype, target=context.target
     ]()
 
-    def scaled_fp8_quant_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
+    def scaled_fp8_quant_unified[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var scaled_fp8_quant}:
         scaled_fp8_quant[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[
@@ -297,12 +302,13 @@ def quantize_tensor_dynamic_scaled_fp8[
         if num_rows == 0:
             return
 
-        # Per-tensor mode: two kernel launches.
-        # 1) Existing per-group kernel: computes per-group scales
-        #    and writes them to the scales buffer.
-        # 2) Per-tensor quantize kernel: loops over all per-group
-        #    scales to find the tensor-wide max, then re-quantizes
-        #    every element with that single scale.
+        # Per-tensor mode runs three launches, and each one only reads what an
+        # earlier launch wrote, since blocks of one grid can't order a read of
+        # a slot against another block's write to it.
+        # 1) Every (row, group) block writes its group max to scales.
+        # 2) One block reduces those maxes and writes the per-tensor scale back
+        #    to every slot.
+        # 3) Every block quantizes its group with the scale in its own slot.
         if num_rows > 1:
             var scales_kernel = _ComputeScalesFp8Kernel[
                 out_type=out_dtype,
@@ -322,17 +328,31 @@ def quantize_tensor_dynamic_scaled_fp8[
                 attributes=pdl_launch_attributes(pdl_level),
             )
 
+            var reduce_kernel = _ReducePerTensorScaleFp8Kernel[
+                out_type=out_dtype,
+                num_threads=num_threads,
+                num_groups=num_cols // group_size,
+            ](
+                scales.address_space_cast[.GENERIC](),
+                scale_ub.cast[scales_dtype](),
+                Int32(num_rows),
+            )
+
+            ctx.enqueue_function(
+                reduce_kernel,
+                grid_dim=1,
+                block_dim=num_threads,
+                attributes=pdl_launch_attributes(pdl_level),
+            )
+
             var quant_kernel = _QuantizeFp8KernelPerTensor[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
-                num_groups=num_cols // group_size,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
                 scales.address_space_cast[.GENERIC](),
-                scale_ub.cast[scales_dtype](),
-                Int32(num_rows),
             )
 
             ctx.enqueue_function(
@@ -810,9 +830,9 @@ struct _ComputeScalesFp8Kernel[
         """Compute per-group FP8 scale factors without quantizing.
 
         Each block scans its (row, group) tile via ``input_fn``, computes the
-        scale factor, and writes it to ``scales[group_idx, row]``. This is
-        the first half of the per-tensor path, so `_QuantizeFp8KernelPerTensor`
-        can find the tensor-wide max scale.
+        group's max-abs, and writes it to ``scales[group_idx, row]``. This is
+        the first launch of the per-tensor path; `_ReducePerTensorScaleFp8Kernel`
+        reduces these maxes to the tensor-wide scale.
         """
         var input_fn = self.input_fn
         var scales = TileTensor(self.scales.ptr, self.scales.layout)
@@ -859,6 +879,71 @@ struct _ComputeScalesFp8Kernel[
 
 
 @fieldwise_init
+struct _ReducePerTensorScaleFp8Kernel[
+    scales_type: DType,
+    scales_layout: TensorLayout,
+    scales_origin: MutOrigin,
+    scales_engine: TensorEngine,
+    scales_idx_type: DType,
+    //,
+    out_type: DType,
+    num_threads: Int,
+    num_groups: Int,
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
+    var scales: TileTensor[
+        mut=True,
+        Self.scales_type,
+        Self.scales_layout,
+        Self.scales_origin,
+        Engine=Self.scales_engine,
+        linear_idx_type=Self.scales_idx_type,
+    ]
+    var scale_ub: Scalar[Self.scales_type]
+    var num_rows_dev: Int32
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.num_threads)
+        )
+    )
+    def __call__(self) capturing:
+        """Reduces the per-group maxes to one per-tensor FP8 scale.
+
+        Runs as a single block. It reads every group max that
+        `_ComputeScalesFp8Kernel` wrote to ``scales``, then overwrites every
+        slot with the per-tensor scale factor, so downstream readers that index
+        ``scales[group_idx, row]`` all see the same value.
+        """
+        var scales = TileTensor(self.scales.ptr, self.scales.layout)
+        var num_rows = Int(self.num_rows_dev)
+        var tid = Int(thread_idx.x)
+
+        with PDL():
+            var thread_max = Scalar[Self.scales_type](0)
+            comptime for g in range(Self.num_groups):
+                for r in range(tid, num_rows, Self.num_threads):
+                    thread_max = max(
+                        thread_max,
+                        rebind[Scalar[Self.scales_type]](
+                            scales.load_linear(Index(g, r))
+                        ),
+                    )
+
+            # The writes below need no barrier: each thread overwrites only
+            # the slots it read itself.
+            var tensor_max = block.max[
+                block_size=Self.num_threads, broadcast=True
+            ](thread_max)
+            var scale_factor = compute_dynamic_fp8_scale[Self.out_type](
+                tensor_max, self.scale_ub
+            )[0]
+
+            comptime for g in range(Self.num_groups):
+                for r in range(tid, num_rows, Self.num_threads):
+                    scales.store_linear(Index(g, r), scale_factor)
+
+
+@fieldwise_init
 struct _QuantizeFp8KernelPerTensor[
     out_type: DType,
     scales_type: DType,
@@ -876,7 +961,6 @@ struct _QuantizeFp8KernelPerTensor[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
-    num_groups: Int,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var output: TileTensor[
@@ -895,8 +979,6 @@ struct _QuantizeFp8KernelPerTensor[
         Engine=Self.scales_engine,
         linear_idx_type=Self.scales_idx_type,
     ]
-    var scale_ub: Scalar[Self.scales_type]
-    var num_rows_dev: Int32
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -904,20 +986,14 @@ struct _QuantizeFp8KernelPerTensor[
         )
     )
     def __call__(self) capturing:
-        """Per-tensor FP8 quantize kernel.
+        """Quantizes one (row, group) tile with the per-tensor FP8 scale.
 
-        Reads all per-group scales written by ``_ComputeScalesFp8Kernel``
-        (stored as ``scales[group_idx, row]``), finds the tensor-wide maximum
-        scale, and re-quantizes every element with that single scale.
-
-        Block (0, 0) thread 0 overwrites ``scales[0, 0]`` with the final
-        per-tensor scale factor so the caller can read it back.
+        Reads the scale that `_ReducePerTensorScaleFp8Kernel` wrote to
+        ``scales[group_idx, row]`` and does not write ``scales``.
         """
         var input_fn = self.input_fn
         var output = TileTensor(self.output.ptr, self.output.layout)
         var scales = TileTensor(self.scales.ptr, self.scales.layout)
-        var scale_ub = self.scale_ub
-        var num_rows = Int(self.num_rows_dev)
         comptime accum_type = get_accum_type[Self.in_type]()
 
         var tid = thread_idx.x
@@ -925,33 +1001,13 @@ struct _QuantizeFp8KernelPerTensor[
         var group_idx = block_idx.y
 
         with PDL():
-            # Find the max scale across all groups and rows.
-            # The scales buffer is small (Self.num_groups * num_rows), so a serial
-            # scan per block is cheap and avoids cross-block synchronisation.
-            var max_scale = Scalar[Self.scales_type](0)
-            comptime for g in range(Self.num_groups):
-                for r in range(num_rows):
-                    var s = rebind[Scalar[Self.scales_type]](
-                        scales.load_linear(Index(g, r))
-                    )
-                    max_scale = max(max_scale, s)
-
-            # `max_scale` is the tensor-wide max-abs: _ComputeScalesFp8Kernel writes
-            # each group's RAW max, and the scan above takes the largest. Route the
-            # scale and its reciprocal through the shared compute_dynamic_fp8_scale so
-            # the per-tensor path gets the SAME finite-reciprocal guard as the
-            # per-group kernels: a near-zero/denormal tensor max makes scale_factor
-            # underflow to a nonzero f32 denormal and 1/scale_factor overflow to +Inf,
-            # which NaNs the fp8 cast on a zero lane (0*Inf). The guard treats a
-            # non-finite reciprocal as zero scale, so the group quantizes to fp8 zero.
-            var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
-                Self.out_type
-            ](max_scale.cast[accum_type](), scale_ub)
-
-            # Write the per-tensor scale to every position so downstream
-            # readers that index scales[group_idx, row] see the correct value.
-            if tid == 0:
-                scales.store_linear(Index(group_idx, row), scale_factor)
+            # The same guarded reciprocal compute_dynamic_fp8_scale uses, so a
+            # near-zero tensor quantizes to fp8 zero instead of 0 * Inf.
+            var scale_factor_recip = guarded_inv_scale(
+                rebind[Scalar[Self.scales_type]](
+                    scales.load_linear(Index(group_idx, row))
+                ).cast[accum_type]()
+            )
 
             for i in range(
                 Int(tid), Self.group_size // Self.simd_width, Self.num_threads
@@ -1337,9 +1393,12 @@ def _matmul_dynamic_scaled_fp8_impl[
                 width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0], idx[0])
                 ).cast[.float32]()
@@ -1365,9 +1424,12 @@ def _matmul_dynamic_scaled_fp8_impl[
                 width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0], Idx[0])
                 ).cast[.float32]()
@@ -1401,7 +1463,10 @@ def _matmul_dynamic_scaled_fp8_impl[
             @inline(.always)
             def scaled_output_fn[
                 dtype: DType, width: SIMDLength, *, alignment: Int = 1
-            ](idx: IndexList[2], val: SIMD[dtype, width]):
+            ](idx: Coord, val: SIMD[dtype, width]):
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0], idx[0])
                 ).cast[dtype]()
@@ -1419,8 +1484,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 var scaled_val = val * a_scale * b_scale
 
                 c.store[width=width, alignment=alignment](
-                    Coord(idx[0], idx[1]),
-                    scaled_val.cast[c_type](),
+                    idx, scaled_val.cast[c_type]()
                 )
 
             @__parameter
@@ -1428,7 +1492,10 @@ def _matmul_dynamic_scaled_fp8_impl[
             @inline(.always)
             def scaled_output_fn_tensor[
                 dtype: DType, width: SIMDLength, *, alignment: Int = 1
-            ](idx: IndexList[2], val: SIMD[dtype, width]):
+            ](idx: Coord, val: SIMD[dtype, width]):
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0], Idx[0])
                 ).cast[dtype]()
@@ -1438,8 +1505,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 var scaled_val = val * a_scale * b_scale
 
                 c.store[width=width, alignment=alignment](
-                    Coord(idx[0], idx[1]),
-                    scaled_val.cast[c_type](),
+                    idx, scaled_val.cast[c_type]()
                 )
 
             # Allocate an fp32 scratch buffer for the matmul accumulator;
@@ -1720,8 +1786,7 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
     var MAT_B_ROWS_SCALE_SIZE: Int
     var MAT_B_COLS_SCALE_SIZE: Int
 
-    comptime if scales_granularity_mnk:
-        comptime scales_granularity = scales_granularity_mnk.value()
+    comptime if case .Some(scales_granularity) = scales_granularity_mnk:
         MAT_A_ROWS_SCALE_SIZE = scales_granularity[2]
         MAT_A_COLS_SCALE_SIZE = scales_granularity[0]
         MAT_B_ROWS_SCALE_SIZE = scales_granularity[
@@ -1790,9 +1855,8 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
 
         accum += a_val * b_val * a_scale_factor * b_scale_factor
 
-    comptime if elementwise_lambda_fn:
-        comptime elementwise_lambda = elementwise_lambda_fn.value()
-        elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
+    comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
+        elementwise_lambda[c_type, 1]((x, y), accum.cast[c_type]())
     else:
         c.store_linear(Index(x, y), accum.cast[c_type]())
 
@@ -1990,8 +2054,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     var MAT_B_ROWS_SCALE_SIZE: Int
     var MAT_B_COLS_SCALE_SIZE: Int
 
-    comptime if scales_granularity_mnk:
-        comptime scales_granularity = scales_granularity_mnk.value()
+    comptime if case .Some(scales_granularity) = scales_granularity_mnk:
         MAT_A_ROWS_SCALE_SIZE = scales_granularity[2]
         MAT_A_COLS_SCALE_SIZE = scales_granularity[0]
         MAT_B_ROWS_SCALE_SIZE = scales_granularity[1]
@@ -2034,9 +2097,8 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
             ).cast[accum_type]()
             accum += a_val * b_val * a_scale * b_scale
 
-    comptime if elementwise_lambda_fn:
-        comptime ep = elementwise_lambda_fn.value()
-        ep[c_type, 1](Index(a_start_row + m_local, n), accum.cast[c_type]())
+    comptime if case .Some(ep) = elementwise_lambda_fn:
+        ep[c_type, 1]((a_start_row + m_local, n), accum.cast[c_type]())
     else:
         var c_ptr = c.ptr + a_start_row * N
         c_ptr[m_local * N + n] = accum.cast[c_type]()
@@ -2072,11 +2134,9 @@ def convert_e4m3fn_to_e4m3fnuz(
     )
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(input_buffer, output_buffer)
     def convert_kernel[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]):
+    ](idx: IndexList[rank]) {var}:
         comptime assert rank == 2, "rank should be equal to 2"
 
         var input_vec_e4m3fn = input_buffer.load_linear[width](idx)
@@ -2091,10 +2151,12 @@ def convert_e4m3fn_to_e4m3fnuz(
         output_buffer.store_linear(idx, output_vec)
 
     comptime target_simd_width = simd_width_of[
-        DType.float8_e4m3fn, target=get_gpu_target()
+        DType.float8_e4m3fn, target=context.target
     ]()
 
-    def convert_kernel_unified[width: Int, alignment: Int = 1](idx: Coord) {}:
+    def convert_kernel_unified[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var convert_kernel}:
         convert_kernel[width, idx.rank, alignment](coord_to_index_list(idx))
 
     _elementwise_impl_gpu[
@@ -2113,6 +2175,53 @@ def convert_e4m3fn_to_e4m3fnuz(
 ########################################################
 # SM100 Blockwise Scaled FP8 + FP32 with normal epilogue kernel dispatch
 ########################################################
+
+
+def _amd_blockwise_tiled_ok[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    transpose_b: Bool,
+    scales_granularity_mnk: IndexList[3],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    device_info: GPUInfo,
+    a_static_k: Int,
+    c_static_n: Int,
+]() -> Bool:
+    """Gate for the AMD gfx950 tiled blockwise-FP8 dense matmul.
+
+    Extracted so a test can `assert_true` the gate directly instead of only
+    exercising `via_dispatch=True`, which passes even if this predicate
+    silently regresses to False (falls back to the naive kernel with
+    identical numerics). `a_static_k` / `c_static_n` are the caller's
+    `type_of(a).static_shape[1]` / `type_of(c).static_shape[1]` (K of A, N
+    of C); pass -1 for a dynamic (non-comptime-known) dimension.
+    """
+    # The whole gate is a comptime decision (every input is a comptime param).
+    # `not elementwise_lambda_fn` materializes an `Optional` of a parameterized
+    # closure, which is illegal at runtime ("parameterized functions cannot be
+    # used at runtime"), so the predicate must be evaluated at comptime, not just
+    # the `device_info` term.
+    return comptime (
+        device_info == MI355X
+        and transpose_b
+        and a_type == .float8_e4m3fn
+        and b_type == .float8_e4m3fn
+        and a_scales_type == .float32
+        and b_scales_type == .float32
+        and (c_type == .bfloat16 or c_type == .float32)
+        and not elementwise_lambda_fn
+        and scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] == 128
+        and scales_granularity_mnk[2] == 128
+        and a_static_k > 0
+        and c_static_n > 0
+        # K need not be a multiple of 128: the tiled kernel zero-masks the
+        # partial final K-slab and indexes the per-128-block scale by real
+        # `kb`.
+    )
 
 
 def blockwise_scaled_fp8_with_epilogue[
@@ -2172,16 +2281,7 @@ def blockwise_scaled_fp8_with_epilogue[
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
 
-        comptime if not elementwise_lambda_fn:
-            blockwise_fp8_matmul[
-                transpose_b=transpose_b,
-                a_scales_type=a_scales_type,
-                b_scales_type=b_scales_type,
-                config=matmul_config,
-                n_scale_granularity=scales_granularity_mnk[1],
-            ](c, a, b, a_scales, b_scales, ctx)
-        else:
-            comptime epilogue = elementwise_lambda_fn.value()
+        comptime if case .Some(epilogue) = elementwise_lambda_fn:
             # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
             # arch support 32B load/store to global memory, see KERN-2037.
             comptime use_32b_simd = (
@@ -2189,7 +2289,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 and ctx.default_device_info.compute >= B200.compute
             )
             comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-                simd_width_of[c_type, target=get_gpu_target()]()
+                simd_width_of[c_type, target=ctx.target]()
             )
 
             var m = Int(c.dim[0]())
@@ -2199,9 +2299,7 @@ def blockwise_scaled_fp8_with_epilogue[
                 simd_width: Int, alignment: Int = 1
             ](idx: Coord) {var}:
                 var c_val = c.load[simd_width](idx)
-                epilogue[c_type, simd_width, alignment=alignment](
-                    Index(idx[0].value(), idx[1].value()), c_val
-                )
+                epilogue[c_type, simd_width, alignment=alignment](idx, c_val)
 
             blockwise_fp8_matmul[
                 transpose_b=transpose_b,
@@ -2213,19 +2311,50 @@ def blockwise_scaled_fp8_with_epilogue[
             elementwise[simd_size, target="gpu"](
                 epilogue_wrapper, Coord(m, n), ctx
             )
+        else:
+            blockwise_fp8_matmul[
+                transpose_b=transpose_b,
+                a_scales_type=a_scales_type,
+                b_scales_type=b_scales_type,
+                config=matmul_config,
+                n_scale_granularity=scales_granularity_mnk[1],
+            ](c, a, b, a_scales, b_scales, ctx)
 
     else:
-        # The naive kernel supports the normal epilogue on non-B200 GPUs.
-        naive_blockwise_scaled_fp8_matmul[
+        # AMD gfx950: tiled MFMA blockwise-FP8 dense matmul for the GLM E4M3 +
+        # fp32-per-[128,128]-block case; everything else falls back to naive.
+        comptime amd_blockwise_tiled_ok = _amd_blockwise_tiled_ok[
+            c_type=c_type,
+            a_type=a_type,
+            b_type=b_type,
+            a_scales_type=a_scales_type,
+            b_scales_type=b_scales_type,
             transpose_b=transpose_b,
             scales_granularity_mnk=scales_granularity_mnk,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            ctx,
-        )
+            device_info=ctx.default_device_info,
+            a_static_k=type_of(a).static_shape[1],
+            c_static_n=type_of(c).static_shape[1],
+        ]()
+
+        comptime if amd_blockwise_tiled_ok:
+            blockwise_scaled_fp8_matmul_amd[
+                transpose_b=transpose_b,
+                N_SCALE=scales_granularity_mnk[1],
+                K_SCALE=scales_granularity_mnk[2],
+            ](c, a, b, a_scales, b_scales, ctx)
+        else:
+            # The naive kernel supports the normal epilogue on non-B200 GPUs.
+            naive_blockwise_scaled_fp8_matmul[
+                transpose_b=transpose_b,
+                scales_granularity_mnk=scales_granularity_mnk,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                ctx,
+            )
         return

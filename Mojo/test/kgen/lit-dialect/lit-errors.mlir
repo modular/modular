@@ -341,3 +341,34 @@ lit.fn @ref_upcast_sibling_subtrees<life: origin<true>>(
     -> !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "b"> : !lit.origin<true>>>
   lit.end_fn
 }
+
+// -----
+
+lit.struct.decl @NotAnEnum {
+  // expected-error @below {{'lit.enum.case' op expected to be in the body of an enum}}
+  lit.enum.case a : []
+}
+
+// -----
+
+lit.struct.decl @EnumEmptyCaseName attributes {isEnum} {
+  // expected-error @below {{'lit.enum.case' op expected a non-empty case name}}
+  "lit.enum.case"() <{name = "", payloadTypes = []}> : () -> ()
+}
+
+// -----
+
+lit.struct.decl @EnumDuplicateCase attributes {isEnum} {
+  // expected-note @below {{see previous declaration here}}
+  lit.enum.case a : []
+  // expected-error @below {{duplicate enum case "a"}}
+  lit.enum.case a : [i32]
+}
+
+// -----
+
+lit.fn @enum_case_outside_struct() -> !kgen.none {
+  // expected-error @below {{'lit.enum.case' op expects parent op 'lit.struct.decl'}}
+  lit.enum.case a : []
+  lit.end_fn
+}

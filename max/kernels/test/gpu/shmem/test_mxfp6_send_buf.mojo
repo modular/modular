@@ -25,13 +25,13 @@ mis-strided write still dequantizes to plausible-looking numbers.
 """
 
 from max.gpu.host import DeviceContext
-from max.gpu import block_dim, thread_idx
+from max.gpu import block_dim
 from max.gpu.host.info import MI355X
 from std.random import random_float64, seed
 from std.memory import bitcast
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp6_quantization import quantize_mxfp6_amd
 from linalg.fp6_utils import FP6Format
 from shmem.ep_comm import MXTokenFormat

@@ -194,6 +194,25 @@ def test_init_encoder_exits_quietly_on_loader_failure() -> None:
         root.setLevel(saved_level)
 
 
+@pytest.mark.parametrize("disable_tqdm", [False, True])
+def test_tokenizer_pool_progress_keeps_input_order(
+    disable_tqdm: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Results stay in input order across many chunks, and the labelled
+    progress bar goes to stderr unless `disable_tqdm` is set."""
+    tok = _FakeTokenizer()
+    texts = ["x" * (4 + i % 97) for i in range(1000)]
+
+    with TokenizerPool(
+        tok, loader=_fake_loader, disable_tqdm=disable_tqdm
+    ) as pool:
+        lens = pool.encode_lens(texts, desc="test-progress")
+
+    assert lens == [len(text) for text in texts]
+    bar_shown = "test-progress" in capsys.readouterr().err
+    assert bar_shown is not disable_tqdm
+
+
 def test_dataset_registry_structure() -> None:
     """Test that the registry has the expected structure."""
     assert isinstance(DATASET_REGISTRY, dict)

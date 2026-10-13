@@ -93,17 +93,11 @@ from std.testing import assert_equal, assert_true
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
-from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#

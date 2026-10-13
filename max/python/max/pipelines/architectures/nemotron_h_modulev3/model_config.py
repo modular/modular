@@ -40,15 +40,43 @@ from max.pipelines.lib.interfaces import (
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights import resolve_hf_quant_config
+from max.support.math import ceildiv
 from transformers import AutoConfig
 from typing_extensions import Self
 
-from .quantization import NemotronHQuantScheme, parse_quant_scheme
+from .quantization import (
+    NVFP4_GROUP_SIZE,
+    ModuleFormat,
+    NemotronHQuantScheme,
+    Parallelism,
+    linear_parallelism,
+    parse_quant_scheme,
+)
 
 logger = logging.getLogger("max.pipelines")
 
 ATTN_CACHE_KEY = "attn"
 STATE_CACHE_KEY = "state"
+
+MOE_TP_CHANNEL_ALIGNMENT = 64
+"""The multiple each device's share of a routed expert's channels is padded
+to under tensor parallelism. It keeps the W4A4 scales a whole number of
+interleaved atoms, and the K of the down projection a whole number of AMD
+grouped matmul tiles."""
+
+
+def moe_channels_per_device(channels: int, num_devices: int) -> int:
+    """Returns the routed expert channels each device holds, padding included.
+
+    Under tensor parallelism each device holds its ``1 / num_devices`` of
+    every expert's channels, zero-padded to :data:`MOE_TP_CHANNEL_ALIGNMENT`.
+    """
+    if num_devices == 1:
+        return channels
+    return (
+        ceildiv(channels // num_devices, MOE_TP_CHANNEL_ALIGNMENT)
+        * MOE_TP_CHANNEL_ALIGNMENT
+    )
 
 
 class LayerKind(enum.Enum):
@@ -107,15 +135,29 @@ def parse_layer_kinds(block_types: Sequence[str]) -> list[LayerKind]:
     return kinds
 
 
-def _runs_w4a4_experts(device_specs: Sequence[DeviceSpec]) -> bool:
-    """Returns whether NVFP4 routed experts run the W4A4 grouped matmul.
+def _check_quantized_runs_on(
+    device_specs: Sequence[DeviceSpec], quant_scheme: NemotronHQuantScheme
+) -> None:
+    """Checks that the devices run the quantized matmuls.
 
-    The kernel is SM100-only.
+    Raises:
+        ValueError: If a module is quantized and a device is not SM100. The
+            NVFP4 block-scaled matmul is SM100-only, and the FP8 path is
+            validated only there.
     """
-    return all(
-        device.api == "cuda" and device.architecture_name.startswith("sm_10")
-        for device in load_devices(device_specs)
-    )
+    if not quant_scheme.quantized:
+        return
+    for device in load_devices(device_specs):
+        if not (
+            device.api == "cuda"
+            and device.architecture_name.startswith("sm_10")
+        ):
+            raise ValueError(
+                "Nemotron-H runs quantized checkpoints on SM100 GPUs only, "
+                f"and {device.architecture_name} is not one. Use the BF16 "
+                "checkpoint, such as "
+                "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16."
+            )
 
 
 def _runs_fused_router(
@@ -187,28 +229,124 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     max_seq_len: int
     kv_params: MultiKVCacheParams
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
-    w4a4_experts: bool = False
-    """Whether NVFP4 routed experts run the W4A4 grouped matmul, with their
-    activations quantized to NVFP4, instead of being dequantized to BF16."""
     fused_router: bool = False
     """Whether the MoE router runs its gate GEMV, sigmoid and top-k as one
     fused op instead of a separate float32 matmul."""
 
     def w4a4_mixers(self) -> frozenset[str]:
-        """Returns the MoE mixers whose routed experts run W4A4.
-
-        A mixer qualifies when every one of its routed projections is NVFP4.
-        """
-        if not self.w4a4_experts:
-            return frozenset()
+        """Returns the MoE mixers whose routed experts are NVFP4, run W4A4."""
         return frozenset(
             mixer
-            for i, kind in enumerate(self.layer_kinds)
-            if kind == LayerKind.MOE
-            and self.quant_scheme.has_nvfp4_routed_experts(
-                mixer := f"backbone.layers.{i}.mixer", self.num_experts
-            )
+            for mixer in self.mixers(LayerKind.MOE)
+            if self.quant_scheme.routed_experts_format(mixer, self.num_experts)
+            is ModuleFormat.NVFP4_WEIGHT_ONLY
         )
+
+    def shared_expert_slices(self, mixer: str) -> int:
+        """Returns how many routed experts' worth of channels the shared
+        expert runs as, inside the routed W4A4 grouped matmul.
+
+        relu2 acts on each channel alone, so the shared expert's channels
+        split into slices as wide as a routed expert's, and the shared output
+        is the sum of the slices' outputs. Each slice runs as one more expert
+        that every token picks at weight 1, instead of a separate W4A4 MLP
+        whose quantize and matmul launches cost more at decode than its
+        weight bytes save.
+
+        Args:
+            mixer: The MoE mixer's checkpoint path.
+
+        Returns:
+            The number of slices, or 0 when the shared expert runs on its
+            own: when it or the routed experts are not NVFP4, or when its
+            channels are not a whole number of routed experts'. Under tensor
+            parallelism each slice splits by channel like a routed expert.
+        """
+        if mixer not in self.w4a4_mixers():
+            return 0
+        if any(
+            self.quant_scheme.format_of(f"{mixer}.shared_experts.{proj}")
+            is not ModuleFormat.NVFP4_WEIGHT_ONLY
+            for proj in ("up_proj", "down_proj")
+        ):
+            return 0
+        slices, rest = divmod(
+            self.moe_shared_expert_intermediate_size,
+            self.moe_intermediate_size,
+        )
+        if rest:
+            return 0
+        return slices
+
+    def runs_as_routed_experts(self, module: str) -> bool:
+        """Returns whether a shared-expert projection runs as routed experts.
+
+        See :meth:`shared_expert_slices`.
+        """
+        mixer, sep, _ = module.partition(".shared_experts.")
+        return bool(sep) and self.shared_expert_slices(mixer) > 0
+
+    def linear_shape(self, module: str) -> tuple[int, int]:
+        """Returns a dense linear module's ``(in_dim, out_dim)``.
+
+        Raises:
+            ValueError: If ``module`` is not a quantizable dense linear.
+        """
+        hidden = self.hidden_size
+        if module == "lm_head":
+            return hidden, self.vocab_size
+        if module.endswith(".mixer.in_proj"):
+            return hidden, (
+                self.mamba_intermediate_size
+                + self.conv_dim
+                + self.mamba_num_heads
+            )
+        if module.endswith(".mixer.out_proj"):
+            return self.mamba_intermediate_size, hidden
+        if ".shared_experts." in module:
+            inner = self.moe_shared_expert_intermediate_size
+        elif module.endswith((".mixer.up_proj", ".mixer.down_proj")):
+            inner = self.intermediate_size
+        else:
+            raise ValueError(f"no linear shape is known for '{module}'")
+        return (
+            (hidden, inner) if module.endswith(".up_proj") else (inner, hidden)
+        )
+
+    def mixers(self, kind: LayerKind) -> frozenset[str]:
+        """Returns the checkpoint names of the mixers of one kind."""
+        return frozenset(
+            f"backbone.layers.{i}.mixer"
+            for i, layer_kind in enumerate(self.layer_kinds)
+            if layer_kind is kind
+        )
+
+    @property
+    def sharded_kv_heads(self) -> int:
+        """Returns the KV heads the k and v projections hold.
+
+        With more devices than KV heads, each head repeats once per device
+        in its group, so that every device holds one whole head.
+        """
+        return max(self.num_key_value_heads, len(self.devices))
+
+    @property
+    def moe_intermediate_size_per_device(self) -> int:
+        """Returns the routed expert channels each device holds, padding
+        included."""
+        return moe_channels_per_device(
+            self.moe_intermediate_size, len(self.devices)
+        )
+
+    @property
+    def nvfp4_experts_split_by_block(self) -> bool:
+        """Returns whether each device's share of the routed expert channels
+        is a whole number of NVFP4 blocks.
+
+        The down projection's block scales can only be split between blocks.
+        """
+        share = self.moe_intermediate_size // len(self.devices)
+        return share % NVFP4_GROUP_SIZE == 0
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -242,7 +380,9 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             raise ValueError("Nemotron-H does not support data parallelism")
         kinds = parse_layer_kinds(huggingface_config.layers_block_type)
         attn = kv_cache_config.to_params(
-            allow_kv_head_replication=allow_kv_head_replication,
+            # With more devices than KV heads, the k and v projections repeat
+            # each head across a group of devices.
+            allow_kv_head_replication=True,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
@@ -252,6 +392,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         )
         hf = huggingface_config
         num_mamba_layers = kinds.count(LayerKind.MAMBA)
+        # Each device holds the state of its own share of the Mamba heads.
+        n = len(devices)
         state = RecurrentStateParams(
             # Separate leaves because the conv and SSM kernels each index
             # their own uniformly strided pool, at different dtypes.
@@ -261,8 +403,11 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     leaf_id="mamba/conv",
                     num_layers=num_mamba_layers,
                     row_shape=(
-                        hf.mamba_num_heads * hf.mamba_head_dim
-                        + 2 * hf.n_groups * hf.ssm_state_size,
+                        (
+                            hf.mamba_num_heads * hf.mamba_head_dim
+                            + 2 * hf.n_groups * hf.ssm_state_size
+                        )
+                        // n,
                         hf.conv_kernel - 1,
                     ),
                     dtype=DType.bfloat16,
@@ -271,7 +416,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     leaf_id="mamba/ssm",
                     num_layers=num_mamba_layers,
                     row_shape=(
-                        hf.mamba_num_heads,
+                        hf.mamba_num_heads // n,
                         hf.mamba_head_dim,
                         hf.ssm_state_size,
                     ),
@@ -318,7 +463,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         config = cls.from_huggingface(
             hf, kv_params=kv_params, devices=devices, max_seq_len=max_seq_len
         )
-        config.w4a4_experts = _runs_w4a4_experts(model_config.device_specs)
+        _check_quantized_runs_on(model_config.device_specs, config.quant_scheme)
         config.fused_router = _runs_fused_router(
             model_config.device_specs,
             num_experts=config.num_experts,
@@ -362,7 +507,30 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 f"Nemotron-H does not clamp dt, but the checkpoint sets "
                 f"time_step_limit={limit}"
             )
-        return cls(
+        n = len(devices)
+        kv_heads = hf.num_key_value_heads
+        if kv_heads % n and n % kv_heads:
+            raise ValueError(
+                f"Nemotron-H gives each device whole KV heads, so {n} devices "
+                f"must divide its {kv_heads} KV heads or be a multiple of them"
+            )
+        for count, what in (
+            (hf.vocab_size, "vocabulary entries"),
+            (hf.num_attention_heads, "attention heads"),
+            (hf.moe_intermediate_size, "routed expert channels"),
+            (
+                hf.moe_shared_expert_intermediate_size,
+                "shared expert channels",
+            ),
+            (hf.mamba_num_heads, "Mamba heads"),
+            (hf.n_groups, "Mamba groups"),
+        ):
+            if count % n:
+                raise ValueError(
+                    f"Nemotron-H shards its {count} {what} across devices, "
+                    f"which {n} devices do not divide"
+                )
+        config = cls(
             hidden_size=hf.hidden_size,
             vocab_size=hf.vocab_size,
             layer_kinds=parse_layer_kinds(hf.layers_block_type),
@@ -392,3 +560,57 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             max_seq_len=max_seq_len,
             kv_params=kv_params,
         )
+        config.check_quantized_modules()
+        return config
+
+    def check_quantized_modules(self) -> None:
+        """Checks that every quantized module runs in its stored format.
+
+        Raises:
+            NotImplementedError: If a quantized module is built in BF16 only,
+                or a mixer's routed experts mix formats.
+            ValueError: If each device's share of the NVFP4 routed experts'
+                channels is not whole NVFP4 blocks, or an NVFP4 row-parallel
+                layer's input does not split into whole 64-column scale
+                blocks per device.
+        """
+        self.quant_scheme.check_dense_modules()
+        for mixer in self.mixers(LayerKind.MOE):
+            self.quant_scheme.routed_experts_format(mixer, self.num_experts)
+        n = len(self.devices)
+        if self.w4a4_mixers() and not self.nvfp4_experts_split_by_block:
+            raise ValueError(
+                f"Nemotron-H cannot run the NVFP4 routed experts of this "
+                f"checkpoint on {n} devices: each device's share of their "
+                f"{self.moe_intermediate_size} channels is not whole "
+                f"{NVFP4_GROUP_SIZE}-channel blocks"
+            )
+        block = 4 * NVFP4_GROUP_SIZE
+        for module, fmt in self.quant_scheme.quantized.items():
+            if (
+                fmt is not ModuleFormat.NVFP4_WEIGHT_ONLY
+                or ".experts." in module
+                or self.runs_as_routed_experts(module)
+                or linear_parallelism(module) is not Parallelism.ROW
+            ):
+                continue
+            in_dim, _ = self.linear_shape(module)
+            if in_dim % (n * block) == 0:
+                continue
+            # Each device's share of the input must be whole scale blocks.
+            counts = [str(d) for d in range(1, n) if in_dim % (d * block) == 0]
+            if not counts:
+                raise ValueError(
+                    f"Nemotron-H cannot run the NVFP4 '{module}' of this "
+                    f"checkpoint: its {in_dim} input channels are not whole "
+                    f"{block}-channel scale blocks"
+                )
+            supported = (
+                f"{', '.join(counts[:-1])} or {counts[-1]}"
+                if len(counts) > 1
+                else counts[0]
+            )
+            raise ValueError(
+                f"Nemotron-H runs the NVFP4 '{module}' of this checkpoint on "
+                f"{supported} devices, not {n}"
+            )

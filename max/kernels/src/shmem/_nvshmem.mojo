@@ -260,7 +260,7 @@ def _dtype_to_nvshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    comptime __match dtype:
+    comptime match dtype:
         case .float16:
             return get_static_string[prefix, "half", suffix, scope]()
         case .bfloat16:

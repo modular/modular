@@ -35,11 +35,9 @@ from max.gpu import (
     global_idx,
     grid_dim,
     lane_id,
-    thread_idx,
     warp_id,
 )
 from std.memory import unsafe_stack_allocation
-from std.utils import Index
 
 from max.gpu.compute.mma import mma
 from max.gpu.host import DeviceContext
@@ -284,12 +282,11 @@ def _gemm_smallm_streaming_kernel[
                         comptime for r4 in range(4):
                             var row = t * _TILE_N + (lane // _TILE_N) * 4 + r4
                             if row < _m:
-                                comptime if elementwise_lambda_fn:
-                                    comptime elementwise_lambda = (
-                                        elementwise_lambda_fn.value()
-                                    )
+                                comptime if case .Some(
+                                    elementwise_lambda
+                                ) = elementwise_lambda_fn:
                                     elementwise_lambda(
-                                        Index(row, out_col),
+                                        (row, out_col),
                                         acc[t][r4].cast[c_type](),
                                     )
                                 else:
@@ -361,12 +358,11 @@ def _gemm_smallm_streaming_kernel[
                         comptime for r4 in range(4):
                             var row = t * _TILE_N + (lane // _TILE_N) * 4 + r4
                             if row < _m:
-                                comptime if elementwise_lambda_fn:
-                                    comptime elementwise_lambda = (
-                                        elementwise_lambda_fn.value()
-                                    )
+                                comptime if case .Some(
+                                    elementwise_lambda
+                                ) = elementwise_lambda_fn:
                                     elementwise_lambda(
-                                        Index(row, out_col),
+                                        (row, out_col),
                                         acc[u * m_tiles + t][r4].cast[c_type](),
                                     )
                                 else:

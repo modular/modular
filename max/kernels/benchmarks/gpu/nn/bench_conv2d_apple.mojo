@@ -36,12 +36,7 @@ Run with: `mojo max/kernels/benchmarks/gpu/nn/bench_conv2d_apple.mojo`.
 from std.math import ceildiv
 from std.time import perf_counter
 
-from layout import (
-    Idx,
-    LTToTTLayout,
-    Layout,
-    TileTensor,
-)
+from layout import LTToTTLayout, Layout, TileTensor
 from max.gpu.host import DeviceContext
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf
 from nn.conv.gpu.im2col_matmul_2d import (

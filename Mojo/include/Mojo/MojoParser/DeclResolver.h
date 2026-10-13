@@ -44,6 +44,7 @@ class ParserBase;
 class SharedState;
 class UnresolvedImportOp;
 class ImportOp;
+class EnumCaseOp;
 class StructDeclOp;
 class StructFieldOp;
 class TraitDeclOp;
@@ -101,9 +102,18 @@ public:
                               ASTDecl *parentDecl, LexerCursor cursor,
                               LexerCursor endCursor, ssize_t indentation);
 
+  /// Create a witness declaration and install it in the trait's scope.
+  WitnessASTDecl &
+  createWitnessDecl(WitnessASTDecl::UnresolvedDecls unresolvedDecls,
+                    TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
+                    ASTDecl &traitDecl, StringAttr name);
+
   /// Attach a declaration to its parent's name table.  For use with
   /// `makeUnlistedDecl`.
   void attachDeclToParentNameTable(ASTDecl *decl, StringAttr name);
+
+  /// Remove an unreachable declaration and its owned children.
+  void eraseDecl(ASTDecl &decl);
 
   /// Register a decl's symbol in the MLIR symbol table and declForTypeSymbol
   /// map, without adding it to the parent's declsInScope. This allows the
@@ -414,6 +424,10 @@ private:
 
   LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
+  /// Resolve the cases parsed in the body of an enum, given in declaration
+  /// order.
+  void resolveEnumCases(ASTDecl &decl, ArrayRef<ASTDecl *> caseDecls);
+  LogicalResult resolveSignature(EnumCaseOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
@@ -426,8 +440,8 @@ private:
 
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
-  ParseResult resolveSignature(WitnessDecl *witness, ASTDecl &decl);
-  ParseResult resolveBody(WitnessDecl *witness, ASTDecl &decl);
+  ParseResult resolveSignature(WitnessASTDecl &witness);
+  ParseResult resolveBody(WitnessASTDecl &witness);
 
   ParseResult resolveBody(ConformanceOp op, ASTDecl &decl);
 
@@ -456,6 +470,10 @@ private:
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<ASTDecl *> parsedDeclList;
+
+  /// Removed declarations retained until the resolver is destroyed so active
+  /// resolution frames can unwind safely.
+  std::vector<ASTDecl *> retiredDeclList;
 
   /// From-import placeholders (`from a.b import c`) that resolved to a
   /// submodule and were superseded by an ImportOp.

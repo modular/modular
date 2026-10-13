@@ -159,6 +159,8 @@ from std.memory import (
     ImmOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalImmPointer,
+    OptionalMutPointer,
     OptionalPointer,
     ImmPointer,
     MutPointer,

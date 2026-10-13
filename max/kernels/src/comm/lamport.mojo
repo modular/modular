@@ -197,7 +197,7 @@ struct LamportGeneration:
     generation while clearing the generation that will be reused two calls
     later, leaving exactly one generation of skew slack.
 
-    Given a monotonically-increasing call counter `flag`:
+    Given a call counter `flag`:
 
     - `data_index` = `flag % 3` is the generation written and read this call;
     - `clear_index` = `(flag + 2) % 3` is the generation cleared back to the
@@ -242,3 +242,16 @@ struct LamportGeneration:
             % 3` for the default of three generations.
         """
         return (flag + Self.NUM_GENERATIONS - 1) % Self.NUM_GENERATIONS
+
+    @staticmethod
+    @inline(.always)
+    def advance(flag: Int) -> Int:
+        """Returns the next call's counter value, mod `NUM_GENERATIONS`.
+
+        Args:
+            flag: The current call counter, in `[0, NUM_GENERATIONS)`.
+
+        Returns:
+            `(flag + 1) % NUM_GENERATIONS`.
+        """
+        return (flag + 1) % Self.NUM_GENERATIONS

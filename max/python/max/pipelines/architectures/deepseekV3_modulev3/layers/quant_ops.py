@@ -28,12 +28,8 @@ from max.experimental.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
 )
 from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.sharding.action import Action, ActionSet, AxisAssignment
-from max.experimental.sharding.cost import (
-    P,
-    R,
-    build_action_set,
-)
+from max.experimental.sharding.action import AxisAssignment
+from max.experimental.sharding.cost import P, R
 from max.experimental.sharding.placements import Placement, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
@@ -104,35 +100,39 @@ def _transpose2d_placement(p: Placement) -> Placement:
     return p
 
 
-def _quantize_finalize(action: Action) -> Action:
-    """Expand the picked output into ``(data, scales)`` mappings.
+def _follow_input_rows(
+    x: TensorLayout,
+    scales_placement: Callable[[Placement], Placement] | None = None,
+) -> list[AxisAssignment]:
+    """Returns rows whose results follow the rank-2 input's placement.
 
-    The picker derives one output placement, which we use for the FP8 data
-    output (same layout as the input). This restores the second, transposed
-    mapping for the block-scale output (see :func:`_transpose2d_placement`).
+    Covers a replicated input (the common case), a contraction-sharded input
+    (``o_proj`` under tensor parallelism), and a row-sharded input (sequence /
+    data parallel). There is no partial-sum row: quantizing is not linear,
+    so a partial input is reduced first.
+
+    Args:
+        x: The rank-2 input whose placement the results follow.
+        scales_placement: The placement of the block scales a quantize op
+            also returns, given the data's placement. ``None`` for an op
+            with one result.
     """
-    (data_mapping,) = action.outputs
-    scales_mapping = DeviceMapping(
-        data_mapping.mesh,
-        tuple(_transpose2d_placement(p) for p in data_mapping.placements),
-    )
-    return Action(inputs=action.inputs, outputs=(data_mapping, scales_mapping))
+
+    def outputs(p: Placement) -> tuple[Placement, ...]:
+        return (p,) if scales_placement is None else (p, scales_placement(p))
+
+    return [
+        AxisAssignment((p,), outputs(p)) for p in (R, Sharded(0), Sharded(1))
+    ]
 
 
-def _quantize_rule(x: TensorLayout, *extras: Any) -> ActionSet:
+def _quantize_rule(x: TensorLayout, *extras: Any) -> list[AxisAssignment]:
     """Sharding rule for dynamic FP8 activation quantization.
 
-    The FP8 data output follows the input placement; the block-scale output is
-    its transpose (handled by :func:`_quantize_finalize`). Covers a replicated
-    input (the common case), a contraction-sharded input (``o_proj`` under
-    tensor parallelism), and a row-sharded input (sequence / data parallel).
+    The FP8 data output follows the input placement; the block-scale output
+    is its transpose.
     """
-    rows = [
-        AxisAssignment((R,), R),
-        AxisAssignment((Sharded(0),), Sharded(0)),
-        AxisAssignment((Sharded(1),), Sharded(1)),
-    ]
-    return build_action_set(rows, layouts=(x,), finalize=_quantize_finalize)
+    return _follow_input_rows(x, _transpose2d_placement)
 
 
 def _scaled_matmul_rule(
@@ -141,7 +141,8 @@ def _scaled_matmul_rule(
     a_scales: TensorLayout,
     b_scales: TensorLayout,
     *extras: Any,
-) -> ActionSet:
+    **kwargs: Any,
+) -> list[AxisAssignment]:
     """Sharding rule for the block-scaled FP8 matmul ``a @ b.T``.
 
     ``a`` is ``[M, K]`` and ``b`` (Linear-convention weight) is ``[N, K]``, so
@@ -151,17 +152,15 @@ def _scaled_matmul_rule(
     column-parallel weights (shard ``N``), row-parallel weights (shard the
     ``K`` contraction, producing a partial sum), and row-sharded activations.
     """
-    layouts = (a, b, a_scales, b_scales)
-    rows = [
-        AxisAssignment((R, R, R, R), R),
+    return [
+        AxisAssignment((R, R, R, R), (R,)),
         # Column-parallel: weight rows (N) sharded -> output columns (N).
-        AxisAssignment((R, Sharded(0), R, Sharded(0)), Sharded(1)),
+        AxisAssignment((R, Sharded(0), R, Sharded(0)), (Sharded(1),)),
         # Row-parallel: contraction (K) sharded on every operand -> partial.
-        AxisAssignment((Sharded(1), Sharded(1), Sharded(0), Sharded(1)), P),
+        AxisAssignment((Sharded(1), Sharded(1), Sharded(0), Sharded(1)), (P,)),
         # Row-sharded activations (sequence / data parallel) -> output rows.
-        AxisAssignment((Sharded(0), R, Sharded(1), R), Sharded(0)),
+        AxisAssignment((Sharded(0), R, Sharded(1), R), (Sharded(0),)),
     ]
-    return build_action_set(rows, layouts=layouts)
 
 
 def _grouped_scaled_matmul_rule(
@@ -171,57 +170,46 @@ def _grouped_scaled_matmul_rule(
     b_scales: TensorLayout,
     expert_start_indices: TensorLayout,
     expert_ids: TensorLayout,
-    *unused_kwargs: Any,
-) -> ActionSet:
+    expert_usage_stats_host: TensorLayout,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
+    out_type: DType = DType.bfloat16,
+) -> list[AxisAssignment]:
     """Sharding rule for the FP8 block-scaled grouped (MoE) matmul."""
-    layouts = (
-        hidden_states,
-        weight,
-        a_scales,
-        b_scales,
-        expert_start_indices,
-        expert_ids,
-    )
-    rows = [
-        AxisAssignment((R, R, R, R, R, R), R),
+    return [
+        AxisAssignment((R, R, R, R, R, R, R), (R,)),
         # Column-parallel: weight's N (out) axis sharded -> output's N axis.
-        AxisAssignment((R, Sharded(1), R, Sharded(1), R, R), Sharded(1)),
+        AxisAssignment((R, Sharded(1), R, Sharded(1), R, R, R), (Sharded(1),)),
         # Row-parallel: weight's K (contraction) axis sharded, matched by
         # hidden_states' K axis; a_scales is transposed relative to
         # hidden_states, so its matching axis is 0 -> partial sum.
         AxisAssignment(
-            (Sharded(1), Sharded(2), Sharded(0), Sharded(2), R, R), P
+            (Sharded(1), Sharded(2), Sharded(0), Sharded(2), R, R, R), (P,)
         ),
     ]
-    return build_action_set(rows, layouts=layouts)
 
 
-def _nvfp4_quantize_finalize(action: Action) -> Action:
-    """Give the NVFP4 block-scale output the same placement as the data."""
-    (data_mapping,) = action.outputs
-    return Action(inputs=action.inputs, outputs=(data_mapping, data_mapping))
-
-
-def _nvfp4_quantize_rule(x: TensorLayout, *extras: Any) -> ActionSet:
+def _nvfp4_quantize_rule(
+    input: TensorLayout,
+    tensor_sf: TensorLayout | float = 1.0,
+    sf_vector_size: int = 16,
+    scales_type: DType = DType.float8_e4m3fn,
+    out_type: DType = DType.uint8,
+) -> list[AxisAssignment]:
     """Sharding rule for dynamic NVFP4 activation block quantization."""
-    rows = [
-        AxisAssignment((R,), R),
-        AxisAssignment((Sharded(0),), Sharded(0)),
-        AxisAssignment((Sharded(1),), Sharded(1)),
+    rows = _follow_input_rows(input, lambda placement: placement)
+    if not isinstance(tensor_sf, TensorLayout):
+        return rows
+    return [
+        AxisAssignment((*row.needed_inputs, R), row.outputs) for row in rows
     ]
-    return build_action_set(
-        rows, layouts=(x,), finalize=_nvfp4_quantize_finalize
-    )
 
 
-def _nvfp4_interleave_rule(scales: TensorLayout, *extras: Any) -> ActionSet:
+def _nvfp4_interleave_rule(
+    scales: TensorLayout, *extras: Any
+) -> list[AxisAssignment]:
     """Sharding rule for ``block_scales_interleave`` (rank-2 -> rank-5)."""
-    rows = [
-        AxisAssignment((R,), R),
-        AxisAssignment((Sharded(0),), Sharded(0)),
-        AxisAssignment((Sharded(1),), Sharded(1)),
-    ]
-    return build_action_set(rows, layouts=(scales,))
+    return _follow_input_rows(scales)
 
 
 def _nvfp4_matmul_rule(
@@ -229,20 +217,25 @@ def _nvfp4_matmul_rule(
     b: TensorLayout,
     a_scales: TensorLayout,
     b_scales: TensorLayout,
-    *extras: Any,
-) -> ActionSet:
+    tensor_sf: TensorLayout | float = 1.0,
+    sf_vector_size: int = 16,
+    out_type: DType = DType.bfloat16,
+) -> list[AxisAssignment]:
     """Sharding rule for the block-scaled NVFP4 matmul ``a @ b.T``."""
-    layouts = (a, b, a_scales, b_scales)
     rows = [
-        AxisAssignment((R, R, R, R), R),
+        AxisAssignment((R, R, R, R), (R,)),
         # Column-parallel: weight rows (N) sharded -> output columns (N).
-        AxisAssignment((R, Sharded(0), R, Sharded(0)), Sharded(1)),
+        AxisAssignment((R, Sharded(0), R, Sharded(0)), (Sharded(1),)),
         # Row-parallel: contraction (K) sharded on every operand -> partial.
-        AxisAssignment((Sharded(1), Sharded(1), Sharded(1), Sharded(1)), P),
+        AxisAssignment((Sharded(1), Sharded(1), Sharded(1), Sharded(1)), (P,)),
         # Row-sharded activations (sequence / data parallel) -> output rows.
-        AxisAssignment((Sharded(0), R, Sharded(0), R), Sharded(0)),
+        AxisAssignment((Sharded(0), R, Sharded(0), R), (Sharded(0),)),
     ]
-    return build_action_set(rows, layouts=layouts)
+    if isinstance(tensor_sf, TensorLayout):
+        rows = [
+            AxisAssignment((*row.needed_inputs, R), row.outputs) for row in rows
+        ]
+    return rows
 
 
 def _nvfp4_grouped_quantize_rule(
@@ -252,17 +245,15 @@ def _nvfp4_grouped_quantize_rule(
     expert_ids: TensorLayout,
     sf_tensor: TensorLayout,
     *extras: Any,
-) -> ActionSet:
+    **kwargs: Any,
+) -> list[AxisAssignment]:
     """Sharding rule for grouped NVFP4 activation quantization."""
-    rows = [
-        AxisAssignment((R, R, R, R, R), R),
-        AxisAssignment((Sharded(1), R, R, R, R), Sharded(1)),
+    # The block scales are placed like the quantized data, so each row
+    # names that placement twice: once for the data, once for the scales.
+    return [
+        AxisAssignment((R, R, R, R, R), (R, R)),
+        AxisAssignment((Sharded(1), R, R, R, R), (Sharded(1), Sharded(1))),
     ]
-    return build_action_set(
-        rows,
-        layouts=(input, row_offsets, scales_offsets, expert_ids, sf_tensor),
-        finalize=_nvfp4_quantize_finalize,
-    )
 
 
 def _nvfp4_grouped_matmul_rule(
@@ -274,8 +265,10 @@ def _nvfp4_grouped_matmul_rule(
     a_scale_offsets: TensorLayout,
     expert_ids: TensorLayout,
     expert_scales: TensorLayout,
-    *unused: Any,
-) -> ActionSet:
+    expert_usage_stats_host: TensorLayout,
+    out_type: DType = DType.bfloat16,
+    estimated_total_m: TensorLayout | None = None,
+) -> list[AxisAssignment]:
     """Sharding rule for the NVFP4 block-scaled grouped (MoE) matmul."""
     layouts = (
         hidden_states,
@@ -286,18 +279,22 @@ def _nvfp4_grouped_matmul_rule(
         a_scale_offsets,
         expert_ids,
         expert_scales,
+        expert_usage_stats_host,
+        *((estimated_total_m,) if estimated_total_m is not None else ()),
     )
-    rows = [
-        AxisAssignment((R, R, R, R, R, R, R, R), R),
+    metadata = (R,) * (len(layouts) - 4)
+    return [
+        AxisAssignment((R, R, R, R, *metadata), (R,)),
         # Column-parallel: weight's N axis (1) -> output's N axis.
-        AxisAssignment((R, Sharded(1), R, Sharded(1), R, R, R, R), Sharded(1)),
+        AxisAssignment(
+            (R, Sharded(1), R, Sharded(1), *metadata), (Sharded(1),)
+        ),
         # Row-parallel: weight's K axis (2) matched by hidden/a_scales K -> P.
         AxisAssignment(
-            (Sharded(1), Sharded(2), Sharded(1), Sharded(2), R, R, R, R),
-            P,
+            (Sharded(1), Sharded(2), Sharded(1), Sharded(2), *metadata),
+            (P,),
         ),
     ]
-    return build_action_set(rows, layouts=layouts)
 
 
 # Wrap raw graph ops so they accept ``Tensor`` and run inside an
@@ -560,7 +557,7 @@ def combine_quant_per_device(
     """Map a per-device leaf transform over a homogeneous bundle.
 
     ``combine`` merges all items' tensors for one leaf into a per-device list
-    (one tensor per mesh device) — e.g. a TP shard-and-stack.  For FP8 input,
+    (one tensor per mesh device) — for example, a TP shard-and-stack.  For FP8 input,
     ``combine`` is applied to the ``data`` and ``weight_scale_inv`` leaves
     independently and the per-device leaves are zipped back into one
     :class:`FP8BlockTensor` per device, so the FP8 invariant (``data`` and
@@ -568,7 +565,7 @@ def combine_quant_per_device(
     is preserved without the caller transposing a struct-of-lists into a
     list-of-structs.  For plain tensors the per-device list is returned as-is.
 
-    ``combine`` must be leaf-agnostic — read any per-leaf difference (e.g. the
+    ``combine`` must be leaf-agnostic — read any per-leaf difference (such as the
     block-scale leaf's smaller trailing dim) off the leaf tensors' own shapes
     rather than branching on which leaf it is.
 
@@ -1012,8 +1009,13 @@ def grouped_matmul_silu(
     quant_config: QuantConfig | None,
     scales_offset: Tensor | None = None,
     estimated_total_m: Tensor | None = None,
+    accum_dtype: DType | None = None,
 ) -> QuantAwareTensor:
-    """Gate/up grouped matmul + SwiGLU, returning the down-projection input."""
+    """Gate/up grouped matmul + SwiGLU, returning the down-projection input.
+
+    ``accum_dtype`` upcasts the gate/up output before the SwiGLU, which
+    DeepSeek-V3.2 does in float32.
+    """
     # Pre-quantized EP activations carry their own per-expert scale offset;
     # single-device tokens rely on the caller-supplied one.
     offset = (
@@ -1025,6 +1027,10 @@ def grouped_matmul_silu(
         isinstance(tokens, NVFP4Activation)
         and quant_config is not None
         and quant_config.can_use_fused_swiglu
+        # The fused kernel computes the activation internally, so it cannot
+        # carry a float32 gate/up accumulation. ``ExpertParallelMoE``'s weight
+        # layout is gated on the same condition.
+        and accum_dtype is None
     ):
         assert isinstance(gate_up, NVFP4Tensor) and isinstance(
             down, NVFP4Tensor
@@ -1063,7 +1069,13 @@ def grouped_matmul_silu(
     # pre-quantized upstream (EP dispatch); otherwise emit bf16 and let the
     # down matmul quantize.
     prequantized = isinstance(tokens, (FP8BlockTensor, NVFP4Activation))
-    requant_weight = down if prequantized else None
+    # NVFP4's down matmul quantizes from bf16 only, so a float32 SwiGLU output
+    # has to be packed by the fused quantized SiLU instead.
+    requant_weight = (
+        down if prequantized or isinstance(down, NVFP4Tensor) else None
+    )
+    if accum_dtype is not None:
+        gate_up_out = gate_up_out.cast(accum_dtype)
     return grouped_silu(
         gate_up_out,
         expert_start_indices,

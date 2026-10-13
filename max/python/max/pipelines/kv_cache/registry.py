@@ -23,6 +23,7 @@ from max.driver import is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     KVCacheParamInterface,
+    KVConnectorType,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     estimated_memory_size,
@@ -35,19 +36,14 @@ from .paged_kv_cache.jenga_cache_manager import JengaKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
-# Temporary allowlist for the Jenga cutover.
-_JENGA_MODEL_NAME_SUBSTRINGS = (
-    "llama",  # Llama 3/4: full
-    "gemma",  # Gemma 3/4: full + SWA
-    "gpt-oss",  # full + SWA
-    "gptoss",  # same as gpt-oss
-    "olmo",  # Olmo 2: full; Olmo 3: 3:1 SWA:full
-    "step-3",  # Step-3.5: full + SWA
-    "step3",  # same as step-3
-    "inkling",  # full + SWA
-    "kimi",  # Kimi K2.x / Kimi-VL: MLA full (Eagle3 draft adds an SWA group)
-    "deepseek",  # DeepSeek V2/V3: MLA full; V3.2 adds a sparse-indexer group
-)
+
+def jenga_supports_di(params: KVCacheParamInterface) -> bool:
+    """Whether disaggregated serving can transfer this cache under Jenga.
+
+    A sliding window leaf nulls the pages its window slid past, so its block
+    ids are not the contiguous prefix a transfer moves.
+    """
+    return all(leaf.group_id.is_full() for leaf in params.leaves().values())
 
 
 def _use_jenga_kv_cache(
@@ -55,26 +51,47 @@ def _use_jenga_kv_cache(
 ) -> bool:
     """Whether the Jenga KV cache serves this cache.
 
-    A recurrent state can only live on Jenga, so it overrides the allowlist.
+    Jenga is the default for all models. A recurrent state can only live on
+    Jenga, so it overrides the legacy opt-out.
     `MODULAR_USE_LEGACY_KV_CACHE=1` otherwise forces the legacy KV cache.
+
+    Raises:
+        ValueError: If no manager can serve the configuration. The legacy
+            manager supports neither disaggregated inference nor a KV
+            connector, and disaggregated inference on Jenga supports only full
+            attention caches.
 
     TODO: temporary flag for the Jenga cutover. Delete once the transition is complete.
     """
-    if recurrent_leaf(params) is not None:
-        return True
-    name = model_name.lower()
-    if not any(token in name for token in _JENGA_MODEL_NAME_SUBSTRINGS):
-        return False
     prefer_legacy = os.getenv("MODULAR_USE_LEGACY_KV_CACHE", "0").lower() in (
         "1",
         "true",
         "yes",
         "y",
     )
-    if prefer_legacy:
+    if prefer_legacy and recurrent_leaf(params) is None:
+        if is_di_enabled:
+            raise ValueError(
+                "Disaggregated inference is incompatible with the legacy KV"
+                " manager selected by MODULAR_USE_LEGACY_KV_CACHE. Unset"
+                " MODULAR_USE_LEGACY_KV_CACHE."
+            )
+        connector = params.kv_connector_config.type
+        if connector != KVConnectorType.null:
+            raise ValueError(
+                f"The '{connector.value}' KV connector is incompatible with"
+                " the legacy KV manager selected by"
+                " MODULAR_USE_LEGACY_KV_CACHE. Unset"
+                " MODULAR_USE_LEGACY_KV_CACHE."
+            )
         return False
-    # TODO(SERVOPT-1590): Jenga is incompatible with Disaggregated Inference.
-    return not is_di_enabled
+    if is_di_enabled and not jenga_supports_di(params):
+        raise ValueError(
+            "Disaggregated inference supports only full-attention KV caches,"
+            " but this model has a sliding-window, recurrent or scratch KV"
+            " cache leaf."
+        )
+    return True
 
 
 def max_seq_len_fitting_in_cache(
@@ -208,9 +225,14 @@ def load_kv_manager(
     # otherwise it cannot be preempted (there is nothing else to evict) and
     # overflows the pool at runtime, crashing the model worker with
     # InsufficientBlocksError. Fail startup instead.
+    # PagedKVCacheManager allocates one page past total_num_pages for the null
+    # block. Size the pages from a budget that already holds it: memory
+    # estimation can cap available_cache_memory at the device's largest
+    # single allocation, so a page beyond it fails to allocate.
+    null_block_bytes = params.bytes_per_block * params.data_parallel_degree
     total_num_pages = compute_num_device_blocks(
         params=params,
-        available_cache_memory=available_cache_memory,
+        available_cache_memory=available_cache_memory - null_block_bytes,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
         require_max_seq_len_fits=True,

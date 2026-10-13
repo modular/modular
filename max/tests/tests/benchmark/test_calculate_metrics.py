@@ -1224,6 +1224,66 @@ def test_build_text_generation_result_not_detected_falls_back_to_trim() -> None:
     assert result.text_data.completed == 3
 
 
+def _outputs_with_completion_tokens(
+    counts: list[int],
+) -> list[RequestFuncOutput]:
+    outputs = []
+    for count in counts:
+        output = _make_request_func_output()
+        output.server_token_stats = ServerTokenStats(completion_tokens=count)
+        outputs.append(output)
+    return outputs
+
+
+def test_build_text_generation_result_attaches_aggregate_server_stats() -> None:
+    """Without sessions, server stats are attached flat in output order."""
+    outputs = _outputs_with_completion_tokens([3, 1, 2])
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert result.session_server_stats is None
+    assert result.aggregate_server_stats == [
+        o.server_token_stats for o in outputs
+    ]
+
+
+def test_build_text_generation_result_attaches_session_server_stats() -> None:
+    """With sessions, server stats are grouped per session."""
+    a, b, c, d = _outputs_with_completion_tokens([1, 2, 3, 4])
+    by_session = {"10": [a], "anon": [b], "2": [c, d]}
+    result = build_text_generation_result(
+        outputs=[a, b, c, d],
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        outputs_by_session=by_session,
+    )
+
+    assert result.aggregate_server_stats is None
+    assert result.session_server_stats is not None
+    assert list(result.session_server_stats) == ["2", "10", "anon"]
+    assert result.session_server_stats["2"] == [
+        c.server_token_stats,
+        d.server_token_stats,
+    ]
+
+
 def test_build_text_generation_result_all_failed_suppresses_ss_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1991,16 +2051,18 @@ def test_aggregate_gpu_stats_disabled_or_empty() -> None:
         [],
         [],
         [],
+        {},
     )
     assert _aggregate_gpu_stats(collect_gpu_stats=True, gpu_metrics=None) == (
         [],
         [],
         [],
+        {},
     )
     # Snapshots with no devices report nothing rather than raising.
     assert _aggregate_gpu_stats(
         collect_gpu_stats=True, gpu_metrics=[{}, {}]
-    ) == ([], [], [])
+    ) == ([], [], [], {})
 
 
 def test_aggregate_gpu_stats_single_device_across_snapshots() -> None:
@@ -2009,7 +2071,7 @@ def test_aggregate_gpu_stats_single_device_across_snapshots() -> None:
         {"n:gpu0": _gpu_stats(util=80, used_mib=100, free_mib=900)},
         {"n:gpu0": _gpu_stats(util=90, used_mib=300, free_mib=700)},
     ]
-    peak, avail, util = _aggregate_gpu_stats(
+    peak, avail, util, _ = _aggregate_gpu_stats(
         collect_gpu_stats=True, gpu_metrics=snapshots
     )
     assert peak == [300.0]
@@ -2040,7 +2102,7 @@ def test_aggregate_gpu_stats_tolerates_changing_device_set() -> None:
         },
     ]
 
-    peak, avail, util = _aggregate_gpu_stats(
+    peak, avail, util, _ = _aggregate_gpu_stats(
         collect_gpu_stats=True, gpu_metrics=snapshots
     )
 
@@ -2052,6 +2114,33 @@ def test_aggregate_gpu_stats_tolerates_changing_device_set() -> None:
     assert util == [75.0, 50.0]
     # Reported mean GPU util is the mean across all engine devices seen.
     assert statistics.mean(util) == 62.5
+
+
+def test_aggregate_gpu_stats_splits_utilization_by_group() -> None:
+    """Each group gets its devices' utilization, in the mapping's order.
+
+    A device with no group still counts toward the overall list, and a
+    grouped device absent from every snapshot adds nothing.
+    """
+    snapshot = {
+        "GPU-a": _gpu_stats(util=96, used_mib=100, free_mib=900),
+        "GPU-b": _gpu_stats(util=94, used_mib=100, free_mib=900),
+        "GPU-c": _gpu_stats(util=38, used_mib=100, free_mib=900),
+        "GPU-d": _gpu_stats(util=50, used_mib=100, free_mib=900),
+    }
+    _, _, util, by_group = _aggregate_gpu_stats(
+        collect_gpu_stats=True,
+        gpu_metrics=[snapshot],
+        gpu_device_groups={
+            "GPU-c": "decode",
+            "GPU-a": "prefill",
+            "GPU-b": "prefill",
+            "GPU-z": "decode",
+        },
+    )
+    assert util == [96.0, 94.0, 38.0, 50.0]
+    assert by_group == {"decode": [38.0], "prefill": [96.0, 94.0]}
+    assert list(by_group) == ["decode", "prefill"]
 
 
 def test_tool_rates_count_offers_and_calls_separately() -> None:

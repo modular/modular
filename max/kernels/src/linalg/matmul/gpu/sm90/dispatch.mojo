@@ -30,7 +30,12 @@ from std.logger import Logger
 
 from std.utils.index import Index, IndexList
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from ....utils_gpu import MatmulConfig, _vendor_blas_fallback_disabled
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from .matmul import warp_specialize_gemm_with_multicasting
@@ -60,20 +65,23 @@ comptime logger = Logger()
 
 
 def matmul_dispatch_sm90[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     c_type: DType,
     a_type: DType,
     b_type: DType,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises -> Int:
     """Dispatches a rank-2 matmul to the SM90 (Hopper) warp-specialized kernel.
 
@@ -83,25 +91,29 @@ def matmul_dispatch_sm90[
     problem does not meet SM90 requirements.
 
     Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         c_type: Element type of the output tensor `c`.
         a_type: Element type of the input tensor `a`.
         b_type: Element type of the input tensor `b`.
         transpose_b: Whether `b` is stored transposed (defaults to `False`);
             the SM90 kernel requires this to be `True` to dispatch.
-        elementwise_lambda_fn: Epilogue applied to each output tile after the
-            matmul, consuming the tile and returning nothing (defaults to
-            `None` for no epilogue).
-        elementwise_compute_lambda_fn: Compute lambda transforming each output
-            value before the epilogue, returning the transformed value
-            (defaults to `None` for no transform).
         pdl_level: Programmatic dependent launch level for overlapping this
             kernel with prior work (defaults to `PDLLevel()`).
+        has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
+            to `False`).
+        has_compute_fn: Whether `compute_fn` transforms each output value
+            before the kernel stores it (defaults to `False`).
 
     Args:
         c: Rank-2 output tensor of shape `(M, N)`.
         a: Rank-2 input tensor of shape `(M, K)`.
         b: Rank-2 input tensor of shape `(K, N)` when `transpose_b` is `True`.
         ctx: Device context for the kernel launch.
+        epilogue_fn: Stores each output element when `has_epilogue_fn` is
+            set (defaults to `no_epilogue_fn`).
+        compute_fn: Maps each output index and value to the value to store
+            when `has_compute_fn` is set (defaults to `no_compute_fn`).
 
     Returns:
         `DISPATCH_HIT` (1) if the kernel was launched, `DISPATCH_MISS` (0)
@@ -154,19 +166,19 @@ def matmul_dispatch_sm90[
             logger.info("------ Dispatching to sm90 FP8 ------")
             return matmul_dispatch_sm90_fp8[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
         elif is_AB_bf16 or is_AB_fp32:
             logger.info("------ Dispatching to sm90 BF16/FP32 ------")
             return matmul_dispatch_sm90_bf16_fp32[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
         logger.info("SM90 dispatch miss - no matching path")
         return DISPATCH_MISS
@@ -541,18 +553,20 @@ def matmul_dispatch_sm90_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises -> Int:
     """Dispatches an FP8 (e4m3fn) rank-2 matmul to the SM90 warp-specialized kernel.
 
@@ -567,22 +581,26 @@ def matmul_dispatch_sm90_fp8[
             `float8_e4m3fn` (inferred).
         b_type: Element type of the input tensor `b`; must be
             `float8_e4m3fn` (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         transpose_b: Whether `b` is stored transposed (defaults to `True`);
             the SM90 kernel requires this to be `True` to dispatch.
-        elementwise_lambda_fn: Epilogue applied to each output tile after the
-            matmul, consuming the tile and returning nothing (defaults to
-            `None` for no epilogue).
-        elementwise_compute_lambda_fn: Compute lambda transforming each output
-            value before the epilogue, returning the transformed value
-            (defaults to `None` for no transform).
         pdl_level: Programmatic dependent launch level for overlapping this
             kernel with prior work (defaults to `PDLLevel()`).
+        has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
+            to `False`).
+        has_compute_fn: Whether `compute_fn` transforms each output value
+            before the kernel stores it (defaults to `False`).
 
     Args:
         c: Rank-2 output tensor of shape `(M, N)`.
         a: Rank-2 input tensor of shape `(M, K)`.
         b: Rank-2 input tensor of shape `(K, N)` when `transpose_b` is `True`.
         ctx: Device context for the kernel launch.
+        epilogue_fn: Stores each output element when `has_epilogue_fn` is
+            set (defaults to `no_epilogue_fn`).
+        compute_fn: Maps each output index and value to the value to store
+            when `has_compute_fn` is set (defaults to `no_compute_fn`).
 
     Returns:
         `DISPATCH_HIT` (1) if the kernel was launched, `DISPATCH_MISS` (0)
@@ -627,12 +645,12 @@ def matmul_dispatch_sm90_fp8[
         )
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
             config=H100_FP8_TUNING_CONFIG,
             grid_shape=Index(128, 1),
             schedule=MatmulSchedule.DS_SCHEDULER,
-        ](c, a, b, ctx)
+        ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
         return DISPATCH_HIT
 
     @inline(.nodebug)
@@ -648,12 +666,12 @@ def matmul_dispatch_sm90_fp8[
         )
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
             config=config,
             schedule=entry.schedule,
             grid_shape=entry.grid_shape,
-        ](c, a, b, ctx)
+        ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
     @inline(.nodebug)
     def _search[
@@ -727,10 +745,10 @@ def matmul_dispatch_sm90_fp8[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
             elif m <= 1024:
                 comptime config = MatmulConfig[
@@ -746,12 +764,12 @@ def matmul_dispatch_sm90_fp8[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.DS_SCHEDULER,
                     grid_shape=Index(H100.sm_count, 1),
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
             else:
                 comptime config = MatmulConfig[
@@ -770,12 +788,12 @@ def matmul_dispatch_sm90_fp8[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.DS_SCHEDULER,
                     grid_shape=Index(H100.sm_count, 1),
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
     return DISPATCH_MISS
 
@@ -791,18 +809,20 @@ def matmul_dispatch_sm90_bf16_fp32[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises -> Int:
     """Dispatches a BF16 or FP32 rank-2 matmul to the SM90 warp-specialized kernel.
 
@@ -816,21 +836,25 @@ def matmul_dispatch_sm90_bf16_fp32[
         c_type: Element type of the output tensor `c` (inferred).
         a_type: Element type of the input tensor `a` (inferred).
         b_type: Element type of the input tensor `b` (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         transpose_b: Whether `b` is stored transposed (defaults to `True`).
-        elementwise_lambda_fn: Epilogue applied to each output tile after the
-            matmul, consuming the tile and returning nothing (defaults to
-            `None` for no epilogue).
-        elementwise_compute_lambda_fn: Compute lambda transforming each output
-            value before the epilogue, returning the transformed value
-            (defaults to `None` for no transform).
         pdl_level: Programmatic dependent launch level for overlapping this
             kernel with prior work (defaults to `PDLLevel()`).
+        has_epilogue_fn: Whether `epilogue_fn` stores the output (defaults
+            to `False`).
+        has_compute_fn: Whether `compute_fn` transforms each output value
+            before the kernel stores it (defaults to `False`).
 
     Args:
         c: Rank-2 output tensor of shape `(M, N)`.
         a: Rank-2 input tensor of shape `(M, K)`.
         b: Rank-2 input tensor of shape `(K, N)` when `transpose_b` is `True`.
         ctx: Device context for the kernel launch.
+        epilogue_fn: Stores each output element when `has_epilogue_fn` is
+            set (defaults to `no_epilogue_fn`).
+        compute_fn: Maps each output index and value to the value to store
+            when `has_compute_fn` is set (defaults to `no_compute_fn`).
 
     Returns:
         `DISPATCH_HIT` (1) if the kernel was launched, `DISPATCH_MISS` (0)
@@ -888,12 +912,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=H100_TUNING_CONFIG,
                 grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                 schedule=SCHEDULE_TYPE,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
 
         else:
@@ -931,12 +955,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK,
                     grid_shape=Index(GRID_DIM_X, GRID_DIM_Y),
                     schedule=SCHEDULE_TYPE,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
 
             else:
@@ -958,12 +982,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK,
                     splits=SPLITS,
                     raster_order=RasterOrder.AlongM,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
 
     comptime static_N = c.static_shape[1]
@@ -996,26 +1020,26 @@ def matmul_dispatch_sm90_bf16_fp32[
             pdl_level=pdl_level,
         )
 
-        comptime if not entry.splits:
+        comptime if case .Some(splits) = entry.splits:
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=entry.schedule,
                 grid_shape=entry.grid_shape,
-            ](c, a, b, ctx)
+                splits=splits,
+                raster_order=entry.raster_order.value(),
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
         else:
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=entry.schedule,
                 grid_shape=entry.grid_shape,
-                splits=entry.splits.value(),
-                raster_order=entry.raster_order.value(),
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
     @inline(.nodebug)
     def _search[
@@ -1148,12 +1172,19 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            has_epilogue_fn=has_epilogue_fn,
+                            has_compute_fn=has_compute_fn,
                             config=base_config,
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
-                        ](c, a, b, ctx)
+                        ](
+                            c,
+                            a,
+                            b,
+                            ctx,
+                            epilogue_fn=epilogue_fn,
+                            compute_fn=compute_fn,
+                        )
                         return DISPATCH_HIT
 
             elif m < 41:
@@ -1172,12 +1203,12 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
                 return DISPATCH_HIT
 
@@ -1197,12 +1228,12 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
                 return DISPATCH_HIT
 
@@ -1225,12 +1256,12 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
                 return DISPATCH_HIT
 
@@ -1250,12 +1281,12 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
                 return DISPATCH_HIT
 
@@ -1275,12 +1306,12 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     # swapAB = True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
                 return DISPATCH_HIT
 
@@ -1300,12 +1331,12 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
                 return DISPATCH_HIT
 
@@ -1325,12 +1356,12 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
                 return DISPATCH_HIT
 
@@ -1349,12 +1380,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
 
             elif m < 225:
@@ -1372,12 +1403,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
 
             elif m < 256:
@@ -1395,12 +1426,12 @@ def matmul_dispatch_sm90_bf16_fp32[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
                     swapAB=True,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
             elif m == 256:
                 comptime config = MatmulConfig[
@@ -1416,11 +1447,11 @@ def matmul_dispatch_sm90_bf16_fp32[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=config,
                     schedule=MatmulSchedule.NONE,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
 
         comptime nk_idx_list = tuning_table.query_index(
@@ -1497,12 +1528,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -1516,12 +1547,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N8192_K2048_config = MatmulConfig[
@@ -1537,12 +1568,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=M8192_N8192_K2048_config,
                 grid_shape=Index(4, H100.sm_count // 4),
                 schedule=MatmulSchedule.TILE2D,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
 
         elif m == 4096:
@@ -1559,11 +1590,11 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=M4096_N8192_K2048_config,
                 schedule=MatmulSchedule.TILE2D,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
 
     comptime if a_is_bfloat16_or_float32 and static_N == 14336 and static_K == 8192:
@@ -1579,12 +1610,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N14336_K8192_config = MatmulConfig[
@@ -1600,12 +1631,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=M8192_N14336_K8192_config,
                 grid_shape=Index(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
 
         elif m == 4096:
@@ -1622,11 +1653,11 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=M4096_N14336_K8192_config,
                 schedule=MatmulSchedule.TILE2D,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
 
     comptime if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 7168:
@@ -1642,12 +1673,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -1661,12 +1692,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=MatmulSchedule.DS_SCHEDULER,
                 grid_shape=Index(128, 1),
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
         elif m == 8192:
             comptime M8192_N8192_K7168_config = MatmulConfig[
@@ -1682,12 +1713,12 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=M8192_N8192_K7168_config,
                 grid_shape=Index(8, H100.sm_count // 8),
                 schedule=MatmulSchedule.TILE2D,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
 
         elif m == 4096:
@@ -1707,11 +1738,11 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=M4096_N8192_K7168_config,
                 schedule=MatmulSchedule.TILE2D,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
             return DISPATCH_HIT
 
     comptime if (
@@ -1733,11 +1764,11 @@ def matmul_dispatch_sm90_bf16_fp32[
             )
             warp_specialize_gemm_with_multicasting[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 config=M512_N3840_K15360_config,
                 schedule=MatmulSchedule.NONE,
-            ](c, a, b, ctx)
+            ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
             return DISPATCH_HIT
 
@@ -1767,11 +1798,11 @@ def matmul_dispatch_sm90_bf16_fp32[
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=default_bf16_config,
                     schedule=MatmulSchedule.NONE,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
 
         comptime if cond:
@@ -1803,12 +1834,19 @@ def matmul_dispatch_sm90_bf16_fp32[
                         comptime base_config = config.to_base_config()
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            has_epilogue_fn=has_epilogue_fn,
+                            has_compute_fn=has_compute_fn,
                             config=base_config,
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
-                        ](c, a, b, ctx)
+                        ](
+                            c,
+                            a,
+                            b,
+                            ctx,
+                            epilogue_fn=epilogue_fn,
+                            compute_fn=compute_fn,
+                        )
                         return DISPATCH_HIT
 
             elif m < 65:
@@ -1842,12 +1880,19 @@ def matmul_dispatch_sm90_bf16_fp32[
                         comptime base_config = config.to_base_config()
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            has_epilogue_fn=has_epilogue_fn,
+                            has_compute_fn=has_compute_fn,
                             config=base_config,
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
-                        ](c, a, b, ctx)
+                        ](
+                            c,
+                            a,
+                            b,
+                            ctx,
+                            epilogue_fn=epilogue_fn,
+                            compute_fn=compute_fn,
+                        )
                         return DISPATCH_HIT
 
             # m 129-240: BN = 72 + ((m-129)//16)*8, cluster=(2,1,1), k_group=2
@@ -1878,12 +1923,19 @@ def matmul_dispatch_sm90_bf16_fp32[
                         comptime base_config = config.to_base_config()
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            has_epilogue_fn=has_epilogue_fn,
+                            has_compute_fn=has_compute_fn,
                             config=base_config,
                             schedule=MatmulSchedule.NONE,
                             swapAB=True,
-                        ](c, a, b, ctx)
+                        ](
+                            c,
+                            a,
+                            b,
+                            ctx,
+                            epilogue_fn=epilogue_fn,
+                            compute_fn=compute_fn,
+                        )
                         return DISPATCH_HIT
 
         def get_k_groups[N: Int]() -> Optional[Int]:
@@ -1937,11 +1989,11 @@ def matmul_dispatch_sm90_bf16_fp32[
 
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
                     config=base_config,
                     schedule=MatmulSchedule.NONE,
-                ](c, a, b, ctx)
+                ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
                 return DISPATCH_HIT
 
     # Fallback path, will use scalar 2B output and lots of OOB check.
@@ -1958,11 +2010,11 @@ def matmul_dispatch_sm90_bf16_fp32[
         )
         warp_specialize_gemm_with_multicasting[
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
             config=default_bf16_config,
             schedule=MatmulSchedule.NONE,
-        ](c, a, b, ctx)
+        ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
         return DISPATCH_HIT
 
     return DISPATCH_MISS

@@ -41,8 +41,8 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
-from max.experimental.sharding.placements import ReduceOp
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 
@@ -142,7 +142,7 @@ class _Conv2dInputChannelParallel:
         # C_in is axis 2 in RSCF filter
         f = transfer_to(Tensor(f_np), DeviceMapping(self.MESH_2, (Sharded(2),)))
         result = F.conv2d(x, f)
-        assert result.placements == (Partial(ReduceOp.SUM),)
+        assert result.placements == (Partial(),)
 
     def test_conv2d_cin_sharded_numerics(self) -> None:
         """S(C_in) x S(C_in_f) -> Partial, gathered result correct."""
@@ -253,7 +253,8 @@ class _PoolingPartial:
         """max_pool2d is non-linear — Partial auto-reduced."""
         x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
         x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
-        result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
+        with auto_reshard(mode="silent"):
+            result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
         assert not any(isinstance(p, Partial) for p in result.placements)
 
 
@@ -297,6 +298,9 @@ class _Cond:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_non_distributed_true(self) -> None:
         """Happy path: cond true branch using DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -311,6 +315,9 @@ class _Cond:
         )
         np.testing.assert_allclose(result[0].to_numpy(), [4.0, 6.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_non_distributed_false(self) -> None:
         """Happy path: cond false branch using DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -351,6 +358,9 @@ class _WhileLoop:
         )
         np.testing.assert_allclose(result[1].to_numpy(), [4.0, 5.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_while_loop_chained_result(self) -> None:
         """While_loop result feeds into further DF ops."""
         counter = Tensor.full([], 0, dtype=DType.float32, device=CPU())
@@ -369,6 +379,9 @@ class _WhileLoop:
         )
         np.testing.assert_allclose(doubled.to_numpy(), [6.0, 6.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_result_chained(self) -> None:
         """Cond result feeds into further DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -385,6 +398,9 @@ class _WhileLoop:
         squared = F.mul(result[0], result[0])
         np.testing.assert_allclose(squared.to_numpy(), [9.0, 16.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_new_tensor_in_branch(self) -> None:
         """Branch creates a NEW tensor (not just captured outer ones)."""
         device = DeviceRef.from_device(CPU())
@@ -399,6 +415,9 @@ class _WhileLoop:
             result[0].to_numpy(), [1.0, 1.0, 1.0], rtol=1e-5
         )
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_multiple_outputs(self) -> None:
         """Cond with two output tensors."""
         device = DeviceRef.from_device(CPU())

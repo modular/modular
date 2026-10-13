@@ -88,13 +88,21 @@ class ProfileScopeColor(str, Enum):
     """
 
     MODULAR_PURPLE = "modular_purple"
+    """The Modular brand purple."""
     BLUE = "blue"
+    """The color blue."""
     GREEN = "green"
+    """The color green."""
     ORANGE = "orange"
+    """The color orange."""
     PURPLE = "purple"
+    """The color purple."""
     RED = "red"
+    """The color red."""
     WHITE = "white"
+    """The color white."""
     YELLOW = "yellow"
+    """The color yellow."""
 
 
 def _is_chain_value(value: _Value[Any]) -> TypeGuard[_Value[_mo.ChainType]]:
@@ -178,7 +186,7 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
         combines them, updates the host chain to the merged result, and
         returns it.
 
-        Duplicates are removed (e.g., if ``DeviceRef.CPU()`` appears in
+        Duplicates are removed (for example, if ``DeviceRef.CPU()`` appears in
         ``devices``, the host chain isn't listed twice).
         """
         keys = list(dict.fromkeys((DeviceRef.CPU(), *devices)))
@@ -393,8 +401,12 @@ class DevicePlacementPolicy(Enum):
     """
 
     Ignore = "ignore"
+    """Transfer silently, without any message."""
     Warn = "warn"
+    """Emit a ``UserWarning`` naming the op; the default policy."""
     Error = "error"
+    """Raise ``ValueError``, making the implicit transfer a hard build-time
+    failure."""
 
 
 # From https://stackoverflow.com/a/76301341
@@ -546,7 +558,8 @@ class Module:
     same ``module=`` argument adds each graph as a top-level op in this
     module.
 
-    Example:
+    For example, build two graphs into a shared module, load them in one
+    compilation unit, then execute both:
 
     .. code-block:: python
 
@@ -588,7 +601,7 @@ class Module:
 
     The wrapped MLIR module is exposed as :attr:`mlir_module` for code that
     must reach the underlying representation (graph compiler internals,
-    serializers, etc.); routine users should not need it.
+    serializers and so on); routine users should not need it.
     """
 
     mlir_module: builtin.ModuleOp
@@ -954,28 +967,27 @@ class Graph:
         :meth:`~max.nn.Module.build_subgraph`, which handles weight prefixes
         automatically.
 
-        Examples:
-            Define a subgraph that adds 1 to every element, then call it on a
-            graph input:
+        For example, define a subgraph that adds 1 to every element, then
+        call it on a graph input:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                from max.dtype import DType
-                from max.graph import Graph, ops
-                from max.graph.type import TensorType, DeviceRef
+            from max.dtype import DType
+            from max.graph import Graph, ops
+            from max.graph.type import TensorType, DeviceRef
 
-                input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
+            input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
 
-                with Graph("main", input_types=[input_type]) as graph:
-                    with graph.add_subgraph(
-                        "add_one", input_types=[input_type]
-                    ) as sub:
-                        x = sub.inputs[0].tensor
-                        one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
-                        sub.output(ops.elementwise.add(x, one))
+            with Graph("main", input_types=[input_type]) as graph:
+                with graph.add_subgraph(
+                    "add_one", input_types=[input_type]
+                ) as sub:
+                    x = sub.inputs[0].tensor
+                    one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
+                    sub.output(ops.elementwise.add(x, one))
 
-                    result = ops.call(sub, graph.inputs[0])
-                    graph.output(*result)
+                result = ops.call(sub, graph.inputs[0])
+                graph.output(*result)
 
         Args:
             name: The name identifier for the subgraph. Must be unique within
@@ -1133,7 +1145,7 @@ class Graph:
         into the outer graph's chain timeline. ``_weights`` is snapshotted
         because :meth:`add_weight` keys its cache by Python identity:
         same-name weights with different ``Weight`` instances across blocks
-        (e.g., separate ``Weight("w", ...)`` calls in the ``true_fn`` and
+        (such as separate ``Weight("w", ...)`` calls in the ``true_fn`` and
         ``false_fn`` of an ``ops.cond``) need each block to start with an
         empty cache so each branch creates its own ``mo.constant.external``
         op (the graph compiler resolves both to the same registry entry).
@@ -1376,21 +1388,21 @@ class Graph:
         until ``output()`` has been called. Subsequent calls to
         :attr:`output_types` read back the types of the values passed here.
 
-        Examples:
-            Build a graph that doubles its input and set the output:
+        For example, build a graph that doubles its input and set the
+        output:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                from max.dtype import DType
-                from max.graph import DeviceRef, Graph, ops
-                from max.graph.type import TensorType
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, ops
+            from max.graph.type import TensorType
 
-                input_type = TensorType(DType.float32, [4], DeviceRef.CPU())
+            input_type = TensorType(DType.float32, [4], DeviceRef.CPU())
 
-                with Graph("double", input_types=[input_type]) as graph:
-                    x = graph.inputs[0].tensor
-                    two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
-                    graph.output(ops.elementwise.mul(x, two))
+            with Graph("double", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+                two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
+                graph.output(ops.elementwise.mul(x, two))
 
         Args:
             outputs: The output values of the graph. Each value may be a
@@ -1675,7 +1687,7 @@ class GraphBlock:
     don't leak into the outer graph.
 
     Pass the block's :attr:`mlir_block` to an op wrapper that accepts a
-    pre-built block (e.g., ``mo.if_(..., then_block=...)``); the wrapper
+    pre-built block (such as ``mo.if_(..., then_block=...)``); the wrapper
     moves the block into the op's region.
 
     Implementation note: the MLIR upstream Python binding requires every
@@ -1721,7 +1733,7 @@ class GraphBlock:
     def mlir_block(self) -> mlir.Block:
         """The underlying ``mlir.Block``.
 
-        Pass this to op wrappers that accept a pre-built block (e.g.,
+        Pass this to op wrappers that accept a pre-built block (such as
         ``mo.IfOp(..., then_block=...)``).
         """
         return self._mlir_block
@@ -1772,14 +1784,14 @@ class GraphBlock:
 
         ``terminator`` defaults to ``mo.YieldOp``. Pass a different
         terminator (or an adapter callable) when the block's owning op
-        expects a non-yield terminator — e.g., ``mo.while``'s condition
+        expects a non-yield terminator — for example, ``mo.while``'s condition
         block uses ``mo.WhileConditionOp(condition, operands)``, which
         splits its first operand off from the rest.
 
         Verification is paused around the terminator's construction because
         the block is still parked in scratch — ``mo.yield``'s parent-type
         check will run later, against the real owning op, when the
-        surrounding control-flow op (e.g., ``mo.if``) is created.
+        surrounding control-flow op (such as ``mo.if``) is created.
         """
         graph = self._graph
         with graph._pause_verification():

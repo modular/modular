@@ -36,11 +36,11 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 def _reduce_generator_cpu[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_0_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -111,11 +111,11 @@ def _reduce_generator_cpu[
 def _reduce_along_inner_dimension[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_0_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -196,7 +196,7 @@ def _reduce_along_inner_dimension[
             # it is the dimension being iterated over. In our case we don't know
             # this yet so we do have to calculate the extra one.
             var indices = _get_nd_indices_from_flat_index(
-                flat_index, shape, reduce_dim
+                flat_index, Coord(shape), reduce_dim
             )
 
             @inline(.always)
@@ -211,7 +211,7 @@ def _reduce_along_inner_dimension[
             ]:
                 var acc = init
                 for idx in range(start, finish, width):
-                    indices[reduce_dim] = idx
+                    indices.replace_dynamic[reduce_dim](idx)
                     var load_value = input_0_fn[init_type, width](indices)
 
                     comptime for i in range(num_reductions):
@@ -266,7 +266,7 @@ def _reduce_along_inner_dimension[
             )
 
             # Store the result back to the output.
-            indices[reduce_dim] = 0
+            indices.replace_dynamic[reduce_dim](0)
             output_0_fn(indices, acc_scalar_tup)
 
     @inline(.always)
@@ -291,11 +291,11 @@ def _reduce_along_inner_dimension[
 def _reduce_along_outer_dimension[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_0_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -370,23 +370,19 @@ def _reduce_along_outer_dimension[
 
                 var reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
                 var indices = _get_nd_indices_from_flat_index(
-                    reduce_vector_idx, shape, reduce_dim
+                    reduce_vector_idx, Coord(shape), reduce_dim
                 )
                 for reduce_dim_idx in range(reduce_dim_size):
-                    indices[reduce_dim] = reduce_dim_idx
-                    var load_value = input_0_fn[
-                        init_type, simd_width, shape.size
-                    ](indices)
+                    indices.replace_dynamic[reduce_dim](reduce_dim_idx)
+                    var load_value = input_0_fn[init_type, simd_width](indices)
 
                     comptime for i in range(num_reductions):
                         acc_simd_tup[i] = reduce_function[
                             init_type, simd_width, i
                         ](load_value, acc_simd_tup[i])
 
-                indices[reduce_dim] = 0
-                output_0_fn[init_type, simd_width, indices.size](
-                    indices, acc_simd_tup
-                )
+                indices.replace_dynamic[reduce_dim](0)
+                output_0_fn[init_type, simd_width](indices, acc_simd_tup)
 
             vectorize[simd_width](inner_dim, reduce_chunk)
 

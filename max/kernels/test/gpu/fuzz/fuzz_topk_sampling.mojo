@@ -57,12 +57,12 @@
 #   dist as-is; 1 = force all logits <= 0, the cleanest temp=0 all--Inf trigger;
 #   2 = force all logits >= 0).
 
-from std.random import random_float64, random_ui64, seed as set_seed
+from std.random import random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext
 from std.utils.numerics import inf, nan
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.topk import fused_token_sampling_gpu
 
 from _fuzz import (

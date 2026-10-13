@@ -39,10 +39,10 @@ Usage:
   br test_mxfp6_quant_amd.mojo.test
 """
 
-from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext
 from std.math import isfinite, recip
 from std.memory import bitcast
-from std.random import random_ui64, seed
+from std.random import seed
 from std.testing import assert_true
 
 from layout import TileTensor, row_major

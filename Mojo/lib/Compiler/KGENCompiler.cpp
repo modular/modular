@@ -390,6 +390,8 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
   IRMapping mapping;
   OwningOpRef<ModuleOp> module = produceStandaloneModule(
       symtab, exportedSymbols, mapping, overrideExported(compilationOptions));
+  if (!module)
+    return Error("failed to slice a standalone module for the target");
   // Override the target.
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
@@ -513,11 +515,12 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
     EmissionOptions emissionOptions, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elaboratorOptions) {
-  DEFINE_OR_RETURN_ERROR(
-      CompiledStandaloneKernel, compiled,
-      compileStandaloneKernel(func, symbol, name, symtab, target, emissionKind,
-                              emissionOptions, compilationOptions,
-                              elaboratorOptions));
+  ErrorOr<CompiledStandaloneKernel> compiledOr = compileStandaloneKernel(
+      func, symbol, name, symtab, target, emissionKind, emissionOptions,
+      compilationOptions, elaboratorOptions);
+  if (compiledOr.isError())
+    return compiledOr.takeError();
+  CompiledStandaloneKernel compiled = compiledOr.takeValue();
   return CrossDeviceFunction{compiled.contents, compiled.numCaptures,
                              std::move(compiled.capturesFunc)};
 }
@@ -550,11 +553,12 @@ compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
   mlir::DenseI64ArrayAttr captureSizes;
   OwningOpRef<Operation *> capturesFunc;
   for (auto [index, kind] : llvm::enumerate(kinds)) {
-    DEFINE_OR_RETURN_ERROR(
-        CompiledStandaloneKernel, compiled,
-        compileStandaloneKernel(func, symbol, name, symtab, target, kind,
-                                emissionOptions, compilationOptions,
-                                elaboratorOptions));
+    ErrorOr<CompiledStandaloneKernel> compiledOr = compileStandaloneKernel(
+        func, symbol, name, symtab, target, kind, emissionOptions,
+        compilationOptions, elaboratorOptions);
+    if (compiledOr.isError())
+      return compiledOr.takeError();
+    CompiledStandaloneKernel compiled = compiledOr.takeValue();
     contents.insert({kind, compiled.contents});
     moduleNames.insert({kind, getXXH3Hash(compiled.contents)});
     if (index == 0) {
@@ -709,6 +713,10 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       OwningOpRef<ModuleOp> module =
           produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping,
                                   overrideExported(target.getTriple()));
+      if (!module) {
+        return Error("failed to slice a standalone module for offload "
+                     "compilation");
+      }
 
       // Override the target.
       eraseTargetInfo(*module);
@@ -823,9 +831,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
       // Backends owning offload lowering left through the per-kernel branch
       // above, so everything reaching here needs an LLVM TargetMachine.
-      DEFINE_OR_RETURN_ERROR(std::unique_ptr<llvm::TargetMachine>, tm,
-                             createTargetMachine(compilationOptions,
-                                                 /*isJIT=*/false));
+      ErrorOr<std::unique_ptr<llvm::TargetMachine>> tmOr =
+          createTargetMachine(compilationOptions, /*isJIT=*/false);
+      if (tmOr.isError())
+        return tmOr.takeError();
+      std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
 
       // Run elaboration through to the end of the optimization pipeline.
       // The scope comes before the pass manager in this declaration. Thus
@@ -1291,19 +1301,37 @@ setEmissionOptions(llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options,
   }
 
   auto [key, value] = emissionOpt.split("=");
+  // Bool spellings are lowercased since the bool parsers only accept
+  // lowercase.
+  bool isBoolSpelling =
+      value.equals_insensitive("true") || value.equals_insensitive("false");
+  std::string normalizedValue = isBoolSpelling ? value.lower() : value.str();
+
   llvm::cl::Option *opt = options.lookup(key);
-  if (!opt)
-    return Error("emission option \"" + Twine(key) + "\" is not found");
+  if (!opt) {
+    // Only `ParseCommandLineOptions` reaches options LLVM declares in TableGen.
+    // TODO: Reset them once LLVM can reset a single such option.
+    if (reset)
+      return success();
+    std::string arg = ("-" + key + "=" + normalizedValue).str();
+    const char *argv[] = {"mojo", arg.c_str()};
+    std::string parseErrors;
+    llvm::raw_string_ostream errs(parseErrors);
+    if (llvm::cl::ParseCommandLineOptions(2, argv, "", &errs))
+      return success();
+    if (StringRef(parseErrors).contains("Unknown command line argument"))
+      return Error("emission option \"" + Twine(key) + "\" is not found");
+    return Error("invalid value \"" + Twine(value) +
+                 "\" for emission option \"" + key +
+                 "\": " + StringRef(parseErrors).trim());
+  }
   if (reset) {
     opt->reset();
     return success();
   }
   // `addOccurrence` dispatches to the option's own value parser, so any
-  // registered option type (bool, int, enum, string) is supported. Bool
-  // spellings are lowercased since the bool parser only accepts lowercase.
-  bool isBoolSpelling =
-      value.equals_insensitive("true") || value.equals_insensitive("false");
-  if (opt->addOccurrence(0, key, isBoolSpelling ? value.lower() : value.str()))
+  // registered option type (bool, int, enum, string) is supported.
+  if (opt->addOccurrence(0, key, normalizedValue))
     return Error("invalid value \"" + Twine(value) +
                  "\" for emission option \"" + key + "\"");
   return success();

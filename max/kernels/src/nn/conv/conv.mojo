@@ -103,13 +103,12 @@ from linalg.utils import (
     partial_simd_store,
 )
 from max.gpu import block_dim, block_idx, thread_idx
-from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host._amdgpu_hip import HIP
 from max.gpu.host._nvidia_cuda import CUDA
 from max.gpu.host.info import _is_sm10x_gpu
 from layout import (
     Coord,
-    Idx,
     IntTuple,
     TensorEngine,
     TensorLayout,
@@ -390,7 +389,7 @@ def _reduce_output[
     F: Int,
     num_partitions: Int,
     num_threads: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     var num_rows = N * output_space_dims.flattened_length()
     var buf_size = num_rows * F
@@ -418,13 +417,12 @@ def _reduce_output[
 
         vectorize[simd_size, unroll_factor=4](reduce_range[1] * F, sum)
 
-        comptime if elementwise_epilogue:
-            comptime epilogue = elementwise_epilogue.value()
+        comptime if case .Some(epilogue) = elementwise_epilogue:
             for m in range(reduce_range[0], reduce_range[0] + reduce_range[1]):
                 var nhowo = _m_to_n_ho_wo_nhwc(
                     m, output_space_dims[0], output_space_dims[1]
                 )
-                epilogue(Index(nhowo[0], nhowo[1], nhowo[2], 0), F)
+                epilogue((nhowo[0], nhowo[1], nhowo[2], 0), F)
 
     # NOTE: _synchronous, so use of locally allocated output_ptr is safe.
     sync_parallelize(reduce_task, num_threads, ctx)
@@ -529,7 +527,7 @@ struct ConvDirectNHWC[
             Self.filter_type, Self.filter_layout, Self.filter_origin
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
-        ctx: Optional[DeviceContext] = None,
+        ctx: Optional[DeviceContext.CPU] = None,
     ) raises:
         comptime assert Self.conv_attr_rank == Self.input_layout.flat_rank - 2
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -996,7 +994,7 @@ struct ConvDirectNHWC[
                 # Convert the 1D index back to (n, ho, wo).
                 var ho, wo = divmod(m, self.conv_shape.wo())
                 epilogue(
-                    Index(
+                    (
                         n,
                         ho,
                         wo,
@@ -1332,63 +1330,66 @@ struct ConvDirectNHWC[
             - self.conv_shape.s() * self.conv_shape.dilation_at[w_axis]()
         ) // self.conv_shape.stride_at[w_axis]() + 1
 
-        comptime if Self.input_layout.rank == 3:
-            self.output_space_loop_1d[
-                micro_kernel_height,
-                micro_kernel_width,
-                has_residual,
-                last_c_tile,
-            ](
-                # Safety: turn off mutable aliasing pointer check
-                output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
-                input_ptr,
-                filter_ptr,
-                n,
-                self.is_new_c_accum(c_tile_offset),
-                c_tile_size,
-                f_tile_offset,
-                f_tile_size,
-                left_pad_impact_end,
-                right_pad_impact_start,
-            )
-        elif Self.input_layout.rank == 4:
-            self.output_space_loop_2d[
-                micro_kernel_height,
-                micro_kernel_width,
-                has_residual,
-                last_c_tile,
-            ](
-                # Safety: turn off mutable aliasing pointer check
-                output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
-                input_ptr,
-                filter_ptr,
-                n,
-                self.is_new_c_accum(c_tile_offset),
-                c_tile_size,
-                f_tile_offset,
-                f_tile_size,
-                left_pad_impact_end,
-                right_pad_impact_start,
-            )
-        elif Self.input_layout.rank == 5:
-            self.output_space_loop_3d[
-                micro_kernel_height,
-                micro_kernel_width,
-                has_residual,
-                last_c_tile,
-            ](
-                # Safety: turn off mutable aliasing pointer check
-                output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
-                input_ptr,
-                filter_ptr,
-                n,
-                self.is_new_c_accum(c_tile_offset),
-                c_tile_size,
-                f_tile_offset,
-                f_tile_size,
-                left_pad_impact_end,
-                right_pad_impact_start,
-            )
+        comptime match Self.input_layout.rank:
+            case 3:
+                self.output_space_loop_1d[
+                    micro_kernel_height,
+                    micro_kernel_width,
+                    has_residual,
+                    last_c_tile,
+                ](
+                    # Safety: turn off mutable aliasing pointer check
+                    output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
+                    input_ptr,
+                    filter_ptr,
+                    n,
+                    self.is_new_c_accum(c_tile_offset),
+                    c_tile_size,
+                    f_tile_offset,
+                    f_tile_size,
+                    left_pad_impact_end,
+                    right_pad_impact_start,
+                )
+
+            case 4:
+                self.output_space_loop_2d[
+                    micro_kernel_height,
+                    micro_kernel_width,
+                    has_residual,
+                    last_c_tile,
+                ](
+                    # Safety: turn off mutable aliasing pointer check
+                    output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
+                    input_ptr,
+                    filter_ptr,
+                    n,
+                    self.is_new_c_accum(c_tile_offset),
+                    c_tile_size,
+                    f_tile_offset,
+                    f_tile_size,
+                    left_pad_impact_end,
+                    right_pad_impact_start,
+                )
+
+            case 5:
+                self.output_space_loop_3d[
+                    micro_kernel_height,
+                    micro_kernel_width,
+                    has_residual,
+                    last_c_tile,
+                ](
+                    # Safety: turn off mutable aliasing pointer check
+                    output_ptr.unsafe_origin_cast[AnyOrigin[mut=True]](),
+                    input_ptr,
+                    filter_ptr,
+                    n,
+                    self.is_new_c_accum(c_tile_offset),
+                    c_tile_size,
+                    f_tile_offset,
+                    f_tile_size,
+                    left_pad_impact_end,
+                    right_pad_impact_start,
+                )
 
     def output_space_loop_1d[
         micro_kernel_height: Int,
@@ -2054,9 +2055,7 @@ struct ConvDirectNHWC[
                 F - f_tile_offset if has_residual else f_tile_size
             )
             for wo_idx in range(wo, wo + micro_kernel_height):
-                epilogue(
-                    Index(n, ho, wo_idx, f_tile_offset), f_tile_size_bounded
-                )
+                epilogue((n, ho, wo_idx, f_tile_offset), f_tile_size_bounded)
 
         return
 
@@ -2287,7 +2286,7 @@ def conv1d_update_wo_tile[
             f_tile_size_bounded = f_tile_size
 
         for wo_idx in range(wo, wo + micro_kernel_height):
-            epilogue(Index(n, wo_idx, f_tile_offset), f_tile_size_bounded)
+            epilogue((n, wo_idx, f_tile_offset), f_tile_size_bounded)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2554,9 +2553,7 @@ def conv2d_update_wo_tile[
 
         for wo_idx in range(howo[1], howo[1] + micro_kernel_height):
             # elementwise_epilogue_fn[4](
-            epilogue(
-                Index(n, howo[0], wo_idx, f_tile_offset), f_tile_size_bounded
-            )
+            epilogue((n, howo[0], wo_idx, f_tile_offset), f_tile_size_bounded)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2821,7 +2818,7 @@ def conv3d_update_wo_tile[
 
         for wo_idx in range(dohowo[2], dohowo[2] + micro_kernel_height):
             epilogue(
-                Index(n, dohowo[0], dohowo[1], wo_idx, f_tile_offset),
+                (n, dohowo[0], dohowo[1], wo_idx, f_tile_offset),
                 f_tile_size_bounded,
             )
 
@@ -3434,7 +3431,7 @@ def conv_nhwc_direct[
     pad_h: IndexList[2],
     pad_w: IndexList[2],
     num_groups: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Runs a direct (register-tiled) NHWC convolution on CPU, dispatching to
     `ConvDirectNHWC.run` with optional elementwise epilogue fusion.
@@ -3523,22 +3520,22 @@ def conv_nhwc_direct[
         # The closure updates a row segment of the output.
         @inline(.always)
         @__parameter
-        def elementwise_epilogue[
-            rank: Int
-        ](coords: IndexList[rank], f_size: Int):
+        def elementwise_epilogue(coords: Coord, f_size: Int):
             comptime simd_size = simd_width_of[output_type]()
 
             @inline(.always)
             def body[width: Int](idx: Int) {coords, output, imm}:
-                # Coordinates of the current index.
-                var curr_coords = rebind[IndexList[input.rank]](coords)
-                curr_coords[input.rank - 1] += idx
+                comptime last = input.rank - 1
+                var curr_coords = coords
+                curr_coords.replace_dynamic[last](
+                    Int(coords[last].value()) + idx
+                )
 
                 # Read through the parameter, not the local `output_tt`
                 # view: this closure outlives the last explicit use of the
                 # locals in this frame, and the parameter is alive for the
                 # whole call.
-                var vec = output.load[width=width](Coord(curr_coords))
+                var vec = output.load[width=width](curr_coords)
                 elementwise_lambda(curr_coords, vec)
 
             vectorize[simd_size](f_size, body)
@@ -3672,10 +3669,9 @@ def conv2d_gpu_naive_nhwc_rscf[
                             ]()
                         )
 
-        comptime if maybe_epilogue_func:
-            comptime epilogue_func = maybe_epilogue_func.value()
+        comptime if case .Some(epilogue_func) = maybe_epilogue_func:
             epilogue_func(
-                IndexList[4](n, h, w, co),
+                (n, h, w, co),
                 value.cast[output_type](),
             )
         else:
@@ -3800,8 +3796,8 @@ def _get_cudnn_meta(
 
     # Get or create the per-device cache dictionary.
     var ptr_meta = _get_global_or_null(cache_key)
-    if ptr_meta:
-        var ptr = ptr_meta.unsafe_value().unsafe_bitcast[CuDNNConvMeta]()
+    if case .Some(ptr_meta) = ptr_meta:
+        var ptr = ptr_meta.unsafe_bitcast[CuDNNConvMeta]()
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
@@ -3828,7 +3824,7 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
         If the dtype is not supported by cuDNN.
     """
 
-    comptime __match dtype:
+    comptime match dtype:
         case .float32:
             return cudnnDataType_t.CUDNN_DATA_FLOAT
         case .float16:
@@ -3930,10 +3926,8 @@ def _get_cached_cudnn_meta_nhwc_full(
     var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
 
     var ptr_meta = _get_global_or_null(cache_key)
-    if ptr_meta:
-        var ptr = ptr_meta.unsafe_value().unsafe_bitcast[
-            CachedCuDNNMetaNHWCFull
-        ]()
+    if case .Some(ptr_meta) = ptr_meta:
+        var ptr = ptr_meta.unsafe_bitcast[CachedCuDNNMetaNHWCFull]()
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
@@ -4309,10 +4303,8 @@ def _get_cached_miopen_meta[
     )
 
     var ptr_meta = _get_global_or_null(cache_key)
-    if ptr_meta:
-        var ptr = ptr_meta.unsafe_value().unsafe_bitcast[
-            CachedMIOpenMeta[conv_rank]
-        ]()
+    if case .Some(ptr_meta) = ptr_meta:
+        var ptr = ptr_meta.unsafe_bitcast[CachedMIOpenMeta[conv_rank]]()
         check_miopen_error(miopenSetStream(ptr[].handle, HIP(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
@@ -4699,10 +4691,9 @@ def _conv_miopen[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime if maybe_epilogue_func:
+    comptime if case .Some(epilogue) = maybe_epilogue_func:
         # MIOpen doesn't support epilogues. Compute to temp buffer,
         # then apply epilogue.
-        comptime epilogue = maybe_epilogue_func.value()
         var output_tmp_data = ctx.enqueue_create_buffer[output_type](
             output.num_elements()
         )
@@ -4725,12 +4716,12 @@ def _conv_miopen[
             _width: Int, alignment: Int = 1
         ](coords: Coord) {var output_tmp}:
             epilogue(
-                coord_to_index_list(coords),
+                coords,
                 output_tmp.load[width=_width](coords),
             )
 
         elementwise[
-            simd_width_of[output_type, target=get_gpu_target()](),
+            simd_width_of[output_type, target=ctx.target](),
             target="gpu",
         ](
             miopen_epilogue,
@@ -5044,12 +5035,11 @@ def conv_gpu[
                         beta,
                     )
 
-                comptime if maybe_epilogue_func:
+                comptime if case .Some(epilogue) = maybe_epilogue_func:
                     # Wrap the 4D NHWC epilogue into a 2D GEMM-space
                     # void epilogue for the SM100 kernel. The kernel
                     # calls this with (m, n) coords where
                     # m = batch*H_out*W_out + h*W_out + w, n = channel.
-                    comptime epilogue = maybe_epilogue_func.value()
                     var out_h = Int(output.dim[1]())
                     var out_w = Int(output.dim[2]())
                     var hw = out_h * out_w
@@ -5062,9 +5052,12 @@ def conv_gpu[
                         _width: SIMDLength,
                         *,
                         alignment: Int = 1,
-                    ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):
-                        var m = coords_2d[0]
-                        var n = coords_2d[1]
+                    ](coords_2d: Coord, val: SIMD[_dtype, _width],):
+                        comptime assert (
+                            coords_2d.rank == 2
+                        ), "the matmul epilogue contract is rank 2"
+                        var m = Int(coords_2d[0].value())
+                        var n = Int(coords_2d[1].value())
                         var batch_idx: Int
                         var rem: Int
                         var h_idx: Int
@@ -5072,7 +5065,7 @@ def conv_gpu[
                         batch_idx, rem = divmod(m, hw)
                         h_idx, w_idx = divmod(rem, out_w)
                         epilogue(
-                            IndexList[4](batch_idx, h_idx, w_idx, n),
+                            (batch_idx, h_idx, w_idx, n),
                             rebind[SIMD[output_type, _width]](val),
                         )
 
@@ -5241,9 +5234,8 @@ def conv_gpu[
             # residual path and the 4-wave kernel does the residual add
             # in-kernel. We pull `source_ptr`'s contents to host along
             # with the other two buffers and combine them in the loop.
-            @__parameter
             @inline(.always)
-            def _audit_amd_4wave_vs_miopen() raises:
+            def _audit_amd_4wave_vs_miopen() raises {imm}:
                 if getenv("MODULAR_CONV_AUDIT_MIOPEN", "0") != "1":
                     return
 
@@ -5290,9 +5282,9 @@ def conv_gpu[
                 ctx.enqueue_copy(host_mio, output_view)
 
                 comptime if has_residual:
-                    if source_ptr:
+                    if case .Some(source_ptr) = source_ptr:
                         var source_view = DeviceBuffer[output_type](
-                            ctx, source_ptr.value(), n_elements, owning=False
+                            ctx, source_ptr, n_elements, owning=False
                         )
                         ctx.enqueue_copy(host_src, source_view)
                 ctx.synchronize()
@@ -5380,13 +5372,12 @@ def conv_gpu[
                 _ = host_mio^
                 _ = host_src^
 
-            comptime if maybe_epilogue_func:
+            comptime if case .Some(_amd_4wave_epi) = maybe_epilogue_func:
                 # Wrap the 4D NHWC epilogue into a 2D GEMM-space
                 # epilogue for the AMD 4-wave kernel. The kernel calls
                 # this with (m, n) coords where
                 # `m = batch*H_out*W_out + h*W_out + w` and `n = channel`.
                 # Mirrors the SM100 wrapper just above.
-                comptime _amd_4wave_epi = maybe_epilogue_func.value()
                 var _amd_4wave_out_h = Int(output.dim[1]())
                 var _amd_4wave_out_w = Int(output.dim[2]())
                 var _amd_4wave_hw = _amd_4wave_out_h * _amd_4wave_out_w
@@ -5399,9 +5390,12 @@ def conv_gpu[
                     _width: SIMDLength,
                     *,
                     alignment: Int = 1,
-                ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-                    var m = coords_2d[0]
-                    var n = coords_2d[1]
+                ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+                    comptime assert (
+                        coords_2d.rank == 2
+                    ), "the matmul epilogue contract is rank 2"
+                    var m = Int(coords_2d[0].value())
+                    var n = Int(coords_2d[1].value())
                     var batch_idx: Int
                     var rem: Int
                     var h_idx: Int
@@ -5409,7 +5403,7 @@ def conv_gpu[
                     batch_idx, rem = divmod(m, _amd_4wave_hw)
                     h_idx, w_idx = divmod(rem, _amd_4wave_out_w)
                     _amd_4wave_epi(
-                        IndexList[4](batch_idx, h_idx, w_idx, n),
+                        (batch_idx, h_idx, w_idx, n),
                         rebind[SIMD[output_type, _width]](val),
                     )
 
@@ -5477,8 +5471,7 @@ def conv_gpu[
                 )
             )
 
-            comptime if maybe_epilogue_func:
-                comptime epilogue = maybe_epilogue_func.value()
+            comptime if case .Some(epilogue) = maybe_epilogue_func:
                 var output_tmp_data = ctx.enqueue_create_buffer[output_type](
                     output.num_elements()
                 )
@@ -5503,11 +5496,10 @@ def conv_gpu[
                 def epilogue_wrapper[
                     _width: Int, alignment: Int = 1
                 ](coords: Coord) {var output_tmp}:
-                    var idx = rebind[IndexList[4]](coord_to_index_list(coords))
                     var vec = output_tmp.load[
                         width=_width, alignment=align_of[output_type]()
                     ](coords)
-                    epilogue(idx, vec)
+                    epilogue(coords, vec)
 
                 elementwise[simd_width_of[output_type](), target="gpu"](
                     epilogue_wrapper,
@@ -5631,8 +5623,7 @@ def conv_gpu[
                 # void epilogue for the 4-wave kernel. The kernel
                 # calls this with (m, n) coords where m flattens
                 # batch*d*h*w and n is the channel.
-                comptime if maybe_epilogue_func:
-                    comptime _amd_3d_epi_5d = maybe_epilogue_func.value()
+                comptime if case .Some(_amd_3d_epi_5d) = maybe_epilogue_func:
                     var _amd_3d_D_out = Int(output.dim[1]())
                     var _amd_3d_H_out = Int(output.dim[2]())
                     var _amd_3d_W_out = Int(output.dim[3]())
@@ -5647,9 +5638,12 @@ def conv_gpu[
                         _width: SIMDLength,
                         *,
                         alignment: Int = 1,
-                    ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):
-                        var m = coords_2d[0]
-                        var n = coords_2d[1]
+                    ](coords_2d: Coord, val: SIMD[_dtype, _width],):
+                        comptime assert (
+                            coords_2d.rank == 2
+                        ), "the matmul epilogue contract is rank 2"
+                        var m = Int(coords_2d[0].value())
+                        var n = Int(coords_2d[1].value())
                         var batch_idx: Int
                         var rem: Int
                         var d_idx: Int
@@ -5660,7 +5654,7 @@ def conv_gpu[
                         d_idx, rem2 = divmod(rem, _amd_3d_HW)
                         h_idx, w_idx = divmod(rem2, _amd_3d_W_out)
                         _amd_3d_epi_5d(
-                            IndexList[5](batch_idx, d_idx, h_idx, w_idx, n),
+                            (batch_idx, d_idx, h_idx, w_idx, n),
                             rebind[SIMD[output_type, _width]](val),
                         )
 
@@ -5895,10 +5889,9 @@ def conv3d_gpu_naive_ndhwc_qrscf[
 
         var value = simd_value.reduce_add() + scalar_value
 
-        comptime if maybe_epilogue_func:
-            comptime epilogue_func = maybe_epilogue_func.value()
+        comptime if case .Some(epilogue_func) = maybe_epilogue_func:
             epilogue_func(
-                IndexList[5](n, d_out_idx, h_out_idx, w_out_idx, co),
+                (n, d_out_idx, h_out_idx, w_out_idx, co),
                 value.cast[output_type](),
             )
         else:
@@ -6406,11 +6399,9 @@ def _conv3d_cudnn[
     var workspace_size_var: Int
 
     var ptr_cached = _get_global_or_null(cache_key)
-    if ptr_cached:
+    if case .Some(ptr_cached) = ptr_cached:
         # Cache hit — reuse previously selected algorithm.
-        var entry = ptr_cached.unsafe_value().unsafe_bitcast[
-            _Conv3dAlgoCacheEntry
-        ]()
+        var entry = ptr_cached.unsafe_bitcast[_Conv3dAlgoCacheEntry]()
         algo = entry[].algo()
         workspace_size_var = entry[].workspace_size
     else:

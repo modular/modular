@@ -17,10 +17,10 @@ from std.utils.numerics import get_accum_type
 
 from std.benchmark import *
 from std.benchmark import keep
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
-from std.memory import Alignment, ThinAllocation, dealloc, Layout
+from std.memory import Alignment, dealloc, Layout
 from std.testing import assert_almost_equal
 
 

@@ -134,8 +134,8 @@ struct MatmulConfig[
         # Heuristic: Use 1 consumer group for small M, 2 otherwise
 
         var num_consumer_groups: Int
-        if consumer_groups:
-            num_consumer_groups = consumer_groups.value()
+        if case .Some(consumer_groups) = consumer_groups:
+            num_consumer_groups = consumer_groups
         else:
             num_consumer_groups = 1 if M <= 64 else 2
 
@@ -186,8 +186,8 @@ struct MatmulConfig[
         self.num_pipeline_stages = 4  # Default for compilation
         self.k_group_size = 1
 
-        if k_groups:
-            self.k_group_size = k_groups.value()
+        if case .Some(k_groups) = k_groups:
+            self.k_group_size = k_groups
         else:
             var output_block_size = mma_mn[0] * mma_mn[1]
 

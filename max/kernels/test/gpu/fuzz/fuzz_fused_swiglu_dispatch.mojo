@@ -43,11 +43,12 @@ from std.sys.defines import get_defined_bool, get_defined_int
 from std.memory.unsafe import bitcast
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_mxfp8_dispatch,
     grouped_matmul_swiglu_mxfp8_dispatch,
 )
+from linalg.swiglu_activation import get_swiglu_activation
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
@@ -77,6 +78,9 @@ comptime H = N // 2
 comptime CLAMP = get_defined_bool["clamp_activation", True]()
 comptime ALPHA = Float32(1.702)
 comptime LIMIT = Float32(7.0)
+comptime ACTIVATION = get_swiglu_activation[
+    "swigluoai" if CLAMP else "silu", ALPHA, LIMIT if CLAMP else 0.0
+]
 
 comptime MAX_M_PER_EXPERT = 512
 
@@ -319,7 +323,7 @@ def run_one_case(
         a_sc_off_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
-        clamp_activation=CLAMP,
+        activation=ACTIVATION,
     ]
     ctx.enqueue_function[ref_epilogue](
         o_ref_tt,
@@ -327,8 +331,6 @@ def run_one_case(
         c_ref_immut,
         a_off_immut,
         a_sc_off_immut,
-        ALPHA,
-        LIMIT,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )
@@ -338,7 +340,7 @@ def run_one_case(
         transpose_b=transpose_b,
         match_bf16=True,
         use_inplace=True,
-        clamp_activation=CLAMP,
+        activation=ACTIVATION,
     ](
         o_test_tt,
         s_test_tt,
@@ -353,8 +355,6 @@ def run_one_case(
         nae,
         M,
         ctx,
-        ALPHA,
-        LIMIT,
     )
     ctx.synchronize()
 

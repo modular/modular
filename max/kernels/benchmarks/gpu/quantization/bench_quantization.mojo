@@ -28,7 +28,7 @@ from std.benchmark import (
     BenchMetric,
 )
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from max.gpu.host.info import _is_sm10x_gpu
 

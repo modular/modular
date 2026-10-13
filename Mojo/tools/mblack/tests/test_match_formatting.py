@@ -72,6 +72,54 @@ def f(x):
     assert_mojo_format(source, expected)
 
 
+def test_mojo_formats_explicit_value_patterns():
+    source = """\
+def f(value, expected):
+    match value:
+    case ==expected:
+        return True
+"""
+    expected = """\
+def f(value, expected):
+    match value:
+        case == expected:
+            return True
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_if_case():
+    source = """\
+def f(pair):
+    if case (0,x as same)=pair:
+        return x
+    elif case (x,1)=pair:
+        return x
+"""
+    expected = """\
+def f(pair):
+    if case (0, x as same) = pair:
+        return x
+    elif case (x, 1) = pair:
+        return x
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_while_case():
+    source = """\
+def f(pair):
+    while case ((0,x)|(x,1)) as matched=pair:
+        pair = next_pair()
+"""
+    expected = """\
+def f(pair):
+    while case ((0, x) | (x, 1)) as matched = pair:
+        pair = next_pair()
+"""
+    assert_mojo_format(source, expected)
+
+
 def test_python_mode_keeps_case_indent():
     source = """\
 def f(x):
@@ -100,7 +148,7 @@ def f(x):
 def test_mojo_formats_var_ref_patterns_in_kwargs():
     source = """\
 def classify_point(p: Point) -> String:
-    __match p:
+    match p:
     case Point(x=var x, y=0):
         return String("x-axis:", x)
     case Point(x=0, y=ref y):
@@ -114,7 +162,7 @@ def classify_point(p: Point) -> String:
 """
     expected = """\
 def classify_point(p: Point) -> String:
-    __match p:
+    match p:
         case Point(x=var x, y=0):
             return String("x-axis:", x)
         case Point(x=0, y=ref y):

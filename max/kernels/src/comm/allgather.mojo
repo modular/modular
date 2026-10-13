@@ -70,12 +70,7 @@ from .device_query import (
     KB,
     dispatch_select_comm_config,
 )
-from .relay import (
-    RELAY_ARCH,
-    RelayTuningConfig,
-    _relay_pairs,
-    _relay_slice_vectors,
-)
+from .relay import RelayTuningConfig, _relay_pairs, _relay_slice_vectors
 from internal_utils import Table
 
 from .reducescatter import _target_address_space
@@ -746,7 +741,7 @@ def _allgather_p2p_relay[
     # `ngpus`-wide grouped barrier and this one advance the same counters at
     # different rates and hang the node.
     comptime relay_domain_id = 0 if 2 * ngpus == MAX_GPUS else 2 * ngpus
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # A relay block only runs if some shard in the relay world is long enough
     # to split. Both groups see both length sets, so they agree on the grid --
@@ -979,7 +974,7 @@ def _allgather_p2p[
         ](max_length * size_of[dtype]()).get_num_blocks()
     )
 
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     # Use ceildiv for max_length to ensure we have enough threads.
     var grid_size = min(
         max_num_blocks,

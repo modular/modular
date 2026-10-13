@@ -15,7 +15,7 @@ from std.math import ceildiv
 
 from max.gpu import block_dim, global_idx
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from layout.tile_tensor import stack_allocation
 from std.testing import assert_false
 

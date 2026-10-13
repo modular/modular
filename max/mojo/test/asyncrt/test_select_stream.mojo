@@ -33,7 +33,7 @@ from std.testing import TestSuite, assert_equal
 
 
 def add_one(
-    inp: Pointer[Float32, MutAnyOrigin],
+    inp: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):

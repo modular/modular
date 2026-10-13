@@ -119,9 +119,9 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
     @traced
     def forward_blocks(
         self, batch: Sequence[TextContext], num_blocks: Sequence[int]
-    ) -> dict[str, list[list[int]]]:
+    ) -> dict[str, list[Sequence[int]]]:
         """Returns the one block each request's scratch lives in."""
-        plans: dict[str, list[list[int]]] = {self.leaf_id: []}
+        plans: dict[str, list[Sequence[int]]] = {self.leaf_id: []}
         for ctx in batch:
             row = self.rows[ctx.request_id]
             leaf_id = self.leaf_id

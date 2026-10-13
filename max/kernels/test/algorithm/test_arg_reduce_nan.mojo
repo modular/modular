@@ -13,7 +13,7 @@
 """NaN behaviour of the `ArgMax`/`ArgMin` reduction monoids.
 
 These monoids back the `mo.reduce.arg_max` / `mo.reduce.arg_min` graph ops
-(`algorithm.reductions.reduce_argmax` emits `acc_indices` straight into the
+(`builtin_kernels.rowwise_reductions.reduce_argmax` emits `acc_indices` straight into the
 output tensor), so an out-of-range index here reaches consumers as real tensor
 data. A downstream `gather` on such an index is an out-of-bounds device access
 that kills the process, so the index must always land in `[0, axis_size)`.
@@ -28,8 +28,8 @@ across multiple workers and their partials are merged.
 """
 
 from algorithm.cpu.rowwise import _CPU_SPLITK_MIN_AXIS
-from algorithm.reduce_op import ArgMax, ArgMin
-from algorithm.reductions import reduce_argmax, reduce_argmin
+from builtin_kernels.monoids import ArgMax, ArgMin
+from builtin_kernels.rowwise_reductions import reduce_argmax, reduce_argmin
 from max.algorithm.backend.cpu.parallelize import _get_num_workers
 from std.testing import TestSuite, assert_equal, assert_true
 from std.utils.coord import Coord

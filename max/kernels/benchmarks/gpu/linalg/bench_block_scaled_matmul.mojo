@@ -59,7 +59,6 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
 )
 from linalg.utils import elementwise_compute_lambda_type
-from std.utils import IndexList
 from max.gpu.primitives import block
 
 
@@ -507,11 +506,14 @@ def bench_matmul[
             width: Int,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             comptime assert c.flat_rank >= 2
-            var x = c.load[width=width](Coord(idx)).cast[_dtype]()
+            var x = c.load[width=width](idx).cast[_dtype]()
             var y = val * x
             return y
 

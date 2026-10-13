@@ -114,7 +114,7 @@ struct DataType(Equatable, TrivialRegisterPassable):
         self._value = Int32(value)
 
     def __init__(out self, dtype: DType) raises:
-        __match dtype:
+        match dtype:
             case .float16:
                 self = Self.F16_R
             case .bfloat16:

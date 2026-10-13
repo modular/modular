@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Mixture of Experts (MoE) module."""
 
+from ..activation import GatedActivation
 from .expert_parallel import forward_moe_sharded_layers
 from .moe import (
-    ClampedSwiGLU,
     MoE,
     MoEGate,
     make_concatenated_gated_activation_fn,
@@ -38,9 +38,9 @@ from .stacked_moe import (
 )
 
 __all__ = [
-    "ClampedSwiGLU",
     "Fp8Strategy",
     "GateUpFormat",
+    "GatedActivation",
     "MoE",
     "MoEGate",
     "MoEQuantized",

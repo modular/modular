@@ -411,8 +411,6 @@ def dispatch_mxfp4(
     n_gpus_per_node: int,
     n_nodes: int,
     fused_shared_expert: bool,
-    fuse_a_scale_preshuffle: bool,
-    max_padded_m: int,
     mx_format: str = "auto",
 ) -> list[tuple[TensorValue, ...]]:
     """Multi-device EP MXFP4 dispatch.
@@ -460,8 +458,6 @@ def dispatch_mxfp4(
             n_nodes,
             fused_shared_expert,
         ),
-        BoolAttr(fuse_a_scale_preshuffle),
-        IntegerAttr(IntegerType(64), max_padded_m),
         StringAttr(mx_format),
     )
 

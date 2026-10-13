@@ -245,8 +245,8 @@ def run_sender(
         for src_idxs, dst_idxs in requests:
             req = engine.initiate_send_transfer(
                 remote_md,
-                src_idxs,
-                dst_idxs,
+                {g: list(src_idxs) for g in remote_md.leaf_ids},
+                {g: list(dst_idxs) for g in remote_md.leaf_ids},
                 src_replica_idx=0,
                 dst_replica_idx=0,
             )
@@ -332,8 +332,10 @@ def run_receiver(
             for blocks in all_blocks:
                 result = blocks.to_numpy()
                 for req in in_flight:
+                    (src_idxs,) = req.src_idxs.values()
+                    (dst_idxs,) = req.dst_idxs.values()
                     for src_idx, dst_idx in zip(
-                        req.src_idxs, req.dst_idxs, strict=True
+                        src_idxs, dst_idxs, strict=True
                     ):
                         expected = (src_idx % 127) + 1
                         page = result[

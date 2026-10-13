@@ -46,6 +46,12 @@ def _rebuild_wheel(rctx):
     )
 
     rctx.execute(["bash", "-c", "mv */platlib/max/_core.*.so max/"])
+
+    # One stable-ABI module serves every Python version, so each wheel above
+    # extracts the same file. Wheels built before max._kv_core shipped lack it;
+    # tolerate that so the tree still analyzes against them (presubmit's OSS
+    # smoke test pins the last nightly), though importing max.nn needs it.
+    rctx.execute(["bash", "-c", "mv */platlib/max/_kv_core.so max/ 2>/dev/null || true"])
     rctx.execute(["mkdir", "-p", "max/_mlir/_mlir_libs"])
     rctx.execute(["bash", "-c", "mv */platlib/max/_mlir/_mlir_libs/_mlir.*.so max/_mlir/_mlir_libs/"])
 
@@ -68,7 +74,7 @@ py_library(
         "modular/**",
     ], exclude = [
         "modular/lib/mojo/*",
-    ]),
+    ]) + glob(["max/_kv_core.so"], allow_empty = True),
     visibility = ["//visibility:public"],
     imports = ["."],
 )

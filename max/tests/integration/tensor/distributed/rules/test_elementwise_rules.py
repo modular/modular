@@ -16,9 +16,11 @@
 from __future__ import annotations
 
 from max.dtype import DType
+from max.experimental import functional as F
 from max.experimental.sharding import DeviceMapping, TensorLayout
 from max.experimental.sharding.rules import (
     binary_rule,
+    cast_rule,
     ternary_rule,
     unary_rule,
 )
@@ -69,6 +71,20 @@ class TestUnaryPassthrough:
         layout = _layout(M(MESH_2D, S(0), S(1)), (4, 8))
         _, (out,) = pick(unary_rule, layout)
         assert out.placements == (S(0), S(1))
+
+
+class TestCast:
+    def test_identity_cast_preserves_partial(self) -> None:
+        assert getattr(F.cast, "rule", None) is cast_rule
+        layout = _layout(M(MESH_1D, P), (4, 8))
+        _, (out,) = pick(cast_rule, layout, DType.float32)
+        assert out.placements == (P,)
+
+    def test_dtype_changing_cast_resolves_partial(self) -> None:
+        layout = _layout(M(MESH_1D, P), (4, 8))
+        args, (out,) = pick(cast_rule, layout, DType.int32)
+        assert P not in args[0].placements
+        assert P not in out.placements
 
 
 # ═════════════════════════════════════════════════════════════════════════

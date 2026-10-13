@@ -36,6 +36,13 @@ DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 # is matched case-insensitively (e.g. ``"none"``, ``"None"``, ``"NONE"``).
 DISABLE_PARSER_SENTINEL = "none"
 
+_ENV_FLAG_TRUE = ("1", "true", "on", "yes")
+
+
+def _env_flag(name: str) -> bool:
+    """Returns whether environment variable ``name`` is set to a true value."""
+    return os.environ.get(name, "").strip().lower() in _ENV_FLAG_TRUE
+
 
 class PipelineRuntimeConfig(ConfigFileModel):
     """Model-agnostic runtime settings for pipeline execution.
@@ -397,6 +404,29 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    disable_overlap: bool = Field(
+        default_factory=lambda: _env_flag("MAX_DISABLE_OVERLAP"),
+        description=(
+            "Keeps the overlap pipeline but synchronizes after every model "
+            "execution, so CPU work no longer overlaps GPU work and throughput "
+            "drops. Device graph capture runs only in the overlap pipeline, so "
+            "this is how to run capture without overlap when debugging. "
+            "Defaults from the ``MAX_DISABLE_OVERLAP`` environment variable. "
+            "Has no effect when the overlap scheduler is off."
+        ),
+    )
+
+    disable_vendor_blas_fallback: bool = Field(
+        default_factory=lambda: _env_flag("MODULAR_DISABLE_VENDOR_FALLBACK"),
+        description=(
+            "Compiles kernels without the matmul vendor-BLAS fallback by "
+            "passing the ``MODULAR_DISABLE_VENDOR_FALLBACK`` define to the "
+            "kernel compile. Always on for device graph capture on HIP. "
+            "Defaults from the ``MODULAR_DISABLE_VENDOR_FALLBACK`` environment "
+            "variable."
+        ),
+    )
+
     dp_ce_balance_timeout_ms: float = Field(
         default=-1.0,
         description=(
@@ -626,9 +656,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
 
         Chunked prefill cuts a CE batch at ``max_batch_input_tokens``, which is
         also what a request has to be allocated for. Without it a prompt is
-        admitted in full, so nothing bounds the allocation.
+        admitted in full, so nothing bounds the allocation. A decode worker
+        encodes no prompt: it receives the whole prompt's KV from prefill in
+        one transfer, so it must hold every page up front.
         """
-        if not self.enable_chunked_prefill:
+        if (
+            not self.enable_chunked_prefill
+            or self.pipeline_role == "decode_only"
+        ):
             return None
         return self.max_batch_input_tokens
 

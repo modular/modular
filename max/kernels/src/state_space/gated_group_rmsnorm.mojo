@@ -71,7 +71,6 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv, rsqrt
 from std.collections import Array
 from std.sys import size_of
-from std.sys.info import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 from std.utils.index import StaticTuple
 from std.utils.numerics import get_accum_type
 import max.gpu.primitives.warp as warp
@@ -307,7 +306,7 @@ def gated_group_rmsnorm_gpu[
 
     comptime vec_width = 16 // max(size_of[dtype](), size_of[gate_dtype]())
     comptime if (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()
     ) and group_size % vec_width == 0:
         # Vector loads read contiguous elements, so each tensor operand needs
         # a unit inner stride as well as 16-byte aligned rows.

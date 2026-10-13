@@ -15,11 +15,7 @@ from std.math import ceildiv
 from std.sys import size_of
 from std.itertools import product
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from std.testing import assert_true
 
 from comm import Signal

@@ -20,6 +20,7 @@
 #   - Duplicate keyword call error
 #   - `comptime` without parentheses (intentional error)
 #   - `input()` walrus example (interactive)
+#   - Walrus precedence without parentheses (intentional error)
 #   - Function type expressions (`def() -> Int`, etc.) are type-level
 #     forms with no standalone runtime behavior to assert
 #   - `type_of`, `conforms_to`, `origin_of` return compiler-internal
@@ -269,12 +270,12 @@ def test_ternary_chained_right_assoc() raises:
 
 
 def test_walrus_in_if() raises:
-    var items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    var samples = List(range(20))
     var captured: Int = -1
-    var n: Int
-    if (n := len(items)) > 10:
-        captured = n
-    assert_equal(captured, 11)
+    var sample_count: Int
+    if (sample_count := len(samples)) > 10:
+        captured = sample_count
+    assert_equal(captured, 20)
 
 
 def test_walrus_in_while() raises:
@@ -285,6 +286,29 @@ def test_walrus_in_while() raises:
         last_seen = j
         i += 1
     assert_equal(last_seen, 2)
+
+
+def test_walrus_targets() raises:
+    var count: Int8
+    assert_equal(count := 300, 44)
+    assert_equal(count, 44)
+
+    var p = Point2(1, 2)
+    assert_equal(p.x := 7, 7)
+    assert_equal(p.x, 7)
+
+    var nums: List[Int] = [1, 2, 3]
+    assert_equal(nums[0] := 9, 9)
+    assert_equal(nums[0], 9)
+
+
+def test_walrus_precedence_parenthesized() raises:
+    var readings: List[Int] = [12, 80]
+    var item: Int
+    var message = String()
+    if (item := readings[0]) < 50:
+        message = String(t"{item} is under 50")
+    assert_equal(message, "12 is under 50")
 
 
 # --- Compile-time expressions ---
@@ -392,6 +416,8 @@ def main() raises:
     test_ternary_chained_right_assoc()
     test_walrus_in_if()
     test_walrus_in_while()
+    test_walrus_targets()
+    test_walrus_precedence_parenthesized()
     test_comptime_expression()
     test_list_comprehension_with_filter()
     test_list_comprehension_over_range()

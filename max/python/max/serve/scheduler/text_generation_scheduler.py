@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import opentelemetry.trace as otel_trace
 from max._core import request_context as _request_context
-from max._core.profiler import range_begin_with_id, range_end
+from max._core.profiler import range_begin_with_id, range_end, request_burst
 from max.pipelines.context import (
     TextAndVisionContext,
     TextContext,
@@ -35,6 +35,7 @@ from max.pipelines.lib import (
     TextGenerationPipeline,
 )
 from max.pipelines.modeling.types import (
+    BatchType,
     Pipeline,
     RequestID,
     TextGenerationInputs,
@@ -398,6 +399,11 @@ class TokenGenerationScheduler(Scheduler):
             batch_id_token = (
                 _batch_id_ctx.set(batch_id) if self._tracing else None
             )
+            # A burst-sampled step-window capture lands mostly on decode
+            # steps; ask for an extra burst to start with this prefill batch.
+            # Before the range below, so the range records in the burst.
+            if inputs.batch_type == BatchType.CE:
+                request_burst("prefill")
             range_id = (
                 range_begin_with_id(batch_id, "max.batch")
                 if kernel_range

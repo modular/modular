@@ -210,8 +210,8 @@ def binary_model(
 
     Lazy by default: compiled on first use and cached for the process lifetime.
     With ``MAX_EAGER_OP_PRECOMPILE=1`` it was precompiled at import and this is a
-    lookup. On the first miss, a warm cache is adopted whole (manifest
-    force-load, else a batched stamp sweep) instead of compiling per target.
+    lookup. On the first miss, a warm cache is adopted whole (the warm store,
+    else a batched stamp sweep) instead of compiling per target.
 
     Args:
         op_type: The concrete ``mo.*Op`` type of the op being handled.
@@ -222,7 +222,7 @@ def binary_model(
         The compiled model ready for execution.
 
     Raises:
-        KeyError: If the (op, device, dtype) is outside the supported set (e.g.
+        KeyError: If the (op, device, dtype) is outside the supported set (such as
             ``And`` on an int dtype).
         EagerLazyCompileDisallowed: If a supported target is not already
             compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.

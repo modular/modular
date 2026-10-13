@@ -21,7 +21,7 @@ and Python code.
 """
 
 from . import ConvertibleFromPython
-from std.ffi import _Global, c_int, c_char
+from std.ffi import _Global, c_int
 from std.sys.info import size_of
 from std.collections import StringDict
 
@@ -31,10 +31,9 @@ from std.builtin.variadics import (
     _create_dynamic_pack,
 )
 from std.reflection import reflect
-from std.memory import OpaquePointer, unsafe_stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.python import Python, PythonObject
 from std.python._cpython import (
-    GILAcquired,
     Py_TPFLAGS_DEFAULT,
     Py_ssize_t,
     PyCFunction,

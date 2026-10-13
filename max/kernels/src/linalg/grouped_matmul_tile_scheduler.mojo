@@ -23,13 +23,34 @@ from layout import ImmTileTensor, TensorLayout
 
 
 @fieldwise_init
-struct RasterOrder(TrivialRegisterPassable):
+struct RasterOrder(EnumLike, TrivialRegisterPassable):
     """Represents the rasterization order used when traversing output tiles."""
 
     var _value: Int32
 
     comptime AlongN = Self(0)
     comptime AlongM = Self(1)
+
+    comptime _enum_case_names = ParameterList.of[
+        "AlongN".value,
+        "AlongM".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "RasterOrder has no payload"
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:

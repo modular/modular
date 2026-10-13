@@ -42,7 +42,7 @@ from max.gpu.host import (
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 from std.testing import assert_true
 

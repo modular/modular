@@ -83,7 +83,7 @@ class DeepseekV3BatchProcessorBase(Llama3EpBatchProcessorBase[InputsT]):
 
         Computes the page-aligned sum of ``current_position`` for each DP
         replica and writes it into the preallocated CPU buffers in-place.
-        When DP < num_devices (i.e. TP only), broadcasts replica 0's value
+        When DP < num_devices (that is, TP only), broadcasts replica 0's value
         to all remaining device slots.
 
         Args:

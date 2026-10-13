@@ -1402,7 +1402,33 @@ index d68479f..360396f 100644
    }
 
    // Phase 3: Combine results (no priority — merge with deduplication)
-@@ -955,12 +968,52 @@ bool GrammarMatcher::Impl::FillNextTokenBitmask(
+@@ -700,6 +713,25 @@ bool GrammarMatcher::Impl::AcceptToken(int32_t token_id, bool debug_print) {
+       is_completed_.push_back(atomic_completed);
+       token_length_history.push_back(1);
+     } else {
++      // Upstream bug: the atomic path predicted its rules on one history row, which it
++      // then popped, while the byte path pushed token.size() rows. A rule predicted
++      // there keeps that row as rule_start_pos, which is now the byte path's first
++      // row, so completing it looks up the wrong parents and drops the continuation
++      // after the token. Re-point those rules at the merged row, where the atomic
++      // parents are merged below. Only a multi-byte token taken by both paths gets
++      // here; a special token never takes the byte path.
++      const int32_t atomic_pos = scanable_state_history_.size() - token.size();
++      const int32_t merged_pos = scanable_state_history_.size() - 1;
++      for (auto& state : atomic_states) {
++        if (state.rule_start_pos == atomic_pos) {
++          state.rule_start_pos = merged_pos;
++        }
++      }
++      for (auto& entry : atomic_completable) {
++        if (entry.second.rule_start_pos == atomic_pos) {
++          entry.second.rule_start_pos = merged_pos;
++        }
++      }
+       auto byte_states = GetLatestScanableStates();
+       std::vector<ParserState> merged = byte_states;
+       StateEqualForParsing state_eq;
+@@ -955,12 +987,52 @@ bool GrammarMatcher::Impl::FillNextTokenBitmask(
    SetTokenBitmask(
        bitmask_data_ptr, tmp_accepted_bitset_, tmp_rejected_indices_, can_reach_end, false
    );
@@ -6440,7 +6466,7 @@ index f0175ba..aa11492 100644
  }  // namespace xgrammar
 
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
-index 4f1cc65..fc159f2 100644
+index 4f1cc65..467104f 100644
 --- a/cpp/json_schema_converter_ext.cc
 +++ b/cpp/json_schema_converter_ext.cc
 @@ -5,10 +5,20 @@
@@ -6464,7 +6490,7 @@ index 4f1cc65..fc159f2 100644
 
  namespace xgrammar {
 
-@@ -17,9 +27,29 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,9 +27,39 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
@@ -6492,13 +6518,35 @@ index 4f1cc65..fc159f2 100644
 +          /*bare_value_regex_exact=*/true,
 +          /*any_string_is_json=*/true,
 +          /*container_value_balanced=*/true}},
-         {JSONFormat::kMiniMaxXML, {"<parameter name=\\\"", "\\\">", "", "</parameter>"}},
+-        {JSONFormat::kMiniMaxXML, {"<parameter name=\\\"", "\\\">", "", "</parameter>"}},
++        {JSONFormat::kMiniMaxXML,
++         {"<parameter name=\\\"",
++          "\\\">",
++          "",
++          "</parameter>",
++          /*key_is_tag=*/false,
++          /*xml_all_depths=*/false,
++          /*array_item_tag=*/"",
++          /*value_framing_stripped=*/false,
++          /*bare_value_regex_exact=*/false,
++          /*any_string_is_json=*/true}},
          {JSONFormat::kDeepSeekXML,
           {"<｜DSML｜parameter name=\\\"",
-@@ -28,6 +58,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
+@@ -28,6 +68,24 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
            // TODO(Linzhang): we do not validate the string's value, and we accept both.
            "</｜DSML｜parameter>"}},
-         {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
+-        {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
++        {JSONFormat::kGlmXML,
++         {"<arg_key>",
++          "</arg_key>",
++          "<arg_value>",
++          "</arg_value>",
++          /*key_is_tag=*/false,
++          /*xml_all_depths=*/false,
++          /*array_item_tag=*/"",
++          /*value_framing_stripped=*/false,
++          /*bare_value_regex_exact=*/false,
++          /*any_string_is_json=*/true}},
 +        {JSONFormat::kMiniMaxM3XML,
 +         {"",
 +          "",
@@ -7309,7 +7357,7 @@ index 4f1cc65..fc159f2 100644
    }
    return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
  }
-@@ -259,16 +833,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -259,16 +833,20 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
      const std::string& rule_name_suffix
  ) {
    if (nested_object_level_ <= 1) {
@@ -7322,8 +7370,12 @@ index 4f1cc65..fc159f2 100644
 +    std::string key_open;
 +    std::string key_close;
 +    if (xml_wrapper_.key_is_tag) {
-+      key_open = OpenTag(key_pattern);
-+      key_close = CloseTag(key_pattern);
++      // key_pattern is a rule, not a name, so it is spliced in where
++      // OpenTag/CloseTag would quote one. The close cannot backreference the
++      // opened key, so it accepts any key the pattern does.
++      std::string prefix = xml_tag_prefix_.empty() ? "" : xml_tag_prefix_literal_ + " ";
++      key_open = prefix + "\"<\" " + key_pattern + " \">\"";
++      key_close = prefix + "\"</\" " + key_pattern + " \">\"";
 +    } else {
 +      key_open = EmitMarker(kKeyOpen, xml_wrapper_.key_wrapper_prefix) + " " + key_pattern + " " +
 +                 EmitMarker(kKeyClose, xml_wrapper_.key_wrapper_suffix);
@@ -7335,7 +7387,7 @@ index 4f1cc65..fc159f2 100644
    }
    return JSONSchemaConverter::FormatOtherProperty(
        key_pattern, value_rule, rule_name, rule_name_suffix
-@@ -276,12 +850,86 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -276,12 +854,95 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
  }
 
  std::string XMLToolCallingConverter::GenerateObject(
@@ -7394,11 +7446,20 @@ index 4f1cc65..fc159f2 100644
 +    // key, so additional/pattern/propertyNames are dropped before the base
 +    // required/optional cascade runs. A tag-key !xml_all_depths style bumps the
 +    // level so nested objects render as inner JSON, not tag-key.
++    //
++    // The exception is a minProperties the declared keys cannot reach: without
++    // undeclared keys no output is valid, and the cascade would collapse to an
++    // empty body. Those keep additional/unevaluated properties, framed by
++    // FormatOtherProperty.
++    bool keep_undeclared = spec.min_properties > static_cast<int>(spec.properties.size());
 +    ObjectSpec declared_only = spec;
-+    declared_only.allow_additional_properties = false;
-+    declared_only.allow_unevaluated_properties = false;
-+    declared_only.additional_properties_schema = nullptr;
-+    declared_only.unevaluated_properties_schema = nullptr;
++    declared_only.allow_additional_properties = keep_undeclared && spec.allow_additional_properties;
++    declared_only.allow_unevaluated_properties =
++        keep_undeclared && spec.allow_unevaluated_properties;
++    declared_only.additional_properties_schema =
++        keep_undeclared ? spec.additional_properties_schema : nullptr;
++    declared_only.unevaluated_properties_schema =
++        keep_undeclared ? spec.unevaluated_properties_schema : nullptr;
 +    declared_only.pattern_properties.clear();
 +    declared_only.property_names = nullptr;
 +    if (!xml_wrapper_.xml_all_depths) {
@@ -7426,7 +7487,7 @@ index 4f1cc65..fc159f2 100644
    return result;
  }
 
-@@ -289,14 +937,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +950,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }

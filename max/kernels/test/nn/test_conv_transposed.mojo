@@ -251,20 +251,19 @@ def test_conv_transposed[
     @inline(.always)
     @__copy_capture(output, bias_ptr)
     @__parameter
-    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
+    def epilogue(coords: Coord, f_size: Int):
         @inline(.always)
         def body1[width: Int](idx: Int) {var}:
-            var curr_coords = rebind[IndexList[rank + 2]](coords)
-            curr_coords[rank + 1] += idx
+            var f = Int(coords[rank + 1].value()) + idx
+            var curr_coords = coords
+            curr_coords.replace_dynamic[rank + 1](f)
 
-            var output_idx = output.layout(Coord(curr_coords))
+            var output_idx = output.layout(curr_coords)
 
             var vec = output.raw_load[width=width](output_idx)
 
             output.raw_store(
-                output_idx,
-                10.0
-                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
+                output_idx, 10.0 * (vec + bias_ptr.load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)

@@ -21,8 +21,10 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/nn",
         "//max/python/max/graph",
@@ -37,7 +39,9 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
         "//max/python/max/pipelines/architectures/step3p5",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/weights",
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
         requirement("numpy"),

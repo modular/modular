@@ -108,6 +108,9 @@ class OutputAllocatingModel:
         del graph_key, buffers
         raise AssertionError("debug_verify_replay is not used in warmup")
 
+    def _await_device_graphs(self) -> None:
+        pass
+
     def release_captured_graph(self, graph_keys: int | Sequence[int]) -> None:
         # Mirrors the engine API surface. ``ServeGraphCaptureRunner`` only
         # forwards a single packed int; we record exactly that for assertions.
@@ -133,7 +136,8 @@ def _make_kv_per_device() -> KVCacheInputsPerDevice[Buffer, Buffer]:
 
 @contextmanager
 def _warmup_model_inputs(
-    batch_size: int, batch_characteristics: BatchCharacteristics
+    batch_size: int,
+    batch_characteristics: BatchCharacteristics,
 ) -> Iterator[MockModelInputs]:
     yield MockModelInputs(
         active_batch_size=batch_size,

@@ -17,7 +17,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.memory import CacheOperation
 from max.gpu.sync import s_waitcnt
 from max.gpu.intrinsics import AMDBufferResource
-from std.memory import AddressSpace, unsafe_stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from structured_kernels.amd_tile_io import _load_from_lds, _load_to_lds

@@ -12,6 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
+struct TString(Stringable):
+    def __init__(out self):
+        pass
+
+    def __str__(self) -> String:
+        return {}
+
+
 struct _FormatArgument[origin: ImmOrigin]:
     def __init__[T: AnyType](out self, ref[Self.origin] writable: T):
         pass
@@ -20,5 +28,5 @@ struct _FormatArgument[origin: ImmOrigin]:
 def __make_tstring[
     format_string: __mlir_type.`!kgen.string`,
     origins: ImmOrigin,
-](ref array: Array[_FormatArgument[origins], _]) -> String:
+](ref array: Array[_FormatArgument[origins], _]) -> TString:
     return {}

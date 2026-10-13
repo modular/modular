@@ -51,6 +51,57 @@ def test_elif_chain(a: Bool, b: Int, c: Bool, d: Int) -> Bool:
     return a
 
 
+# CHECK-LABEL: lit.fn @"test_if_case
+# CHECK:       hlcf.match {
+# CHECK:         lit.call {{.*}}@"__eq__
+# CHECK:         hlcf.if
+# CHECK:           hlcf.match.next
+# CHECK:         %x = lit.var.decl "x"
+# CHECK:         lit.ref.store
+# CHECK:         hlcf.match.complete
+# CHECK:       } else {
+# CHECK:         hlcf.if
+# CHECK:           %boolean_arm = lit.var.decl "boolean_arm"
+# CHECK:         } else {
+# CHECK:           hlcf.match {
+# CHECK:             %y = lit.var.decl "y"
+# CHECK:             lit.ref.store
+# CHECK:             hlcf.match.complete
+# CHECK:           } else {
+# CHECK:             %else_arm = lit.var.decl "else_arm"
+def test_if_case(a: Int, b: Int, condition: Bool):
+    if case (0, x) = (a, b):
+        _ = x
+    elif condition:
+        var boolean_arm: Int
+    elif case (y, 1) = (a, b):
+        _ = y
+    else:
+        var else_arm: Int
+
+
+# An if-case OR pattern nests the OR's match inside the conditional match.
+# CHECK-LABEL: lit.fn @"test_if_case_or
+# CHECK:       hlcf.match {
+# CHECK:         hlcf.match {
+# CHECK:           hlcf.match.complete
+# CHECK-NEXT:    }
+# CHECK-NEXT:    case {
+# CHECK:           hlcf.match.complete
+# CHECK:         } else {
+# CHECK:           hlcf.match.next
+# CHECK:         }
+# CHECK:         %value{{.*}} = lit.var.decl "value"
+# CHECK:         hlcf.match.complete
+# CHECK:       } else {
+# CHECK:         %miss = lit.var.decl "miss"
+def test_if_case_or(a: Int, b: Int):
+    if case (0, value) | (value, 1) = (a, b):
+        _ = value
+    else:
+        var miss: Int
+
+
 # CHECK-LABEL: lit.fn @"test_constant
 def test_constant(a: Bool) -> Bool:
     # CHECK: [[FOUR:%.*]] = kgen.param.constant{{.*}}4
@@ -231,6 +282,33 @@ def test_while(a: Bool, b: Bool) -> Bool:
     else:
         inside_else = 2
     return a
+
+
+# CHECK-LABEL: lit.fn @"test_while_case
+# CHECK:       lit.loop {
+# CHECK:         hlcf.match {
+# CHECK:           hlcf.match {
+# CHECK:             hlcf.match.complete
+# CHECK:           }
+# CHECK:           case {
+# CHECK:             hlcf.match.complete
+# CHECK:           } else {
+# CHECK:             hlcf.match.next
+# CHECK:           }
+# CHECK:           %value{{.*}} = lit.var.decl "value"
+# CHECK:           hlcf.match.complete
+# CHECK:         } else {
+# CHECK:           lit.loop.break.else
+# CHECK:         }
+# CHECK:         lit.loop.continue
+# CHECK:       } else {
+# CHECK:         %exhausted = lit.var.decl "exhausted"
+def test_while_case(var a: Int, b: Int):
+    while case (0, value) | (value, 1) = (a, b):
+        _ = value
+        a = 4
+    else:
+        var exhausted: Int
 
 
 # CHECK-LABEL: lit.fn @"test_else_outside_while

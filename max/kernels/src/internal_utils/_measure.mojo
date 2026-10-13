@@ -21,7 +21,6 @@ from max.algorithm import elementwise, mean, sum
 from std.algorithm.functional import unswitch
 from max.gpu.host import DeviceContext
 
-from std.utils import IndexList
 from std.utils.coord import Coord
 
 # ===----------------------------------------------------------------------=== #
@@ -139,9 +138,9 @@ def correlation[
     var umu = Scalar[out_type]()
     var vmu = Scalar[out_type]()
     var w_list = List[Scalar[dtype]]()
-    if w:
+    if case .Some(w) = w:
         w_list = List[Scalar[dtype]](capacity=len)
-        _div(w_list.unsafe_ptr(), w.value(), _sum(w.value(), len), len, ctx)
+        _div(w_list.unsafe_ptr(), w, _sum(w, len), len, ctx)
     if centered:
         if w:
             umu = _dot[out_type=out_type](u, w_list.unsafe_ptr(), len)

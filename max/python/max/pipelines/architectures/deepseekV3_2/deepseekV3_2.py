@@ -65,7 +65,7 @@ from .layers.sparse_mla import (
     TensorParallelSparseLatentAttentionWithRope,
     TensorParallelSparseLatentAttentionWithRopeFp8,
 )
-from .model_config import DeepseekV3_2Config
+from .model_config import DeepseekV3_2Config, indexer_cache_layer_map
 
 # Opt-in dual-carry + fused AG+RMSNorm. Default (unset / any other value) is
 # the baseline path: consumer-side ``input_layernorm``, plain post-MLP
@@ -395,6 +395,7 @@ class DeepseekV3_2DecoderLayer(Module):
     def __call__(
         self,
         layer_idx: TensorValue,
+        indexer_layer_idx: TensorValue,
         xs_raw: list[TensorValue],
         xs_norm: list[TensorValue],
         signal_buffers: list[BufferValue],
@@ -410,6 +411,9 @@ class DeepseekV3_2DecoderLayer(Module):
         next_input_gamma: list[TensorValue] | None = None,
         # Note: this is only used for MTP iterations after step 0.
         reuse_prev_topk: bool = False,
+        # Positions between the token the reused selection was computed for
+        # and this step's token.
+        selection_lag: int = 0,
     ) -> list[TensorValue]:
         # Dual-carry Pre-LN: attention uses ``xs_norm``; residuals use ``xs_raw``.
         apply_next = bool(next_input_gamma)
@@ -440,6 +444,8 @@ class DeepseekV3_2DecoderLayer(Module):
             mla_prefill_metadata=mla_prefill_metadata,
             prev_topk_indices=prev_topk,
             reuse_prev_topk=reuse_prev_topk,
+            selection_lag=selection_lag,
+            indexer_layer_idx=indexer_layer_idx,
         )
 
         ep_config = self.config.ep_config
@@ -787,6 +793,10 @@ class DeepseekV3_2(Module):
                 ]
             )
 
+        indexer_cache_layers = indexer_cache_layer_map(
+            self.config.indexer_types, len(self.layers)
+        )
+
         def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
             # Layout of ``h``:
             # - carry_next_input_norm, idx==0: residual only (embeddings);
@@ -836,6 +846,11 @@ class DeepseekV3_2(Module):
                 )
             values: list[Tree[Any]] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                ops.constant(
+                    indexer_cache_layers[idx],
+                    DType.uint32,
+                    device=DeviceRef.CPU(),
+                ),
                 hidden_raw,
                 hidden_norm,
                 signal_buffers,

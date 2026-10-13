@@ -26,12 +26,14 @@ recurrence records into the ring and the fold applies the accepted records.
 
 from __future__ import annotations
 
+import functools
+
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
+from max.engine import InferenceSession, Model
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_recurrence_fwd,
@@ -99,45 +101,26 @@ def _rand(rng: np.random.Generator, *shape: int) -> np.ndarray:
     return rng.standard_normal(shape).astype(np.float32)
 
 
-def _run(
-    accepted: list[int],
-    *,
-    replay_full_window: bool = False,
-    verify_writes_conv_window: bool = False,
-) -> dict[str, np.ndarray]:
-    """Verifies a window, rolls back, and independently runs the prefix.
+@functools.cache
+def _device() -> Accelerator:
+    return Accelerator()
 
-    Returns the live and reference pools. ``live`` is what the rollback
-    produced; ``reference`` is what the forward kernels produce over a
-    host-sliced accepted prefix, built without ``accepted_row_plan``, so the
-    two agreeing is not a tautology.
+
+@functools.cache
+def _model(
+    *, replay_full_window: bool, verify_writes_conv_window: bool
+) -> Model:
+    """Compiles the verify, rollback and reference graph once per variant.
+
+    Every shape that varies between cases is symbolic, so one compile serves
+    every batch and accepted length, and the cases only differ in their
+    inputs.
 
     Args:
-        accepted: Drafts each request accepted.
         replay_full_window: Roll back onto every verified row instead of the
             accepted prefix.
         verify_writes_conv_window: Let the verify write the conv window.
     """
-    batch = len(accepted)
-    rng = np.random.default_rng(7)
-    total = batch * BLOCK
-    qkv = _rand(rng, total, CONV_DIM)
-    conv_weight = _rand(rng, CONV_DIM, CONV_KERNEL)
-    decay = -np.abs(_rand(rng, total, NUM_V_HEADS))
-    beta = np.abs(_rand(rng, total, NUM_V_HEADS))
-    merged_offsets = np.arange(batch + 1, dtype=np.uint32) * BLOCK
-    slots = np.arange(batch, dtype=np.uint32)
-    init_conv = _rand(rng, MAX_SLOTS, CONV_DIM, CONV_KERNEL - 1)
-    init_rec = _rand(rng, MAX_SLOTS, NUM_V_HEADS, KEY_HEAD_DIM, VALUE_HEAD_DIM)
-
-    # The reference prefix, sliced on the host: rows [0, 1 + accepted) of each
-    # request's window, which is what the step actually commits.
-    keep = [1 + a for a in accepted]
-    ref_rows = np.concatenate(
-        [np.arange(b * BLOCK, b * BLOCK + keep[b]) for b in range(batch)]
-    ).astype(np.int64)
-    ref_offsets = np.concatenate([[0], np.cumsum(keep)]).astype(np.uint32)
-
     gpu = DeviceRef.GPU()
     conv_pool_type = BufferType(
         DType.float32, [MAX_SLOTS, CONV_DIM, CONV_KERNEL - 1], device=gpu
@@ -148,18 +131,18 @@ def _run(
         device=gpu,
     )
     types: list[TensorType | BufferType] = [
-        TensorType(DType.float32, [total, CONV_DIM], device=gpu),
+        TensorType(DType.float32, ["total_seq_len", CONV_DIM], device=gpu),
         TensorType(DType.float32, [CONV_DIM, CONV_KERNEL], device=gpu),
-        TensorType(DType.float32, [total, NUM_V_HEADS], device=gpu),
-        TensorType(DType.float32, [total, NUM_V_HEADS], device=gpu),
+        TensorType(DType.float32, ["total_seq_len", NUM_V_HEADS], device=gpu),
+        TensorType(DType.float32, ["total_seq_len", NUM_V_HEADS], device=gpu),
         # Symbolic, as the served graph declares it. A static length lets
         # fusion vectorize the plan's and the fold's shared offsets slice as
         # if it were aligned, which faults on a misaligned address.
         TensorType(DType.uint32, ["offsets_len"], device=gpu),
         TensorType(DType.int64, ["batch_size"], device=gpu),
         TensorType(DType.uint32, ["batch_size"], device=gpu),
-        TensorType(DType.int64, [len(ref_rows)], device=gpu),
-        TensorType(DType.uint32, [batch + 1], device=gpu),
+        TensorType(DType.int64, ["ref_rows"], device=gpu),
+        TensorType(DType.uint32, ["ref_offsets_len"], device=gpu),
         conv_pool_type,  # live conv
         rec_pool_type,  # live recurrent
         BufferType(DType.float32, [MAX_SLOTS, *RING_ROW_SHAPE], device=gpu),
@@ -182,6 +165,7 @@ def _run(
         live_conv, live_rec, ring, ref_conv, ref_rec = (
             v.buffer for v in graph.inputs[9:]
         )
+        total_rows = qkv_v.shape[0]
 
         # One linear layer here, so each row table is one layer deep, and
         # request ``r`` holds row ``r`` of every pool.
@@ -211,14 +195,14 @@ def _run(
         )
 
         rows, replay_offsets = accepted_row_plan(
-            offsets_v, accepted_v, k_v, Dim(total), gpu
+            offsets_v, accepted_v, k_v, total_rows, gpu
         )
         fold_accepted = accepted_lengths(offsets_v, accepted_v, k_v)
         if replay_full_window:
             rows = ops.range(
                 start=0,
-                stop=Dim(total),
-                out_dim=Dim(total),
+                stop=total_rows,
+                out_dim=total_rows,
                 device=gpu,
                 dtype=DType.int64,
             )
@@ -268,9 +252,53 @@ def _run(
         )
         graph.output()
 
-    device = Accelerator()
-    session = InferenceSession(devices=[device])
-    model = session.load(graph)
+    return InferenceSession(devices=[_device()]).load(graph)
+
+
+def _run(
+    accepted: list[int],
+    *,
+    replay_full_window: bool = False,
+    verify_writes_conv_window: bool = False,
+) -> dict[str, np.ndarray]:
+    """Verifies a window, rolls back, and independently runs the prefix.
+
+    Returns the live and reference pools. ``live`` is what the rollback
+    produced; ``reference`` is what the forward kernels produce over a
+    host-sliced accepted prefix, built without ``accepted_row_plan``, so the
+    two agreeing is not a tautology.
+
+    Args:
+        accepted: Drafts each request accepted.
+        replay_full_window: Roll back onto every verified row instead of the
+            accepted prefix.
+        verify_writes_conv_window: Let the verify write the conv window.
+    """
+    batch = len(accepted)
+    rng = np.random.default_rng(7)
+    total = batch * BLOCK
+    qkv = _rand(rng, total, CONV_DIM)
+    conv_weight = _rand(rng, CONV_DIM, CONV_KERNEL)
+    decay = -np.abs(_rand(rng, total, NUM_V_HEADS))
+    beta = np.abs(_rand(rng, total, NUM_V_HEADS))
+    merged_offsets = np.arange(batch + 1, dtype=np.uint32) * BLOCK
+    slots = np.arange(batch, dtype=np.uint32)
+    init_conv = _rand(rng, MAX_SLOTS, CONV_DIM, CONV_KERNEL - 1)
+    init_rec = _rand(rng, MAX_SLOTS, NUM_V_HEADS, KEY_HEAD_DIM, VALUE_HEAD_DIM)
+
+    # The reference prefix, sliced on the host: rows [0, 1 + accepted) of each
+    # request's window, which is what the step actually commits.
+    keep = [1 + a for a in accepted]
+    ref_rows = np.concatenate(
+        [np.arange(b * BLOCK, b * BLOCK + keep[b]) for b in range(batch)]
+    ).astype(np.int64)
+    ref_offsets = np.concatenate([[0], np.cumsum(keep)]).astype(np.uint32)
+
+    model = _model(
+        replay_full_window=replay_full_window,
+        verify_writes_conv_window=verify_writes_conv_window,
+    )
+    device = _device()
 
     def pool(values: np.ndarray) -> Buffer:
         return Buffer.from_numpy(np.ascontiguousarray(values)).to(device)

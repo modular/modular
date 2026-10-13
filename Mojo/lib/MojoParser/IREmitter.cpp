@@ -177,6 +177,26 @@ PValue IREmitter::emitErrorForDynamicValueInParameter(Location loc,
   return {};
 }
 
+void IREmitter::warnIfTransferIsOnlyBorrowed(ASTExprAnd<AnyValue> value) {
+  MRValue transferred = value.ir.getIfMRValue();
+  if (!transferred || !value.expr)
+    return;
+
+  auto *transfer = dyn_cast<UnaryOpNode>(value.expr->getWithoutParens());
+  if (!transfer || transfer->kind != ExprNode::kTransfer)
+    return;
+
+  if (Value storage =
+          OriginTrackable::findUnderlyingValueFromField(transferred))
+    if (auto varDecl = storage.getDefiningOp<VarDeclOp>();
+        varDecl && varDecl.isSynthetic())
+      return;
+
+  emitWarning(transfer->getLoc()) << "this value is borrowed here, so the "
+                                     "transfer has no effect and can be removed"
+                                  << FixIt::remove(transfer->getLoc());
+}
+
 //===----------------------------------------------------------------------===//
 // Emission helpers for various value classifications.
 
@@ -304,6 +324,7 @@ BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprDest &dest) {
     if (auto pmb = value.ir.getIfPMBValue())
       return pmb;
     // Otherwise decay MLValue/MRValue to MBValue.
+    warnIfTransferIsOnlyBorrowed(value);
     return MBValue(value.ir.getMValueReference());
   }
 
@@ -1804,6 +1825,12 @@ CValue IREmitter::emitInt(ASTExprAnd<AnyValue> indexValue,
   return emitInt(indexValue, dest);
 }
 
+CValue IREmitter::emitInt(int64_t value, llvm::SMLoc loc, ExprContext context) {
+  SyntheticNode expr(loc);
+  auto indexAttr = IntegerAttr::get(IndexType::get(getContext()), value);
+  return emitInt(ASTExprAnd<AnyValue>{PValue(indexAttr), &expr}, context);
+}
+
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
 ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
@@ -1895,11 +1922,12 @@ void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
   // Unfortunately, we don't have a good way to do a lookup given an origin
   // attribute, so we scan the body of the try block for any vardecls. Is this
   // the only thing that can declare an origin?
-  SmallPtrSet<Attribute, 8> originSet;
+  SmallPtrSet<Attribute, 8> roots;
   for (auto o : origins)
-    originSet.insert(OriginType::stripMutCastAndRebind(o));
+    if (ParamDeclRefAttr root = getRootOrigin(o))
+      roots.insert(root);
   tryOp.getTryRegion().walk([&](VarDeclOp varDecl) {
-    if (originSet.contains(varDecl.getType().getOrigin())) {
+    if (roots.contains(varDecl.getType().getOrigin())) {
       auto diag = emitError(loc);
       diag << "inferred error type " << rvalueType << " captures origin ";
       if (varDecl.isSynthetic()) {

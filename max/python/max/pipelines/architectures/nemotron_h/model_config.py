@@ -55,7 +55,7 @@ def build_fp8_quant_config(
 
     Nemotron-H FP8 (modelopt ``quant_algo=FP8``) stores, per quantized Linear,
     an ``F8_E4M3`` weight plus a scalar ``weight_scale`` and ``input_scale``
-    (both fp32) — i.e. per-tensor static activation+weight scaling. Returns
+    (both fp32), that is, per-tensor static activation+weight scaling. Returns
     ``None`` if the checkpoint is not FP8 (no ``weight_scale`` tensors).
 
     The generic ``mlp_quantized_layers`` / ``attn_quantized_layers`` machinery
@@ -121,7 +121,7 @@ def parse_hybrid_pattern(pattern: str) -> list[str]:
     """Map a Nemotron-H ``hybrid_override_pattern`` to per-layer kinds.
 
     ``M`` -> ``"mamba"``, ``*`` -> ``"attention"``, ``-`` -> ``"mlp"``,
-    ``E`` -> ``"moe"`` (the Nemotron-3 MoE hybrids, e.g. 30B-A3B).
+    ``E`` -> ``"moe"`` (the Nemotron-3 MoE hybrids, for example, 30B-A3B).
     """
     kinds: list[str] = []
     for ch in pattern:

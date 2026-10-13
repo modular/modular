@@ -31,3 +31,14 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )
+
+modular_py_test(
+    name = "test_moe_shard",
+    srcs = ["test_moe_shard.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)

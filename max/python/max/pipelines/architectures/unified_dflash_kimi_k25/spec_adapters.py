@@ -97,6 +97,7 @@ class DFlashKimiK25Proposer:
     """The DFlash block draft, sharded and data-parallel."""
 
     samples_from_anchor = False
+    supports_zero_draft_rows = False
 
     def __init__(
         self,

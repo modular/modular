@@ -34,15 +34,12 @@ from layout import (
     TensorEngine,
     ComptimeInt,
     Coord,
-    CoordLike,
     IntTuple,
     Layout,
-    LayoutTensor,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     coord,
-    lt_to_tt,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -57,13 +54,11 @@ from layout.tile_layout import RowMajorLayout, Layout as InternalLayout
 from layout.coord import Coord, DynamicCoord, Idx
 
 from std.collections import OptionalReg
-from std.utils import Index, IndexList
+from std.utils import Index
 from std.utils.coord import dyn_coord
 from std.sys import size_of
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import ceildiv
-
-from max.gpu import thread_idx
 
 
 @inline(.always)
@@ -128,7 +123,7 @@ def create_flat_scale_tma_tile[
     ctx: DeviceContext,
     ptr: UnsafePointer[mut=_, Scalar[dtype], _],
     rows: Int,
-) raises -> TMATensorTile[dtype, 2, Index(1, BOX), Index(1, BOX)]:
+) raises -> TMATensorTile[dtype, coord[1, BOX]]:
     """Builds a flat `1 x rows` TMA descriptor with a `BOX`-wide box.
 
     A TMA descriptor's global strides must be 16-byte multiples, which for a
@@ -159,9 +154,9 @@ def create_flat_scale_tma_tile[
         ),
     )
     return create_tensor_tile[
-        Index(1, BOX),
+        coord[1, BOX],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __desc_shape=Index(1, BOX),
+        __desc_shape=coord[1, BOX],
     ](ctx, scale_tensor)
 
 
@@ -174,7 +169,7 @@ def create_paged_scale_tma_tile[
     total_blocks: Int,
     rows_per_block: Int,
     block_stride: Int,
-) raises -> TMATensorTile[dtype, 2, Index(1, BOX), Index(1, BOX)]:
+) raises -> TMATensorTile[dtype, coord[1, BOX]]:
     """Builds a `total_blocks x rows_per_block` scale descriptor.
 
     The paged counterpart of :func:`create_flat_scale_tma_tile`, and the same
@@ -216,9 +211,9 @@ def create_paged_scale_tma_tile[
         ),
     )
     return create_tensor_tile[
-        Index(1, BOX),
+        coord[1, BOX],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __desc_shape=Index(1, BOX),
+        __desc_shape=coord[1, BOX],
     ](ctx, scale_tensor)
 
 
@@ -231,7 +226,7 @@ def create_flat_kv_tma_tile[
     rows: Int,
     heads: Int,
     depth: Int,
-) raises -> TMATensorTile[dtype, 4, Index(1, BN, 1, BK), Index(1, BN, 1, BK)]:
+) raises -> TMATensorTile[dtype, coord[1, BN, 1, BK]]:
     """Builds the one-block form of the split KV descriptor.
 
     A contiguous or ragged buffer has no blocks, so it declares a single one
@@ -264,9 +259,9 @@ def create_flat_kv_tma_tile[
         ),
     )
     return create_tensor_tile[
-        Index(1, BN, 1, BK),
+        coord[1, BN, 1, BK],
         swizzle_mode=swizzle_mode,
-        __desc_shape=Index(1, BN, 1, BK),
+        __desc_shape=coord[1, BN, 1, BK],
     ](ctx, kv_tensor)
 
 
@@ -295,7 +290,7 @@ def padded_depth[
 
 @inline(.always)
 def _kv_cache_out_slot[
-    drop_list: Tuple, kv_cache_rank: Int, flat_rank: Int, i: Int
+    drop_list: Array[Int, _], kv_cache_rank: Int, flat_rank: Int, i: Int
 ]() -> Int:
     """Returns the output slot that source dimension `i` maps to.
 
@@ -322,7 +317,7 @@ def _kv_cache_out_slot[
 
 @inline(.always)
 def _compute_kv_cache_dynamic_shape_strides[
-    dtype: DType, //, kv_cache_rank: Int, drop_list: Tuple
+    dtype: DType, //, kv_cache_rank: Int, drop_list: Array[Int, _]
 ](blocks: TileTensor[dtype, ...], page_stride: Int = -1) -> Tuple[
     DynamicCoord[.int64, kv_cache_rank],
     DynamicCoord[.int64, kv_cache_rank],
@@ -795,8 +790,8 @@ struct PagedRowIndices[
     @inline(.always)
     def _tma_copy_kv_impl[
         dtype: DType,
-        tile_shape: IndexList[3],
-        desc_shape: IndexList[3],
+        tile_shape: Coord,
+        desc_shape: Coord,
         //,
         *,
         is_k: Bool,
@@ -811,7 +806,7 @@ struct PagedRowIndices[
         row_major: Bool = False,
     ](
         self,
-        tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
+        tma_op: TMATensorTile[dtype, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
             mut=True, Scalar[dtype], _, address_space=.SHARED
         ],
@@ -849,8 +844,10 @@ struct PagedRowIndices[
         `expect_bytes` to the full (non-partial) byte count, since every
         `pages_per_iter * num_depth_chunks` TMA arrives at the mbar.
         """
-        comptime swizzle_gran = desc_shape[2]
-        comptime num_depth_chunks = ceildiv(tile_shape[2], swizzle_gran)
+        comptime swizzle_gran = desc_shape.element_types[2].static_value
+        comptime num_depth_chunks = ceildiv(
+            tile_shape.element_types[2].static_value, swizzle_gran
+        )
 
         comptime tile_rows = (
             (Self.BN // 2 if Self.pair_cta else Self.BN) if is_k else (
@@ -869,7 +866,9 @@ struct PagedRowIndices[
         # transaction count underflows into the next phase, and the consumer's
         # ring accounting desyncs into a hang (SM100 FA4 Layout-E, where the V
         # box row source is a reduction chunk rather than the whole tile).
-        comptime assert tile_shape[0] == tma_per_issue_rows, (
+        comptime assert (
+            tile_shape.element_types[0].static_value == tma_per_issue_rows
+        ), (
             "kv TMA descriptor box rows must equal the issue-site per-issue"
             " rows; a descriptor whose box was not split by page_size was"
             " paired with a page-split issue loop"
@@ -1145,8 +1144,8 @@ struct PagedRowIndices[
     @inline(.always)
     def tma_copy_v[
         dtype: DType,
-        tile_shape: IndexList[3],
-        desc_shape: IndexList[3],
+        tile_shape: Coord,
+        desc_shape: Coord,
         //,
         *,
         needs_partial: Bool,
@@ -1159,7 +1158,7 @@ struct PagedRowIndices[
         row_major: Bool = False,
     ](
         self,
-        tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
+        tma_op: TMATensorTile[dtype, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
             mut=True, Scalar[dtype], _, address_space=.SHARED
         ],
@@ -1248,8 +1247,8 @@ struct PagedRowIndices[
 
         Parameters:
             dtype: The KV element dtype.
-            tile_shape: The 3D TMA tile shape as an `IndexList[3]`.
-            desc_shape: The 3D TMA descriptor shape as an `IndexList[3]`.
+            tile_shape: The 3D TMA tile shape as a `Coord`.
+            desc_shape: The 3D TMA descriptor shape as a `Coord`.
             needs_partial: When `True`, emit a runtime partial-page dispatch
                 that tests `num_valid_pages` against each page slot.
             num_v_sub_tiles: Number of V sub-tiles the `BN` tile is split
@@ -1307,8 +1306,8 @@ struct PagedRowIndices[
     @inline(.always)
     def tma_copy_k[
         dtype: DType,
-        tile_shape: IndexList[3],
-        desc_shape: IndexList[3],
+        tile_shape: Coord,
+        desc_shape: Coord,
         //,
         *,
         needs_partial: Bool,
@@ -1319,7 +1318,7 @@ struct PagedRowIndices[
         row_major: Bool = False,
     ](
         self,
-        tma_op: TMATensorTile[dtype, 3, tile_shape, desc_shape, True],
+        tma_op: TMATensorTile[dtype, tile_shape, desc_shape, True],
         stage_base: UnsafePointer[
             mut=True, Scalar[dtype], _, address_space=.SHARED
         ],
@@ -1387,8 +1386,8 @@ struct PagedRowIndices[
 
         Parameters:
             dtype: The KV element dtype.
-            tile_shape: The 3D TMA tile shape as an `IndexList[3]`.
-            desc_shape: The 3D TMA descriptor shape as an `IndexList[3]`.
+            tile_shape: The 3D TMA tile shape as a `Coord`.
+            desc_shape: The 3D TMA descriptor shape as a `Coord`.
             needs_partial: When `True`, emit a runtime partial-page dispatch
                 that tests `k_num_valid_pages` against each page slot.
             smem_BN: The SMEM depth-chunk stride in rows (defaults to `Self.BN`).
@@ -1622,6 +1621,21 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         """
         ...
 
+    @always_inline
+    def blocks_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+        """Returns the base pointer to the K/V blocks tensor.
+
+        Combined with `get_tma_row`, this lets a caller address a row
+        without a lookup-table indirection: element
+        `(virtual_row, head_idx, head_dim_idx)` sits at
+        `blocks_raw_ptr() + virtual_row * (kv_params.num_heads *
+        kv_params.head_size) + head_idx * kv_params.head_size +
+        head_dim_idx`, where `virtual_row = get_tma_row(encoded_index)`.
+        """
+        ...
+
     @staticmethod
     def max_tile_size() -> Int:
         """Returns the maximum tile size for the KVCache."""
@@ -1744,6 +1758,26 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         ...
 
     @inline(.always)
+    def sparse_tma_row(self, batch_idx: UInt32, logical_index: Int32) -> Int32:
+        """Returns the TMA row of a sparse selection's logical token, or `-1`.
+
+        Default: `row_idx`, with a negative (unused) slot staying `-1`. The
+        `PagedKVCache` override also maps a slot whose page is unallocated to
+        `-1`.
+
+        Args:
+            batch_idx: Batch entry the selection belongs to.
+            logical_index: Token position within the entry, or `-1`.
+
+        Returns:
+            The row `get_tma_row` would return for the slot's physical index,
+            or `-1`.
+        """
+        if logical_index < 0:
+            return -1
+        return Int32(self.row_idx(batch_idx, UInt32(logical_index)))
+
+    @inline(.always)
     def create_paged_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -1751,8 +1785,9 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        pool_row_tokens: Int = 1,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype, 4, Index(1, BN, 1, BK), Index(1, BN, 1, BK)
+        Self.dtype, coord[1, BN, 1, BK]
     ]:
         """Creates the split `(block, row_in_block)` TMA tile for this cache.
 
@@ -1760,7 +1795,11 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         :meth:`kv_tma_coords`. The flat descriptor folds the block into the
         row, and that product spans the whole allocation rather than this
         cache's share of it, so it leaves the signed 32-bit TMA coordinate on
-        a large pool."""
+        a large pool.
+
+        `pool_row_tokens > 1` views each run of that many token rows as one
+        row, for a key spread over consecutive tokens (GLM-5.3-Flash's
+        k-pooled indexer cache). Rows are then keys, not tokens."""
         ...
 
     @inline(.always)
@@ -1775,7 +1814,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        IndexList[3](BN, 1, BK),
+        coord[BN, 1, BK],
         swizzle_mode,
     ]:
         """Creates a TMA tile for this KV cache.
@@ -1793,9 +1832,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         TILE: Int
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.scale_dtype,
-        2,
-        Index(1, flat_scale_window[Self.scale_dtype, TILE]()),
-        Index(1, flat_scale_window[Self.scale_dtype, TILE]()),
+        coord[1, flat_scale_window[Self.scale_dtype, TILE]()],
     ]:
         """Creates a flat TMA descriptor over the SCALE pool.
 
@@ -1815,7 +1852,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         padded_depth: Int,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         DType.bfloat16,
-        IndexList[3](BN, 1, BK),
+        coord[BN, 1, BK],
         swizzle_mode,
     ]:
         """Creates a BF16 TMA tile for the rope portion of the KV cache.
@@ -1839,15 +1876,14 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         tma_dtype,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             tile_height,
             _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-        ),
+        ],
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
@@ -1899,15 +1935,14 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             tile_height,
             _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-        ),
+        ],
     ]:
         """Creates a BF16 gather4 TMA descriptor for the rope portion of the
         KV cache.
@@ -2305,9 +2340,7 @@ struct ContinuousBatchingKVCache[
         TILE: Int
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.scale_dtype,
-        2,
-        Index(1, flat_scale_window[Self.scale_dtype, TILE]()),
-        Index(1, flat_scale_window[Self.scale_dtype, TILE]()),
+        coord[1, flat_scale_window[Self.scale_dtype, TILE]()],
     ]:
         """Not supported: this cache carries no quantization scales."""
         comptime assert False, (
@@ -2323,8 +2356,9 @@ struct ContinuousBatchingKVCache[
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        pool_row_tokens: Int = 1,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype, 4, Index(1, BN, 1, BK), Index(1, BN, 1, BK)
+        Self.dtype, coord[1, BN, 1, BK]
     ]:
         """Builds the split descriptor over this cache's blocks.
 
@@ -2336,6 +2370,8 @@ struct ContinuousBatchingKVCache[
             swizzle_mode: TMA swizzle for the innermost dimension.
             BN: Rows per tile.
             BK: Depth per tile, padded to the swizzle granularity.
+            pool_row_tokens: Must be 1; only a paged cache holds a key spread
+                over token rows.
 
         Args:
             ctx: The CUDA device context used to create the TMA descriptor.
@@ -2346,6 +2382,9 @@ struct ContinuousBatchingKVCache[
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0, "BK must be a multiple of swizzle granularity"
+        comptime assert (
+            pool_row_tokens == 1
+        ), "only a paged cache holds a key spread over token rows"
         var total_blocks = Int(self.blocks.dim[0]())
         var rows_per_block = Int(self.blocks.dim[1]())
         var block_pitch = Int(self.blocks.layout.stride[0]().value())
@@ -2359,9 +2398,9 @@ struct ContinuousBatchingKVCache[
             ),
         )
         return create_tensor_tile[
-            Index(1, BN, 1, BK),
+            coord[1, BN, 1, BK],
             swizzle_mode=swizzle_mode,
-            __desc_shape=Index(1, BN, 1, BK),
+            __desc_shape=coord[1, BN, 1, BK],
         ](ctx, kv_tensor)
 
     @inline(.always)
@@ -2376,7 +2415,7 @@ struct ContinuousBatchingKVCache[
         row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        IndexList[3](BN, 1, BK),
+        coord[BN, 1, BK],
         swizzle_mode,
     ]:
         """Creates a TMA tile for this KV cache.
@@ -2414,12 +2453,10 @@ struct ContinuousBatchingKVCache[
             self.blocks.dim[1]()
         )
 
-        comptime smem_dim = IndexList[3](BN, 1, BK)
-        comptime gmem_dim = IndexList[3](
-            UNKNOWN_VALUE,
-            Self.kv_params.num_heads,
-            Self.kv_params.head_size,
-        )
+        comptime smem_dim = coord[BN, 1, BK]
+        comptime gmem_dim = coord[
+            UNKNOWN_VALUE, Self.kv_params.num_heads, Self.kv_params.head_size
+        ]
         return create_split_tma[
             smem_dim,
             gmem_dim,
@@ -2439,15 +2476,14 @@ struct ContinuousBatchingKVCache[
         l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         tma_dtype,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             tile_height,
             _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-        ),
+        ],
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
@@ -2506,7 +2542,7 @@ struct ContinuousBatchingKVCache[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             DType.bfloat16,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -2535,15 +2571,14 @@ struct ContinuousBatchingKVCache[
         l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             tile_height,
             _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-        ),
+        ],
     ]:
         """Not supported for ContinuousBatchingKVCache."""
         comptime assert False, (
@@ -2646,6 +2681,13 @@ struct ContinuousBatchingKVCache[
         return UnsafePointer[
             Scalar[Self.scale_dtype], MutAnyOrigin
         ].unsafe_dangling()
+
+    @always_inline
+    def blocks_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+        """Returns the base pointer to the blocks tensor."""
+        return self.blocks.ptr.as_unsafe_any_origin()
 
 
 struct PagedKVCache[
@@ -2885,8 +2927,8 @@ struct PagedKVCache[
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.scales = scales
-        if scales_lookup_table:
-            self.scales_lookup_table = scales_lookup_table.value()
+        if case .Some(scales_lookup_table) = scales_lookup_table:
+            self.scales_lookup_table = scales_lookup_table
         else:
             self.scales_lookup_table = self.lookup_table
 
@@ -2922,6 +2964,40 @@ struct PagedKVCache[
         var phys_block, offset = divmod(encoded_index, Int32(Self.page_size))
         var stride = Int32(self._stride())
         return phys_block * stride + offset
+
+    @inline(.always)
+    def sparse_tma_row(self, batch_idx: UInt32, logical_index: Int32) -> Int32:
+        """Returns the TMA row of a sparse selection's logical token, or `-1`.
+
+        A slot is `-1` when it is unused (negative), when its page lies past
+        the lookup table, or when the page is unallocated (the table holds the
+        `total_num_pages` sentinel, which is at least `blocks.dim[0]`).
+
+        Args:
+            batch_idx: Batch entry the selection belongs to.
+            logical_index: Token position within the entry, or `-1`.
+
+        Returns:
+            `get_tma_row(physical_block * page_size + offset)`, or `-1`.
+        """
+        # Branch-free: an invalid slot loads entry (0, 0) and is discarded, so
+        # a caller converting several slots issues all the table loads before
+        # waiting on any. A branch on each loaded block serialized them.
+        var lut_rows = Int(self.lookup_table.dim[0]())
+        var lut_cols = Int(self.lookup_table.dim[1]())
+        debug_assert(
+            lut_rows > 0 and lut_cols > 0, "sparse_tma_row: empty lookup table"
+        )
+        var page, offset = divmod(Int(logical_index), Self.page_size)
+        var in_table = (
+            logical_index >= 0 and page < lut_cols and Int(batch_idx) < lut_rows
+        )
+        var block = self.lookup_table.load[width=1](
+            Coord(Int(batch_idx) if in_table else 0, page if in_table else 0)
+        )[0]
+        var valid = in_table and Int(block) < Int(self.blocks.dim[0]())
+        var row = Int32(block) * Int32(self._stride()) + Int32(offset)
+        return row if valid else -1
 
     @inline(.always)
     def num_kv_rows(self) -> Int:
@@ -3280,7 +3356,7 @@ struct PagedKVCache[
         row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        IndexList[3](BN, 1, BK),
+        coord[BN, 1, BK],
         swizzle_mode,
     ]:
         """Creates a TMA tile for this KV cache."""
@@ -3317,12 +3393,10 @@ struct PagedKVCache[
                 t" coordinate. Lower --max-batch-size, or split this descriptor"
                 t" into (block, row_in_block) as the scale pool already is."
             )
-        comptime smem_dim = IndexList[3](BN, 1, BK)
-        comptime gmem_dim = IndexList[3](
-            UNKNOWN_VALUE,
-            Self.kv_params.num_heads,
-            Self.kv_params.head_size,
-        )
+        comptime smem_dim = coord[BN, 1, BK]
+        comptime gmem_dim = coord[
+            UNKNOWN_VALUE, Self.kv_params.num_heads, Self.kv_params.head_size
+        ]
         return create_split_tma[
             smem_dim,
             gmem_dim,
@@ -3339,11 +3413,9 @@ struct PagedKVCache[
         BK: Int = padded_depth[
             Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
+        pool_row_tokens: Int = 1,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype,
-        4,
-        Index(1, BN, 1, BK),
-        Index(1, BN, 1, BK),
+        Self.dtype, coord[1, BN, 1, BK]
     ]:
         """Builds a `total_blocks x page_size x heads x depth` KV descriptor.
 
@@ -3369,6 +3441,10 @@ struct PagedKVCache[
             swizzle_mode: TMA swizzle for the innermost dimension.
             BN: Rows per tile.
             BK: Depth per tile, padded to the swizzle granularity.
+            pool_row_tokens: Token rows that make up one descriptor row. A
+                key spread over that many consecutive tokens is contiguous,
+                because a page's rows are, so the descriptor reads it as one
+                `pool_row_tokens * head_size`-wide row.
 
         Args:
             ctx: Device context used to create the TMA descriptor.
@@ -3386,21 +3462,29 @@ struct PagedKVCache[
         # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads,
         # head_size], subset at kv and layer, so `blocks.ptr` already carries
         # this layer's offset and `stride[0]` is the whole per-block pitch.
+        comptime assert pool_row_tokens == 1 or (
+            Self.kv_params.num_heads == 1
+            and Self.page_size % pool_row_tokens == 0
+        ), (
+            "a pooled row is contiguous only with one head and whole pools per"
+            " page"
+        )
         var total_blocks = Int(self.blocks.dim[0]())
         var block_pitch = Int(self.blocks.layout.stride[0]().value())
         comptime heads = Self.kv_params.num_heads
-        comptime depth = Self.kv_params.head_size
+        comptime depth = Self.kv_params.head_size * pool_row_tokens
+        comptime rows = Self.page_size // pool_row_tokens
         var kv_tensor = TileTensor(
             self.blocks.ptr,
             InternalLayout(
-                Coord(total_blocks, Self.page_size, heads, depth),
+                Coord(total_blocks, rows, heads, depth),
                 Coord(block_pitch, heads * depth, depth, Idx[1]),
             ),
         )
         return create_tensor_tile[
-            Index(1, BN, 1, BK),
+            coord[1, BN, 1, BK],
             swizzle_mode=swizzle_mode,
-            __desc_shape=Index(1, BN, 1, BK),
+            __desc_shape=coord[1, BN, 1, BK],
         ](ctx, kv_tensor)
 
     @inline(.always)
@@ -3408,9 +3492,7 @@ struct PagedKVCache[
         TILE: Int
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.scale_dtype,
-        2,
-        Index(1, flat_scale_window[Self.scale_dtype, TILE]()),
-        Index(1, flat_scale_window[Self.scale_dtype, TILE]()),
+        coord[1, flat_scale_window[Self.scale_dtype, TILE]()],
     ]:
         """Creates a flat TMA descriptor over the scale pool."""
         comptime assert (
@@ -3471,15 +3553,14 @@ struct PagedKVCache[
         l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         tma_dtype,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             tile_height,
             _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-        ),
+        ],
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
 
@@ -3538,7 +3619,7 @@ struct PagedKVCache[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             DType.bfloat16,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -3570,12 +3651,10 @@ struct PagedKVCache[
         # Offset past the FP8 content to reach the BF16 rope data,
         # then reinterpret the pointer as BF16.
         var rope_ptr = (self.blocks.ptr + padded_depth).bitcast[BFloat16]()
-        comptime smem_dim = IndexList[3](BN, 1, BK)
-        comptime gmem_dim = IndexList[3](
-            UNKNOWN_VALUE,
-            Self.kv_params.num_heads,
-            bf16_row_stride,
-        )
+        comptime smem_dim = coord[BN, 1, BK]
+        comptime gmem_dim = coord[
+            UNKNOWN_VALUE, Self.kv_params.num_heads, bf16_row_stride
+        ]
         tma = create_split_tma[smem_dim, gmem_dim, swizzle_mode](
             ctx, rope_ptr, rows
         )
@@ -3590,15 +3669,14 @@ struct PagedKVCache[
         l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             tile_height,
             _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-        ),
+        ],
     ]:
         """Creates a BF16 gather4 TMA descriptor for the rope portion of the
         KV cache.
@@ -4016,6 +4094,13 @@ struct PagedKVCache[
             Scalar[Self.scale_dtype], MutAnyOrigin
         ].unsafe_dangling()
 
+    @always_inline
+    def blocks_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+        """Returns the base pointer to the blocks tensor."""
+        return self.blocks.ptr.as_unsafe_any_origin()
+
 
 trait KVCollectionT(ImplicitlyCopyable):
     """Trait for a pair of caches (keys and values)."""
@@ -4059,8 +4144,9 @@ struct ContinuousBatchingKVCacheCollection[
     comptime name_str = "continuous_batching"
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
-    # A `LayoutTensor` is a bare pointer, so a collection built at the MOGG
-    # boundary is always raw-pointer backed.
+    # Collections at the MOGG boundary retain raw-pointer-backed DefaultEngine
+    # views, not owning DeviceBuffers. The runtime keeps buffers alive externally;
+    # those keepalives need not become DevicePassable collection fields.
     comptime CacheType = ContinuousBatchingKVCache[
         Self.dtype,
         Self.kv_params,
@@ -4117,35 +4203,6 @@ struct ContinuousBatchingKVCacheCollection[
 
     def __init__(
         out self,
-        blocks: LayoutTensor[
-            Self.dtype, Layout.row_major[6](), Self.blocks_origin
-        ],
-        cache_lengths: LayoutTensor[
-            .uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
-        ],
-        lookup_table: LayoutTensor[
-            .uint32, Layout(UNKNOWN_VALUE), Self.lookup_table_origin
-        ],
-        max_seq_length: UInt32,
-        max_cache_length: UInt32,
-    ):
-        """Construct from LayoutTensor params (MOGG boundary)."""
-        comptime assert blocks.rank == 6
-        self.blocks = lt_to_tt[ResultLayout=Self.blocks_tt_layout](blocks)
-        self.cache_lengths = lt_to_tt[
-            ResultLayout=Self.CacheType.cache_lengths_tt_layout
-        ](cache_lengths)
-        self.lookup_table = lt_to_tt[
-            ResultLayout=Self.CacheType.lookup_table_tt_layout
-        ](lookup_table)
-        self.max_seq_length = max_seq_length
-        self.max_cache_length = max_cache_length
-        self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
-        )
-
-    def __init__(
-        out self,
         blocks: TileTensor[
             Self.dtype, _, Self.blocks_origin, linear_idx_type=_
         ],
@@ -4174,7 +4231,7 @@ struct ContinuousBatchingKVCacheCollection[
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
+            _compute_kv_cache_dynamic_shape_strides[4, [1, 2]](self.blocks)
         )
 
     @inline(.always)
@@ -4261,8 +4318,9 @@ struct PagedKVCacheCollection[
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
     comptime scale_dtype = Self.scale_dtype_.or_else(Self.dtype_)
-    # A `LayoutTensor` is a bare pointer, so a collection built at the MOGG
-    # boundary is always raw-pointer backed.
+    # Collections at the MOGG boundary retain raw-pointer-backed DefaultEngine
+    # views, not owning DeviceBuffers. The runtime keeps buffers alive externally;
+    # those keepalives need not become DevicePassable collection fields.
     comptime CacheType = PagedKVCache[
         Self.dtype,
         Self.kv_params,
@@ -4377,101 +4435,6 @@ struct PagedKVCacheCollection[
     var kv_cache_dynamic_shape: DynamicCoord[.int64, 4]
     var kv_cache_dynamic_strides: DynamicCoord[.int64, 4]
 
-    def __init__[
-        scales_dtype: DType = Self.scale_dtype
-    ](
-        out self,
-        blocks: LayoutTensor[
-            Self.dtype, Layout.row_major[6](), Self.blocks_origin
-        ],
-        cache_lengths: LayoutTensor[
-            .uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
-        ],
-        lookup_table: LayoutTensor[
-            .uint32, Layout.row_major[2](), Self.lookup_table_origin
-        ],
-        max_seq_length: UInt32,
-        max_cache_length: UInt32,
-        # `scales_dtype` is inferred from the `scales` argument's element type;
-        # it is definitionally equal to `Self.scale_dtype` but the compiler
-        # cannot fold the derived alias through the arg->param conversion, so
-        # the free parameter lets any caller pass a real scales tensor and the
-        # body rebinds to the (equal) field type. Remove once MOCO-4337 is
-        # fixed.
-        scales: OptionalReg[
-            LayoutTensor[
-                scales_dtype, Layout.row_major[6](), Self.scales_origin
-            ]
-        ] = OptionalReg[
-            LayoutTensor[
-                scales_dtype, Layout.row_major[6](), MutUntrackedOrigin
-            ]
-        ](),
-        # Distinct LUT for scales pages. When absent, scales reuse
-        # `lookup_table` (values/scales share one block-id space today).
-        scales_lookup_table: OptionalReg[
-            LayoutTensor[
-                .uint32, Layout.row_major[2](), Self.lookup_table_origin
-            ]
-        ] = None,
-        # Distance in elements from one page to the next, or -1 for the packed
-        # distance implied by `blocks`. See the field of the same name.
-        page_stride: Int = -1,
-        # The same distance for `scales`, which is its own pool leaf and so
-        # pads independently of the values.
-        scales_page_stride: Int = -1,
-    ):
-        """Construct from LayoutTensor params (MOGG boundary)."""
-        comptime assert blocks.rank == 6
-        comptime assert (
-            scales_dtype == Self.scale_dtype
-        ), "scales element dtype must match the collection's scale_dtype"
-        self.blocks = lt_to_tt[ResultLayout=Self.blocks_tt_layout](blocks)
-        self.cache_lengths = lt_to_tt[
-            ResultLayout=Self.CacheType.cache_lengths_tt_layout
-        ](cache_lengths)
-        self.lookup_table = lt_to_tt[
-            ResultLayout=Self.CacheType.lookup_table_tt_layout
-        ](lookup_table)
-        # Scales resolve their page through their own LUT when one is provided;
-        # otherwise they reuse the values LUT (shared block-id space).
-        if scales_lookup_table:
-            self.scales_lookup_table = lt_to_tt[
-                ResultLayout=Self.CacheType.lookup_table_tt_layout
-            ](scales_lookup_table.value())
-        else:
-            self.scales_lookup_table = self.lookup_table
-        self.max_seq_length = max_seq_length
-        self.max_cache_length = max_cache_length
-        self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](
-                self.blocks, page_stride
-            )
-        )
-        if scales is not None:
-            # `scales_dtype == Self.scale_dtype` (asserted above); rebind the
-            # syntactically-distinct-but-equal element type for the field store.
-            self.scales = lt_to_tt[ResultLayout=Self.scales_tt_layout](
-                rebind[
-                    LayoutTensor[
-                        Self.scale_dtype,
-                        Layout.row_major[6](),
-                        Self.scales_origin,
-                    ]
-                ](scales.value())
-            )
-            self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
-                4, (1, 2)
-            ](
-                self.scales.value(), scales_page_stride
-            )
-        else:
-            self.scales = None
-            self.kv_cache_scales_dynamic_shape = DynamicCoord[.int64, 4]()
-            self.kv_cache_scales_dynamic_strides = DynamicCoord[
-                DType.int64, 4
-            ]()
-
     def __init__(
         out self,
         blocks: TileTensor[
@@ -4509,23 +4472,23 @@ struct PagedKVCacheCollection[
             Self.CacheType.lookup_table_tt_layout,
             Self.CacheType.lookup_table_tt_type.Engine,
         ](lookup_table)
-        if scales_lookup_table:
-            self.scales_lookup_table = scales_lookup_table.value()
+        if case .Some(scales_lookup_table) = scales_lookup_table:
+            self.scales_lookup_table = scales_lookup_table
         else:
             self.scales_lookup_table = self.lookup_table
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](
+            _compute_kv_cache_dynamic_shape_strides[4, [1, 2]](
                 self.blocks, page_stride
             )
         )
-        if scales is not None:
-            self.scales = scales.value()
+        if case .Some(scales) = scales:
+            self.scales = scales
             self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
-                4, (1, 2)
+                4, [1, 2]
             ](
-                self.scales.value(), scales_page_stride
+                scales, scales_page_stride
             )
         else:
             self.scales = None
@@ -4622,17 +4585,15 @@ struct PagedKVCacheCollection[
 
         var scales_tt: OptionalReg[Self.CacheType.scales_tt_type] = None
         comptime if Self.CacheType.quantization_enabled:
-            if self.scales is not None:
-                var scale_offset = Int(
-                    self.scales.value().layout(kv_layer_coord)
-                )
+            if case .Some(scales) = self.scales:
+                var scale_offset = Int(scales.layout(kv_layer_coord))
                 scales_tt = _make_cache_tt[
                     Self.CacheType.scale_dtype,
                     Self.CacheType.scales_tt_layout,
                     4,
                     Engine=Self.CacheType.scales_engine,
                 ](
-                    self.scales.value().ptr + scale_offset,
+                    scales.ptr + scale_offset,
                     self.kv_cache_scales_dynamic_shape,
                     self.kv_cache_scales_dynamic_strides,
                 )

@@ -196,7 +196,7 @@ def test_unified_dspark_graph_compiles(
         draft=draft_config,
         draft_kv_params=draft_kv_params,
         speculative_config=SpeculativeConfig(
-            speculative_method="dflash",
+            speculative_method="dspark",
             num_speculative_tokens=BLOCK_SIZE,
         ),
         target_layer_ids=list(TARGET_LAYER_IDS),

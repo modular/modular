@@ -25,8 +25,7 @@ cta_group 1) and layout B (cta_group 2).
 test_matmul_sm100_partial_n_tile_epilogue covers the compute-lambda path.
 """
 
-from std.collections import Optional
-from std.sys import align_of, size_of
+from std.sys import size_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
@@ -39,7 +38,6 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from linalg.utils import elementwise_epilogue_type
 import linalg.matmul.vendor.blas as vendor_blas
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -107,16 +105,11 @@ def test_transposed_epilogue_row_straddle[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_tensor)
     def store_epilogue[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor.store[width=width](Coord(idx), val.cast[c_type]())
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c_tensor.store[width=width](idx, val.cast[c_type]())
 
     seed(1234)
     rand(a_host.as_span())
@@ -142,15 +135,16 @@ def test_transposed_epilogue_row_straddle[
         AB_swapped=swapAB,
     )
 
-    comptime optional_lambda_fn = Optional[elementwise_epilogue_type](
-        store_epilogue
-    )
-
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        elementwise_lambda_fn=optional_lambda_fn,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+    ](
+        IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+        a_tensor,
+        b_tensor,
+        store_epilogue,
+        ctx,
+    )
 
     vendor_blas.matmul(
         ctx,

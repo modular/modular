@@ -90,7 +90,7 @@ modular_py_test(
             "test_hadamard_transform.py",
             # Construction-only smoke; runs on CPU (own target below).
             "test_mla_prefill_decode_graph_construction.py",
-            # Device-independent arithmetic; runs on CPU (own target below).
+            # Own target below.
             "test_indexer_prefix_sum.py",
         ],
     ),
@@ -105,12 +105,10 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
-    # Graph-compile-heavy MLA test files spread across shards so the
-    # compiles run in parallel on CI workers (unsharded they exceed the
-    # 900s "large" timeout).
-    per_test_shard_count = {
-        # Each sparse decode test compiles its own graph (~120-220s under CI
-        # contention); shard so those compiles run in parallel.
+    precompile_mefs = True,
+    # Each sparse decode test compiles its own graphs (~120-220s each), so
+    # split those CPU record actions to compile in parallel.
+    precompile_shards = {
         "test_mla_sparse_decode_graph_gpu.py": 5,
     },
     tags = [
@@ -157,17 +155,18 @@ modular_py_test(
     ],
 )
 
-# The prefix sum the pooled-key cache derives its row offsets from is plain
-# integer arithmetic over graph ops, so this compiles and executes on CPU.
+# The prefix sum the pooled-key cache derives its row offsets from. Its cases
+# run on both CPU and GPU, so the target lands on a GPU worker to cover both.
 modular_py_test(
     name = "test_indexer_prefix_sum",
     size = "medium",
     srcs = ["test_indexer_prefix_sum.py"],
-    imports = ["."],
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

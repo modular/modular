@@ -15,7 +15,7 @@
 The list is intrusive -- the links live on the blocks themselves -- so its
 bookkeeping can drift out of step with the links it maintains. Every test here
 walks the links and compares them against what the queue reports, which is the
-guarantee its callers (``BlockPool``, ``JengaBlockPool``) take for granted.
+guarantee its caller (``BlockPool``) takes for granted.
 """
 
 from __future__ import annotations

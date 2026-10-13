@@ -109,7 +109,7 @@ class UnifiedDSparkGemma4_12BInputs(UnifiedSpecDecodeInputs):
 class UnifiedDSparkGemma4_12BModel(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedDSparkGemma4_12BConfig],
 ):
     """Unified DSpark Gemma4: target + draft in one compiled graph."""
 
@@ -259,10 +259,9 @@ class UnifiedDSparkGemma4_12BModel(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedDSparkGemma4_12BConfig,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDSparkGemma4_12BConfig)
 
         nn_model = UnifiedDSparkGemma4_12BModule(model_config)
 

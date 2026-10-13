@@ -14,7 +14,6 @@
 
 from std.sys import size_of, CompilationTarget
 from std.sys.info import _TargetType
-from std.builtin.rebind import downcast
 from std.collections.array import Array
 from std.reflection import reflect
 from std.utils.static_tuple import StaticTuple, _StaticTupleTraits

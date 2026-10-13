@@ -13,11 +13,7 @@
 
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from std.random import rand
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,

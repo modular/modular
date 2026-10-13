@@ -11,10 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import std.os
 from std.os.env import getenv, setenv
 from std.os.path import expanduser, join
-from std.sys.info import CompilationTarget
 
 from std.testing import TestSuite, assert_equal
 

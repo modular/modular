@@ -161,7 +161,7 @@ def _handle_import_error(
 
     Args:
         e: The raised error
-        subcommand: The subcommand that was run (i.e. "serve" for `max serve`)
+        subcommand: The subcommand that was run (that is, "serve" for `max serve`)
         suggestion: Which package to install, first item is when using conda, second is for wheels.
     """
 

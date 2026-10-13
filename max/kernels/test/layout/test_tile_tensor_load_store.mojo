@@ -24,12 +24,9 @@ from std.testing import assert_false, assert_true, TestSuite
 
 from layout import (
     ComptimeInt,
-    CoordLike,
-    Idx,
     RowMajorLayout,
     TileTensor,
     coord,
-    row_major,
 )
 
 # Target SM80 (Ampere) explicitly so the test cross-compiles to NVIDIA PTX

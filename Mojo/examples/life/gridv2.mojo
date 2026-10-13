@@ -57,8 +57,8 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
 
     @staticmethod
     def random(seed: Optional[Int] = None) -> Self:
-        if seed:
-            random.seed(seed.value())
+        if case .Some(seed) = seed:
+            random.seed(seed)
         else:
             random.seed()
 

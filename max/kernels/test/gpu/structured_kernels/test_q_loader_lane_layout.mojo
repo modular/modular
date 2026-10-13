@@ -34,10 +34,8 @@ fragment matches the contiguous formula
 `frag[f] == (lid // 32) * 32 / 8 + f / 8` for `f in [0, 32)`.
 """
 
-from max.gpu import lane_id, thread_idx
-from max.gpu.sync import barrier
+from max.gpu import lane_id
 from max.gpu.host import DeviceContext
-from std.memory import AddressSpace
 from std.testing import assert_equal
 
 from layout import TileTensor

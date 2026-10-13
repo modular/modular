@@ -14,7 +14,7 @@
 from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from layout._fillers import random
 from state_space.selective_scan import (
     mamba_split_conv1d_scan_combined_cpu,

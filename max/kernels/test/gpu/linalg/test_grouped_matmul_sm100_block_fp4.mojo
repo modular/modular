@@ -42,7 +42,7 @@ from std.simd import (
     _convert_f32_to_float8_scalar,
     _convert_f32_to_float8_ue8m0,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 

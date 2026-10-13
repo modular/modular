@@ -19,7 +19,7 @@ matmul kernel with a compute epilogue that fuses the scale multiply in-register
 """
 
 from std.collections import Optional
-from std.math import ceildiv, rsqrt
+from std.math import rsqrt
 from std.sys import (
     align_of,
     get_defined_bool,
@@ -45,9 +45,6 @@ from linalg.utils import elementwise_compute_lambda_type
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from nn.softmax import softmax_inline
-
-
-from std.utils.index import Index, IndexList
 
 
 # ---------------------------------------------------------------------------
@@ -398,9 +395,8 @@ def bench_manual[
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val * scale.cast[_dtype]()
 
     comptime scale_fn = Optional[elementwise_compute_lambda_type](

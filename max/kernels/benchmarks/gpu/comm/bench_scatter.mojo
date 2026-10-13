@@ -21,7 +21,7 @@ Focus is on small sizes typical of row_offsets distribution.
 
 from std.collections import Array
 from std.math import ceildiv
-from std.sys import size_of, simd_width_of
+from std.sys import size_of
 from std.sys.defines import get_defined_bool, get_defined_dtype, get_defined_int
 
 from std.benchmark import (
@@ -37,7 +37,7 @@ from max.benchmark import (
 )
 from comm.sync import enable_p2p
 from comm.scatter import scatter
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer

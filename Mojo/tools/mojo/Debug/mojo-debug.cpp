@@ -13,7 +13,7 @@
 
 #include "mojo-debug.h"
 #if MOJO_COMPILER_ACCELERATOR_SUPPORT
-#include "../Common/internal/CudaGdb.h"
+#include "../Common/max_license/CudaGdb.h"
 #endif
 #include "../Common/LLDB.h"
 #include "Init/Init.h"
@@ -28,10 +28,8 @@ using namespace M;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct DebugOptTable : public llvm::opt::PrecomputedOptTable {
-  DebugOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct DebugOptTable : public llvm::opt::OptTable {
+  DebugOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 } // namespace
 

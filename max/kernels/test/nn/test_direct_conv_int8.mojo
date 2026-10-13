@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, isclose
 from std.random import rand
-from std.sys.info import num_physical_cores, simd_width_of
+from std.sys.info import simd_width_of
 
 from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
@@ -24,8 +24,6 @@ from nn.conv.conv import (
 )
 from nn.conv.conv_utils import (
     ConvShape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )

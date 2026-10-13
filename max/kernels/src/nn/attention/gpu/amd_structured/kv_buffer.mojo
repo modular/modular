@@ -34,18 +34,15 @@ TileTensor is used throughout:
 
 from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
-from std.sys import simd_width_of, llvm_intrinsic
+from std.sys import simd_width_of
 from max.gpu import WARP_SIZE, lane_id
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
-    Layout,
     MixedLayout,
     TensorLayout,
     TileTensor,
-    DefaultEngine,
 )
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
@@ -1185,9 +1182,8 @@ struct DecodeStreamingKVBuffer[
             # only a scalar `element_size` and loses the element-layout
             # stride, so a subsequent `distribute` emits a contiguous
             # `load[width=simd]` that reads the wrong bytes on a strided
-            # tile. LayoutTensor's `vectorize` preserves the element
-            # layout via `zipped_divide` and iterates element-by-element
-            # in `copy_from`, which is why the LayoutTensor path works.
+            # tile. Preserve the strided element addressing with the
+            # explicit scalar loads below instead of vectorizing this view.
             #
             # The MFMA B non-transpose layout is BLOCK-distributed:
             # lane (tr, tc) with tr = lane // MMA_N, tc = lane % MMA_N

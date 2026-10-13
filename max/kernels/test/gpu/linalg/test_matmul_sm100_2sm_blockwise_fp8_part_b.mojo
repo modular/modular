@@ -20,7 +20,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc, unsafe_memset_zero
+from std.memory import unsafe_memset_zero
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -29,7 +29,6 @@ from std.random import rand
 from internal_utils._measure import relative_difference
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -198,7 +197,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    # LayoutTensors for reference matmul
+    # TileTensors for reference matmul
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(

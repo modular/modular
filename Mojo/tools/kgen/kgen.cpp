@@ -865,6 +865,8 @@ int main(int argc, char **argv) {
   registerAsmPrinterCLOptions();
   registerDefaultTimingManagerCLOptions();
   KGEN::registerDefaultKGENPasses("kgen");
+  // Passes contributed by whichever backend plugins this build links.
+  KGEN::TargetTraitsRegistry::get().registerAllPasses();
   registerPassManagerCLOptions();
   KGEN::initializeDebugOptions();
   KGEN::KGENPassCLOptions::registerOptions();

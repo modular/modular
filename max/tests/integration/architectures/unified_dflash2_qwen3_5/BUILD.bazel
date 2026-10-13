@@ -72,6 +72,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
@@ -132,6 +133,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max:tree",

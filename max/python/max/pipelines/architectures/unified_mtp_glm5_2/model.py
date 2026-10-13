@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, fields, replace
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Protocol
 
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
@@ -24,7 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer
+from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
@@ -49,6 +49,13 @@ from .unified_mtp_glm5_2 import UnifiedMTPGlm5_2
 logger = logging.getLogger("max.pipelines")
 
 
+class _TargetConfig(Protocol):
+    """What the MTP setup reads from a graph-API or ModuleV3 target config."""
+
+    ep_config: EPConfig | None
+    n_shared_experts: int
+
+
 def _subtree_quantized(
     draft_state_dict: dict[str, WeightData], subtree: str
 ) -> bool:
@@ -56,11 +63,10 @@ def _subtree_quantized(
 
     A projection is quantized iff the checkpoint provides a ``weight_scale``
     companion for it. Used to detect the MTP layer's per-subtree quantization
-    (e.g. NVFP4 leaves the whole MTP layer in bf16, with no scales).
+    (for example, NVFP4 leaves the whole MTP layer in bf16, with no scales).
     """
     return any(
-        subtree in key and key.endswith(".weight_scale")
-        for key in draft_state_dict
+        subtree in key and ".weight_scale" in key for key in draft_state_dict
     )
 
 
@@ -140,8 +146,28 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
         if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
             raise ValueError("Only the EP strategy is supported.")
 
-        # Build the nested {target: {mla, indexer}, draft: {mla, indexer}}
-        # KV tree. The draft caches store a single layer.
+        self._finish_mtp_config(config)
+        return config
+
+    def _finish_mtp_config(self, config: _TargetConfig) -> None:
+        """Builds the draft config and the nested target/draft KV tree."""
+        draft_kv = self._split_mtp_kv_params()
+        draft_config = self._create_draft_config(
+            self._draft_state_dict, draft_kv
+        )
+
+        if draft_config.ep_config is not None and config.ep_config is not None:
+            draft_config.ep_config.node_id = config.ep_config.node_id
+
+        draft_config.return_hidden_states = ReturnHiddenStates.LAST
+        self._draft_config = draft_config
+
+    def _split_mtp_kv_params(self) -> MultiKVCacheParams:
+        """Nests the target's KV tree beside a single-layer draft tree.
+
+        Sets :attr:`kv_params` to ``{target: {mla, indexer}, draft: {mla,
+        indexer}}`` and returns the draft's tree.
+        """
         assert isinstance(self.kv_params, MultiKVCacheParams)
         target_kv = self.kv_params
         target_mla_params = target_kv.children["mla"]
@@ -154,21 +180,10 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
                 "indexer": replace(target_indexer_params, num_layers=1),
             }
         )
-
-        draft_config = self._create_draft_config(
-            self._draft_state_dict, draft_kv
-        )
-
-        if draft_config.ep_config is not None and config.ep_config is not None:
-            draft_config.ep_config.node_id = config.ep_config.node_id
-
         self.kv_params = MultiKVCacheParams.from_params(
             {"target": target_kv, "draft": draft_kv}
         )
-
-        draft_config.return_hidden_states = ReturnHiddenStates.LAST
-        self._draft_config = draft_config
-        return config
+        return draft_kv
 
     @override
     def _init_distributed_runtime(
@@ -176,11 +191,12 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
         session: InferenceSession,
         model_config: Any,
     ) -> None:
-        assert isinstance(model_config, DeepseekV3_2Config)
+        # A graph-API or ModuleV3 target config.
+        config: _TargetConfig = model_config
         self.ep_comm_initializer = None
         self.draft_ep_comm_initializer = None
 
-        if model_config.ep_config is None or is_virtual_device_mode():
+        if config.ep_config is None or is_virtual_device_mode():
             return
 
         # NVFP4 leaves the MTP layer's routed experts in bf16 (no
@@ -191,20 +207,20 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             self._draft_state_dict, ".mlp.experts."
         )
 
-        ep_alloc_config = model_config.ep_config
+        ep_alloc_config = config.ep_config
         if draft_moe_dispatches_bf16:
             ep_alloc_config = replace(
-                model_config.ep_config,
+                config.ep_config,
                 dispatch_dtype=DType.bfloat16,
                 dispatch_quant_config=None,
-                fused_shared_expert=model_config.n_shared_experts == 1,
+                fused_shared_expert=config.n_shared_experts == 1,
             )
             logger.info("Upsizing shared EP buffers for bf16 draft dispatch.")
 
         self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
         self.ep_comm_initializer.ep_init(session)
-        model_config.ep_config.node_id = ep_alloc_config.node_id
-        if model_config.ep_config.node_id == -1:
+        config.ep_config.node_id = ep_alloc_config.node_id
+        if config.ep_config.node_id == -1:
             raise ValueError(
                 "EP node ID is not set. Please check if the EP "
                 "initialization is successful."

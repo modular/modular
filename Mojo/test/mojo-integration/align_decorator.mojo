@@ -440,9 +440,9 @@ def test_optional_alignment() raises:
 
     # Verify we can access the value correctly
     assert_equal(container.other, 99, "other field should have value 99")
-    if container.opt:
+    if case .Some(opt) = container.opt:
         assert_equal(
-            container.opt.value().value,
+            opt.value,
             42,
             "opt.value().value should be 42",
         )

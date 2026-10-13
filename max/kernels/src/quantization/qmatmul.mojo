@@ -49,8 +49,6 @@ from std.memory.alloc import Alignment, Layout as AllocLayout
 
 from max.runtime.asyncrt import parallelism_level
 
-from std.utils.index import Index
-
 from ._utils import roundeven_to_int32
 
 comptime K_BATCH_SIZE = 512
@@ -995,7 +993,7 @@ def _matmul_qint4_m_1[
         ...,
     ],
     c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime assert a_quant.rank == 2
     comptime assert a_scale.rank == 2
@@ -1050,14 +1048,10 @@ def _matmul_qint4_m_1[
 
             c_float.store(c.ptr.unsafe_offset(c.layout(Coord(Idx[0], n))), N)
 
-            comptime if elementwise_lambda_fn:
-                comptime func = elementwise_lambda_fn.value()
-
+            comptime if case .Some(func) = elementwise_lambda_fn:
                 comptime for nn in range(tile_n):
                     var val = c_float[0, nn]
-                    func[.float32, simd_width](
-                        Index(0, n + nn * simd_width), val
-                    )
+                    func[.float32, simd_width]((0, n + nn * simd_width), val)
 
         tile[[2, 1]](0, ceildiv(task_n_count, simd_width), process_cols)
 
@@ -1081,7 +1075,7 @@ def _matmul_qint4_m_any[
         ...,
     ],
     c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = align_of[SIMD[.float32, simd_width]]()
@@ -1211,18 +1205,12 @@ def _matmul_qint4_m_any[
                     # otherwise we give intermediate results.
                     var last_k_iter = ceildiv(K, K_BATCH_SIZE) - 1
                     if ko == last_k_iter * K_BATCH_SIZE:
-                        comptime if elementwise_lambda_fn:
-                            comptime func = elementwise_lambda_fn.value()
-
+                        comptime if case .Some(func) = elementwise_lambda_fn:
                             comptime for mm in range(tile_m):
                                 comptime for nn in range(tile_n):
                                     var val = c_float[mm, nn]
                                     func[.float32, simd_width](
-                                        Index(
-                                            m + mm,
-                                            n + nn * simd_width,
-                                        ),
-                                        val,
+                                        (m + mm, n + nn * simd_width), val
                                     )
 
                 tile[[4, 2, 1]](0, M, process_rows)
@@ -1247,7 +1235,7 @@ def _matmul_qint4[
         ...,
     ],
     c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = Alignment.of[SIMD[.float32, simd_width]]()
@@ -1294,7 +1282,7 @@ def matmul_qint4[
     a: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes a matrix multiply of a float32 A matrix against block-wise
     quantized int4 B weights, producing a float32 result.

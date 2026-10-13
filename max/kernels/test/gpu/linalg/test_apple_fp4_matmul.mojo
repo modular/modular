@@ -64,7 +64,6 @@ from linalg.matmul.gpu.apple import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
 from std.math import ceildiv
 from linalg.matmul.gpu.apple.fp4_matmul import (
-    _enqueue_apple_fp4_materialize_dense,
     _launch_apple_fp4_matmul,
     enqueue_apple_fp4_matmul,
 )

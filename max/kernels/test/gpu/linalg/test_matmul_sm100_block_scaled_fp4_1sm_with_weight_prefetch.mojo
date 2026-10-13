@@ -23,7 +23,6 @@
 # ===----------------------------------------------------------------------=== #
 from std.math import align_up, ceildiv
 from std.sys import argv, size_of
-import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.block_scaled_quantization import naive_block_scaled_matmul
 from max.gpu.host import DeviceContext
@@ -264,11 +263,10 @@ def _test_impl[
         width: SIMDLength,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_tensor.store[alignment=alignment * size_of[c_type](),](
-            Coord(idx), scaled
-        )
+        c_tensor.store[alignment=alignment * size_of[c_type](),](idx, scaled)
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn

@@ -25,7 +25,6 @@ from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu import lane_id, WARP_SIZE
 from max.gpu.intrinsics import ds_read_tr16_b64
 from std.math.uutils import ufloordiv, umod
-from std.memory import AddressSpace
 from std.sys import simd_width_of
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
@@ -470,7 +469,7 @@ struct KVMmaOp[
         # `ds_read_tr16_b64` intrinsic with a swizzled per-lane address.
         # Mirrors `load_v_fp8_strip`'s swizzle path. No-swizzle case
         # keeps the original helper-based load.
-        comptime if Self.swizzle:
+        comptime if case .Some(swizzle) = Self.swizzle:
             # Per-lane element offset within a (4, 16) shared_b_tile
             # (inside a (16, 16) half of the (MMA_K, MMA_N) sub-tile).
             # Stride along the K-dim of the tile is `BK` elements.
@@ -506,8 +505,7 @@ struct KVMmaOp[
                         var vec_idx = total_elem // simd_w_elem
                         var sub_vec = total_elem & (simd_w_elem - 1)
                         var swizzled_elem = (
-                            Self.swizzle.value()(vec_idx) * simd_w_elem
-                            + sub_vec
+                            swizzle(vec_idx) * simd_w_elem + sub_vec
                         )
                         return ds_read_tr16_b64(smem_base + swizzled_elem)
 

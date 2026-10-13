@@ -26,6 +26,7 @@ RUNNERS = {
     "MI355": "modrunner-mi355",
     "2xB200": "modrunner-b200-efa-2x",
     "2xMI355": "modrunner-mi355-2x",
+    "4xB200": "modrunner-b200-4x",
     "4xMI355": "modrunner-mi355-4x",
     "8xB200": "modrunner-b200-efa-8x",
     "8xMI355": "modrunner-mi355-8x",
@@ -35,44 +36,47 @@ _1xB200 = {"B200"}
 _1xMI355 = {"MI355"}
 _2xB200 = {"2xB200"}
 _2xMI355 = {"2xMI355"}
+_4xB200 = {"4xB200"}
 _4xMI355 = {"4xMI355"}
 _8xB200 = {"8xB200"}
 _8xMI355 = {"8xMI355"}
 DISABLE: set[str] = set()
+NIGHTLY = {"NIGHTLY"}
 
-# Model → HW it runs on. DISABLE runs nowhere.
+# Model → HW it runs on. DISABLE runs nowhere. NIGHTLY adds the model to the
+# scheduled nightly run (`--tier nightly`) on the HW it lists; without it the
+# model runs only on manual dispatch.
 #
 # To add a model, trigger the smoke test with it first:
 # https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
 # then list it below with the HW it passed on. VLMs also go in is_vision_model
-# in smoke_test.py, and reasoning models in is_reasoning_model in
-# eval_runner.py.
+# in smoke_test.py.
 # Every entry is exactly one line. The only comment allowed is an existing
 # Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off
 HF_MODELS: Mapping[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": _1xB200 | _1xMI355,
     "allenai/olmOCR-2-7B-1025-FP8": _1xB200 | _1xMI355,
-    "amd/Kimi-K2.7-Code-MXFP4": _4xMI355,
-    "nvidia/Kimi-K2.7-Code-NVFP4": _8xB200,
-    "amd/MiniMax-M3-MXFP4": _4xMI355,
+    "amd/Kimi-K2.7-Code-MXFP4": NIGHTLY | _4xMI355,
+    "nvidia/Kimi-K2.7-Code-NVFP4": NIGHTLY | _8xB200,
+    "amd/MiniMax-M3-MXFP4": NIGHTLY | _4xMI355,
     "ByteDance-Seed/academic-ds-9B": DISABLE,  # TODO(SERVOPT-1120)
     "deepseek-ai/DeepSeek-V2-Lite-Chat": DISABLE,  # TODO(SERVOPT-1120)
     "deepseek-ai/DeepSeek-V3.1-Terminus": _8xB200,
     "google/diffusiongemma-26B-A4B-it": DISABLE,
     "google/gemma-3-1b-it": _1xB200,  # TODO(KERN-3014)
     "google/gemma-3-27b-it": _1xB200 | _1xMI355,
-    "google/gemma-4-26B-A4B-it": _1xB200 | _1xMI355,
-    "google/gemma-4-31B-it": _1xB200 | _1xMI355,
-    "nvidia/Gemma-4-26B-A4B-NVFP4": _1xB200,
+    "google/gemma-4-26B-A4B-it": NIGHTLY | _1xB200 | _1xMI355,
+    "google/gemma-4-31B-it": NIGHTLY | _1xB200 | _1xMI355,
+    "nvidia/Gemma-4-26B-A4B-NVFP4": NIGHTLY | _1xB200,
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
-    "nvidia/Gemma-4-31B-IT-NVFP4": _1xB200 | _2xB200,
+    "nvidia/Gemma-4-31B-IT-NVFP4": NIGHTLY | _1xB200 | _2xB200,
     "meta-llama/Llama-3.1-8B-Instruct": _1xB200 | _1xMI355,
-    "meta-models/Muse-Glimmer-30B": _1xB200,
+    "meta-models/Muse-Glimmer-30B": NIGHTLY | _1xB200,
     "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
     "microsoft/phi-4": _1xB200 | _1xMI355,
-    "MiniMaxAI/MiniMax-M3-MXFP8": _8xMI355,  # TODO(MODELS-1611)
-    "modularai/MiniMax-M3-MXFP6": _4xMI355 | _8xMI355,
+    "MiniMaxAI/MiniMax-M3-MXFP8": NIGHTLY | _8xMI355,  # TODO(MODELS-1611)
+    "modularai/MiniMax-M3-MXFP6": NIGHTLY | _4xMI355 | _8xMI355,
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": _1xB200 | _1xMI355,
     "modularai/Llama-3.1-405B-Instruct-autofp8": _4xMI355 | _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4": _8xB200,
@@ -84,12 +88,12 @@ HF_MODELS: Mapping[str, set[str]] = {
     "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": _1xB200 | _2xB200,
     "Qwen/Qwen3.5-9B": _1xB200,
     "Qwen/Qwen3.6-27B": _1xB200,
-    "Qwen/Qwen3.8-27B": _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
+    "Qwen/Qwen3.8-27B": NIGHTLY | _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": _1xB200 | _1xMI355,  # TODO(MODELS-1021)
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": _8xB200,
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": _4xMI355 | _8xB200,
     "openai/gpt-oss-20b": _1xB200 | _1xMI355 | _2xB200,
-    "thinkingmachines/Inkling-Small-NVFP4": _2xB200,
+    "thinkingmachines/Inkling-Small-NVFP4": NIGHTLY | _2xB200,
 }
 
 # Models tested with custom MAX recipe presets. MODEL_RECIPES in
@@ -101,8 +105,8 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "microsoft/Phi-3.5-mini-instruct__modulev3": _1xB200 | _1xMI355,
     "microsoft/phi-4__modulev3": _1xB200 | _1xMI355,
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": _1xB200 | _1xMI355,
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": _1xB200,
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": _1xMI355,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": NIGHTLY | _1xB200 | _2xB200,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": NIGHTLY | _1xMI355 | _2xMI355,
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": _8xB200,
@@ -112,23 +116,23 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": _8xB200,
     "google/gemma-4-12B-it__device_graph_synthesis": _1xB200 | _1xMI355,
-    "google/gemma-4-12B-it__dspark": _1xB200 | _1xMI355,
-    "google/gemma-4-26B-A4B-it__tuned": _1xB200,
-    "google/gemma-4-31B-it__tuned": _1xB200,
-    "google/gemma-4-31B-it__cascade": _1xB200,
-    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": _1xB200,
-    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": _1xB200,
+    "google/gemma-4-12B-it__dspark": NIGHTLY | _1xB200 | _1xMI355,
+    "google/gemma-4-26B-A4B-it__tuned": NIGHTLY | _1xB200,
+    "google/gemma-4-31B-it__tuned": NIGHTLY | _1xB200,
+    "google/gemma-4-31B-it__cascade": NIGHTLY | _1xB200,
+    "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": NIGHTLY | _1xB200,
+    "nvidia/Gemma-4-31B-IT-NVFP4__tuned": NIGHTLY | _1xB200,
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": _8xB200,
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": _1xB200,
     "meta-llama/Llama-3.1-8B-Instruct__mojo_tiered_kvconnector": _1xB200,
-    "nvidia/GLM-5.2-NVFP4__mtp_tpep": _8xB200,
-    "RadixArk/GLM-5.3-NVFP4__mtp_tpep": _8xB200,
-    "zai-org/GLM-5.3-Flash__tpep": _8xB200,
-    "thinkingmachines/Inkling-Small-NVFP4__mtp": _2xB200,
-    "RadixArk/Qwen3.8-27B-NVFP4__mtp": _1xB200,
-    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": _1xB200,
-    "MiniMaxAI/MiniMax-M3-MXFP8__mtp": _8xB200,
-    "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": _2xB200,
+    "nvidia/GLM-5.2-NVFP4__mtp_tpep": NIGHTLY | _8xB200,
+    "RadixArk/GLM-5.3-NVFP4__mtp_tpep": NIGHTLY | _8xB200,
+    "zai-org/GLM-5.3-Flash__tpep": NIGHTLY | _8xB200,
+    "thinkingmachines/Inkling-Small-NVFP4__mtp": NIGHTLY | _2xB200,
+    "RadixArk/Qwen3.8-27B-NVFP4__mtp": NIGHTLY | _1xB200,
+    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": NIGHTLY | _1xB200,
+    "MiniMaxAI/MiniMax-M3-MXFP8__mtp": NIGHTLY | _8xB200,
+    "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": NIGHTLY | _2xB200,
 }
 
 # Aliases whose recipe ships with a private arch, so it cannot appear in
@@ -140,36 +144,7 @@ MODELS: Mapping[str, set[str]] = {**HF_MODELS, **CUSTOM_MODELS}
 # fmt: on
 
 NIGHTLY_MODELS = frozenset(
-    {
-        "google/gemma-4-12B-it__dspark",
-        "google/gemma-4-26B-A4B-it",
-        "google/gemma-4-26B-A4B-it__tuned",
-        "google/gemma-4-31B-it",
-        "google/gemma-4-31B-it__cascade",
-        "google/gemma-4-31B-it__tuned",
-        "nvidia/Gemma-4-26B-A4B-NVFP4",
-        "nvidia/Gemma-4-26B-A4B-NVFP4__tuned",
-        "nvidia/Gemma-4-31B-IT-NVFP4",
-        "nvidia/Gemma-4-31B-IT-NVFP4__tuned",
-        "MiniMaxAI/MiniMax-M3-MXFP8",
-        "MiniMaxAI/MiniMax-M3-MXFP8__mtp",
-        "amd/MiniMax-M3-MXFP4",
-        "modularai/MiniMax-M3-MXFP6",
-        "nvidia/GLM-5.2-NVFP4__mtp_tpep",
-        "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
-        "zai-org/GLM-5.3-Flash__tpep",
-        "amd/Kimi-K2.7-Code-MXFP4",
-        "nvidia/Kimi-K2.7-Code-NVFP4",
-        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3",
-        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3",
-        "thinkingmachines/Inkling-Small-NVFP4",
-        "thinkingmachines/Inkling-Small-NVFP4__mtp",
-        "Qwen/Qwen3.8-27B",
-        "RadixArk/Qwen3.8-27B-NVFP4__mtp",
-        "RadixArk/Qwen3.8-27B-NVFP4__dflash2",
-        "deepseek-ai/DeepSeek-V4-Flash-0731__tp2",
-        "meta-models/Muse-Glimmer-30B",
-    }
+    model for model, tags in MODELS.items() if "NIGHTLY" in tags
 )
 
 TIERS = ("nightly", "all")
@@ -231,6 +206,7 @@ def parse_override(raw: str | None) -> list[str]:
 @click.option("--run-on-mi355", is_flag=True)
 @click.option("--run-on-2xb200", is_flag=True)
 @click.option("--run-on-2xmi355", is_flag=True)
+@click.option("--run-on-4xb200", is_flag=True)
 @click.option("--run-on-4xmi355", is_flag=True)
 @click.option("--run-on-8xb200", is_flag=True)
 @click.option("--run-on-8xmi355", is_flag=True)
@@ -242,6 +218,7 @@ def main(
     run_on_mi355: bool,
     run_on_2xb200: bool,
     run_on_2xmi355: bool,
+    run_on_4xb200: bool,
     run_on_4xmi355: bool,
     run_on_8xb200: bool,
     run_on_8xmi355: bool,
@@ -251,6 +228,7 @@ def main(
         "MI355": run_on_mi355,
         "2xB200": run_on_2xb200,
         "2xMI355": run_on_2xmi355,
+        "4xB200": run_on_4xb200,
         "4xMI355": run_on_4xmi355,
         "8xB200": run_on_8xb200,
         "8xMI355": run_on_8xmi355,

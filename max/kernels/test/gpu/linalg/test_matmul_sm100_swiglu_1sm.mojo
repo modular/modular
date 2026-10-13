@@ -36,14 +36,17 @@ Usage:
 """
 
 from std.math import exp, recip
-from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import (
+    TileTensor,
+    CoordLike,
+    row_major,
+    Idx,
+)
 
 from linalg.matmul.gpu.sm100_structured.fused_swiglu.config import (
     FusedSwiGLUMatmulConfig,
@@ -53,8 +56,7 @@ from linalg.matmul.gpu.sm100_structured.fused_swiglu.dispatch import (
     matmul_swiglu_dispatch_sm100,
 )
 
-from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
+from std.utils.index import Index
 
 
 def swiglu_reference(

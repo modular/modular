@@ -25,13 +25,13 @@ from . import (
     LaunchAttribute,
     ConstantMemoryMapping,
     FuncAttribute,
-    Attribute,
 )
 
 from ._device_context_metal import MetalEnqueueFunctionArgs
 
 from .device_context import (
     DeviceContext,
+    DeviceContextBase,
     DeviceBuffer,
     DeviceFunction,
     DeviceExternalFunction,
@@ -42,7 +42,7 @@ from .device_context import (
     _DeviceFunctionPtr,
     _DeviceContextPtr,
     _FunctionEnqueuer,
-    _is_apple_gpu,
+    _max_dynamic_shared_bytes_for_load,
 )
 
 
@@ -125,7 +125,7 @@ __extension DeviceFunction:
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext.Generic[Self.target],
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
@@ -140,19 +140,9 @@ __extension DeviceFunction:
         """
         self._context = ctx
 
-        var max_dynamic_shared_size_bytes: Int32 = -1
-        if func_attribute:
-            if (
-                func_attribute.value().attribute
-                == Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-            ):
-                max_dynamic_shared_size_bytes = func_attribute.value().value
-            else:
-                raise Error(
-                    "the function attribute '",
-                    func_attribute.value().attribute,
-                    "' is not currently supported",
-                )
+        var max_dynamic_shared_size_bytes = _max_dynamic_shared_bytes_for_load[
+            Self.target
+        ](func_attribute)
 
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
@@ -167,6 +157,7 @@ __extension DeviceFunction:
             compile_options=Self.compile_options,
             link_options=Self.link_options,
         ]()
+        self._capture_sizes = Self._snapshot_capture_sizes(self._func_impl)
         var debug_level = String(DebugLevel)
         _checked(
             external_call[
@@ -247,10 +238,8 @@ __extension DeviceExternalFunction:
                 .as_unsafe_any_origin()
             )
 
-        if cluster_dim:
-            attributes.append(
-                LaunchAttribute.from_cluster_dim(cluster_dim.value())
-            )
+        if case .Some(cluster_dim) = cluster_dim:
+            attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))
 
         if constant_memory:
             for i in range(len(constant_memory)):
@@ -260,7 +249,7 @@ __extension DeviceExternalFunction:
         # sizes are passed to the enqueuer (matching the previous direct call).
         var no_arg_sizes = OptionalPointer[UInt64, MutAnyOrigin](None)
 
-        comptime if _is_apple_gpu[Self.target]():
+        comptime if Self.target.is_apple_gpu():
             # Metal takes the launch payload via `args[0]`; see
             # `MetalDeviceContext::enqueueFunctionExecDirect`.
             var dense_args_sizes = Array[UInt64, num_args](fill=0)
@@ -326,7 +315,7 @@ __extension DeviceExternalFunction:
         )
 
 
-__extension DeviceContext:
+__extension DeviceContextBase:
     def _check_supports_default_compile_function(self):
         pass
 
@@ -424,17 +413,9 @@ __extension DeviceContext:
             block_dim, location=call_location()
         )
 
-        # If shared_mem_bytes is specified but func_attribute is not,
-        # automatically set MAX_DYNAMIC_SHARED_SIZE_BYTES if needed (>48KB)
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
+        var inferred_func_attribute = self._func_attribute_for_launch(
+            func_attribute, shared_mem_bytes
+        )
 
         var gpu_kernel = self.compile_function[
             func,
@@ -531,15 +512,9 @@ __extension DeviceContext:
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
+        var inferred_func_attribute = self._func_attribute_for_launch(
+            func_attribute, shared_mem_bytes
+        )
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
@@ -639,15 +614,9 @@ __extension DeviceContext:
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
+        var inferred_func_attribute = self._func_attribute_for_launch(
+            func_attribute, shared_mem_bytes
+        )
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
@@ -752,15 +721,9 @@ __extension DeviceContext:
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
+        var inferred_func_attribute = self._func_attribute_for_launch(
+            func_attribute, shared_mem_bytes
+        )
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
@@ -870,15 +833,9 @@ __extension DeviceContext:
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
+        var inferred_func_attribute = self._func_attribute_for_launch(
+            func_attribute, shared_mem_bytes
+        )
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
@@ -993,15 +950,9 @@ __extension DeviceContext:
         _check_dim["DeviceContext.enqueue_function", "block_dim"](
             block_dim, location=call_location()
         )
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
+        var inferred_func_attribute = self._func_attribute_for_launch(
+            func_attribute, shared_mem_bytes
+        )
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,

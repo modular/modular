@@ -101,14 +101,8 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from max.gpu.host.compile import CompilationTarget
 from std.math import ceildiv
-from max.gpu.sync import (
-    AMDScheduleBarrierMask,
-    s_waitcnt,
-    schedule_group_barrier,
-)
-from std.memory import AddressSpace
+from max.gpu.sync import s_waitcnt
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import (
     likely,
@@ -152,7 +146,6 @@ from .mha_softmax import OnlineSoftmax
 from .mha_mma_op import MhaConfigV2, MhaMmaOp
 
 from .iglp import (
-    _iglp_opt,
     sched_barrier_exp_pairs,
     sched_barrier_pairs,
     sched_dsread_valu_pairs,
@@ -623,7 +616,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
     ]:
         """Builds the per-tile K gmem TileTensor at `(batch, t*KV_BLOCK,
         kv_head, 0)` via `MHAOperand.block_paged_tile`. For
-        LayoutTensorMHAOperand this resolves to a pointer-arithmetic
+        TileTensorMHAOperand this resolves to a pointer-arithmetic
         offset into a contiguous buffer; for KVCacheMHAOperand it
         resolves through the page table."""
         comptime assert (
@@ -1374,7 +1367,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
           accumulator.
         - `k`, `v`: any `MHAOperand` whose `block_paged_tile[KV_BLOCK]`
           returns `(KV_BLOCK, DEPTH)` tiles per `(batch, t*KV_BLOCK,
-          kv_head, 0)`. `LayoutTensorMHAOperand` for contiguous test /
+          kv_head, 0)`. `TileTensorMHAOperand` for contiguous test /
           bench buffers; `KVCacheMHAOperand` for paged production
           caches (`page_size >= KV_BLOCK = 64`).
 
@@ -1645,7 +1638,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # Per-(batch, kv_head) is captured via the MHAOperand interface.
         # `_dma_k` / `_dma_v` call `k.block_paged_tile[KV_BLOCK](...)` per
         # tile, returning a TileTensor anchored at `(batch_idx,
-        # t*KV_BLOCK, kv_head_idx, 0)`. For LayoutTensorMHAOperand this
+        # t*KV_BLOCK, kv_head_idx, 0)`. For TileTensorMHAOperand this
         # resolves to a pointer-arithmetic offset (contiguous K/V);
         # for KVCacheMHAOperand it resolves through the page table.
         # Cast indices to UInt32 once so the trait calls don't repeat
@@ -2219,17 +2212,12 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             _s_barrier_raw()
 
         # Output store. col_l → row_l is a zero-cost re-tag of the same
-        # per-lane storage, so we construct a TileTensor view over
-        # `o_reg.ptr` directly under `O_T_LAYOUT` instead of invoking a
+        # per-lane storage, so we reshape `o_reg` to its transposed row_l
+        # view (O_T_LAYOUT) over the same storage instead of invoking a
         # transpose primitive. The in-place divide above made `o_reg`
         # hold the normalized output.
         comptime _o_view_layout = Self._MmaOp.O_T_LAYOUT
-        var o_normalized_view = TileTensor[
-            .float32,
-            type_of(_o_view_layout),
-            MutUntrackedOrigin,
-            address_space=.LOCAL,
-        ](o_reg.ptr, _o_view_layout)
+        var o_normalized_view = o_reg.reshape(_o_view_layout)
         var epilogue_writer = RegTileEpilogue[output_dtype, 1](o_warp_2d)
         # Partial-Q-tile bound: for sequences whose length is not a
         # multiple of BM, the last tile owns fewer than BM valid Q rows
@@ -2560,7 +2548,7 @@ def mha_prefill_v2[
       `o`'s dtype matches `config.output_dtype`: BF16 for production
       inference (which the dispatcher uses) or FP32 if the caller wants
       the unnormalized accumulator.
-    - `k`, `v`: any `MHAOperand` (`LayoutTensorMHAOperand` for tests/
+    - `k`, `v`: any `MHAOperand` (`TileTensorMHAOperand` for tests/
       bench, `KVCacheMHAOperand` for paged production caches at
       `page_size >= KV_BLOCK = 64`).
 

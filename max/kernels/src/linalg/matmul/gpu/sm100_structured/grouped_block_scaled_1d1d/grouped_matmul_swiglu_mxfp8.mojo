@@ -27,13 +27,14 @@ BF16 GMEM round trip).
 """
 
 from max.gpu.host import DeviceContext
-from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.memory import UnsafePointer
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.fp4_utils import MXFP8_SF_DTYPE, MXFP8_SF_VECTOR_SIZE
 from .dispatch import grouped_matmul_mxfp8_dispatch
 from .grouped_1d1d_matmul_kernel import RealSwiGLUOutput
+from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
 
 def grouped_matmul_swiglu_mxfp8_dispatch[
@@ -52,10 +53,7 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     # cooperative path on prefill regimes; flip to False to benchmark
     # the cooperative path on decode.
     use_inplace: Bool = True,
-    # Activation flavor. False = plain SwiGLU; True = clamped
-    # (`swigluoai`). Pass the HF config `swiglu_alpha`/`swiglu_limit`
-    # as the runtime `alpha`/`limit` args when set to True.
-    clamp_activation: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
 ](
     c_packed: TileTensor,
     c_swiglu_scales: TileTensor,
@@ -70,10 +68,6 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
-    # Runtime α and L for clamped activation. Ignored when
-    # `clamp_activation=False`.
-    alpha: Float32 = Float32(0.0),
-    limit: Float32 = Float32(0.0),
 ) raises:
     """SwiGLU + MXFP8 fused MoE up-projection dispatch.
 
@@ -109,10 +103,8 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
             dispatch-level gate forces the cooperative path on
             prefill regimes; flip to False to benchmark the
             cooperative path on decode.
-        clamp_activation: Activation flavor (defaults to False).
-            False is plain SwiGLU; True is clamped (`swigluoai`).
-            Pass the HF config `swiglu_alpha`/`swiglu_limit` as the
-            runtime `alpha`/`limit` args when set to True.
+        activation: Gated activation applied in the fused epilogue, selected
+            at compile time (defaults to `swiglu`).
 
     Args:
         c_packed: Output `float8_e4m3fn`, shape `(M_total, D)` (one
@@ -138,14 +130,6 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
         num_active_experts: Number of active experts.
         estimated_total_m: Estimated total non-padded token count.
         ctx: Device context.
-        alpha: Runtime α for the clamped activation. Ignored when
-            `clamp_activation=False`. Pass the HF config
-            `swiglu_alpha` value (canonically 1.702 for the
-            `swigluoai` family).
-        limit: Runtime L for the clamped activation. Ignored when
-            `clamp_activation=False`. Pass the HF config
-            `swiglu_limit` value (canonically 7.0 for the
-            `swigluoai` family).
     """
     comptime c_type = DType.bfloat16
     comptime N = type_of(b).static_shape[1]
@@ -175,13 +159,11 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
         sf_dim1,
         MXFP8_SF_DTYPE,
         MXFP8_SF_VECTOR_SIZE,
-        clamp_activation,
+        activation,
     ](
         c_packed_ptr,
         c_swiglu_scales_ptr,
         c_input_scales_ptr,
-        alpha,
-        limit,
     )
 
     grouped_matmul_mxfp8_dispatch[

@@ -393,7 +393,7 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
         ```
     """
 
-    comptime __match dtype:
+    comptime match dtype:
         case .float16:
             return (1e-3, 1e-5)
         case .bfloat16:

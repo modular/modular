@@ -92,6 +92,7 @@ class DFlash2Qwen3_5Proposer:
     """The DFlash2 block draft on Qwen3.5, borrowing the target's head."""
 
     samples_from_anchor = False
+    supports_zero_draft_rows = False
 
     def __init__(
         self,

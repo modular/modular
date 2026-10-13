@@ -40,7 +40,7 @@ from std.random import random_ui64, seed
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp6_utils import (
     FP6Format,

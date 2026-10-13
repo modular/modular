@@ -101,6 +101,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
+                moe_dim=config.moe_intermediate_size,
                 max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,

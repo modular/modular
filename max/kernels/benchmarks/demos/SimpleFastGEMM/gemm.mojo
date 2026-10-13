@@ -25,7 +25,7 @@ from linalg.utils import (
 )
 
 
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, row_major
 from layout.tensor_engine import DefaultEngine
 
 comptime dtype = DType.float32

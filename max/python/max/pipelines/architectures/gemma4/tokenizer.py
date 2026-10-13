@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import heapq
 import json
 import re
@@ -43,6 +42,7 @@ from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
     encode_dkv_cache_hint,
     open_image,
+    run_with_default_executor,
 )
 from max.pipelines.modeling.types import (
     TextGenerationRequest,
@@ -439,7 +439,11 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(
+            # Rendering is pure-Python Jinja over the whole conversation;
+            # inline it and a long multi-turn history blocks the API server's
+            # event loop for the full render, serializing request intake.
+            prompt = await run_with_default_executor(
+                self.apply_chat_template,
                 request.messages,
                 request.tools,
                 **(request.chat_template_options or {}),
@@ -504,7 +508,7 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
                 if needs_image_hash or self._video_preprocess_cache.enabled
                 else [None] * len(request.videos)
             )
-            per_video = await asyncio.to_thread(
+            per_video = await run_with_default_executor(
                 self._preprocess_videos, computed_video_hashes, request.videos
             )
             padded_pvs = [pvs for pvs, _, _, _ in per_video]
@@ -569,9 +573,12 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
                 for t in text_list
             ]
 
-        # Tokenize
+        # Tokenize. Off-loop for the same reason as the template render
+        # above -- the delegate is CPU-bound, and encode() elsewhere in this
+        # codebase already runs it on the default executor.
         if text_list is not None:
-            tokenizer_out = self.delegate(
+            tokenizer_out = await run_with_default_executor(
+                self.delegate,
                 text_list,
                 add_special_tokens=add_special_tokens,
                 padding=False,

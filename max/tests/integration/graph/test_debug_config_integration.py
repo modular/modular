@@ -561,7 +561,7 @@ class TestReaderMigration:
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
         # The pipeline writes one file per stage with extensions like
-        # `.mo.mlir`, `.mo-pre-mogg.mlir`, `.mogg.mlir`, etc.  We just
+        # `.mo.mlir`, `.mo-pre-map.mlir`, `.mogg-pre-mgp.mlir`, etc.  We just
         # require at least one MLIR file landed.
         assert any(name.endswith(".mlir") for name in files), (
             f"Expected at least one .mlir file in {ir_dir}, got {files}"

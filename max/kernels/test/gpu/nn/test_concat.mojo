@@ -126,9 +126,8 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     @inline(.always)
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output_any}:
-        var coord = Coord(indices)
+        c_type: DType, width: SIMDLength, *, alignment: Int
+    ](coord: Coord, val: SIMD[c_type, width]) {var output_any}:
         comptime assert output_any.flat_rank >= coord.flat_rank
         output_any.store[width=width](
             coord,

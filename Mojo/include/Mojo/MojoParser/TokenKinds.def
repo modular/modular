@@ -168,7 +168,8 @@ TOK_KEYWORD(__functions_in_module)
 TOK_KEYWORD(__get_current_function_name)
 TOK_KEYWORD(__struct_field_ref)
 TOK_KEYWORD(__is_run_in_comptime_interpreter)
-TOK_KEYWORD(__match) // Experimental match statement (pattern matching).
+TOK_KEYWORD(__match) // Deprecated spelling of match (TODO: remove in Mojo 1.2).
+TOK_KEYWORD(__enum)  // Experimental enum declaration.
 
 #ifndef MODULAR_PRODUCTION
 TOK_KEYWORD(__mojo_crash) // Crashes the compiler. Not shipped to users.

@@ -25,7 +25,7 @@ from std.math import align_up, ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from std.memory import Pointer, alloc
+from std.memory import Pointer
 from internal_utils import assert_almost_equal
 from std.testing import assert_equal, assert_false
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.dispatch import (
@@ -42,12 +42,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
 )
 from std.random import random_float64, random_ui64, seed, rand
 from std.simd import _convert_f32_to_float8_scalar
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -565,14 +560,14 @@ def test_tuned_stages() raises:
     """Pins the stage lookup: tuned rows, the decode default, and auto."""
     # An untuned decode shape, and the decode rows the default replaced.
     assert_equal(
-        _tuned_stages[1856, 2688, DECODE_AVG_M]().value(),
-        DECODE_DEFAULT_STAGES,
+        _tuned_stages[1856, 2688, DECODE_AVG_M](),
+        Optional(DECODE_DEFAULT_STAGES),
     )
-    assert_equal(_tuned_stages[4096, 7168, DECODE_AVG_M]().value(), 6)
-    assert_equal(_tuned_stages[7168, 2048, DECODE_AVG_M]().value(), 6)
-    assert_equal(_tuned_stages[2048, 4096, DECODE_AVG_M]().value(), 6)
+    assert_equal(_tuned_stages[4096, 7168, DECODE_AVG_M](), Optional(6))
+    assert_equal(_tuned_stages[7168, 2048, DECODE_AVG_M](), Optional(6))
+    assert_equal(_tuned_stages[2048, 4096, DECODE_AVG_M](), Optional(6))
     # Tuned prefill rows, and auto stages for untuned prefill.
-    assert_equal(_tuned_stages[4096, 7168, -1]().value(), 7)
+    assert_equal(_tuned_stages[4096, 7168, -1](), Optional(7))
     assert_false(Bool(_tuned_stages[1856, 2688, SMALL_PREFILL_AVG_M]()))
     assert_false(Bool(_tuned_stages[2048, 4096, -1]()))
 

@@ -144,7 +144,7 @@ class MiniMaxM2Config(Llama3Config):
             An initialized MiniMaxM2Config instance.
         """
         # Get base config from Llama3Config
-        base_config = Llama3Config.initialize_from_config(
+        base_config = super().initialize_from_config(
             pipeline_config,
             huggingface_config,
             model_config,
@@ -167,7 +167,7 @@ class MiniMaxM2Config(Llama3Config):
         ]
 
         # Override KV params and attention multiplier with MiniMax-specific values
-        kv_params = MiniMaxM2Config.construct_kv_params(
+        kv_params = cls.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=device_refs,

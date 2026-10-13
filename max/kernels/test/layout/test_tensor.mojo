@@ -15,7 +15,6 @@ from std.math import ceildiv
 from std.sys import align_of
 
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
 from layout import (
     Layout,
     TileTensor,
@@ -25,7 +24,6 @@ from layout import (
     col_major,
     row_major,
     stack_allocation,
-    UNKNOWN_VALUE,
 )
 from layout.int_tuple import product
 from layout.tile_layout import Layout as TileLayout
@@ -33,9 +31,11 @@ from layout.layout_tensor import *
 from std.testing import assert_equal
 
 
-def print_raw_major_tensor(tensor: LayoutTensor):
-    for i in range(tensor.shape[0]()):
-        for j in range(tensor.shape[1]()):
+def print_raw_major_tensor(tensor: TileTensor):
+    comptime assert tensor.rank == tensor.flat_rank == 2
+    comptime assert tensor.element_size == 1
+    for i in range(tensor.dim[0]()):
+        for j in range(tensor.dim[1]()):
             print(tensor[i, j], "\t", end="")
         print("")
 
@@ -730,9 +730,7 @@ def test_copy_vectorized():
 # CHECK-LABEL: test_distribute_vectorized
 def test_distribute_vectorized():
     print("== test_distribute_vectorized")
-    var tensor_8_8 = LayoutTensor[
-        .float32, Layout(IntTuple(8, 8), IntTuple(8, 1)), MutAnyOrigin
-    ].stack_allocation[stack_alignment=16]()
+    var tensor_8_8 = stack_allocation[.float32, alignment=16](row_major[8, 8]())
     arange(tensor_8_8)
 
     var tensor_8_2xv4 = tensor_8_8.vectorize[1, 4]()
@@ -744,7 +742,7 @@ def test_distribute_vectorized():
     # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
-    print(tensor_8_2xv4)
+    print_tile_tensor(tensor_8_2xv4)
 
     # CHECK: ----thread[ 0 ]----
     # CHECK: [0.0, 1.0, 2.0, 3.0]
@@ -767,9 +765,9 @@ def test_distribute_vectorized():
     # CHECK: [44.0, 45.0, 46.0, 47.0]
     # CHECK: [60.0, 61.0, 62.0, 63.0]
     for tid in range(4):
-        var fragments = tensor_8_2xv4.distribute[Layout(IntTuple(2, 2))](tid)
+        var fragments = tensor_8_2xv4.distribute[col_major[2, 2]()](tid)
         print("----thread[", tid, "]----")
-        print(fragments)
+        print_tile_tensor(fragments)
 
     # Fill the buffer first because we can't fill a vectorized tensor.
     # This will become easier when we can vectorize nested layout.
@@ -959,296 +957,6 @@ def test_split():
     print_tile_tensor(tiles_vec2_axis0[1])
 
     _ = tensor_4x4
-
-
-# DISABLED-CHECK-LABEL: test_copy_subtiles_scalars
-# def test_copy_subtiles_scalars():
-#    print("== test_copy_subtiles_scalars")
-#    var tensor_13x7 = LayoutTensor[
-#        .float32, Layout.row_major(13, 7)
-#    ].stack_allocation[stack_alignment=16]()
-#    arange(tensor_13x7)
-#    print(tensor_13x7)
-#
-#    alias tile_m_size = 4
-#    alias tile_n_size = 2
-#
-#    # DISABLED-CHECK: ----tile-data[ 0 , 0 ]----
-#    # DISABLED-CHECK: 0.0 1.0
-#    # DISABLED-CHECK: 7.0 8.0
-#    # DISABLED-CHECK: 14.0 15.0
-#    # DISABLED-CHECK: 21.0 22.0
-#    # DISABLED-CHECK: ----tile-data[ 0 , 1 ]----
-#    # DISABLED-CHECK: 2.0 3.0
-#    # DISABLED-CHECK: 9.0 10.0
-#    # DISABLED-CHECK: 16.0 17.0
-#    # DISABLED-CHECK: 23.0 24.0
-#    # DISABLED-CHECK: ----tile-data[ 0 , 2 ]----
-#    # DISABLED-CHECK: 4.0 5.0
-#    # DISABLED-CHECK: 11.0 12.0
-#    # DISABLED-CHECK: 18.0 19.0
-#    # DISABLED-CHECK: 25.0 26.0
-#    # DISABLED-CHECK: ----tile-data[ 0 , 3 ]----
-#    # DISABLED-CHECK: 6.0 0.0
-#    # DISABLED-CHECK: 13.0 0.0
-#    # DISABLED-CHECK: 20.0 0.0
-#    # DISABLED-CHECK: 27.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 1 , 0 ]----
-#    # DISABLED-CHECK: 28.0 29.0
-#    # DISABLED-CHECK: 35.0 36.0
-#    # DISABLED-CHECK: 42.0 43.0
-#    # DISABLED-CHECK: 49.0 50.0
-#    # DISABLED-CHECK: ----tile-data[ 1 , 1 ]----
-#    # DISABLED-CHECK: 30.0 31.0
-#    # DISABLED-CHECK: 37.0 38.0
-#    # DISABLED-CHECK: 44.0 45.0
-#    # DISABLED-CHECK: 51.0 52.0
-#    # DISABLED-CHECK: ----tile-data[ 1 , 2 ]----
-#    # DISABLED-CHECK: 32.0 33.0
-#    # DISABLED-CHECK: 39.0 40.0
-#    # DISABLED-CHECK: 46.0 47.0
-#    # DISABLED-CHECK: 53.0 54.0
-#    # DISABLED-CHECK: ----tile-data[ 1 , 3 ]----
-#    # DISABLED-CHECK: 34.0 0.0
-#    # DISABLED-CHECK: 41.0 0.0
-#    # DISABLED-CHECK: 48.0 0.0
-#    # DISABLED-CHECK: 55.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 2 , 0 ]----
-#    # DISABLED-CHECK: 56.0 57.0
-#    # DISABLED-CHECK: 63.0 64.0
-#    # DISABLED-CHECK: 70.0 71.0
-#    # DISABLED-CHECK: 77.0 78.0
-#    # DISABLED-CHECK: ----tile-data[ 2 , 1 ]----
-#    # DISABLED-CHECK: 58.0 59.0
-#    # DISABLED-CHECK: 65.0 66.0
-#    # DISABLED-CHECK: 72.0 73.0
-#    # DISABLED-CHECK: 79.0 80.0
-#    # DISABLED-CHECK: ----tile-data[ 2 , 2 ]----
-#    # DISABLED-CHECK: 60.0 61.0
-#    # DISABLED-CHECK: 67.0 68.0
-#    # DISABLED-CHECK: 74.0 75.0
-#    # DISABLED-CHECK: 81.0 82.0
-#    # DISABLED-CHECK: ----tile-data[ 2 , 3 ]----
-#    # DISABLED-CHECK: 62.0 0.0
-#    # DISABLED-CHECK: 69.0 0.0
-#    # DISABLED-CHECK: 76.0 0.0
-#    # DISABLED-CHECK: 83.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 3 , 0 ]----
-#    # DISABLED-CHECK: 84.0 85.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 3 , 1 ]----
-#    # DISABLED-CHECK: 86.0 87.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 3 , 2 ]----
-#    # DISABLED-CHECK: 88.0 89.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 3 , 3 ]----
-#    # DISABLED-CHECK: 90.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    for tile_m in range(ceildiv(13, tile_m_size)):
-#        for tile_n in range(ceildiv(7, tile_n_size)):
-#            var tile_4x2 = tensor_13x7.tile[tile_m_size, tile_n_size](
-#                tile_m, tile_n
-#            )
-#            print("----tile-data[", tile_m, ",", tile_n, "]----")
-#            var tile_4x2_cache = LayoutTensor[
-#                .float32, Layout.row_major(tile_m_size, tile_n_size)
-#            ].stack_allocation[stack_alignment=16]().fill(0)
-#            tile_4x2_cache.copy_from[
-#                dst_coords_bound = rebind[
-#                    IndexList[tile_4x2_cache.layout.rank()]
-#                ]((13, 7))
-#            ](tile_4x2)
-#            print(tile_4x2_cache)
-
-
-# DISABLED-CHECK-LABEL: test_copy_distributed_subtiles_scalars
-# def test_copy_distributed_subtiles_scalars():
-#    print("== test_copy_distributed_subtiles_scalars")
-#    var tensor_13x7 = LayoutTensor[
-#        .float32, Layout.row_major(13, 7)
-#    ].stack_allocation[stack_alignment=16]()
-#    arange(tensor_13x7)
-#
-#    alias tile_m_size = 4
-#    alias tile_n_size = 4
-#
-#    # DISABLED-CHECK: ----tile-data[ 0 , 0 ]----
-#    # DISABLED-CHECK: 0.0 1.0 2.0 3.0
-#    # DISABLED-CHECK: 7.0 8.0 9.0 10.0
-#    # DISABLED-CHECK: 14.0 15.0 16.0 17.0
-#    # DISABLED-CHECK: 21.0 22.0 23.0 24.0
-#    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-#    # DISABLED-CHECK: 0.0 2.0
-#    # DISABLED-CHECK: 14.0 16.0
-#    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-#    # DISABLED-CHECK: 1.0 3.0
-#    # DISABLED-CHECK: 15.0 17.0
-#    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-#    # DISABLED-CHECK: 7.0 9.0
-#    # DISABLED-CHECK: 21.0 23.0
-#    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-#    # DISABLED-CHECK: 8.0 10.0
-#    # DISABLED-CHECK: 22.0 24.0
-#    # DISABLED-CHECK: ----tile-data[ 0 , 1 ]----
-#    # DISABLED-CHECK: 4.0 5.0 6.0 0.0
-#    # DISABLED-CHECK: 11.0 12.0 13.0 0.0
-#    # DISABLED-CHECK: 18.0 19.0 20.0 0.0
-#    # DISABLED-CHECK: 25.0 26.0 27.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-#    # DISABLED-CHECK: 4.0 6.0
-#    # DISABLED-CHECK: 18.0 20.0
-#    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-#    # DISABLED-CHECK: 5.0 0.0
-#    # DISABLED-CHECK: 19.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-#    # DISABLED-CHECK: 11.0 13.0
-#    # DISABLED-CHECK: 25.0 27.0
-#    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-#    # DISABLED-CHECK: 12.0 0.0
-#    # DISABLED-CHECK: 26.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 1 , 0 ]----
-#    # DISABLED-CHECK: 28.0 29.0 30.0 31.0
-#    # DISABLED-CHECK: 35.0 36.0 37.0 38.0
-#    # DISABLED-CHECK: 42.0 43.0 44.0 45.0
-#    # DISABLED-CHECK: 49.0 50.0 51.0 52.0
-#    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-#    # DISABLED-CHECK: 28.0 30.0
-#    # DISABLED-CHECK: 42.0 44.0
-#    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-#    # DISABLED-CHECK: 29.0 31.0
-#    # DISABLED-CHECK: 43.0 45.0
-#    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-#    # DISABLED-CHECK: 35.0 37.0
-#    # DISABLED-CHECK: 49.0 51.0
-#    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-#    # DISABLED-CHECK: 36.0 38.0
-#    # DISABLED-CHECK: 50.0 52.0
-#    # DISABLED-CHECK: ----tile-data[ 1 , 1 ]----
-#    # DISABLED-CHECK: 32.0 33.0 34.0 0.0
-#    # DISABLED-CHECK: 39.0 40.0 41.0 0.0
-#    # DISABLED-CHECK: 46.0 47.0 48.0 0.0
-#    # DISABLED-CHECK: 53.0 54.0 55.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-#    # DISABLED-CHECK: 32.0 34.0
-#    # DISABLED-CHECK: 46.0 48.0
-#    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-#    # DISABLED-CHECK: 33.0 0.0
-#    # DISABLED-CHECK: 47.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-#    # DISABLED-CHECK: 39.0 41.0
-#    # DISABLED-CHECK: 53.0 55.0
-#    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-#    # DISABLED-CHECK: 40.0 0.0
-#    # DISABLED-CHECK: 54.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 2 , 0 ]----
-#    # DISABLED-CHECK: 56.0 57.0 58.0 59.0
-#    # DISABLED-CHECK: 63.0 64.0 65.0 66.0
-#    # DISABLED-CHECK: 70.0 71.0 72.0 73.0
-#    # DISABLED-CHECK: 77.0 78.0 79.0 80.0
-#    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-#    # DISABLED-CHECK: 56.0 58.0
-#    # DISABLED-CHECK: 70.0 72.0
-#    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-#    # DISABLED-CHECK: 57.0 59.0
-#    # DISABLED-CHECK: 71.0 73.0
-#    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-#    # DISABLED-CHECK: 63.0 65.0
-#    # DISABLED-CHECK: 77.0 79.0
-#    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-#    # DISABLED-CHECK: 64.0 66.0
-#    # DISABLED-CHECK: 78.0 80.0
-#    # DISABLED-CHECK: ----tile-data[ 2 , 1 ]----
-#    # DISABLED-CHECK: 60.0 61.0 62.0 0.0
-#    # DISABLED-CHECK: 67.0 68.0 69.0 0.0
-#    # DISABLED-CHECK: 74.0 75.0 76.0 0.0
-#    # DISABLED-CHECK: 81.0 82.0 83.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-#    # DISABLED-CHECK: 60.0 62.0
-#    # DISABLED-CHECK: 74.0 76.0
-#    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-#    # DISABLED-CHECK: 61.0 0.0
-#    # DISABLED-CHECK: 75.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-#    # DISABLED-CHECK: 67.0 69.0
-#    # DISABLED-CHECK: 81.0 83.0
-#    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-#    # DISABLED-CHECK: 68.0 0.0
-#    # DISABLED-CHECK: 82.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 3 , 0 ]----
-#    # DISABLED-CHECK: 84.0 85.0 86.0 87.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-#    # DISABLED-CHECK: 84.0 86.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-#    # DISABLED-CHECK: 85.0 87.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----tile-data[ 3 , 1 ]----
-#    # DISABLED-CHECK: 88.0 89.0 90.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 0 ]----
-#    # DISABLED-CHECK: 88.0 90.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 1 ]----
-#    # DISABLED-CHECK: 89.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 2 ]----
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: ----fragments-data[ 3 ]----
-#    # DISABLED-CHECK: 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0
-#
-#    for tile_m in range(ceildiv(13, tile_m_size)):
-#        for tile_n in range(ceildiv(7, tile_n_size)):
-#            print("----tile-data[", tile_m, ",", tile_n, "]----")
-#            var tile_4x4 = tensor_13x7.tile[tile_m_size, tile_n_size](
-#                tile_m, tile_n
-#            )
-#            var tile_4x4_cache = LayoutTensor[
-#                .float32, Layout.row_major(tile_m_size, tile_n_size)
-#            ].stack_allocation[stack_alignment=16]().fill(0)
-#            tile_4x4_cache.copy_from[
-#                dst_coords_bound = rebind[
-#                    IndexList[tile_4x4_cache.layout.rank()]
-#                ]((13, 7))
-#            ](tile_4x4)
-#            print(tile_4x4_cache)
-#
-#            for th_id in range(4):
-#                print("----fragments-data[", th_id, "]----")
-#                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](
-#                    th_id
-#                )
-#                var tile_2x2_cache = LayoutTensor[
-#                    .float32, Layout.row_major(2, 2)
-#                ].stack_allocation[stack_alignment=16]().fill(0)
-#                tile_2x2_cache.copy_from[
-#                    dst_coords_bound = rebind[
-#                        IndexList[tile_2x2_cache.layout.rank()]
-#                    ]((13, 7))
-#                ](tile_2x2)
-#                print(tile_2x2_cache)
-#
 
 
 def test_copy_subtiles_scalars_back():
@@ -1626,248 +1334,16 @@ def test_nested_layout_tensor_iterator():
     print(tiled_nested_tensor_iter[][1, 0], tiled_nested_tensor_iter[][1, 1])
 
 
-# DISABLED-CHECK-LABEL: test_copy_from_bigger_tensor
-# def test_copy_from_bigger_tensor():
-#    print("== test_copy_from_bigger_tensor")
-#    var tensor_5x7 = LayoutTensor[
-#        .float32, Layout.row_major(8, 8)
-#    ].stack_allocation().fill(0)
-#
-#    var tensor_8x8 = LayoutTensor[
-#        .float32, Layout.row_major(8, 8)
-#    ].stack_allocation()
-#    arange(tensor_8x8)
-#
-#    tensor_5x7.copy_from[
-#        rebind[IndexList[tensor_5x7.layout.rank()]]((5, 7))
-#    ](tensor_8x8)
-#    # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 0.0
-#    # DISABLED-CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 0.0
-#    # DISABLED-CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 0.0
-#    # DISABLED-CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 0.0
-#    # DISABLED-CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    print(tensor_5x7)
-
-
-# DISABLED-CHECK-LABEL: test_copy_from_smaller_tensor
-# def test_copy_from_smaller_tensor():
-#     print("== test_copy_from_smaller_tensor")
-#     var tensor_5x7 = LayoutTensor[
-#         .float32, Layout.row_major(8, 8)
-#     ].stack_allocation()
-#     arange(tensor_5x7)
-#
-#     var tensor_8x8 = LayoutTensor[
-#         .float32, Layout.row_major(8, 8)
-#     ].stack_allocation().fill(0)
-#
-#     tensor_8x8.copy_from[
-#         rebind[IndexList[tensor_8x8.layout.rank()]]((5, 7))
-#     ](tensor_5x7)
-#     # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 0.0
-#     # DISABLED-CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 0.0
-#     # DISABLED-CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 0.0
-#     # DISABLED-CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 0.0
-#     # DISABLED-CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 0.0
-#     # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#     # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#     # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#     print(tensor_8x8)
-
-
-# DISABLED-CHECK-LABEL: test_copy_from_vectorized_masked_write
-# def test_copy_from_vectorized_masked_write():
-#    print("== test_copy_from_vectorized_masked_write")
-#
-#    var tensor_4x8 = LayoutTensor[
-#        .float32, Layout.row_major(4, 8)
-#    ].stack_allocation()
-#    arange(tensor_4x8)
-#
-#    var tensor_8x8 = LayoutTensor[
-#        .float32, Layout.row_major(8, 8)
-#    ].stack_allocation()
-#    arange(tensor_8x8)
-#
-#    var tensor_8x8_data = LayoutTensor[
-#        .float32, Layout.row_major(8, 8)
-#    ].stack_allocation()
-#
-#    var tensor_1x5 = LayoutTensor[.float32, Layout.row_major(1, 5)](
-#        tensor_8x8_data.ptr
-#    )
-#
-#    _ = tensor_8x8_data.fill(-1)
-#
-#    var tensor_1x8 = LayoutTensor[
-#        .float32, Layout.row_major(1, 8)
-#    ].stack_allocation()
-#    arange(tensor_1x8)
-#
-#    var tensor_1x5_v1_4 = tensor_1x5.vectorize[1, 4]()
-#    tensor_1x5_v1_4.copy_from[
-#        dst_coords_bound = rebind[IndexList[tensor_1x5_v1_4.layout.rank()]](
-#            (1, 5)
-#        )
-#    ](tensor_1x8.vectorize[1, 4]())
-#
-#    # DISABLED-CHECK: write-1x5:
-#    # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    print("write-1x5:")
-#    print(tensor_8x8_data)
-#
-#    var tensor_3x8 = LayoutTensor[.float32, Layout.row_major(3, 8)](
-#        tensor_8x8_data.ptr
-#    )
-#
-#    _ = tensor_8x8_data.fill(-1)
-#
-#    var tensor_3x8_v_4_4 = tensor_3x8.vectorize[4, 4]()
-#    tensor_3x8_v_4_4.copy_from[
-#        dst_coords_bound = rebind[IndexList[tensor_3x8_v_4_4.layout.rank()]](
-#            (3, 8)
-#        )
-#    ](tensor_4x8.vectorize[4, 4]())
-#
-#    # DISABLED-CHECK: write-3x8:
-#    # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
-#    # DISABLED-CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-#    # DISABLED-CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    print("write-3x8:")
-#    print(tensor_8x8_data)
-#
-#    var tensor_5x8 = LayoutTensor[.float32, Layout.row_major(5, 8)](
-#        tensor_8x8_data.ptr
-#    )
-#
-#    _ = tensor_8x8_data.fill(-1)
-#
-#    var tensor5x8_v_4_1 = tensor_5x8.vectorize[4, 1]()
-#    tensor5x8_v_4_1.copy_from[
-#        dst_coords_bound = rebind[IndexList[tensor5x8_v_4_1.layout.rank()]](
-#            (5, 8)
-#        )
-#    ](tensor_8x8.vectorize[4, 1]())
-#
-#    # DISABLED-CHECK: write-5x8:
-#    # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
-#    # DISABLED-CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-#    # DISABLED-CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
-#    # DISABLED-CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-#    # DISABLED-CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    # DISABLED-CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
-#    print("write-5x8:")
-#    print(tensor_8x8_data)
-#
-
-
-# def test_copy_from_vectorized_masked_read():
-#    print("== test_copy_from_vectorized_masked_read")
-#    var tensor_8x8 = LayoutTensor[
-#        .float32, Layout.row_major(8, 8)
-#    ].stack_allocation().fill(-1)
-#
-#    var tensor_8x5 = LayoutTensor[
-#        .float32, Layout.row_major(8, 5)
-#    ].stack_allocation()
-#    arange(tensor_8x5)
-#
-#    var tensor_8x8_v_1_4 = tensor_8x8.vectorize[1, 4]()
-#    tensor_8x8_v_1_4.copy_from[
-#        src_coords_bound = rebind[IndexList[tensor_8x8_v_1_4.layout.rank()]](
-#            (8, 5)
-#        )
-#    ](tensor_8x5.vectorize[1, 4]())
-#
-#    # DISABLED-CHECK: read-8x5:
-#    # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 5.0 6.0 7.0 8.0 9.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 10.0 11.0 12.0 13.0 14.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 15.0 16.0 17.0 18.0 19.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 20.0 21.0 22.0 23.0 24.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 25.0 26.0 27.0 28.0 29.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 30.0 31.0 32.0 33.0 34.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 35.0 36.0 37.0 38.0 39.0 0.0 0.0 0.0
-#    print("read-8x5:")
-#    print(tensor_8x8)
-#
-#    var tensor_5x8 = LayoutTensor[
-#        .float32, Layout.row_major(5, 8)
-#    ].stack_allocation()
-#    arange(tensor_5x8)
-#
-#    _ = tensor_8x8.fill(-1)
-#    var tensor_8x8_v_4_1 = tensor_8x8.vectorize[4, 1]()
-#    tensor_8x8_v_4_1.copy_from[
-#        src_coords_bound = rebind[IndexList[tensor_8x8_v_4_1.layout.rank()]](
-#            (5, 8)
-#        )
-#    ](tensor_5x8.vectorize[4, 1]())
-#
-#    # DISABLED-CHECK: read-5x8:
-#    # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
-#    # DISABLED-CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-#    # DISABLED-CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
-#    # DISABLED-CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-#    # DISABLED-CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    print("read-5x8:")
-#    print(tensor_8x8)
-#
-#    _ = tensor_8x8.fill(-1)
-#    var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
-#    tensor_8x8_v_4_4.copy_from[
-#        src_coords_bound = rebind[IndexList[tensor_8x8_v_4_4.layout.rank()]](
-#            (5, 8)
-#        )
-#    ](tensor_5x8.vectorize[4, 4]())
-#
-#    # DISABLED-CHECK: read-5x8_v_4_4:
-#    # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
-#    # DISABLED-CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-#    # DISABLED-CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
-#    # DISABLED-CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-#    # DISABLED-CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    # DISABLED-CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-#    print("read-5x8_v_4_4:")
-#    print(tensor_8x8)
-
-
 # CHECK-LABEL: test_binary_math_ops
 def test_binary_math_ops() raises:
     print("== test_binary_math_ops")
 
-    var managed_tensor_a = ManagedLayoutTensor[
-        .float32, Layout(IntTuple(8, 4))
-    ]()
-    var tensor_a = managed_tensor_a.tensor()
+    var tensor_a_storage = Array[Float32, 32](fill=0)
+    var tensor_a = TileTensor(tensor_a_storage, col_major[8, 4]())
     arange(tensor_a, start=1)
 
-    var managed_tensor_b = ManagedLayoutTensor[
-        .float32, Layout(IntTuple(8, 4))
-    ]()
-    var tensor_b = managed_tensor_b.tensor()
+    var tensor_b_storage = Array[Float32, 32](fill=0)
+    var tensor_b = TileTensor(tensor_b_storage, col_major[8, 4]())
     arange(tensor_b, start=32, step=-1)
 
     # CHECK: ----add matrix----
@@ -1880,7 +1356,15 @@ def test_binary_math_ops() raises:
     # CHECK: 33.0 	33.0 	33.0 	33.0
     # CHECK: 33.0 	33.0 	33.0 	33.0
     print("----add matrix----")
-    var add = tensor_a + tensor_b
+    var add_storage = Array[Float32, 32](fill=0)
+    var add = TileTensor(add_storage, col_major[8, 4]())
+    type_of(add).Engine.add[
+        LhsEngine=type_of(tensor_a).Engine, RhsEngine=type_of(tensor_b).Engine
+    ](
+        dst=(add._unsafe_storage_cast[to_mut=True](), add.layout),
+        lhs=(tensor_a._storage, tensor_a.layout),
+        rhs=(tensor_b._storage, tensor_b.layout),
+    )
     print_raw_major_tensor(add)
 
     # CHECK: ----sub matrix----
@@ -1893,7 +1377,15 @@ def test_binary_math_ops() raises:
     # CHECK: -17.0 	-19.0 	-21.0 	-23.0
     # CHECK: -25.0 	-27.0 	-29.0 	-31.0
     print("----sub matrix----")
-    var sub = tensor_b - tensor_a
+    var sub_storage = Array[Float32, 32](fill=0)
+    var sub = TileTensor(sub_storage, col_major[8, 4]())
+    type_of(sub).Engine.sub[
+        LhsEngine=type_of(tensor_b).Engine, RhsEngine=type_of(tensor_a).Engine
+    ](
+        dst=(sub._unsafe_storage_cast[to_mut=True](), sub.layout),
+        lhs=(tensor_b._storage, tensor_b.layout),
+        rhs=(tensor_a._storage, tensor_a.layout),
+    )
     print_raw_major_tensor(sub)
 
     # CHECK: ----div matrix----
@@ -1906,7 +1398,15 @@ def test_binary_math_ops() raises:
     # CHECK: 0.32    0.26923078      0.22222222      0.17857143
     # CHECK: 0.13793103      0.1     0.06451613      0.03125
     print("----div matrix----")
-    var div = tensor_b / tensor_a
+    var div_storage = Array[Float32, 32](fill=0)
+    var div = TileTensor(div_storage, col_major[8, 4]())
+    type_of(div).Engine.truediv[
+        LhsEngine=type_of(tensor_b).Engine, RhsEngine=type_of(tensor_a).Engine
+    ](
+        dst=(div._unsafe_storage_cast[to_mut=True](), div.layout),
+        lhs=(tensor_b._storage, tensor_b.layout),
+        rhs=(tensor_a._storage, tensor_a.layout),
+    )
     print_raw_major_tensor(div)
 
     # CHECK: ----mul matrix----
@@ -1919,11 +1419,16 @@ def test_binary_math_ops() raises:
     # CHECK: 200.0 	182.0 	162.0 	140.0
     # CHECK: 116.0 	90.0 	62.0 	32.0
     print("----mul matrix----")
-    var mul = tensor_b * tensor_a
+    var mul_storage = Array[Float32, 32](fill=0)
+    var mul = TileTensor(mul_storage, col_major[8, 4]())
+    type_of(mul).Engine.mul[
+        LhsEngine=type_of(tensor_b).Engine, RhsEngine=type_of(tensor_a).Engine
+    ](
+        dst=(mul._unsafe_storage_cast[to_mut=True](), mul.layout),
+        lhs=(tensor_b._storage, tensor_b.layout),
+        rhs=(tensor_a._storage, tensor_a.layout),
+    )
     print_raw_major_tensor(mul)
-
-    _ = managed_tensor_a^
-    _ = managed_tensor_b^
 
 
 def test_vectorized_tile() raises:
@@ -1949,9 +1454,10 @@ def test_nested_tile() raises:
     comptime base_layout = Layout.row_major(8, 8)
     comptime tiler_layout = Layout.row_major(2, 2)
     comptime layout = blocked_product(base_layout, tiler_layout)
-    var managed_tensor_a = ManagedLayoutTensor[.float32, layout]()
-    arange(managed_tensor_a.tensor())
-    var tensor_a = managed_tensor_a.tensor()
+    var tensor_a = LayoutTensor[
+        .float32, layout, MutAnyOrigin
+    ].stack_allocation()
+    arange(tensor_a)
     var vt = tensor_a.tile[4, 4](0, 0)
     for i in range(4):
         for j in range(4):
@@ -1969,12 +1475,12 @@ def test_tensor_size() raises:
 
 # This test doesn't need to run, it just needs to compile
 def test_merge():
-    comptime layout = Layout.row_major(4, 4)
-    var stack = Array[UInt32, layout.size()](fill={})
-    var tensor = LayoutTensor[.uint32, layout](stack)
-    var stack2 = Array[UInt32, layout.size()](fill={})
-    var tensor2 = LayoutTensor[.uint32, layout](stack2)
-    var a = tensor if tensor.size() > 1 else tensor2
+    comptime layout = row_major[4, 4]()
+    var stack = Array[UInt32, layout.static_product](fill={})
+    var tensor = TileTensor(stack, layout).as_unsafe_any_origin()
+    var stack2 = Array[UInt32, layout.static_product](fill={})
+    var tensor2 = TileTensor(stack2, layout).as_unsafe_any_origin()
+    var a = tensor if tensor.num_elements() > 1 else tensor2
     print(a)
 
 
@@ -2009,8 +1515,6 @@ def main() raises:
     test_distribute_vectorized()
     test_distribute_axis_projection()
     test_split()
-    # test_copy_subtiles_scalars()
-    # test_copy_distributed_subtiles_scalars()
     # # TODO(#38547) re-enable the following test once the non-deterministic behavior is addressed.
     # # test_copy_subtiles_scalars_back()
     test_slice_with_offsets()
@@ -2019,10 +1523,6 @@ def main() raises:
     # test_element_coords_vectorized()
     # test_element_coords_tile_and_distribute()
     # test_element_coords_tiles_do_not_div()
-    # test_copy_from_bigger_tensor()
-    # test_copy_from_smaller_tensor()
-    # test_copy_from_vectorized_masked_write()
-    # test_copy_from_vectorized_masked_read()
     test_binary_math_ops()
     test_vectorized_tile()
     test_nested_tile()

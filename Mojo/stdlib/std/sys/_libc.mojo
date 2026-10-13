@@ -23,7 +23,6 @@ from std.ffi import (
     c_size_t,
     c_pid_t,
     external_call,
-    get_errno,
     CStringSpan,
 )
 from std.sys import CompilationTarget

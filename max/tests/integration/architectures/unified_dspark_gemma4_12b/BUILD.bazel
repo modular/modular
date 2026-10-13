@@ -63,6 +63,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     # The full unified-graph compile takes ~7 min on CI — too heavy for
     # presubmit (the unified dflash arches ship no presubmit compile test
     # at all). Run explicitly / from scheduled jobs only.

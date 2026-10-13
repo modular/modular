@@ -556,8 +556,8 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         comptime for i in range(Self._InjectedValues.__len__()):
             var lower, upper = self._values[i].bounds()
             res_lower = min(res_lower, lower)
-            if upper:
-                res_upper = min(res_upper.or_else(Int.MAX), upper.value())
+            if case .Some(upper) = upper:
+                res_upper = min(res_upper.or_else(Int.MAX), upper)
 
         return (res_lower, res_upper)
 
@@ -805,8 +805,8 @@ struct _PeekableIterator[InnerIterator: Iterator](
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var peek_len = 1 if self._next else 0
         var lower, upper = self._inner.bounds()
-        if upper:
-            return (lower + peek_len, upper.value() + peek_len)
+        if case .Some(upper) = upper:
+            return (lower + peek_len, upper + peek_len)
         else:
             return (lower + peek_len, None)
 

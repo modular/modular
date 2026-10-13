@@ -72,7 +72,9 @@ _TARGET_PREFIX = "target."
 class UnifiedDflash2Qwen3_5Model(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    GraphPipelineModelWithKVCache[Qwen3VLTextAndVisionContext],
+    GraphPipelineModelWithKVCache[
+        Qwen3VLTextAndVisionContext, UnifiedDflash2Qwen3_5Config
+    ],
 ):
     """Qwen3.5 with a DFlash2 block drafter, in one compiled graph."""
 
@@ -210,10 +212,9 @@ class UnifiedDflash2Qwen3_5Model(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedDflash2Qwen3_5Config,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDflash2Qwen3_5Config)
         if not self.pipeline_config.needs_bitmask_constraints:
             raise ValueError(
                 "Qwen3.5 DFlash2 needs the constrained-decoding bitmask input:"

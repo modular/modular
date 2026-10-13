@@ -21,7 +21,7 @@ from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (

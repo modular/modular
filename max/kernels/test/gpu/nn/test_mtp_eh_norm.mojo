@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the MTP draft layer's fused input projection."""
 
-from std.math import rsqrt, sqrt
+from std.math import sqrt
 from std.random import rand, seed
 from std.testing import assert_equal, assert_true
 

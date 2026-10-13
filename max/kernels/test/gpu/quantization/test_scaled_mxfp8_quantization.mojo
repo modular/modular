@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.block_scaled_quantization import (
     quantize_dynamic_scaled_fp4fp8,

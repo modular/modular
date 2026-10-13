@@ -130,6 +130,27 @@ def stop_capture(output_path: str) -> str:
         incomplete.
     """
 
+def request_burst(reason: str) -> bool:
+    """
+    Requests an extra step-window burst for an event, opened now.
+
+    Applies only to a capture with ``profiling-period-steps`` set, where it
+    adds a burst between scheduled ones for an event the schedule would
+    likely miss, such as a prefill batch. Call it just before the execute
+    the burst should start with. The burst covers ``profiling-active-steps``
+    steps and is saved to ``<output>.event<k>.json``, labeled with
+    ``reason``. At most one request is honored per gap between scheduled
+    bursts, and none before the first scheduled burst.
+
+    Args:
+        reason: Why the burst was requested, recorded in the trace.
+            Characters outside ``[A-Za-z0-9_.-]`` become ``_``.
+
+    Returns:
+        True if a burst opened. False when profiling is off, which costs a
+        single check, or when the request was not honored.
+    """
+
 def is_capture_recording() -> bool:
     """
     Returns whether a capture is recording.

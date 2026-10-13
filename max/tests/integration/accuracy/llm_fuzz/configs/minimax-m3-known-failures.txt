@@ -15,6 +15,11 @@
 #   - Mammoth, via the llm-fuzz image's EXCLUDE_FILE env var (the Dockerfile
 #     copies this whole tree into the image)
 
+# concurrent_stress
+# Asserts tool_choice=required calls a declared tool. MiniMax asked for M3's
+# grammar to admit undeclared tool names, so a call the history suggests (e.g.
+# `tool_name`) is valid output here.
+concurrent_stress:concurrent_mixed_10
 # endurance_soak
 endurance_soak:endurance_steady_state_error_windows
 endurance_soak:endurance_streaming_leak

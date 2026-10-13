@@ -18,7 +18,7 @@ types that abstract over the NVIDIA and AMD vendor libraries so callers can
 dispatch GEMM operations without binding to a specific vendor API.
 """
 
-from std.sys import has_amd_gpu_accelerator, size_of
+from std.sys import default_accelerator, size_of
 from std.math import ceildiv
 from std.ffi import _get_global_or_null, external_call
 
@@ -95,14 +95,10 @@ from _rocblas.rocblas import (
     rocblas_destroy_handle,
 )
 from max.gpu.host import DeviceContext
+from max.gpu.host._kernel_load_gate import KernelLoadScope
 from max.gpu.host._amdgpu_hip import HIP
 from max.gpu.host._nvidia_cuda import CUDA
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from layout.tile_tensor import (
     NullableTileTensor,
     _ComptimeConditionalTileTensor,
@@ -130,7 +126,7 @@ from linalg.fp4_utils import (
 # ===----------------------------------------------------------------------===#
 
 
-struct Backend(Equatable, TrivialRegisterPassable, Writable):
+struct Backend(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Identifies which vendor BLAS library backs a matmul operation.
 
     Acts as a comptime-selectable tag (`AUTOMATIC`, `CUBLAS`, `CUBLASLT`,
@@ -145,6 +141,30 @@ struct Backend(Equatable, TrivialRegisterPassable, Writable):
     comptime CUBLASLT = Self(2)
     comptime ROCBLAS = Self(3)
     comptime HIPBLASLT = Self(4)
+
+    comptime _enum_case_names = ParameterList.of[
+        "AUTOMATIC".value,
+        "CUBLAS".value,
+        "CUBLASLT".value,
+        "ROCBLAS".value,
+        "HIPBLASLT".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Backend has no payload"
 
     def __init__(out self, value: Int):
         self._value = Int32(value)
@@ -182,9 +202,9 @@ def _resolve_backend[
     comptime if backend is not Backend.AUTOMATIC:
         return backend
     # TODO: Remove this once we have a proper hipBLASLt backend for float32.
-    elif dtype == DType.float32 and has_amd_gpu_accelerator():
+    elif dtype == DType.float32 and default_accelerator().is_amd_gpu():
         return Backend.ROCBLAS
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         return Backend.HIPBLASLT
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
@@ -331,8 +351,8 @@ def _ffi_void_ptr[
 
     Returns None when the optional is empty.
     """
-    if ptr:
-        return rebind[OpaquePointer[MutAnyOrigin]](ptr.unsafe_value())
+    if case .Some(ptr) = ptr:
+        return rebind[OpaquePointer[MutAnyOrigin]](ptr)
     return None
 
 
@@ -367,14 +387,15 @@ def _get_global_handle[
 ](ctx: DeviceContext) raises -> Handle[backend]:
     var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
     var global_ptr = _get_global_or_null(HANDLE_NAME)
-    if global_ptr:
-        var ptr = global_ptr.value().unsafe_bitcast[Handle[backend]]()
+    if case .Some(global_ptr) = global_ptr:
+        var ptr = global_ptr.unsafe_bitcast[Handle[backend]]()
         _attach_handle_to_stream(ctx, ptr[])
         return ptr[]
 
     # Otherwise, we have not initialized the handle yet.
     var handle_ptr = alloc(AllocLayout[Handle[backend]].single()).unsafe_leak()
-    handle_ptr.unsafe_write(Handle[backend]())
+    with KernelLoadScope(ctx):
+        handle_ptr.unsafe_write(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
         handle_ptr.bitcast[NoneType](),
@@ -539,74 +560,79 @@ def matmul[
             transpose_b,
         )
 
-    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+    with KernelLoadScope(ctx), Trace[TraceLevel.OP, target=StaticString("gpu")](
         String(t"{handle.resolved_backend}_matmul"),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
-        comptime if handle.resolved_backend is Backend.CUBLAS:
-            _cublas_matmul[use_tf32=use_tf32](
-                ctx,
-                handle._get_cublas(),
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                c_row_major=c_row_major,
-                transpose_a=transpose_a,
-                transpose_b=transpose_b,
-                alpha=alpha,
-                beta=beta,
-            )
-        elif handle.resolved_backend is Backend.ROCBLAS:
-            _rocblas_matmul[use_tf32=use_tf32](
-                ctx,
-                handle._get_rocblas(),
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                c_row_major=c_row_major,
-                transpose_a=transpose_a,
-                transpose_b=transpose_b,
-                alpha=alpha,
-                beta=beta,
-            )
-        elif handle.resolved_backend is Backend.CUBLASLT:
-            _cublasLt_matmul[scales_type=scales_type, has_scales=has_scales](
-                ctx,
-                handle._get_cublas(),
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                a_scales=a_scales,
-                b_scales=b_scales,
-                c_row_major=c_row_major,
-                transpose_a=transpose_a,
-                transpose_b=transpose_b,
-                alpha=alpha,
-                beta=beta,
-            )
-        elif handle.resolved_backend is Backend.HIPBLASLT:
-            _hipblasLt_matmul[scales_type=scales_type, has_scales=has_scales](
-                ctx,
-                handle._get_hipblaslt(),
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                a_scales=a_scales,
-                b_scales=b_scales,
-                c_row_major=c_row_major,
-                transpose_a=transpose_a,
-                transpose_b=transpose_b,
-                alpha=alpha,
-                beta=beta,
-                batch_size=batch_size,
-            )
-        else:
-            raise Error(
-                "the backend '",
-                handle.backend,
-                "' is not currently supported",
-            )
+        comptime match handle.resolved_backend:
+            case .CUBLAS:
+                _cublas_matmul[use_tf32=use_tf32](
+                    ctx,
+                    handle._get_cublas(),
+                    c_tensor,
+                    a_tensor,
+                    b_tensor,
+                    c_row_major=c_row_major,
+                    transpose_a=transpose_a,
+                    transpose_b=transpose_b,
+                    alpha=alpha,
+                    beta=beta,
+                )
+            case .ROCBLAS:
+                _rocblas_matmul[use_tf32=use_tf32](
+                    ctx,
+                    handle._get_rocblas(),
+                    c_tensor,
+                    a_tensor,
+                    b_tensor,
+                    c_row_major=c_row_major,
+                    transpose_a=transpose_a,
+                    transpose_b=transpose_b,
+                    alpha=alpha,
+                    beta=beta,
+                )
+            case .CUBLASLT:
+                _cublasLt_matmul[
+                    scales_type=scales_type, has_scales=has_scales
+                ](
+                    ctx,
+                    handle._get_cublas(),
+                    c_tensor,
+                    a_tensor,
+                    b_tensor,
+                    a_scales=a_scales,
+                    b_scales=b_scales,
+                    c_row_major=c_row_major,
+                    transpose_a=transpose_a,
+                    transpose_b=transpose_b,
+                    alpha=alpha,
+                    beta=beta,
+                )
+            case .HIPBLASLT:
+                _hipblasLt_matmul[
+                    scales_type=scales_type, has_scales=has_scales
+                ](
+                    ctx,
+                    handle._get_hipblaslt(),
+                    c_tensor,
+                    a_tensor,
+                    b_tensor,
+                    a_scales=a_scales,
+                    b_scales=b_scales,
+                    c_row_major=c_row_major,
+                    transpose_a=transpose_a,
+                    transpose_b=transpose_b,
+                    alpha=alpha,
+                    beta=beta,
+                    batch_size=batch_size,
+                )
+            case _:
+                raise Error(
+                    "the backend '",
+                    handle.backend,
+                    "' is not currently supported",
+                )
 
 
 # ===----------------------------------------------------------------------===#

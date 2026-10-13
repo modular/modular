@@ -49,6 +49,12 @@ the artifact it claims against the graph claiming it.
 The signature check is a guard, not a proof: it catches divergences visible in a
 graph's input and output types, not every way two graphs can differ. Reuse only
 artifacts produced by the same code at the same revision.
+
+Not every artifact is one graph. A caller that compiles a module of many graphs
+together, because that is far cheaper than compiling them one at a time, names
+the artifact itself with :meth:`MefStore.claim_export_artifact` and asks for it
+by that name with :meth:`MefStore.artifact`. The name is its whole identity, and
+asking for one nobody recorded raises like a missing graph does.
 """
 
 from __future__ import annotations
@@ -148,7 +154,10 @@ def _fingerprint(graph: Graph) -> str:
 
 
 class MissingArtifactError(RuntimeError):
-    """No artifact was recorded for a graph a session was asked to import.
+    """No artifact was recorded for what a store was asked to import.
+
+    Either a graph a session was asked to compile, or an artifact a caller
+    named by key (see :meth:`MefStore.artifact`).
 
     A :class:`RuntimeError` because that is what this path raised before the
     type existed, and callers catch it that way.
@@ -156,19 +165,24 @@ class MissingArtifactError(RuntimeError):
 
     def __init__(
         self,
-        graph_name: str,
         key: str,
-        signature: dict[str, list[str]],
         directories: tuple[Path, ...],
         recorded: Iterable[str],
+        *,
+        graph_name: str | None = None,
+        signature: dict[str, list[str]] | None = None,
     ) -> None:
         self.graph_name = graph_name
         self.key = key
         self.signature = signature
         self.directories = directories
+        wanted = (
+            f"for graph {graph_name!r} with signature {signature}"
+            if graph_name is not None
+            else "under that key"
+        )
         super().__init__(
-            f"no precompiled artifact {key!r} for graph {graph_name!r} with "
-            f"signature {signature}, in "
+            f"no precompiled artifact {key!r} {wanted}, in "
             + ", ".join(str(path) for path in directories)
             + ".\n  precompiled: "
             + (", ".join(sorted(recorded)) or "(nothing)")
@@ -235,6 +249,9 @@ class MefStore:
     # Where each artifact actually lives, which is not derivable from the key
     # once the artifacts come from more than one directory.
     _artifacts: dict[str, Path] = field(default_factory=dict)
+    # Artifacts a caller names itself rather than through a graph (see
+    # `claim_export_artifact`), and where each lives.
+    _named: dict[str, Path] = field(default_factory=dict)
 
     @classmethod
     def for_export(
@@ -312,6 +329,7 @@ class MefStore:
 
         entries: dict[str, _Entry] = {}
         artifacts: dict[str, Path] = {}
+        named: dict[str, Path] = {}
         for path in paths:
             manifest = path / _MANIFEST_NAME
             if not manifest.is_file():
@@ -335,6 +353,17 @@ class MefStore:
                     )
                 entries.setdefault(recorded.key, recorded)
                 artifacts.setdefault(recorded.key, path / recorded.key)
+            # Absent from a manifest written before named artifacts existed.
+            for name in json.loads(manifest.read_text()).get("artifacts", []):
+                # Nothing records what a named artifact holds, so one key in
+                # two directories cannot be told apart from two artifacts.
+                if name in named:
+                    raise RuntimeError(
+                        f"{named[name]} and {path / name} are both recorded as"
+                        f" {name!r}, and nothing says whether they hold the"
+                        " same thing; name only one of them."
+                    )
+                named[name] = path / name
 
         return cls(
             directories=paths,
@@ -343,6 +372,7 @@ class MefStore:
             verify_body=verify_body,
             _entries=entries,
             _artifacts=artifacts,
+            _named=named,
         )
 
     def claim_export(self, graph: Graph) -> Path:
@@ -378,6 +408,11 @@ class MefStore:
             # A graph compiled twice claims one artifact, and the second
             # export rewrites bytes describing the same graph. Two *different*
             # graphs landing on one key is the case no artifact can represent.
+            if key in self._named:
+                raise RuntimeError(
+                    f"{key!r} is already an artifact named in this store, so"
+                    f" graph {graph.name!r} cannot be exported under it"
+                )
             previous = self._entries.get(key)
             if (
                 previous is not None
@@ -424,7 +459,11 @@ class MefStore:
                     recorded.name for recorded in self._entries.values()
                 ]
             raise MissingArtifactError(
-                graph.name, key, _signature(graph), self.directories, recorded
+                key,
+                self.directories,
+                recorded,
+                graph_name=graph.name,
+                signature=_signature(graph),
             )
         if self.verify_body:
             if not entry.fingerprint:
@@ -441,10 +480,59 @@ class MefStore:
                 )
         return self._artifacts[entry.key]
 
+    def claim_export_artifact(self, name: str) -> Path:
+        """Records an artifact the caller names, and returns where to write it.
+
+        For an artifact that is not one graph -- a module of many, compiled
+        together because that is far cheaper than one at a time -- so no graph
+        can name it. The caller's name is its whole identity: a reader asks for
+        it by the same name, and nothing checks what it holds.
+
+        Args:
+            name: The artifact's filename within the store.
+
+        Returns:
+            Where to export the compiled artifact.
+
+        Raises:
+            ValueError: If this store is not exporting, or ``name`` is already
+                a graph's artifact.
+        """
+        if not self.exporting:
+            raise ValueError("only an exporting store records artifacts")
+        path = self.directories[0] / name
+        with self._lock:
+            if name in self._entries:
+                raise ValueError(
+                    f"{name!r} is already a graph's artifact in this store"
+                )
+            self._named[name] = path
+        return path
+
+    def artifact(self, name: str) -> Path:
+        """Returns the artifact recorded under ``name``.
+
+        Args:
+            name: What the exporting caller named it.
+
+        Returns:
+            The artifact's path.
+
+        Raises:
+            MissingArtifactError: If no directory recorded ``name``.
+        """
+        with self._lock:
+            path = self._named.get(name)
+            recorded = list(self._named)
+        if path is None:
+            raise MissingArtifactError(name, self.directories, recorded)
+        return path
+
     def write_manifest(self) -> None:
         """Writes the manifest describing everything exported so far."""
         with self._lock:
             entries = sorted(self._entries.values(), key=lambda e: e.key)
+            named = sorted(self._named)
         (self.directories[0] / _MANIFEST_NAME).write_text(
             json.dumps(
                 {
@@ -457,6 +545,7 @@ class MefStore:
                         }
                         for entry in entries
                     ],
+                    "artifacts": named,
                 },
                 indent=2,
             )

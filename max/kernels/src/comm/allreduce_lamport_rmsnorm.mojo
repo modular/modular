@@ -38,7 +38,7 @@ from std.collections import Array
 
 from max.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -235,7 +235,9 @@ def _allreduce_lamport_rmsnorm_kernel[
     if tid == 0:
         var arrived = Atomic.fetch_add(state + Lamport.STATE_ARRIVAL, UInt32(1))
         if Int(arrived) == grid_dim.x - 1:
-            (state + Lamport.STATE_FLAG).store[volatile=True](UInt32(flag + 1))
+            (state + Lamport.STATE_FLAG).store[volatile=True](
+                UInt32(LamportGeneration.advance(flag))
+            )
             (state + Lamport.STATE_PREV_PACKS).store[volatile=True](
                 UInt32(cur_packs)
             )
@@ -284,6 +286,12 @@ def lamport_allreduce_rmsnorm[
     comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
     comptime max_tpb = ctx.default_device_info.max_thread_block_size
     comptime BLOCK_SIZE = align_down(max_tpb, WARP_SIZE)
+
+    # A zero grid is rejected by `enqueue_function`. Every rank sees the same
+    # `rows`, and the generation flag only advances in-kernel, so skipping
+    # the launch on all ranks leaves the rotation in step.
+    if rows == 0:
+        return
 
     if cols % atomic_width != 0:
         raise Error(

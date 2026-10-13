@@ -199,13 +199,13 @@ def test_inlining() raises:
     assert_equal(doubled[.never](3), 6)
 
 
-# --- comptime __match: specialize by pattern ---
+# --- comptime match: specialize by pattern ---
 def small_tile[mt: Int, nt: Int]() -> String where mt * nt <= 256:
     return String("small ", mt, "x", nt)
 
 
 def tile_path[m: Int, n: Int]() -> String:
-    comptime __match (m, n):
+    comptime match (m, n):
         case (16, 16):
             return "tuned 16x16"
         case (mt, nt) if mt * nt <= 256:  # the guard proves small_tile's where
@@ -216,7 +216,7 @@ def tile_path[m: Int, n: Int]() -> String:
 
 def tile_count[m: Int]() -> Int:
     var hits = 0
-    comptime __match m:
+    comptime match m:
         case 16:
             hits += 1
     # no case _: an unmatched subject compiles to nothing

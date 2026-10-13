@@ -67,6 +67,13 @@ class FuzzTarget:
 
 
 _TARGETS: dict[str, FuzzTarget] = {
+    "argsort": FuzzTarget(
+        name="argsort",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_argsort.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_argsort.mojo.test",
+        description="argsort block boundaries, exact CPU sort and permutation oracle",
+        default_oracle="ref",
+    ),
     "attn_res_mix": FuzzTarget(
         name="attn_res_mix",
         bazel_target=("//Kernels/test/fuzz:fuzz_attn_res_mix.mojo.test"),
@@ -135,9 +142,9 @@ _TARGETS: dict[str, FuzzTarget] = {
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_reductions.mojo.test",
         binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_reductions.mojo.test",
         description=(
-            "algorithm.reductions sum/max/min/mean/argmax/argmin over the"
-            " rowwise GPU scaffolder; reduced axis drawn from 0, outputs"
-            " sentinel-checked for a missing write (ref oracle)"
+            "builtin_kernels.rowwise_reductions sum/max/min/mean/argmax/"
+            "argmin over the rowwise GPU scaffolder; reduced axis drawn from"
+            " 0, outputs sentinel-checked for a missing write (ref oracle)"
         ),
         default_oracle="ref",
     ),

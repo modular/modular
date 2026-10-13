@@ -13,7 +13,7 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys import argv, size_of
+from std.sys import argv
 from std.sys.defines import get_defined_int
 
 from max.gpu import *

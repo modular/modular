@@ -303,7 +303,7 @@ def build_prefill_graph(spec: PrefillSpec) -> Graph:
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
         freqs_cis = ops.cast(rope.freqs_cis, hidden.dtype).to(hidden.device)
-        out, _topk = attn(
+        out, _rows = attn(
             layer_idx,
             hidden,
             kv_mla,

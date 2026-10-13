@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import std.time
-from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
+from std.sys import size_of, simd_width_of
 from std.itertools import product
 
-from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout import (
+    Coord,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
 from comm import Signal, group_start, group_end
 from comm.sync import enable_p2p, init_signal_buffer
-from comm.allreduce import (
-    _allreduce_naive_single,
-    allreduce,
-    elementwise_epilogue_type,
-)
+from comm.allreduce import _allreduce_naive_single, allreduce
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
 from max.gpu.host import (
@@ -32,7 +32,6 @@ from max.gpu.host import (
     get_gpu_target,
 )
 from std.testing import assert_almost_equal, assert_true
-from std.collections import Optional
 
 from std.utils import IndexList, StaticTuple
 
@@ -201,20 +200,23 @@ def allreduce_test[
     group_start()
 
     comptime for i in range(ngpus):
-        allreduce[
-            ngpus=ngpus,
-            output_lambda=Optional[elementwise_epilogue_type](
-                outputs_lambda[input_index=i, ...]
-            ) if use_custom_epilogue else None,
-            use_multimem=use_multimem,
-        ](in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i])
+        comptime if use_custom_epilogue:
+            allreduce[
+                ngpus=ngpus,
+                output_lambda=outputs_lambda[input_index=i, ...],
+                use_multimem=use_multimem,
+            ](in_tensors, out_tensors[i].layout, rank_sigs, list_of_ctx[i])
+        else:
+            allreduce[ngpus=ngpus, use_multimem=use_multimem](
+                in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i]
+            )
     group_end()
 
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
-    comptime if not use_multimem and has_amd_gpu_accelerator():
+    comptime if not use_multimem and list_of_ctx.T.target.is_amd_gpu():
         try:
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -379,7 +381,7 @@ def allreduce_naive_test() raises -> None:
             dtype=DType.float32,
             ngpus=ngpus,
             output_lambda=outputs_lambda[input_index=i, ...],
-        ](in_tensors, out_tensors[i], 216, ctxs[i])
+        ](in_tensors, out_tensors[i].layout, 216, ctxs[i])
 
     # Synchronize and verify
     for i in range(ngpus):

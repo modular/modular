@@ -73,6 +73,19 @@ def _add_graph() -> tuple[Graph, Buffer]:
     return graph, _float_buffer([3.0, 4.0])
 
 
+def _cpu_bfloat16_cast_graph() -> tuple[Graph, Buffer]:
+    """Returns a float32-to-bfloat16 cast on CPU and a matching input.
+
+    The interpreter's cast family has no bfloat16 on CPU, so it refuses this
+    graph at dispatch, while the compiler serves it.
+    """
+    input_type = TensorType(DType.float32, [2], CPU())
+    with Graph("cast_bf16", input_types=[input_type]) as graph:
+        (x,) = graph.inputs
+        graph.output(ops.cast(x.tensor, DType.bfloat16))
+    return graph, _float_buffer([3.0, 4.0])
+
+
 def _failing_execute(
     graph: Graph, inputs: Sequence[Buffer]
 ) -> Sequence[Buffer | None]:
@@ -183,13 +196,22 @@ class TestInterpreterExecutor:
         )
         with Graph("constant", input_types=[]) as graph:
             graph.output(ops.constant([1.0], dtype=DType.float32, device=CPU()))
-        with pytest.raises(UnsupportedGraphError, match="require compilation"):
+        with pytest.raises(
+            UnsupportedGraphError, match=r"mo\.constant requires compilation"
+        ):
             InterpreterExecutor().execute(graph, [])
+
+    def test_refuses_unsupported_variant_at_dispatch(self) -> None:
+        graph, buf = _cpu_bfloat16_cast_graph()
+        with pytest.raises(UnsupportedGraphError, match="Unsupported cast"):
+            InterpreterExecutor().execute(graph, [buf])
 
     def test_refuses_graph_over_max_ops(self) -> None:
         """max_ops caps the graph size the interpreter accepts."""
         graph, buf = _add_graph()
-        with pytest.raises(UnsupportedGraphError, match="threshold 1"):
+        with pytest.raises(
+            UnsupportedGraphError, match="more than 1 dispatchable ops"
+        ):
             InterpreterExecutor(max_ops=1).execute(graph, [buf])
 
     def test_propagates_runtime_error(
@@ -267,7 +289,7 @@ class TestJitExecutor:
             interpreter=InterpreterExecutor(max_ops=0),
             sync_on_interpreter_fallback=False,
         )
-        with pytest.raises(UnsupportedGraphError, match="require compilation"):
+        with pytest.raises(UnsupportedGraphError, match="more than 0"):
             executor.execute(graph, [buf])
         assert len(pending_pool.submissions) == 1
 
@@ -479,6 +501,30 @@ class TestFallbackExecutor:
         with pytest.warns(UserWarning, match="file a bug"):
             (out,) = executor.execute(graph, [buf])
         assert _values(out) == pytest.approx([4.0, 5.0])
+
+    def test_refusals_only_propagates_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With refusals_only, a non-refusal failure is not compiled past."""
+        monkeypatch.setattr(_interpreter, "execute", _failing_execute)
+        executor = _FallbackExecutor(
+            interpreter=InterpreterExecutor(), refusals_only=True
+        )
+        graph, buf = _add_graph()
+        with pytest.raises(RuntimeError, match=_KERNEL_FAILURE):
+            executor.execute(graph, [buf])
+        assert not executor.cache
+
+    def test_refusals_only_compiles_a_dispatch_refusal(self) -> None:
+        """An unsupported variant found at dispatch is still a refusal."""
+        executor = _FallbackExecutor(
+            interpreter=InterpreterExecutor(), refusals_only=True
+        )
+        graph, buf = _cpu_bfloat16_cast_graph()
+        (out,) = executor.execute(graph, [buf])
+        assert out is not None
+        assert out.dtype == DType.bfloat16
+        assert len(executor.cache) == 1
 
 
 class TestDefaultExecutor:

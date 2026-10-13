@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Test DP=1, TP=1 basic send/recv using GPU 0 and GPU 1."""
+"""Test DP=1, TP=1 send/recv from GPU 1 to GPU 0 over UCX's CUDA IPC transport."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ import time
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import kv_memory
-from max.driver import Accelerator
+from _transfer_engine_helpers import every_leaf, join_peers, kv_memory
+from max.driver import Accelerator, accelerator_api
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
 
@@ -66,7 +66,11 @@ def transfer_routine_sender(
     # Perform transfer
     t0 = time.time()
     transfer_req = engine.initiate_send_transfer(
-        remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
+        remote_md,
+        every_leaf(remote_md, src_idxs),
+        every_leaf(remote_md, dst_idxs),
+        src_replica_idx=0,
+        dst_replica_idx=0,
     )
     transfer_queue.put(transfer_req)
     engine.sync_and_release(transfer_req)
@@ -147,7 +151,17 @@ def transfer_routine_receiver(
     engine.cleanup()
 
 
-def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.skipif(
+    accelerator_api() == "hip", reason="Checks the CUDA IPC transport"
+)
+def test_send_recv_basic(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # TODO(GEX-4348): VMM-allocated KV buffers are not CUDA-IPC exportable, so
+    # UCX falls back to TCP under the default memory manager. Drop this once
+    # they are.
+    monkeypatch.setenv("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM", "0")
+
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
     sender_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
@@ -164,6 +178,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     dst_idxs = [1, 0]
 
     sender_proc = ctx.Process(
+        name="sender",
         target=transfer_routine_sender,
         args=(
             sender_md_queue,
@@ -179,6 +194,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
         ),
     )
     receiver_proc = ctx.Process(
+        name="receiver",
         target=transfer_routine_receiver,
         args=(
             sender_md_queue,
@@ -195,16 +211,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
 
     sender_proc.start()
     receiver_proc.start()
-
-    sender_proc.join()
-    receiver_proc.join()
-
-    assert sender_proc.exitcode == 0, (
-        f"Sender process failed with exit code {sender_proc.exitcode}"
-    )
-    assert receiver_proc.exitcode == 0, (
-        f"Receiver process failed with exit code {receiver_proc.exitcode}"
-    )
+    join_peers([sender_proc, receiver_proc])
 
     out, _err = capfd.readouterr()
 

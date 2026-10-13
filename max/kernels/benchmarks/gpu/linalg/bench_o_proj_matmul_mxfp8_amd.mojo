@@ -31,7 +31,7 @@ from std.benchmark import (
 
 from internal_utils._cache_busting import CacheBustingBuffer
 from internal_utils._utils import InitializationType, arg_parse
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.amd import block_scaled_matmul_amd
 
 comptime OPERAND_DTYPE = DType.float8_e4m3fn

@@ -52,6 +52,15 @@ def make_closure(x: Int):
     def my_closure(y: Int) {var x} -> Int:
         return x + y
 
+# CHECK:  lit.fn @"move_trivial
+def move_trivial(var x: Int):
+    # COM: `var x^` on a trivial Int is passed owned in memory, like a `var`
+    # COM: argument (MOCO-4440).
+    # CHECK: lit.call {{.*}}my_closure::__storage"::@"__init__
+    # CHECK-SAME: "x": !lit.ref<!Int, {{[^>]*}}> owned_in_mem
+    def my_closure(y: Int) {var x^} -> Int:
+        return x + y
+
 # // -----
 
 # COM: Nested Captures

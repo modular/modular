@@ -221,6 +221,7 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
                 w_uv_scale=w_uv_scale,
                 quant_config=quant_config,
                 sparse_indices=sparse_indices,
+                physical_indices=False,
                 sparse_topk_lengths=sparse_topk_lengths,
                 sparse_attn_sink=sparse_attn_sink,
                 sparse_indices_stride=indices_stride,

@@ -300,10 +300,7 @@ params:
   $max_num_keys: 17612
 
 # label=narrow_decode -- `seq_len` in {4, 8}, the widths that miss the alternate
-# tile's `% 3 == 0` and stay on the default 4-token MMA_N=128 tile. Under
-# `-D FP8_INDEX_CONS_WGS=2` a `seq_len=4` CTA holds one live token block and one
-# dead one while `seq_len=8` fills both, so the 4-cells against the 8-cells
-# measure the dead-warpgroup drain.
+# tile's `% 3 == 0` and stay on the default 4-token MMA_N=128 tile.
 - num_heads: 32
   depth: 128
   page_size: 128

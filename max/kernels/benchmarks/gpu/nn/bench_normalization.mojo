@@ -24,7 +24,8 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, coord, row_major
-from nn.normalization import layer_norm, rms_norm_gpu
+from nn.normalization import rms_norm_gpu
+from builtin_kernels.rowwise_normalization import layer_norm
 from std.utils.coord import ComptimeInt
 
 from std.utils.index import Index, IndexList

@@ -119,220 +119,222 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
             )
 
         comptime if is_cpu[target]():
-            if dstate == 16:
-                varlen_selective_scan_fwd_cpu[
-                    dtype,
-                    16,
-                ](
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    Optional[DeviceContext](ctx),
-                )
-            elif dstate == 8:
-                varlen_selective_scan_fwd_cpu[
-                    dtype,
-                    8,
-                ](
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                )
-            else:  # dstate == 4
-                varlen_selective_scan_fwd_cpu[
-                    dtype,
-                    4,
-                ](
-                    dim,
-                    ngroups,
-                    batch,
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    Optional[DeviceContext](ctx),
-                )
+            match dstate:
+                case 16:
+                    varlen_selective_scan_fwd_cpu[
+                        dtype,
+                        16,
+                    ](
+                        dim,
+                        ngroups,
+                        batch,
+                        PAD_SLOT_ID,
+                        delta_softplus_int8,
+                        u_tt,
+                        delta_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        delta_bias_tt,
+                        ssm_states_tt,
+                        output_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                        Optional(ctx.assert_cpu_target()),
+                    )
+                case 8:
+                    varlen_selective_scan_fwd_cpu[
+                        dtype,
+                        8,
+                    ](
+                        dim,
+                        ngroups,
+                        batch,
+                        PAD_SLOT_ID,
+                        delta_softplus_int8,
+                        u_tt,
+                        delta_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        delta_bias_tt,
+                        ssm_states_tt,
+                        output_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                    )
+                case _:  # dstate == 4
+                    varlen_selective_scan_fwd_cpu[
+                        dtype,
+                        4,
+                    ](
+                        dim,
+                        ngroups,
+                        batch,
+                        PAD_SLOT_ID,
+                        delta_softplus_int8,
+                        u_tt,
+                        delta_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        delta_bias_tt,
+                        ssm_states_tt,
+                        output_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                        Optional(ctx.assert_cpu_target()),
+                    )
         elif is_gpu[target]():
             var gpu_ctx = ctx
             comptime BLOCK_SIZE = 128
             var num_dim_blocks = ceildiv(dim, BLOCK_SIZE)
 
-            if dstate == 16:
-                comptime DSTATE_VAL = 16
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        output_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    Int32(dim),
-                    Int32(ngroups),
-                    Int32(batch),
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    grid_dim=(num_dim_blocks, batch, 1),
-                    block_dim=(BLOCK_SIZE, 1, 1),
-                )
-            elif dstate == 8:
-                comptime DSTATE_VAL = 8
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        output_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    Int32(dim),
-                    Int32(ngroups),
-                    Int32(batch),
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    grid_dim=(num_dim_blocks, batch, 1),
-                    block_dim=(BLOCK_SIZE, 1, 1),
-                )
-            else:  # dstate == 4
-                comptime DSTATE_VAL = 4
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_scan_fwd_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        u_tt.LayoutType,
-                        delta_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        delta_bias_tt.LayoutType,
-                        ssm_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        output_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    Int32(dim),
-                    Int32(ngroups),
-                    Int32(batch),
-                    PAD_SLOT_ID,
-                    delta_softplus_int8,
-                    u_tt,
-                    delta_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    delta_bias_tt,
-                    ssm_states_tt,
-                    output_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    grid_dim=(num_dim_blocks, batch, 1),
-                    block_dim=(BLOCK_SIZE, 1, 1),
-                )
+            match dstate:
+                case 16:
+                    comptime DSTATE_VAL = 16
+                    var compiled_kernel = gpu_ctx.compile_function[
+                        varlen_selective_scan_fwd_gpu[
+                            dtype,
+                            DSTATE_VAL,
+                            u_tt.LayoutType,
+                            delta_tt.LayoutType,
+                            A_tt.LayoutType,
+                            B_tt.LayoutType,
+                            C_tt.LayoutType,
+                            D_tt.LayoutType,
+                            z_tt.LayoutType,
+                            delta_bias_tt.LayoutType,
+                            ssm_states_tt.LayoutType,
+                            output_tt.LayoutType,
+                            query_start_loc_tt.LayoutType,
+                            cache_indices_tt.LayoutType,
+                            has_initial_state_tt.LayoutType,
+                            output_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_kernel,
+                        Int32(dim),
+                        Int32(ngroups),
+                        Int32(batch),
+                        PAD_SLOT_ID,
+                        delta_softplus_int8,
+                        u_tt,
+                        delta_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        delta_bias_tt,
+                        ssm_states_tt,
+                        output_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                        grid_dim=(num_dim_blocks, batch, 1),
+                        block_dim=(BLOCK_SIZE, 1, 1),
+                    )
+                case 8:
+                    comptime DSTATE_VAL = 8
+                    var compiled_kernel = gpu_ctx.compile_function[
+                        varlen_selective_scan_fwd_gpu[
+                            dtype,
+                            DSTATE_VAL,
+                            u_tt.LayoutType,
+                            delta_tt.LayoutType,
+                            A_tt.LayoutType,
+                            B_tt.LayoutType,
+                            C_tt.LayoutType,
+                            D_tt.LayoutType,
+                            z_tt.LayoutType,
+                            delta_bias_tt.LayoutType,
+                            ssm_states_tt.LayoutType,
+                            output_tt.LayoutType,
+                            query_start_loc_tt.LayoutType,
+                            cache_indices_tt.LayoutType,
+                            has_initial_state_tt.LayoutType,
+                            output_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_kernel,
+                        Int32(dim),
+                        Int32(ngroups),
+                        Int32(batch),
+                        PAD_SLOT_ID,
+                        delta_softplus_int8,
+                        u_tt,
+                        delta_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        delta_bias_tt,
+                        ssm_states_tt,
+                        output_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                        grid_dim=(num_dim_blocks, batch, 1),
+                        block_dim=(BLOCK_SIZE, 1, 1),
+                    )
+                case _:  # dstate == 4
+                    comptime DSTATE_VAL = 4
+                    var compiled_kernel = gpu_ctx.compile_function[
+                        varlen_selective_scan_fwd_gpu[
+                            dtype,
+                            DSTATE_VAL,
+                            u_tt.LayoutType,
+                            delta_tt.LayoutType,
+                            A_tt.LayoutType,
+                            B_tt.LayoutType,
+                            C_tt.LayoutType,
+                            D_tt.LayoutType,
+                            z_tt.LayoutType,
+                            delta_bias_tt.LayoutType,
+                            ssm_states_tt.LayoutType,
+                            output_tt.LayoutType,
+                            query_start_loc_tt.LayoutType,
+                            cache_indices_tt.LayoutType,
+                            has_initial_state_tt.LayoutType,
+                            output_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_kernel,
+                        Int32(dim),
+                        Int32(ngroups),
+                        Int32(batch),
+                        PAD_SLOT_ID,
+                        delta_softplus_int8,
+                        u_tt,
+                        delta_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        delta_bias_tt,
+                        ssm_states_tt,
+                        output_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                        grid_dim=(num_dim_blocks, batch, 1),
+                        block_dim=(BLOCK_SIZE, 1, 1),
+                    )
         else:
             raise Error("Unsupported target device")
 
@@ -460,217 +462,219 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
             )
 
         comptime if is_cpu[target]():
-            if dstate == 16:
-                varlen_selective_state_update_cpu[
-                    dtype,
-                    16,
-                ](
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    Optional[DeviceContext](ctx),
-                )
-            elif dstate == 8:
-                varlen_selective_state_update_cpu[
-                    dtype,
-                    8,
-                ](
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                )
-            else:  # dstate == 4
-                varlen_selective_state_update_cpu[
-                    dtype,
-                    4,
-                ](
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    Optional[DeviceContext](ctx),
-                )
+            match dstate:
+                case 16:
+                    varlen_selective_state_update_cpu[
+                        dtype,
+                        16,
+                    ](
+                        batch,
+                        nheads,
+                        dim,
+                        nheads_ngroups_ratio,
+                        PAD_SLOT_ID,
+                        dt_softplus_int8,
+                        Int8(has_state_batch_indices),
+                        state_tt,
+                        x_tt,
+                        dt_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        output_tt,
+                        dt_bias_tt,
+                        state_batch_indices_tt,
+                        Optional(ctx.assert_cpu_target()),
+                    )
+                case 8:
+                    varlen_selective_state_update_cpu[
+                        dtype,
+                        8,
+                    ](
+                        batch,
+                        nheads,
+                        dim,
+                        nheads_ngroups_ratio,
+                        PAD_SLOT_ID,
+                        dt_softplus_int8,
+                        Int8(has_state_batch_indices),
+                        state_tt,
+                        x_tt,
+                        dt_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        output_tt,
+                        dt_bias_tt,
+                        state_batch_indices_tt,
+                    )
+                case _:  # dstate == 4
+                    varlen_selective_state_update_cpu[
+                        dtype,
+                        4,
+                    ](
+                        batch,
+                        nheads,
+                        dim,
+                        nheads_ngroups_ratio,
+                        PAD_SLOT_ID,
+                        dt_softplus_int8,
+                        Int8(has_state_batch_indices),
+                        state_tt,
+                        x_tt,
+                        dt_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        output_tt,
+                        dt_bias_tt,
+                        state_batch_indices_tt,
+                        Optional(ctx.assert_cpu_target()),
+                    )
         elif is_gpu[target]():
             var gpu_ctx = ctx
             comptime BLOCK_SIZE_M = 4
             var total_threads = batch * nheads * ceildiv(dim, BLOCK_SIZE_M)
 
-            if dstate == 16:
-                comptime DSTATE_VAL = 16
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                        state_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    Int32(total_threads),
-                    Int32(batch),
-                    Int32(nheads),
-                    Int32(dim),
-                    Int32(nheads_ngroups_ratio),
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
-                    block_dim=(1,),
-                )
-            elif dstate == 8:
-                comptime DSTATE_VAL = 8
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                        state_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    Int32(total_threads),
-                    Int32(batch),
-                    Int32(nheads),
-                    Int32(dim),
-                    Int32(nheads_ngroups_ratio),
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
-                    block_dim=(1,),
-                )
-            else:  # dstate == 4
-                comptime DSTATE_VAL = 4
-                var compiled_kernel = gpu_ctx.compile_function[
-                    varlen_selective_state_update_gpu[
-                        dtype,
-                        DSTATE_VAL,
-                        state_tt.LayoutType,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
-                        A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
-                        D_tt.LayoutType,
-                        z_tt.LayoutType,
-                        output_tt.LayoutType,
-                        dt_bias_tt.LayoutType,
-                        state_batch_indices_tt.LayoutType,
-                        state_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_kernel,
-                    Int32(total_threads),
-                    Int32(batch),
-                    Int32(nheads),
-                    Int32(dim),
-                    Int32(nheads_ngroups_ratio),
-                    PAD_SLOT_ID,
-                    dt_softplus_int8,
-                    Int8(has_state_batch_indices),
-                    state_tt,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    z_tt,
-                    output_tt,
-                    dt_bias_tt,
-                    state_batch_indices_tt,
-                    grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
-                    block_dim=(1,),
-                )
+            match dstate:
+                case 16:
+                    comptime DSTATE_VAL = 16
+                    var compiled_kernel = gpu_ctx.compile_function[
+                        varlen_selective_state_update_gpu[
+                            dtype,
+                            DSTATE_VAL,
+                            state_tt.LayoutType,
+                            x_tt.LayoutType,
+                            dt_tt.LayoutType,
+                            A_tt.LayoutType,
+                            B_tt.LayoutType,
+                            C_tt.LayoutType,
+                            D_tt.LayoutType,
+                            z_tt.LayoutType,
+                            output_tt.LayoutType,
+                            dt_bias_tt.LayoutType,
+                            state_batch_indices_tt.LayoutType,
+                            state_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_kernel,
+                        Int32(total_threads),
+                        Int32(batch),
+                        Int32(nheads),
+                        Int32(dim),
+                        Int32(nheads_ngroups_ratio),
+                        PAD_SLOT_ID,
+                        dt_softplus_int8,
+                        Int8(has_state_batch_indices),
+                        state_tt,
+                        x_tt,
+                        dt_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        output_tt,
+                        dt_bias_tt,
+                        state_batch_indices_tt,
+                        grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
+                        block_dim=(1,),
+                    )
+                case 8:
+                    comptime DSTATE_VAL = 8
+                    var compiled_kernel = gpu_ctx.compile_function[
+                        varlen_selective_state_update_gpu[
+                            dtype,
+                            DSTATE_VAL,
+                            state_tt.LayoutType,
+                            x_tt.LayoutType,
+                            dt_tt.LayoutType,
+                            A_tt.LayoutType,
+                            B_tt.LayoutType,
+                            C_tt.LayoutType,
+                            D_tt.LayoutType,
+                            z_tt.LayoutType,
+                            output_tt.LayoutType,
+                            dt_bias_tt.LayoutType,
+                            state_batch_indices_tt.LayoutType,
+                            state_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_kernel,
+                        Int32(total_threads),
+                        Int32(batch),
+                        Int32(nheads),
+                        Int32(dim),
+                        Int32(nheads_ngroups_ratio),
+                        PAD_SLOT_ID,
+                        dt_softplus_int8,
+                        Int8(has_state_batch_indices),
+                        state_tt,
+                        x_tt,
+                        dt_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        output_tt,
+                        dt_bias_tt,
+                        state_batch_indices_tt,
+                        grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
+                        block_dim=(1,),
+                    )
+                case _:  # dstate == 4
+                    comptime DSTATE_VAL = 4
+                    var compiled_kernel = gpu_ctx.compile_function[
+                        varlen_selective_state_update_gpu[
+                            dtype,
+                            DSTATE_VAL,
+                            state_tt.LayoutType,
+                            x_tt.LayoutType,
+                            dt_tt.LayoutType,
+                            A_tt.LayoutType,
+                            B_tt.LayoutType,
+                            C_tt.LayoutType,
+                            D_tt.LayoutType,
+                            z_tt.LayoutType,
+                            output_tt.LayoutType,
+                            dt_bias_tt.LayoutType,
+                            state_batch_indices_tt.LayoutType,
+                            state_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_kernel,
+                        Int32(total_threads),
+                        Int32(batch),
+                        Int32(nheads),
+                        Int32(dim),
+                        Int32(nheads_ngroups_ratio),
+                        PAD_SLOT_ID,
+                        dt_softplus_int8,
+                        Int8(has_state_batch_indices),
+                        state_tt,
+                        x_tt,
+                        dt_tt,
+                        A_tt,
+                        B_tt,
+                        C_tt,
+                        D_tt,
+                        z_tt,
+                        output_tt,
+                        dt_bias_tt,
+                        state_batch_indices_tt,
+                        grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
+                        block_dim=(1,),
+                    )
         else:
             raise Error("Unsupported target device")
 

@@ -14,8 +14,33 @@ max.pipelines
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.architectures
+   max.pipelines.audio
+   max.pipelines.context
+   max.pipelines.diffusion
+   max.pipelines.kv_cache
+   max.pipelines.lib
+   max.pipelines.lib.arch_lookup
+   max.pipelines.lib.interfaces
+   max.pipelines.lib.log_probabilities
+   max.pipelines.lib.registry
+   max.pipelines.lib.request_text
+   max.pipelines.logging_utils
+   max.pipelines.modeling.base
+   max.pipelines.modeling.dataprocessing
+   max.pipelines.modeling.types
+   max.pipelines.weights
+   max.pipelines.lora
+   max.pipelines.request
+   max.pipelines.sampling
+   max.pipelines.speculative
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    pipelines.architectures
    pipelines.audio
@@ -24,6 +49,7 @@ Submodules
    pipelines.kv_cache
    pipelines.lib
    pipelines.lib.arch_lookup
+   pipelines.lib.generate
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
    pipelines.lib.registry
@@ -55,6 +81,17 @@ Configuration
    SamplingConfig
    SpeculativeConfig
 
+In-process generation
+---------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   AutoModel
+   AutoTokenizer
+
 Pipelines
 ---------
 
@@ -76,7 +113,6 @@ Model interface
    :toctree: generated
    :template: autosummary/class.rst
 
-   GenerateMixin
    MemoryEstimator
    ModelInputs
    ModelOutputs

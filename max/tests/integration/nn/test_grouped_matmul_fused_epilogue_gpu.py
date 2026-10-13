@@ -30,11 +30,11 @@ K = 256
 N = 192
 
 
-def _build(epilogue: str, unfused: bool) -> Graph:
+def _build(epilogue: str, escaping: bool) -> Graph:
     """Builds the routed up projection followed by an elementwise epilogue.
 
-    With ``unfused`` the matmul output is also a graph output, so the
-    epilogue cannot fuse into the matmul and runs as its own kernel.
+    With ``escaping`` the matmul output is also a graph output, so the fused
+    epilogue stores it beside the epilogue's result.
     """
     with Graph(
         f"grouped_matmul_{epilogue}",
@@ -74,7 +74,7 @@ def _build(epilogue: str, unfused: bool) -> Graph:
                 row_scale, token_expert_order, axis=0
             )
         outputs = [act, token_expert_order]
-        if unfused:
+        if escaping:
             outputs.append(up)
         g.output(*outputs)
     return g
@@ -106,14 +106,12 @@ def _fuses_whole_epilogue(model: Model, epilogue: str) -> bool:
 def test_grouped_matmul_fused_epilogue(epilogue: str, num_tokens: int) -> None:
     device = Accelerator()
     session = InferenceSession(devices=[device])
-    fused = session.load(_build(epilogue, unfused=False))
-    unfused = session.load(_build(epilogue, unfused=True))
-    # Both graphs compute the same values, so the comparison below passes
-    # even if fusion stops happening; check the compiled kernels instead.
+    fused = session.load(_build(epilogue, escaping=False))
+    escaping = session.load(_build(epilogue, escaping=True))
+    # The comparisons below pass even if fusion stops happening, so check the
+    # compiled kernels too.
     assert _fuses_whole_epilogue(fused, epilogue), fused.kernel_summaries
-    assert not _fuses_whole_epilogue(unfused, epilogue), (
-        unfused.kernel_summaries
-    )
+    assert _fuses_whole_epilogue(escaping, epilogue), escaping.kernel_summaries
 
     # Unseeded data occasionally put an output on the relu boundary, where
     # bf16 rounding flips it past the tolerance.
@@ -136,18 +134,20 @@ def test_grouped_matmul_fused_epilogue(epilogue: str, num_tokens: int) -> None:
     out_t = from_dlpack(out).cpu()
     order_np = from_dlpack(order).cpu().numpy().astype(np.int64)
 
-    # Fusing the epilogue must not change a single bit of the result. The
-    # two runs may order rows within an expert differently, so compare the
-    # rows by token.
-    unfused_out, unfused_order = unfused.execute(*inputs)[:2]
-    unfused_order_np = from_dlpack(unfused_order).cpu().numpy()
+    # Storing the matmul output too must not change a single bit of the
+    # result. The two runs may order rows within an expert differently, so
+    # compare the rows by token.
+    escaping_out, escaping_order, escaping_up = escaping.execute(*inputs)
+    escaping_order_np = (
+        from_dlpack(escaping_order).cpu().numpy().astype(np.int64)
+    )
     by_token = torch.empty_like(out_t)
     by_token[torch.from_numpy(order_np)] = out_t
-    unfused_by_token = torch.empty_like(out_t)
-    unfused_by_token[torch.from_numpy(unfused_order_np.astype(np.int64))] = (
-        from_dlpack(unfused_out).cpu()
-    )
-    torch.testing.assert_close(by_token, unfused_by_token, rtol=0, atol=0)
+    escaping_by_token = torch.empty_like(out_t)
+    escaping_by_token[torch.from_numpy(escaping_order_np)] = from_dlpack(
+        escaping_out
+    ).cpu()
+    torch.testing.assert_close(by_token, escaping_by_token, rtol=0, atol=0)
 
     # moe_create_indices does not fix the row order within an expert, so the
     # reference is built from the order the graph returns. Row r of the
@@ -160,3 +160,14 @@ def test_grouped_matmul_fused_epilogue(epilogue: str, num_tokens: int) -> None:
     else:
         ref = torch.relu(up + bias.float()) * row_scale.float()[order_np]
     torch.testing.assert_close(out_t.float(), ref, rtol=2e-2, atol=2e-2)
+
+    # The matmul output the epilogue stores, in the escaping run's row order.
+    escaping_rows = x.float()[escaping_order_np]
+    escaping_experts = weight.float()[topk_ids[escaping_order_np]]
+    escaping_ref = torch.einsum("rk,rnk->rn", escaping_rows, escaping_experts)
+    torch.testing.assert_close(
+        from_dlpack(escaping_up).cpu().float(),
+        escaping_ref,
+        rtol=2e-2,
+        atol=2e-2,
+    )

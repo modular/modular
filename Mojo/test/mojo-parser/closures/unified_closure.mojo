@@ -146,8 +146,8 @@ def s4_make_closure(x: Int, mem: String) -> Int:
 # S5: lit.struct.decl @"closure$s5_make_closure{{.*}}::parametric::__storage"(trait<@"##__mojo_closure__##"<
 # S5-SAME: :param_list<type> [#kgen.quote<!AnyType_MyInterface>], :param_list<type> [#kgen.quote<!lit.ref<:!AnyType_MyInterface *(0,1), imm *[0,1]>>], :type #kgen.quote<none>
 # S5-SAME: >, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>) attributes {{{.*}}synthetic}
-# S5: lit.fn @"__init__(::String)"[imm *"mem`", mut *"self`"]
-# S5-NOT: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"]
+# S5: lit.fn @"__init__(::String)"no_nested_origin_exclusivity[imm *"mem`", mut *"self`"]
+# S5-NOT: lit.fn @"__init__($0$)"{{.*}}[mut *"impl`", mut *"self`"]
 
 
 trait s5_MyInterface:

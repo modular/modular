@@ -15,8 +15,6 @@ from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from layout import (
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -26,8 +24,6 @@ from state_space.selective_scan import (
     mamba_split_conv1d_scan_combined_cpu,
 )
 from std.testing import TestSuite, assert_almost_equal
-
-from std.utils.index import Index
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634

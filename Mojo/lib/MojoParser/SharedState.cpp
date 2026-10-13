@@ -25,6 +25,7 @@
 #include "ParserEvaluationContext.h"
 #include "Signatures.h"
 
+#include "Mojo/DepGraphDialect/DepGraphAnalysis.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
@@ -55,6 +56,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/bit.h"
@@ -448,6 +450,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   docsBasePath = config.docsBasePath;
 
   preloadAllKGENDialects(config.context);
+  compilerCaches = KGEN::CompilerCaches::getOrCreate(config.context);
 
   // Record any existing buffers in the source manager.
   for (int i = 0, e = sourceMgr.getNumBuffers(); i < e; ++i) {
@@ -515,30 +518,6 @@ void SharedState::collectParamRefsInType(
   size_t requiredSignatureDepth = 0; // ignored
   impl->collector.collectUsesFromType(type, uses, hasConstExpr,
                                       requiredSignatureDepth);
-}
-
-void SharedState::deleteDecl(ASTDecl &decl) {
-  if (!decl.getUserNameIfOperation())
-    return;
-  Operation *op = decl.getIfOperation();
-
-  // Remove from global maps.
-  // Func needs a special case since it may or may not be a symbol.
-  if (auto func = dyn_cast<FnOp>(op)) {
-    if (SymbolRefAttr sym = decl.getSymbolRef())
-      declResolver->declForFuncSymbol.erase(sym);
-    impl->sourceNames.forgetSourceName(func);
-  } else if (auto symbolDecl = dyn_cast<mlir::SymbolOpInterface>(op)) {
-    if (SymbolRefAttr sym = decl.getSymbolRef())
-      declResolver->declForTypeSymbol.erase(sym);
-    impl->sourceNames.forgetSourceName(symbolDecl);
-    impl->symbolTables.getSymbolTable(op->getParentOp()).remove(op);
-  }
-  op->erase();
-
-  // Set the IRValue to nullptr, so that any reference pointing to the decl can
-  // check if it's valid.
-  decl.setIRValue(nullptr);
 }
 
 ASTDecl &SharedState::getTopLevelDecl() { return *impl->topLevelDecl; }
@@ -760,7 +739,7 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
         }
         return LookupResult::getSuccess(e);
       }
-    } while ((curSearchScope = curSearchScope->parentDecl));
+    } while ((curSearchScope = curSearchScope->getParentDecl()));
     // If we found a name in a context that we skip, return it in the failure
     // for diagnostic reporting.
     return LookupResult::getFailure(skipped);
@@ -860,7 +839,7 @@ auto SharedState::lookupAllDeclsWithName(StringRef name, SMLoc loc,
         for (ASTDecl *decl : e)
           allDecls.push_back(decl);
       }
-    } while ((curSearchScope = curSearchScope->parentDecl));
+    } while ((curSearchScope = curSearchScope->getParentDecl()));
 
     // If we found declarations, return success.
     if (!allDecls.empty())
@@ -932,8 +911,9 @@ void SharedState::materializePrecompiledStdlibOp(Operation *op) {
 }
 
 ASTDecl &SharedState::importModule(const ImportPath &path,
-                                   PackageOp currentPackage, llvm::SMLoc loc) {
-  return getModuleLoader().importModule(path, currentPackage, loc);
+                                   PackageOp currentPackage, llvm::SMLoc loc,
+                                   ASTDecl *importer) {
+  return getModuleLoader().importModule(path, currentPackage, loc, importer);
 }
 
 SmallVector<ASTDecl *>
@@ -975,6 +955,10 @@ SharedState::getWrappedSourcePath(unsigned bufferId) const {
   return it == impl->wrapperBuffers.end()
              ? std::optional<StringRef>(std::nullopt)
              : it->second;
+}
+
+void SharedState::recordDepEdge(ASTDecl *importer, ASTDecl *imported) {
+  return getModuleLoader().recordDepEdge(importer, imported);
 }
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
@@ -1047,9 +1031,8 @@ ASTDecl *SharedState::lookupNamedTypeDecl(StringRef name, ASTDecl &context,
   if (isa_and_nonnull<StructDeclOp>(firstDecl.getIfOperation()))
     return &firstDecl;
 
-  if (auto aliasDecl =
-          dyn_cast_or_null<AliasDeclOp>(firstDecl.getIfOperation())) {
-    if (LIT::isMetaType(aliasDecl.getType()))
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(&firstDecl)) {
+    if (LIT::isMetaType(aliasDecl->getOp().getType()))
       return &firstDecl;
   }
 
@@ -1062,10 +1045,10 @@ static ASTType typeForResolvedTypeDecl(SharedState &state, ASTDecl *decl,
                                        SMLoc loc) {
   if (auto structDecl = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation()))
     return structDecl.bindReference();
-  if (auto aliasDecl = dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(decl)) {
     if (failed(state.declResolver->resolveBody(*decl, loc)))
       return state.getTypeCheckErrorType();
-    return aliasDecl.getValueAttr();
+    return aliasDecl->getOp().getValueAttr();
   }
   return state.getTypeCheckErrorType();
 }
@@ -1287,6 +1270,11 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
   Lexer lexer(diags, moduleBuffer);
   decl.setLoc(lexer.getToken().getLoc());
   decl.setParseCursor(lexer.getCursor(), LexerCursor::getEOF(moduleBuffer));
+
+  // The source buffer is now available, so backfill the content hash that
+  // could not be computed when the deferred module was registered.
+  if (isIncrParsingEnabled())
+    state->contentHash = DepGraph::hashModuleBuffer(moduleBuffer->getBuffer());
 
   // Auto-import the core language modules and notify the listener - the
   // module's content now exists.
@@ -1520,7 +1508,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
       packageImportLoc = origin->bytecodeImportLoc;
       break;
     }
-  } while ((parentDecl = parentDecl->parentDecl));
+  } while ((parentDecl = parentDecl->getParentDecl()));
   assert(bytecodeReader && "bytecode decl doesn't have a bytecode reader");
 
   // Functor used to resolve references within a single operation.
@@ -1713,10 +1701,12 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
   // reference structs that finalize() will delete as stubs, causing
   // verifySymbolUses to fail. We must erase them after finalize() runs.
   SmallVector<Operation *> materializedUnparsedOps;
+  SmallVector<ASTDecl *> unparsedBytecodeDecls;
   for (ASTDecl *decl : declResolver->parsedDeclList) {
     if (!decl->loadedFromBytecode ||
         decl->resolvedness != DeclResolvedness::unparsed)
       continue;
+    unparsedBytecodeDecls.push_back(decl);
     if (Operation *op = decl->getIfOperation()) {
       bool isLazy = llvm::any_of(readers, [op](mlir::BytecodeReader *r) {
         return r->isMaterializable(op);
@@ -1724,10 +1714,10 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
       if (!isLazy)
         materializedUnparsedOps.push_back(op);
     }
-    // Clear the ASTDecl pointer to avoid a dangling reference after the op
-    // is erased below or deleted as a stub by finalize().
-    decl->setIRValue(PValue(BoolAttr::get(getContext(), false)));
   }
+  for (ASTDecl *decl : unparsedBytecodeDecls)
+    if (llvm::is_contained(declResolver->parsedDeclList, decl))
+      declResolver->eraseDecl(*decl);
 
   for (auto &origin : getModuleLoader().getOrigins()) {
     if (!origin->bytecodeReader)
@@ -1801,8 +1791,9 @@ FnTypeGeneratorType SharedState::getClosureFnSig(TraitSymbolAttr closureInst) {
   ParameterEvaluator evaluator = *populateTraitBindingEvaluator(
       closureInst, cast<TraitDeclOp>(traitDecl->getIfOperation()));
 
-  auto callAlias = cast<AliasDeclOp>(
-      traitDecl->lookupInCurrentScope("__call__").front()->getIfOperation());
+  AliasDeclOp callAlias =
+      cast<AliasASTDecl>(traitDecl->lookupInCurrentScope("__call__").front())
+          ->getOp();
   return cast<FnTypeGeneratorType>(evaluator.replace(callAlias.getType()));
 }
 
@@ -1859,9 +1850,9 @@ SharedState::getCaptureRangeInScope(ASTDecl &scope) {
 void SharedState::addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl,
                                     Capture capture) {
   getImpl().capturesInScope[&scope].insert({capture.getSpelling(), capture});
-  if (captureDecl->getParentDecl() != scope.parentDecl) {
+  if (captureDecl->getParentDecl() != scope.getParentDecl()) {
     if (scope.getNearestDeclOfType<FnOp>())
-      addCaptureToScope(*scope.parentDecl, captureDecl, capture);
+      addCaptureToScope(*scope.getParentDecl(), captureDecl, capture);
   }
 }
 
@@ -2068,6 +2059,13 @@ void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
                                       StringRef spelling, SourceRange range) {
   if (isListenerInterestedInLoc(parserListener, range.getStart()))
     parserListener->onRef(decls, spelling, diags.convertToSMRange(range));
+}
+
+void SharedState::notifyListenerOnMatchMissingCases(llvm::SMRange matchRange,
+                                                    SMLoc insertLoc,
+                                                    StringRef arms) {
+  if (isListenerInterestedInLoc(parserListener, matchRange.Start))
+    parserListener->onMatchMissingCases(matchRange, insertLoc, arms);
 }
 
 /// Return the location of the identifier in the given expression.

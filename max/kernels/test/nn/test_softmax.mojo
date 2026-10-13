@@ -14,11 +14,7 @@
 from std.sys.info import simd_width_of
 
 from layout._fillers import arange
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from nn.softmax import logsoftmax_inline, softmax_2_pass
 
 

@@ -26,13 +26,13 @@ the same kernel catches indexing errors in the `grid.x=M` path.
 
 from std.math import ceildiv
 from std.random import randn, random_float64, seed
-from std.sys import has_amd_gpu_accelerator, simd_width_of
+from std.sys import simd_width_of, default_accelerator
 from std.testing import assert_equal
 
 from internal_utils import assert_almost_equal
 from layout import TileTensor, row_major
 from linalg.gemv import gemv_split_k
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 
 # K3's MoE router gate at TP8: N = routed-expert count, K = hidden_size. The
 # weight is replicated (not TP-split, see `KimiK3MoEGate`), so this is the
@@ -64,7 +64,7 @@ def _run_case[M: Int](ctx: DeviceContext) raises:
     comptime c_type = DType.float32
     comptime a_type = DType.float32
     comptime b_type = DType.float32
-    comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[c_type, target=ctx.target]()
     comptime check_bounds_n = ROUTER_N % TILE_N != 0
 
     var a_host = ctx.enqueue_create_host_buffer[a_type](M * ROUTER_K)
@@ -214,7 +214,7 @@ def _run_case[M: Int](ctx: DeviceContext) raises:
 
 
 def main() raises:
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("SKIP: AMD GPU not available")
         return
 

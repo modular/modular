@@ -218,7 +218,7 @@ def grouped_gemv_kernel[
                 sums[r] = warp.sum(acc[r * tokens_per_pass + t].reduce_add())
             if lid < rows_per_sg and n0 + lid < N and t < pass_rows:
                 var out = SIMD[c_type, 1](sums[lid].cast[c_type]())
-                var idx: IndexList[2] = (a_start + t0 + t, n0 + lid)
+                var idx = Coord(a_start + t0 + t, n0 + lid)
                 comptime if has_epilogue_fn:
                     epilogue_fn[c_type, 1, alignment=1](idx, out)
                 else:
@@ -321,12 +321,15 @@ def grouped_matmul_mma_kernel[
     @inline(.always)
     def group_epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {
+    ](idx: Coord, val: SIMD[dtype, width]) {
         var epilogue_fn, var compute_fn, var c_ptr, var a_start
     }:
-        var row_idx: IndexList[2] = (a_start + idx[0], idx[1])
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row = a_start + Int(idx[0].value())
+        var col = Int(idx[1].value())
+        var row_idx = Coord(row, col)
         comptime if has_compute_fn:
-            (c_ptr + row_idx[0] * N + idx[1]).store[alignment=alignment](
+            (c_ptr + row * N + col).store[alignment=alignment](
                 rebind[SIMD[c_type, width]](
                     compute_fn[dtype, width, alignment=alignment](row_idx, val)
                 )

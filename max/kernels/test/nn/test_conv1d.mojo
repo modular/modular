@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv, isclose
+from std.math import isclose
 from std.random import rand
 from std.sys.info import simd_width_of
 

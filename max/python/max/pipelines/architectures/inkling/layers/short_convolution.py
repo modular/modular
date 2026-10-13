@@ -32,7 +32,7 @@ from max.graph import (
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
-from max.nn.state_space import short_conv_ring_commit, short_conv_ring_fwd
+from max.nn.state_space import short_conv_ring
 
 
 class ShortConvolution(Module, Shardable):
@@ -134,9 +134,9 @@ class ShortConvolution(Module, Shardable):
         """Returns ``x + conv(x)``.
 
         Taps before the chunk read the ring slot. ``commit_conv_state``
-        writes the chunk's last inputs to the ring.
+        writes the chunk's last inputs to the ring in the same launch.
         """
-        out = short_conv_ring_fwd(
+        return short_conv_ring(
             x,
             self.taps,
             conv_ring,
@@ -144,64 +144,8 @@ class ShortConvolution(Module, Shardable):
             positions,
             conv_rows,
             layer_row,
+            commit=self.commit_conv_state,
         )
-        if self.commit_conv_state:
-            short_conv_ring_commit(
-                x,
-                conv_ring,
-                input_row_offsets,
-                positions,
-                conv_rows,
-                layer_row,
-            )
-        return out
-
-
-def short_conv_ring_commit_kv(
-    qkvr: TensorValue,
-    k_ring: BufferValue,
-    v_ring: BufferValue,
-    input_row_offsets: TensorValue,
-    positions: TensorValue,
-    k_conv_rows: TensorValue,
-    v_conv_rows: TensorValue,
-    k_layer_row: TensorValue,
-    v_layer_row: TensorValue,
-    *,
-    k_col: int,
-) -> None:
-    """Commits the K and V conv inputs of a fused ``qkvr`` projection in one
-    launch.
-
-    Args:
-        qkvr: ``[total_seq_len, q_dim + k_dim + v_dim + ...]`` projection.
-        k_ring: The K site's ``[slots, ring_len, channels]`` conv state.
-        v_ring: The V site's, same shape.
-        input_row_offsets: ``[batch + 1]`` uint32.
-        positions: ``[total_seq_len]`` uint32 position per token.
-        k_conv_rows: ``[num_layers, batch]`` uint32 K ring slot per sequence.
-        v_conv_rows: The V site's slot table, same shape.
-        k_layer_row: Scalar uint32 CPU row of ``k_conv_rows`` this layer reads.
-        v_layer_row: The same for ``v_conv_rows``.
-        k_col: First K column of ``qkvr``; V follows K.
-    """
-    ops.inplace_custom(
-        "mo.short_conv_ring_commit_kv",
-        device=qkvr.device,
-        values=[
-            k_ring,
-            v_ring,
-            qkvr,
-            input_row_offsets,
-            positions,
-            k_conv_rows,
-            v_conv_rows,
-            k_layer_row,
-            v_layer_row,
-        ],
-        out_types=[],
-        parameters={"k_col": k_col},
-    )
 
 
 def fused_qk_rms_norm_short_conv_ragged(
@@ -226,6 +170,7 @@ def fused_qk_rms_norm_short_conv_ragged(
     *,
     q_num_heads: int,
     apply_log_scaling: bool,
+    commit: bool,
     multiply_before_cast: bool = True,
 ) -> TensorValue:
     """Runs a short-conv attention block's prologue in one GPU launch.
@@ -233,8 +178,9 @@ def fused_qk_rms_norm_short_conv_ragged(
     From the fused ``qkvr`` projection: Q gets a per-head RMSNorm; K and V
     get a depthwise causal conv with residual, pre-chunk taps from their
     conv rings; K is then RMSNormed; both are stored into the paged KV
-    cache. Exact for any chunk length. The rings are only read; commit them
-    afterwards with :func:`short_conv_ring_commit_kv`.
+    cache. Exact for any chunk length. With ``commit``, each sequence's last
+    ``ring_len`` K and V conv inputs are written into the rings in the same
+    launch; without it the rings are only read.
 
     Args:
         kv_params: The KV cache parameters.
@@ -260,6 +206,7 @@ def fused_qk_rms_norm_short_conv_ragged(
         layer_idx: Scalar uint32 KV-cache layer index.
         q_num_heads: Number of query heads.
         apply_log_scaling: Whether to scale Q by ``log_scaling``.
+        commit: Whether to commit the K and V conv inputs to their rings.
         multiply_before_cast: Whether to multiply by gamma before casting to
             the output dtype.
 
@@ -298,5 +245,6 @@ def fused_qk_rms_norm_short_conv_ragged(
         parameters={
             "multiply_before_cast": multiply_before_cast,
             "apply_log_scaling": apply_log_scaling,
+            "commit": commit,
         },
     )[0].tensor

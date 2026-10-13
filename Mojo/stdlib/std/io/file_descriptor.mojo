@@ -24,18 +24,11 @@ f.close()
 ```
 
 """
-from std.os import abort
-from std.sys import (
-    CompilationTarget,
-    is_amd_gpu,
-    is_gpu,
-    is_nvidia_gpu,
-)
+from std.sys import CompilationTarget, is_gpu
 from std.ffi import (
     c_ssize_t,
     c_int,
     external_call,
-    _external_call_const,
     get_errno,
 )
 
@@ -45,10 +38,10 @@ from std.collections import Span
 struct FileDescriptor(TrivialRegisterPassable, Writer):
     """File descriptor of a file."""
 
-    var value: Int
+    var value: c_int
     """The underlying value of the file descriptor."""
 
-    def __init__(out self, value: Int = 1):
+    def __init__(out self, value: c_int = 1):
         """Constructs the file descriptor from an integer.
 
         Args:
@@ -62,7 +55,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         Args:
             f: The file handle.
         """
-        self.value = f._get_raw_fd()
+        self.value = c_int(f._get_raw_fd())
 
     @inline(.always)
     def write_bytes(mut self, bytes: Span[Byte, _]):
@@ -72,11 +65,19 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-        var written = external_call["write", c_ssize_t](
-            self.value.__mlir_index__(),
-            bytes.unsafe_ptr(),
-            len(bytes).__mlir_index__(),
-        )
+        var written: c_ssize_t
+        if __is_run_in_comptime_interpreter:
+            written = external_call["write", c_ssize_t](
+                self.value.__mlir_index__(),
+                bytes.unsafe_ptr(),
+                len(bytes).__mlir_index__(),
+            )
+        else:
+            written = external_call["write", c_ssize_t](
+                self.value,
+                bytes.unsafe_ptr(),
+                len(bytes).__mlir_index__(),
+            )
         assert written == len(bytes), "expected amount of bytes not written"
 
     def write_string(mut self, string: StringSlice):
@@ -145,7 +146,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         comptime if is_gpu():
             return False
-        return external_call["isatty", c_int](c_int(self.value)) != 0
+        return external_call["isatty", c_int](self.value) != 0
 
     def fchdir(self) raises:
         """Changes the current working directory to the one
@@ -155,7 +156,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             If the operations fails. In particular if the fd is
             not a directory.
         """
-        var result = external_call["fchdir", c_int](c_int(self.value))
+        var result = external_call["fchdir", c_int](self.value)
         if result < 0:
             var err = get_errno()
             raise Error("fchdir failed err: ", String(err))

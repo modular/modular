@@ -53,7 +53,6 @@ from eval_runner import (
     resolve_canonical_repo_id,
     safe_model_name,
     test_single_request,
-    validate_hf_token,
     write_github_output,
     write_results,
 )
@@ -426,7 +425,7 @@ def get_server_cmd(
     autoscale_devices: bool = True,
     gpu_spec: tuple[str, int],
 ) -> ServerCommand:
-    _, gpu_count = gpu_spec
+    gpu_name, gpu_count = gpu_spec
     env: dict[str, str] = {}
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
@@ -514,6 +513,9 @@ def get_server_cmd(
 
     if framework == "vllm" and accelerator(serve_image) == "amd":
         env["VLLM_ROCM_USE_AITER"] = "1"
+        # AITER's unquantized MoE rejects Nemotron-H's non-gated MLP.
+        if "nemotron" in model.casefold():
+            VLLM += ["--moe-backend", "triton"]
 
     if framework in ("max", "max-ci"):
         # Force MAX to rely solely on the KVConnector for prefix cache hits to test
@@ -523,6 +525,10 @@ def get_server_cmd(
             and recipe.model.kv_cache.kv_connector_config.type != "null"
         ):
             env["MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE"] = "1"
+        # HIP caps VMM-mapped memory at ~1.7 TiB per process, which rules out
+        # VMM on 8 GPUs at the default memory budget.
+        if gpu_name.startswith("AMD") and gpu_count <= 4:
+            env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
@@ -710,8 +716,6 @@ def smoke_test(
     A 1.0 value means 100% accuracy.
 
     """
-    validate_hf_token()
-
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
 
@@ -779,7 +783,6 @@ def smoke_test(
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
-                model_alias=model if served != model else None,
                 lm_eval_metadata=lm_eval_metadata,
             )
 

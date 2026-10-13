@@ -84,19 +84,10 @@ def test_tuple_contains() raises:
     assert_true(b.__contains__(True))
     assert_true(False in b)
     assert_true(b.__contains__(False))
-    assert_false(b.__contains__(1))
-    assert_false(b.__contains__(0))
-
-    var c = (1, 0)
-    assert_false(c.__contains__(True))
-    assert_false(c.__contains__(False))
-    assert_false(True in c)
-    assert_false(False in c)
 
     var d = (123, True, "Mojo is awesome")
 
     assert_true("Mojo is awesome" in d)
-    assert_false(StaticString("Mojo is awesome") in d)
     assert_true(d.__contains__("Mojo is awesome"))
 
     assert_false("Hello world" in d)
@@ -129,14 +120,6 @@ def test_tuple_contains() raises:
     assert_true(b_alias.__contains__(True))
     assert_true(False in b_alias)
     assert_true(b_alias.__contains__(False))
-    assert_false(b_alias.__contains__(1))
-    assert_false(b_alias.__contains__(0))
-
-    comptime c_alias = (1, 0)
-    assert_false(c_alias.__contains__(True))
-    assert_false(c_alias.__contains__(False))
-    assert_false(True in c_alias)
-    assert_false(False in c_alias)
 
     comptime d_alias = (123, True, "Mojo is awesome")
     # Ensure `contains` itself works in comp-time domain

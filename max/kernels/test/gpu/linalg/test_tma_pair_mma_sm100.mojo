@@ -39,6 +39,7 @@ from layout import (
     MixedLayout,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout._fillers import random
@@ -67,13 +68,11 @@ def tma_umma_kernel_pair_cta[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_tma_rank: Int,
-    b_tma_rank: Int,
-    a_tile_shape: IndexList[a_tma_rank],
-    b_tile_shape: IndexList[b_tma_rank],
+    a_tile_shape: Coord,
+    b_tile_shape: Coord,
     c_layout: TensorLayout,
-    a_desc_shape: IndexList[a_tma_rank],
-    b_desc_shape: IndexList[b_tma_rank],
+    a_desc_shape: Coord,
+    b_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -82,8 +81,8 @@ def tma_umma_kernel_pair_cta[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
@@ -102,10 +101,14 @@ def tma_umma_kernel_pair_cta[
     comptime CLUSTER_M = Int(cluster_shape[0])
     comptime CLUSTER_N = Int(cluster_shape[1])
 
-    comptime a_tma_load_size = _idx_product[a_tma_rank, a_desc_shape]()
-    comptime b_tma_load_size = _idx_product[b_tma_rank, b_desc_shape]()
-    comptime a_tma_rows = a_desc_shape[0]
-    comptime b_tma_rows = b_desc_shape[0] if transpose_b else b_desc_shape[1]
+    comptime a_tma_load_size = _idx_product[a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape.element_types[0].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[
+        0
+    ].static_value if transpose_b else b_desc_shape.element_types[
+        1
+    ].static_value
 
     comptime a_smem_layout = tile_layout_k_major_typed[
         a_type, BM, BK, a_swizzle
@@ -243,11 +246,17 @@ def tma_umma_kernel_pair_cta[
 
             var a_smem_slice = TileTensor(
                 a_smem + peer_cta_coord[2] * a_tma_load_size,
-                row_major[a_tile_shape[0], a_tile_shape[1]](),
+                row_major[
+                    a_tile_shape.element_types[0].static_value,
+                    a_tile_shape.element_types[1].static_value,
+                ](),
             )
             var b_smem_slice = TileTensor(
                 b_smem + peer_cta_coord[1] * b_tma_load_size,
-                row_major[b_tile_shape[0], b_tile_shape[1]](),
+                row_major[
+                    b_tile_shape.element_types[0].static_value,
+                    b_tile_shape.element_types[1].static_value,
+                ](),
             )
 
             a_tma_op.async_multicast_load[cta_group](
@@ -466,14 +475,10 @@ def test_tma_umma_pair_cta[
     var c_dev = c.device_tensor()
 
     var a_tma_op = create_tensor_tile[
-        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        coord[Int(BM) // Int(cluster_shape[1]), BK], swizzle_mode=a_swizzle
     ](ctx, a_dev)
     var b_tma_op = create_tensor_tile[
-        Index(
-            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
-        ) if transpose_b else Index(
-            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
-        ),
+        coord[Int(BN) // (Int(cluster_shape[0]) // Int(cta_group)), BK],
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
@@ -485,8 +490,6 @@ def test_tma_umma_pair_cta[
         ab_type,
         ab_type,
         c_type,
-        type_of(a_tma_op).rank,
-        type_of(b_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(b_tma_op).tile_shape,
         type_of(c_dev).LayoutType,

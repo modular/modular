@@ -35,7 +35,7 @@ from max.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 
 
 @fieldwise_init
-struct AMDIGLPStrategy(Equatable, Intable, TrivialRegisterPassable):
+struct AMDIGLPStrategy(EnumLike, Equatable, Intable, TrivialRegisterPassable):
     """Preset strategy values for the `llvm.amdgcn.iglp.opt` intrinsic.
 
     LLVM AMDGPU defines these as named presets in `AMDGPUIGroupLP.cpp`;
@@ -64,6 +64,29 @@ struct AMDIGLPStrategy(Equatable, Intable, TrivialRegisterPassable):
 
     comptime MFMA_EXP_SIMPLE_INTERLEAVE = Self(3)
     """`MFMAExpSimpleInterleaveOpt`: interleaves 1 TRANS per 1 MFMA."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "MFMA_SMALL_GEMM".value,
+        "MFMA_SMALL_GEMM_SINGLE_WAVE".value,
+        "MFMA_EXP_INTERLEAVE".value,
+        "MFMA_EXP_SIMPLE_INTERLEAVE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "AMDIGLPStrategy has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value

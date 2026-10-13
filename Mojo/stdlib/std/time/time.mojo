@@ -20,7 +20,6 @@ from std.time import perf_counter_ns
 """
 
 from std.math import ceil, floor
-from std.os import abort
 from std.ffi import external_call
 from std.sys import (
     CompilationTarget,
@@ -29,7 +28,6 @@ from std.sys import (
     is_nvidia_gpu,
     llvm_intrinsic,
 )
-from std.sys._assembly import inlined_assembly
 
 # ===-----------------------------------------------------------------------===#
 # Utilities

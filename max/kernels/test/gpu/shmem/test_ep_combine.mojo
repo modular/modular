@@ -22,7 +22,7 @@ from std.random import randint, randn, seed
 from std.sys import argv, size_of
 
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import TileTensor, Idx
+from layout import Coord, TileTensor, Idx
 from layout.tile_layout import row_major
 from std.memory import Pointer
 from shmem import *
@@ -35,6 +35,7 @@ from shmem.ep_comm import (
     dispatch_async_kernel,
 )
 from std.testing import assert_equal
+from std.utils.index import IndexList
 
 
 def is_benchmark() -> Bool:
@@ -237,16 +238,26 @@ def test_combine[
     var func_combine_async = ctx.compile_function[combine_async]()
     shmem_module_init(func_combine_async)
 
+    @inline(.always)
+    @__parameter
+    @__copy_capture(output_2_tensor)
+    def store_output_2[
+        dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
+    ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        output_2_tensor.store[
+            width=width, alignment=alignment * size_of[dtype]()
+        ](Coord(coords), rebind[SIMD[input_type, width]](val))
+
     comptime combine_wait = combine_wait_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        output_2_tensor.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
         n_ranks,
         combine_msg_bytes,
         n_tokens_per_rank,
+        store_output_2,
     ]
     var func_combine_async_wait = ctx.compile_function[combine_wait]()
 
@@ -322,7 +333,7 @@ def test_combine[
     ) raises {var atomic_counter, imm}:
         ctx.enqueue_function(
             func_combine_async_wait,
-            output_2_tensor,
+            Int32(n_tokens_per_rank),
             send_buf,
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),

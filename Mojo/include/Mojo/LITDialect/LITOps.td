@@ -488,7 +488,10 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // Comptime values attached with `@__annotation(...)`, in source order.
     // Read back through `#kgen.get_annotation_value`, which the reflection
     // library wraps as `reflect[T].annotation[index]`.
-    DefaultValuedAttr<ArrayAttr, "{}">:$annotations
+    DefaultValuedAttr<ArrayAttr, "{}">:$annotations,
+    // Present if the struct is declared with `__enum`. Its cases are the
+    // `lit.enum.case` ops in its body.
+    UnitAttr:$isEnum
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -531,6 +534,9 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
     /// Get whether this struct is compiler generated.
     bool isSynthetic();
+
+    /// Return true if this struct is declared with `__enum`.
+    bool isEnum() { return getIsEnum(); }
   }];
 
   let builders = [
@@ -588,6 +594,41 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     Type getReboundType(StructType structSelfType,
                         ParameterEvaluationContext *ctx = nullptr);
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// EnumCaseOp
+//===----------------------------------------------------------------------===//
+
+def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
+  let summary = "Enum case declaration.";
+  let description = [{
+    The `lit.enum.case` operation declares a case of the enum whose
+    `lit.struct.decl` contains it. The cases of an enum are its
+    `lit.enum.case` ops, in declaration order. `payloadTypes` lists the
+    case's payload types as written, empty for a case without a payload; it
+    is absent until the payload is resolved.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @Color {
+      lit.enum.case red : []
+      lit.enum.case rgb : [!alias_Int1, !alias_Int1, !alias_Int1]
+    } {isEnum}
+    ```
+  }];
+
+  let arguments = (ins
+    StrAttr:$name,
+    OptionalAttr<TypeArrayAttr>:$payloadTypes,
+    OptionalAttr<LIT_DocStringAttr>:$docString
+  );
+  let assemblyFormat = [{
+    custom<KeywordAsString>($name) (`:` $payloadTypes^)? attr-dict
+  }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

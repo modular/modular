@@ -87,9 +87,9 @@ def unsafe_stack_allocation[
     comptime if is_gpu():
         # On NVGPU, SHARED and CONSTANT address spaces lower to global memory.
 
-        comptime global_name = name.value() if name else "_global_alloc"
+        comptime global_name = name.or_else("_global_alloc")
 
-        comptime __match address_space:
+        comptime match address_space:
             case .SHARED:
                 return {
                     _mlir_value = __mlir_op.`pop.global_alloc`[
@@ -142,10 +142,8 @@ def unsafe_stack_allocation[
             case _:
                 pass
 
-    elif CurrentPlugin.stack_allocation_fn[address_space]:
-        return comptime (
-            CurrentPlugin.stack_allocation_fn[address_space].value()
-        )[count, type, name=name, alignment=alignment]()
+    elif case .Some(hook) = CurrentPlugin.stack_allocation_fn[address_space]:
+        return hook[count, type, name=name, alignment=alignment]()
 
     # Perform a stack allocation of the requested size, alignment, and type.
     return {

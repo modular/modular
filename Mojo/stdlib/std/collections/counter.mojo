@@ -503,7 +503,7 @@ struct Counter[
         result.update(self)
         result.update(other)
 
-        return +result^  # Remove zero and negative counts
+        return +result  # Remove zero and negative counts
 
     def __iadd__(mut self, other: Self):
         """Add counts from another `Counter` to this `Counter`.
@@ -528,7 +528,7 @@ struct Counter[
 
         result.subtract(other)
 
-        return +result^  # Remove zero and negative counts
+        return +result  # Remove zero and negative counts
 
     def __isub__(mut self, other: Self):
         """Subtract counts from another `Counter` from this `Counter`, but keep

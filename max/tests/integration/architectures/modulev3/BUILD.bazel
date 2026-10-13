@@ -16,6 +16,8 @@ modular_py_test(
     name = "test_arch_parity",
     srcs = ["test_arch_parity.py"],
     deps = [
+        "//max/python/max/pipelines/architectures/deepseekV3_2",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gemma4_modulev3",
         "//max/python/max/pipelines/lib",
@@ -36,6 +38,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
         "manual",  # TODO (MODELS-1354): This is timing out, re-enable after investigation

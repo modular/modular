@@ -29,38 +29,65 @@ using namespace LIT;
 ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
                  ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
                  ssize_t indentation)
-    : shared(shared), irValue(irValue), loc(loc), parentDecl(parentDecl),
-      cursor(cursor), endCursorState(endCursor.getState()),
-      indentation(indentation) {
+    : ASTDecl(Kind::Base, shared, std::move(irValue), loc, parentDecl, cursor,
+              endCursor, indentation) {}
+
+ASTDecl::ASTDecl(Kind kind, SharedState &shared, DeclIRValue irValue,
+                 llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                 LexerCursor endCursor, ssize_t indentation)
+    : shared(shared), irValue(std::move(irValue)), loc(loc),
+      parentDeclAndKind(parentDecl, kind), cursor(cursor),
+      endCursorState(endCursor.getState()), indentation(indentation) {
   resolvedness = DeclResolvedness::unparsed;
   referencedFromBytecode = false;
-  hasDisabledDecls = false;
   hasReferenceError = false;
   hasBodyDecorators = false;
   loadedFromBytecode = false;
   isExplicitParamScope = false;
 }
 
+ASTDecl::~ASTDecl() = default;
+
+AliasASTDecl::AliasASTDecl(SharedState &shared, AliasDeclOp aliasOp,
+                           llvm::SMLoc loc, ASTDecl *parentDecl,
+                           LexerCursor cursor, LexerCursor endCursor,
+                           ssize_t indentation)
+    : ASTDecl(Kind::Alias, shared, aliasOp.getOperation(), loc, parentDecl,
+              cursor, endCursor, indentation) {}
+
+AliasDeclOp AliasASTDecl::getOp() const {
+  return cast<AliasDeclOp>(getIfOperation());
+}
+
+WitnessASTDecl::WitnessASTDecl(SharedState &shared,
+                               UnresolvedDecls unresolvedDecls,
+                               TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
+                               ASTDecl *parentDecl, LexerCursor cursor,
+                               LexerCursor endCursor, ssize_t indentation)
+    : ASTDecl(Kind::Witness, shared, static_cast<Operation *>(nullptr), loc,
+              parentDecl, cursor, endCursor, indentation),
+      storage(std::move(unresolvedDecls)), traitSymbol(traitSymbol) {}
+
 bool ASTDecl::isCallableDecl() const {
-  if (auto witness = getIfWitness())
+  if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
   return isa_and_nonnull<FnOp>(getIfOperation());
 }
 
 FnTypeGeneratorType ASTDecl::getDeclFullSignature() const {
-  if (auto witness = getIfWitness()) // already expanded.
+  if (auto *witness = dyn_cast<WitnessASTDecl>(this)) // already expanded.
     return cast<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
   return cast<FnOp>(getIfOperation()).getFullSignature();
 }
 
 bool ASTDecl::isStaticMethodDecl() const {
-  if (auto witness = getIfWitness())
+  if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return witness->getWitnessEntry().isStaticMethod;
   return cast<FnOp>(getIfOperation()).getIsStatic();
 }
 
 ImplicitConversionKind ASTDecl::getDeclImplicitConversionKind() const {
-  if (auto witness = getIfWitness())
+  if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return witness->getWitnessEntry().implicitConversion;
   return cast<FnOp>(getIfOperation()).getImplicitConversion();
 }
@@ -112,15 +139,8 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
     return {};
 
   auto it = declsInScope->find(name);
-  if (it != declsInScope->end() && !it->second.empty()) {
-    // A name whose decls are all disabled is a miss
-    if (LLVM_UNLIKELY(hasDisabledDecls) &&
-        llvm::all_of(it->second,
-                     [](ASTDecl *decl) { return decl->isDisabled(); })) {
-      return {};
-    }
+  if (it != declsInScope->end() && !it->second.empty())
     return it->second;
-  }
   return {};
 }
 
@@ -199,7 +219,7 @@ void ASTDecl::takeDecls(ASTDecl &src) {
     setErroneous();
   for (auto &[name, children] : src.getDeclsInScope())
     for (ASTDecl *child : children)
-      child->parentDecl = this;
+      child->parentDeclAndKind.setPointer(this);
   declsInScope = std::move(src.declsInScope);
   counter = src.counter;
   assert(!knownAssumptions && "assumptions should be empty before overwriting");
@@ -219,7 +239,7 @@ void ASTDecl::mergeDeclsFrom(ASTDecl &src) {
   for (auto &[name, children] : *src.declsInScope) {
     TinyPtrVector<ASTDecl *> &entries = (*declsInScope)[name];
     for (ASTDecl *child : children) {
-      child->parentDecl = this;
+      child->parentDeclAndKind.setPointer(this);
       entries.push_back(child);
     }
   }
@@ -390,7 +410,7 @@ void ASTDecl::dump() const {
     llvm::errs() << "\n";
   } else if (auto cv = getIfIRValue()) {
     cv.dump();
-  } else if (auto witness = getIfWitness()) {
+  } else if (auto *witness = dyn_cast<WitnessASTDecl>(this)) {
     llvm::errs() << "witness ";
     if (resolvedness < DeclResolvedness::signature) {
       llvm::errs() << "<unresolved>";

@@ -500,3 +500,57 @@ def _exported(directory: Path) -> Path:
     """Returns ``directory``, holding one recorded artifact of ``_graph()``."""
     InferenceSession(devices=[CPU()], export_mefs=directory).load(_graph())
     return directory
+
+
+def _export_named(directory: Path, name: str) -> None:
+    """Exports ``_graph()`` into ``directory`` as an artifact called ``name``."""
+    store = MefStore.for_export(directory)
+    compiled = InferenceSession(devices=[CPU()]).compile(_graph())
+    compiled.export_mef(store.claim_export_artifact(name))
+    store.write_manifest()
+
+
+def test_a_named_artifact_is_found_by_its_name(tmp_path: Path) -> None:
+    # What a module compiled as one artifact needs: no graph claims it, so the
+    # caller's name is how the reader finds it again.
+    _export_named(tmp_path, "sweep_cpu.mef")
+
+    path = MefStore.for_import(tmp_path).artifact("sweep_cpu.mef")
+    model = InferenceSession(devices=[CPU()]).load(path)
+    np.testing.assert_allclose(_execute(model), np.ones(4))
+
+
+def test_a_named_artifact_nobody_recorded_raises(tmp_path: Path) -> None:
+    _export_named(tmp_path, "sweep_cpu.mef")
+
+    with pytest.raises(MissingArtifactError, match=r"'sweep_gpu_0\.mef'"):
+        MefStore.for_import(tmp_path).artifact("sweep_gpu_0.mef")
+
+
+def test_named_artifacts_are_found_across_directories(tmp_path: Path) -> None:
+    first, second = tmp_path / "a", tmp_path / "b"
+    _export_named(first, "first.mef")
+    _export_named(second, "second.mef")
+
+    store = MefStore.for_import([first, second])
+    assert store.artifact("first.mef") == first / "first.mef"
+    assert store.artifact("second.mef") == second / "second.mef"
+
+
+def test_one_name_in_two_directories_raises(tmp_path: Path) -> None:
+    # Unlike a graph's artifact, nothing records what a named one holds, so a
+    # name both directories claim cannot be resolved by comparing them.
+    first, second = tmp_path / "a", tmp_path / "b"
+    _export_named(first, "sweep_cpu.mef")
+    _export_named(second, "sweep_cpu.mef")
+
+    with pytest.raises(RuntimeError, match="both recorded as"):
+        MefStore.for_import([first, second])
+
+
+def test_a_name_cannot_also_be_a_graphs_artifact(tmp_path: Path) -> None:
+    store = MefStore.for_export(tmp_path)
+    taken = store.claim_export(_graph()).name
+
+    with pytest.raises(ValueError, match="already a graph's artifact"):
+        store.claim_export_artifact(taken)

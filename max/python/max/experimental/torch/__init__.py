@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Bridge between PyTorch and MAX graphs.
+
+Call Mojo custom ops and MAX graphs from PyTorch, and convert tensor dtypes
+between the two frameworks.
+"""
+
 from .torch import (
     CustomOpLibrary,
     graph_op,

@@ -36,6 +36,13 @@ engine never names more than 64 registers in one instruction and waits per
 64-column slice: two `x64` instructions and two waits per direction, no
 `x128`.
 
+Two fragment kernels check the `16x256b` shape against the row shape. One
+writes every lane through its row view and reads each `(16, 32)` half of the
+warp tile back through `tmem_16x256b`, comparing every register with the
+cell `tmem_cell` names for its coordinate; the other fills the fragment from
+`tmem_cell` and stores it, then reads the rows back. Their codegen tests
+assert each fragment copy is one `16x256b.x4` instruction.
+
 A fifth kernel runs under launch bounds that hand `ptxas` a 128-register
 budget, the width the ISA would let a single instruction name, and copies a
 128-column row from global memory through TMEM and back. Its test compiles
@@ -44,17 +51,21 @@ so the 64-register cap is what keeps a wide copy inside a budget that an
 `x128` and its staging registers could not fit.
 """
 
+from std.itertools import product
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal, assert_true
 from std.utils.static_tuple import StaticTuple
 
-from layout import Coord, Idx, TileTensor, row_major, stack_allocation
+from layout import Coord, Idx, TileTensor, coord, row_major, stack_allocation
 from layout.tile_layout import Layout as TileLayout
 from layout.tmem_engine import (
     TMemEngine,
+    TMem16x256bRegisters,
     TMemStorage,
     TMEM_NUM_LANES,
+    tmem_cell,
     tmem_copy_async,
+    tmem_16x256b,
 )
 
 from max.gpu import (
@@ -306,6 +317,96 @@ def tmem_m64_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
         tcgen05_dealloc[1](smem_addr[], UInt32(NUM_COLS))
 
 
+comptime FRAG_REG_LAYOUT = TMem16x256bRegisters[NUM_COLS]
+comptime FRAG_REPEATS = type_of(FRAG_REG_LAYOUT).static_shape[2]
+comptime HALVES = 2
+comptime FRAG_LANES = WARP_SIZE // HALVES
+
+
+def tmem_16x256b_load_kernel(mismatches: MutPointer[Int32, MutAnyOrigin]):
+    """Writes rows, reads both halves through `tmem_16x256b`, and counts the
+    registers that disagree with the cell `tmem_cell` names."""
+    var smem_addr = unsafe_stack_allocation[
+        1, DType.uint32, address_space=.SHARED
+    ]()
+    if warp_id() == 0:
+        tcgen05_alloc[1](smem_addr, UInt32(NUM_COLS))
+    barrier()
+    var tile = AccumTile[NUM_COLS](
+        AccumStorage(smem_addr[]), AccumLayout[NUM_COLS]
+    )
+    var warp_tile = tile.tile[WARP_SIZE, NUM_COLS](
+        Coord(Int(warp_id()), Idx[0])
+    )
+    var row = warp_tile.tile[1, NUM_COLS](coord[0, 0])
+    var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
+    var regs = stack_allocation[dtype=.float32](row_major[1, NUM_COLS]())
+    comptime for c in range(NUM_COLS):
+        regs[coord[0, c]] = _expected(lane, c)
+    row.copy_from(regs)
+
+    var count: Int32 = 0
+    comptime for half in range(HALVES):
+        var view = tmem_16x256b(
+            warp_tile.tile[FRAG_LANES, NUM_COLS](coord[half, 0])
+        )
+        var frag = stack_allocation[dtype=.float32](FRAG_REG_LAYOUT)
+        frag.copy_from(view)
+        # Strides (1, 2, 4) make j the contiguous register mode.
+        comptime for r, i, j in product(
+            range(FRAG_REPEATS), range(2), range(2)
+        ):
+            comptime cell_coord = Coord(coord[j, i], Idx[r])
+            var cell = tmem_cell(view, cell_coord)
+            if frag[cell_coord] != _expected(cell[0], cell[1]):
+                count += 1
+    mismatches[unsafe_offset=lane] = count
+    barrier()
+    if warp_id() == 0:
+        tcgen05_release_allocation_lock[1]()
+        tcgen05_dealloc[1](smem_addr[], UInt32(NUM_COLS))
+
+
+def tmem_16x256b_store_kernel(output: MutPointer[Float32, MutAnyOrigin]):
+    """Fills both halves through `tmem_16x256b` from the cells `tmem_cell`
+    names, reads the rows back, and writes `output[lane * NUM_COLS + col]`."""
+    var smem_addr = unsafe_stack_allocation[
+        1, DType.uint32, address_space=.SHARED
+    ]()
+    if warp_id() == 0:
+        tcgen05_alloc[1](smem_addr, UInt32(NUM_COLS))
+    barrier()
+    var tile = AccumTile[NUM_COLS](
+        AccumStorage(smem_addr[]), AccumLayout[NUM_COLS]
+    )
+    var warp_tile = tile.tile[WARP_SIZE, NUM_COLS](
+        Coord(Int(warp_id()), Idx[0])
+    )
+    comptime for half in range(HALVES):
+        var view = tmem_16x256b(
+            warp_tile.tile[FRAG_LANES, NUM_COLS](coord[half, 0])
+        )
+        var frag = stack_allocation[dtype=.float32](FRAG_REG_LAYOUT)
+        comptime for r, i, j in product(
+            range(FRAG_REPEATS), range(2), range(2)
+        ):
+            comptime cell_coord = Coord(coord[j, i], Idx[r])
+            var cell = tmem_cell(view, cell_coord)
+            frag[cell_coord] = _expected(cell[0], cell[1])
+        view.copy_from(frag)
+
+    var row = warp_tile.tile[1, NUM_COLS](coord[0, 0])
+    var back = stack_allocation[dtype=.float32](row_major[1, NUM_COLS]())
+    back.copy_from(row)
+    var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
+    comptime for c in range(NUM_COLS):
+        output[unsafe_offset=lane * NUM_COLS + c] = back[coord[0, c]]
+    barrier()
+    if warp_id() == 0:
+        tcgen05_release_allocation_lock[1]()
+        tcgen05_dealloc[1](smem_addr[], UInt32(NUM_COLS))
+
+
 def test_codegen_batches_one_instruction_per_direction() raises:
     print("== test_codegen_batches_one_instruction_per_direction")
     var asm = _compile_code[
@@ -430,13 +531,48 @@ def test_m64_round_trip(ctx: DeviceContext) raises:
             )
 
 
+def test_codegen_fragment_copies_are_one_16x256b_instruction() raises:
+    print("== test_codegen_fragment_copies_are_one_16x256b_instruction")
+    # 32 columns are 4 repeats of 256 bits, so each half is one instruction.
+    var ld_asm = _compile_code[
+        tmem_16x256b_load_kernel, target=get_gpu_target["sm_100a"]()
+    ]().asm
+    assert_equal(ld_asm.count("tcgen05.ld.sync.aligned.16x256b.x4.b32"), 2)
+    var st_asm = _compile_code[
+        tmem_16x256b_store_kernel, target=get_gpu_target["sm_100a"]()
+    ]().asm
+    assert_equal(st_asm.count("tcgen05.st.sync.aligned.16x256b.x4.b32"), 2)
+
+
+def test_fragment_load_matches_rows(ctx: DeviceContext) raises:
+    print("== test_fragment_load_matches_rows")
+    var buf = ctx.enqueue_create_buffer[.int32](NUM_LANES)
+    buf.enqueue_fill(Int32(-1))
+    ctx.enqueue_function[tmem_16x256b_load_kernel](
+        buf, grid_dim=1, block_dim=NUM_LANES
+    )
+    var host = ctx.enqueue_create_host_buffer[.int32](NUM_LANES)
+    ctx.enqueue_copy(host, buf)
+    ctx.synchronize()
+    for lane in range(NUM_LANES):
+        assert_equal(host[lane], 0, String(t"lane {lane}"))
+
+
+def test_fragment_store_matches_rows(ctx: DeviceContext) raises:
+    print("== test_fragment_store_matches_rows")
+    _check_round_trip[tmem_16x256b_store_kernel, NUM_COLS](ctx)
+
+
 def main() raises:
     test_codegen_batches_one_instruction_per_direction()
     test_codegen_async_copies_share_one_wait()
     test_codegen_wide_row_caps_registers_per_instruction()
+    test_codegen_fragment_copies_are_one_16x256b_instruction()
     with DeviceContext() as ctx:
         test_round_trip_all_lanes(ctx)
         test_async_round_trip_all_lanes(ctx)
         test_wide_round_trip_all_lanes(ctx)
         test_budget_round_trip_does_not_spill(ctx)
         test_m64_round_trip(ctx)
+        test_fragment_load_matches_rows(ctx)
+        test_fragment_store_matches_rows(ctx)

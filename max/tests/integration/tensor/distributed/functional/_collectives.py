@@ -41,6 +41,7 @@ Cross-mesh transitions:
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any, ClassVar
 
@@ -59,6 +60,7 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
 )
+from max.experimental.sharding.placements import local_shard_shape_from_global
 from max.experimental.tensor import Tensor
 
 
@@ -865,3 +867,107 @@ class CollectivesTests:
             swapped, DeviceMapping(self.MESH_2D, (Sharded(0), Sharded(1)))
         )
         self._assert_shards(back, t_np, self.MESH_2D, (Sharded(0), Sharded(1)))
+
+    # ─── Collectives over several mesh axes ─────────────────────────
+
+    @staticmethod
+    def _expected_shard(
+        full: np.ndarray,
+        device_idx: int,
+        mesh: DeviceMesh,
+        placements: tuple[Any, ...],
+    ) -> np.ndarray:
+        """Returns the part of ``full`` that ``device_idx`` holds.
+
+        The mesh axes that shard a tensor axis split it once over all their
+        devices, in row-major order, with the larger pieces first, as
+        ``np.array_split`` does.
+        """
+        result = full
+        for axis in {p.axis for p in placements if isinstance(p, Sharded)}:
+            group = [
+                ax for ax, p in enumerate(placements) if p == Sharded(axis)
+            ]
+            chunks = np.array_split(
+                result, math.prod(mesh.mesh_shape[ax] for ax in group), axis
+            )
+            result = chunks[mesh.device_coord(device_idx, group)]
+        return result
+
+    def _assert_split_shards(
+        self, result: Tensor, full: np.ndarray, placements: tuple[Any, ...]
+    ) -> None:
+        mesh = self.MESH_2D
+        assert result.placements == placements
+        for i in range(mesh.num_devices):
+            np.testing.assert_allclose(
+                result.local_shards[i].to_numpy(),
+                self._expected_shard(full, i, mesh, placements),
+                rtol=1e-5,
+            )
+
+    @pytest.mark.parametrize("rows", [8, 9, 10])
+    def test_split_along_two_mesh_axes_matches_shape_model(
+        self, rows: int
+    ) -> None:
+        a = np.arange(rows * 3, dtype=np.float32).reshape(rows, 3)
+        placements = (Sharded(0), Sharded(0))
+        placed = transfer_to(Tensor(a), DeviceMapping(self.MESH_2D, placements))
+        self._assert_split_shards(placed, a, placements)
+        model = local_shard_shape_from_global(
+            [rows, 3], self.MESH_2D, placements
+        )
+        assert [
+            [int(d) for d in shard.shape] for shard in placed.local_shards
+        ] == [[int(d) for d in shape] for shape in model]
+
+    @pytest.mark.parametrize("rows", [8, 9, 10])
+    def test_allreduce_over_two_mesh_axes(self, rows: int) -> None:
+        a = np.arange(rows * 3, dtype=np.float32).reshape(rows, 3)
+        t = self.partial_fn(a, self.MESH_2D, (Partial(), Partial()))
+        result = allreduce_sum(t, mesh_axis=("dp", "tp"))
+        self._assert_split_shards(result, a * 4, (Replicated(), Replicated()))
+
+    @pytest.mark.parametrize("rows", [8, 9, 10])
+    def test_allgather_over_two_mesh_axes(self, rows: int) -> None:
+        a = np.arange(rows * 3, dtype=np.float32).reshape(rows, 3)
+        placed = transfer_to(
+            Tensor(a), DeviceMapping(self.MESH_2D, (Sharded(0), Sharded(0)))
+        )
+        result = allgather(placed, tensor_axis=0, mesh_axis=("dp", "tp"))
+        self._assert_split_shards(result, a, (Replicated(), Replicated()))
+
+    @pytest.mark.parametrize("rows", [8, 9, 10])
+    def test_partial_to_split_along_two_mesh_axes(self, rows: int) -> None:
+        a = np.arange(rows * 3, dtype=np.float32).reshape(rows, 3)
+        t = self.partial_fn(a, self.MESH_2D, (Partial(), Partial()))
+        placements = (Sharded(0), Sharded(0))
+        result = transfer_to(t, DeviceMapping(self.MESH_2D, placements))
+        self._assert_split_shards(result, a * 4, placements)
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            (Replicated(), Sharded(0)),
+            (Sharded(0), Replicated()),
+            (Replicated(), Replicated()),
+            (Sharded(1), Sharded(0)),
+        ],
+    )
+    @pytest.mark.parametrize("rows", [8, 9, 10])
+    def test_unsplit_from_two_mesh_axes(
+        self, rows: int, target: tuple[Any, ...]
+    ) -> None:
+        a = np.arange(rows * 4, dtype=np.float32).reshape(rows, 4)
+        placed = transfer_to(
+            Tensor(a), DeviceMapping(self.MESH_2D, (Sharded(0), Sharded(0)))
+        )
+        result = transfer_to(placed, DeviceMapping(self.MESH_2D, target))
+        # Gathering some mesh axes of a split does not rebalance the other
+        # pieces: 10 rows split as 3, 3, 2, 2 gather into 6 and 4 rows, not
+        # 5 and 5, and the layout must report those sizes.
+        assert result.placements == target
+        np.testing.assert_allclose(result.to_numpy(), a, rtol=1e-5)
+        assert [list(s.shape) for s in result.local_shards] == [
+            list(t.shape) for t in result.layout.local_types
+        ]

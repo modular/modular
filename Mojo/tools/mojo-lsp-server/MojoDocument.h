@@ -231,6 +231,12 @@ public:
                  const llvm::lsp::CodeActionContext &context,
                  LSPResponder<std::vector<llvm::lsp::CodeAction>> responder);
 
+  /// Record a `match` statement whose header spans `matchRange` and whose
+  /// cases leave values uncovered; inserting `arms` at `insertLoc` covers
+  /// them. Both locations are in this document's source manager.
+  void addMatchMissingCases(llvm::SMRange matchRange, llvm::SMLoc insertLoc,
+                            StringRef arms);
+
   //===--------------------------------------------------------------------===//
   // Language Features
 
@@ -440,6 +446,17 @@ private:
   llvm::StringMap<
       std::map<llvm::lsp::Range, std::vector<llvm::lsp::CodeAction>>>
       fixits;
+
+  /// A `match` statement whose cases leave values uncovered, and the edit
+  /// that appends an arm for each of them.
+  struct MatchMissingCases {
+    llvm::SMRange matchRange;
+    llvm::SMLoc insertLoc;
+    std::string arms;
+  };
+
+  /// The matches with uncovered values in the current version of the file.
+  std::vector<MatchMissingCases> matchesWithMissingCases;
 
   /// An ordered set of inlay hints for the current version of the file.
   std::vector<MojoInlayHint> inlayHints;

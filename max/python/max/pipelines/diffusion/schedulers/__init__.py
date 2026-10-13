@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Noise schedulers for diffusion pipelines, plus the factory that creates
+them from a model config.
+"""
+
 from .scheduler_factory import SchedulerFactory
 from .scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,

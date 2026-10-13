@@ -13,7 +13,7 @@
 
 from std.simd import FastMathFlag
 from std.compile import compile_info
-from std.testing import TestSuite, assert_false, assert_true
+from std.testing import TestSuite, assert_true
 
 
 def test_simd_fma_fastmath() raises:

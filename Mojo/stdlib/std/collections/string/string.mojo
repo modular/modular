@@ -23,8 +23,6 @@ from std.collections.string.string_span import (
     CodepointSliceIter,
     GraphemeIndicesIter,
     GraphemeSliceIter,
-    _to_string_list,
-    _unsafe_strlen,
 )
 from std.builtin.builtin_slice import ContiguousSlice
 from std.hashlib.hasher import Hasher
@@ -572,7 +570,7 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSpan(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr
                 )
             )
         )
@@ -591,7 +589,9 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSpan(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[
+                        c_char
+                    ]()
                 )
             )
         )

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.ffi import _Global
-from std.memory import MaybeUninit
 from std.os import abort
 from std.traits import (
     IsTriviallyCopyable,
@@ -22,6 +21,8 @@ from std.traits import (
 from std.sys import size_of
 
 from test_utils import (
+    CopyCounter,
+    MoveCounter,
     MoveCopyCounter,
     ObservableDel,
     ConfigureTrivial,
@@ -33,7 +34,6 @@ from test_utils import (
     check_write_to,
 )
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
-from std.benchmark import keep
 
 from std.utils import Variant
 from std.utils._nicheable import UnsafeNicheable
@@ -231,10 +231,9 @@ def test_variant_linear_type_deinit_with() raises:
 
 
 def test_variant_pinned_linear_type_deinit_with() raises:
-    def make() -> PinnedExplicitDelOnly:
-        return PinnedExplicitDelOnly(5)
-
-    var v = Variant[PinnedExplicitDelOnly, Int](init_with=make)
+    var v = Variant[PinnedExplicitDelOnly, Int](
+        init_with=lambda () -> PinnedExplicitDelOnly: PinnedExplicitDelOnly(5)
+    )
     var data = v[PinnedExplicitDelOnly].data
     # Destroy before potentially raising after assert
     v^.deinit_with[PinnedExplicitDelOnly](PinnedExplicitDelOnly.destroy)
@@ -300,6 +299,24 @@ def test_variant_trivial_moveinit() raises:
     # check variant of non-movable type
     # # TODO(MOCO-3383): Compiler issue with folding non-struct types
     # assert_false(IsTriviallyMovable[Variant[NonMovable]])
+
+
+def test_variant_trivial_move_is_bitwise() raises:
+    comptime Counter = MoveCounter[Int, trivial_move=True]
+    var v1 = Variant[Counter](Counter(42))
+    var moves = v1[Counter].move_count
+    var v2 = v1^
+    assert_equal(v2[Counter].value, 42)
+    assert_equal(v2[Counter].move_count, moves)
+
+
+def test_variant_trivial_copy_is_bitwise() raises:
+    comptime Counter = CopyCounter[Int, trivial_copy=True]
+    var v1 = Variant[Counter](Counter(42))
+    var copies = v1[Counter].copy_count
+    var v2 = v1.copy()
+    assert_equal(v2[Counter].value, 42)
+    assert_equal(v2[Counter].copy_count, copies)
 
 
 def test_variant_write_to() raises:
@@ -503,19 +520,13 @@ def test_variant_admits_non_movable_type() raises:
 
 def test_variant_closure_construction() raises:
     # Populate a non-`Movable` (pinned) type in place via a closure.
-    def make_pinned() -> _Pinned:
-        return _Pinned(7)
-
-    var v = Variant[_Pinned, Int](init_with=make_pinned)
+    var v = Variant[_Pinned, Int](init_with=lambda () -> _Pinned: _Pinned(7))
     assert_true(v.isa[_Pinned]())
     assert_false(v.isa[Int]())
     assert_equal(v[_Pinned].value, 7)
 
     # The closure's return type selects the type; here a `Movable` one.
-    def make_int() -> Int:
-        return 42
-
-    var v2 = Variant[_Pinned, Int](init_with=make_int)
+    var v2 = Variant[_Pinned, Int](init_with=lambda () -> Int: 42)
     assert_true(v2.isa[Int]())
     assert_equal(v2[Int], 42)
 

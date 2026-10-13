@@ -47,18 +47,12 @@ from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from std.memory import alloc
 from std.utils.numerics import isinf, isnan
 from nn.attention.mha_mask import CausalMask
 from nn.attention.gpu.mla import flare_mla_prefill
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 from std.testing import assert_equal
 
 from _paged_prefill_test_utils import (
@@ -66,7 +60,6 @@ from _paged_prefill_test_utils import (
     HEAD_DIM_GRAN,
     KV_NUM_HEADS,
     NUM_LAYERS,
-    ROPE_DEPTH,
     SCALE_BLOCK_SIZE,
     fill_paged_block_scales,
     fill_paged_blocks_uniform,

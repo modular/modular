@@ -125,7 +125,7 @@ def wait_for_server_ready(
     promptly on a crashed/failed bring-up instead of hanging for the full
     timeout.
 
-    When *base_url* is provided (a remote endpoint, e.g. ``--base-url``), it
+    When *base_url* is provided (a remote endpoint, for example, ``--base-url``), it
     replaces the ``http://<host>:<port>`` prefix and the request carries an
     ``Authorization: Bearer $OPENAI_API_KEY`` header, matching the auth the
     benchmark requests themselves send. Local servers (no *base_url*) are
@@ -220,7 +220,7 @@ def _resolve_architectures(
 
     Used only to detect architecture-specific tokenizer overrides. Returns an
     empty list (and warns at most once per model path) when the config cannot
-    be loaded — e.g. a locally-produced quant whose repo is not on the Hub, or
+    be loaded — for example, a locally-produced quant whose repo is not on the Hub, or
     a host that cannot reach the Hub. The warning shares the root cause of the
     ``huggingface_hub`` retry chatter suppressed by :func:`_quiet_hf_hub_retries`,
     so it is deduplicated rather than repeated for every load.
@@ -262,7 +262,7 @@ def get_tokenizer(
     repeated loads across worker processes hit the same cached snapshot.
 
     ``architectures`` lets a caller supply a previously resolved architecture
-    list (e.g. the parent process passing its result to spawned tokenizer-pool
+    list (such as the parent process passing its result to spawned tokenizer-pool
     workers) so the redundant per-worker ``AutoConfig`` Hub lookup — and its
     warning — is skipped. When ``None`` the list is resolved here once.
 
@@ -363,7 +363,7 @@ def parse_comma_separated(
     """Split a comma-separated string and convert each element.
 
     Args:
-        value: Comma-separated string (e.g. ``"1,2,4"``), or ``None``.
+        value: Comma-separated string (such as ``"1,2,4"``), or ``None``.
         convert: Callable applied to each stripped token.
         default: If *value* is ``None``, return ``[default]``.
             When both *value* and *default* are ``None`` the result is

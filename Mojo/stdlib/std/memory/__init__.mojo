@@ -60,6 +60,8 @@ from .pointer import (
     MutOpaquePointer,
     MutPointer,
     OpaquePointer,
+    OptionalImmPointer,
+    OptionalMutPointer,
     OptionalPointer,
     Pointer,
 )

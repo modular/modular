@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .allreduce import Allreduce, Signals
+from .allreduce import Allreduce, MulticastPool, Signals
 
 __all__ = [
     "Allreduce",
+    "MulticastPool",
     "Signals",
 ]

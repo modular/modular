@@ -25,6 +25,7 @@ from max.driver import (
     enable_all_peer_access,
     is_virtual_device_mode,
 )
+from max.driver import SymmetricPool as DriverSymmetricPool
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -255,3 +256,94 @@ class Signals:
             )
             for dev in self.devices
         ]
+
+
+class MulticastPool:
+    """Symmetric multicast pool backing NVSwitch (NVLS) allreduce.
+
+    Unlike :class:`Signals`, the pool is a single driver-owned allocation
+    registered once per device set; the kernel reaches it through the driver
+    registry, never through a graph operand. Capacity is a cap, not a fit: a
+    payload that does not fit falls back to peer-to-peer allreduce.
+    """
+
+    # No allreduce kernel reads the pool yet, so serving neither allocates nor
+    # charges it. Flips to True with the NVLS kernel; tests flip it directly.
+    ENABLED = False
+    # NVSwitch multicast is only meaningful from four ranks; whether it beats
+    # peer-to-peer at a given rank count is a dispatch decision, not a reason
+    # to withhold the allocation.
+    MIN_DEVICES = 4
+    # NVLS holds the whole payload resident on every rank, so past this the
+    # reservation costs more VRAM than the collective saves.
+    MAX_BYTES = 512 * 1024 * 1024
+    # Allreduce operands are bf16 activations regardless of weight encoding.
+    _ACTIVATION_BYTES = 2
+
+    @staticmethod
+    def capacity_bytes(
+        num_devices: int, num_tokens: int, hidden_size: int
+    ) -> int:
+        """Returns the usable per-device pool bytes, or ``0`` for none.
+
+        Sizes for the dominant tensor-parallel allreduce, whose operand is
+        ``num_tokens x hidden_size`` in bf16. Larger reductions (vocab-parallel
+        logits, MoE router) exceed it and take peer-to-peer instead. The
+        driver rounds the reservation up to its granularity (2 MiB), which
+        memory planning does not charge.
+
+        Args:
+            num_devices: Ranks the pool would span.
+            num_tokens: Per-batch token budget (``max_batch_input_tokens``),
+                not ``max_batch_size``, which memory planning derives from
+                this estimate.
+            hidden_size: Model hidden width, or ``0`` when unknown.
+
+        Returns:
+            Usable per-device bytes, or ``0`` when no pool should be allocated.
+        """
+        if num_devices < MulticastPool.MIN_DEVICES:
+            return 0
+        if num_tokens <= 0 or hidden_size <= 0:
+            return 0
+        payload = num_tokens * hidden_size * MulticastPool._ACTIVATION_BYTES
+        if payload > MulticastPool.MAX_BYTES:
+            return 0
+        return payload
+
+    @staticmethod
+    def allocate(
+        devices: Sequence[Device], byte_size: int
+    ) -> DriverSymmetricPool | None:
+        """Allocates the pool for ``devices``, or returns ``None``.
+
+        Every precondition is a fallback rather than an error: zero capacity,
+        virtual devices, no multicast support, or a failed allocation all
+        yield ``None`` and callers run peer-to-peer allreduce.
+
+        Args:
+            devices: Driver devices the pool should span.
+            byte_size: Per-device bytes, as charged by memory planning.
+
+        Returns:
+            The registered pool, or ``None`` when NVLS is unavailable.
+        """
+        if byte_size <= 0 or is_virtual_device_mode():
+            return None
+        # The registry is create-once, so a second model over the same
+        # devices reuses the existing pool.
+        if existing := DriverSymmetricPool.lookup(devices):
+            return existing
+        try:
+            return DriverSymmetricPool.allocate(devices, byte_size)
+        except RuntimeError as exc:
+            # Memory planning already reserved the pool's bytes; they now go
+            # unused, which over-reserves but cannot cause an OOM.
+            logging.getLogger(__name__).warning(
+                "Symmetric multicast pool allocation failed; allreduce will "
+                "use peer-to-peer and the %d bytes reserved per device stay "
+                "unused: %s",
+                byte_size,
+                exc,
+            )
+            return None

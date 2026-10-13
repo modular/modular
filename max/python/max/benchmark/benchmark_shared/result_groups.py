@@ -96,6 +96,11 @@ class GpuStatsGroup(BaseModel):
     peak_gpu_memory_mib: list[float] = Field(default_factory=list)
     available_gpu_memory_mib: list[float] = Field(default_factory=list)
     gpu_utilization: list[float] = Field(default_factory=list)
+    # ``gpu_utilization`` split by group, such as a disaggregated engine's
+    # prefill and decode GPUs, whose loads a single mean would hide.
+    gpu_utilization_by_group: dict[str, list[float]] = Field(
+        default_factory=dict
+    )
 
 
 class LatencyStatsGroup(BaseModel):
@@ -155,7 +160,7 @@ class BenchmarkResultGroups(BaseModel):
 
     ``summary`` is always populated; the remaining groups are ``None``
     when the underlying result has nothing to report for that group
-    (e.g. ``cache_stats`` on a pixel-generation iteration).
+    (such as ``cache_stats`` on a pixel-generation iteration).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

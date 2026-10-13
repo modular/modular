@@ -32,17 +32,21 @@ covers small-batch decode (`M <= tile_m`) at the cost of one extra fp32
 accumulator set per row.
 """
 
-from std.collections import Optional
 from std.math import ceildiv, min
-from std.utils import IndexList
 
 from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 import max.gpu.primitives.warp as warp
+from std.utils import IndexList
 
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
 
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 
 @inline(.always)
@@ -88,7 +92,10 @@ def apple_gemv_kernel[
     c_engine: TensorEngine,
     a_engine: TensorEngine,
     w_engine: TensorEngine,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    has_epilogue_fn: Bool,
+    has_compute_fn: Bool,
     tile_m: Int,
     rows_per_warp: Int,
     tile_k: Int,
@@ -100,12 +107,16 @@ def apple_gemv_kernel[
     m_arg: Int32,
     n_arg: Int32,
     k_arg: Int32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """Computes `rows_per_warp` columns of `c[:m] = a[:m] @ weight^T` per warp.
 
     `c` is `[M, N]`, `a` is `[M, K]` and `weight` is `[N, K]`, all row-major,
     with `M <= tile_m`. K must be a multiple of `tile_k`, so every chunk load
-    is aligned to its width. Accumulation is fp32.
+    is aligned to its width. Accumulation is fp32. With `has_compute_fn`,
+    `compute_fn` maps each output before it is stored; with
+    `has_epilogue_fn`, `epilogue_fn` stores each output instead.
     """
     var m = Int(m_arg)
     var n = Int(n_arg)
@@ -158,9 +169,17 @@ def apple_gemv_kernel[
             var col = n0 + r
             if lid == r and mi < m and col < n:
                 var y = dot.cast[c_type]()
-                comptime if elementwise_lambda_fn:
-                    comptime epilogue = elementwise_lambda_fn.value()
-                    epilogue[c_type, 1](IndexList[2](mi, col), y)
+                comptime if has_compute_fn:
+                    c.store(
+                        Coord(mi, col),
+                        compute_fn[c_type, 1, alignment=1](
+                            Coord(IndexList[2](mi, col)), y
+                        ),
+                    )
+                elif has_epilogue_fn:
+                    epilogue_fn[c_type, 1, alignment=1](
+                        Coord(IndexList[2](mi, col)), y
+                    )
                 else:
                     c.store(Coord(mi, col), y)
 
@@ -169,6 +188,8 @@ def apple_gemv_kernel[
 def enqueue_apple_gemv_config[
     c_type: DType,
     in_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     *,
     tile_m: Int,
@@ -176,30 +197,40 @@ def enqueue_apple_gemv_config[
     tile_k: Int = 8,
     unroll: Int = 2,
     warps_per_block: Int = 8,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[in_type, ...],
     weight: TileTensor[in_type, ...],
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Enqueues `apple_gemv_kernel` with an explicit launch configuration.
 
     Parameters:
         c_type: Output element type. Accumulation is fp32.
         in_type: Activation and weight element type (bf16 or fp16).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         tile_m: Largest activation row count the launch supports.
         rows_per_warp: Weight rows (output columns) per warp.
         tile_k: Elements per lane per K chunk.
         unroll: K chunks per loop iteration.
         warps_per_block: Warps per threadgroup.
-        elementwise_lambda_fn: Optional epilogue applied to each output.
+        has_epilogue_fn: Whether `epilogue_fn` stores each output at its
+            `(row, col)` in `c`.
+        has_compute_fn: Whether `compute_fn` maps each output before it is
+            stored.
 
     Args:
         c: Output `[M, N]`.
         a: Activation `[M, K]` with `M <= tile_m` and `K % tile_k == 0`.
         weight: Weight `[N, K]`.
         ctx: Device context to enqueue on.
+        epilogue_fn: Epilogue that stores each output.
+        compute_fn: Compute epilogue applied to each output.
     """
     comptime assert in_type in (
         DType.bfloat16,
@@ -222,7 +253,10 @@ def enqueue_apple_gemv_config[
         type_of(c).Engine,
         type_of(a).Engine,
         type_of(weight).Engine,
-        elementwise_lambda_fn,
+        EpilogueFnType,
+        ComputeFnType,
+        has_epilogue_fn,
+        has_compute_fn,
         tile_m,
         rows_per_warp,
         tile_k,
@@ -235,6 +269,8 @@ def enqueue_apple_gemv_config[
         Int32(m),
         Int32(n),
         Int32(k),
+        host_arg=epilogue_fn,
+        host_arg2=compute_fn,
         grid_dim=ceildiv(num_warps, warps_per_block),
         block_dim=BLK,
     )
@@ -274,14 +310,19 @@ def apple_gemv_small_batch_supported(m: Int, k: Int) -> Bool:
 def enqueue_apple_gemv[
     c_type: DType,
     in_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     *,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[in_type, ...],
     weight: TileTensor[in_type, ...],
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Enqueues `c = a @ weight^T` for `1 <= M <= APPLE_GEMV_MAX_M`.
 
@@ -291,13 +332,20 @@ def enqueue_apple_gemv[
     Parameters:
         c_type: Output element type. Accumulation is fp32.
         in_type: Activation and weight element type (bf16 or fp16).
-        elementwise_lambda_fn: Optional epilogue applied to each output.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
+        has_epilogue_fn: Whether `epilogue_fn` stores each output at its
+            `(row, col)` in `c`.
+        has_compute_fn: Whether `compute_fn` maps each output before it is
+            stored.
 
     Args:
         c: Output `[M, N]`.
         a: Activation `[M, K]` with `K % 8 == 0`.
         weight: Weight `[N, K]`.
         ctx: Device context to enqueue on.
+        epilogue_fn: Epilogue that stores each output.
+        compute_fn: Compute epilogue applied to each output.
     """
     var m = Int(c.dim[0]())
     debug_assert(1 <= m <= APPLE_GEMV_MAX_M, "apple_gemv: M must be in [1, 8]")
@@ -306,19 +354,22 @@ def enqueue_apple_gemv[
             tile_m=2,
             rows_per_warp=1,
             unroll=4,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, weight, ctx)
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](c, a, weight, ctx, epilogue_fn, compute_fn)
     elif m <= 4:
         enqueue_apple_gemv_config[
             tile_m=4,
             rows_per_warp=1,
             unroll=4,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, weight, ctx)
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](c, a, weight, ctx, epilogue_fn, compute_fn)
     else:
         enqueue_apple_gemv_config[
             tile_m=8,
             rows_per_warp=1,
             unroll=2,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, weight, ctx)
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
+        ](c, a, weight, ctx, epilogue_fn, compute_fn)

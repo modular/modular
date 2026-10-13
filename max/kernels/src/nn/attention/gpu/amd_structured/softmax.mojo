@@ -26,7 +26,7 @@ from std.bit import log2_floor
 from max.gpu import lane_id, warp_id as get_warp_id
 from max.gpu.sync import barrier
 from layout import TileTensor, row_major, stack_allocation
-from layout.tile_layout import TensorLayout, col_major
+from layout.tile_layout import col_major
 from nn.softmax import _exp2_concrete, _exp_concrete
 
 

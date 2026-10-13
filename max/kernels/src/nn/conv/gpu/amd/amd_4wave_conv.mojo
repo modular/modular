@@ -149,7 +149,7 @@ def amd_4wave_conv[
     # `c_type` MMA output BEFORE the residual FMA. Use for bias /
     # ReLU / SiLU / GELU fusion. Matches the SM100 reference
     # `D = lambda(Conv(A,B)) + beta * C` semantics. Signature
-    # `(IndexList[2], SIMD) capturing -> SIMD`.
+    # `(Coord, SIMD) capturing -> SIMD`.
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,

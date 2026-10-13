@@ -21,7 +21,7 @@ from std.memory import (
     unsafe_memset_zero,
     unsafe_stack_allocation,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 
 comptime TILE_SZ_A = 128
 comptime TILE_SZ_B = 16

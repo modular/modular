@@ -16,7 +16,7 @@ from std.sys import (
     get_defined_dtype,
     get_defined_int,
     align_of,
-    has_apple_gpu_accelerator,
+    default_accelerator,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -50,7 +50,6 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from std.utils import IndexList
 
 
 def _verify_buffers_gpu[
@@ -186,8 +185,9 @@ def verify_matmul[
     @__copy_capture(c_device_nd)
     def normal_elementwise_epilogue[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-        c_device_nd.store[width=width](Coord(idx), val.cast[c_type]())
+    ](idx: Coord, val: SIMD[dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c_device_nd.store[width=width](idx, val.cast[c_type]())
 
     comptime if enable_normal_epilogue:
         _matmul_gpu[
@@ -437,10 +437,13 @@ def bench_matmul[
             width: SIMDLength,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
-            var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var x = tensor_c.load[width=width](idx).cast[_dtype]()
             var y = val * x
             return y
 
@@ -453,8 +456,11 @@ def bench_matmul[
         @__copy_capture(tensor_c)
         def normal_elementwise_epilogue[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            tensor_c.store[width=width](Coord(idx), val.cast[c_type]())
+        ](idx: Coord, val: SIMD[dtype, width]) capturing -> None:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            tensor_c.store[width=width](idx, val.cast[c_type]())
 
         comptime optional_normal_lambda_fn = Optional[
             elementwise_epilogue_type
@@ -580,7 +586,7 @@ def main() raises:
     )
     # The reference is vendor BLAS, which Apple GPUs don't have.
     var verify = arg_parse(
-        "verify", not has_apple_gpu_accelerator()
+        "verify", not default_accelerator().is_apple_gpu()
     ) if not c_type.is_float8() else False
     comptime cache_busting = get_defined_bool["cache_busting", True]()
     comptime transpose_b = True

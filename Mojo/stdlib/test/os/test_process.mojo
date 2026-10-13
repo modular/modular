@@ -48,7 +48,7 @@ def test_process_wait() raises:
     var command = "echo"
     var p = Process.run(command, ["== TEST_WAIT"])
     assert_true(p.wait().has_exited())
-    assert_equal(p.wait().exit_code.value(), 0)
+    assert_equal(p.wait().exit_code, Optional(0))
     assert_false(p.kill())
 
 
@@ -90,7 +90,7 @@ def test_process_inherits_env() raises:
 
     var p = Process.run("printenv", ["_MOJO_TEST_ENV_INHERIT"])
     var status = p.wait()
-    assert_equal(status.exit_code.value(), 0)
+    assert_equal(status.exit_code, Optional(0))
 
 
 def main() raises:

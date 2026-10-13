@@ -42,7 +42,7 @@ from max.gpu import (
     grid_dim,
     thread_idx,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -536,7 +536,7 @@ def reducescatter_rmsnorm[
     # divisibility below.
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
-    comptime simd_width = simd_width_of[in_dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime max_supported_cols = WARP_SIZE * simd_width * max_warps_per_block
     if cols > max_supported_cols:
         raise Error(

@@ -19,7 +19,8 @@ one, nor the process running these assertions.
 
 The suite below is a GPU test in miniature -- one test that loads and executes,
 one that reaches for hardware before compiling anything, one that opts out, one
-that compiles two graphs a name and a signature cannot tell apart. Its graphs
+that compiles two graphs a name and a signature cannot tell apart, one that
+builds a graph after executing another. Its graphs
 are CPU graphs and it asks torch rather than MAX for the accelerator it does not
 have, so it runs on any host: what is under test is which compiles were recorded
 and what replay does with them, not the arch they were compiled for. Presenting
@@ -86,6 +87,13 @@ def test_compiles_two_graphs_of_one_name() -> None:
     session = InferenceSession(devices=[CPU()])
     session.load(_graph(1.0))
     session.load(_graph(2.0))
+
+
+def test_builds_after_executing() -> None:
+    session = InferenceSession(devices=[CPU()])
+    model = session.load(_graph(ADDEND))
+    model.execute(np.zeros(WIDTH, dtype=np.float32))
+    session.load(_graph(4.0))
 
 
 if os.environ.get("SUITE_EXTRA"):
@@ -242,6 +250,7 @@ def test_record_classifies_each_test(recorded: _Run) -> None:
         "test_stages_a_device_tensor_first": "no_compile",
         "test_opts_out": "opted_out",
         "test_compiles_two_graphs_of_one_name": "passed",
+        "test_builds_after_executing": "recorded",
     }
 
 
@@ -264,7 +273,7 @@ def test_record_keeps_two_graphs_of_one_name_apart(recorded: _Run) -> None:
     graphs = recorded.manifest()["graphs"]
     assert isinstance(graphs, list)
     assert set(exported) <= {entry["key"] for entry in graphs}
-    assert len(list(recorded.artifacts.glob("*.mef"))) == 3
+    assert len(list(recorded.artifacts.glob("*.mef"))) == 4
 
 
 def test_replay_initializes_every_recorded_graph(
@@ -274,9 +283,21 @@ def test_replay_initializes_every_recorded_graph(
     # compiling it, which means the artifact initialized and executed.
     replayed = _replay(suite, recorded, tmp_path_factory, {})
 
-    assert "3 graphs answered from artifacts" in replayed.output
+    assert "4 graphs answered from artifacts" in replayed.output
     assert "::test_loads_and_executes PASSED" in replayed.output
     assert "::test_compiles_two_graphs_of_one_name PASSED" in replayed.output
+
+
+def test_replay_compiles_what_came_after_the_record_stopped(
+    suite: Path, recorded: _Run, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    # The record stopped at the execute, so it never saw the second graph.
+    # That is not a divergence: replay answers the first and compiles the
+    # second, and the summary counts it as GPU time the record could not save.
+    replayed = _replay(suite, recorded, tmp_path_factory, {})
+
+    assert "::test_builds_after_executing PASSED" in replayed.output
+    assert "1 graphs compiled past where the record stopped" in replayed.output
 
 
 def test_replay_compiles_what_the_record_run_could_not(

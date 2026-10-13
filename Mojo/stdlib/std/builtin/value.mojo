@@ -21,6 +21,8 @@ change; see the deprecated aliases below for the explicit import paths.
 
 import std.traits
 
+from std.builtin.constrained import _field_conforms_to_error
+
 
 @deprecated(
     "`Movable` has moved to `std.traits`. It's still exported from the"
@@ -78,10 +80,23 @@ def materialize[T: AnyType, //, value: T](out result: T):
 
 
 trait Defaultable:
-    """The `Defaultable` trait describes a type with a default constructor.
+    """Describes a type with a default constructor.
 
-    Implementing the `Defaultable` trait requires the type to define
-    an `__init__` method with no arguments:
+    The `Defaultable` trait has a default implementation of `__init__()` that
+    uses reflection to default-construct every field. This means simple
+    structs can conform to `Defaultable` without implementing any methods:
+
+    ```mojo
+    @fieldwise_init
+    struct Point(Defaultable):
+        var x: Int
+        var y: Int
+
+    var p = Point()  # x == 0, y == 0
+    ```
+
+    All fields must conform to `Defaultable`. Override `__init__()` for custom
+    default semantics:
 
     ```mojo
     struct Foo(Defaultable):
@@ -106,9 +121,40 @@ trait Defaultable:
     ```
     """
 
+    @inline(.always)
     def __init__(out self):
-        """Create a default instance of the value."""
-        ...
+        """Creates a default instance of the value.
+
+        The default implementation uses reflection to default-construct all
+        fields in place. All fields must conform to `Defaultable`.
+        """
+        comptime r = reflect[Self]
+        comptime types = r.field_types()
+
+        # Mark `self` initialized so each field can be constructed in place.
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        comptime for i in range(r.field_count()):
+            comptime T = types[i]
+            comptime assert conforms_to(
+                T, Defaultable
+            ), _field_conforms_to_error[
+                Parent=Self,
+                FieldIndex=i,
+                ParentConformsTo="Defaultable",
+            ]()
+            # TODO(MOCO-5088): Inline the `unsafe_write(init_with=)` once a
+            # lambda can bind a `comptime for` loop's field type.
+            _default_init_field(Pointer(to=r.field_ref[i](self)))
+
+
+@inline(.always)
+def _default_init_field[
+    T: AnyType,
+    origin: MutOrigin,
+    //,
+](ptr: MutPointer[T, origin]) where conforms_to(T, Defaultable):
+    ptr.unsafe_write(init_with=lambda () -> T: T())
 
 
 trait TrivialRegisterPassable(

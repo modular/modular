@@ -13,20 +13,28 @@ contribution](issue-pr-etiquette.md#keep-each-pull-request-to-one-contribution).
 
 ## Compiler
 
-The compiler team currently accepts *bug fixes only*.
+The compiler team currently accepts *bug fixes* and *refactors*.
 
-A change should:
+A *bug fix* should:
 
 - Fix incorrect or misleading diagnostics, crashes, or mis-compiles where the
   current behavior is clearly not intentional, meaning it deviates from the
   generally perceived semantics of the language, whether explicit or implicit.
 - Have a user-observable effect.
 
-A change should not:
+A *refactor* should:
+
+- Reduce code complexity and/or compile time without changing its intended
+  behavior.
+
+In either case, a change *should not*:
 
 - Alter the intended Mojo language semantics.
 - Alter the intended IR semantics for our MLIR dialects.
 - Alter the compilation pipeline.
+
+To find a place to start, see the
+[open good first compiler issues](https://github.com/modular/modular/issues?q=is%3Aissue+state%3Aopen+label%3A%22good+first+issue%22+label%3A%22help+wanted%22+label%3A%22Team%3A+Mojo+Compiler%22).
 
 For technical details on working in the compiler codebase, see the
 [compiler contributor docs](compiler/README.md).

@@ -714,7 +714,7 @@ async def test_prefix_caching_chunked_prefill() -> None:
     # block 2 holds projections for [..., 16, 17, 18]
     # seq_id_2 needs projections for [..., 16, 17, 16]
     run_forward(model, kv_manager, ctx_2, prompt_2_part_2, 42)
-    blocks = kv_manager.get_req_blocks(ctx_2)
+    (blocks,) = kv_manager.get_req_blocks_per_leaf(ctx_2).values()
     assert 2 not in blocks
 
     metrics = kv_manager.get_metrics_aggregated()

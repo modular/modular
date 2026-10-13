@@ -15,14 +15,13 @@ from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
 from max.gpu import *
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from std.random import NormalRandom, Random
 from std.testing import *
 
 from std.utils.coord import Coord
-from std.utils.index import Index, IndexList
 
-from layout import TileTensor, Idx, row_major
+from layout import TileTensor, row_major
 
 
 def run_elementwise[
@@ -30,7 +29,7 @@ def run_elementwise[
 ](ctx: DeviceContext) raises:
     comptime length = 256
 
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     var out_stack = Array[Scalar[dtype], length](fill={})
     var out_host = TileTensor(out_stack, row_major[length]())

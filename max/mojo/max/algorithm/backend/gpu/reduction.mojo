@@ -17,7 +17,7 @@ from std.math.uutils import udivmod, ufloordiv
 
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
 from max.gpu.primitives.block import broadcast
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -205,23 +205,24 @@ def block_reduce[
 @inline(.always)
 def row_reduce[
     BLOCK_SIZE: Int,
-    input_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
+    input_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
     reduce_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     simd_width: Int,
-    rank: Int,
     accum_type: DType = get_accum_type[dtype](),
     *,
     axis: Int,
 ](
-    mut row_coords: IndexList[rank],
+    mut row_coords: Coord,
     init: Scalar[dtype],
     row_size: Int,
-) -> Scalar[accum_type]:
+) -> Scalar[
+    accum_type
+]:
     """Reduces a single row along the given axis using block-level cooperative
     reduction. Delegates to the multi-reduction `row_reduce` overload with
     `num_reductions=1`.
@@ -232,7 +233,6 @@ def row_reduce[
         reduce_fn: The binary reduction function.
         dtype: The data type of the input elements.
         simd_width: The SIMD vector width.
-        rank: The tensor rank.
         accum_type: The accumulator data type (defaults to widened type).
         axis: The axis along which to reduce.
 
@@ -264,7 +264,6 @@ def row_reduce[
         reduce_wrapper,
         dtype,
         simd_width,
-        rank,
         accum_type=accum_type,
         axis=axis,
     ](row_coords, init_tup, row_size)[0]
@@ -274,20 +273,19 @@ def row_reduce[
 def row_reduce[
     BLOCK_SIZE: Int,
     num_reductions: Int,
-    input_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
+    input_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
     reduce_fn: def[dtype: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     simd_width: Int,
-    rank: Int,
     accum_type: DType = get_accum_type[dtype](),
     *,
     axis: Int,
 ](
-    mut row_coords: IndexList[rank],
+    mut row_coords: Coord,
     init: StaticTuple[Scalar[dtype], num_reductions],
     row_size: Int,
 ) -> StaticTuple[Scalar[accum_type], num_reductions]:
@@ -303,7 +301,6 @@ def row_reduce[
           index.
         dtype: The data type of the input elements.
         simd_width: The SIMD vector width.
-        rank: The tensor rank.
         accum_type: The accumulator data type (defaults to widened type).
         axis: The axis along which to reduce.
 
@@ -333,10 +330,8 @@ def row_reduce[
         if idx_in_padded_row >= rounded_row_size:
             break
 
-        row_coords[axis] = idx_in_padded_row
-        var val = input_fn[dtype, simd_width, rank](row_coords).cast[
-            accum_type
-        ]()
+        row_coords.replace_dynamic[axis](idx_in_padded_row)
+        var val = input_fn[dtype, simd_width](row_coords).cast[accum_type]()
 
         comptime for i in range(num_reductions):
             accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
@@ -351,8 +346,8 @@ def row_reduce[
 
     # handle trailing values
     for idx_in_padded_row in range(rounded_row_size, row_size):
-        row_coords[axis] = idx_in_padded_row
-        var val = input_fn[dtype, 1, rank](row_coords).cast[accum_type]()
+        row_coords.replace_dynamic[axis](idx_in_padded_row)
+        var val = input_fn[dtype, 1](row_coords).cast[accum_type]()
 
         comptime for i in range(num_reductions):
             scalar_accum[i] = reduce_fn[accum_type, 1, i](val, scalar_accum[i])
@@ -368,11 +363,11 @@ def reduce_kernel[
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
-    input_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_fn: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -409,7 +404,7 @@ def reduce_kernel[
         # each block reduces a row, which requires no partial reductions
         for row_idx in range(block_idx.x, num_rows, grid_dim.x):
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx, shape, axis
+                row_idx, Coord(shape), axis
             )
 
             var row_accum = row_reduce[
@@ -419,7 +414,6 @@ def reduce_kernel[
                 reduce_fn,
                 dtype,
                 simd_width,
-                rank,
                 accum_type=accum_type,
                 axis=axis,
             ](row_coords, init, row_size)
@@ -432,8 +426,8 @@ def reduce_kernel[
                 comptime for i in range(num_reductions):
                     row_accum_cast[i] = row_accum[i].cast[dtype]()
 
-                row_coords[axis] = 0
-                output_fn[dtype, 1, rank](row_coords, row_accum_cast)
+                row_coords.replace_dynamic[axis](0)
+                output_fn[dtype, 1](row_coords, row_accum_cast)
 
 
 @__llvm_metadata(
@@ -444,11 +438,11 @@ def small_reduce_kernel[
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
-    input_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_fn: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -494,7 +488,7 @@ def small_reduce_kernel[
             grid_dim.x * warps_per_block,
         ):
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx + warp_id(), shape, axis
+                row_idx + warp_id(), Coord(shape), axis
             )
 
             # One row per warp, warp collectively reads from global
@@ -507,8 +501,8 @@ def small_reduce_kernel[
                     val[i] = init[i].cast[accum_type]()
 
                 if lane_id() < row_size:
-                    row_coords[axis] = lane_id()
-                    var t = input_fn[dtype, simd_width, rank](row_coords).cast[
+                    row_coords.replace_dynamic[axis](lane_id())
+                    var t = input_fn[dtype, simd_width](row_coords).cast[
                         accum_type
                     ]()
 
@@ -543,8 +537,8 @@ def small_reduce_kernel[
                     comptime for i in range(num_reductions):
                         row_accum_cast[i] = result[i][0].cast[dtype]()
 
-                    row_coords[axis] = 0
-                    output_fn[dtype, 1, rank](row_coords, row_accum_cast)
+                    row_coords.replace_dynamic[axis](0)
+                    output_fn[dtype, 1](row_coords, row_accum_cast)
 
 
 @__llvm_metadata(
@@ -555,11 +549,11 @@ def twophase_reduce_kernel[
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
-    input_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_fn: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -617,7 +611,9 @@ def twophase_reduce_kernel[
     if row_idx >= num_rows:
         return
 
-    var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
+    var row_coords = _get_nd_indices_from_flat_index(
+        row_idx, Coord(shape), axis
+    )
 
     # --- Phase 1: Each block reduces its portion of the row ---
     # Threads are striped across ALL blocks for this row to coalesce reads.
@@ -633,10 +629,8 @@ def twophase_reduce_kernel[
 
     with PDL():
         for elem_idx in range(row_tid, row_size, row_total_threads):
-            row_coords[axis] = elem_idx
-            var val = input_fn[dtype, simd_width, rank](row_coords).cast[
-                accum_type
-            ]()
+            row_coords.replace_dynamic[axis](elem_idx)
+            var val = input_fn[dtype, simd_width](row_coords).cast[accum_type]()
 
             comptime for i in range(num_reductions):
                 accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
@@ -695,8 +689,8 @@ def twophase_reduce_kernel[
                 comptime for i in range(num_reductions):
                     result_cast[i] = final_result[i].cast[dtype]()
 
-                row_coords[axis] = 0
-                output_fn[dtype, 1, rank](row_coords, result_cast)
+                row_coords.replace_dynamic[axis](0)
+                output_fn[dtype, 1](row_coords, result_cast)
 
 
 @__llvm_metadata(
@@ -707,11 +701,11 @@ def saturated_reduce_kernel[
     axis: Int,
     num_reductions: Int,
     BLOCK_SIZE: Int,
-    input_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_fn: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -755,7 +749,7 @@ def saturated_reduce_kernel[
         ):
             # Reduce the whole row
             var row_coords = _get_nd_indices_from_flat_index(
-                row_idx, shape, axis
+                row_idx, Coord(shape), axis
             )
 
             # Declare & initialize registers
@@ -767,8 +761,8 @@ def saturated_reduce_kernel[
 
             # Load data & reduce
             for val_idx in range(row_size):
-                row_coords[axis] = val_idx
-                var t = input_fn[dtype, simd_width, rank](row_coords).cast[
+                row_coords.replace_dynamic[axis](val_idx)
+                var t = input_fn[dtype, simd_width](row_coords).cast[
                     accum_type
                 ]()
 
@@ -784,17 +778,17 @@ def saturated_reduce_kernel[
                 row_accum_cast[i] = val[i].cast[dtype]()
 
             # Write output
-            row_coords[axis] = 0
-            output_fn[dtype, simd_width, rank](row_coords, row_accum_cast)
+            row_coords.replace_dynamic[axis](0)
+            output_fn[dtype, simd_width](row_coords, row_accum_cast)
 
 
 def reduce_launch[
     num_reductions: Int,
-    input_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_fn: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -885,7 +879,7 @@ def reduce_launch[
     if thread_saturated and not reduce_contig_dim:
         # TODO: a shape which *only just* saturates the device might be
         # more performant without SIMD, but the dispatch is more complicated
-        comptime simd_packing_factor = simd_width_of[dtype, get_gpu_target()]()
+        comptime simd_packing_factor = simd_width_of[dtype, ctx.target]()
         comptime BLOCK_SIZE = get_defined_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
 
         comptime kernel = saturated_reduce_kernel[
@@ -1003,11 +997,11 @@ def reduce_launch[
 def _reduce_generator_gpu[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_0_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]

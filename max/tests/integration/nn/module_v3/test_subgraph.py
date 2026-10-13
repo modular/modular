@@ -344,7 +344,8 @@ def _tp_block() -> TPBlock:
 def test_tensor_parallel_block_shares_one_subgraph() -> None:
     """A real distributed block: sharded weights thread in per device and an
     all-reduce runs inside the body. Two layers share one ``@TPBlock``, each
-    weight registers one external constant per shard, and numerics hold."""
+    weight registers one external constant that the body slices per device,
+    and numerics hold."""
     rng = np.random.default_rng(1)
     input_type = TensorLayout(
         F32, ["batch", D], DeviceMapping(MESH, (Replicated(),))
@@ -356,11 +357,11 @@ def test_tensor_parallel_block_shares_one_subgraph() -> None:
     assert count_graphs(mlir, "Block") == 1
     assert count_calls(mlir, "Block") == 2
     # The shared body registers each sharded weight once under its *relative*
-    # name (one external constant per device); each layer's ``mo.call`` carries
-    # the per-layer prefix that resolves those names to its own weights.
+    # name, as the checkpoint holds it, and slices each device's shard from it;
+    # each layer's ``mo.call`` carries the per-layer prefix that resolves those
+    # names to its own weights.
     for weight in ("w_in", "w_out"):
-        for shard in range(2):
-            assert f'name = "{weight}._shard.{shard}"' in mlir
+        assert mlir.count(f'name = "{weight}"') == 1
     for i in range(2):
         assert f'prefix = "layers.{i}."' in mlir
 

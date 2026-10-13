@@ -22,8 +22,8 @@ def vec_func[
     & RegisterPassable
     & def(Float32, Float32) -> Float32
 ](
-    in0: Pointer[Float32, MutAnyOrigin],
-    in1: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
     op: OpType,
@@ -55,8 +55,8 @@ def vec_func5[
     & RegisterPassable
     & def(Float32, Float32) -> Float32,
 ](
-    in0: Pointer[Float32, MutAnyOrigin],
-    in1: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
     op0: Op0,

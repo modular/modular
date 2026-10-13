@@ -41,7 +41,7 @@ TOOL_CALL_PATTERN = re.compile(
 def _json_loads_gemma4_string(body: str) -> str:
     """Decode a ``<|"|>``-delimited Gemma4 string body as a JSON string body.
 
-    The grammar emits the body JSON-escaped (e.g. ``\\t`` for a tab) except a
+    The grammar emits the body JSON-escaped (such as ``\\t`` for a tab) except a
     literal ``"``, which is emitted raw. Backslashes are always doubled, so no
     ``"`` is ever already-escaped: escape every ``"`` to ``\\"`` and decode
     with :func:`json.loads`. Falls open (returns ``body`` unchanged) on
@@ -97,7 +97,7 @@ def _parse_gemma4_args(
         args_str: The raw Gemma4 argument string.
         partial: When True (streaming), bare values at end of string are
             omitted because they may be incomplete and type-unstable
-            (e.g. partial boolean parsed as bare string).
+            (such as partial boolean parsed as bare string).
 
     Returns a dict ready for ``json.dumps()``.
     """

@@ -40,7 +40,12 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from std.utils import Index
 from internal_utils import arg_parse
-from layout import CoordLike, Coord, Idx, TileTensor, row_major
+from layout import (
+    CoordLike,
+    Idx,
+    TileTensor,
+    row_major,
+)
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,

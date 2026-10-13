@@ -26,6 +26,8 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     TransientScheduler,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+    attn_tmem_addr,
     StagedPipeline,
     VProducerPipeline,
     KConsumerPipeline,
@@ -47,8 +49,8 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     Pack,
     q_coord,
-    q_tma,
-    QTMATile,
+    q_tma_prefill,
+    QTMATilePrefill,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -91,7 +93,7 @@ from nn.attention.gpu.nvidia.sm100.smem import SM100AttentionSMem
 
 
 @fieldwise_init
-struct WarpRole(Equatable, TrivialRegisterPassable):
+struct WarpRole(EnumLike, Equatable, TrivialRegisterPassable):
     """Tags each warp with its specialized role in the warp-specialized MLA prefill kernel.
     """
 
@@ -103,6 +105,38 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
     comptime Load = Self(4)
     comptime CVTToBF16 = Self(5)
     comptime Empty = Self(6)
+
+    # The implicit fieldwise initializer accepts raw values outside the named
+    # cases, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "Softmax0".value,
+        "Softmax1".value,
+        "Correction".value,
+        "MMA".value,
+        "Load".value,
+        "CVTToBF16".value,
+        "Empty".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        """Return the active case index."""
+        return Int(self._role)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """WarpRole cases carry no payload."""
+        comptime assert False, "WarpRole has no payload"
 
     @inline(.always)
     def __eq__(self, other: Int) -> Bool:
@@ -155,13 +189,11 @@ __extension SM100MLA:
     def mla_prefill_kernel_blockscale[
         blockwise_scale: Int = 0,
     ](
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.BM // 2,
             depth=Self.config.BK0,
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -269,7 +301,6 @@ __extension SM100MLA:
         var rope_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
             attn_smem.rope_smem_base()
         )
-        var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         # Extra blockscale barriers are placed after the SM100AttentionSMem layout.
         # Align to 8 bytes for SharedMemBarrier.
@@ -314,10 +345,6 @@ __extension SM100MLA:
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
             tma_to_cvt_pipeline.init()
             cvt_to_mma_pipeline.init()
-        elif warp_idx == 1:
-            tcgen05_alloc[Self.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -331,177 +358,171 @@ __extension SM100MLA:
 
         barrier()
 
-        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
-        # barrier publish it), and carry it by register into the shared
-        # fa4_softmax / fa4_correction consumers (see depth-512 fix).
-        var tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = attn_tmem_addr[cluster_size=1]()
 
         var role = warp_idx_to_role(warp_idx)
 
         # warp group partitioning
         # Two QO:
-        if role == WarpRole.Softmax0 or role == WarpRole.Softmax1:
-            # softmax $warp_group_idx
-            warpgroup_reg_alloc[num_reg_softmax]()
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
+        match role:
+            case .Softmax0 | .Softmax1:
+                # softmax $warp_group_idx
+                warpgroup_reg_alloc[num_reg_softmax]()
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
 
-            if not seq_info.is_valid():
-                return
+                if not seq_info.is_valid():
+                    return
 
-            var pos: MLAPositionSummary = MLAPositionSummary.create[
-                _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
-            ](k_rope_lut, seq_info)
+                var pos: MLAPositionSummary = MLAPositionSummary.create[
+                    _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
+                ](k_rope_lut, seq_info)
 
-            fa4_softmax[
-                Self.KVLUTType,
-                Self.config.fa4_config,
-                Self.ValidLengthType,
-                NullPointer[Self.output_dtype],
-                False,
-                Self.MaxSeqLenType,
-            ](
-                attn_smem,
-                tmem_addr,
-                pos.score_row,
-                seq_info,
-                mask,
-                pos.num_keys,
-                scale.cast[Self.accum_dtype](),
-                max_seq_len.as_uint32(),
-                ragged_tma_store,
-                NullPointer[Self.output_dtype](),
-            )
-
-        elif role == WarpRole.Correction:
-            # correction
-            warpgroup_reg_dealloc[num_reg_correction]()
-
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
-            if not seq_info.is_valid():
-                return
-            var pos: MLAPositionSummary = MLAPositionSummary.create[
-                _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
-            ](k_rope_lut, seq_info)
-            fa4_correction[
-                Self.config.fa4_config,
-                Self.page_size,
-            ](
-                attn_smem,
-                tmem_addr,
-                seq_info.prompt_idx,
-                pos.score_row,
-                pos.num_keys,
-                mask,
-            )
-        elif role == WarpRole.Load:
-            warpgroup_reg_dealloc[num_reg_other]()
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
-
-            if not seq_info.is_valid():
-                return
-            var pos: MLAPositionSummary = MLAPositionSummary.create[
-                _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
-            ](k_rope_lut, seq_info)
-
-            Self.load(
-                tma_to_cvt_pipeline,
-                pos.score_row,
-                pos.num_keys,
-                seq_info,
-                max_seq_len,
-                mask,
-                q_tma_op,
-                k_nope_tma_op,
-                k_rope_tma_op,
-                v_tma_op,
-                kv_lut,
-                k_rope_lut,
-                q_smem,
-                k_smem,
-                v_smem,
-                rope_smem,
-            )
-
-        elif role == WarpRole.MMA:
-            warpgroup_reg_dealloc[num_reg_other]()
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
-
-            if not seq_info.is_valid():
-                tcgen05_release_allocation_lock[Self.cta_group]()
-                tcgen05_dealloc[Self.cta_group](
-                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
+                fa4_softmax[
+                    Self.KVLUTType,
+                    Self.config.fa4_config,
+                    Self.ValidLengthType,
+                    NullPointer[Self.output_dtype],
+                    False,
+                    Self.MaxSeqLenType,
+                ](
+                    attn_smem,
+                    tmem_addr,
+                    pos.score_row,
+                    seq_info,
+                    mask,
+                    pos.num_keys,
+                    scale.cast[Self.accum_dtype](),
+                    max_seq_len.as_uint32(),
+                    ragged_tma_store,
+                    NullPointer[Self.output_dtype](),
                 )
-                return
-            var pos: MLAPositionSummary = MLAPositionSummary.create[
-                _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
-            ](k_rope_lut, seq_info)
-            Self.mma(
-                ptr_tmem_addr[0],
-                cvt_to_mma_pipeline,
-                seq_info.prompt_idx,
-                pos.score_row,
-                pos.num_keys,
-                mask,
-                q_smem,
-                k_smem,
-                v_smem,
-                rope_smem,
-            )
-        elif role == WarpRole.CVTToBF16:
-            warpgroup_reg_dealloc[num_reg_other]()
 
-            var seq_info: SeqInfo = get_seq_info[
-                Self.BM,
-                Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
-            ](batch_size, max_seq_len, valid_length, partition)
+            case .Correction:
+                # correction
+                warpgroup_reg_dealloc[num_reg_correction]()
 
-            if not seq_info.is_valid():
-                return
-
-            var pos: MLAPositionSummary = MLAPositionSummary.create[
-                _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
-            ](k_rope_lut, seq_info)
-
-            var iter_count: UInt32 = (
-                mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
-                    seq_info.prompt_idx, pos.score_row, pos.num_keys
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
+                if not seq_info.is_valid():
+                    return
+                var pos: MLAPositionSummary = MLAPositionSummary.create[
+                    _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
+                ](k_rope_lut, seq_info)
+                fa4_correction[
+                    Self.config.fa4_config,
+                    Self.page_size,
+                ](
+                    attn_smem,
+                    tmem_addr,
+                    seq_info.prompt_idx,
+                    pos.score_row,
+                    pos.num_keys,
+                    mask,
                 )
-                - 1
-            )
+            case .Load:
+                warpgroup_reg_dealloc[num_reg_other]()
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
 
-            var local_thread_idx = UInt32(thread_idx.x - 14 * WARP_SIZE)
+                if not seq_info.is_valid():
+                    return
+                var pos: MLAPositionSummary = MLAPositionSummary.create[
+                    _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
+                ](k_rope_lut, seq_info)
 
-            Self.convert_fp8_to_bf16(
-                iter_count,
-                tma_to_cvt_pipeline,
-                cvt_to_mma_pipeline,
-                k_rope_lut,
-                k_smem,
-                rope_smem,
-                seq_info,
-                pos.num_keys,
-                local_thread_idx,
-            )
+                Self.load(
+                    tma_to_cvt_pipeline,
+                    pos.score_row,
+                    pos.num_keys,
+                    seq_info,
+                    max_seq_len,
+                    mask,
+                    q_tma_op,
+                    k_nope_tma_op,
+                    k_rope_tma_op,
+                    v_tma_op,
+                    kv_lut,
+                    k_rope_lut,
+                    q_smem,
+                    k_smem,
+                    v_smem,
+                    rope_smem,
+                )
 
-        elif role == WarpRole.Empty:
-            warpgroup_reg_dealloc[num_reg_empty]()
+            case .MMA:
+                warpgroup_reg_dealloc[num_reg_other]()
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
+
+                if not seq_info.is_valid():
+                    return
+                var pos: MLAPositionSummary = MLAPositionSummary.create[
+                    _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
+                ](k_rope_lut, seq_info)
+                Self.mma(
+                    tmem_addr,
+                    cvt_to_mma_pipeline,
+                    seq_info.prompt_idx,
+                    pos.score_row,
+                    pos.num_keys,
+                    mask,
+                    q_smem,
+                    k_smem,
+                    v_smem,
+                    rope_smem,
+                )
+            case .CVTToBF16:
+                warpgroup_reg_dealloc[num_reg_other]()
+
+                var seq_info: SeqInfo = get_seq_info[
+                    Self.BM,
+                    Self.num_q_heads,
+                    Self.MaskType.get_type_name() == "CausalMask",
+                ](batch_size, max_seq_len, valid_length, partition)
+
+                if not seq_info.is_valid():
+                    return
+
+                var pos: MLAPositionSummary = MLAPositionSummary.create[
+                    _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
+                ](k_rope_lut, seq_info)
+
+                var iter_count: UInt32 = (
+                    mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
+                        seq_info.prompt_idx, pos.score_row, pos.num_keys
+                    )
+                    - 1
+                )
+
+                var local_thread_idx = UInt32(thread_idx.x - 14 * WARP_SIZE)
+
+                Self.convert_fp8_to_bf16(
+                    iter_count,
+                    tma_to_cvt_pipeline,
+                    cvt_to_mma_pipeline,
+                    k_rope_lut,
+                    k_smem,
+                    rope_smem,
+                    seq_info,
+                    pos.num_keys,
+                    local_thread_idx,
+                )
+
+            case .Empty:
+                warpgroup_reg_dealloc[num_reg_empty]()
 
     @staticmethod
     @inline(.always)
@@ -512,13 +533,11 @@ __extension SM100MLA:
         seq_info: SeqInfo,
         max_seq_len: Self.MaxSeqLenType,
         mask: Self.MaskType,
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.BM // 2,
             depth=Self.config.BK0,  # padded depth -> 192
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -565,9 +584,15 @@ __extension SM100MLA:
             MutAnyOrigin,
             address_space=.SHARED,
         ]
-        comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+        comptime q_elems = type_of(q_tma_op).tile_shape.element_types[
+            0
+        ].static_value * type_of(q_tma_op).tile_shape.element_types[
+            1
+        ].static_value * type_of(
             q_tma_op
-        ).tile_shape[1] * type_of(q_tma_op).tile_shape[2]
+        ).tile_shape.element_types[
+            2
+        ].static_value
         comptime QType = SMemTensorLT[q_elems]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
@@ -653,9 +678,8 @@ __extension SM100MLA:
             Self.ov_depth * kv_sub_BN * size_of[Self.qkv_dtype]()
         )
 
-        @__parameter
         @inline(.always)
-        def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+        def _k_num_valid_pages(current_kv_row: UInt32) {imm} -> UInt32:
             """Valid K_nope/V sub-tile pages at `current_kv_row`."""
             if current_kv_row >= num_keys:
                 return UInt32(0)
@@ -664,9 +688,8 @@ __extension SM100MLA:
                 UInt32(ceildiv(Int(num_keys - current_kv_row), Int(kv_sub_BN))),
             )
 
-        @__parameter
         @inline(.always)
-        def _rope_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+        def _rope_num_valid_pages(current_kv_row: UInt32) {imm} -> UInt32:
             """Valid K_rope sub-tile pages at `current_kv_row`."""
             if current_kv_row >= num_keys:
                 return UInt32(0)
@@ -699,16 +722,17 @@ __extension SM100MLA:
             Self.ov_depth * Self.config.BN * size_of[Self.qkv_dtype]()
         )
 
-        @__parameter
+        comptime produce_k_rope_rope_pages_type = type_of(rope_paged_rows)
+
         @inline(.always)
         def _produce_k_rope[
             partial: Bool,
         ](
-            rope_pages: type_of(rope_paged_rows),
+            rope_pages: produce_k_rope_rope_pages_type,
             kv_row_base: UInt32,
             smem_base_ptr: SharedMemPointer[Scalar[Self.KRopeType.dtype]],
             rope_nvp: UInt32,
-        ):
+        ) {imm}:
             """K_rope sub-tile TMA into smem starting at `smem_base_ptr`,
             signaling completion on the CVT producer mbar.
 
@@ -770,16 +794,17 @@ __extension SM100MLA:
                     e,
                 )
 
-        @__parameter
+        comptime produce_v_paged_type = type_of(paged_rows)
+
         @inline(.always)
         def _produce_v[
             partial: Bool,
         ](
-            paged: type_of(paged_rows),
+            paged: produce_v_paged_type,
             mbar: SharedMemPointer[SharedMemBarrier],
             smem_ptr: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
             v_nvp: UInt32 = UInt32(num_kv_pages),
-        ):
+        ) {imm}:
             """V tile production at `mbar` / `smem_ptr`. Both modes pass
             the V destination smem pointer directly so this closure
             doesn't need to know about pipeline machinery
@@ -825,11 +850,10 @@ __extension SM100MLA:
             var kv_pipeline: KVPipeProdType = {mbars.get_k_mbars()}
             kv_pipeline.state._phase = 1  # producer starts at phase 1
 
-            @__parameter
             @inline(.always)
-            def _fused_rope_smem_ptr() -> (
-                SharedMemPointer[Scalar[Self.KRopeType.dtype]]
-            ):
+            def _fused_rope_smem_ptr() {
+                imm
+            } -> SharedMemPointer[Scalar[Self.KRopeType.dtype]]:
                 """FP8 base of the current rope-buffer slot.
 
                 Bug-B fix: bitcast the BF16 buffer base to FP8 BEFORE
@@ -844,19 +868,24 @@ __extension SM100MLA:
                     * UInt32(rope_stage_elems)
                 ).bitcast[Scalar[Self.KRopeType.dtype]]()
 
-            @__parameter
+            comptime produce_k_fused_paged_type = type_of(paged_rows)
+            comptime produce_k_fused_rope_paged_type = type_of(rope_paged_rows)
+            comptime produce_k_fused_mbar_type = type_of(
+                kv_pipeline.producer_mbar()
+            )
+
             @inline(.always)
             def _produce_k_fused[
                 partial: Bool,
                 with_q: Bool = False,
             ](
-                paged: type_of(paged_rows),
-                rope_paged: type_of(rope_paged_rows),
+                paged: produce_k_fused_paged_type,
+                rope_paged: produce_k_fused_rope_paged_type,
                 kv_row_local: UInt32,
-                mbar: type_of(kv_pipeline.producer_mbar()),
+                mbar: produce_k_fused_mbar_type,
                 k_nvp: UInt32 = UInt32(num_kv_pages),
                 rope_nvp: UInt32 = UInt32(num_rope_pages),
-            ):
+            ) {imm}:
                 """Q (if `with_q`) + K_nope onto `mbar`, then K_rope
                 onto `tma_to_cvt_pipeline.producer_mbar()` via the
                 shared `_produce_k_rope` closure.
@@ -898,11 +927,10 @@ __extension SM100MLA:
                     rope_nvp,
                 )
 
-            @__parameter
             @inline(.always)
-            def _fused_v_smem_ptr() -> (
-                SharedMemPointer[Scalar[Self.KVLUTType.dtype]]
-            ):
+            def _fused_v_smem_ptr() {
+                imm
+            } -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
                 """V destination smem ptr at the current KV stage."""
                 return k_smem_base + kv_pipeline.state.index() * UInt32(
                     kv_stage_elems
@@ -1066,19 +1094,22 @@ __extension SM100MLA:
             # Get K0 barrier (no wait needed for first iteration)
             var k0_mbar = k_pipeline.producer_mbar[qk_stage=0]()
 
-            @__parameter
+            comptime produce_k_split_paged_type = type_of(paged_rows)
+            comptime produce_k_split_rope_paged_type = type_of(rope_paged_rows)
+            comptime produce_k_split_mbar_type = type_of(k0_mbar)
+
             @inline(.always)
             def _produce_k_split[
                 partial: Bool,
                 with_q: Bool = False,
             ](
-                paged: type_of(paged_rows),
-                rope_paged: type_of(rope_paged_rows),
+                paged: produce_k_split_paged_type,
+                rope_paged: produce_k_split_rope_paged_type,
                 kv_row_local: UInt32,
-                mbar: type_of(k0_mbar),
+                mbar: produce_k_split_mbar_type,
                 k_nvp: UInt32 = UInt32(num_kv_pages),
                 rope_nvp: UInt32 = UInt32(num_rope_pages),
-            ):
+            ) {imm}:
                 """Q (if `with_q`) + K_nope onto `mbar`, then K_rope
                 onto `tma_to_cvt_pipeline.producer_mbar()` via the
                 shared `_produce_k_rope` closure.
@@ -1138,10 +1169,13 @@ __extension SM100MLA:
                     rope_nvp,
                 )
 
-            @__parameter
+            comptime split_v_smem_ptr_pair_type = type_of(
+                pipeline_v.get_tile[qk_stage=0]()
+            )
+
             @inline(.always)
             def _split_v_smem_ptr(
-                pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
+                pair: split_v_smem_ptr_pair_type,
             ) -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
                 """V destination smem ptr for non-shared-KV's V pipeline pair.
 
@@ -1831,13 +1865,11 @@ def mla_sm100_prefill_blockscale[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    var q_tma_op = q_tma[
+    var q_tma_op = q_tma_prefill[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.BM // 2,
         depth=fa4_config.qk_depth,
         q_num_heads=fa4_config.num_q_heads,
-        group=fa4_config.group,
-        decoding=False,
     ](
         ctx,
         q.ptr,
@@ -1922,13 +1954,11 @@ def _mla_prefill_sm100_valid_length_dispatch[
         middle_dim=_,
         tma_blocks_per_op=_,
     ],
-    q_tma_op: QTMATile[
+    q_tma_op: QTMATilePrefill[
         q_type,
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.BM // 2,
         depth=fa4_config.qk_depth,
-        group=fa4_config.group,
-        decoding=False,
     ],
     k_nope_tma_op: KVTMATile[
         KVType.dtype,
@@ -2040,6 +2070,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     )
     comptime assert smem_use <= fa4_config.sm100_smem_carveout
 
+    assert_sm_exclusive_smem[smem_use]()
     ctx.enqueue_function[kernel](
         q_tma_op,
         k_nope_tma_op,

@@ -85,6 +85,7 @@ class AdaptiveVerifyWidth:
         update_interval: int = 5,
         probe_interval: int = 50,
         margin: float = 0.02,
+        min_batch_size: int = 1,
     ) -> None:
         """Builds a controller over ``candidates``.
 
@@ -96,12 +97,15 @@ class AdaptiveVerifyWidth:
                 observations is extrapolated.
             probe_interval: Steps between probes at the widest width.
             margin: Relative gain a new width needs over the current one.
+            min_batch_size: Smallest batch size whose graphs include the
+                narrower widths. Smaller buckets keep the widest.
         """
         self._candidates = list(candidates)
         self._alpha = ema_alpha
         self._update_interval = max(1, update_interval)
         self._probe_interval = max(1, probe_interval)
         self._margin = margin
+        self._min_batch_size = min_batch_size
         widest = self._candidates[-1]
         self._accepted = [0.0] * widest
         # Observations each position stays measured for; 0 extrapolates it.
@@ -207,6 +211,9 @@ class AdaptiveVerifyWidth:
 
     def _choose_width(self, bucket: int) -> None:
         """Switches ``bucket`` to the width with the best tokens per second."""
+        # A bucket entirely below the floor can only run the widest width.
+        if (2 << bucket) - 1 < self._min_batch_size:
+            return
         tokens = list(accumulate(self._acceptance(), initial=1.0))
         rates = {
             width: tokens[width] / self._step_time(bucket, width)

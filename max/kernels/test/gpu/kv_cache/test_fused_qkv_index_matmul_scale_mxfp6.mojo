@@ -41,7 +41,7 @@ Run:
   bt-mi355 //max/kernels/test/gpu/kv_cache:test_fused_qkv_index_matmul_scale_mxfp6
 """
 
-from std.math import ceildiv, isclose
+from std.math import isclose
 from std.random import random_ui64, seed
 
 from max.gpu.host import DeviceContext

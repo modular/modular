@@ -81,6 +81,29 @@ trait Trait:
     """This is a trait function doc."""
     ...
 
+
+trait TraitWithDefault:
+    """A trait with a default method."""
+
+    def defaulted(self):
+        """Provide the default implementation."""
+        pass
+
+
+struct UsesTraitDefault(TraitWithDefault):
+    """A struct that uses a default trait method."""
+
+    pass
+
+
+struct OverridesTraitDefault(TraitWithDefault):
+    """A struct that overrides a default trait method."""
+
+    def defaulted(self):
+        """Override the default implementation."""
+        pass
+
+
 # MOTO-869: A docstring ending with an example should pass validation.
 @fieldwise_init
 struct StructWithExamples(Movable where False):

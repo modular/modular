@@ -20,7 +20,7 @@ Handles both image and video media.
 Reference files:
 - ``kimi_k25_vision_processing.py``  (KimiK25VisionProcessor)
 - ``kimi_k25_processor.py``          (KimiK25Processor)
-- ``media_utils.py``                 (navit_resize_image, navit_patchify, etc.)
+- ``media_utils.py``                 (navit_resize_image, navit_patchify and so on)
 """
 
 from __future__ import annotations

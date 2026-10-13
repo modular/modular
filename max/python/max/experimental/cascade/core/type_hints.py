@@ -32,7 +32,7 @@ import numpy as np
 class Result(Protocol):
     """Scalar handle that can be passed as a :data:`CascadeValue`.
 
-    Concrete runtimes supply their own Result (e.g. the rust-backed
+    Concrete runtimes supply their own Result (such as the rust-backed
     pyclass). The protocol is structural so this public module does not
     import a runtime-private type. Awaiting is optional: some Results are
     only consumed from Rust.
@@ -47,7 +47,7 @@ class Result(Protocol):
 class ResultIter(Protocol):
     """Streaming handle that can be passed as a :data:`CascadeValue`.
 
-    Concrete runtimes supply their own ResultIter (e.g. the rust-backed
+    Concrete runtimes supply their own ResultIter (such as the rust-backed
     pyclass). The protocol is structural so this public module does not
     import a runtime-private type. Async iteration is optional: some
     ResultIters are only consumed from Rust.
@@ -109,7 +109,7 @@ def return_type(method: Callable[..., Any]) -> object | None:
 def async_elem_type(hint: object | None) -> object | None:
     """Returns the element type of an async-iterable hint.
 
-    i.e. the ``T`` in ``AsyncIterator[T]``, or None for anything else.
+    That is, the ``T`` in ``AsyncIterator[T]``, or None for anything else.
     """
     origin = get_origin(hint)
     if isinstance(origin, type) and issubclass(origin, AsyncIterable):

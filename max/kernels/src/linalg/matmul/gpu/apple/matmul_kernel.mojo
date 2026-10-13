@@ -28,10 +28,9 @@ tails. Operands load DRAM->register directly -- threadgroup-memory staging
 
 from std.collections import Array, Optional
 from max.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
-from std.math import align_down, ceildiv
+from std.math import align_down, ceildiv, divmod
 from max.gpu.host import DeviceContext
 from std.sys import align_of, size_of
-from std.utils import IndexList
 from layout import TensorEngine, TileTensor, Idx
 from layout.tile_layout import Layout, TensorLayout, row_major
 from layout.coord import Coord
@@ -997,7 +996,7 @@ struct AppleM5MatMul[
                         else:
                             for e in range(min(4, n - acol)):
                                 epilogue[Self.c_type, 1](
-                                    IndexList[2](arow, acol + e),
+                                    (arow, acol + e),
                                     SIMD[Self.c_type, 1](y[e]),
                                 )
                     else:
@@ -1825,11 +1824,9 @@ struct AppleM5MatMul[
             acc += partials_ptr[s * mn + idx]
 
         var y = acc.cast[Self.c_type]()
-        comptime if Self.elementwise_lambda_fn:
-            comptime epilogue = Self.elementwise_lambda_fn.value()
-            epilogue[Self.c_type, 1](
-                (idx // n, idx % n), SIMD[Self.c_type, 1](y)
-            )
+        comptime if case .Some(epilogue) = Self.elementwise_lambda_fn:
+            var row, col = divmod(idx, n)
+            epilogue[Self.c_type, 1]((row, col), SIMD[Self.c_type, 1](y))
         else:
             c_ptr[idx] = y
 
@@ -1971,7 +1968,7 @@ def enqueue_apple_matmul[
     # normal shapes (many tiles) take the single-pass launch below.
     var tiles = grid_m * grid_n
     var num_strips = ceildiv(k, MM.BK)
-    var route_split_k = force_split_k.value() if force_split_k else (
+    var route_split_k = force_split_k.or_else(
         tiles <= 16 and num_strips >= 32 and num_strips >= 8 * tiles
     )
     if route_split_k:

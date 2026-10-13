@@ -25,10 +25,12 @@ import resource
 import sys
 from itertools import pairwise
 
+import numpy as np
 import pytest
 from max.driver import (
     CPU,
     Accelerator,
+    Buffer,
     _ChunkedStagingRegion,
     accelerator_count,
 )
@@ -45,15 +47,30 @@ def _page() -> int:
 
 
 def _region(
-    blocks: int, block_bytes: int = BLOCK_BYTES, **kw: int
+    blocks: int,
+    block_bytes: int = BLOCK_BYTES,
+    chunk_bytes: int = 512 * 1024 * 1024,
+    driver_alloc: bool = False,
+    mlock_pages: bool = False,
 ) -> _ChunkedStagingRegion:
     """A region shaped as the host KV cache allocates one."""
     return _ChunkedStagingRegion(
         byte_size=blocks * block_bytes,
         row_bytes=block_bytes,
         device=Accelerator(),
-        **kw,
+        chunk_bytes=chunk_bytes,
+        driver_alloc=driver_alloc,
+        mlock_pages=mlock_pages,
     )
+
+
+def _vm_locked_kib() -> int:
+    """This process's locked memory, as the kernel reports it."""
+    with open("/proc/self/status") as f:
+        for line in f:
+            if line.startswith("VmLck:"):
+                return int(line.split()[1])
+    raise AssertionError("no VmLck line in /proc/self/status")
 
 
 def _block_view(region: _ChunkedStagingRegion, bid: int) -> memoryview:
@@ -142,6 +159,96 @@ def test_blocks_are_laid_out_back_to_back() -> None:
     assert gaps == [BLOCK_BYTES] * 3
 
 
+def test_registered_chunk_addresses_tile_the_one_mapping() -> None:
+    region = _region(64, chunk_bytes=8 * BLOCK_BYTES)
+    assert not region.driver_alloc
+    assert region.chunk_addresses == [
+        region.address + i * region.chunk_bytes for i in range(8)
+    ]
+
+
+# --- driver-allocated chunks ------------------------------------------------ #
+
+
+def _driver_block_view(region: _ChunkedStagingRegion, bid: int) -> memoryview:
+    """Block ``bid``, resolved to its chunk the way the offload engine does."""
+    rows_per_chunk = region.chunk_bytes // region.row_bytes
+    chunk, row = divmod(bid, rows_per_chunk)
+    addr = region.chunk_addresses[chunk] + row * region.row_bytes
+    return memoryview(
+        (ctypes.c_uint8 * region.row_bytes).from_address(addr)
+    ).cast("B")
+
+
+def test_driver_alloc_reports_one_address_per_chunk() -> None:
+    region = _region(64, chunk_bytes=8 * BLOCK_BYTES, driver_alloc=True)
+    assert region.driver_alloc
+    assert region.byte_size == 64 * BLOCK_BYTES
+    assert region.chunk_bytes == 8 * BLOCK_BYTES
+    assert region.num_chunks == 8
+    addrs = region.chunk_addresses
+    assert len(addrs) == 8
+    assert len(set(addrs)) == 8
+    assert all(addr != 0 for addr in addrs)
+    with pytest.raises(RuntimeError, match="chunk_addresses"):
+        _ = region.address
+
+
+def test_driver_alloc_last_chunk_holds_the_remainder() -> None:
+    region = _region(10, chunk_bytes=4 * BLOCK_BYTES, driver_alloc=True)
+    assert region.num_chunks == 3
+    # The partial last chunk is still addressable to its final byte.
+    _driver_block_view(region, 9)[-1] = 7
+    assert _driver_block_view(region, 9)[-1] == 7
+
+
+def test_driver_alloc_blocks_are_distinct_and_writable() -> None:
+    blocks = 24
+    region = _region(blocks, chunk_bytes=5 * BLOCK_BYTES, driver_alloc=True)
+    assert region.num_chunks > 1
+    for bid in range(blocks):
+        _driver_block_view(region, bid)[:] = bytes([bid % 256]) * BLOCK_BYTES
+    for bid in range(blocks):
+        block = _driver_block_view(region, bid)
+        assert block[0] == bid % 256
+        assert block[-1] == bid % 256
+
+
+def test_driver_alloc_release_and_reallocate() -> None:
+    """Freeing every chunk on release lets the same budget be allocated again."""
+    for _ in range(4):
+        region = _region(32, chunk_bytes=8 * BLOCK_BYTES, driver_alloc=True)
+        _driver_block_view(region, 31)[:16] = b"\x05" * 16
+        del region
+
+
+# --- GPU round trip --------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("driver_alloc", [False, True])
+def test_round_trips_data_through_the_gpu(driver_alloc: bool) -> None:
+    """A staging chunk is only useful if the GPU can actually DMA it.
+
+    Writes a pattern into the first chunk's host memory, copies it onto the
+    accelerator and back, and checks it survived -- the same host-to-device
+    path the offload engine drives through :obj:`address`/:obj:`chunk_addresses`.
+    """
+    device = Accelerator()
+    region = _region(4, chunk_bytes=2 * BLOCK_BYTES, driver_alloc=driver_alloc)
+    addr = region.chunk_addresses[0] if driver_alloc else region.address
+
+    host_view = np.ctypeslib.as_array(
+        (ctypes.c_uint8 * region.row_bytes).from_address(addr)
+    )
+    pattern = np.arange(region.row_bytes, dtype=np.uint8)
+    host_view[:] = pattern
+
+    device_buf = Buffer.from_dlpack(host_view).to(device)
+    roundtripped = device_buf.to(CPU()).to_numpy()
+
+    np.testing.assert_array_equal(roundtripped, pattern)
+
+
 # --- lifetime ------------------------------------------------------------- #
 
 
@@ -213,3 +320,23 @@ def test_rejects_zero_chunk_bytes() -> None:
             device=Accelerator(),
             chunk_bytes=0,
         )
+
+
+def test_mlock_pages_locks_the_registered_mapping() -> None:
+    soft, _ = resource.getrlimit(resource.RLIMIT_MEMLOCK)
+    if soft != resource.RLIM_INFINITY and soft < 8 * BLOCK_BYTES:
+        pytest.skip("RLIMIT_MEMLOCK is too low to lock the test region")
+    before = _vm_locked_kib()
+    region = _region(8, mlock_pages=True)
+
+    assert region.mlocked
+    assert _vm_locked_kib() - before >= 8 * BLOCK_BYTES // 1024
+
+
+def test_mlock_is_off_by_default() -> None:
+    assert not _region(4).mlocked
+
+
+def test_mlock_pages_rejected_with_driver_alloc() -> None:
+    with pytest.raises(ValueError, match="mlock_pages"):
+        _region(4, driver_alloc=True, mlock_pages=True)

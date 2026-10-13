@@ -29,6 +29,8 @@ from layout import (
     TileTensor,
     row_major,
 )
+from std.atomic import Atomic, Ordering
+from std.collections.string.string_span import _get_kgen_string
 from std.math import align_up, ceildiv
 from layout.tma_async import SharedMemBarrier, PipelineState
 from std.utils.static_tuple import StaticTuple
@@ -38,7 +40,7 @@ from structured_kernels.tile_types import (
     _strided_layout,
 )
 from max.gpu import WARP_SIZE, grid_dim, lane_id
-from max.gpu.sync import NamedBarrierSemaphore
+from max.gpu.sync import NamedBarrierSemaphore, named_barrier
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
@@ -423,6 +425,7 @@ struct TileScheduler[
         clc_empty: Self.ClcBarrierArray,
         clc_throttle: Self.ThrottleBarrierArray,
         locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
+        k_group_size: Int = 1,
     ):
         """Initialize from typed barrier arrays.
 
@@ -438,6 +441,9 @@ struct TileScheduler[
                 scheduler against the load warp.
             locks_ptr: Pointer to the per-output-tile lock buffer used to
                 synchronize split-K reductions across CTAs.
+            k_group_size: K tiles the producer and MMA loops consume per
+                step; every split but the last covers a whole number of
+                these.
         """
         self.scheduler = Self.UnderlyingScheduler(
             cluster_dim,
@@ -449,8 +455,10 @@ struct TileScheduler[
         self.total_k_tiles = ceildiv(
             mnk[2], UInt32(Self.reduction_tile_shape[2])
         )
-        self.k_tiles_per_split = ceildiv(
-            self.total_k_tiles, UInt32(Self.num_split_k)
+        self.k_tiles_per_split = UInt32(
+            splitk_k_tiles_per_split(
+                Int(self.total_k_tiles), Self.num_split_k, k_group_size
+            )
         )
         self.locks_ptr = locks_ptr.bitcast[Int32]()
         self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
@@ -801,6 +809,190 @@ struct TileScheduler[
 
             stage_addr = stage_addr + stage_width
 
+    comptime PARALLEL_BARRIER_ID = 4
+    """Named barrier of the epilogue warpgroup in the parallel reduction
+    (ids 0 and 1 belong to the output writer and the MMA handshake)."""
+
+    @inline(.always)
+    def store_partial_slot[
+        accum_type: DType
+    ](
+        self,
+        tmem: TmemAddress,
+        workspace: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+        epilogue_thread_idx: Int,
+        work_info: WorkInfo,
+    ):
+        """Stores this split's accumulator to its own workspace slot.
+
+        Slot `tile * num_split_k + split` holds the BM x MMA_N fp32 tile in
+        16-byte pieces, piece `q * BM + row` holding columns 4q .. 4q + 3 of
+        the row, so a warp's 32 rows of one piece column are contiguous.
+
+        Parameters:
+            accum_type: Accumulator dtype.
+
+        Args:
+            tmem: TMEM address of the accumulator stage.
+            workspace: Base of the fp32 workspace.
+            epilogue_thread_idx: Thread index in the epilogue warpgroup,
+                which is the accumulator row it holds.
+            work_info: The split's work tile.
+        """
+        comptime assert Self.BM == 128, "one accumulator row per thread"
+        comptime assert Self.MMA_N % 4 == 0, "rows store in 16-byte pieces"
+        var tile = Int(self.output_tile_index(work_info))
+        var split = Int(work_info.k_start // self.k_tiles_per_split)
+        var row0 = (
+            tile * Self.num_split_k + split
+        ) * Self.BM * Self.MMA_N + 4 * epilogue_thread_idx
+        # tcgen05.ld repeats are powers of two: read in the largest one that
+        # divides MMA_N.
+        comptime CH = min(128, Self.MMA_N & -Self.MMA_N)
+        comptime for c0 in range(0, Self.MMA_N, CH):
+            var v = tcgen05_ld[
+                datapaths=32,
+                bits=32,
+                repeat=CH,
+                dtype=accum_type,
+                pack=False,
+            ](tmem.addr + UInt32(c0))
+            tcgen05_load_wait()
+            comptime for q in range(CH // 4):
+                (workspace + row0 + 4 * (c0 // 4 + q) * Self.BM).store[
+                    alignment=16
+                ](
+                    SIMD[accum_type, 4](
+                        v[4 * q], v[4 * q + 1], v[4 * q + 2], v[4 * q + 3]
+                    )
+                )
+
+    @inline(.always)
+    def reduce_slice_to_output[
+        accum_type: DType,
+        c_type: DType,
+        //,
+        transpose_c: Bool,
+        pieces_per_batch: Int,
+    ](
+        self,
+        workspace: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+        counters: SplitKTileCounters,
+        c: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+        c_row_stride: Int,
+        epilogue_thread_idx: Int,
+        work_info: WorkInfo,
+        shape: Tuple[UInt32, UInt32],
+    ):
+        """Publishes this split's slot, waits for the tile's other splits and
+        writes slice `split` of the summed tile to C.
+
+        The tile's 16-byte pieces are cut into `num_split_k` slices, one per
+        split. Every split sums its slice over all the tile's slots in split
+        order, so the output does not depend on which split finished first,
+        and the reduction is spread over the tile's CTAs. The tile's counter
+        word counts arrivals in its low half and finished readers in its
+        high half; the last reader resets it, so it is zero again for the
+        next launch on this tile.
+
+        Parameters:
+            accum_type: Accumulator dtype (inferred).
+            c_type: Output dtype (inferred).
+            transpose_c: Whether the kernel computes C transposed (swapped
+                A and B): accumulator rows are then output columns.
+            pieces_per_batch: Pieces per thread whose loads from every slot
+                are in flight together; bounds the registers held.
+
+        Args:
+            workspace: Base of the fp32 workspace.
+            counters: The kernel's tile counters (`splitk_tile_counters`).
+            c: Base of the row-major output.
+            c_row_stride: Elements between consecutive rows of the output.
+            epilogue_thread_idx: Thread index in the epilogue warpgroup.
+            work_info: The split's work tile.
+            shape: The output's (rows, columns).
+        """
+        comptime S = Self.num_split_k
+        comptime pieces = Self.BM * Self.MMA_N // 4
+        comptime per = ceildiv(pieces, S)
+        comptime PT = ceildiv(per, WARPGROUP_SIZE)
+        comptime RB = min(pieces_per_batch, PT)
+        comptime NB = ceildiv(PT, RB)
+        var tile = Int(self.output_tile_index(work_info))
+        var split = Int(work_info.k_start // self.k_tiles_per_split)
+        var count = counters + tile * SPLITK_COUNTER_STRIDE
+
+        # Every thread's slot stores precede thread 0's release add.
+        named_barrier[Int32(WARPGROUP_SIZE)](Int32(Self.PARALLEL_BARRIER_ID))
+        if epilogue_thread_idx == 0:
+            _ = Atomic[UInt32, scope="device"].fetch_add[
+                ordering=Ordering.RELEASE
+            ](count, 1)
+        var seen = Atomic[UInt32, scope="device"].load[
+            ordering=Ordering.ACQUIRE
+        ](count)
+        while (seen & 0xFFFF) < UInt32(S):
+            seen = Atomic[UInt32, scope="device"].load[
+                ordering=Ordering.ACQUIRE
+            ](count)
+
+        var lo = min(split * per, pieces)
+        var hi = min(lo + per, pieces)
+        var last = max(hi - 1, 0)
+        var base = tile * S * Self.BM * Self.MMA_N
+        var row0 = Int(work_info.m) * Self.BM
+        var col0 = Int(work_info.n) * Self.MMA_N
+        var rows = Int(shape[0])
+        var cols = Int(shape[1])
+        comptime for jb in range(NB):
+            # Unconditional loads (past-the-slice threads re-read its last
+            # piece and drop it below): a guarded load merges with a zero at
+            # the branch's end, which serializes the slots' loads.
+            var vals = StaticTuple[SIMD[accum_type, 4], RB * S]()
+            comptime for k in range(S):
+                comptime for uu in range(RB):
+                    comptime u = jb * RB + uu
+                    comptime if u < PT:
+                        var p = min(
+                            lo + epilogue_thread_idx + WARPGROUP_SIZE * u, last
+                        )
+                        vals[k * RB + uu] = (
+                            workspace + base + k * Self.BM * Self.MMA_N + 4 * p
+                        ).load[width=4, alignment=16]()
+            comptime for uu in range(RB):
+                comptime u = jb * RB + uu
+                comptime if u < PT:
+                    var p = lo + epilogue_thread_idx + WARPGROUP_SIZE * u
+                    if p < hi:
+                        var sum = vals[uu]
+                        comptime for k in range(1, S):
+                            sum += vals[k * RB + uu]
+                        var i = row0 + p % Self.BM
+                        comptime for e in range(4):
+                            var j = col0 + 4 * (p // Self.BM) + e
+                            comptime if transpose_c:
+                                if j < rows and i < cols:
+                                    c[j * c_row_stride + i] = sum[e].cast[
+                                        c_type
+                                    ]()
+                            else:
+                                if i < rows and j < cols:
+                                    c[i * c_row_stride + j] = sum[e].cast[
+                                        c_type
+                                    ]()
+
+        # Every thread has read the slots before thread 0 counts this split
+        # out; the last split out resets the word.
+        named_barrier[Int32(WARPGROUP_SIZE)](Int32(Self.PARALLEL_BARRIER_ID))
+        if epilogue_thread_idx == 0:
+            var old = Atomic[UInt32, scope="device"].fetch_add[
+                ordering=Ordering.ACQUIRE_RELEASE
+            ](count, 0x10000)
+            if (old >> 16) == UInt32(S - 1):
+                Atomic[UInt32, scope="device"].store[ordering=Ordering.RELAXED](
+                    count, 0
+                )
+
     @inline(.always)
     def reduction[
         accum_type: DType,
@@ -913,6 +1105,75 @@ struct TileScheduler[
             lock_ptr + lock_idx, barrier_group_thread_idx
         )
         sema.arrive_set(barrier_id, Int32(val))
+
+
+comptime SPLITK_TILE_COUNTERS = 256
+"""Tile counters per slot. A parallel split-K grid has every CTA resident, at
+most one per SM, so it has fewer tiles than this."""
+
+comptime SPLITK_COUNTER_SLOTS = 4
+"""Counter slots per kernel. Each device context, which launches on its own
+stream, takes a slot of its own, so launches on different streams never share
+counters; contexts past the last slot use per-call counters."""
+
+comptime SPLITK_COUNTER_STRIDE = 32
+"""Words between tile counters: one 128-byte line each, so the tiles'
+atomics do not share a line."""
+
+comptime SPLITK_SLOT_WORDS = SPLITK_TILE_COUNTERS * SPLITK_COUNTER_STRIDE
+"""Words in one counter slot."""
+
+comptime SplitKTileCounters = UnsafePointer[
+    UInt32, MutUntrackedOrigin, address_space=AddressSpace.GLOBAL
+]
+"""Pointer to a kernel's tile counters (see `splitk_tile_counters`)."""
+
+
+@inline(.always)
+def splitk_tile_counters() -> SplitKTileCounters:
+    """Returns the calling kernel's tile counters for the parallel split-K
+    reduction.
+
+    The counters are a device global of the kernel's module, which the driver
+    zero-fills when it loads the module, and every reduction leaves its
+    tile's counter at zero again. So they need no allocation or memset in
+    the stream: a first launch recorded into a CUDA graph, whose recorded
+    memsets would not run before the graph replays, still finds them zero.
+    Call it once per kernel; every call site is a distinct global.
+
+    Returns:
+        `SPLITK_COUNTER_SLOTS` slots of `SPLITK_SLOT_WORDS` zero-initialized
+        words, one counter every `SPLITK_COUNTER_STRIDE` words.
+    """
+    return {
+        _mlir_value = __mlir_op.`pop.global_alloc`[
+            name=_get_kgen_string["splitk_tile_counters"](),
+            count=(SPLITK_COUNTER_SLOTS * SPLITK_SLOT_WORDS).__mlir_index__(),
+            _type=SplitKTileCounters._mlir_type,
+            alignment=Int(128).__mlir_index__(),
+        ]()
+    }
+
+
+@inline(.always)
+def splitk_k_tiles_per_split(
+    total_k_tiles: Int, num_split_k: Int, k_group_size: Int
+) -> Int:
+    """Returns the K tiles per split, rounded up to a whole K group.
+
+    The producer and MMA loops consume one K group per step without tail
+    handling, so a split whose count is not a multiple of `k_group_size`
+    would read into the next split's range.
+
+    Args:
+        total_k_tiles: K tiles of the whole problem.
+        num_split_k: Number of splits.
+        k_group_size: K tiles per producer and MMA step.
+
+    Returns:
+        The K tiles each split but the last covers.
+    """
+    return align_up(ceildiv(total_k_tiles, num_split_k), k_group_size)
 
 
 @inline(.always)

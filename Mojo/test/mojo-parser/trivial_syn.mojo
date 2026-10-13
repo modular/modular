@@ -37,7 +37,9 @@ struct X_T_U(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.struct.decl @C
 #  CHECK-SAME: <X: [[X_TYPE:!.*]], Y: [[Y_TYPE:!.*]]>
-struct C[X: ImplicitlyCopyable & Deinitable, Y: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable):
+struct C[
+    X: ImplicitlyCopyable & Deinitable, Y: ImplicitlyCopyable & Deinitable
+](ImplicitlyCopyable):
     var x: Self.X
     var y: Self.Y
 
@@ -47,18 +49,18 @@ struct C[X: ImplicitlyCopyable & Deinitable, Y: ImplicitlyCopyable & Deinitable]
     # CHECK-LABEL:  kgen.conformance @{{.*}}::@Copyable {
     # CHECK-NEXT:      kgen.witness "__init__{{.*}}(*, "copy":{{.*}}"
     # CHECK-NEXT:      kgen.witness "copy{{.*}}"
-    # CHECK: kgen.witness "__copy_ctor_is_trivial" : !Bool = sugar_builtin(apply({{.*}})
+    # CHECK: kgen.witness "__copy_ctor_is_trivial" : !Bool = {_mlir_value: scalar<bool> = and({{.*}})}
 
     # CHECK-LABEL:  kgen.conformance @{{.*}}::@Deinitable {
     # CHECK-NEXT:    kgen.witness "__deinit__{{.*}}"
-    # CHECK: kgen.witness "__del__is_trivial" : !Bool = sugar_builtin(apply({{.*}})
+    # CHECK: kgen.witness "__del__is_trivial" : !Bool = {_mlir_value: scalar<bool> = and({{.*}})}
 
     # CHECK-LABEL:  kgen.conformance @{{.*}}::@ImplicitlyCopyable {
     # CHECK-NEXT:   }
 
     # CHECK-LABEL:  kgen.conformance @{{.*}}::@Movable {
     # CHECK-NEXT:    kgen.witness "__init__{{.*}}(*, "move":{{.*}}"
-    # CHECK: kgen.witness "__move_ctor_is_trivial" : !Bool = sugar_builtin(apply({{.*}})
+    # CHECK: kgen.witness "__move_ctor_is_trivial" : !Bool = {_mlir_value: scalar<bool> = and({{.*}})}
 
 
 # CHECK-LABEL: lit.struct.decl @StructMLIRTypeOnly
@@ -125,6 +127,16 @@ trait DefaultsInit:
 
 
 # CHECK-LABEL: lit.struct.decl @OverridesDefaultInit
-struct OverridesDefaultInit(DefaultsInit, Copyable):
+struct OverridesDefaultInit(Copyable, DefaultsInit):
     def __init__(out self, x: Int):
         pass
+
+
+# CHECK-LABEL: lit.struct.decl @P
+struct P[T: Copyable & Deinitable](Copyable):
+    # The repeated `T` field and the trivial `Int` field fold away
+    # CHECK: lit.alias.decl __copy_ctor_is_trivial: !Bool = <#kgen.get_witness<:[[T_TYPE:!.*]] T, @{{.*}}::@Copyable, "__copy_ctor_is_trivial">>
+    var a: Self.T
+    var b: Self.T
+    # follows by a trivial field
+    var c: Int

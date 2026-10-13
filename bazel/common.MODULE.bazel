@@ -30,6 +30,8 @@ bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 bazel_dep(name = "xxhash", version = "0.8.3.bcr.1")
 
 # Necessary for LLVM
+bazel_dep(name = "libxml2", version = "2.15.3")
+bazel_dep(name = "xz", version = "5.4.5.bcr.9", repo_name = "llvm_xz")
 bazel_dep(name = "zlib-ng", version = "2.3.3", repo_name = "llvm_zlib")
 bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
 
@@ -234,6 +236,8 @@ http_archive(
         "//bazel/public-patches:nixl-libfabric-release-inflight.patch",
         # TODO(GEX-4312): drop once the fix ships in a tagged NIXL release.
         "//bazel/public-patches:nixl-libfabric-vmm-cuda-ctx.patch",
+        # TODO(GEX-4374): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-src-addr-peer-limit.patch",
     ],
     sha256 = "1dc9d1c070491ed8ed89942f14124c5d914b85be279cf694678203fd7a94c927",
     strip_prefix = "nixl-1.5.0",
@@ -244,8 +248,8 @@ http_archive(
 http_archive(
     name = "ucx_prebuilt",
     build_file = "//bazel/public-patches:ucx_prebuilt.BUILD",
-    sha256 = "5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/ucx_prebuilt/501d8fd1611247ac46efb1a56fca3b16b9feae2f/5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c/ucx-prebuilt-linux-x86-64.tar.gz",
+    sha256 = "a88fa1f779d7e27185bcef7fe0fa53243705936f093fcc62da218c3aefdc1a1c",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/ucx_prebuilt/1b9edc29f8ca0728f13e01d0d4397f5d910f74fa/a88fa1f779d7e27185bcef7fe0fa53243705936f093fcc62da218c3aefdc1a1c/ucx-prebuilt-linux-x86-64.tar.gz",
 )
 
 # UCCL transport library for the AMD NIXL UCCL backend. Built by

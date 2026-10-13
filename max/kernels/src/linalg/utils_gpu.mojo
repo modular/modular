@@ -651,8 +651,8 @@ def get_hilbert_lut_with_cache(
     # use runtime lookup since key is computed at runtime
     var cached_ptr = _get_global_or_null(key_str)
 
-    if cached_ptr:
-        var device_ptr = cached_ptr.unsafe_value().unsafe_bitcast[UInt32]()
+    if case .Some(cached_ptr) = cached_ptr:
+        var device_ptr = cached_ptr.unsafe_bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
         return DeviceBuffer[.uint32](ctx, device_ptr, num_blocks, owning=False)

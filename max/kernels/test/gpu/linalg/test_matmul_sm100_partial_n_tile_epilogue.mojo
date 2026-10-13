@@ -22,8 +22,7 @@ Both ``transpose_c`` branches of ``apply_to_fragment`` are exercised
 (``swapAB=False/True``); each branch has its own bounds checks.
 """
 
-from std.collections import Optional
-from std.sys import align_of, size_of
+from std.sys import size_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
@@ -107,9 +106,10 @@ def test_partial_n_tile_compute_epilogue[
     @inline(.always)
     def in_bounds_compute_lambda[
         _dtype: DType, width: SIMDLength, *, alignment: Int
-    ](
-        idx: IndexList[2], val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]
-    ) -> SIMD[_dtype, width]:
+    ](idx: Coord, val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]) -> SIMD[
+        _dtype, width
+    ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val + c_val
 
     seed(1234)
@@ -156,16 +156,17 @@ def test_partial_n_tile_compute_epilogue[
     @inline(.always)
     def in_bounds_compute_lambda_local[
         _dtype: DType, width: SIMDLength
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) {var c_host_copy} -> SIMD[
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_host_copy} -> SIMD[
         _dtype, width
     ]:
-        return val + c_host_copy.load[width=width](Coord(idx)).cast[_dtype]()
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val + c_host_copy.load[width=width](idx).cast[_dtype]()
 
     for i in range(M):
         for j in range(N):
             comptime assert c_host_ref.flat_rank == 2
             c_host_ref[i, j] = in_bounds_compute_lambda_local(
-                (i, j), c_host_ref[i, j]
+                Coord(i, j), c_host_ref[i, j]
             )
 
     comptime rtol = 1e-2

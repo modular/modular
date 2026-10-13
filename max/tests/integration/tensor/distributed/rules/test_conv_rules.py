@@ -142,3 +142,23 @@ class TestConv2dTransposeRule:
         w = _layout(M(MESH_1D, R), (3, 3, 3, 16))
         _, (out,) = pick(conv2d_transpose_rule, x, w)
         assert out.placements == (S(0),)
+
+
+class TestConvBias:
+    """The bias is an operand: it follows the output channels it adds to."""
+
+    def test_bias_splits_with_output_channels(self) -> None:
+        x = _layout(M(MESH_1D, R), (1, 8, 8, 3))
+        w = _layout(M(MESH_1D, S(3)), (3, 3, 3, 8))
+        b = _layout(M(MESH_1D, S(0)), (8,))
+        action = pick(conv2d_rule, x, w, bias=b)
+        assert action.inputs[2].placements == (S(0),)
+        assert action.outputs[0].placements == (S(3),)
+
+    def test_bias_never_meets_a_partial_sum(self) -> None:
+        # Adding the bias on every rank of a partial sum would add it twice.
+        x = _layout(M(MESH_1D, S(3)), (1, 8, 8, 4))
+        w = _layout(M(MESH_1D, S(2)), (3, 3, 4, 8))
+        b = _layout(M(MESH_1D, R), (8,))
+        action = pick(conv2d_rule, x, w, bias=b)
+        assert not isinstance(action.outputs[0].placements[0], Partial)

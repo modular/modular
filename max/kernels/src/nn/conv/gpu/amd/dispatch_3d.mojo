@@ -51,7 +51,6 @@ Mirrors the structure of `nn.conv.gpu.amd.dispatch`.
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
-from std.math.uutils import udivmod
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList

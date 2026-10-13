@@ -116,7 +116,8 @@ def _make_replay_runner() -> ServeGraphCaptureRunner:
     runner = ServeGraphCaptureRunner.__new__(ServeGraphCaptureRunner)
     runner._records = {}
     runner.graph_entries = {}
-    runner._model = MagicMock()
+    runner._engine_model = MagicMock()
+    runner._signal_buffers = []
     runner._host_input_guard_mode = None
     return runner
 

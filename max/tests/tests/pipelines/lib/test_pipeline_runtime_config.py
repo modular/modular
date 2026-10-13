@@ -25,6 +25,53 @@ from max.pipelines.modeling.eager_validation import (
 from pydantic import ValidationError
 
 
+@pytest.mark.parametrize(
+    ("field", "env_var"),
+    [
+        ("disable_overlap", "MAX_DISABLE_OVERLAP"),
+        ("disable_vendor_blas_fallback", "MODULAR_DISABLE_VENDOR_FALLBACK"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("env_value", "expected"),
+    [
+        (None, False),
+        ("1", True),
+        ("true", True),
+        ("0", False),
+        ("off", False),
+    ],
+)
+def test_debug_flag_defaults_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    env_var: str,
+    env_value: str | None,
+    expected: bool,
+) -> None:
+    monkeypatch.delenv(env_var, raising=False)
+    if env_value is not None:
+        monkeypatch.setenv(env_var, env_value)
+    assert getattr(PipelineRuntimeConfig(), field) is expected
+
+
+@pytest.mark.parametrize(
+    ("field", "env_var"),
+    [
+        ("disable_overlap", "MAX_DISABLE_OVERLAP"),
+        ("disable_vendor_blas_fallback", "MODULAR_DISABLE_VENDOR_FALLBACK"),
+    ],
+)
+def test_debug_flag_explicit_value_beats_env(
+    monkeypatch: pytest.MonkeyPatch, field: str, env_var: str
+) -> None:
+    monkeypatch.setenv(env_var, "1")
+    assert (
+        getattr(PipelineRuntimeConfig.model_validate({field: False}), field)
+        is False
+    )
+
+
 def test_emit_reasoning_content_defaults_false() -> None:
     assert PipelineRuntimeConfig().emit_reasoning_content is False
 
@@ -61,6 +108,25 @@ def test_vision_cache_utilization_accepts_in_range_values(
 def test_is_disaggregated(pipeline_role: PipelineRole, expected: bool) -> None:
     runtime = PipelineRuntimeConfig(pipeline_role=pipeline_role)
     assert runtime.is_disaggregated is expected
+
+
+@pytest.mark.parametrize(
+    ("pipeline_role", "expected"),
+    [
+        ("prefill_and_decode", 1024),
+        ("prefill_only", 1024),
+        ("decode_only", None),
+    ],
+)
+def test_max_num_input_tokens_uncapped_on_decode(
+    pipeline_role: PipelineRole, expected: int | None
+) -> None:
+    runtime = PipelineRuntimeConfig(
+        pipeline_role=pipeline_role,
+        enable_chunked_prefill=True,
+        max_batch_input_tokens=1024,
+    )
+    assert runtime.max_num_input_tokens == expected
 
 
 @pytest.mark.parametrize("utilization", [-0.01, -1, 1.01, 2, 100])

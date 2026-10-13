@@ -57,8 +57,7 @@ from std.benchmark import (
 from std.random import rand
 
 from max.benchmark import bencher_iter_custom
-from max.gpu.host import DeviceContext, get_gpu_target
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
 
 from internal_utils import CacheBustingBuffer, arg_parse
@@ -111,7 +110,7 @@ def bench_rms_norm_gemm_pdl[
     """
     comptime assert dtype == .bfloat16, "this bench is bf16-only"
 
-    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=ctx.target]()
     comptime MMA_K = 16
 
     comptime gemm_config_off = MatmulConfig[dtype, dtype, dtype, True](

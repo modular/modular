@@ -32,16 +32,8 @@ multi-expert ragged batch, sparse expert-id routing, and a production-ish
 Llama-4-Scout gate/up shape.
 """
 
-from std.collections import Optional
-from std.sys import align_of
-
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul import grouped_matmul_rowwise_dynamic_scaled_fp8

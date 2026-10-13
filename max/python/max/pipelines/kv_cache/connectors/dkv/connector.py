@@ -86,6 +86,16 @@ class _DkvClient(Protocol):
 
     def abandon_prepared(self) -> None: ...
 
+    def is_healthy(self) -> bool: ...
+
+    def lookup(
+        self,
+        *,
+        group_ids: Sequence[int],
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+    ) -> Sequence[Sequence[bool]]: ...
+
     def offload(
         self,
         *,
@@ -191,10 +201,9 @@ def _to_dkv_u64(h: bytes) -> int:
     The dkv proto stays ``uint64 seq_hash``. Accepts the canonical bytes
     forms the block hasher produces:
 
-    * 8 bytes (``ahash64`` / ``sha256_64``): used as-is, big-endian unsigned.
+    * 8 bytes (``ahash64``): used as-is, big-endian unsigned.
     * 32 bytes (full ``sha256``): truncated to the first 8 bytes (big-endian
-      unsigned). Byte-identical to ``sha256_64`` of the same digest, so the
-      same logical block collapses to the same dkv key under either algo.
+      unsigned), because the dkv wire key is 64 bits wide.
 
     Args:
         h: Canonical block-hash bytes, length 8 or 32.
@@ -500,7 +509,7 @@ def _required_operator_env() -> tuple[NixlBackendType, str]:
 def _dtype_tag(dtype: object) -> str:
     """Returns a stable, restart-invariant text tag for a ``DType``.
 
-    Uses the enum member ``name`` (e.g. ``"bfloat16"``) when present, else
+    Uses the enum member ``name`` (such as ``"bfloat16"``) when present, else
     ``str(dtype)``. Never uses Python's per-process-randomized ``hash``, so the
     fingerprint it feeds is identical across process restarts.
     """
@@ -1345,6 +1354,11 @@ class DKVConnector(KVConnector):
             for leaf_id, group_id in self._leaves.items()
             if group_id.is_sliding_window()
         ]
+        # :meth:`probe` asks one leaf and its masks are read as a
+        # full-attention run, which only a full leaf answers.
+        self._probe_leaf_id: str | None = (
+            self._full_leaf_ids[0] if self._full_leaf_ids else None
+        )
         # One window for every sliding leaf (``_validate_dkv_leaves`` rejects a
         # tree with two), so resolve it once. 0 only when there is no sliding
         # leaf at all, per the note below.
@@ -1361,8 +1375,8 @@ class DKVConnector(KVConnector):
         # off. That is what the leased path needs -- a leaf spanning none
         # would take a lease and hand it straight back on every request
         # without ever posting a block, because
-        # :func:`longest_sliding_window_hit` would return the whole candidate
-        # unread and :func:`blocks_held_of_hit` would then make its share 0.
+        # the sliding-window rule would return the whole candidate unread and
+        # :func:`max._kv_core.blocks_held_of_hit` would then make its share 0.
         # Recency is a property of the leaf's attention group, so it is fixed
         # here rather than rebuilt inside the per-replica admission loop.
         self._group_recencies = [
@@ -1432,6 +1446,56 @@ class DKVConnector(KVConnector):
             dkv_hash: depth for depth, dkv_hash in enumerate(dkv_hashes, 1)
         }
         return resident
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+    ) -> list[Mapping[str, Sequence[bool]]]:
+        """Reports what each replica could load of ``block_hashes``.
+
+        One lookup of the first full-attention leaf, for pricing a request
+        before it is bound: every replica of a tenant shares one store, so one
+        healthy replica's client answers for every replica that can load. It
+        costs two RPCs, a ``read_blocks`` that pins and a ``release_blocks``
+        before it returns, and the read bumps that leaf's read tally on the
+        server. A replica with a degraded leaf client loads nothing until it
+        reconnects, so it answers all misses. A tree with no full-attention
+        leaf raises ``ValueError``: a sliding leaf's mask cannot price a run. Holds no pin past the call,
+        takes no hint, which would dial peers, and leaves every replica's
+        outstanding lease alone.
+        """
+        # TODO(CLIN-2044): this pinned read bumps read_ref_tally on this leaf
+        # alone and stages G2 inside read_blocks, so at diskWriteThreshold >= 2
+        # this leaf turns disk-eligible first; a presence-only lookup fixes both.
+        probe_leaf_id = self._probe_leaf_id
+        if probe_leaf_id is None:
+            raise ValueError("dkv probe needs a full-attention leaf")
+        misses: Mapping[str, Sequence[bool]] = {
+            probe_leaf_id: [False] * len(block_hashes)
+        }
+        able = [r for r in replica_idxs if self._can_load(r)]
+        if not block_hashes or not able:
+            return [misses for _ in replica_idxs]
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        (mask,) = self._clients[able[0]][probe_leaf_id].lookup(
+            group_ids=[self._wire_ids[probe_leaf_id]],
+            block_hashes=dkv_hashes,
+        )
+        if len(mask) != len(dkv_hashes):
+            raise ValueError(
+                f"dkv lookup answered {len(mask)} blocks wide over "
+                f"{len(dkv_hashes)} blocks"
+            )
+        resident: Mapping[str, Sequence[bool]] = {probe_leaf_id: mask}
+        return [resident if r in able else misses for r in replica_idxs]
+
+    def _can_load(self, replica_idx: int) -> bool:
+        """Whether every leaf client of ``replica_idx`` is serving."""
+        return all(
+            client.is_healthy()
+            for client in self._clients[replica_idx].values()
+        )
 
     def _abandon_leases(self, replica_idx: int) -> None:
         """Hands back whatever leases this replica is still holding.
@@ -1725,28 +1789,28 @@ class DKVConnector(KVConnector):
         Each ``block_hashes`` element follows the same 8-or-32 byte contract as
         :meth:`load` (truncated to its first 8 bytes at the dkv boundary; see
         :func:`_to_dkv_u64`). Best-effort and fire-and-forget: the Rust client
-        spawns the touch RPC and returns immediately, so this never blocks the
-        caller and a missed touch costs at most a later refetch, never
-        correctness. A no-op when ``MODULAR_DKV_DISABLE_G0_TOUCH`` is set (the
-        kill-switch, read once at construction).
+        queues the touch RPC behind the settles queued before it and returns
+        immediately, so this never blocks the caller and a missed touch costs
+        at most a later refetch, never correctness. A no-op when
+        ``MODULAR_DKV_DISABLE_G0_TOUCH`` is set (the kill-switch, read once at
+        construction).
 
         Not chunked. ``shard_keys`` mints one key per TP shard, so a long
         sequence on a full leaf is a large request (TP=8 over 780 blocks is
-        ~6k keys), but splitting it here would break the walk: the pyo3 shim
-        spawns each ``touch`` as its own task that then contends for the
-        connector mutex, so two calls have no ordering, and which key ends up
-        MRU depends on which chunk lands last. Chunking belongs inside
-        ``Connector::touch``, where the splits can be awaited in order
-        (SERVOPT-1615). Windowing the sliding leaves removes the pathological
-        case (a 1k window is 8 blocks however long the sequence is).
+        ~6k keys). Touches run in the order they are sent, so chunks would
+        land in order, but splitting here costs a Python call and a queued
+        RPC per chunk; chunking belongs in ``Toucher::send``, which queues the
+        whole walk (SERVOPT-1615). Windowing the sliding leaves removes the
+        pathological case (a 1k window is 8 blocks however long the sequence
+        is).
 
         Routes to the processing replica's per-leaf clients, one call per leaf.
         """
         if self._g0_touch_disabled:
             return
         # Honor the KVConnector.touch contract ("never raises into the caller").
-        # This runs on the scheduler thread BEFORE the Rust client's fire-and-
-        # forget spawn, so a bad hash length (_to_dkv_u64 -> ValueError) or an
+        # This runs on the scheduler thread BEFORE the Rust client queues the
+        # touch, so a bad hash length (_to_dkv_u64 -> ValueError) or an
         # out-of-range replica_idx (IndexError) would otherwise propagate here.
         # A missed recency touch is never a correctness issue, so swallow and
         # log at debug (matches offload's swallow posture; design section 4).
@@ -1879,5 +1943,15 @@ class DKVConnector(KVConnector):
                     dkv_peer_loads=m["peer_loads"],
                     dkv_peer_load_failures=m["peer_load_failures"],
                     dkv_hints_rejected=m["hints_rejected"],
+                    dkv_hints_rejected_by_reason=dict(
+                        m["hints_rejected_by_reason"]
+                    ),
+                    # Per-call counters: summed per leaf client, since each
+                    # client issues its own RPCs on its own socket and lock.
+                    dkv_rpc_calls=dict(m["rpc_calls"]),
+                    dkv_rpc_time_ms=dict(m["rpc_time_ms"]),
+                    dkv_rpc_socket_wait_ms=dict(m["rpc_socket_wait_ms"]),
+                    dkv_lock_waits=dict(m["lock_waits"]),
+                    dkv_lock_wait_ms=dict(m["lock_wait_ms"]),
                 )
         return total

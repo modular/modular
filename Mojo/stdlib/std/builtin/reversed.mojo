@@ -15,11 +15,9 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from std.builtin.rebind import downcast
 from std.collections import Deque
 from std.collections.deque import _DequeIter
 from std.collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
-from std.collections.list import _ListIter
 from std.collections.array import _ArrayIter
 from std.hashlib import Hasher
 

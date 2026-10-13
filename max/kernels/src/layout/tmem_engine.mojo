@@ -36,13 +36,19 @@ copy without waiting, so several copies can share one wait issued through
 `wait_store` or `wait_load`. An async copy stages its whole row, so its row is
 capped at 64 columns; a wider row is tiled into slices with one copy each.
 
-Access is warp-collective. `tcgen05.ld` and `tcgen05.st` take the warp's base
-lane in the address and hand thread `t` lane `base + t`, so a thread can only
-touch its own lane. A copy therefore means "these columns of the lane this
-thread owns", and the TMEM operand must be a warp base, never `base + lane`.
-The per-thread view of a warp's `(32, N)` tile is its row 0
-(`tile.tile[1, N](Coord(Idx[0], Idx[0]))`), whose storage is the unchanged
-warp base.
+Access is warp-collective: `tcgen05.ld` and `tcgen05.st` take a collective
+base in the address and place each thread's registers relative to it, so a
+TMEM operand is always a base, never `base + lane`, and its layout says which
+cells this thread's registers hold. Two views exist. The row view of a warp's
+`(32, N)` tile is its row 0 (`tile.tile[1, N](coord[0, 0])`): the
+`32x32b` shape hands thread `t` lane `base + t`, so the copy means "these
+columns of the lane this thread owns". The `16x256b` view of a `(16, N)` half
+of that tile, `tmem_16x256b(block)`, has layout `TMem16x256bLayout[N]`, a
+column pair by two lanes 8 apart, repeated every 8 columns: the `16x256b`
+shape hands thread `t` the cells of that layout from lane `base + t // 4`,
+column `2 * (t % 4)`, in the layout's flat order, which is the MMA accumulator
+fragment order. `tmem_cell` turns a view coordinate back into the lane and
+column this thread's element occupies.
 
 The design is written up in `Mojo/docs/stdlib/internal/gpua/tmem_engine.md`.
 """
@@ -58,13 +64,14 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 
-from layout import Coord, CoordLike, Idx, TensorLayout
+from layout import Coord, CoordLike, Idx, TensorLayout, coord
+from layout.tile_layout import Layout as TileLayout
+from max.gpu import lane_id
 from layout.tile_tensor import TileTensor
 from layout.tensor_engine import (
     TensorEngine,
     _copy_widen_factor,
     _layout_row_major,
-    _offset_elements,
 )
 
 
@@ -88,20 +95,25 @@ lane."""
 
 
 @inline(.always)
-def _grid_index(addr: UInt32) -> Int:
+def _grid_index(addr: UInt32) -> UInt32:
     """Returns the cell `addr` encodes as a flat lane-first index on the
-    grid, `col * TMEM_NUM_LANES + lane`."""
-    var lane = Int(addr >> _LANE_SHIFT)
-    var col = Int(addr & ((1 << _LANE_SHIFT) - 1))
+    grid, `col * TMEM_NUM_LANES + lane`.
+
+    The index is 32-bit like the address, so view offsets cost the same
+    32-bit adds and shifts as the hand-written address arithmetic they
+    replace.
+    """
+    var lane = addr >> _LANE_SHIFT
+    var col = addr & ((1 << _LANE_SHIFT) - 1)
     return (col << _LANE_BITS) | lane
 
 
 @inline(.always)
-def _encode(grid_index: Int) -> UInt32:
-    """Returns the encoded TMEM address of the cell at flat `grid_index`."""
+def _encode(grid_index: UInt32) -> UInt32:
+    """Returns the address of the cell at flat grid index `grid_index`."""
     var lane = grid_index & (TMEM_NUM_LANES - 1)
     var col = grid_index >> _LANE_BITS
-    return UInt32((lane << _LANE_SHIFT) + col)
+    return (lane << _LANE_SHIFT) | col
 
 
 def _is_lane_run[L: TensorLayout]() -> Bool:
@@ -122,6 +134,99 @@ def _is_lane_run[L: TensorLayout]() -> Bool:
                 return False
             expected *= L.static_shape[i]
     return True
+
+
+comptime _FRAGMENT_COLS_PER_REPEAT = 8
+"""Columns of one lane that one `16x256b` repeat covers: 256 bits of 32-bit
+cells."""
+comptime _FRAGMENT_LANE_PAIR_STRIDE = 8
+"""Lanes between the two rows of a thread's `16x256b` fragment."""
+
+comptime TMem16x256bLayout[num_cols: Int] = TileLayout(
+    shape=Coord(coord[2, 2], Idx[num_cols // _FRAGMENT_COLS_PER_REPEAT]),
+    stride=Coord(
+        coord[TMEM_NUM_LANES, _FRAGMENT_LANE_PAIR_STRIDE],
+        Idx[_FRAGMENT_COLS_PER_REPEAT * TMEM_NUM_LANES],
+    ),
+)
+"""This thread's `16x256b` fragment of a `(16, num_cols)` lane block.
+
+The first mode is a 2 by 2 quad of cells, a column pair (stride one column)
+by two lanes 8 apart; the second mode repeats the quad every 8 columns. The
+offsets are relative to the block base plus the lane and column the hardware
+adds for this thread, and the flat order, column within the pair fastest,
+then lane, then repeat, is the order `tcgen05.ld.16x256b` fills registers in.
+
+Parameters:
+    num_cols: The columns of the block, a multiple of 8.
+"""
+
+
+comptime TMem16x256bRegisters[num_cols: Int] = TileLayout(
+    shape=Coord(coord[2, 2], Idx[num_cols // _FRAGMENT_COLS_PER_REPEAT]),
+    stride=Coord(coord[1, 2], Idx[4]),
+)
+"""The register tile layout for a `TMem16x256bLayout[num_cols]` view.
+
+Same shape as the view, packed in the view's flat order, so copying a
+fragment into a tile with this layout lets a register be addressed by the
+coordinate of its cell, and `copy_from` moves it without reordering.
+
+Parameters:
+    num_cols: The columns of the block, a multiple of 8.
+"""
+
+
+@fieldwise_init
+struct TMemAccessShape(EnumLike, Equatable, TrivialRegisterPassable):
+    """Names a supported `tcgen05.ld` or `tcgen05.st` data movement shape."""
+
+    var _value: Int32
+
+    comptime ROW_32X32B = Self(0)
+    """Selects the 32x32b row access shape."""
+
+    comptime BLOCK_16X256B = Self(1)
+    """Selects the 16x256b block access shape."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "ROW_32X32B".value,
+        "BLOCK_16X256B".value,
+    ].values
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TMemAccessShape has no payload"
+
+
+def _access_shape_for_layout[L: TensorLayout]() -> TMemAccessShape:
+    """Returns the instruction shape selected by this thread's TMEM view."""
+    comptime if _is_lane_run[L]():
+        return TMemAccessShape.ROW_32X32B
+    else:
+        comptime assert L.all_dims_known and L.flat_rank == 3, (
+            "TMemEngine copies need a (1, N) lane row or a"
+            " `tmem_16x256b` view of a (16, N) block"
+        )
+        comptime assert (
+            L.static_shape[0] == 2
+            and L.static_stride[0] == TMEM_NUM_LANES
+            and L.static_shape[1] == 2
+            and L.static_stride[1] == _FRAGMENT_LANE_PAIR_STRIDE
+            and L.static_stride[2] == _FRAGMENT_COLS_PER_REPEAT * TMEM_NUM_LANES
+        ), "TMemEngine: unsupported TMEM data movement layout"
+        return TMemAccessShape.BLOCK_16X256B
 
 
 @inline(.always)
@@ -248,11 +353,11 @@ struct TMemEngine(TensorEngine):
     slice; the `_async` variants issue everything and leave the wait to the
     caller.
 
-    The `tcgen05` access shape is not stored on the engine: its lane count is
-    always 32, one thread per lane, and its bits per lane are the element
-    type's width, so a float32 tile moves in the `32x32b` shape. Only 4-byte
-    element types are supported; two-byte types would need the `pack::16b`
-    path.
+    The `tcgen05` access shape is not stored on the engine; the TMEM operand's
+    layout selects a `TMemAccessShape` case. A `(1, N)` lane row moves in
+    `32x32b`, one thread per lane, and a `TMem16x256bLayout` view, from
+    `tmem_16x256b`, moves in `16x256b`. Only 4-byte element types are
+    supported; two-byte types would need the `pack::16b` path.
     """
 
     comptime element_size = 1
@@ -261,16 +366,34 @@ struct TMemEngine(TensorEngine):
     comptime _BASE_TYPE_NAME: StaticString = "TMemEngine"
     """The unparameterized name of this engine."""
 
-    comptime _DATAPATHS = 32
-    """The lane count of the access shape: one thread per lane, which is what
-    makes a copy mean "this thread's row"."""
+    comptime _ACCESS_SHAPES = ((32, 32), (16, 256))
+    """Data movement shapes indexed by `TMemAccessShape`."""
 
-    comptime _cols_per_repeat[dtype: DType] = (
-        Self._DATAPATHS * bit_width_of[dtype]()
+    comptime _access_shape[shape: TMemAccessShape]: Tuple[Int, Int] = (
+        Self._ACCESS_SHAPES[Int(shape._value)]
+    )
+    """The `tcgen05` shape a copy issues, lanes by bits per lane.
+
+    Parameters:
+        shape: The data movement shape selected by the TMEM view.
+    """
+    comptime _regs_per_unit[shape: TMemAccessShape] = (
+        Self._access_shape[shape][0] * Self._access_shape[shape][1]
     ) // (32 * 32)
-    """Columns one thread receives per unit of the instruction repeat count
-    in the `32x{bits}b` shape whose bits are `dtype`'s width."""
+    """Registers one thread receives per unit of the instruction's repeat
+    count.
 
+    Parameters:
+        shape: The data movement shape selected by the TMEM view.
+    """
+    comptime _cols_per_unit[shape: TMemAccessShape] = Self._access_shape[shape][
+        1
+    ] // 32
+    """Columns of one lane one unit of the repeat count covers.
+
+    Parameters:
+        shape: The data movement shape selected by the TMEM view.
+    """
     comptime _MAX_LOG2_WIDTH = 6
     """Log2 of the most registers one instruction names per thread.
 
@@ -422,31 +545,14 @@ struct TMemEngine(TensorEngine):
         Returns:
             A handle at the cell `offset` positions after `storage`'s.
         """
+        # Sum the components at address width; a view hands over a folded
+        # `ComptimeInt` part and a runtime part, and both fit in 32 bits.
+        var grid_offset = UInt32(0)
+        comptime for i in range(offset_coord.flat_rank):
+            grid_offset += UInt32(Int(offset_coord[i].value()))
         return type_of(storage)(
-            _encode(_grid_index(storage.addr) + _offset_elements(offset_coord))
+            _encode(_grid_index(storage.addr) + grid_offset)
         )
-
-    @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
-    ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the number of grid positions from `other` to `storage`.
-
-        Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' address space parameter.
-
-        Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The signed difference of the two cells' flat grid indices.
-        """
-        return _grid_index(storage.addr) - _grid_index(other.addr)
 
     @staticmethod
     def _check_copy[
@@ -472,58 +578,60 @@ struct TMemEngine(TensorEngine):
         comptime assert (
             TMemLayoutType.static_product == PtrLayoutType.static_product
         ), "TMemEngine copies require matching total element count"
+        comptime access_shape = _access_shape_for_layout[TMemLayoutType]()
+        comptime num_cols = (
+            TMemLayoutType.static_product * Self._cols_per_unit[access_shape]
+        ) // Self._regs_per_unit[access_shape]
         comptime assert (
-            TMemLayoutType.rank == 2
-        ), "TMemEngine tiles are two-dimensional: lanes by columns"
-        comptime assert _is_lane_run[TMemLayoutType](), (
-            "TMemEngine copies address consecutive columns of one lane; tile"
-            " the TMEM tensor down to this thread's (1, N) row view first"
-        )
-        comptime assert (
-            TMemLayoutType.static_product <= TMEM_NUM_COLS
+            num_cols <= TMEM_NUM_COLS
         ), "TMemEngine copies must fit in the columns of one lane"
-        comptime assert (
-            TMemLayoutType.static_product % Self._cols_per_repeat[tmem_dtype]
-            == 0
-        ), "TMemEngine: column count must be a multiple of the shape's width"
 
     @staticmethod
-    def _check_async_fits[num_cols: Int, *, wait: Bool]():
+    def _check_async_fits[num_regs: Int, *, wait: Bool]():
         """Rejects at compile time an async copy wider than one slice.
 
         Without a wait between slices the store side could not reuse its
-        staging registers, so an async copy stages its whole row; capping the
-        row at `_MAX_WIDTH` keeps that footprint within the engine's bound.
+        staging registers, so an async copy stages its whole operand; capping
+        it at `_MAX_WIDTH` registers keeps that footprint within the engine's
+        bound.
         """
-        comptime assert wait or num_cols <= Self._MAX_WIDTH, (
-            "TMemEngine: an async copy stages its whole row and holds"
-            " num_cols registers live, so the row must fit in 64 columns;"
-            " tile a wider row and issue one copy per slice"
+        comptime assert wait or num_regs <= Self._MAX_WIDTH, (
+            "TMemEngine: an async copy stages its whole operand and holds"
+            " its registers live, so it must fit in 64 registers; tile a"
+            " wider view and issue one copy per slice"
         )
 
     @staticmethod
     @inline(.always)
     def _move_chunk[
-        dtype: DType, num_cols: Int, //, width: Int, *, store: Bool
-    ](addr: UInt32, mut buf: Array[Scalar[dtype], num_cols], col: Int):
-        """Issues one `tcgen05.st` from, or `tcgen05.ld` into, `buf[col:col +
-        width]` at `addr + col`, without waiting."""
-        comptime repeat = width // Self._cols_per_repeat[dtype]
-        ref chunk = Pointer(to=buf[col]).unsafe_bitcast[
-            Array[Scalar[dtype], width]
-        ]()[]
+        dtype: DType,
+        num_regs: Int,
+        //,
+        access_shape: TMemAccessShape,
+        units: Int,
+        *,
+        store: Bool,
+    ](addr: UInt32, mut buf: Array[Scalar[dtype], num_regs], unit_off: Int):
+        """Issues one `tcgen05.st` from, or `tcgen05.ld` into, the `units`
+        repeats of `buf` that start at repeat `unit_off`, at the matching
+        column of `addr`, without waiting."""
+        comptime width = units * Self._regs_per_unit[access_shape]
+        var col = unit_off * Self._cols_per_unit[access_shape]
+        ref chunk = Pointer(
+            to=buf[unit_off * Self._regs_per_unit[access_shape]]
+        ).unsafe_bitcast[Array[Scalar[dtype], width]]()[]
         comptime if store:
             tcgen05_st[
-                datapaths=Self._DATAPATHS,
-                bits=bit_width_of[dtype](),
-                repeat=repeat,
+                datapaths=Self._access_shape[access_shape][0],
+                bits=Self._access_shape[access_shape][1],
+                repeat=units,
                 pack=False,
             ](addr + UInt32(col), chunk)
         else:
             chunk = tcgen05_ld[
-                datapaths=Self._DATAPATHS,
-                bits=bit_width_of[dtype](),
-                repeat=repeat,
+                datapaths=Self._access_shape[access_shape][0],
+                bits=Self._access_shape[access_shape][1],
+                repeat=units,
                 dtype=dtype,
                 pack=False,
                 width=width,
@@ -532,23 +640,29 @@ struct TMemEngine(TensorEngine):
     @staticmethod
     @inline(.always)
     def _move_columns[
-        dtype: DType, num_cols: Int, //, *, store: Bool
-    ](addr: UInt32, mut buf: Array[Scalar[dtype], num_cols]):
-        """Moves `num_cols` consecutive columns of this thread's lane between
-        `addr` and `buf`, one instruction per chunk and no wait.
+        dtype: DType,
+        num_regs: Int,
+        //,
+        access_shape: TMemAccessShape,
+        *,
+        store: Bool,
+    ](addr: UInt32, mut buf: Array[Scalar[dtype], num_regs]):
+        """Moves this thread's `num_regs` registers between `addr` and `buf`,
+        one instruction per chunk and no wait.
 
         The ISA accepts power-of-two repeat counts, and the engine caps an
-        instruction at `_MAX_WIDTH` registers, so the columns are covered by
+        instruction at `_MAX_WIDTH` registers, so the repeats are covered by
         full-width chunks first and then by one chunk per set bit of the
         remainder, largest first.
         """
-        comptime cols_per_unit = Self._cols_per_repeat[dtype]
-        comptime units = num_cols // cols_per_unit
-        comptime max_units = Self._MAX_WIDTH // cols_per_unit
+        comptime units = num_regs // Self._regs_per_unit[access_shape]
+        comptime max_units = Self._MAX_WIDTH // Self._regs_per_unit[
+            access_shape
+        ]
         comptime full = units // max_units
         comptime for i in range(full):
-            Self._move_chunk[Self._MAX_WIDTH, store=store](
-                addr, buf, i * Self._MAX_WIDTH
+            Self._move_chunk[access_shape, max_units, store=store](
+                addr, buf, i * max_units
             )
         comptime rem = units - full * max_units
         comptime for b in range(Self._MAX_LOG2_WIDTH - 1, -1, -1):
@@ -557,8 +671,8 @@ struct TMemEngine(TensorEngine):
                 # Larger set bits precede this chunk, so it starts where
                 # the remainder's lower bits (this one included) begin.
                 comptime unit_off = units - (rem & (2 * chunk_units - 1))
-                Self._move_chunk[chunk_units * cols_per_unit, store=store](
-                    addr, buf, unit_off * cols_per_unit
+                Self._move_chunk[access_shape, chunk_units, store=store](
+                    addr, buf, unit_off
                 )
 
     @staticmethod
@@ -622,34 +736,38 @@ struct TMemEngine(TensorEngine):
         Self._check_copy[
             SelfLayoutType, OtherLayoutType, dst_dtype, OtherEngine
         ]()
-        comptime num_cols = SelfLayoutType.static_product
-        Self._check_async_fits[num_cols, wait=wait]()
-        # The TMEM side is a run of columns by `_check_copy`, which the
-        # instruction walks contiguously, so only the pointer side decides
-        # whether the raw walk can widen.
+        comptime access_shape = _access_shape_for_layout[SelfLayoutType]()
+        comptime num_regs = SelfLayoutType.static_product
+        Self._check_async_fits[num_regs, wait=wait]()
+        # The TMEM side is walked by the instruction in the view's flat
+        # order, so only the pointer side decides whether the raw walk can
+        # widen.
         comptime widen = _copy_widen_factor[
             dst_dtype=dst_dtype,
             src_dtype=src_dtype,
             element_size=1,
             dst_row_major=True,
             src_row_major=_layout_row_major[OtherLayoutType](),
-            num_elements=num_cols,
+            num_elements=num_regs,
         ]()
         var ptr = OtherEngine.unsafe_ptr(other[0])
         comptime if wait:
-            comptime for s in range(ceildiv(num_cols, Self._MAX_WIDTH)):
+            comptime for s in range(ceildiv(num_regs, Self._MAX_WIDTH)):
                 comptime start = s * Self._MAX_WIDTH
-                comptime cols = min(Self._MAX_WIDTH, num_cols - start)
-                var buf = Array[Scalar[dst_dtype], cols](uninitialized=True)
+                comptime regs = min(Self._MAX_WIDTH, num_regs - start)
+                comptime col = (
+                    start // Self._regs_per_unit[access_shape]
+                ) * Self._cols_per_unit[access_shape]
+                var buf = Array[Scalar[dst_dtype], regs](uninitialized=True)
                 _gather[widen=widen, start=start](ptr, other[1], buf)
-                Self._move_columns[store=True](
-                    storage[0].addr + UInt32(start), buf
+                Self._move_columns[access_shape, store=True](
+                    storage[0].addr + UInt32(col), buf
                 )
                 tcgen05_store_wait()
         else:
-            var buf = Array[Scalar[dst_dtype], num_cols](uninitialized=True)
+            var buf = Array[Scalar[dst_dtype], num_regs](uninitialized=True)
             _gather[widen=widen, start=0](ptr, other[1], buf)
-            Self._move_columns[store=True](storage[0].addr, buf)
+            Self._move_columns[access_shape, store=True](storage[0].addr, buf)
 
     @staticmethod
     @inline(.always)
@@ -692,30 +810,34 @@ struct TMemEngine(TensorEngine):
         Self._check_copy[
             SelfLayoutType, OtherLayoutType, src_dtype, OtherEngine
         ]()
-        comptime num_cols = SelfLayoutType.static_product
-        Self._check_async_fits[num_cols, wait=wait]()
+        comptime access_shape = _access_shape_for_layout[SelfLayoutType]()
+        comptime num_regs = SelfLayoutType.static_product
+        Self._check_async_fits[num_regs, wait=wait]()
         comptime widen = _copy_widen_factor[
             dst_dtype=dst_dtype,
             src_dtype=src_dtype,
             element_size=1,
             dst_row_major=_layout_row_major[OtherLayoutType](),
             src_row_major=True,
-            num_elements=num_cols,
+            num_elements=num_regs,
         ]()
         var ptr = OtherEngine.unsafe_ptr(other[0])
         comptime if wait:
-            comptime for s in range(ceildiv(num_cols, Self._MAX_WIDTH)):
+            comptime for s in range(ceildiv(num_regs, Self._MAX_WIDTH)):
                 comptime start = s * Self._MAX_WIDTH
-                comptime cols = min(Self._MAX_WIDTH, num_cols - start)
-                var buf = Array[Scalar[src_dtype], cols](uninitialized=True)
-                Self._move_columns[store=False](
-                    storage[0].addr + UInt32(start), buf
+                comptime regs = min(Self._MAX_WIDTH, num_regs - start)
+                comptime col = (
+                    start // Self._regs_per_unit[access_shape]
+                ) * Self._cols_per_unit[access_shape]
+                var buf = Array[Scalar[src_dtype], regs](uninitialized=True)
+                Self._move_columns[access_shape, store=False](
+                    storage[0].addr + UInt32(col), buf
                 )
                 tcgen05_load_wait()
                 _scatter[widen=widen, start=start](ptr, other[1], buf)
         else:
-            var buf = Array[Scalar[src_dtype], num_cols](uninitialized=True)
-            Self._move_columns[store=False](storage[0].addr, buf)
+            var buf = Array[Scalar[src_dtype], num_regs](uninitialized=True)
+            Self._move_columns[access_shape, store=False](storage[0].addr, buf)
             _scatter[widen=widen, start=0](ptr, other[1], buf)
 
     @staticmethod
@@ -751,8 +873,8 @@ struct TMemEngine(TensorEngine):
         up to 64 columns is one slice with a single `tcgen05.wait::st`; a
         wider row moves in 64-column slices, each waited on, so at most 64
         staging registers are live at once. `storage` must be a warp-base
-        handle whose layout addresses consecutive columns of one lane, such as
-        row 0 of a warp's `(32, N)` tile.
+        handle whose layout is a `(1, N)` row of a warp's tile, such as its row
+        0, or a `tmem_16x256b` view.
 
         Parameters:
             SelfLayoutType: The layout type of the destination storage.
@@ -867,9 +989,8 @@ struct TMemEngine(TensorEngine):
         to 64 columns is one slice with a single `tcgen05.wait::ld`; a wider
         row moves in 64-column slices, each loaded, waited on and written
         before the next, so at most 64 staging registers are live at once.
-        `storage` must be a warp-base handle whose layout addresses
-        consecutive columns of one lane, such as row 0 of a warp's `(32, N)`
-        tile.
+        `storage` must be a warp-base handle whose layout is a `(1, N)` row of
+        a warp's tile, such as its row 0, or a `tmem_16x256b` view.
 
         Parameters:
             SelfLayoutType: The layout type of the source storage.
@@ -955,6 +1076,77 @@ struct TMemEngine(TensorEngine):
             OtherEngine=OtherEngine,
             wait=False,
         ](storage, other)
+
+
+@inline(.always)
+def tmem_16x256b(
+    block: TileTensor[Engine=TMemEngine, ...],
+) -> TileTensor[
+    block.dtype,
+    type_of(TMem16x256bLayout[type_of(block).static_shape[1]]),
+    block.origin,
+    Engine=TMemEngine,
+    address_space=block.address_space,
+]:
+    """Returns this thread's `16x256b` fragment view of a `(16, N)` lane block.
+
+    The view keeps the block's storage, the collective base the instruction
+    takes, and lays `TMem16x256bLayout[N]` over it. Copying it into an
+    `N / 2`-element register tile issues `tcgen05.ld.16x256b`, copying a
+    register tile into it issues `tcgen05.st.16x256b`, and the registers
+    follow the layout's flat order.
+
+    Args:
+        block: A `(16, N)` block of a warp's `(32, N)` TMEM tile, such as
+            `warp_tile.tile[16, N](coord[half, 0])`.
+
+    Returns:
+        The fragment view over the block's storage.
+    """
+    comptime L = type_of(block).LayoutType
+    comptime assert (
+        L.all_dims_known
+        and L.flat_rank == 2
+        and L.static_shape[0] == 2 * _FRAGMENT_LANE_PAIR_STRIDE
+        and L.static_stride[0] == 1
+        and L.static_stride[1] == TMEM_NUM_LANES
+    ), "tmem_16x256b takes a (16, N) lane block of a warp's TMEM tile"
+    comptime assert (
+        L.static_shape[1] % _FRAGMENT_COLS_PER_REPEAT == 0
+    ), "a 16x256b fragment covers columns in groups of 8"
+    return {block._storage, TMem16x256bLayout[L.static_shape[1]]}
+
+
+@inline(.always)
+def tmem_cell(
+    view: TileTensor[Engine=TMemEngine, ...], coord: Coord
+) -> Tuple[Int, Int]:
+    """Returns the lane and column this thread's element at `coord` of a TMEM
+    view occupies.
+
+    The view's layout gives the cell relative to its base; the hardware adds
+    this thread's placement, which depends on the access shape the layout
+    selects: lane `t` for a `(1, N)` row of a warp tile, and lane `t // 4`,
+    column `2 * (t % 4)` for a `tmem_16x256b` view. This is the one place
+    that placement is written down.
+
+    Args:
+        view: A row view or fragment view with a warp-base storage.
+        coord: A coordinate of the view.
+
+    Returns:
+        The `(lane, column)` pair on the TMEM grid.
+    """
+    comptime L = type_of(view).LayoutType
+    comptime access_shape = _access_shape_for_layout[L]()
+    var base = _grid_index(view._storage.addr) + UInt32(Int(view.layout(coord)))
+    var lane = base & (TMEM_NUM_LANES - 1)
+    var col = base >> _LANE_BITS
+    var thread = UInt32(lane_id())
+    comptime if access_shape == TMemAccessShape.BLOCK_16X256B:
+        return (Int(lane + thread // 4), Int(col + 2 * (thread % 4)))
+    else:
+        return (Int(lane + thread), Int(col))
 
 
 @inline(.always)

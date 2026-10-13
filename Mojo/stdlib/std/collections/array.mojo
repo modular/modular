@@ -41,7 +41,7 @@ from std.collections import check_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
 from std.hashlib.hasher import Hasher
-from std.sys import is_gpu, size_of
+from std.sys import size_of
 from std.memory import (
     MaybeUninit,
     forget_deinit,
@@ -268,6 +268,12 @@ struct Array[T: AnyType, length: Int](
         **lexicographically**: elements compare pairwise and the first differing
         pair decides the result.
     """
+
+    # Exposes the generic parameters so `test_utils.cabi_check` can recover
+    # an array field's element type and length from a reflected field type,
+    # see `_ArrayMarker` there.
+    comptime _cabi_element_type: AnyType = Self.T
+    comptime _cabi_length: Int = Self.length
 
     comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
     comptime __copy_ctor_is_trivial: Bool = IsTriviallyCopyable[Self.T]

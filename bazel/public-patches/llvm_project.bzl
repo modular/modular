@@ -2,7 +2,6 @@
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@llvm-raw//utils/bazel:configure.bzl", _llvm_configure = "llvm_configure")
-load("@llvm-raw//utils/bazel:linux_uapi.bzl", "linux_uapi_setup")
 
 # Mirrors the pyyaml repo that upstream's own llvm_repos_extension defines, so
 # that @pyyaml//:yaml resolves from the generated llvm-project repo.
@@ -20,6 +19,21 @@ py_library(
     srcs = glob(["yaml/*.py"]),
 )
 """
+
+# Stands in for upstream's linux_uapi_setup, which downloads a Debian package
+# (llvm/llvm-project#216868) that our downloader config blocks. Only label
+# resolution needs this repo, never its headers.
+def _linux_uapi_stub_impl(repository_ctx):
+    repository_ctx.file("BUILD.bazel", """\
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "linux_uapi_headers",
+    visibility = ["//visibility:public"],
+)
+""")
+
+_linux_uapi_stub = repository_rule(implementation = _linux_uapi_stub_impl)
 
 BACKENDS = [
     "AArch64",
@@ -41,7 +55,7 @@ def _llvm_project_impl(module_ctx):
     # labels: libc:hdrgen entered the transitive closure in this LLVM bump
     # (llvm/llvm-project#218992, #218993), and the @linux_uapi reference sits in
     # a select() branch, which Bazel resolves whether or not it is selected.
-    linux_uapi_setup(name = "linux_uapi")
+    _linux_uapi_stub(name = "linux_uapi")
     http_archive(
         name = "pyyaml",
         build_file_content = _PYYAML_CONTENT,

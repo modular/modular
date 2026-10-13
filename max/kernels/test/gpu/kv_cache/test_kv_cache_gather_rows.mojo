@@ -24,7 +24,7 @@ from std.random import randn_float64, random_ui64, seed
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.kv_cache_gather import kv_cache_gather_rows_ragged
 

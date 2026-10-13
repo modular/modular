@@ -19,7 +19,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, Idx, TileTensor, row_major
-from nn.normalization import rms_norm_rope
+from builtin_kernels.rowwise_normalization import rms_norm_rope
 
 from std.utils.index import Index, IndexList
 

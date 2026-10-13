@@ -31,16 +31,13 @@ from kv_cache.types import KVCacheT, PagedKVCacheCollection
 from layout import (
     Coord,
     CoordLike,
-    Idx,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.fused_qk_rope import rope_value
 from nn.rope import get_safetensors_idx
-from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -150,9 +147,8 @@ def _rope_split_store_ragged_impl[
     }:
         comptime simd_width = width
         comptime assert idx_arg.rank == 2
-        var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
-        var global_token_idx = idx[0]
-        var col = idx[1]
+        var global_token_idx = Int(idx_arg[0].value())
+        var col = Int(idx_arg[1].value())
 
         # Guard: simd_width >= 2 is guaranteed by the comptime assert after
         # this function. We wrap in comptime if because elementwise
@@ -550,10 +546,10 @@ def _rope_split_store_ragged_with_position_ids[
         ]() else simd_width_of[dtype, target=get_gpu_target()]()
     )
     comptime kernel_simd_width = gcd(target_simd_width, head_size)
-    comptime if mrope_section:
-        comptime for i in range(len(mrope_section.value())):
+    comptime if case .Some(sections) = mrope_section:
+        comptime for i in range(len(sections)):
             comptime assert (
-                Int(mrope_section.value()[i].value()) % kernel_simd_width == 0
+                Int(sections[i].value()) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     var pos_ids_ptr = position_ids.ptr
@@ -562,10 +558,10 @@ def _rope_split_store_ragged_with_position_ids[
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
     ) {var pos_ids_ptr, var pos_ids_stride} -> Int:
-        comptime if mrope_section:
+        comptime if case .Some(sections) = mrope_section:
             var section_idx = 0
-            comptime for i in range(len(mrope_section.value())):
-                comptime val = Int(mrope_section.value()[i].value())
+            comptime for i in range(len(sections)):
+                comptime val = Int(sections[i].value())
                 if dim_idx < val:
                     section_idx = i
                     break

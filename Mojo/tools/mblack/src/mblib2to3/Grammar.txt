@@ -92,7 +92,8 @@ vfplist: vfpdef (',' vfpdef)* [',']
 stmt: simple_stmt | compound_stmt
 simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 small_stmt: (expr_stmt | print_stmt | del_stmt | pass_stmt | flow_stmt |
-             import_stmt | global_stmt | exec_stmt | assert_stmt)
+             import_stmt | global_stmt | exec_stmt | assert_stmt |
+             enum_case_stmt)
 expr_stmt: testlist_star_expr_stmt (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*)
 top_expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -141,8 +142,9 @@ comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEW
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt | comptime_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
-if_stmt: 'if' namedexpr_test ':' suite ('elif' namedexpr_test ':' suite)* ['else' ':' suite]
-while_stmt: 'while' namedexpr_test ':' suite ['else' ':' suite]
+if_stmt: 'if' if_condition ':' suite ('elif' if_condition ':' suite)* ['else' ':' suite]
+if_condition: namedexpr_test | "case" patterns '=' namedexpr_test
+while_stmt: 'while' if_condition ':' suite ['else' ':' suite]
 for_stmt: 'for' exprlist 'in' testlist_star_expr ':' suite ['else' ':' suite]
 try_stmt: ('try' ':' suite
            ((except_clause ':' suite)+
@@ -199,7 +201,7 @@ and_expr: shift_expr ('&' shift_expr)*
 shift_expr: arith_expr (('<<'|'>>') arith_expr)*
 arith_expr: term (('+'|'-') term)*
 term: factor (('*'|'@'|'/'|'%'|'//') factor)*
-factor: ('+'|'-'|'~') factor | power
+factor: ('+'|'-'|'~'|'==') factor | power
 power: [AWAIT] atom trailer* ['**' factor]
 # Contextually inferred member references (`.member`) are atoms so they parse
 # wherever an expression is expected: call args, subscripts, annotations, etc.
@@ -240,11 +242,11 @@ type_and_expr: type_shift_expr ('&' type_shift_expr)*
 type_shift_expr: type_arith_expr (('<<'|'>>') type_arith_expr)*
 type_arith_expr: type_term (('+'|'-') type_term)*
 type_term: type_factor (('*'|'@'|'/'|'%'|'//') type_factor)*
-type_factor: ('+'|'-'|'~') type_factor | type_power
+type_factor: ('+'|'-'|'~'|'==') type_factor | type_power
 type_power: [AWAIT] type_atom trailer* ['**' factor]
 type_atom: functype | generatortype | atom
 
-classdef: STRUCT NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
+classdef: (STRUCT | ENUM) NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 typeconvexpr: atom trailer* | functype | generatortype
 typeconv: (['*'|VAR|IMM|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
@@ -307,7 +309,8 @@ yield_arg: 'from' test | testlist_star_expr
 
 # 3.10 match statement definition
 #
-# Soft keywords use double quotes ("match", "case", "__match").
+# Pattern-matching soft keywords use double quotes. Keep "__match" for
+# deprecated-source compatibility.
 #
 # Two layouts are accepted after the subject colon:
 #   1. Indented: NEWLINE INDENT case_block+ DEDENT
@@ -338,3 +341,8 @@ case_block: "case" patterns [guard] ':' suite
 guard: 'if' namedexpr_test
 patterns: pattern (',' pattern)* [',']
 pattern: (expr|star_expr) ['as' expr]
+
+# An `__enum` case. As a small_stmt it takes a doc string and `;` as a field
+# does; the compiler rejects it outside an `__enum`. "case" stays a soft
+# keyword: no expression statement starts with two names.
+enum_case_stmt: "case" NAME ['(' [arglist] ')']

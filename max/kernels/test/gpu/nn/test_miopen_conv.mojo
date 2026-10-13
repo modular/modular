@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, TileTensor, row_major
 from layout._fillers import random
 from nn.conv.conv import conv_miopen
 

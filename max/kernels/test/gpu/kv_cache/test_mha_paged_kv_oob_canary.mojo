@@ -31,7 +31,7 @@ from std.random import seed
 from std.sys.defines import get_defined_int
 from std.utils.numerics import max_or_inf
 
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from max.gpu.host import DeviceContext

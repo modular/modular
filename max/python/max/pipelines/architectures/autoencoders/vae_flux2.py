@@ -727,8 +727,12 @@ def interpolate_2d_nearest(
 ) -> TensorValue:
     """Upsample a 2D tensor using nearest-neighbor interpolation.
 
-    Workaround using reshape + broadcast because ``ops.resize`` does not
-    support NEAREST mode.  Only ``scale_factor=2`` is implemented.
+    Delegates to ``ops.resize_nearest`` with the asymmetric transform and
+    floor rounding, which at an exact 2x scale maps each output coordinate
+    to ``out_coord // 2`` -- the same replication the old hand-rolled
+    reshape + broadcast expansion produced. The resize kernel's
+    integer-scale fast path makes this as cheap as the broadcast trick.
+    Only ``scale_factor=2`` is implemented.
 
     Args:
         x: Input tensor of shape ``[N, C, H, W]`` (NCHW).
@@ -745,22 +749,12 @@ def interpolate_2d_nearest(
         )
 
     n, c, h, w = x.shape
-    target_shape = [n, c, h * scale_factor, w * scale_factor]
-
-    # [N, C, H, W] -> [N, C, H, 1, W, 1]
-    x_reshaped = ops.reshape(x, [n, c, h, 1, w, 1])
-
-    ones_scalar = ops.constant(1.0, dtype=x.dtype, device=x.device)
-    ones = ops.broadcast_to(
-        ones_scalar,
-        [1, 1, 1, scale_factor, 1, scale_factor],
+    return ops.resize_nearest(
+        x,
+        [n, c, h * scale_factor, w * scale_factor],
+        coordinate_transform_mode=2,
+        round_mode=2,
     )
-
-    # [N, C, H, 1, W, 1] * [1, 1, 1, 2, 1, 2] -> [N, C, H, 2, W, 2]
-    x_expanded = x_reshaped * ones
-
-    # [N, C, H, 2, W, 2] -> [N, C, H*2, W*2]
-    return ops.reshape(x_expanded, target_shape)
 
 
 class Upsample2D(Module):

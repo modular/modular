@@ -14,7 +14,6 @@
 from std.atomic import Atomic, Ordering, fence
 
 from std.compile import compile_info
-from std.sys import CompilationTarget
 from std.testing import TestSuite, assert_false, assert_true
 
 from max.gpu.host import get_gpu_target

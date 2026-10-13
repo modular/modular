@@ -27,7 +27,7 @@ import importlib
 import pathlib
 import time
 from collections.abc import Awaitable, Coroutine
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -89,11 +89,6 @@ def _ensure_discovered() -> None:
 def get_all_scenarios() -> dict[str, type[BaseScenario]]:
     _ensure_discovered()
     return dict(_SCENARIO_REGISTRY)
-
-
-def get_scenario(name: str) -> type[BaseScenario]:
-    _ensure_discovered()
-    return _SCENARIO_REGISTRY[name]
 
 
 # ---------------------------------------------------------------------------

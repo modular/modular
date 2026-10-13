@@ -330,6 +330,10 @@ public:
   /// This emits an error and returns null if emission fails.
   Value emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
+  /// Warn when `value` is a transfer out of a variable that is about to
+  /// be borrowed rather than consumed.
+  void warnIfTransferIsOnlyBorrowed(ASTExprAnd<AnyValue> value);
+
   //===--------------------------------------------------------------------===//
   // Function Calls
 
@@ -338,12 +342,19 @@ public:
   /// failure.
   CValue emitIndirectCall(CValue callee, CallOperands &&operands);
 
-  /// Emit an indirect call to a resolved value in a try block, invoking a
-  /// callback to generate logic in the 'catch' block that is wrapped around the
-  /// call. This ensures that the ExprDest is updated and live after the try
-  /// block, which only works if the "catch" logic doesn't fall through.
+  /// Emit a call to `callee` in a try block, invoking a callback to generate
+  /// logic in the 'catch' block that is wrapped around the call. This ensures
+  /// that the ExprDest is updated and live after the try block, which only
+  /// works if the "catch" logic doesn't fall through.
   ///
   /// This emits an error and returns null on failure.
+  CValue
+  emitCallInTryBlock(CValue callee, CallOperands &&operands,
+                     function_ref<CValue(CallOperands &&)> emitCall,
+                     std::function<void(VarDeclOp errDecl)> emitCatchLogic);
+
+  /// Emit an indirect call to a resolved value in a try block. See
+  /// `emitCallInTryBlock`.
   CValue emitIndirectCallInTryBlock(
       CValue callee, CallOperands &&operands,
       std::function<void(VarDeclOp errDecl)> emitCatchLogic);
@@ -578,6 +589,9 @@ public:
   /// Emit a `Int`-typed value from an `index` value.
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprDest &dest);
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprContext context);
+
+  /// Emit an `Int`-typed value from a C++ integer.
+  CValue emitInt(int64_t value, llvm::SMLoc loc, ExprContext context);
 
   /// Given an expression that can be used in `origin_of` or a ref expression,
   /// analyze it to determine which origin it represents.  If it doesn't work,

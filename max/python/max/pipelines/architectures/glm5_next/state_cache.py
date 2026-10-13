@@ -119,7 +119,7 @@ def state_regions(
     ring.
 
     Args:
-        num_kda_layers: KDA layers, i.e. ``len(config.kda_layers)``.
+        num_kda_layers: KDA layers; that is, ``len(config.kda_layers)``.
         num_heads: KDA heads across all devices.
         head_dim: Per-head width, shared by both KDA state axes.
         conv_kernel_dim: Causal conv kernel size; the window is one less.

@@ -32,7 +32,7 @@ from max.gpu.host import (
 from std.collections.optional import OptionalReg
 from std.ffi import c_size_t, external_call
 from std.logger import Logger
-from std.sys import align_of, bit_width_of, size_of, CompilationTarget
+from std.sys import align_of, bit_width_of, size_of
 from std.memory import unsafe_memcpy
 from std.memory.unsafe import bitcast
 from std.reflection import call_location, SourceLocation
@@ -51,7 +51,6 @@ from max.gpu.host.device_context import (
     _check_dim,
     _checked,
     _CString,
-    _DeviceBufferMode,
     _DeviceBufferPtr,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
@@ -234,6 +233,27 @@ struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
         )
 
 
+@fieldwise_init
+struct StableAddr(TrivialRegisterPassable):
+    """Identifies a stable address slot.
+
+    A slot is a graph-lifetime location in device memory holding one device data
+    pointer. The slot's own address never changes, so a recorded graph may bake
+    it in; its contents are the value the graph most recently replayed through
+    `DeviceGraph.replay_collective()` published with
+    `DeviceGraphBuilder.place_stable()`. A view over a slot must therefore read
+    the data pointer when it is used rather than when it is constructed; see
+    `StableTensor` in the `extensibility` package.
+
+    Both pointer layers are device addresses. The slot lives in device memory
+    so that graphs on other devices can read it, and it holds a device data
+    pointer. Neither layer may be dereferenced on the host.
+    """
+
+    var ptr: Pointer[Pointer[NoneType, MutUntrackedOrigin], ImmUntrackedOrigin]
+    """Device address of the slot; the slot holds the device data pointer."""
+
+
 struct DeviceGraphCache(Movable):
     """Holds the device graphs a model has already built, keyed for reuse.
 
@@ -255,6 +275,11 @@ struct DeviceGraphCache(Movable):
     by the context's pointer identity. Each pool retains its C++ context, so a
     key's referent stays alive for as long as its entry does."""
 
+    var _stable: Dict[String, List[DeviceBuffer[DType.uint64]]]
+    """Stable address slots, one list per collective keyed by the collective's
+    identity. Each slot is a one-pointer device buffer; the cache owns them so
+    they outlive every graph variant that bakes in their addresses."""
+
     var _lock: BlockingSpinLock
     """Lock used to allow safe mutation of this structure in a concurrent
     context. The general assumption this type makes is that locks are held for
@@ -264,6 +289,7 @@ struct DeviceGraphCache(Movable):
         """Creates an empty cache."""
         self._cache = {}
         self._pools = {}
+        self._stable = {}
         self._lock = BlockingSpinLock()
 
     @staticmethod
@@ -340,9 +366,9 @@ struct DeviceGraphCache(Movable):
     ) -> String:
         var key = Self._closure_key(build)
 
-        if ctx:
+        if case .Some(ctx) = ctx:
             try:
-                key.write(t"Device({ctx.value().id()})", "|")
+                key.write(t"Device({ctx.id()})", "|")
             except e:
                 pass
 
@@ -422,6 +448,81 @@ struct DeviceGraphCache(Movable):
             var pool = DeviceGraphMemoryPool(ctx)
             self._pools[key] = pool
             return pool^
+
+    @doc_hidden
+    def get_or_create_stable_slots[
+        N: Int
+    ](
+        mut self,
+        key: String,
+        ctxs: Array[DeviceContext, N],
+        devices: List[Int],
+    ) raises -> List[StableAddr]:
+        """Returns the stable address slots of a collective, allocating them on
+        first use.
+
+        Every graph variant of one collective must agree on its slots: a graph
+        on one device bakes in the addresses of slots that graphs on other
+        devices publish into, whichever variant of those graphs happens to
+        run. The table is therefore keyed by the collective's identity rather
+        than by its inputs, and lives as long as the cache.
+
+        Parameters:
+            N: Number of device contexts in the collective.
+
+        Args:
+            key: Identity of the collective.
+            ctxs: The collective's device contexts.
+            devices: For each slot, the index into `ctxs` of the device whose
+                memory holds it.
+
+        Returns:
+            One slot per entry of `devices`.
+
+        Raises:
+            If a device index is out of range or allocating a slot fails.
+        """
+        with BlockingScopedLock(self._lock):
+            var found = self._stable.find(key)
+            if found:
+                return Self._slots_of(found.take())
+
+        # Allocate outside the lock. A caller that missed at the same time may
+        # insert first, in which case its slots win, matching `cache()`.
+        var buffers = List[DeviceBuffer[DType.uint64]]()
+        for device in devices:
+            if device < 0 or device >= N:
+                raise Error(
+                    String(
+                        t"stable slot device index {device} is out of range"
+                        t" for a collective of {N} device(s)"
+                    )
+                )
+            buffers.append(ctxs[device].enqueue_create_buffer[DType.uint64](1))
+
+        with BlockingScopedLock(self._lock):
+            var existing = self._stable.find(key)
+            if existing:
+                return Self._slots_of(existing.take())
+            var slots = Self._slots_of(buffers)
+            self._stable[key] = buffers^
+            return slots^
+
+    @staticmethod
+    def _slots_of(
+        buffers: List[DeviceBuffer[DType.uint64]],
+    ) -> List[StableAddr]:
+        var slots = List[StableAddr](capacity=len(buffers))
+        for i in range(len(buffers)):
+            var buffer = buffers[i]
+            slots.append(
+                StableAddr(
+                    buffer.unsafe_ptr()
+                    .unsafe_bitcast[Pointer[NoneType, MutUntrackedOrigin]]()
+                    .unsafe_origin_cast[MutUntrackedOrigin]()
+                )
+            )
+        return slots^
 
 
 trait DeviceGraphInput(ImplicitlyCopyable):
@@ -578,7 +679,19 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
     def replay_collective[
         N: Int
     ](graphs: Array[DeviceGraph, N], ctxs: Array[DeviceContext, N],) raises:
-        """Replays the graphs of a collective.
+        """Replays the graphs of a collective, publishing their stable
+        addresses first.
+
+        Every graph's `DeviceGraphBuilder.place_stable()` values are written
+        into their slots, each device's stream is made to wait on every other
+        device's writes, and then every graph is replayed. The waits are
+        device-side events rather than host synchronization, so the publishes
+        overlap with each other. The call returns only after every context
+        has finished its replay, unlike `replay()`, which is asynchronous.
+
+        This mirrors the MGP `mgp_device_graph_collective_execute` primitive
+        implemented in C++, which host-synchronizes between the publishes and
+        the replays instead.
 
         Parameters:
             N: Number of graphs in the collective.
@@ -594,10 +707,44 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
             synchronizing a context fails.
         """
         for graph in graphs:
+            graph._patch_stable_addresses()
+
+        # Each device must wait for all other devices to complete the
+        # address patching process.
+        for i in range(N):
+            for j in range(N):
+                if i != j:
+                    ctxs[i].enqueue_wait_for(ctxs[j])
+
+        for graph in graphs:
             graph.replay()
 
         for ctx in ctxs:
             ctx.synchronize()
+
+    def _patch_stable_addresses(self) raises:
+        """Enqueues the writes that publish this graph's
+        [`DeviceGraphBuilder.place_stable()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#place_stable)
+        values into their stable address slots.
+
+        The writes are asynchronous on this graph's device context. Because a
+        graph on another device may read a slot as soon as it launches, call
+        this for every graph of a collective and synchronize the contexts that
+        published before replaying any of them. A graph that publishes nothing
+        does nothing here.
+
+        Raises:
+            If a slot write cannot be enqueued.
+        """
+        # const char *AsyncRT_DeviceGraph_patchStableAddresses(
+        #     DeviceGraph *graph)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraph_patchStableAddresses",
+                _CString[],
+                _DeviceGraphPtr[mut=True],
+            ](self._handle)
+        )
 
     @staticmethod
     def create_collective[
@@ -608,6 +755,8 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         build_for: Some[def[n: Int](mut DeviceGraphBuilder[_]) raises],
         key_for: Some[def[n: Int]() raises -> String],
         cache: Pointer[mut=True, DeviceGraphCache, _],
+        *,
+        stable_devices: List[Int] = [],
     ) raises -> Array[DeviceGraph, N]:
         """Builds a `DeviceGraph` for every device in `ctxs` against a shared
         cache.
@@ -616,6 +765,15 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         `build_for[i]` on `ctxs[i]` and consults `cache` for a matching entry.
         On a hit the cached graph is returned and `build_for[i]` is never
         called.
+
+        The graphs exchange values through stable address slots, which the cache
+        owns and every variant of the collective shares (see
+        `DeviceGraphCache.get_or_create_stable_slots()`). The slots are
+        installed on each builder before `build_for[i]` runs, so the callback
+        may reach them with `DeviceGraphBuilder.get_stable()` and
+        `DeviceGraphBuilder.place_stable()`. Replay the returned graphs with
+        `DeviceGraph.replay_collective()`, which publishes every slot's value
+        and orders the publishes ahead of every graph's launch.
 
         Parameters:
             N: Number of device contexts, and the resulting graph count.
@@ -629,6 +787,9 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
                 cache key. This function is generated by the graph compiler
                 based on the computed interface of the device graph.
             cache: The cache to consult and store newly built graphs in.
+            stable_devices: For each stable address slot the graphs may
+                reference by index, the index into `ctxs` of the device whose
+                memory holds it. Empty when the collective uses no slots.
 
         Returns:
             One instantiated `DeviceGraph` per entry of `ctxs`, in the same
@@ -682,6 +843,14 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         """
         var result = Array[Optional[DeviceGraph], N]()
 
+        # Slots are keyed by the collective alone: every device's graph, in
+        # every variant, must see the same addresses.
+        var slots = List[StableAddr]()
+        if len(stable_devices) > 0:
+            slots = cache[].get_or_create_stable_slots(
+                DeviceGraphCache._closure_key(build_for), ctxs, stable_devices
+            )
+
         comptime for i in range(N):
             var ctx = ctxs[i]
             var key = DeviceGraphCache._closure_key(build_for)
@@ -689,6 +858,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
             key.write(key_for[i]())
 
             def build(mut b: DeviceGraphBuilder[_]) raises {imm}:
+                b._set_stable_slots(slots.copy())
                 build_for[i](b)
 
             # Caching of command buffers can easily exceed the maximum number of
@@ -998,16 +1168,55 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     `AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone` returns for an empty graph.
     """
 
+    var _stable: List[StableAddr]
+    """The stable address slots this graph may reference by index; installed
+    by `DeviceGraph.create_collective()` before the build callback runs."""
+
+    var _recording_ctx: DeviceContext
+    """The one recording context this builder hands out. The emitted kernel
+    wrappers request a context per kernel, but builds are sequential and only
+    one is ever live, so `recording_context()` reseats this context's chain
+    root instead of constructing a fresh one each call."""
+
     @doc_hidden
     def __init__(
         out self,
         handle: _DeviceGraphBuilderPtr[mut=True],
         ctx: DeviceContext,
-    ):
+    ) raises:
         self._handle = handle
         self._ctx = ctx
         self._implicit_deps = []
         self._region_floor = None
+        self._stable = []
+
+        # The sentinel seed is never read: `recording_context()` reseats the
+        # chain root before every hand-out.
+        var result: _DeviceContextPtr[mut=True] = {}
+        # const char *AsyncRT_DeviceGraphBuilder_recordingContext(
+        #     DeviceContext **result, DeviceGraphBuilder *builder,
+        #     int32_t seedNodeId)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_recordingContext",
+                _CString[],
+                Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                _DeviceGraphBuilderPtr[mut=True],
+                Int32,
+            ](
+                Pointer(to=result),
+                handle,
+                Int32(-1),
+            )
+        )
+        # `checkRef` transferred ownership of the fresh reference to us, so the
+        # stored context must release it on destruction.
+        self._recording_ctx = DeviceContext(ctx_ptr=result)
+        self._recording_ctx._owning = True
+
+    @doc_hidden
+    def _set_stable_slots(mut self, var slots: List[StableAddr]):
+        self._stable = slots^
 
     @inline(.always)
     def context(self) -> DeviceContext:
@@ -1041,41 +1250,49 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             A `DeviceContext` that records into this builder.
 
         Raises:
-            If the backing driver fails to create the recording context.
+            If adding the seed node or reseating the recording context's chain
+            root fails.
         """
         # Dependency tracking lives on the Mojo builder (`_implicit_deps` and
-        # `region` scopes); the C++ builder does not model it. Materialize the
-        # current implicit predecessor as a single empty "seed" node — its
-        # dependencies come from `_merge_implicit` inside `add_empty` — and hand
-        # that node across the boundary. Operations recorded through the
-        # returned context chain after the seed, so they respect whatever
-        # `region` scope is active when `recording_context` is called. Those
-        # recorded nodes land in the same id space, so the last of them becomes
-        # the chain predecessor a later `add_*` in the same scope picks up,
-        # which keeps the scope serial across the boundary.
-        var seed = self.add_empty()
-        var result: _DeviceContextPtr[mut=True] = {}
-        # const char *AsyncRT_DeviceGraphBuilder_recordingContext(
-        #     DeviceContext **result, DeviceGraphBuilder *builder,
-        #     int32_t seedNodeId)
+        # `region` scopes); the C++ builder does not model it. Hand the current
+        # implicit predecessor across the boundary as a single "seed" node.
+        # Operations recorded through the returned context chain after the
+        # seed, so they respect whatever `region` scope is active when
+        # `recording_context` is called. Those recorded nodes land in the same
+        # id space, so the last of them becomes the chain predecessor a later
+        # `add_*` in the same scope picks up, which keeps the scope serial
+        # across the boundary.
+        #
+        # A single predecessor is the seed directly; only a predecessor set
+        # that is empty or fans in from several nodes needs an empty node to
+        # collapse it. The common case — the next kernel wrapper inside a
+        # region — chains straight after the previous node, so a build is not
+        # littered with one empty node per wrapper.
+        #
+        # The context itself is memoized on the builder: every call reseats the
+        # chain root of the one stored recording context rather than
+        # constructing a fresh one, so two hand-outs never chain after each
+        # other's nodes by accident.
+        var deps = self._merge_implicit([])
+        var seed: Self.Node
+        if len(deps) == 1:
+            seed = deps[0]
+        else:
+            seed = self.add_empty()
+        # const char *AsyncRT_DeviceContext_reseedRecording(
+        #     DeviceContext *ctx, int32_t seedNodeId)
         _checked(
             external_call[
-                "AsyncRT_DeviceGraphBuilder_recordingContext",
+                "AsyncRT_DeviceContext_reseedRecording",
                 _CString[],
-                Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
-                _DeviceGraphBuilderPtr[mut=True],
+                _DeviceContextPtr[mut=True],
                 Int32,
             ](
-                Pointer(to=result),
-                self._handle,
+                self._recording_ctx._handle,
                 seed.id,
             )
         )
-        # `checkRef` transferred ownership of the fresh reference to us, so the
-        # returned context must release it on destruction.
-        var ctx = DeviceContext(ctx_ptr=result)
-        ctx._owning = True
-        return ctx^
+        return self._recording_ctx
 
     @doc_hidden
     @inline(.always)
@@ -1156,8 +1373,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         ties to the enclosing `DeviceGraph.create` scope.
         """
         var id = self._last_node_id()
-        if id:
-            return Self.Node(id.value())
+        if case .Some(id) = id:
+            return Self.Node(id)
         return None
 
     @inline(.always)
@@ -1400,15 +1617,9 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             block_dim, location=call_location()
         )
 
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._ctx._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
+        var inferred_func_attribute = self._ctx._func_attribute_for_launch(
+            func_attribute, shared_mem_bytes
+        )
 
         var gpu_kernel = self._ctx.compile_function[
             func,
@@ -1869,7 +2080,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         ), "bitwidth of memset dtype must be one of [8,16,32,64]"
         var value: UInt64
 
-        comptime __match bitwidth:
+        comptime match bitwidth:
             case 8:
                 value = UInt64(Int(bitcast[.uint8, 1](val)))
             case 16:
@@ -2265,6 +2476,65 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             "AsyncRT_DeviceGraphBuilder_addInput",
             NoneType,
         ](self._handle, result._handle)
+
+    def get_stable(mut self, index: Int) raises -> StableAddr:
+        """Returns stable address slot `index` of this graph's collective.
+
+        Args:
+            index: Position of the slot in the collective's slot table.
+
+        Returns:
+            The slot, for the graph body to build views over.
+
+        Raises:
+            If `index` is out of range of the installed slot table.
+        """
+        self._check_stable_index(index)
+        return self._stable[index]
+
+    def place_stable(
+        mut self,
+        index: Int,
+        source: Pointer[mut=True, NoneType, _],
+    ) raises -> StableAddr:
+        """Records that this graph publishes `source` into stable address slot
+        `index`.
+
+        The publish is not a node of the graph. It is a device write the
+        instantiated graph issues when the collective is replayed through
+        `DeviceGraph.replay_collective()`, which orders every publish ahead of
+        every graph's launch; a graph on another device may read the slot as
+        soon as it launches. Inside a device graph `source` is graph-stable
+        (an `add_input` twin or a pool allocation), so the published value is
+        fixed once recorded.
+
+        Args:
+            index: Position of the slot in the collective's slot table.
+            source: The device data pointer to publish.
+
+        Returns:
+            The slot.
+
+        Raises:
+            If `index` is out of range of the installed slot table.
+        """
+        self._check_stable_index(index)
+        var slot = self._stable[index]
+        # void AsyncRT_DeviceGraphBuilder_addStableAssignment(
+        #     DeviceGraphBuilder *builder, void **stableAddress, void *ptr)
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_addStableAssignment", NoneType
+        ](self._handle, slot.ptr, source)
+        return slot
+
+    def _check_stable_index(self, index: Int) raises:
+        if index < 0 or index >= len(self._stable):
+            raise Error(
+                String(
+                    t"stable slot index {index} is out of range; the graph"
+                    t" has {len(self._stable)} slot(s)"
+                )
+            )
 
 
 @doc_hidden

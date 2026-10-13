@@ -1,3 +1,19 @@
+diff --git a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+index b683f86ca386..adee37eb4ce6 100644
+--- a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+@@ -509,11 +509,6 @@ cc_library(
+             "-ldl",
+             "-lm",
+         ],
+-    }) + select({
+-        # musl's 128 KiB default worker stack is insufficient for recursive
+-        # LLVM passes such as DSE's dominator-tree traversal.
+-        "@rules_cc//cc/libc:musl": ["-Wl,-z,stack-size=8388608"],
+-        "//conditions:default": [],
+     }),
+     textual_hdrs = glob([
+         "include/llvm/Support/*.def",
 diff --git a/utils/bazel/llvm-project-overlay/llvm/config.bzl b/utils/bazel/llvm-project-overlay/llvm/config.bzl
 index c6fe876f4b5e..57003c2f62e0 100644
 --- a/utils/bazel/llvm-project-overlay/llvm/config.bzl

@@ -23,12 +23,11 @@ from std.algorithm.functional import unswitch
 
 from max.algorithm.functional import elementwise
 from max.gpu import global_idx
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.primitives.grid_controls import PDLLevel
 from std.collections import Optional, OptionalReg
 from kv_cache.types import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
@@ -41,15 +40,10 @@ from layout import (
     CoordLike,
     Idx,
     ImmTileTensor,
-    Layout,
-    LayoutTensor,
     RowMajorLayout,
-    RuntimeLayout,
     TileTensor,
     TensorLayout,
-    UNKNOWN_VALUE,
     coord_to_index_list,
-    lt_to_tt,
     row_major,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
@@ -91,6 +85,7 @@ from nn.attention.gpu.mla import (
     flare_mla_prefill,
     mla_prefill_plan,
 )
+from nn.attention.gpu.nvidia.sm100.mla_decode_utils import SparseRowLayout
 from quantization.qmatmul import matmul_qint4
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
@@ -930,15 +925,17 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
     @inline(.always)
     def write_to_cache[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]):
-        if idx[1] < q_dim:
+    ](idx: Coord, val: SIMD[_dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var col = Int(idx[1].value())
+        if col < q_dim:
             output.store[width=width, alignment=align_of[dtype]()](
-                Coord(idx),
+                idx,
                 rebind[SIMD[dtype, width]](val),
             )
             return
 
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
 
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -956,15 +953,15 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
         comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
-            hd_idx = idx[1] - q_dim
+            hd_idx = col - q_dim
 
         else:
-            if idx[1] < qk_offset:
+            if col < qk_offset:
                 cache = k_cache
-                h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
+                h_idx, hd_idx = udivmod(col - q_dim, kv_params.head_size)
             else:
                 cache = v_cache.value()
-                h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
+                h_idx, hd_idx = udivmod(col - qk_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -976,22 +973,21 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             rebind[SIMD[kv_type, width]](cast_saturating[kv_type](output_val)),
         )
 
-    comptime if group_size:
+    comptime if case .Some(group_size) = group_size:
         comptime assert (
-            not has_zp.value()
+            Optional(False) == has_zp
         ), "Zero point is not supported for quantization."
         comptime assert (
             weight_dtype == .uint8
         ), "Expect GPTQ weights in an uint8 tensor."
 
-        # GPTQ remains on the legacy quantized launcher boundary.
         _qmatmul_common[
-            group_size=group_size.value(),
+            group_size=group_size,
             target=target,
             elementwise_lambda_fn=write_to_cache,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[.uint8]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[.uint8](),
             context,
         )
 
@@ -1001,8 +997,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
         ), "Mismatch in dtype between weight and QKV tensors"
 
         _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -1071,18 +1067,20 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     @inline(.always)
     def write_to_cache[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]):
+    ](idx: Coord, val: SIMD[_dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var col = Int(idx[1].value())
         var output_val = val + rebind[SIMD[_dtype, width]](
-            bias.load[width=width, alignment=align_of[dtype]()](Coord(idx[1]))
+            bias.load[width=width, alignment=align_of[dtype]()](Coord(col))
         )
-        if idx[1] < q_dim:
+        if col < q_dim:
             output.store[width=width, alignment=align_of[dtype]()](
-                Coord(idx),
+                idx,
                 rebind[SIMD[dtype, width]](output_val),
             )
             return
 
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
 
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -1095,12 +1093,12 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         var h_idx: Int
         var hd_idx: Int
         var cache: cache_t
-        if idx[1] < qk_offset:
+        if col < qk_offset:
             cache = k_cache
-            h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
+            h_idx, hd_idx = udivmod(col - q_dim, kv_params.head_size)
         else:
             cache = v_cache
-            h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
+            h_idx, hd_idx = udivmod(col - qk_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1112,21 +1110,21 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             rebind[SIMD[kv_type, width]](cast_saturating[kv_type](output_val)),
         )
 
-    comptime if group_size:
+    comptime if case .Some(group_size) = group_size:
         comptime assert (
-            not has_zp.value()
+            Optional(False) == has_zp
         ), "Zero point is not supported for quantization."
         comptime assert (
             weight_dtype == .uint8
         ), "Expect GPTQ weights to be a 'uint8' tensor."
 
         _qmatmul_common[
-            group_size=group_size.value(),
+            group_size=group_size,
             target=target,
             elementwise_lambda_fn=write_to_cache,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[.uint8]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[.uint8](),
             context,
         )
 
@@ -1136,8 +1134,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         ), "Mismatch in dtype between weight and QKV tensors"
 
         _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -1235,7 +1233,9 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     @inline(.always)
     def write_to_cache[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
+    ](idx: Coord, val: SIMD[dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var col = Int(idx[1].value())
         var output_val: SIMD[dtype, width]
 
         comptime if use_per_tensor:
@@ -1243,12 +1243,12 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             var scale_b = weight_scale[0, 0][0].cast[dtype]()
             output_val = val * (scale_a * scale_b)
         elif use_per_channel:
-            var scale_a = input_scale.load[width=1](Coord(0, idx[0])).cast[
-                dtype
-            ]()
+            var scale_a = input_scale.load[width=1](
+                Coord(0, Int(idx[0].value()))
+            ).cast[dtype]()
             var scale_b = weight_scale.load[
                 width=width, alignment=align_of[scale_dtype]()
-            ](Coord(idx[1], 0)).cast[dtype]()
+            ](Coord(col, 0)).cast[dtype]()
             output_val = val * (scale_a * scale_b)
         else:
             # blockwise quantization, we need to use the blockwise_scaled_fp8_with_epilogue kernel
@@ -1258,19 +1258,19 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             SIMD[output_dtype, width]
         ](output_val.cast[output_dtype]())
 
-        if bias:
-            output_val_out += bias.value().load[
+        if case .Some(bias) = bias:
+            output_val_out += bias.load[
                 width=width, alignment=align_of[output_dtype]()
-            ](Coord(idx[1]))
+            ](Coord(col))
 
-        if idx[1] < q_dim:
+        if col < q_dim:
             output.store[width=width, alignment=align_of[output_dtype]()](
-                Coord(idx),
+                idx,
                 output_val_out,
             )
             return
 
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
 
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -1287,15 +1287,15 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
         comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
-            hd_idx = idx[1] - q_dim
+            hd_idx = col - q_dim
 
         else:
-            if idx[1] < qk_offset:
+            if col < qk_offset:
                 cache = k_cache
-                h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
+                h_idx, hd_idx = udivmod(col - q_dim, kv_params.head_size)
             else:
                 cache = v_cache.value()
-                h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
+                h_idx, hd_idx = udivmod(col - qk_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1334,8 +1334,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             elementwise_lambda_fn=write_to_cache,
             output_dtype=output_dtype,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -1414,7 +1414,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     @inline(.always)
     def write_to_cache[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
+    ](idx: Coord, val: SIMD[dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # Blockwise-scaled matmul epilogue: scatter Q to `output` and K/V into
         # the paged cache. Runs as the `elementwise_lambda_fn` of the
         # block-scaled matmul (Mojo kernel when covered, vendor otherwise).
@@ -1422,14 +1423,16 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             SIMD[output_dtype, width]
         ](val.cast[output_dtype]())
 
-        if idx[1] < q_dim:
+        var col = Int(idx[1].value())
+
+        if col < q_dim:
             output.store[width=width, alignment=align_of[output_dtype]()](
-                Coord(idx),
+                idx,
                 output_val_out,
             )
             return
 
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
 
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -1446,15 +1449,15 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
         comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
-            hd_idx = idx[1] - q_dim
+            hd_idx = col - q_dim
 
         else:
-            if idx[1] < qk_offset:
+            if col < qk_offset:
                 cache = k_cache
-                h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
+                h_idx, hd_idx = udivmod(col - q_dim, kv_params.head_size)
             else:
                 cache = v_cache.value()
-                h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
+                h_idx, hd_idx = udivmod(col - qk_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -1859,19 +1862,20 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
     @inline(.always)
     def write_to_caches[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
+    ](idx: Coord, val: SIMD[dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # The block-scaled matmul already applied the scales; the epilogue just
         # routes and casts. `idx[1]` is the column in the concatenated N space.
         var output_val_out: SIMD[output_dtype, width] = rebind[
             SIMD[output_dtype, width]
         ](val.cast[output_dtype]())
 
-        var col = idx[1]
+        var col = Int(idx[1].value())
 
         # Q band -> q_output[:, col].
         if col < q_end:
             q_output.store[width=width, alignment=align_of[output_dtype]()](
-                Coord(idx), output_val_out
+                idx, output_val_out
             )
             return
 
@@ -1880,12 +1884,12 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
         # (Q | K | V | IndexQ | IndexK).
         if col >= v_end and col < iq_end:
             iq_output.store[width=width, alignment=align_of[output_dtype]()](
-                Coord(idx[0], col - v_end),
+                Coord(Int(idx[0].value()), col - v_end),
                 output_val_out,
             )
             return
 
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
@@ -2222,19 +2226,20 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     @inline(.always)
     def write_to_caches[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]):
+    ](idx: Coord, val: SIMD[_dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # The matmul produced the projections; the epilogue just routes and
         # casts. `idx[1]` is the column in the concatenated N space.
         var output_val_out: SIMD[dtype, width] = rebind[SIMD[dtype, width]](
             val.cast[dtype]()
         )
 
-        var col = idx[1]
+        var col = Int(idx[1].value())
 
         # Q band -> output[:, col].
         if col < q_end:
             output.store[width=width, alignment=align_of[dtype]()](
-                Coord(idx), output_val_out
+                idx, output_val_out
             )
             return
 
@@ -2243,12 +2248,12 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
         # branch order matches the column layout (Q | K | V | IndexQ | IndexK).
         if col >= v_end and col < iq_end:
             output.store[width=width, alignment=align_of[dtype]()](
-                Coord(idx[0], q_dim + (col - v_end)),
+                Coord(Int(idx[0].value()), q_dim + (col - v_end)),
                 output_val_out,
             )
             return
 
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
@@ -2296,8 +2301,8 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     ), "Mismatch in dtype between weight and QKV tensors"
 
     _matmul_common[target=target, elementwise_lambda_fn=write_to_caches](
-        hidden_state.to_layout_tensor(),
-        weight.bitcast[dtype]().to_layout_tensor(),
+        hidden_state,
+        weight.bitcast[dtype](),
         context,
     )
 
@@ -2311,49 +2316,39 @@ def _matmul_common[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     output_dtype: DType = dtype,
 ](
-    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
-    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    comptime N = Int(weight.layout.shape[0])
+    var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
+    comptime N = weight.static_shape[0]
 
     var c_alloc_layout = AllocLayout[Scalar[output_dtype]](
         count=TOTAL_SEQ_LEN * N
     )
-    var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
-    ]
+    var c_ptr: Optional[
+        UnsafePointer[Scalar[output_dtype], MutUntrackedOrigin]
+    ] = None
 
     comptime if is_cpu[target]():
-        # The CPU matmul codepath uses the C buffer as a workspace
-        # even if an epilogue is provided, here we just allocate
-        # something to ensure we don't segfault.
-        var c_ptr = alloc(c_alloc_layout).unsafe_leak()
+        # CPU matmul uses C as workspace even when an epilogue owns the output.
+        c_ptr = alloc(c_alloc_layout).unsafe_leak()
 
-        c_nd = {
-            c_ptr,
-            RuntimeLayout[c_nd.layout].row_major(
-                IndexList[2](TOTAL_SEQ_LEN, N)
-            ),
-        }
-    else:
-        c_nd = {
-            None,
-            RuntimeLayout[c_nd.layout].row_major(
-                IndexList[2](TOTAL_SEQ_LEN, N)
-            ),
-        }
+    # Preserve the null GPU placeholder: TMA setup may inspect C's alignment
+    # even though the epilogue redirects all stores to the cache.
+    var c_nd = TileTensor(
+        c_ptr._unsafe_nullable(), row_major(TOTAL_SEQ_LEN, Idx[N])
+    )
 
     matmul[
         target=target,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](lt_to_tt(c_nd), lt_to_tt(hidden_state), lt_to_tt(weight), context)
+    ](c_nd, hidden_state, weight, context)
 
     comptime if is_cpu[target]():
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=c_nd.ptr).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=c_ptr.value()).unsafe_with_layout(
                 c_alloc_layout
             )
         )
@@ -2368,31 +2363,29 @@ def _qmatmul_common[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    weight: LayoutTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
     comptime assert is_gpu[target](), "GPTQ quantization only works on GPU."
 
-    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    comptime N = Int(weight.layout.shape[0])
-    var c_nd: LayoutTensor[
-        dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
-    ]
+    var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
+    comptime N = weight.static_shape[0]
+    var c_ptr: Optional[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]] = None
 
-    c_nd = {
-        None,
-        RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
-    }
+    # The epilogue owns all stores; C remains a null output view.
+    var c_nd = TileTensor(
+        c_ptr._unsafe_nullable(), row_major(TOTAL_SEQ_LEN, Idx[N])
+    )
 
     matmul_gpu_qint4_impl[
         target=target,
         group_size=group_size,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](
-        lt_to_tt(c_nd),
-        lt_to_tt(hidden_state),
-        lt_to_tt(weight),
+        c_nd,
+        hidden_state,
+        weight,
         context,
     )
 
@@ -2767,20 +2760,17 @@ def _matmul_kv_cache_ragged_impl[
     @inline(.always)
     def write_to_cache_common[
         dtype: DType, cache_t: KVCacheT, width: SIMDLength
-    ](
-        k_cache: cache_t,
-        v_cache: cache_t,
-        idx: IndexList[2],
-        val: SIMD[dtype, width],
-    ):
+    ](k_cache: cache_t, v_cache: cache_t, idx: Coord, val: SIMD[dtype, width],):
         comptime kv_type = cache_t.dtype
+
+        comptime assert idx.rank == 2, "the KV-cache write contract is rank 2"
 
         comptime assert (
             kv_type == dtype
         ), "Mismatch in dtype between hidden state and KV tensors"
 
         # Token index in the "ragged" combined sequence dimension.
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
 
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -2789,17 +2779,18 @@ def _matmul_kv_cache_ragged_impl[
             UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
+        var col = Int(idx[1].value())
         var cache: cache_t
         var h_idx: Int
         var hd_idx: Int
-        if idx[1] < k_offset:
+        if col < k_offset:
             # Write this element to the K cache.
             cache = k_cache
-            h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
+            h_idx, hd_idx = udivmod(col, kv_params.head_size)
         else:
             # Otherwise, write this element to the V cache.
             cache = v_cache
-            h_idx, hd_idx = udivmod(idx[1] - k_offset, kv_params.head_size)
+            h_idx, hd_idx = udivmod(col - k_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -2820,12 +2811,13 @@ def _matmul_kv_cache_ragged_impl[
     @inline(.always)
     def write_to_cache_continuous[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
+    ](idx: Coord, val: SIMD[dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         write_to_cache_common(k_cache_reg, v_cache_reg, idx, val)
 
     _matmul_common[
         target=target, elementwise_lambda_fn=write_to_cache_continuous
-    ](hidden_state.to_layout_tensor(), weight.to_layout_tensor(), ctx)
+    ](hidden_state, weight, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2999,7 +2991,8 @@ def _matmul_k_cache_ragged_impl[
     @inline(.always)
     def write_to_cache[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width],):
+    ](idx: Coord, val: SIMD[dtype, width],):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime kv_type = cache_t.dtype
 
         comptime assert (
@@ -3007,7 +3000,7 @@ def _matmul_k_cache_ragged_impl[
         ), "Mismatch in dtype between hidden state and KV tensors"
 
         # Token index in the "ragged" combined sequence dimension.
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
 
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -3016,7 +3009,7 @@ def _matmul_k_cache_ragged_impl[
             UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
-        var h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
+        var h_idx, hd_idx = udivmod(Int(idx[1].value()), kv_params.head_size)
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -3029,7 +3022,7 @@ def _matmul_k_cache_ragged_impl[
         )
 
     _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-        hidden_state.to_layout_tensor(), weight.to_layout_tensor(), ctx
+        hidden_state, weight, ctx
     )
 
 
@@ -3195,7 +3188,8 @@ def _matmul_k_cache_ragged_scale_impl[
     @inline(.always)
     def write_to_cache[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width],):
+    ](idx: Coord, val: SIMD[dtype, width],):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime kv_type = cache_t.dtype
 
         comptime assert (
@@ -3203,7 +3197,7 @@ def _matmul_k_cache_ragged_scale_impl[
         ), "Mismatch in dtype between hidden state and KV tensors"
 
         # Token index in the "ragged" combined sequence dimension.
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
 
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -3212,7 +3206,7 @@ def _matmul_k_cache_ragged_scale_impl[
             UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
-        var h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
+        var h_idx, hd_idx = udivmod(Int(idx[1].value()), kv_params.head_size)
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -3507,15 +3501,17 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     @inline(.always)
     def write_to_cache_common[
         dtype: DType, cache_t: KVCacheT, width: SIMDLength
-    ](k_or_v_cache: cache_t, idx: IndexList[2], val: SIMD[dtype, width],):
+    ](k_or_v_cache: cache_t, idx: Coord, val: SIMD[dtype, width],):
         comptime k_or_v_type = cache_t.dtype
+
+        comptime assert idx.rank == 2, "the KV-cache write contract is rank 2"
 
         comptime assert (
             k_or_v_type == dtype
         ), "Mismatch in dtype between hidden state and KV tensors"
 
         # Token index in the "ragged" combined sequence dimension.
-        var global_token_idx = idx[0]
+        var global_token_idx = Int(idx[0].value())
 
         var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
@@ -3526,7 +3522,7 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 
         # Write this element to the K or V cache.
         var cache = k_or_v_cache
-        var h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
+        var h_idx, hd_idx = udivmod(Int(idx[1].value()), kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -3543,7 +3539,8 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
     @__copy_capture(k_or_v_cache)
     def write_to_k_or_v_cache_continuous[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
+    ](idx: Coord, val: SIMD[dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         write_to_cache_common(k_or_v_cache, idx, val)
 
     _qmatmul_gguf_quantized_alloc_output[
@@ -3589,28 +3586,29 @@ def _qmatmul_gguf_quantized_common[
     weight: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     output: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
 ) raises:
-    comptime if quantization_encoding == "q4_0":
-        matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
-        )
-    elif quantization_encoding == "q4_k":
-        matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
-        )
-    elif quantization_encoding == "q6_k":
-        matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
-            hidden_state,
-            weight,
-            output,
-        )
-    else:
-        raise Error(
-            "Unsupported quantization encoding: ", quantization_encoding
-        )
+    comptime match quantization_encoding:
+        case "q4_0":
+            matmul_qint4[32, elementwise_lambda_fn=elementwise_lambda_fn](
+                hidden_state,
+                weight,
+                output,
+            )
+        case "q4_k":
+            matmul_Q4_K[elementwise_lambda_fn=elementwise_lambda_fn](
+                hidden_state,
+                weight,
+                output,
+            )
+        case "q6_k":
+            matmul_Q6_K[elementwise_lambda_fn=elementwise_lambda_fn](
+                hidden_state,
+                weight,
+                output,
+            )
+        case _:
+            raise Error(
+                "Unsupported quantization encoding: ", quantization_encoding
+            )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4203,8 +4201,11 @@ def generic_flare_mla_decode_kv_cache_ragged[
     sparse_mla: Bool = False,
     # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding.
     fold_shared_index: Bool = False,
+    # How the sparse index producer packs each row; see flare_mla_decoding.
+    sparse_row: SparseRowLayout = SparseRowLayout(),
     # Whether `extra_k` is supplied; see flare_mla_decoding.
     has_extra_k: Bool = False,
+    physical_indices: Bool = True,
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
@@ -4236,6 +4237,8 @@ def generic_flare_mla_decode_kv_cache_ragged[
     # Logical sparse indices for position-based causal masking; `None` keeps
     # the prior slot-count behavior. See mla_decode_utils.mojo.
     logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    # See flare_mla_decoding.
+    selection_lag: Int = 0,
 ) raises:
     """Dispatches MLA decode attention over a ragged batch against a paged KV cache.
 
@@ -4255,7 +4258,11 @@ def generic_flare_mla_decode_kv_cache_ragged[
             physical KV row indices via gather4 TMA (defaults to `False`).
         fold_shared_index: Whether to use the read-once shared-index MTP
             fold threaded to `flare_mla_decoding` (defaults to `False`).
+        sparse_row: How the sparse index producer packs each row, which
+            bounds each row by its valid length (defaults to plain top-k).
         has_extra_k: Whether `extra_k` is supplied (defaults to `False`).
+        physical_indices: Whether `d_indices` holds paged physical rows rather
+            than token positions (defaults to `True`); see `flare_mla_decoding`.
         AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
             (inferred).
         TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
@@ -4291,6 +4298,8 @@ def generic_flare_mla_decode_kv_cache_ragged[
             from the MoGG op so SM100 grid sizing matches the kernel.
         logical_indices: Logical sparse indices for position-based causal
             masking; `None` keeps the prior slot-count behavior.
+        selection_lag: Positions between the token each sparse row was
+            computed for and the token that reads it.
     """
 
     @inline(.always)
@@ -4329,7 +4338,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
             per_token_scale_rope_aware=per_token_scale_rope_aware,
             sparse_mla=sparse_mla,
             fold_shared_index=fold_shared_index,
+            sparse_row=sparse_row,
             has_extra_k=has_extra_k,
+            physical_indices=physical_indices,
         ](
             q,
             input_row_offsets,
@@ -4351,6 +4362,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             extra_scales_ptr,
             num_partitions_in,
             logical_indices,
+            selection_lag,
         )
 
 
@@ -4366,8 +4378,11 @@ def _flare_mla_decode_kv_cache_ragged[
     sparse_mla: Bool = False,
     # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding.
     fold_shared_index: Bool = False,
+    # How the sparse index producer packs each row; see flare_mla_decoding.
+    sparse_row: SparseRowLayout = SparseRowLayout(),
     # Whether `extra_k` is supplied; see flare_mla_decoding.
     has_extra_k: Bool = False,
+    physical_indices: Bool = True,
     AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
@@ -4401,6 +4416,8 @@ def _flare_mla_decode_kv_cache_ragged[
     # Logical sparse indices for position-based causal masking; `None` keeps
     # the prior slot-count behavior. See mla_decode_utils.mojo.
     logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    # See flare_mla_decoding.
+    selection_lag: Int = 0,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -4429,6 +4446,8 @@ def _flare_mla_decode_kv_cache_ragged[
         num_partitions_in: Capturable-graph num_partitions override.
         logical_indices: Logical sparse indices for position-based causal
             masking; `None` keeps the prior slot-count behavior.
+        selection_lag: Positions between the token each sparse row was
+            computed for and the token that reads it.
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -4451,9 +4470,7 @@ def _flare_mla_decode_kv_cache_ragged[
     # (has, value) pair, capture the primitives, then rebuild Optional[Int]
     # inside the closure.
     var has_num_partitions = num_partitions_in.__bool__()
-    var num_partitions_val = (
-        num_partitions_in.value() if has_num_partitions else 0
-    )
+    var num_partitions_val = num_partitions_in.or_else(0)
 
     @inline(.always)
     def _dispatch_mla[
@@ -4472,6 +4489,7 @@ def _flare_mla_decode_kv_cache_ragged[
         var has_num_partitions,
         var num_partitions_val,
         var logical_indices,
+        var selection_lag,
         imm,
     }:
         var _num_partitions_in: Optional[Int] = Optional[Int](
@@ -4485,6 +4503,8 @@ def _flare_mla_decode_kv_cache_ragged[
             sparse=sparse_mla,
             fold_shared_index=fold_shared_index,
             has_extra_k=has_extra_k,
+            physical_indices=physical_indices,
+            sparse_row=sparse_row,
         ](
             output,
             q,
@@ -4506,6 +4526,7 @@ def _flare_mla_decode_kv_cache_ragged[
             extra_scales_ptr=extra_scales_ptr,
             num_partitions_in=_num_partitions_in,
             logical_indices=logical_indices,
+            selection_lag=selection_lag,
         )
 
     dispatch_mask[
@@ -4978,24 +4999,20 @@ def _cross_attention_dispatch[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     q_max_seq_len: UInt32,
-    kv_input_row_offsets: LayoutTensor[
+    kv_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_cache: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -5016,25 +5033,22 @@ def _cross_attention_dispatch[
                 "CPU flash attention requires output dtype == q dtype;"
                 " the distinct-output-dtype (fp8->bf16) path is GPU-only."
             )
-            var sink_weights_tt = OptionalReg[ImmutTileTensor1D[dtype]]()
-            if sink_weights:
-                var weights = sink_weights.value()
-                sink_weights_tt = immut_tile_tensor_1d(
-                    weights.ptr, weights.dim[0]()
-                )
             return flash_attention_kv_cache_cpu(
-                lt_to_tt(q),
-                lt_to_tt(q_input_row_offsets),
+                q,
+                q_input_row_offsets,
                 # Use KV offsets for cross attention.
-                lt_to_tt(kv_input_row_offsets),
+                kv_input_row_offsets,
                 k,
                 v,
                 mask,
                 scale,
-                lt_to_tt(output.bitcast[dtype]()),
-                sink_weights_tt,
+                output.bitcast[dtype](),
+                sink_weights,
             )
         else:
+            comptime assert kv_input_row_offsets.flat_rank == 1
+            if Int(kv_input_row_offsets.layout.stride[0]().value()) != 1:
+                raise Error("kv_input_row_offsets must have unit stride")
             gpu_flash_attention[ragged=True, sink=False](
                 output,
                 q,
@@ -5045,15 +5059,9 @@ def _cross_attention_dispatch[
                 scale,
                 context,
                 Int(q_max_seq_len),
-                LayoutTensor[
-                    kv_input_row_offsets.dtype,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                ](
-                    kv_input_row_offsets.ptr.as_imm().as_unsafe_any_origin(),
-                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                        kv_input_row_offsets.runtime_layout.shape.value.canonicalize()
-                    ),
+                immut_tile_tensor_1d(
+                    kv_input_row_offsets.unsafe_ptr(),
+                    Int(kv_input_row_offsets.dim[0]()),
                 ),
                 None,
             )
@@ -5074,24 +5082,20 @@ def generic_cross_attention_kv_cache[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    q_max_seq_len: LayoutTensor[
-        mut=False, .uint32, address_space=.GENERIC, ...
-    ],
-    kv_input_row_offsets: LayoutTensor[
+    q_max_seq_len: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    kv_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     """Dispatches cross-attention flash attention over a ragged batch against a paged KV cache.
 
@@ -5114,6 +5118,7 @@ def generic_cross_attention_kv_cache[
         q_max_seq_len: Scalar tensor holding the maximum query sequence length.
         kv_input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
             start of each KV sequence along the ragged sequence dimension.
+            GPU dispatch requires unit stride.
         kv_collection: The collection storing the KVCache entries for this
             layer, retrieved via layer_idx.
         layer_idx: The index of the layer being executed, used to retrieve the
@@ -5127,20 +5132,31 @@ def generic_cross_attention_kv_cache[
             leading cache slots.
     """
 
+    comptime assert q_max_seq_len.flat_rank == 1
+    if q_max_seq_len.num_elements() != 1:
+        raise Error("q_max_seq_len must contain exactly one element")
+
     @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
-                    trace_arg("output", output.runtime_layout.shape.value),
-                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg(
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
                     trace_arg(
                         "q_input_row_offsets",
-                        q_input_row_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(
+                            q_input_row_offsets.layout.shape_coord()
+                        ),
                     ),
                     trace_arg(
                         "kv_input_row_offsets",
-                        kv_input_row_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(
+                            kv_input_row_offsets.layout.shape_coord()
+                        ),
                     ),
                     "layer_idx=" + String(layer_idx),
                     "num_heads=" + String(collection_t.kv_params.num_heads),
@@ -5148,6 +5164,12 @@ def generic_cross_attention_kv_cache[
                 ]
             )
         )
+
+    # A skipped speculative draft step hands the cross-attention zero query
+    # rows. Without this guard, flash attention would derive a zero grid from
+    # the empty offsets and fail the launch.
+    if q.dim[0]() == 0:
+        return
 
     with Trace[TraceLevel.OP, target=target](
         "mo.cross_attention.ragged."
@@ -5251,9 +5273,7 @@ def generic_kv_cache_radd_dispatch[
     # fail codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @__parameter
-    @__copy_capture(a, k_cache, v_cache, input_row_offsets)
-    def do_radd[width: Int, alignment: Int = 1](idx: Coord):
+    def do_radd[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 2, "Rank must be 2"
 
         # we could be slicing the batch, so we need to add the offset to get the actual index in the flattened batch
@@ -5296,18 +5316,18 @@ def generic_kv_cache_radd_dispatch[
         )
 
     comptime if is_gpu[target]():
-        comptime compile_target = get_gpu_target()
+        comptime compile_target = ctx.target
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[do_radd, simd_width, target=target](
-            a.layout.shape_coord(), ctx
+        elementwise[simd_width, target=target](
+            do_radd, a.layout.shape_coord(), ctx
         )
     else:
         comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[do_radd, simd_width, target=target](
-            a.layout.shape_coord(), ctx
+        elementwise[simd_width, target=target](
+            do_radd, a.layout.shape_coord(), ctx
         )
 
 
@@ -5315,12 +5335,12 @@ def kv_cache_store_ragged[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: def[width: Int, alignment: Int](
-        idx: IndexList[3]
-    ) capturing -> SIMD[cache_t.dtype, width],
+    input_fn: def[width: Int, alignment: Int](idx: Coord) capturing -> SIMD[
+        cache_t.dtype, width
+    ],
 ](
     cache: cache_t,
-    input_shape: IndexList[3],
+    input_shape: Coord,
     input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
@@ -5342,7 +5362,7 @@ def kv_cache_store_ragged[
 
     Args:
         cache: The KVCache object to write key or value entries into.
-        input_shape: Shape of the input as a 3D index list (tokens, heads,
+        input_shape: Shape of the input as a 3D coordinate (tokens, heads,
             head_size).
         input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
             start of each sequence along the ragged sequence dimension.
@@ -5357,12 +5377,10 @@ def kv_cache_store_ragged[
     # fails codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @__parameter
-    @__copy_capture(cache, input_row_offsets)
     def write_to_cache[
         width: Int,
         alignment: Int = 1,
-    ](idx: Coord) capturing:
+    ](idx: Coord) {var}:
         var row = Int(idx[0].value())
         # Rows past the last offset belong to no request. A producer whose
         # output row count is only an upper bound on a data-dependent one
@@ -5373,9 +5391,7 @@ def kv_cache_store_ragged[
         # pages follow.
         if row >= Int(input_row_offsets[input_row_offsets.num_elements() - 1]):
             return
-        var input_idx = IndexList[3](
-            row, Int(idx[1].value()), Int(idx[2].value())
-        )
+        var input_idx = Coord(row, Int(idx[1].value()), Int(idx[2].value()))
         var loaded_val = input_fn[width=width, alignment=alignment](input_idx)
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row)
         var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
@@ -5395,25 +5411,22 @@ def kv_cache_store_ragged[
         simd_width_of[
             cache_t.dtype, target=CompilationTarget.current()
         ]() if is_cpu[target]() else simd_width_of[
-            cache_t.dtype, target=get_gpu_target()
+            cache_t.dtype, target=context.target
         ]()
     )
 
     elementwise[
-        write_to_cache,
-        simd_width,
-        target=target,
-        _trace_description="kv_cache_store_ragged",
-    ](Coord(input_shape), context)
+        simd_width, target=target, _trace_description="kv_cache_store_ragged"
+    ](write_to_cache, input_shape, context)
 
 
 def kv_cache_store_padded[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: def[width: Int, alignment: Int](
-        idx: IndexList[4]
-    ) capturing -> SIMD[cache_t.dtype, width],
+    input_fn: def[width: Int, alignment: Int](idx: Coord) capturing -> SIMD[
+        cache_t.dtype, width
+    ],
 ](
     cache: cache_t,
     input_shape: IndexList[4],
@@ -5450,22 +5463,14 @@ def kv_cache_store_padded[
     # fails codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @__parameter
-    @__copy_capture(cache, valid_lengths)
     @inline(.always)
-    def write_to_cache[width: Int, alignment: Int = 1](idx: Coord) capturing:
+    def write_to_cache[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var batch_idx = Int(idx[0].value())
         var token_idx = Int(idx[1].value())
         var valid_len = Int(valid_lengths[batch_idx])
         if token_idx >= valid_len:
             return
-        var input_idx = IndexList[4](
-            batch_idx,
-            token_idx,
-            Int(idx[2].value()),
-            Int(idx[3].value()),
-        )
-        var loaded_val = input_fn[width=width, alignment=alignment](input_idx)
+        var loaded_val = input_fn[width=width, alignment=alignment](idx)
         var h_idx = Int(idx[2].value())
         var hd_idx = Int(idx[3].value())
         var cache_length = cache.cache_length(batch_idx)
@@ -5482,16 +5487,13 @@ def kv_cache_store_padded[
         simd_width_of[
             cache_t.dtype, target=CompilationTarget.current()
         ]() if is_cpu[target]() else simd_width_of[
-            cache_t.dtype, target=get_gpu_target()
+            cache_t.dtype, target=context.target
         ]()
     )
 
     elementwise[
-        write_to_cache,
-        simd_width,
-        target=target,
-        _trace_description="kv_cache_store_padded",
-    ](Coord(input_shape), context)
+        simd_width, target=target, _trace_description="kv_cache_store_padded"
+    ](write_to_cache, Coord(input_shape), context)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -5622,7 +5624,7 @@ def kv_cache_2m_iadd_dispatch[
             "kv-cache-2m-iadd",
             task_id=Int(ctx.id()),
         ):
-            comptime compile_target = get_gpu_target()
+            comptime compile_target = ctx.target
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
             elementwise[iadd, simd_width, target=target](

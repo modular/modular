@@ -31,11 +31,9 @@ Run:
   ./bazelw test //max/kernels/test/gpu/linalg:test_mxfp6_matmul_amd_preb_epilogue.mojo.test
 """
 
-from std.math import ceildiv
 from std.random import random_ui64, seed
 from std.sys import align_of
 from std.testing import assert_equal, assert_true
-from std.utils import IndexList
 
 from max.gpu.host import DeviceContext, HostBuffer
 from max.gpu.host.info import MI355X
@@ -159,9 +157,10 @@ def _run_case[
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         out_tt.store[width=width, alignment=alignment](
-            Coord(idx), rebind[SIMD[DType.float32, width]](val)
+            idx, rebind[SIMD[DType.float32, width]](val)
         )
 
     comptime if preshuffled_b:

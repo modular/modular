@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -42,6 +43,7 @@ from max.pipelines.lib.config.config import (
     _resolve_default_tool_parser,
     _resolve_overlap_and_device_graph_capture,
     _resolve_spec_decode_mixed_batches,
+    _validate_kv_cache_format,
 )
 from max.pipelines.lib.config.model_config import (
     _build_model_config,
@@ -433,6 +435,7 @@ class TestSpeculativeArchitectureOverride:
         speculative: bool = True,
         is_dflash: bool = False,
         is_dflash2: bool = False,
+        is_dspark: bool = False,
         draft_arch: str | None = None,
     ) -> SimpleNamespace:
         """Build a minimal stand-in exposing the attrs the method reads.
@@ -447,10 +450,21 @@ class TestSpeculativeArchitectureOverride:
             draft_model = SimpleNamespace(
                 huggingface_config=SimpleNamespace(architectures=[draft_arch])
             )
+        method = (
+            "dspark"
+            if is_dspark
+            else "dflash2"
+            if is_dflash2
+            else "dflash"
+            if is_dflash
+            else "eagle"
+        )
         spec = (
             SimpleNamespace(
+                speculative_method=method,
                 is_dflash=lambda: is_dflash or is_dflash2,
                 is_dflash2=lambda: is_dflash2,
+                is_dspark=lambda: is_dspark,
                 is_mtp=lambda: False,
             )
             if speculative
@@ -498,7 +512,7 @@ class TestSpeculativeArchitectureOverride:
     def test_gemma4_unified_dspark(self) -> None:
         cfg = self._make_config(
             "Gemma4UnifiedForConditionalGeneration",
-            is_dflash=True,
+            is_dspark=True,
             draft_arch="Gemma4DSparkModel",
         )
         assert self._resolved_arch(cfg) == "UnifiedDSparkGemma4_12BForCausalLM"
@@ -514,7 +528,7 @@ class TestSpeculativeArchitectureOverride:
     def test_minimax_m3_dspark(self) -> None:
         cfg = self._make_config(
             "MiniMaxM3SparseForConditionalGeneration",
-            is_dflash=True,
+            is_dspark=True,
             draft_arch="DSparkMiniMaxDraftModel",
         )
         assert (
@@ -523,14 +537,14 @@ class TestSpeculativeArchitectureOverride:
         )
 
     def test_minimax_m3_dspark_rejects_other_methods(self) -> None:
-        """The DSpark graph only runs under the v1 dflash harness."""
-        for kwargs in ({}, {"is_dflash2": True}):
+        """The DSpark graph only runs a DSpark draft step."""
+        for kwargs in ({}, {"is_dflash": True}, {"is_dflash2": True}):
             cfg = self._make_config(
                 "MiniMaxM3SparseForConditionalGeneration",
                 draft_arch="DSparkMiniMaxDraftModel",
                 **kwargs,
             )
-            with pytest.raises(ValueError, match="dflash"):
+            with pytest.raises(ValueError, match="dspark"):
                 self._resolved_arch(cfg)
 
     def test_no_speculative_is_noop(self) -> None:
@@ -2273,3 +2287,28 @@ def test_from_args__explicit_backend_is_preserved() -> None:
         )
         == "xgrammar"
     )
+
+
+def test_config__fp4_kv_cache_needs_an_opted_in_architecture() -> None:
+    """``float4_e2m1fn`` and its alias are refused for an architecture that
+    has not opted in, and every other format passes through."""
+    assert not DUMMY_LLAMA_ARCH.supports_nvfp4_kv_cache
+    opted_in = replace(DUMMY_LLAMA_ARCH, supports_nvfp4_kv_cache=True)
+    for fp4 in ("float4_e2m1fn", "float4_e2m1"):
+        with pytest.raises(ValueError, match=f"'{fp4}' is not supported"):
+            _validate_kv_cache_format(
+                KVCacheConfig(kv_cache_format=fp4), DUMMY_LLAMA_ARCH
+            )
+        _validate_kv_cache_format(KVCacheConfig(kv_cache_format=fp4), opted_in)
+    for fmt in (None, "bfloat16", "float8_e4m3fn"):
+        _validate_kv_cache_format(
+            KVCacheConfig(kv_cache_format=fmt), DUMMY_LLAMA_ARCH
+        )
+
+
+def test_config__fp4_kv_cache_format_maps_to_packed_uint8() -> None:
+    """Both FP4 spellings store packed uint8, and ``nvfp4`` is not a format."""
+    assert cache_dtype_for_encoding(None, "float4_e2m1fn") == DType.uint8
+    assert cache_dtype_for_encoding(None, "FLOAT4_E2M1") == DType.uint8
+    with pytest.raises(ValueError, match="Unrecognized kv_cache_format"):
+        cache_dtype_for_encoding(None, "nvfp4")

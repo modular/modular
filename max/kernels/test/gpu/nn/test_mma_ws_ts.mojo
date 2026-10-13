@@ -31,13 +31,12 @@ SMEM), so no separate readback verification is needed for either.
 """
 
 from std.math import ceildiv
-from std.memory import alloc
 from std.random import rand, randn, seed
 from std.sys import size_of
 
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     prefetch_tma_descriptor,
@@ -70,6 +69,7 @@ from layout import (
     Idx,
     RowMajorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -204,15 +204,13 @@ comptime TOTAL_SMEM_BYTES = METADATA_OFFSET + 32
 @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(k_tma_op, `nvvm.grid_constant`)
 def dense_mma_ws_ts_kernel[
-    q_tile_rank: Int,
-    q_tile_shape: IndexList[q_tile_rank],
-    q_desc_shape: IndexList[q_tile_rank],
-    k_tile_rank: Int,
-    k_tile_shape: IndexList[k_tile_rank],
-    k_desc_shape: IndexList[k_tile_rank],
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
+    k_tile_shape: Coord,
+    k_desc_shape: Coord,
 ](
-    q_tma_op: TMATensorTile[OP_TYPE, q_tile_rank, q_tile_shape, q_desc_shape],
-    k_tma_op: TMATensorTile[OP_TYPE, k_tile_rank, k_tile_shape, k_desc_shape],
+    q_tma_op: TMATensorTile[OP_TYPE, q_tile_shape, q_desc_shape],
+    k_tma_op: TMATensorTile[OP_TYPE, k_tile_shape, k_desc_shape],
     p_output: TileTensor[
         ACCUM_TYPE,
         RowMajorLayout[ComptimeInt[P_ROWS], ComptimeInt[P_COLS]],
@@ -421,17 +419,13 @@ def sparse_mma_ws_ts_kernel[
     op_type: DType,
     rows: Int,
     cols: Int,
-    q_tile_rank: Int,
-    q_tile_shape: IndexList[q_tile_rank],
-    q_desc_shape: IndexList[q_tile_rank],
-    k_tile_rank: Int,
-    k_tile_shape: IndexList[k_tile_rank],
-    k_desc_shape: IndexList[k_tile_rank],
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
+    k_tile_shape: Coord,
+    k_desc_shape: Coord,
 ](
-    q_tma_op: TMATensorTile[op_type, q_tile_rank, q_tile_shape, q_desc_shape],
-    k_gather4_tma: TMATensorTile[
-        op_type, k_tile_rank, k_tile_shape, k_desc_shape
-    ],
+    q_tma_op: TMATensorTile[op_type, q_tile_shape, q_desc_shape],
+    k_gather4_tma: TMATensorTile[op_type, k_tile_shape, k_desc_shape],
     d_indices: MutPointer[Int32, MutAnyOrigin],
     p_output: TileTensor[
         .float32,
@@ -561,7 +555,7 @@ def sparse_mma_ws_ts_kernel[
     barrier()
 
     # ---- K TMA gather4: all calls on a single barrier ----
-    comptime box_width = k_tile_shape[1]
+    comptime box_width = Int(k_tile_shape[1].value())
     comptime num_col_groups = ceildiv(cols, box_width)
     comptime num_4row_chunks = rows // 4
     comptime total_calls = num_col_groups * num_4row_chunks
@@ -693,21 +687,17 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
 
     # ---- Create TMA descriptors: k-major, SWIZZLE_128B ----
     var q_tma_op = create_tensor_tile[
-        Index(ROWS, COLS),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+        coord[ROWS, COLS], swizzle_mode=TensorMapSwizzle.SWIZZLE_128B
     ](ctx, q_inp.device_tensor())
 
     var k_tma_op = create_tensor_tile[
-        Index(K_ROWS, K_COLS),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+        coord[K_ROWS, K_COLS], swizzle_mode=TensorMapSwizzle.SWIZZLE_128B
     ](ctx, k_inp.device_tensor())
 
     # ---- Launch kernel ----
     comptime kernel = dense_mma_ws_ts_kernel[
-        type_of(q_tma_op).rank,
         type_of(q_tma_op).tile_shape,
         type_of(q_tma_op).desc_shape,
-        type_of(k_tma_op).rank,
         type_of(k_tma_op).tile_shape,
         type_of(k_tma_op).desc_shape,
     ]
@@ -947,8 +937,7 @@ def test_sparse_mma_ws_ts[
 
     # ---- Create Q TMA descriptor ----
     var q_tma_op = create_tensor_tile[
-        Index(rows, cols),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+        coord[rows, cols], swizzle_mode=TensorMapSwizzle.SWIZZLE_128B
     ](ctx, q_inp.device_tensor())
 
     # ---- Create K gather4 TMA tile ----
@@ -961,10 +950,8 @@ def test_sparse_mma_ws_ts[
         op_type,
         rows,
         cols,
-        type_of(q_tma_op).rank,
         type_of(q_tma_op).tile_shape,
         type_of(q_tma_op).desc_shape,
-        type_of(k_gather4_tma).rank,
         type_of(k_gather4_tma).tile_shape,
         type_of(k_gather4_tma).desc_shape,
     ]
@@ -1284,8 +1271,7 @@ def test_sparse_paged_mma_ws_ts[
 
     # ---- Create Q TMA descriptor ----
     var q_tma_op = create_tensor_tile[
-        Index(rows, cols),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+        coord[rows, cols], swizzle_mode=TensorMapSwizzle.SWIZZLE_128B
     ](ctx, q_inp.device_tensor())
 
     # ---- Create K gather4 TMA descriptor from the paged KV cache ----
@@ -1298,10 +1284,8 @@ def test_sparse_paged_mma_ws_ts[
         op_type,
         rows,
         cols,
-        type_of(q_tma_op).rank,
         type_of(q_tma_op).tile_shape,
         type_of(q_tma_op).desc_shape,
-        type_of(k_gather4_tma).rank,
         type_of(k_gather4_tma).tile_shape,
         type_of(k_gather4_tma).desc_shape,
     ]

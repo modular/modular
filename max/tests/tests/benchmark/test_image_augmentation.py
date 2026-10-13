@@ -152,7 +152,7 @@ def test_augment_request_samples_full_fraction_adds_images_to_all() -> None:
         assert request.prompt_len > 100
 
 
-def test_augment_request_samples_partial_fraction_converges() -> None:
+def test_augment_request_samples_picks_the_exact_share() -> None:
     n = 2000
     samples = RequestSamples(requests=[_make_request() for _ in range(n)])
     augment_samples_with_images(
@@ -163,9 +163,7 @@ def test_augment_request_samples_partial_fraction_converges() -> None:
         image_aspect_ratio=1.0,
     )
     with_images = sum(1 for r in samples.requests if r.encoded_images)
-    # Loose bound: a Bernoulli(0.3) draw over 2000 trials essentially never
-    # lands outside +/- 0.1 of the target fraction.
-    assert 0.2 * n < with_images < 0.4 * n
+    assert with_images == 600
 
 
 def _make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
@@ -178,6 +176,130 @@ def _make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
             SessionMessage(source="assistant", content="", num_tokens=5)
         )
     return ChatSession(id=session_id, messages=messages)
+
+
+def _sessions_with_images(samples: ChatSamples) -> int:
+    return sum(
+        1
+        for session in samples.chat_sessions
+        if any(m.images for m in session.messages)
+    )
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_a_small_fraction_still_picks_its_share_of_sessions(seed: int) -> None:
+    # 0.0677 * 40 = 2.7: two or three sessions on every seed, never none.
+    samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(40)])
+    augment_samples_with_images(
+        samples,
+        fraction=0.0677,
+        image_count=1,
+        image_long_side=64,
+        image_aspect_ratio=1.0,
+        turn="every",
+        seed=seed,
+    )
+    assert _sessions_with_images(samples) in (2, 3)
+
+
+def test_fractional_shares_round_to_the_right_mean() -> None:
+    picked = []
+    for seed in range(200):
+        samples = ChatSamples(
+            chat_sessions=[_make_session(i, num_user_turns=1) for i in range(4)]
+        )
+        augment_samples_with_images(
+            samples,
+            fraction=0.3,
+            image_count=1,
+            image_long_side=64,
+            image_aspect_ratio=1.0,
+            turn="every",
+            seed=seed,
+        )
+        picked.append(_sessions_with_images(samples))
+    # 0.3 * 4 = 1.2: one or two each time, averaging 1.2.
+    assert set(picked) == {1, 2}
+    assert sum(picked) / len(picked) == pytest.approx(1.2, abs=0.1)
+
+
+def test_a_session_that_cannot_carry_images_is_replaced() -> None:
+    # Session 0 has no user turn, so the pick moves to another session.
+    no_user = ChatSession(
+        id=0,
+        messages=[SessionMessage(source="assistant", content="", num_tokens=5)],
+    )
+    samples = ChatSamples(
+        chat_sessions=[no_user] + [_make_session(i) for i in range(1, 4)]
+    )
+    augment_samples_with_images(
+        samples,
+        fraction=0.75,
+        image_count=1,
+        image_long_side=64,
+        image_aspect_ratio=1.0,
+        turn="every",
+        seed=0,
+    )
+    assert _sessions_with_images(samples) == 3
+
+
+def _user_turns(session: ChatSession) -> int:
+    return sum(1 for m in session.messages if m.source == "user")
+
+
+def test_image_sessions_are_cut_to_the_drawn_turn_count() -> None:
+    samples = ChatSamples(
+        chat_sessions=[_make_session(i, num_user_turns=6) for i in range(4)]
+        + [_make_session(4, num_user_turns=2)]
+    )
+    augment_samples_with_images(
+        samples,
+        fraction=1.0,
+        image_count=1,
+        image_long_side=64,
+        image_aspect_ratio=1.0,
+        turn="every",
+        num_turns=3,
+    )
+    assert [_user_turns(s) for s in samples.chat_sessions] == [3, 3, 3, 3, 2]
+    for session in samples.chat_sessions:
+        # The cut keeps each kept turn's reply.
+        assert session.messages[-1].source == "assistant"
+        assert all(m.images for m in session.messages if m.source == "user")
+
+
+def test_sessions_without_images_keep_their_length() -> None:
+    samples = ChatSamples(
+        chat_sessions=[_make_session(i, num_user_turns=6) for i in range(4)]
+    )
+    augment_samples_with_images(
+        samples,
+        fraction=0.5,
+        image_count=1,
+        image_long_side=64,
+        image_aspect_ratio=1.0,
+        turn="every",
+        num_turns=2,
+        seed=0,
+    )
+    turns = sorted(_user_turns(s) for s in samples.chat_sessions)
+    assert turns == [2, 2, 6, 6]
+
+
+def test_a_rejected_session_is_not_cut() -> None:
+    samples = ChatSamples(chat_sessions=[_make_session(0, num_user_turns=6)])
+    augment_samples_with_images(
+        samples,
+        fraction=1.0,
+        image_count=1,
+        image_long_side=512,
+        image_aspect_ratio=1.0,
+        turn="every",
+        num_turns=2,
+        max_chat_len=1,
+    )
+    assert _user_turns(samples.chat_sessions[0]) == 6
 
 
 def test_augment_chat_samples_first_turn_only() -> None:
@@ -358,6 +480,38 @@ def test_augment_request_samples_skips_prompt_with_no_user_message() -> None:
     assert system_only.prompt_len == 5
 
 
+@pytest.mark.parametrize("seed", range(20))
+def test_a_request_with_no_user_message_is_replaced(seed: int) -> None:
+    # 0.45 * 6 = 2.7: two or three plain requests get images; system-only
+    # requests the shuffle reaches are skipped, not counted.
+    system_only = [
+        SampledRequest(
+            prompt_formatted=[ChatMessage(role="system", content="be terse")],
+            prompt_len=5,
+            output_len=8,
+            encoded_images=[],
+            ignore_eos=False,
+        )
+        for _ in range(2)
+    ]
+    samples = RequestSamples(
+        requests=system_only + [_make_request() for _ in range(4)]
+    )
+
+    augment_samples_with_images(
+        samples,
+        fraction=0.45,
+        image_count=1,
+        image_long_side=64,
+        image_aspect_ratio=1.0,
+        seed=seed,
+    )
+
+    assert all(not r.encoded_images for r in system_only)
+    with_images = sum(1 for r in samples.requests if r.encoded_images)
+    assert with_images in (2, 3)
+
+
 def test_augment_request_samples_augments_prompt_with_a_user_message() -> None:
     with_user = SampledRequest(
         prompt_formatted=[
@@ -528,3 +682,5 @@ def test_logs_the_sampled_per_request_shares(
         )
     assert "1.000 per request" in caplog.text
     assert "100.0% of turns carrying at least one image part" in caplog.text
+    # Three-turn sessions resend 1, 2 and 3 parts: two on average.
+    assert "2.00 image parts on each" in caplog.text

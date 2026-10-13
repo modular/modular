@@ -30,8 +30,7 @@ that the existing DeepSeek tests use, so any divergence is a kernel
 numerics bug we've introduced.
 """
 
-from std.math import ceildiv
-from std.random import randn, seed
+from std.random import seed
 
 from max.gpu.host import DeviceContext
 from layout import (
@@ -44,7 +43,7 @@ from linalg.fp8_quantization import (
     naive_blockwise_scaled_fp8_matmul,
 )
 from std.testing import assert_almost_equal
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def _run_one[

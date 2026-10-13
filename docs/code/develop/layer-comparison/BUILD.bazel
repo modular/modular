@@ -6,14 +6,15 @@ package(default_visibility = ["//visibility:private"])
 modular_py_binary(
     name = "layer_comparison",
     srcs = ["layer_comparison.py"],
+    # Eager ops use the optional _interpreter_ops kernels at runtime.
+    # Without them, every eager op falls back to a full graph compile.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
     imports = ["."],
     deps = [
-        "//max/python/max/driver",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        "//max/python/max/nn/hooks",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -23,6 +24,7 @@ modular_run_binary_test(
     name = "layer_comparison_test",
     size = "large",
     binary = "layer_comparison",
+    tags = ["skip-ci-asan"],
     # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],

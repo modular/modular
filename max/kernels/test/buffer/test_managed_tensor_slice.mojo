@@ -134,34 +134,6 @@ def test_simd_load_store() raises:
     assert_equal(loaded2, SIMD[.float32, 4](5.0, 6.0, 7.0, 8.0))
 
 
-def test_to_layout_tensor() raises:
-    """Test to_layout_tensor() conversion."""
-    var storage = Array[Float32, 3 * 4](
-        fill_with=lambda (i: Int) -> Float32: Float32(i)
-    )
-    comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
-    var tensor = ManagedTensorSlice[
-        mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](storage.unsafe_ptr(), (3, 4))
-
-    # Convert to LayoutTensor
-    var layout_tensor = tensor.to_layout_tensor()
-
-    # Verify the layout tensor has the same data
-    assert_equal(layout_tensor[0, 0], 0.0)
-    assert_equal(layout_tensor[1, 1], 5.0)
-    assert_equal(layout_tensor[2, 3], 11.0)
-
-    # Verify dimensions
-    assert_equal(Int(layout_tensor.runtime_layout.shape[0]), 3)
-    assert_equal(Int(layout_tensor.runtime_layout.shape[1]), 4)
-
-    # TODO(GEX-4147): ManagedTensorSlice needs to carry the Array's origin
-    # `tensor` holds an untracked pointer into `storage`; keep `storage` alive
-    # until the last read through it.
-    _ = storage^
-
-
 def test_stride_length() raises:
     """Test stride_length methods."""
     var storage = Array[Float32, 3 * 5](fill={})
@@ -217,7 +189,7 @@ def test_simd_load_store_2d() raises:
 
 
 def test_to_tile_tensor() raises:
-    """Test to_tile_tensor() conversion."""
+    """Test to_tile_tensor() conversion preserves dtype, layout, and pointer."""
     var storage = Array[Float32, 3 * 4](
         fill_with=lambda (i: Int) -> Float32: Float32(i)
     )
@@ -229,15 +201,23 @@ def test_to_tile_tensor() raises:
     # Convert to TileTensor
     var tile_tensor = tensor.to_tile_tensor[.int64]()
 
-    # Verify the layout tensor has the same data
+    # Verify dtype and rank are carried across.
+    comptime assert tile_tensor.dtype == DType.float32
     comptime assert tile_tensor.flat_rank == 2
+
+    # Verify the tile tensor views the same data.
     assert_equal(tile_tensor[0, 0], 0.0)
     assert_equal(tile_tensor[1, 1], 5.0)
     assert_equal(tile_tensor[2, 3], 11.0)
 
-    # Verify dimensions
+    # Verify the tile tensor is a view over the slice, not a copy.
+    assert_equal(Int(tile_tensor.unsafe_ptr()), Int(tensor.unsafe_ptr()))
+
+    # Verify dimensions and strides match the slice.
     assert_equal(tile_tensor.layout.shape[0]().value(), 3)
     assert_equal(tile_tensor.layout.shape[1]().value(), 4)
+    assert_equal(tile_tensor.layout.stride[0]().value(), 4)
+    assert_equal(tile_tensor.layout.stride[1]().value(), 1)
 
     # TODO(GEX-4147): ManagedTensorSlice needs to carry the Array's origin
     # `tensor` holds an untracked pointer into `storage`; keep `storage` alive
@@ -479,51 +459,6 @@ def test_foreach_value_form_rank2() raises:
     _check_value_form_rank2[DType.float32]()
 
 
-def _check_value_matches_parametric[dtype: DType]() raises:
-    comptime N = 32
-    var storage = Array[Scalar[dtype], 2 * N](fill={})
-    var base = storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
-    var value_ptr = base
-    var param_ptr = base.unsafe_offset(N)
-
-    var value_out = _flat_output[dtype, N](value_ptr)
-    var param_out = _flat_output[dtype, N](param_ptr)
-    var value_view = _flat_view[dtype, N](value_ptr)
-    var param_view = _flat_view[dtype, N](param_ptr)
-
-    var ctx = DeviceContext(api="cpu")
-    var two = Scalar[dtype](2)
-
-    # Both bodies compute `2 * i + 1`. The value form carries its multiplier in
-    # a capture list; the comptime form cannot capture at all without
-    # `@__parameter`, so it spells the multiplier inline. Same arithmetic, two
-    # dispatch paths — any divergence is the new overload's fault.
-    @inline(.always)
-    def value_body[width: Int](idx: Coord) {var two} -> SIMD[dtype, width]:
-        return _lane_ramp[dtype, width](coord_to_index_list(idx)[0]) * two + 1
-
-    foreach(value_body, value_out, ctx)
-
-    @inline(.always)
-    def param_body[width: Int](idx: Coord) capturing -> SIMD[dtype, width]:
-        return _lane_ramp[dtype, width](coord_to_index_list(idx)[0]) * 2 + 1
-
-    foreach[param_body](param_out, ctx)
-
-    for i in range(N):
-        assert_equal(
-            value_view.load[1]((i,)),
-            param_view.load[1]((i,)),
-        )
-        assert_equal(value_view.load[1]((i,)), Scalar[dtype](i * 2 + 1))
-    _ = storage^
-
-
-def test_foreach_value_matches_parametric() raises:
-    """Differential: both overloads produce identical results for one body."""
-    _check_value_matches_parametric[DType.float32]()
-
-
 def _check_capture_outer_tensor[dtype: DType]() raises:
     comptime N = 32
     var storage = Array[Scalar[dtype], 2 * N](fill={})
@@ -745,33 +680,6 @@ def test_foreach_routes_through_fused_store() raises:
     break output fusion while every other test still passed.
     """
     _check_fused_store[DType.float32]()
-
-
-def _check_parametric_form_still_resolves[dtype: DType]() raises:
-    comptime N = 32
-    var storage = Array[Scalar[dtype], N](fill={})
-    var base = storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
-    var out = _flat_output[dtype, N](base)
-    var view = _flat_view[dtype, N](base)
-
-    # No capture list: a `capturing` body written without `@__parameter` does
-    # not actually capture, so anything it needs has to come from `idx`.
-    @inline(.always)
-    def body[width: Int](idx: Coord) capturing -> SIMD[dtype, width]:
-        return _lane_ramp[dtype, width](coord_to_index_list(idx)[0]) + 5
-
-    var ctx = DeviceContext(api="cpu")
-    foreach[body](out, ctx)
-
-    for i in range(N):
-        assert_equal(view.load[1]((i,)), Scalar[dtype](i + 5))
-    _ = storage^
-
-
-def test_foreach_parametric_form_still_resolves() raises:
-    """Regression guard: adding the value overload left the comptime one
-    callable and unambiguous."""
-    _check_parametric_form_still_resolves[DType.float32]()
 
 
 def main() raises:

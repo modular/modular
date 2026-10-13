@@ -57,6 +57,10 @@ public:
     return emitError(getToken().getLoc(), message);
   }
 
+  /// Warn if `tok` is the unprefixed `async` or `await` spelling of the
+  /// unstable `__async` or `__await` keyword.
+  void warnIfUnprefixedAsyncSpelling(const Token &tok);
+
   //===--------------------------------------------------------------------===//
   // Location Handling
   //===--------------------------------------------------------------------===//
@@ -293,6 +297,13 @@ public:
   /// the current statement.  This can be passed in as None when there is a
   /// trailing punctuator that naturally terminates the expression.
   ParseResult parseExpression(ExprNode *&result,
+                              std::optional<size_t> stmtIndent = std::nullopt,
+                              Precedence minPrec = Precedence::kExpression);
+  /// Parse an expression with its nodes owned by `allocator`.  This is usually
+  /// the statement allocator for the current statement being parsed, but for
+  /// decorators (and other "actually immortal" things, it can be the persistent
+  /// allocator).
+  ParseResult parseExpression(ExprNode *&result, BumpAllocator &allocator,
                               std::optional<size_t> stmtIndent = std::nullopt,
                               Precedence minPrec = Precedence::kExpression);
   ParseResult parseVarInitExpression(ExprNode *&result, size_t stmtIndent);

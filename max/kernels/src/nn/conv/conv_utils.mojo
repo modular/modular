@@ -35,14 +35,26 @@ from std.utils.index import Index, IndexList
 
 
 # Elementwise epilogue signature
-comptime elementwise_epilogue_type = def[rank: Int](
-    coords: IndexList[rank],
+comptime elementwise_epilogue_type = def(
+    coords: Coord,
     f_size: Int,
 ) capturing -> None
+"""Fused epilogue applied over a whole `f_size`-long run at `coords`.
+
+Distinct from `elementwise_simd_epilogue_type`, which receives the value; this
+one receives only the coordinate and the run length. Rank-N in the output's own
+space; the `Coord` carries its rank, so there is no `rank` parameter.
+"""
 
 comptime elementwise_simd_epilogue_type = def[
-    dtype: DType, rank: Int, width: SIMDLength, alignment: Int = 1
-](IndexList[rank], SIMD[dtype, width]) capturing -> None
+    dtype: DType, width: SIMDLength, alignment: Int = 1
+](Coord, SIMD[dtype, width]) capturing -> None
+"""Fused elementwise epilogue for convolution: `(coord, value) -> None`.
+
+The coordinate is rank-N in the output's own space (NHWC / NDHWC), unlike
+`linalg.utils.elementwise_epilogue_type`, which is always rank 2. The `Coord`
+carries its own rank.
+"""
 
 
 # ===----------------------------------------------------------------------=== #
@@ -240,38 +252,41 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
             Self.rank == 1 or Self.rank == 2 or Self.rank == 3
         ), "Only support 1d, 2d, and 3d convolution."
 
-        comptime if Self.rank == 1:
-            var w = output_flat_coord * self.stride_at[0]() - self.pad_w_lower()
+        comptime match Self.rank:
+            case 1:
+                var w = (
+                    output_flat_coord * self.stride_at[0]() - self.pad_w_lower()
+                )
 
-            return self.c * w
+                return self.c * w
 
-        elif Self.rank == 2:
-            # Unpack output coordinates
-            var ho, wo = divmod(output_flat_coord, self.wo())
+            case 2:
+                # Unpack output coordinates
+                var ho, wo = divmod(output_flat_coord, self.wo())
 
-            # Input coordinates
-            var h = ho * self.stride_at[0]() - self.pad_h_lower()
-            var w = wo * self.stride_at[1]() - self.pad_w_lower()
+                # Input coordinates
+                var h = ho * self.stride_at[0]() - self.pad_h_lower()
+                var w = wo * self.stride_at[1]() - self.pad_w_lower()
 
-            return self.c * (w + self.w() * (h + n * self.h()))
+                return self.c * (w + self.w() * (h + n * self.h()))
 
-        elif Self.rank == 3:
-            # Unpack output coordinates
-            var doho, wo = divmod(output_flat_coord, self.wo())
-            var do, ho = divmod(doho, self.ho())
+            case 3:
+                # Unpack output coordinates
+                var doho, wo = divmod(output_flat_coord, self.wo())
+                var do, ho = divmod(doho, self.ho())
 
-            # Input coordinates
-            var d = do * self.stride_at[0]() - self.pad_d_lower()
-            var h = ho * self.stride_at[1]() - self.pad_h_lower()
-            var w = wo * self.stride_at[2]() - self.pad_w_lower()
+                # Input coordinates
+                var d = do * self.stride_at[0]() - self.pad_d_lower()
+                var h = ho * self.stride_at[1]() - self.pad_h_lower()
+                var w = wo * self.stride_at[2]() - self.pad_w_lower()
 
-            return self.c * (
-                w + self.w() * (h + self.h() * (d + self.d() * self.n))
-            )
+                return self.c * (
+                    w + self.w() * (h + self.h() * (d + self.d() * self.n))
+                )
 
-        else:
-            # Pass compile.
-            return -1
+            case _:
+                # Pass compile.
+                return -1
 
     @inline(.always)
     def matmul_M(self) -> Int:
@@ -551,12 +566,13 @@ def reorder_padding[rank: Int](pad: IntTuple) -> IntTuple:
     Returns:
         Flattened padding tuple ordered as per-dimension `(lower, upper)` pairs.
     """
-    comptime if rank == 1:
-        return IntTuple(pad).flatten()
-    elif rank == 2:
-        return IntTuple(pad[0], pad[2], pad[1], pad[3])
-    else:
-        return IntTuple(pad[0], pad[2], pad[4], pad[1], pad[3], pad[5])
+    comptime match rank:
+        case 1:
+            return IntTuple(pad).flatten()
+        case 2:
+            return IntTuple(pad[0], pad[2], pad[1], pad[3])
+        case _:
+            return IntTuple(pad[0], pad[2], pad[4], pad[1], pad[3], pad[5])
 
 
 struct ConvInfoStatic[rank: Int](Defaultable):

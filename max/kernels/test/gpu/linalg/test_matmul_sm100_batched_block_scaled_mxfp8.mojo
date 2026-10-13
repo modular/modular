@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from std.math import align_up
 from std.sys import argv, size_of
-import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -38,7 +36,6 @@ from linalg.fp4_utils import (
 from std.random import random_ui64
 from std.simd import _convert_f32_to_float8_ue8m0
 from layout import (
-    Coord,
     CoordLike,
     Idx,
     TileTensor,

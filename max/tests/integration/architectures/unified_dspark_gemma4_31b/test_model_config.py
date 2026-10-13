@@ -361,7 +361,7 @@ def _make_unified(
     target = target if target is not None else _make_target()
     # None means unset: a config that never mentions num_speculative_tokens.
     speculative_config = SpeculativeConfig(
-        speculative_method="dflash",
+        speculative_method="dspark",
         num_speculative_tokens=num_speculative_tokens,
     )
     return UnifiedDSparkGemma4_31BConfig(
@@ -460,7 +460,7 @@ def _kv_pipeline_stand_in(kv_cache: KVCacheConfig) -> PipelineConfig:
         SimpleNamespace(
             model=SimpleNamespace(kv_cache=kv_cache, data_parallel_degree=1),
             speculative=SpeculativeConfig(
-                speculative_method="dflash", num_speculative_tokens=7
+                speculative_method="dspark", num_speculative_tokens=7
             ),
         ),
     )
@@ -711,7 +711,7 @@ def _make_unified_real(
         draft=draft,
         draft_kv_params=draft_kv_params,
         speculative_config=SpeculativeConfig(
-            speculative_method="dflash", num_speculative_tokens=7
+            speculative_method="dspark", num_speculative_tokens=7
         ),
         target_layer_ids=[0, 1],
         mask_token_id=draft.mask_token_id,
@@ -909,7 +909,7 @@ def test_relaxed_acceptance_threads_into_sampler(virtual_gpu: None) -> None:
 
     config = _make_unified_real(_parse(_raw()))
     config.speculative_config = SpeculativeConfig(
-        speculative_method="dflash",
+        speculative_method="dspark",
         num_speculative_tokens=7,
         use_relaxed_acceptance_for_thinking=True,
         relaxed_topk=5,
@@ -1042,9 +1042,9 @@ def test_block_dispatch_metadata_rebuild_content() -> None:
 
 def test_width_honors_explicit() -> None:
     draft_hf = _raw()
-    unset = SpeculativeConfig(speculative_method="dflash")
+    unset = SpeculativeConfig(speculative_method="dspark")
     assert speculators_dspark_width(unset, None, draft_hf) == 7
     explicit = SpeculativeConfig(
-        speculative_method="dflash", num_speculative_tokens=4
+        speculative_method="dspark", num_speculative_tokens=4
     )
     assert speculators_dspark_width(explicit, None, draft_hf) == 4

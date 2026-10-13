@@ -38,12 +38,140 @@ from max.gpu.sync import barrier
 import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.memory import bitcast, unsafe_stack_allocation
 from std.math import ceildiv
 from std.time import global_perf_counter_ns
 from std.utils.numerics import min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
-from structured_kernels.trace_buf import GmemTrace, NullTrace, TraceBuf
+from structured_kernels.trace_buf import NullTrace, TraceBuf
+
+# ===----------------------------------------------------------------------=== #
+# Per-row live-column bounds and output sinks
+# ===----------------------------------------------------------------------=== #
+
+
+trait TopkSink(TrivialRegisterPassable):
+    """Where a top-k kernel writes each selected column.
+
+    The kernels hand every output slot to `store`, `-1` padding included, so a
+    sink can derive more than one output from a selection in the same pass.
+    """
+
+    def store(self, idx: Int, col: Int32):
+        """Writes output slot `idx` of the flat `[rows, K]` output.
+
+        Args:
+            idx: Flat output slot, `row * K + rank`.
+            col: Selected column, or `-1` for a padding slot.
+        """
+        ...
+
+
+struct PlainSink(TopkSink):
+    """Writes the selected columns to one int32 buffer."""
+
+    var out_idxs: UnsafePointer[Int32, MutUntrackedOrigin]
+    """Flat `[rows, K]` output buffer."""
+
+    @inline(.always)
+    def __init__(out self, out_idxs: UnsafePointer[Int32, MutAnyOrigin]):
+        """Wraps an output buffer.
+
+        Args:
+            out_idxs: Flat `[rows, K]` output buffer.
+        """
+        self.out_idxs = out_idxs.unsafe_origin_cast[MutUntrackedOrigin]()
+
+    @inline(.always)
+    def store(self, idx: Int, col: Int32):
+        """Writes `col` to `out_idxs[idx]`.
+
+        Args:
+            idx: Flat output slot.
+            col: Selected column, or `-1`.
+        """
+        self.out_idxs[idx] = col
+
+
+trait RowBound(DevicePassable, TrivialRegisterPassable):
+    """Per-row live-column count and output sink for the bounded top-k kernels.
+
+    Every thread of a row's block calls `row` once, at kernel entry, with the
+    block's row index; the block is converged there, so an implementation may
+    use warp-collective operations. Per-row state the sink needs (a batch
+    lookup, say) is resolved there once rather than per store.
+    """
+
+    comptime Sink: TopkSink
+    """Sink type the kernels write the row's selections through."""
+
+    def row(
+        self, row: Int, out_idxs: UnsafePointer[Int32, MutAnyOrigin]
+    ) -> Tuple[Int, Self.Sink]:
+        """Returns the live leading column count of `row` and its sink.
+
+        Args:
+            row: Row index within the launch (the block index).
+            out_idxs: The launch's flat `[rows, K]` output buffer.
+
+        Returns:
+            The live column count, which the kernels clamp to `[0, N]`, and
+            the sink for the row's output slots.
+        """
+        ...
+
+
+struct RowBoundsPtr(RowBound):
+    """Row bounds read from a `[rows]` int32 device buffer."""
+
+    comptime device_type: AnyType = Self
+    """Device-side type alias; the struct is trivially device-passable."""
+
+    comptime Sink = PlainSink
+    """Selections go to the output buffer unchanged."""
+
+    var bounds: UnsafePointer[Int32, ImmUntrackedOrigin]
+    """Device pointer to one int32 bound per row."""
+
+    @inline(.always)
+    def __init__(out self, bounds: UnsafePointer[Int32, ImmutAnyOrigin]):
+        """Wraps a device buffer of per-row bounds.
+
+        Args:
+            bounds: Device pointer to one int32 bound per row.
+        """
+        self.bounds = bounds.unsafe_origin_cast[ImmUntrackedOrigin]()
+
+    @inline(.always)
+    def row(
+        self, row: Int, out_idxs: UnsafePointer[Int32, MutAnyOrigin]
+    ) -> Tuple[Int, PlainSink]:
+        """Returns `bounds[row]` and a plain sink.
+
+        Args:
+            row: Row index within the launch.
+            out_idxs: The launch's flat `[rows, K]` output buffer.
+
+        Returns:
+            The stored bound and a sink over `out_idxs`.
+        """
+        return (Int(self.bounds[row]), PlainSink(out_idxs))
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Returns the type name for runtime diagnostics.
+
+        Returns:
+            Always `"RowBoundsPtr"`.
+        """
+        return "RowBoundsPtr"
+
 
 # ===----------------------------------------------------------------------=== #
 # Compile-time constants
@@ -300,43 +428,48 @@ def _bitonic_sort_desc[
             comptime stride = 1 << (h - 1)
             var want_d = ((e0 >> s) & 1) == 0
 
-            comptime if stride == 1:
-                var want_d0 = ((e0 >> s) & 1) == 0
-                var want_d2 = ((e2 >> s) & 1) == 0
-                v0, i0, v1, i1 = _swap_pair_if[tiebreak](
-                    v0, i0, v1, i1, want_d0
-                )
-                v2, i2, v3, i3 = _swap_pair_if[tiebreak](
-                    v2, i2, v3, i3, want_d2
-                )
+            comptime match stride:
+                case 1:
+                    var want_d0 = ((e0 >> s) & 1) == 0
+                    var want_d2 = ((e2 >> s) & 1) == 0
+                    v0, i0, v1, i1 = _swap_pair_if[tiebreak](
+                        v0, i0, v1, i1, want_d0
+                    )
+                    v2, i2, v3, i3 = _swap_pair_if[tiebreak](
+                        v2, i2, v3, i3, want_d2
+                    )
 
-            elif stride == 2:
-                v0, i0, v2, i2 = _swap_pair_if[tiebreak](v0, i0, v2, i2, want_d)
-                v1, i1, v3, i3 = _swap_pair_if[tiebreak](v1, i1, v3, i3, want_d)
+                case 2:
+                    v0, i0, v2, i2 = _swap_pair_if[tiebreak](
+                        v0, i0, v2, i2, want_d
+                    )
+                    v1, i1, v3, i3 = _swap_pair_if[tiebreak](
+                        v1, i1, v3, i3, want_d
+                    )
 
-            else:
-                comptime ts = stride >> 2
-                var pv0 = warp.shuffle_xor(v0, UInt32(ts))
-                var pi0 = warp.shuffle_xor(i0, UInt32(ts))
-                var pv1 = warp.shuffle_xor(v1, UInt32(ts))
-                var pi1 = warp.shuffle_xor(i1, UInt32(ts))
-                var pv2 = warp.shuffle_xor(v2, UInt32(ts))
-                var pi2 = warp.shuffle_xor(i2, UInt32(ts))
-                var pv3 = warp.shuffle_xor(v3, UInt32(ts))
-                var pi3 = warp.shuffle_xor(i3, UInt32(ts))
-                var is_lo = (tid & ts) == 0
-                v0, i0 = _select_lane_after_xor[tiebreak](
-                    v0, i0, pv0, pi0, want_d, is_lo
-                )
-                v1, i1 = _select_lane_after_xor[tiebreak](
-                    v1, i1, pv1, pi1, want_d, is_lo
-                )
-                v2, i2 = _select_lane_after_xor[tiebreak](
-                    v2, i2, pv2, pi2, want_d, is_lo
-                )
-                v3, i3 = _select_lane_after_xor[tiebreak](
-                    v3, i3, pv3, pi3, want_d, is_lo
-                )
+                case _:
+                    comptime ts = stride >> 2
+                    var pv0 = warp.shuffle_xor(v0, UInt32(ts))
+                    var pi0 = warp.shuffle_xor(i0, UInt32(ts))
+                    var pv1 = warp.shuffle_xor(v1, UInt32(ts))
+                    var pi1 = warp.shuffle_xor(i1, UInt32(ts))
+                    var pv2 = warp.shuffle_xor(v2, UInt32(ts))
+                    var pi2 = warp.shuffle_xor(i2, UInt32(ts))
+                    var pv3 = warp.shuffle_xor(v3, UInt32(ts))
+                    var pi3 = warp.shuffle_xor(i3, UInt32(ts))
+                    var is_lo = (tid & ts) == 0
+                    v0, i0 = _select_lane_after_xor[tiebreak](
+                        v0, i0, pv0, pi0, want_d, is_lo
+                    )
+                    v1, i1 = _select_lane_after_xor[tiebreak](
+                        v1, i1, pv1, pi1, want_d, is_lo
+                    )
+                    v2, i2 = _select_lane_after_xor[tiebreak](
+                        v2, i2, pv2, pi2, want_d, is_lo
+                    )
+                    v3, i3 = _select_lane_after_xor[tiebreak](
+                        v3, i3, pv3, pi3, want_d, is_lo
+                    )
 
     # XOR bank-swizzle (bijection) to keep the SMEM stages bank-conflict-free.
     var sw0 = (e0 & ~31) | ((e0 ^ (e0 >> 5)) & 31)
@@ -579,38 +712,38 @@ def _persistent_topk_2048_kernel[
     K: Int32,
 ):
     """Block-wide bitonic top-k for `N <= _PTOPK_TOTAL` (one block per row)."""
-    _persistent_topk_2048_impl(in_scores, out_idxs, N, K, Int(N))
+    _persistent_topk_2048_impl(in_scores, PlainSink(out_idxs), N, K, Int(N))
 
 
 @__name(t"persistent_topk_2048_bounded_{in_dtype}")
 def _persistent_topk_2048_bounded_kernel[
-    in_dtype: DType
+    in_dtype: DType, RB: RowBound
 ](
     in_scores: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
-    row_bounds: UnsafePointer[Int32, ImmutAnyOrigin],
+    row_bounds: RB,
 ):
     """`_persistent_topk_2048_kernel` with a per-row live-column bound.
 
-    Row `r` reads only `in_scores[r * N .. r * N + row_bounds[r])`; columns
+    Row `r` reads only `in_scores[r * N .. r * N + row_bounds(r))`; columns
     past the bound load as `(-inf, -1)`, so they are never selected and pad
     the output with `-1`. Scan cost tracks each row's real length rather than
     the row stride `N`.
     """
-    var bound = Int(row_bounds[block_idx.x])
+    var bound, sink = row_bounds.row(block_idx.x, out_idxs)
     _persistent_topk_2048_impl(
-        in_scores, out_idxs, N, K, min(Int(N), max(0, bound))
+        in_scores, sink, N, K, min(Int(N), max(0, bound))
     )
 
 
 @inline(.always)
 def _persistent_topk_2048_impl[
-    in_dtype: DType, //
+    in_dtype: DType, S: TopkSink, //
 ](
     in_scores: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
+    sink: S,
     N: Int32,
     K: Int32,
     count: Int,
@@ -658,13 +791,13 @@ def _persistent_topk_2048_impl[
 
     var base = token * _K
     if e0 < _K:
-        out_idxs[base + e0] = i0
+        sink.store(base + e0, i0)
     if e1 < _K:
-        out_idxs[base + e1] = i1
+        sink.store(base + e1, i1)
     if e2 < _K:
-        out_idxs[base + e2] = i2
+        sink.store(base + e2, i2)
     if e3 < _K:
-        out_idxs[base + e3] = i3
+        sink.store(base + e3, i3)
 
 
 @__name(t"streaming_topk_{in_dtype}")
@@ -1424,7 +1557,7 @@ def _histsel_topk_kernel[
         sig_bits,
         phi_dtype,
         scan_items,
-    ](in_scores, out_idxs, N, K, Int(N), trace_buf)
+    ](in_scores, PlainSink(out_idxs), N, K, Int(N), trace_buf)
 
 
 @__name(t"histsel_topk_bounded_{in_dtype}")
@@ -1442,24 +1575,25 @@ def _histsel_topk_bounded_kernel[
     sig_bits: Int = _hsel_sig_bits[in_dtype](),
     phi_dtype: DType = _hsel_phi_dtype[in_dtype](),
     scan_items: Int = _HSEL_SCAN_ITEMS,
+    RB: RowBound = RowBoundsPtr,
 ](
     in_scores: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
-    row_bounds: UnsafePointer[Int32, ImmutAnyOrigin],
+    row_bounds: RB,
     trace_buf: TraceBufT,
 ):
     """`_histsel_topk_impl` with a per-row live-column bound.
 
-    Row `r` scans only `[0, row_bounds[r])` of its `N`-wide stripe; columns
+    Row `r` scans only `[0, row_bounds(r))` of its `N`-wide stripe; columns
     past the bound are never selected and pad the output with `-1` (the same
     result as the unbounded kernel over a `-inf`-padded row), while the row
     traffic tracks the real length. A bound at or below `K` selects every
     live column, in descending order, and pads the rest of the output row
     with `-1`.
     """
-    var bound = Int(row_bounds[block_idx.x])
+    var bound, sink = row_bounds.row(block_idx.x, out_idxs)
     _histsel_topk_impl[
         TraceBufT,
         enable_trace,
@@ -1473,12 +1607,13 @@ def _histsel_topk_bounded_kernel[
         sig_bits,
         phi_dtype,
         scan_items,
-    ](in_scores, out_idxs, N, K, min(Int(N), max(0, bound)), trace_buf)
+    ](in_scores, sink, N, K, min(Int(N), max(0, bound)), trace_buf)
 
 
 @inline(.always)
 def _histsel_topk_impl[
     in_dtype: DType,
+    S: TopkSink,
     //,
     TraceBufT: TraceBuf,
     enable_trace: Bool = False,
@@ -1494,7 +1629,7 @@ def _histsel_topk_impl[
     scan_items: Int = _HSEL_SCAN_ITEMS,
 ](
     in_scores: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
+    sink: S,
     N: Int32,
     K: Int32,
     count: Int,
@@ -1581,6 +1716,11 @@ def _histsel_topk_impl[
         ctl[4] = 0
     if tid < _HSEL_WARPS:
         wcur[tid] = 0
+    # Only a select-all row needs this: it skips every round below, and with them
+    # the barriers that would otherwise order this store ahead of the claims.
+    # `select_all` is block-uniform, so the barrier is not divergent.
+    if select_all:
+        barrier()
 
     # A column is one of the K when `phi > t_phi`, or `phi == t_phi` and its
     # `~column` is at least `t_rcol` -- descending score, ascending column.
@@ -1964,9 +2104,13 @@ def _histsel_topk_impl[
     # more than the rank it would save. So the reproducible contract keeps the rank
     # and only `deterministic=False` skips it.
     comptime if (not ordered) and (not deterministic):
+        # Select-all appends only `count` keys; the slots past it are stale.
         var q = tid
         while q < _K:
-            out_idxs[token * _K + q] = _key_column(sel_k[q])
+            sink.store(
+                token * _K + q,
+                _key_column(sel_k[q]) if q < m_sel else Int32(-1),
+            )
             q += _PTOPK_BLOCK
         comptime if enable_trace:
             if tid == 0:
@@ -1998,7 +2142,7 @@ def _histsel_topk_impl[
         wor,
         hist,
         sel_k,
-        out_idxs,
+        sink,
         token * _K,
         m_sel,
         _K,
@@ -2150,6 +2294,8 @@ def _hsel_digit_of[
 
 @inline(.always)
 def _hsel_rank_write[
+    S: TopkSink,
+    //,
     TraceBufT: TraceBuf,
     nthreads: Int,
     enable_trace: Bool,
@@ -2168,7 +2314,7 @@ def _hsel_rank_write[
     wor: UnsafePointer[UInt64, sk_origin, address_space=.SHARED],
     dmap: UnsafePointer[UInt32, d_origin, address_space=.SHARED],
     banchor: UnsafePointer[UInt64, d_origin, address_space=.SHARED],
-    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
+    sink: S,
     out_base: Int,
     M: Int,
     K: Int,
@@ -2177,7 +2323,7 @@ def _hsel_rank_write[
     trace_buf: TraceBufT,
     token: Int,
 ):
-    """Write the largest `K` of the `M` keys in `sel_k` to `out_idxs`, descending.
+    """Write the largest `K` of the `M` keys in `sel_k` to `sink`, descending.
 
     `M` may exceed `K` when `slots` does: a rank is a bijection onto `[0, M)`, so
     the keys the caller wants are exactly the ranks below `K` and the rest are
@@ -2357,7 +2503,6 @@ def _hsel_rank_write[
             cnt[j] = hist[top - j]
             local += cnt[j]
     var inclusive = block.prefix_sum[block_size=nthreads](local)
-    barrier()
     # `acc` before the add is the count of keys in strictly higher bins, which is
     # both bin `b`'s first output slot and its cursor's initial value -- so the
     # cursor costs no second pass over the bins and no extra barrier.
@@ -2465,9 +2610,9 @@ def _hsel_rank_write[
         # `M < K` only under a per-row bound with fewer live columns than
         # selections; ranks exist for the `M` live keys and the tail is `-1`.
         if q < M:
-            out_idxs[out_base + q] = Int32(Int(stage[q]))
+            sink.store(out_base + q, Int32(Int(stage[q])))
         else:
-            out_idxs[out_base + q] = Int32(-1)
+            sink.store(out_base + q, Int32(-1))
         q += nthreads
 
 
@@ -2506,7 +2651,7 @@ def _histsel_resident_kernel[
         res_vecs,
         sig_bits,
         phi_dtype,
-    ](in_scores, out_idxs, N, K, Int(N), trace_buf)
+    ](in_scores, PlainSink(out_idxs), N, K, Int(N), trace_buf)
 
 
 @__llvm_metadata(
@@ -2526,21 +2671,22 @@ def _histsel_resident_bounded_kernel[
     in_dtype: DType = .float32,
     sig_bits: Int = _hsel_sig_bits[in_dtype](),
     phi_dtype: DType = _hsel_phi_dtype[in_dtype](),
+    RB: RowBound = RowBoundsPtr,
 ](
     in_scores: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Int32, MutAnyOrigin],
     N: Int32,
     K: Int32,
-    row_bounds: UnsafePointer[Int32, ImmutAnyOrigin],
+    row_bounds: RB,
     trace_buf: TraceBufT,
 ):
     """`_histsel_resident_impl` with a per-row live-column bound.
 
     Same contract as `_histsel_topk_bounded_kernel`: row `r` reads only
-    `[0, row_bounds[r])` of its stripe, and a bound at or below `K` yields all
+    `[0, row_bounds(r))` of its stripe, and a bound at or below `K` yields all
     live columns descending with a `-1` output tail.
     """
-    var bound = Int(row_bounds[block_idx.x])
+    var bound, sink = row_bounds.row(block_idx.x, out_idxs)
     _histsel_resident_impl[
         TraceBufT,
         enable_trace,
@@ -2551,12 +2697,13 @@ def _histsel_resident_bounded_kernel[
         res_vecs,
         sig_bits,
         phi_dtype,
-    ](in_scores, out_idxs, N, K, min(Int(N), max(0, bound)), trace_buf)
+    ](in_scores, sink, N, K, min(Int(N), max(0, bound)), trace_buf)
 
 
 @inline(.always)
 def _histsel_resident_impl[
     in_dtype: DType,
+    S: TopkSink,
     //,
     TraceBufT: TraceBuf,
     enable_trace: Bool = False,
@@ -2569,7 +2716,7 @@ def _histsel_resident_impl[
     phi_dtype: DType = _hsel_phi_dtype[in_dtype](),
 ](
     in_scores: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
-    out_idxs: UnsafePointer[Int32, MutAnyOrigin],
+    sink: S,
     N: Int32,
     K: Int32,
     count: Int,
@@ -2698,7 +2845,7 @@ def _histsel_resident_impl[
         if select_all:
             var q = tid
             while q < _K:
-                out_idxs[token * _K + q] = Int32(q) if q < count else Int32(-1)
+                sink.store(token * _K + q, Int32(q) if q < count else Int32(-1))
                 q += _HSEL_RES_BLOCK
             comptime if enable_trace:
                 if tid == 0:
@@ -3074,7 +3221,7 @@ def _histsel_resident_impl[
                 var gp = Int(warp.shuffle_idx(wb, UInt32(WARP_SIZE - 1)) + pre)
                 comptime for j in range(_PTOPK_ITEMS):
                     if (gmask >> UInt32(j)) & UInt32(1) != 0:
-                        out_idxs[obase + gp] = Int32(c0 + j)
+                        sink.store(obase + gp, Int32(c0 + j))
                         gp += 1
 
             comptime if enable_trace:
@@ -3103,7 +3250,7 @@ def _histsel_resident_impl[
                 comptime for j in range(_PTOPK_ITEMS):
                     if (emask[v] >> UInt32(j)) & UInt32(1) != 0:
                         if ep < _K:
-                            out_idxs[obase + ep] = Int32(c0 + j)
+                            sink.store(obase + ep, Int32(c0 + j))
                         ep += 1
 
             comptime if enable_trace:
@@ -3173,7 +3320,7 @@ def _histsel_resident_impl[
                     UInt64(global_perf_counter_ns()),
                 )
 
-        # Straight to `out_idxs`: a thread's own keys land on consecutive slots,
+        # Straight to `sink`: a thread's own keys land on consecutive slots,
         # and staging them in shared memory to copy out by slot measured slower
         # than the scatter it avoids.
         var obase = token * _K
@@ -3183,11 +3330,11 @@ def _histsel_resident_impl[
             var ep = Int(pref[v] & UInt32(0xFFFF)) + Int(e_before[v])
             comptime for j in range(_PTOPK_ITEMS):
                 if (gmask[v] >> UInt32(j)) & UInt32(1) != 0:
-                    out_idxs[obase + gp] = Int32(c0 + j)
+                    sink.store(obase + gp, Int32(c0 + j))
                     gp += 1
                 elif (emask[v] >> UInt32(j)) & UInt32(1) != 0:
                     if ep < need_eq:
-                        out_idxs[obase + n_above + ep] = Int32(c0 + j)
+                        sink.store(obase + n_above + ep, Int32(c0 + j))
                     ep += 1
 
         comptime if enable_trace:
@@ -3257,7 +3404,7 @@ def _histsel_resident_impl[
         wor,
         dmap,
         banchor,
-        out_idxs,
+        sink,
         token * _K,
         m_sel,
         _K,
@@ -3711,7 +3858,7 @@ def _assert_scores_16b_aligned[
 
 
 def persistent_topk_block[
-    in_dtype: DType, //
+    in_dtype: DType, //, RB: RowBound = RowBoundsPtr
 ](
     ctx: DeviceContext,
     in_scores: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
@@ -3719,7 +3866,7 @@ def persistent_topk_block[
     N: Int,
     K: Int,
     total_seq_len: Int,
-    row_bounds: Optional[UnsafePointer[Int32, ImmutAnyOrigin]] = None,
+    row_bounds: Optional[RB] = None,
 ) raises:
     """Launch block-wide bitonic top-k for `total_seq_len` score rows.
 
@@ -3747,16 +3894,19 @@ def persistent_topk_block[
 
     Parameters:
         in_dtype: Element type of the score buffer, f32 or bf16 (inferred).
+        RB: Type of `row_bounds`; see `RowBound`.
 
     Args:
         ctx: Device context.
         in_scores: Flat score buffer `[total_seq_len × N]` row-major.
         out_idxs: Output buffer `[total_seq_len × K]` row-major (int32).
         N: Score columns per token (the row stride).
-        K: Top-k count per token (≤ N, and ≤ PERSISTENT_TOPK_MAX_N when N > 2048).
+        K: Top-k count per token, at most PERSISTENT_TOPK_MAX_N. It may
+            exceed `N`; slots past a row's live columns are `-1`.
         total_seq_len: Number of rows (one block per row).
-        row_bounds: Optional `[total_seq_len]` int32 per-row live-column counts.
-            When set, row `r` reads only its first `row_bounds[r]` columns;
+        row_bounds: Optional per-row live-column counts (`RowBoundsPtr` over
+            a `[total_seq_len]` int32 buffer, or any `RowBound`). When set, row
+            `r` reads only its first `row_bounds(r)` columns;
             columns past the bound are never selected, never read (they may be
             uninitialized), and pad the output with `-1`. Scan cost tracks the
             real row lengths. Only supported for `N ≤ PERSISTENT_TOPK_MAX_N`
@@ -3764,15 +3914,15 @@ def persistent_topk_block[
     """
     _assert_scores_16b_aligned(in_scores, N, total_seq_len)
     if N <= PERSISTENT_TOPK_MAX_N:
-        if row_bounds:
+        if case .Some(row_bounds) = row_bounds:
             ctx.enqueue_function[
-                _persistent_topk_2048_bounded_kernel[in_dtype]
+                _persistent_topk_2048_bounded_kernel[in_dtype, RB]
             ](
                 in_scores,
                 out_idxs,
                 Int32(N),
                 Int32(K),
-                row_bounds.value(),
+                row_bounds,
                 grid_dim=total_seq_len,
                 block_dim=_PTOPK_BLOCK,
             )
@@ -3830,6 +3980,7 @@ def persistent_topk_block_split[
     sig_bits: Int = _hsel_sig_bits[in_dtype](),
     phi_dtype: DType = _hsel_phi_dtype[in_dtype](),
     scan_items: Int = _hsel_prefetch_scan_items[in_dtype, phi_dtype](),
+    RB: RowBound = RowBoundsPtr,
 ](
     ctx: DeviceContext,
     in_scores: UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin],
@@ -3837,7 +3988,7 @@ def persistent_topk_block_split[
     N: Int,
     K: Int,
     total_seq_len: Int,
-    row_bounds: Optional[UnsafePointer[Int32, ImmutAnyOrigin]] = None,
+    row_bounds: Optional[RB] = None,
 ) raises:
     """Launch bitonic top-k, splitting the N dimension when rows under-fill GPU.
 
@@ -3894,16 +4045,18 @@ def persistent_topk_block_split[
             lands mid-vector for some threads and not others. The arms that do
             not prefetch always take the default width; they hold no group
             across the loop, so a wider one would cost registers for nothing.
+        RB: Type of `row_bounds`; see `RowBound`.
 
     Args:
         ctx: Device context.
         in_scores: Flat score buffer `[total_seq_len × N]` row-major.
         out_idxs: Output buffer `[total_seq_len × K]` row-major (int32).
         N: Score columns per token (the row stride).
-        K: Top-k count per token (≤ N, and ≤ PERSISTENT_TOPK_MAX_N when N > 2048).
+        K: Top-k count per token, at most PERSISTENT_TOPK_MAX_N. It may
+            exceed `N`; slots past a row's live columns are `-1`.
         total_seq_len: Number of rows.
-        row_bounds: Optional `[total_seq_len]` int32 per-row live-column counts;
-            see `persistent_topk_block`. Row `r` scans only `[0, row_bounds[r])`
+        row_bounds: Optional per-row live-column counts; see
+            `persistent_topk_block`. Row `r` scans only `[0, row_bounds(r))`
             of its `N`-wide stripe, so under capture-frozen metadata (where `N`
             is a worst-case bound) the scan cost tracks each row's real length.
             Supported on every path this launcher selects for `N > 2048` (the
@@ -3911,7 +4064,7 @@ def persistent_topk_block_split[
     """
     _assert_scores_16b_aligned(in_scores, N, total_seq_len)
     if N <= PERSISTENT_TOPK_MAX_N:
-        persistent_topk_block(
+        persistent_topk_block[RB=RB](
             ctx, in_scores, out_idxs, N, K, total_seq_len, row_bounds
         )
         return
@@ -3936,10 +4089,11 @@ def persistent_topk_block_split[
                 # and no reason for the per-bin digit -- both exist only to make
                 # ranking cheap. `sel_cap` of `_PTOPK_TOTAL` is what asks the
                 # rounds to land exactly on `K` instead.
-                if row_bounds:
+                if case .Some(row_bounds) = row_bounds:
                     ctx.enqueue_function[
                         _histsel_resident_bounded_kernel[
                             NullTrace,
+                            RB=RB,
                             sel_cap=_PTOPK_TOTAL,
                             ordered=False,
                             deterministic=deterministic,
@@ -3953,7 +4107,7 @@ def persistent_topk_block_split[
                         out_idxs,
                         Int32(N),
                         Int32(K),
-                        row_bounds.value(),
+                        row_bounds,
                         NullTrace(),
                         grid_dim=total_seq_len,
                         block_dim=_HSEL_RES_BLOCK,
@@ -3990,10 +4144,11 @@ def persistent_topk_block_split[
             # score level including the masked tail, whose `phi` takes the digit's
             # top varying positions and leaves it unable to split within a level.
             if N >= K + K // 2:
-                if row_bounds:
+                if case .Some(row_bounds) = row_bounds:
                     ctx.enqueue_function[
                         _histsel_resident_bounded_kernel[
                             NullTrace,
+                            RB=RB,
                             res_vecs=res_vecs,
                             in_dtype=in_dtype,
                             sig_bits=sig_bits,
@@ -4004,7 +4159,7 @@ def persistent_topk_block_split[
                         out_idxs,
                         Int32(N),
                         Int32(K),
-                        row_bounds.value(),
+                        row_bounds,
                         NullTrace(),
                         grid_dim=total_seq_len,
                         block_dim=_HSEL_RES_BLOCK,
@@ -4032,10 +4187,11 @@ def persistent_topk_block_split[
             # instantiation takes the per-bin digit -- and only this one, since it
             # costs a scan and shared memory the shapes above do not need. With the
             # runs narrow again the hand-over is affordable here too.
-            if row_bounds:
+            if case .Some(row_bounds) = row_bounds:
                 ctx.enqueue_function[
                     _histsel_resident_bounded_kernel[
                         NullTrace,
+                        RB=RB,
                         bin_digit=True,
                         res_vecs=res_vecs,
                         in_dtype=in_dtype,
@@ -4047,7 +4203,7 @@ def persistent_topk_block_split[
                     out_idxs,
                     Int32(N),
                     Int32(K),
-                    row_bounds.value(),
+                    row_bounds,
                     NullTrace(),
                     grid_dim=total_seq_len,
                     block_dim=_HSEL_RES_BLOCK,
@@ -4099,10 +4255,11 @@ def persistent_topk_block_split[
         # group buys them no parallelism and only raises pressure.
         if not hsel_fills_gpu:
             comptime if (not ordered) and (not deterministic):
-                if row_bounds:
+                if case .Some(row_bounds) = row_bounds:
                     ctx.enqueue_function[
                         _histsel_topk_bounded_kernel[
                             NullTrace,
+                            RB=RB,
                             prefetch=True,
                             scan_items=scan_items,
                             tail_bits=_HSEL_TAIL_BITS,
@@ -4117,7 +4274,7 @@ def persistent_topk_block_split[
                         out_idxs,
                         Int32(N),
                         Int32(K),
-                        row_bounds.value(),
+                        row_bounds,
                         NullTrace(),
                         grid_dim=total_seq_len,
                         block_dim=_PTOPK_BLOCK,
@@ -4153,10 +4310,11 @@ def persistent_topk_block_split[
                     ),
                 )
                 return
-            if row_bounds:
+            if case .Some(row_bounds) = row_bounds:
                 ctx.enqueue_function[
                     _histsel_topk_bounded_kernel[
                         NullTrace,
+                        RB=RB,
                         prefetch=True,
                         tail_bits=_HSEL_TAIL_BITS,
                         rank_bits=_HSEL_RANK_BITS,
@@ -4171,7 +4329,7 @@ def persistent_topk_block_split[
                     out_idxs,
                     Int32(N),
                     Int32(K),
-                    row_bounds.value(),
+                    row_bounds,
                     NullTrace(),
                     grid_dim=total_seq_len,
                     block_dim=_PTOPK_BLOCK,
@@ -4208,10 +4366,11 @@ def persistent_topk_block_split[
             )
             return
 
-        if row_bounds:
+        if case .Some(row_bounds) = row_bounds:
             ctx.enqueue_function[
                 _histsel_topk_bounded_kernel[
                     NullTrace,
+                    RB=RB,
                     ordered=ordered,
                     deterministic=deterministic,
                     in_dtype=in_dtype,
@@ -4223,7 +4382,7 @@ def persistent_topk_block_split[
                 out_idxs,
                 Int32(N),
                 Int32(K),
-                row_bounds.value(),
+                row_bounds,
                 NullTrace(),
                 grid_dim=total_seq_len,
                 block_dim=_PTOPK_BLOCK,

@@ -393,8 +393,20 @@ parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
 
   if (parseOptionalInline(p, inlineLevel) ||
       parseOptionalDecorators(p, decorators) ||
-      p.parseOptionalAttrDictWithKeyword(attrs) ||
-      p.parseRegion(body, args, /*enableNameShadowing=*/true))
+      p.parseOptionalAttrDictWithKeyword(attrs))
+    return failure();
+
+  // The printer spells out a signature the printed types cannot rebuild.
+  if (Attribute explicitSignature = attrs.erase("funcTypeGenerator")) {
+    auto typeAttr = dyn_cast<TypeAttr>(explicitSignature);
+    if (!typeAttr || !isa<FuncTypeGeneratorType>(typeAttr.getValue()))
+      return p.emitError(p.getCurrentLocation(),
+                         "expected 'funcTypeGenerator' to be a function "
+                         "type generator");
+    signatureAttr = typeAttr;
+  }
+
+  if (p.parseRegion(body, args, /*enableNameShadowing=*/true))
     return failure();
   return success();
 }
@@ -417,10 +429,21 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
 
   auto gen = cast<GeneratorOp>(op);
   SmallVector<StringRef, 10> elidedAttrs{
-      gen.getExportKindAttrName(),        gen.getSymNameAttrName(),
-      gen.getFuncTypeGeneratorAttrName(), gen.getFunctionTypeAttrName(),
-      gen.getInputParamsAttrName(),       gen.getInlineLevelAttrName(),
-      gen.getDecoratorsAttrName()};
+      gen.getExportKindAttrName(),   gen.getSymNameAttrName(),
+      gen.getFunctionTypeAttrName(), gen.getInputParamsAttrName(),
+      gen.getInlineLevelAttrName(),  gen.getDecoratorsAttrName()};
+
+  // The parser rebuilds `funcTypeGenerator` from the printed body-view types,
+  // which only works when they reference nothing but the input parameters. A
+  // signature that names a parameter the body lifts, for example, has to be
+  // printed as well.
+  auto signatureType = cast<FuncTypeGeneratorType>(signature.getValue());
+  FuncType signatureBody = signatureType.getBody();
+  if (FuncTypeGeneratorType::remapToFuncTypeGenerator(
+          inputParams.getValue(), cast<FunctionType>(functionType.getValue()),
+          signatureBody.getArgConventions(),
+          signatureBody.getFnEffects()) == signatureType)
+    elidedAttrs.push_back(gen.getFuncTypeGeneratorAttrName());
   ArrayAttr emptyArray = ArrayAttr::get(op->getContext(), {});
   if (attrs.get(gen.getFnAttrsAttrName()) == emptyArray)
     elidedAttrs.push_back(gen.getFnAttrsAttrName());

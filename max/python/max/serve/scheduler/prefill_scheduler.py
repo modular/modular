@@ -17,11 +17,11 @@ import os
 import queue
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import (
-    JengaKVCacheManager,
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManagerInterface,
@@ -46,6 +46,7 @@ from max.serve.scheduler.base import (
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
+    check_di_supports,
 )
 from max.serve.scheduler.interface import Scheduler
 from max.serve.telemetry.metrics import METRICS
@@ -56,7 +57,7 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger, _trace_batch
+from .utils import SchedulerLogger, _trace_batch, held_blocks_per_leaf
 
 logger = logging.getLogger("max.serve")
 
@@ -68,10 +69,38 @@ logger = logging.getLogger("max.serve")
 _DI_LATENCY_PING_ENABLED = os.getenv("MAX_SERVE_DI_LATENCY_PING", "0") == "1"
 
 
+def _pages_to_transfer(
+    src_blocks: Mapping[str, list[int]], dst_blocks: Mapping[str, list[int]]
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Pairs each leaf's pages with decode's, skipping ones decode holds.
+
+    Decode marks the pages its prefix cache already holds with ``-1``.
+    """
+    if src_blocks.keys() != dst_blocks.keys():
+        raise ValueError(
+            f"Prefill leaves {list(src_blocks)} do not match decode leaves "
+            f"{list(dst_blocks)}"
+        )
+    src_idxs: dict[str, list[int]] = {}
+    dst_idxs: dict[str, list[int]] = {}
+    for leaf_id, dst in dst_blocks.items():
+        src = src_blocks[leaf_id]
+        if len(src) != len(dst):
+            raise ValueError(
+                f"Leaf {leaf_id!r} holds {len(src)} pages on prefill but "
+                f"{len(dst)} on decode"
+            )
+        num_cached = dst.count(-1)
+        src_idxs[leaf_id] = src[num_cached:]
+        dst_idxs[leaf_id] = dst[num_cached:]
+        assert -1 not in dst_idxs[leaf_id]
+    return src_idxs, dst_idxs
+
+
 @dataclass
 class TransferDest:
     engine_name: str
-    dst_block_ids: list[int]
+    dst_block_ids: dict[str, list[int]]
     dst_replica_idx: int
 
 
@@ -94,10 +123,7 @@ class PrefillScheduler(Scheduler):
         kv_cache: PagedKVCacheManagerInterface,
         dispatcher: PrefillDispatcherServer,
     ) -> None:
-        # TODO(SERVOPT-1590): remove once Jenga supports DI.
-        assert not isinstance(kv_cache, JengaKVCacheManager), (
-            "Jenga KV cache is incompatible with Disaggregated Inference"
-        )
+        check_di_supports(kv_cache)
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
         self.kv_cache = kv_cache
@@ -202,8 +228,8 @@ class PrefillScheduler(Scheduler):
         for active in self.active_transfers.values():
             if self.transfer_engine.is_complete(active.transfer):
                 self.transfer_engine.cleanup_transfer(active.transfer)
-                blocks_released = len(
-                    self.kv_cache.get_req_blocks(active.context)
+                blocks_released = held_blocks_per_leaf(
+                    self.kv_cache, active.context
                 )
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
                 self.kv_cache.release(active.context)
@@ -212,8 +238,9 @@ class PrefillScheduler(Scheduler):
                 self.pipeline.release(active.context.request_id)
                 to_be_deleted.append(active.context.request_id)
                 logger.debug(
-                    "KV transfer complete for request %s: releasing %d blocks "
-                    "back to prefill pool. Remaining in-flight transfers: %d.",
+                    "KV transfer complete for request %s: releasing blocks "
+                    "per leaf %s back to prefill pool. Remaining in-flight "
+                    "transfers: %d.",
                     active.context.request_id,
                     blocks_released,
                     len(self.active_transfers) - len(to_be_deleted),
@@ -258,12 +285,12 @@ class PrefillScheduler(Scheduler):
         # If cancelled, release the request's blocks instead of transferring them.
         if req_id in self.outstanding_cancelled_requests:
             self.outstanding_cancelled_requests.remove(req_id)
-            blocks_held = len(self.kv_cache.get_req_blocks(context))
+            blocks_held = held_blocks_per_leaf(self.kv_cache, context)
             self.kv_cache.release(context)
             self.pipeline.release(req_id)
             logger.warning(
                 "Dropping cancelled request %s before KV transfer: released "
-                "%d blocks on replica %d.",
+                "blocks per leaf %s on replica %d.",
                 req_id,
                 blocks_held,
                 src_replica_idx,
@@ -275,18 +302,11 @@ class PrefillScheduler(Scheduler):
             transfer_dest.engine_name
         ]
 
-        # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = self.kv_cache.get_req_blocks(context)
-        dst_idxs = transfer_dest.dst_block_ids
-        assert len(src_idxs) == len(dst_idxs)
-
-        # Transfer only the blocks that are not already on decode node.
-        num_already_cached_blocks = dst_idxs.count(-1)
-        src_idxs = src_idxs[num_already_cached_blocks:]
-        dst_idxs = dst_idxs[num_already_cached_blocks:]
-        assert dst_idxs.count(-1) == 0
-
+        src_idxs, dst_idxs = _pages_to_transfer(
+            self.kv_cache.get_req_blocks_per_leaf(context),
+            transfer_dest.dst_block_ids,
+        )
         transfer_data = self.transfer_engine.initiate_send_transfer(
             remote_metadata,
             src_idxs,
@@ -300,7 +320,7 @@ class PrefillScheduler(Scheduler):
             transfer=transfer_data,
         )
         transfer_pinned = sum(
-            len(self.kv_cache.get_req_blocks(at.context))
+            self.kv_cache.num_req_blocks(at.context)
             for at in self.active_transfers.values()
         )
         block_count = self.kv_cache.block_count(src_replica_idx)

@@ -2376,6 +2376,106 @@ _M3_INVOKE_NAME_CLASS_BODY = '^"<>\\[\\]\\n\\r'
 _M3_UNKNOWN_HATCH_MAX_NAME_LEN = 256
 
 
+# Where a JSON Schema nests subschemas, by the shape holding them. Only these
+# are walked: every other value is data (a ``default``, an ``enum``) or, under
+# ``properties``, a map keyed by name, where a property that happens to be
+# called ``const`` is not a literal.
+_M3_SUBSCHEMA_KEYWORDS = frozenset(
+    {
+        "items",
+        "additionalItems",
+        "contains",
+        "additionalProperties",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else",
+    }
+)
+_M3_SUBSCHEMA_LIST_KEYWORDS = frozenset({"anyOf", "allOf", "oneOf", "prefixItems"})
+_M3_SUBSCHEMA_MAP_KEYWORDS = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
+)
+
+
+def _m3_is_container(value: Any) -> bool:
+    return isinstance(value, (dict, list))
+
+
+def _m3_literal_schema(value: Any) -> Dict[str, Any]:
+    """Returns the schema admitting exactly *value*, without container literals.
+
+    M3's tag-keyed XML spells an object as nested tags and an array as
+    ``<item>`` children, so a container literal has no wire text of its own and
+    the converter rejects it. The same constraint holds structurally: each
+    member pinned to its own literal, and nothing else admitted.
+    """
+    if isinstance(value, dict):
+        return {
+            "type": "object",
+            "properties": {k: _m3_literal_schema(v) for k, v in value.items()},
+            "required": list(value),
+            "additionalProperties": False,
+        }
+    if isinstance(value, list):
+        return {
+            "type": "array",
+            "prefixItems": [_m3_literal_schema(v) for v in value],
+            "items": False,
+            "minItems": len(value),
+            "maxItems": len(value),
+        }
+    return {"const": value}
+
+
+def _m3_expand_subschemas(key: str, value: Any) -> Any:
+    """Applies :func:`_m3_expand_container_literals` to the subschemas a
+    keyword holds, returning any other value unchanged."""
+    if key in _M3_SUBSCHEMA_KEYWORDS:
+        return _m3_expand_container_literals(value)
+    if key in _M3_SUBSCHEMA_LIST_KEYWORDS and isinstance(value, list):
+        return [_m3_expand_container_literals(v) for v in value]
+    if key in _M3_SUBSCHEMA_MAP_KEYWORDS and isinstance(value, dict):
+        return {k: _m3_expand_container_literals(v) for k, v in value.items()}
+    return value
+
+
+def _m3_expand_container_literals(schema: Any) -> Any:
+    """Rewrites container ``const``/``enum`` literals into structural schemas.
+
+    Each becomes an ``anyOf`` with one branch per container literal, plus one
+    ``enum`` branch for the scalars an ``enum`` mixes in. A schema without
+    container literals comes back equal to *schema*, so it compiles as before.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    out = {k: _m3_expand_subschemas(k, v) for k, v in schema.items()}
+    literal_sets = [
+        (key, literals)
+        for key, literals in (
+            ("const", [out.get("const")]),
+            ("enum", out.get("enum")),
+        )
+        if key in out
+        and isinstance(literals, list)
+        and any(map(_m3_is_container, literals))
+    ]
+    for key, literals in literal_sets:
+        del out[key]
+        scalars = [v for v in literals if not _m3_is_container(v)]
+        branches = [_m3_literal_schema(v) for v in literals if _m3_is_container(v)]
+        branches += [{"enum": scalars}] if scalars else []
+        # A schema's own anyOf stays, and the literal is required beside it.
+        if "anyOf" in out:
+            out.setdefault("allOf", []).append({"anyOf": branches})
+            continue
+        out["anyOf"] = branches
+    return out
+
+
 def _m3_escape_regex_literal(text: str) -> str:
     """Escapes *text* so an xgrammar regex matches it literally."""
     return "".join("\\" + c if c in _M3_REGEX_META else c for c in text)
@@ -2474,7 +2574,7 @@ def get_minimax_m3_structural_tag(
         return TagFormat(
             begin=INVOKE_BEGIN_PREFIX + name + INVOKE_BEGIN_SUFFIX,
             content=JSONSchemaFormat(
-                json_schema=parameters,
+                json_schema=_m3_expand_container_literals(parameters),
                 style="minimax_m3_xml",
                 xml_tag_prefix=TAG_PREFIX,
                 reject_unsupported=reject_unsupported,

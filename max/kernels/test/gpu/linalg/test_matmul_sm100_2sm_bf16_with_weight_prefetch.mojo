@@ -25,7 +25,12 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import (
+    TileTensor,
+    CoordLike,
+    row_major,
+    Idx,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )

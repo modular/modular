@@ -28,7 +28,6 @@ from std.math import divmod
 from std.sys.info import align_of
 
 from layout import TileTensor
-from layout.coord import Coord
 
 
 @fieldwise_init

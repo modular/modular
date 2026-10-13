@@ -28,7 +28,6 @@ modular_py_library(
         requirement("openai"),
         requirement("psutil"),
         requirement("pydantic"),
-        requirement("pyyaml"),
         requirement("tiktoken"),
         requirement("transformers"),
         requirement("requests"),

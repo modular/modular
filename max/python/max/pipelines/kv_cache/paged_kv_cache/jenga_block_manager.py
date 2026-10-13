@@ -28,22 +28,25 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import chain
 
+from max._kv_core import longest_joint_prefix_hit
 from max.driver import Buffer, batch_inplace_copy
 from max.nn.kv_cache import KVCacheGroupId, KVLeafRegion
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnector
+from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
+    CompletedTransfer,
+    KVConnector,
+    KVLoadFailed,
+    KVLoadRefused,
+    KVTransfer,
+)
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
-from ..prefix_hit import longest_joint_prefix_hit
-from .block_manager import (
-    CompletedTransfer,
-    KVLoadFailed,
-    KVLoadRefused,
-    KVTransfer,
+from ._common import (
     PrefixCacheHits,
     _compute_seq_len,
     _OnloadSplice,
@@ -501,6 +504,8 @@ class JengaBlockManager:
         """
         desired_hashes = self._compute_block_hashes(ctx, [])
         hit_counts: list[PrefixCacheHits] = []
+        # TODO(CLIN-2043): prices DP admission with a leased lookup per replica
+        # on every leaf; pricing once needs a shape-aware probe across leaves.
         for replica_idx in range(self._num_replicas):
             num_hit_blocks = self._find_longest_device_prefix_cache_hit(
                 desired_hashes, replica_idx, self._cross_replica_copy_enabled
@@ -576,11 +581,21 @@ class JengaBlockManager:
                 block_hashes,
                 replica_idx=replica_idx,
             )
-            # The connector reads these pages on its own engine, so pin them
-            # until the D2H lands. An offload that moved nothing is already
-            # complete and needs no pin.
+            # Use the event to determine which pages the connector needs to read
+            # and track only those in the transfer.
             if not event.is_complete():
-                self._track_transfer(event, src, replica_idx)
+                by_bid = {
+                    leaf_id: {block.bid: block for block in blocks}
+                    for leaf_id, blocks in src.items()
+                }
+                self._track_transfer(
+                    event,
+                    {
+                        leaf_id: [by_bid[leaf_id][bid] for bid in taken]
+                        for leaf_id, taken in event.g0_blocks_per_leaf.items()
+                    },
+                    replica_idx,
+                )
         self._pending_offloads[replica_idx].clear()
 
     def poll_transfers(self) -> None:
@@ -655,10 +670,12 @@ class JengaBlockManager:
         # reconcile would otherwise decide part of the hit.
         return longest_joint_prefix_hit(
             [
-                (group.group_id, resident[leaf_id])
+                (
+                    group.group_id.prefix_hit_shape(self._block_size),
+                    resident[leaf_id],
+                )
                 for leaf_id, group in self._cacheable_groups.items()
-            ],
-            self._block_size,
+            ]
         )
 
     @traced
@@ -944,9 +961,8 @@ class JengaBlockManager:
     def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
         """Returns the pages the request holds, per leaf.
 
-        Distinct from :meth:`PagedKVCacheManagerInterface.get_req_blocks`
-        (a single flat ``list[int]``, sized for one leaf): Jenga's caches
-        aren't interchangeable, so this returns one list per leaf instead.
+        Each leaf tiles huge blocks at its own ratio, so one leaf's block ids
+        say nothing about another's.
         """
         self._replica_of(ctx)
         return {
@@ -955,12 +971,11 @@ class JengaBlockManager:
             for leaf_id, blocks in group.blocks_of(ctx.request_id).items()
         }
 
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds for the first leaf.
-
-        TODO: Delete this method after refactoring downstream callers.
-        """
-        return next(iter(self.get_req_blocks_per_leaf(ctx).values()))
+    def num_req_blocks(self, ctx: TextContext) -> int:
+        """Returns the request's length in pages, its longest leaf row."""
+        return max(
+            len(blocks) for blocks in self.get_req_blocks_per_leaf(ctx).values()
+        )
 
     def huge_block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the huge-block occupancy for the given replica.
@@ -970,13 +985,14 @@ class JengaBlockManager:
         """
         pool = self.pools[replica_idx]
         return BlockCount(
-            free=len(pool.free_huge_blocks), total=len(pool.huge_blocks)
+            free=pool.num_free_huge_blocks,
+            total=pool.num_allocatable_huge_blocks,
         )
 
     def little_block_count(self, replica_idx: int = 0) -> dict[str, BlockCount]:
         """Returns each leaf's little-block occupancy for the given replica."""
         pool = self.pools[replica_idx]
-        total_huge_blocks = len(pool.huge_blocks)
+        total_huge_blocks = pool.num_allocatable_huge_blocks
         return {
             leaf_id: BlockCount(
                 free=pool.num_free_blocks(leaf_id),
@@ -1057,14 +1073,13 @@ class JengaBlockManager:
         return longest_joint_prefix_hit(
             [
                 (
-                    group.group_id,
+                    group.group_id.prefix_hit_shape(self._block_size),
                     group.residency(
                         desired_hashes, replica_idx, allow_cross_replica
                     ),
                 )
                 for group in self._cacheable_groups.values()
-            ],
-            self._block_size,
+            ]
         )
 
     def _lookup_device_prefix_cache_hit(
@@ -1158,6 +1173,7 @@ class JengaBlockManager:
             # visible to every request, so its page must already be filled.
             for block_hash, dst in staged:
                 pool.commit_into_prefix_cache(block_hash, dst)
+            self._metrics.cross_replica_blocks_copied += len(copies)
             self._metrics.cross_replica_bytes_copied += num_bytes
         finally:
             for block in held:

@@ -219,10 +219,3 @@ def driver_tensor_type(t: driver.Buffer) -> TensorType:
         TensorType: A tensor type representing the driver tensor's properties.
     """
     return TensorType(t.dtype, t.shape, DeviceRef.from_device(t.device))
-
-
-def driver_tensor_of_type(t: TensorType) -> driver.Buffer:
-    """Creates a driver buffer matching the given tensor type."""
-    return driver.Buffer(
-        t.dtype, [int(d) for d in t.shape], t.device.to_device()
-    )

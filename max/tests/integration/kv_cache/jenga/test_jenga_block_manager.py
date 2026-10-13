@@ -26,10 +26,7 @@ from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnector
-from max.pipelines.kv_cache.paged_kv_cache.block_manager import PrefixCacheHits
-from max.pipelines.kv_cache.paged_kv_cache.block_utils import (
-    LittleKVCacheBlock,
-)
+from max.pipelines.kv_cache.paged_kv_cache._common import PrefixCacheHits
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,
     KVLeafInfo,
@@ -559,6 +556,31 @@ def test_swa_frees_the_blocks_it_slid_past_with_block_size_larger_than_1() -> (
     bm.step(ctx)
     assert bm.get_req_blocks_per_leaf(ctx)[SLIDING] == [0, 0, 3]
     assert bm.huge_block_count().free == 8
+
+
+def test_swa_reserves_every_page_a_decoding_request_holds() -> None:
+    """A window that starts mid-page spans one more page than it fills.
+
+    A window of 12 tokens over pages of 4 is 3 pages wide, but the query at
+    token 12 attends back to token 1, which is still on page 0, while it writes
+    page 3. So a decoding request holds 4 pages, and the reserve has to say so.
+    """
+    bm = make_manager(
+        {SLIDING: sliding(ratio=1, window=12)},
+        block_size=4,
+        num_huge_blocks=10,
+    )
+    ctx = make_ctx(num_tokens=12)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+    ctx.update(42)
+    bm.step(ctx)
+
+    bm.alloc(ctx)
+
+    held = [b for b in bm.get_req_blocks_per_leaf(ctx)[SLIDING] if b != 0]
+    assert len(held) == 4
+    assert bm._blocks_to_reserve(4096)[SLIDING] == len(held)
 
 
 def test_swa_reuses_the_blocks_it_freed() -> None:
@@ -1202,30 +1224,32 @@ def test_two_windows_converge_on_prefix_cache_hit() -> None:
 
 
 # ===--------------------------------------------------------------------=== #
-# get_req_blocks
+# num_req_blocks
 # ===--------------------------------------------------------------------=== #
 
 
-def test_get_req_blocks_returns_first_leaf_blocks() -> None:
+def test_num_req_blocks_counts_pages_when_leaf_ids_differ() -> None:
     bm = make_manager(
-        {FULL: full(ratio=1), SLIDING: sliding(ratio=1, window=10)},
+        {VALUES: full(ratio=1), SCALES: full(ratio=10)},
         block_size=1,
+        num_huge_blocks=8,
     )
     ctx = make_ctx(num_tokens=3)
     bm.claim(ctx)
     bm.alloc(ctx)
 
     per_leaf = bm.get_req_blocks_per_leaf(ctx)
-    assert bm.get_req_blocks(ctx) == next(iter(per_leaf.values()))
+    assert per_leaf[VALUES] != per_leaf[SCALES]
+    assert bm.num_req_blocks(ctx) == 3
 
 
-def test_get_req_blocks_empty_when_claimed_not_allocated() -> None:
+def test_num_req_blocks_zero_when_claimed_not_allocated() -> None:
     bm = make_manager({FULL: full(ratio=1)}, block_size=1)
     ctx = make_ctx(num_tokens=3)
     bm.claim(ctx)
 
-    assert bm.get_req_blocks(ctx) == []
-    assert not bm.get_req_blocks(ctx)
+    assert bm.get_req_blocks_per_leaf(ctx) == {FULL: []}
+    assert bm.num_req_blocks(ctx) == 0
 
 
 # ===--------------------------------------------------------------------=== #
@@ -2060,9 +2084,9 @@ def test_copy_prefix_from_peers_skips_leaves_already_present() -> None:
     assert bm.metrics.cross_replica_bytes_copied == 8
 
 
-def test_copy_prefix_from_peers_hands_back_its_pages_when_allocation_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_copy_prefix_from_peers_hands_back_its_pages_when_allocation_fails() -> (
+    None
+):
     """A refused allocation keeps what landed and strands nothing.
 
     A page dropped here would be referenced by nothing and recorded
@@ -2078,23 +2102,16 @@ def test_copy_prefix_from_peers_hands_back_its_pages_when_allocation_fails(
     commit_hashes(bm, [FULL], hashes, replica_idx=1)
 
     pool = bm.pools[0]
-    free_before = pool.num_free_blocks(FULL)
-    real_alloc = pool.alloc_block
-    allocated = 0
-
-    def alloc_then_refuse(leaf_id: str) -> LittleKVCacheBlock:
-        nonlocal allocated
-        allocated += 1
-        if allocated == 2:
-            raise InsufficientBlocksError("no room for the second page")
-        return real_alloc(leaf_id)
-
-    monkeypatch.setattr(pool, "alloc_block", alloc_then_refuse)
+    # Squeeze the pool to one free page, so the second page is refused.
+    squeeze = [
+        pool.alloc_block(FULL) for _ in range(pool.num_free_blocks(FULL) - 1)
+    ]
+    assert pool.num_free_blocks(FULL) == 1
 
     bm._copy_prefix_from_peers(hashes, 0)
 
-    assert allocated == 2
-    assert pool.num_free_blocks(FULL) == free_before
+    assert pool.num_free_blocks(FULL) == 1
+    assert all(block.ref_cnt == 1 for block in squeeze)
     # The first page landed before the refusal, so it is kept rather than
     # thrown away; only the hash whose page never arrived is missing.
     assert set(pool.prefix_caches[FULL]) == {b"a"}

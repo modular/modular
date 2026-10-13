@@ -24,7 +24,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.argsort import argsort
 
 

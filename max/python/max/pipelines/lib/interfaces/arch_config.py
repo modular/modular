@@ -15,11 +15,11 @@
 The `ArchConfig` class is not to be confused with the following classes:
 - PipelineConfig: Parameters that are relevant to the entire pipeline and are
   generally passed in from the top level (MAX Serve, entrypoints). For example,
-  the max_batch_size, max_length, etc.
+  the max_batch_size, max_length, and so on.
 - MAXModelConfig: Model-related parameters that may be defined at the top level.
   This class is used as an organizational layer for the PipelineConfig that can
   be accessed using the `pipeline_config.model` attribute.
-  Parameters include the model_path, device_specs, quantization_encoding, etc.
+  Parameters include the model_path, device_specs, quantization_encoding, and so on.
 
 The architecture-specific config is defined during the startup phase, from a
 PipelineConfig object.
@@ -76,14 +76,14 @@ class ArchConfig(Protocol):
             pipeline_config: The pipeline configuration.
             model_config: The model configuration to read from. When ``None``
                 (the default), ``pipeline_config.model`` is used.  Pass an
-                explicit config (e.g. ``pipeline_config.draft_model``) to
+                explicit config (such as ``pipeline_config.draft_model``) to
                 initialize the arch config for a different model.
             max_seq_len: The effective maximum sequence length to store on
                 the config. The value is received, never derived here: the
                 pipeline model passes the memory plan's VRAM-clamped length,
                 while memory planning (which runs before a plan exists)
                 passes the construction-resolved ``model_config.max_length``.
-                Configs whose sequence length is pure model metadata (e.g.
+                Configs whose sequence length is pure model metadata (such as
                 diffusion components) ignore it.
         """
 
@@ -226,7 +226,7 @@ class ArchConfigWithStoredKVParams(ArchConfigWithBoundedMaxSeqLen):
 
     Also provides a default :meth:`construct_kv_params` for the common grouped
     attention case. Speculative decoding defaults to ``None`` via
-    :meth:`KVCacheConfig.to_params` unless a subclass (e.g. Llama3) passes a
+    :meth:`KVCacheConfig.to_params` unless a subclass (such as Llama3) passes a
     nonzero ``num_draft_tokens``. Configs that need a different head/layer
     mapping or MLA should override ``construct_kv_params``.
     """
@@ -309,7 +309,7 @@ class ArchVLConfigWithTextSubconfig:
     subconfig is read from ``text_config`` or ``llm_config`` on the HuggingFace
     config (MAX field names need not match HF attribute names).
     Override :meth:`construct_kv_params` / :meth:`calculate_max_seq_len` when
-    resolution is dynamic (e.g. InternVL) or semantics differ (e.g. Gemma4 KV).
+    resolution is dynamic (such as InternVL) or semantics differ (such as Gemma4 KV).
     """
 
     @classmethod

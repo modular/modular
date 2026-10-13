@@ -92,6 +92,35 @@ def tryFinally():
         pass
 
 
+# CHECK-LABEL: lit.fn @"tryExceptInTryFinally
+def tryExceptInTryFinally():
+    # CHECK: lit.try %__try_error__
+    try:
+        # CHECK: lit.try %__try_error___0
+        try:
+            # CHECK-NEXT: lit.try.yield
+            pass
+        # CHECK-NEXT: } except {
+        # CHECK-NEXT: lit.try.yield
+        # CHECK-NEXT: } else {
+        # CHECK-NEXT: lit.try.yield
+        # CHECK-NEXT: } finally {
+        # CHECK-NEXT: lit.try.yield
+        # CHECK-NEXT: }
+        except:
+            pass
+    # CHECK-NEXT: lit.try.yield
+    # CHECK-NEXT: } except {
+    # CHECK-NEXT: hlcf.unreachable
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT: lit.try.yield
+    # CHECK-NEXT: } finally {
+    # CHECK-NEXT: lit.try.yield
+    # CHECK-NEXT: }
+    finally:
+        pass
+
+
 def maybeRaises() raises -> Int:
     return 0
 

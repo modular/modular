@@ -62,7 +62,7 @@ SecureRandomBytesGenerator::getRandomBytes(MutableArrayRef<uint8_t> buf) {
   } while (bytesNeeded > 0);
   return success();
 #elif defined(_WIN32)
-  if (CryptGenRandom((HCRYPTPROV)ctx, buf.size(), buf.data()))
+  if (!CryptGenRandom((HCRYPTPROV)ctx, buf.size(), buf.data()))
     return Error("random read failed");
   return success();
 #endif // __APPLE__ | __linux__ | _WIN32

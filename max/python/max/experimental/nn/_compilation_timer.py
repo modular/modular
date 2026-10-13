@@ -52,14 +52,18 @@ class CompilationTimer:
     :meth:`InferenceSession.init_all`, so they are accurate even when the
     timer wraps a higher-level call like ``session.load_all``.
 
-    Args:
-        name: The name to use in log messages (e.g., "model", "vision model").
+    For example, time the build, compile, and init phases of a model load
+    inside a pipeline model method:
 
-    Example:
-        >>> with CompilationTimer("model") as timer:
-        ...     graph = self._build_graph(self.weights, self.adapter)
-        ...     timer.mark_build_complete()
-        ...     model = session.load(graph, weights_registry=self.state_dict)
+    .. code-block:: python
+
+        with CompilationTimer("model") as timer:
+            graph = self._build_graph(self.weights, self.adapter)
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=self.state_dict)
+
+    Args:
+        name: The name to use in log messages (such as ``"model"`` or ``"vision model"``).
     """
 
     def __init__(self, name: str) -> None:

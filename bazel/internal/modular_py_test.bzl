@@ -110,13 +110,14 @@ def _wire_precompile(
     collect_transitive_mojoinfo(
         name = producer_mojo_deps,
         deps_to_scan = deps,
-        target_compatible_with = target_compatible_with,
+        target_compatible_with = target_compatible_with + _NO_RECORD,
         testonly = True,
     )
     producer_env = test_name + ".precompile.mojo_test_env"
     mojo_test_environment(
         name = producer_env,
         data = mojo_deps + [producer_mojo_deps],
+        target_compatible_with = target_compatible_with + _NO_RECORD,
         testonly = True,
     )
 

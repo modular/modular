@@ -30,7 +30,7 @@ the QRSCF dispatch chain, before `dispatch_im2col_matmul_conv3d`.
 """
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
@@ -150,8 +150,7 @@ def dispatch_1x1x1_matmul_conv3d[
     var a_tt = input.reshape(row_major(full_M, K))
     var c_tt = output.reshape(row_major(full_M, N))
 
-    comptime if maybe_epilogue_func:
-        comptime epilogue_5d = maybe_epilogue_func.value()
+    comptime if case .Some(epilogue_5d) = maybe_epilogue_func:
 
         @__parameter
         @inline(.always)
@@ -161,9 +160,12 @@ def dispatch_1x1x1_matmul_conv3d[
             _width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-            var m_idx = coords_2d[0]
-            var n_idx = coords_2d[1]
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+            comptime assert (
+                coords_2d.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var m_idx = Int(coords_2d[0].value())
+            var n_idx = Int(coords_2d[1].value())
             var batch_idx = m_idx // DHW_out
             var sp = m_idx - batch_idx * DHW_out
             var d_idx = sp // HW_out
@@ -171,7 +173,7 @@ def dispatch_1x1x1_matmul_conv3d[
             var h_idx = rem // W_out
             var w_idx = rem - h_idx * W_out
             epilogue_5d(
-                IndexList[5](batch_idx, d_idx, h_idx, w_idx, n_idx),
+                (batch_idx, d_idx, h_idx, w_idx, n_idx),
                 rebind[SIMD[output_type, _width]](val),
             )
 

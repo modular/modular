@@ -189,8 +189,7 @@ __extension Attention:
         # =============================================================
 
         @inline(.always)
-        @__parameter
-        def mma_qk():
+        def mma_qk() {imm}:
             """All QK MMAs for the tile, reading K regs from SMEM."""
             self.zero_p_buffer[0]()
             comptime for strip in range(num_qk_strips):
@@ -213,8 +212,7 @@ __extension Attention:
                         )
 
         @inline(.always)
-        @__parameter
-        def mma_pv():
+        def mma_pv() {imm}:
             """All PV MMAs for the tile, reading V regs from SMEM."""
             comptime for strip in range(Self.BN // Self.BK):
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
@@ -269,8 +267,9 @@ __extension Attention:
         # =============================================================
 
         @inline(.always)
-        @__parameter
-        def process_tile[slot: Int, has_next: Bool]():
+        def process_tile[
+            slot: Int, has_next: Bool
+        ]() {mut k_buffer, mut self, mut v_buffer, imm}:
             comptime next_slot = 1 - slot
 
             # Wait for K+V of this slot.  When has_next, only the previous

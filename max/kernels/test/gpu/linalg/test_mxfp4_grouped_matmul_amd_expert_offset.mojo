@@ -35,7 +35,7 @@ from std.memory import bitcast
 from std.random import random_ui64, seed
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import (
     PreShuffledBGroupedGEMM,

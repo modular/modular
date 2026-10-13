@@ -17,7 +17,7 @@ from std.algorithm.functional import tile_and_unswitch
 from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, row_major
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_false
 

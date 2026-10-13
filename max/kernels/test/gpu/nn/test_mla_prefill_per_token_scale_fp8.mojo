@@ -20,7 +20,7 @@ from layout.tile_layout import row_major
 from layout.coord import Idx, Coord
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
 
@@ -489,10 +489,10 @@ def test_prefill[
         row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
+    var k_ref_operand = TileTensorMHAOperand(
         k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
+    var v_ref_operand = TileTensorMHAOperand(
         v_ref_device.as_imm().as_unsafe_any_origin()
     )
 

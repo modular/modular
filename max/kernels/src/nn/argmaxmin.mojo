@@ -33,7 +33,7 @@ def _argn[
     input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
@@ -197,7 +197,7 @@ def argmax(
     input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -216,7 +216,7 @@ def argmax(
     input: TileTensor[mut=False, ...],
     axis_buf: TileTensor[mut=False, ...],
     output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises where axis_buf.flat_rank == 1:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -240,7 +240,7 @@ def argmin(
     input: TileTensor[mut=False, ...],
     axis: Int,
     output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
@@ -259,7 +259,7 @@ def argmin(
     input: TileTensor[mut=False, ...],
     axis_buf: TileTensor[mut=False, ...],
     output: TileTensor[mut=True, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises where axis_buf.flat_rank == 1:
     """
     Finds the indices of the minimum element along the specified axis.

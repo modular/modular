@@ -26,7 +26,12 @@ from internal_utils import (
 )
 from std.random import rand
 from internal_utils._measure import relative_difference
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import (
+    TileTensor,
+    CoordLike,
+    row_major,
+    Idx,
+)
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,

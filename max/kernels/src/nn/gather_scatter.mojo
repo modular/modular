@@ -11,11 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Implements gather and scatter operations for CPU and GPU, including indexed reductions."""
-
+from layout import (
+    Coord,
+    DefaultEngine,
+    TensorEngine,
+    TensorLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+    row_major,
+)
 from std.collections.string.string_span import get_static_string
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
-from std.sys.info import CompilationTarget, is_apple_gpu
+from std.sys.info import (
+    CompilationTarget,
+    _is_sm_9x_or_newer,
+    is_amd_gpu,
+    is_apple_gpu,
+    is_nvidia_gpu,
+)
 from std.utils.numerics import neg_inf
 
 from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
@@ -23,15 +38,7 @@ from std.algorithm.functional import tile
 from std.atomic import Atomic
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
-from layout import (
-    Coord,
-    Idx,
-    DefaultEngine,
-    TileTensor,
-    UNKNOWN_VALUE,
-    coord_to_index_list,
-    row_major,
-)
+
 from layout.coord import DynamicCoord
 from std.memory import unsafe_memcpy
 from max.runtime.asyncrt import parallelism_level
@@ -130,7 +137,7 @@ def gather_reduce[
     input: TileTensor[mut=False, dtype, ...],
     indices: TileTensor[mut=False, .int32, ...],
     reduce_init: Scalar[dtype],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
     reduces the output across axis 1 to produce output[i, k].
@@ -303,6 +310,134 @@ def gather_reduce[
     sync_parallelize(task_func, num_tasks, ctx)
 
 
+@inline(.always)
+def gather_sum[
+    dtype: DType,
+    //,
+    target: StaticString = "cpu",
+](
+    output: TileTensor[mut=True, dtype, ...],
+    input: TileTensor[mut=False, dtype, ...],
+    indices: TileTensor[mut=False, .int32, ...],
+    ctx: DeviceContext,
+) raises:
+    """Computes output[i, k] = Σ_j input[indices[i, j], k].
+
+    Dispatches to the CPU `gather_reduce` kernel on CPU targets and to
+    the `elementwise` GPU driver on GPU targets.
+
+    Args:
+        output: Output tensor holding the reduced embeddings, shape
+            [batch, embedding_dim] (rank 2) or [batch, 1, embedding_dim]
+            (rank 3).
+        input: Source embedding table, shape [num_embeddings, embedding_dim].
+        indices: Multi-hot indices, shape [batch, multi_hot], `int32`.
+        ctx: Device context for kernel execution; the compiled builtin
+            always supplies the placement device's context.
+    """
+    comptime assert input.flat_rank == 2
+    comptime assert indices.flat_rank == 2
+
+    if input.num_elements() == 0 or indices.num_elements() == 0:
+        return
+    var dev_ctx = ctx
+
+    var batch = Int(indices.dim[0]())
+    var multi_hot = Int(indices.dim[1]())
+    var emb_dim = Int(input.dim[1]())
+    var table_size = Int(input.dim[0]())
+
+    # Rank-3 outputs ([batch, 1, emb_dim]) are contiguous with the rank-2
+    # view, so one flat layout covers both.
+    var output_flat = TileTensor(output.ptr, row_major(Coord(batch, emb_dim)))
+    var input_flat = TileTensor(
+        input.ptr,
+        input.layout.make_dynamic[.int64](),
+    )
+
+    comptime if is_cpu[target]():
+
+        def add[
+            dtype: DType, simd_width: SIMDLength
+        ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
+            dtype, simd_width
+        ]:
+            return x + y
+
+        var cpu_ctx = DeviceContext._map_assert_cpu_target(dev_ctx)
+
+        gather_reduce[dtype, 0, 1, simd_width_of[dtype](), add](
+            output_flat,
+            input_flat,
+            indices,
+            0,
+            cpu_ctx,
+        )
+    else:
+        # Elementwise over the output's [batch, emb_dim] view: each call
+        # sums one multi-hot row-slice of the table. The elementwise GPU
+        # driver sizes the grid to saturate the SMs (grid-stride loop with
+        # per-thread ILP) and packs simd_width lanes along the contiguous
+        # embedding axis, including the uneven tail, so no hand-rolled
+        # kernel is needed for either GPU family.
+        comptime target_simd_width = (
+            simd_width_of[dtype, target=get_gpu_target()]()
+        )
+
+        @inline(.always)
+        def gather_sum_elementwise_fn[
+            width: Int, alignment: Int = 1
+        ](coords: Coord) {
+            # Copy-capture the tensors: an `imm` (by-reference) capture
+            # marshals a host pointer into the kernel arg struct on
+            # address-space-disjoint backends (Metal), so the body would
+            # silently read/write host memory (see rope.mojo and the
+            # gpu-kernel-closures-must-copy-capture-tensors KB entry).
+            var input_flat,
+            var indices,
+            var output_flat,
+            var multi_hot,
+            var emb_dim,
+            var table_size,
+        }:
+            var i = Int(coords[0].value())
+            var k = Int(coords[1].value())
+
+            var accum = SIMD[dtype, width](0)
+            for j in range(multi_hot):
+                var idx = Int(indices.raw_load(i * multi_hot + j))
+                if idx < 0:
+                    idx += table_size
+                # Trap in safe builds if normalization still leaves the
+                # index out of bounds: raw_load would silently read
+                # garbage on GPU (the gather path above validates the
+                # same).
+                debug_assert[assert_mode="safe"](
+                    0 <= idx < table_size,
+                    (
+                        "Gather_sum index out of bounds. Run on CPU for"
+                        " more detailed error checking."
+                    ),
+                )
+                accum += input_flat.raw_load[
+                    width=width, alignment=alignment * align_of[dtype]()
+                ](idx * emb_dim + k)
+
+            output_flat.raw_store[
+                width=width, alignment=alignment * align_of[dtype]()
+            ](i * emb_dim + k, accum)
+
+        elementwise[
+            simd_width=target_simd_width,
+            target=target,
+            _trace_description="gather_sum",
+        ](
+            gather_sum_elementwise_fn,
+            Coord(batch, emb_dim),
+            dev_ctx,
+        )
+
+
 # TODO: Delete / for testing purposes (test_gather.mojo)
 def gather[
     dtype: DType,
@@ -368,7 +503,7 @@ def gather[
             var next_idx_ptr = indices_ptr.unsafe_offset(
                 min(indices_remaining - 1, prefetch_offset)
             )
-            input_coords[axis] = rebind[input_coords.element_types[axis]](
+            input_coords.replace_dynamic[axis](
                 Int64(
                     _unsafe_normalize_neg_index(
                         next_idx_ptr.unsafe_load(),
@@ -554,9 +689,7 @@ def gather_elementwise_fn_wrapper[
     comptime for i in range(indices_shape.size):
         comptime for j in range(coords.rank):
             if j == i + Int(axis):
-                indices_index[i] = rebind[indices_index.element_types[i]](
-                    Int64(coords[j].value())
-                )
+                indices_index.replace_dynamic[i](Int64(coords[j].value()))
 
     # The index we are gathering.
     var data_index = indices_fn[1](indices_index)
@@ -575,9 +708,7 @@ def gather_elementwise_fn_wrapper[
             var normalized_coords = _unsafe_normalize_neg_index(
                 data_index, input_shape[axis]
             )
-            data_indices[i] = rebind[data_indices.element_types[i]](
-                Int64(normalized_coords)
-            )
+            data_indices.replace_dynamic[i](Int64(normalized_coords))
 
             # Do a real bounds check and provide a nice message on CPU.
             # Use debug_assert to validate normalized index is within bounds
@@ -597,18 +728,15 @@ def gather_elementwise_fn_wrapper[
         elif i > Int(axis):
             # Skip over any extra indices dimensions. These are essentially new dimensions.
             comptime if i + skip_factor >= 0:
-                data_indices[i] = rebind[data_indices.element_types[i]](
+                data_indices.replace_dynamic[i](
                     Int64(coords[i + skip_factor].value())
                 )
         else:
             comptime if i < coords.rank:
-                data_indices[i] = rebind[data_indices.element_types[i]](
-                    Int64(coords[i].value())
-                )
+                data_indices.replace_dynamic[i](Int64(coords[i].value()))
 
     # Load the data.
-    comptime if prefetch_fn:
-        comptime func = prefetch_fn.value()
+    comptime if case .Some(func) = prefetch_fn:
         func(data_indices, indices_index)
     var data = input_fn[simd_width, element_alignment](data_indices)
 
@@ -678,7 +806,7 @@ def gather[
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
             target
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+        ]() else simd_width_of[dtype, target=context.target]()
     )
 
     gather_guards(axis, input_shape, indices_shape, output_shape)
@@ -771,7 +899,9 @@ def gather[
 
 
 @fieldwise_init
-struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
+struct ScatterOobIndexStrategy(
+    EnumLike, Equatable, ImplicitlyCopyable, Writable
+):
     """Valid indices are within the range [-dim_size, dim_size). Indices which
     fall outside of that can be handled using different strategies. Note that
     negative indices are allowed in order to support negative relative indexing.
@@ -788,6 +918,43 @@ struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
     comptime SKIP = Self(1)
     """Users may pass in indices outside of the range [-dim_size, dim_size). In
     which case the corresponding update will be skipped."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "UNDEFINED".value,
+        "SKIP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ScatterOobIndexStrategy has no payload"
+
+
+@inline(.always)
+def _has_native_atomic_add[dtype: DType]() -> Bool:
+    """Whether adding `dtype` is a single hardware atomic on this target.
+
+    Apple GPUs keep the compare-exchange loop. Sub-32-bit types would compile
+    to a word-sized compare-exchange loop anyway, except 16-bit floats, which
+    have a native atomic add from sm_90.
+    """
+    comptime if not (is_nvidia_gpu() or is_amd_gpu()):
+        return False
+    elif bit_width_of[dtype]() >= 32:
+        return dtype.is_integral() or dtype.is_floating_point()
+    else:
+        return dtype.is_half_float() and _is_sm_9x_or_newer()
 
 
 @inline(.always)
@@ -806,6 +973,9 @@ def _atomic_reduce[
     each update exactly once regardless of interleaving. `compare_exchange`
     compares floats bitwise (via their integral representation), so NaN
     payloads cannot livelock the loop.
+
+    Max and min stay on the loop: the update is skipped when the destination
+    already dominates it, so a native atomic measured no faster.
     """
     comptime if is_apple_gpu():
         # KERN-3243 tracks a real fix for these dtypes.
@@ -825,6 +995,30 @@ def _atomic_reduce[
             return
 
 
+comptime _AtomicUpdateFn = def[dtype: DType](
+    MutPointer[Scalar[dtype], ...], Scalar[dtype]
+) thin -> None
+
+
+@inline(.always)
+def _atomic_add[
+    dtype: DType, //
+](ptr: MutPointer[Scalar[dtype], ...], update: Scalar[dtype]):
+    """Adds an update atomically, using compare-exchange on unsupported targets.
+    """
+    comptime if _has_native_atomic_add[dtype]():
+        _ = Atomic.fetch_add(ptr, update)
+    else:
+
+        @inline(.always)
+        def add[
+            ty: DType, width: SIMDLength
+        ](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
+            return lhs + rhs
+
+        _atomic_reduce[add](ptr, update)
+
+
 @inline(.always)
 def scatter_nd_generator[
     output_type: DType,
@@ -832,11 +1026,7 @@ def scatter_nd_generator[
     //,
     oob_index_strategy: ScatterOobIndexStrategy = ScatterOobIndexStrategy.UNDEFINED,
     target: StaticString = "cpu",
-    reduce_fn: OptionalReg[
-        def[
-            dtype: DType, width: SIMDLength
-        ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
-    ] = None,
+    atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
@@ -854,12 +1044,11 @@ def scatter_nd_generator[
         indices_type: Type of the indices tensor.
         oob_index_strategy: Strategy to handle out of bounds indices.
         target: Target cpu or cuda.
-        reduce_fn: Reduction function to apply: none (default), add, mul, max,
-                   min. When set, every update is folded in atomically, in
-                   unspecified order — the atomic runs on all updates, not
-                   only detected duplicates, since duplicate index vectors
-                   can only be known at runtime. Without a reduce_fn,
-                   duplicates leave an unspecified winner instead.
+        atomic_update_fn: Callable that atomically applies an update to a
+            destination pointer. Called for every update on CPU and GPU, in
+            unspecified order. Use `_atomic_add` for addition or
+            `_atomic_reduce[reduce_fn]` for a binary reduction. Without a
+            callable, duplicate indices leave an unspecified winner.
         _trace_description: A description of the function, used for profiling and tracing.
 
     Args:
@@ -1035,9 +1224,9 @@ def scatter_nd_generator[
                     output_offset + output_strides[i] * output_index_tensor[i]
                 )
 
-            comptime if reduce_fn:
+            comptime if case .Some(atomic_update) = atomic_update_fn:
                 for i in range(count_copy):
-                    _atomic_reduce[reduce_fn.value()](
+                    atomic_update(
                         output_flat.ptr.unsafe_offset(output_offset + i),
                         updates_flat.load[width=1](Coord(updates_offset + i)),
                     )
@@ -1116,9 +1305,9 @@ def scatter_nd_generator[
                 width=simd_width, alignment=access_alignment
             ](Coord(updates_base + elem))
 
-            comptime if reduce_fn:
+            comptime if case .Some(atomic_update) = atomic_update_fn:
                 comptime for lane in range(simd_width):
-                    _atomic_reduce[reduce_fn.value()](
+                    atomic_update(
                         output_flat.ptr.unsafe_offset(
                             output_base + elem + lane
                         ),
@@ -1153,11 +1342,9 @@ def scatter_nd_generator[
             # iteration dim), so the bases must also be multiples of the
             # width — slice_elems, every stride feeding a base offset, and
             # the raw pointers all have to be pack-divisible.
-            comptime pack = simd_width_of[
-                output_type, target=get_gpu_target()
-            ]()
+            comptime pack = simd_width_of[output_type, target=context.target]()
             comptime vector_alignment = align_of[
-                SIMD[output_type, pack], target=get_gpu_target()
+                SIMD[output_type, pack], target=context.target
             ]()
 
             var vector_safe = (
@@ -1366,11 +1553,8 @@ def scatter_elements[
     input_type: DType,
     indices_type: DType,
     *,
-    reduce_fn: OptionalReg[
-        def[
-            dtype: DType, width: SIMDLength
-        ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
-    ] = None,
+    target: StaticString = "cpu",
+    atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
 ](
     input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
@@ -1386,10 +1570,12 @@ def scatter_elements[
         rank: Rank of the `input`, `indices`, `updates`, and `output` tensors.
         input_type: Element type of `input`, `updates`, and `output`.
         indices_type: Element type of `indices` (must be `int32` or `int64`).
-        reduce_fn: Reduction function to apply: none (default, overwrite),
-            add, mul, max, min. Updates for duplicate indices are reduced
-            atomically, in unspecified order (without a reduce_fn,
-            duplicates leave an unspecified winner instead).
+        target: Target backend to execute on, such as "cpu" or "gpu".
+        atomic_update_fn: Callable that atomically applies an update to a
+            destination pointer. Called for every update on CPU and GPU, in
+            unspecified order. Use `_atomic_add` for addition or
+            `_atomic_reduce[reduce_fn]` for a binary reduction. Without a
+            callable, duplicate indices leave an unspecified winner.
 
     Args:
         input: Source tensor copied into `output` before scattering.
@@ -1423,10 +1609,17 @@ def scatter_elements[
 
     var axis = _axis if _axis >= 0 else _axis + rank
 
-    # Do serial or parallel unsafe_memcpy depending on output size.
-    unsafe_parallel_memcpy(
-        dest=output.unsafe_ptr(), src=input.unsafe_ptr(), count=output.size()
-    )
+    comptime if is_gpu[target]():
+        ctx.enqueue_copy(output.unsafe_ptr(), input.unsafe_ptr(), output.size())
+    else:
+        unsafe_parallel_memcpy(
+            dest=output.unsafe_ptr(),
+            src=input.unsafe_ptr(),
+            count=output.size(),
+        )
+
+    if indices.size() == 0:
+        return
 
     var input_ax_dim = input.dim_size(axis)
 
@@ -1440,21 +1633,25 @@ def scatter_elements[
         )
         var update_val = updates.to_tile_tensor()[indices_coords]
 
-        comptime if reduce_fn:
+        comptime if case .Some(atomic_update) = atomic_update_fn:
             var output_tt = output.to_tile_tensor()
             var output_offset = 0
             for i in range(rank):
                 output_offset += (
                     Int(output_tt.dynamic_stride(i)) * output_coords[i]
                 )
-            _atomic_reduce[reduce_fn.value()](
+            atomic_update(
                 output.unsafe_ptr().unsafe_offset(output_offset), update_val
             )
         else:
             output.to_tile_tensor()[Coord(output_coords)] = update_val
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[1](update_func, indices.shape_coord(), ctx)
+    elementwise[
+        simd_width=1,
+        target=target,
+        _trace_description="scatter_elements",
+    ](update_func, indices.shape_coord(), ctx)
 
 
 @inline(.always)
@@ -1744,7 +1941,7 @@ def gather_nd[
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
             target
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+        ]() else simd_width_of[dtype, target=ctx.target]()
     )
 
     # Only use SIMD if:

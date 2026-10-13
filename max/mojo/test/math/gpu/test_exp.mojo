@@ -16,11 +16,9 @@ from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
 from max.gpu import *
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from std.testing import *
 from std.utils.coord import Coord
-
-from std.utils import IndexList
 
 
 def run_elementwise[
@@ -28,7 +26,7 @@ def run_elementwise[
 ](ctx: DeviceContext) raises where dtype.is_floating_point():
     comptime length = 256
 
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)

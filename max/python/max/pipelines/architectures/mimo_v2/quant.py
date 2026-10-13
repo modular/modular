@@ -18,8 +18,7 @@ with 128x128 block scales. The export declares modelopt ``MIXED_PRECISION``
 with only the routed experts quantized (``W4A16_NVFP4``, group 16), and
 stores every dense linear as F32 or BF16. MAX serves Xiaomi's format: the
 weight adapter turns the experts back into MXFP4 and the F32 dense linears
-back into FP8, each exactly. The shared parser refuses ``MIXED_PRECISION``, so
-the checks and the configs live here.
+back into FP8, each exactly.
 
 ``exclude_modules`` is not read. It is empty although no dense linear is
 quantized, so only ``quantized_layers`` says what is.
@@ -29,17 +28,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from max.dtype import DType
-from max.nn.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-)
+from max.nn.quant_config import MXFP4_BLOCK_SIZE, QuantConfig
+from max.pipelines.weights.quant import read_modelopt_quantized_layers
 from transformers.configuration_utils import PretrainedConfig
 
 MLP_PROJECTIONS = ("gate_proj", "up_proj", "down_proj")
@@ -48,7 +40,7 @@ QKV_LAYOUT = "global_q_k_v"
 """The only ``conversion_metadata.qkv_layout`` the adapter can invert."""
 
 FP8_BLOCK = 128
-MXFP4_BLOCK = 32
+MXFP4_BLOCK = MXFP4_BLOCK_SIZE
 NVFP4_GROUP_SIZE = 16
 _NVFP4_ALGO = "W4A16_NVFP4"
 
@@ -95,21 +87,16 @@ def validate_checkpoint_config(config: PretrainedConfig) -> None:
             than W4A16 NVFP4 routed experts with everything else unquantized,
             or the QKV layout is not the export's global order.
     """
-    quant: Mapping[str, Any] = (
+    quant: Mapping[str, object] = (
         getattr(config, "quantization_config", None) or {}
     )
-    method, algo = quant.get("quant_method"), quant.get("quant_algo")
-    if (method, algo) != ("modelopt", "MIXED_PRECISION"):
-        raise ValueError(
-            f"MiMo-V2: quantization_config is quant_method={method!r}, "
-            f"quant_algo={algo!r}; only NVFP4 exports (modelopt "
-            "MIXED_PRECISION) load for now."
-        )
-    if quant.get("kv_cache_quant_algo") is not None:
-        raise ValueError(
-            "MiMo-V2: kv_cache_quant_algo is "
-            f"{quant['kv_cache_quant_algo']!r}; KV-cache scales are not wired."
-        )
+    read_modelopt_quantized_layers(
+        quant,
+        allowed={(_NVFP4_ALGO, NVFP4_GROUP_SIZE)},
+        expected_modules=routed_expert_modules(config),
+        kv_cache_quant_algos=(None,),
+        model_name="MiMo-V2",
+    )
 
     metadata = getattr(config, "conversion_metadata", None) or {}
     layout = metadata.get("qkv_layout")
@@ -119,31 +106,6 @@ def validate_checkpoint_config(config: PretrainedConfig) -> None:
             f"weight adapter only inverts {QKV_LAYOUT!r}. Reading qkv_proj in "
             "the wrong row order gives wrong attention without an error."
         )
-
-    declared = quant.get("quantized_layers") or {}
-    expected = routed_expert_modules(config)
-    if unexpected := sorted(set(declared) - expected):
-        raise ValueError(
-            f"MiMo-V2: quantized_layers names {len(unexpected)} module(s) "
-            f"that are not routed-expert projections, e.g. {unexpected[:3]}. "
-            "Only the routed experts are quantized in this export."
-        )
-    if missing := sorted(expected - set(declared)):
-        raise ValueError(
-            f"MiMo-V2: quantized_layers lists {len(declared)} of the "
-            f"{len(expected)} routed-expert projections; missing e.g. "
-            f"{missing[:3]}."
-        )
-    for module, entry in declared.items():
-        if not isinstance(entry, Mapping) or (
-            entry.get("quant_algo"),
-            entry.get("group_size"),
-        ) != (_NVFP4_ALGO, NVFP4_GROUP_SIZE):
-            raise ValueError(
-                f"MiMo-V2: quantized_layers[{module!r}] is {entry!r}; "
-                f"expected quant_algo {_NVFP4_ALGO!r} with group_size "
-                f"{NVFP4_GROUP_SIZE}."
-            )
 
 
 def parse_quant_scheme(config: PretrainedConfig) -> MiMoV2QuantScheme:
@@ -162,39 +124,15 @@ def parse_quant_scheme(config: PretrainedConfig) -> MiMoV2QuantScheme:
     moe = set(moe_layers(config))
     all_layers = set(range(config.num_hidden_layers))
     return MiMoV2QuantScheme(
-        dense=QuantConfig(
-            input_scale=InputScaleSpec(
-                granularity=ScaleGranularity.BLOCK,
-                origin=ScaleOrigin.DYNAMIC,
-                dtype=DType.float32,
-                block_size=(1, FP8_BLOCK),
-            ),
-            weight_scale=WeightScaleSpec(
-                granularity=ScaleGranularity.BLOCK,
-                dtype=DType.float32,
-                block_size=(FP8_BLOCK, FP8_BLOCK),
-            ),
+        dense=QuantConfig.blockscaled_fp8(
             mlp_quantized_layers=all_layers - moe,
             # qkv_proj only; o_proj is BF16 in every layer.
             attn_quantized_layers=all_layers,
+            block_size=FP8_BLOCK,
             embedding_output_dtype=DType.bfloat16,
-            format=QuantFormat.BLOCKSCALED_FP8,
         ),
-        experts=QuantConfig(
-            input_scale=InputScaleSpec(
-                granularity=ScaleGranularity.BLOCK,
-                origin=ScaleOrigin.DYNAMIC,
-                dtype=DType.float32,
-                block_size=(1, MXFP4_BLOCK),
-            ),
-            weight_scale=WeightScaleSpec(
-                granularity=ScaleGranularity.BLOCK,
-                dtype=DType.float8_e8m0fnu,
-                block_size=(1, MXFP4_BLOCK),
-            ),
+        experts=QuantConfig.mxfp4(
             mlp_quantized_layers=moe,
-            attn_quantized_layers=set(),
             embedding_output_dtype=DType.bfloat16,
-            format=QuantFormat.MXFP4,
         ),
     )

@@ -11,6 +11,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
+        exclude = ["test_execute_stress.py"],
     ),
     exec_properties = {
         "test.resources:gpu-memory": "3",
@@ -27,5 +28,87 @@ modular_py_test(
         requirement("ml-dtypes"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+# Every launch reloads its module here, so each one is a cold kernel load. The
+# function-cache bypass exists only in the CUDA driver. Load logging records
+# only each kernel's first load, which maps each worker thread to its GPU.
+# Manual: the kernel-load stress workflow runs it on a dedicated 2-GPU runner,
+# not presubmit.
+modular_py_test(
+    name = "test_execute_stress",
+    size = "enormous",
+    srcs = [
+        "conftest.py",
+        "test_execute_stress.py",
+    ],
+    args = [
+        "-k",
+        "test_steps_survive_kernel_loads",
+    ],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_BYPASS_FUNCTION_CACHE": "1",
+        "MODULAR_DEVICE_CONTEXT_LOG_LOAD_FUNCTION": "1",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "180",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+        "//:nvidia_gpu",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
+
+# The same test file's shape-kernel case, with the function cache on: cold loads
+# come from shape-specialized kernels meeting new batch sizes. Load logging
+# names each loading kernel and its thread and GPU, which the optimized build's
+# hang capture cannot.
+modular_py_test(
+    name = "test_execute_stress_cache_on",
+    size = "enormous",
+    srcs = [
+        "conftest.py",
+        "test_execute_stress.py",
+    ],
+    args = [
+        "-k",
+        "test_steps_survive_shape_kernel_loads",
+    ],
+    data = ["//max/tests/integration/graph/multi_gpu/testdata/shape_kernel_ops"],
+    env = {
+        "STRESS_SHAPE_OPS_PATH": "$(rootpath //max/tests/integration/graph/multi_gpu/testdata/shape_kernel_ops)",
+        "MODULAR_DEVICE_CONTEXT_LOG_LOAD_FUNCTION": "1",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "180",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+        "//:nvidia_gpu",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
     ],
 )

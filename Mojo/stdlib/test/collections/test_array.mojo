@@ -528,12 +528,12 @@ def _test_array_iter_bounds[
     for i in range(array_len):
         var lower, upper = iter.bounds()
         assert_equal(array_len - i, lower)
-        assert_equal(array_len - i, upper.value())
+        assert_equal(Optional(array_len - i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 struct NonWritable(Copyable):
@@ -858,11 +858,8 @@ def test_array_concat_list_literal_rhs() raises:
 
 
 def test_array_concat_list_literal_to_rvalue() raises:
-    def returns_array() -> Array[Int, 2]:
-        return [1, 2]
-
     # An rvalue array concatenates with a literal directly.
-    var a = returns_array().concat([3, 4])
+    var a = (lambda () -> Array[Int, 2]: [1, 2])().concat([3, 4])
     comptime assert type_of(a).length == 4
     for i in range(4):
         assert_equal(a[i], i + 1)

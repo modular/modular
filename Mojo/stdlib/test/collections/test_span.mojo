@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import TestSuite
-from std.testing import assert_equal, assert_raises, assert_true, assert_false
+from std.testing import assert_equal, assert_raises, assert_true
 from test_utils import (
     CopyCounter,
     DelCounter,
@@ -21,11 +21,6 @@ from test_utils import (
     check_write_to,
 )
 from std.memory import MaybeUninit, forget_deinit
-from std.traits import (
-    IsTriviallyCopyable,
-    IsTriviallyDeinitable,
-    IsTriviallyMovable,
-)
 from std.math import iota
 from std.hashlib import Hasher
 
@@ -447,21 +442,21 @@ def test_binary_search() raises:
         assert_true(view._binary_search_index(0) is None)
         view = Span(data)[:1]
         assert_true(view._binary_search_index(0))
-        assert_equal(view._binary_search_index(0).value(), 0)
+        assert_equal(view._binary_search_index(0), Optional(0))
         view = Span(data)[: len(data) - 1]
         assert_true(view._binary_search_index(1))
-        assert_equal(view._binary_search_index(1).value(), 1)
+        assert_equal(view._binary_search_index(1), Optional(1))
         view = Span(data)
         assert_true(view._binary_search_index(Scalar[dtype](max_val)))
         assert_equal(
-            view._binary_search_index(Scalar[dtype](max_val)).value(),
-            max_val,
+            view._binary_search_index(Scalar[dtype](max_val)),
+            Optional(max_val),
         )
         view = Span(data)[: len(data) - 1]
         assert_true(view._binary_search_index(Scalar[dtype](max_val - 1)))
         assert_equal(
-            view._binary_search_index(Scalar[dtype](max_val - 1)).value(),
-            max_val - 1,
+            view._binary_search_index(Scalar[dtype](max_val - 1)),
+            Optional(max_val - 1),
         )
 
     _test[.uint8]()
@@ -474,29 +469,17 @@ def test_binary_search_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
-    def cmp_7(x: Int) -> Int:
-        return x - 7
+    var result = span.binary_search_by[lambda (x: Int) -> Int: x - 7]()
+    assert_equal(Optional(3), result)
 
-    var result = span.binary_search_by[cmp_7]()
-    assert_equal(3, result.value())
-
-    def cmp_6(x: Int) -> Int:
-        return x - 6
-
-    var result2 = span.binary_search_by[cmp_6]()
+    var result2 = span.binary_search_by[lambda (x: Int) -> Int: x - 6]()
     assert_true(not result2)
 
-    def cmp_1(x: Int) -> Int:
-        return x - 1
+    var result3 = span.binary_search_by[lambda (x: Int) -> Int: x - 1]()
+    assert_equal(Optional(0), result3)
 
-    var result3 = span.binary_search_by[cmp_1]()
-    assert_equal(0, result3.value())
-
-    def cmp_13(x: Int) -> Int:
-        return x - 13
-
-    var result4 = span.binary_search_by[cmp_13]()
-    assert_equal(6, result4.value())
+    var result4 = span.binary_search_by[lambda (x: Int) -> Int: x - 13]()
+    assert_equal(Optional(6), result4)
 
 
 def test_binary_search_by_unified() raises:
@@ -509,7 +492,7 @@ def test_binary_search_by_unified() raises:
         return x - seven
 
     var result = span.binary_search_by(cmp_7)
-    assert_equal(3, result.value())
+    assert_equal(Optional(3), result)
 
     var six = 6
 
@@ -525,7 +508,7 @@ def test_binary_search_by_unified() raises:
         return x - one
 
     var result3 = span.binary_search_by(cmp_1)
-    assert_equal(0, result3.value())
+    assert_equal(Optional(0), result3)
 
     var thirteen = 13
 
@@ -533,7 +516,7 @@ def test_binary_search_by_unified() raises:
         return x - thirteen
 
     var result4 = span.binary_search_by(cmp_13)
-    assert_equal(6, result4.value())
+    assert_equal(Optional(6), result4)
 
 
 def test_iter() raises:

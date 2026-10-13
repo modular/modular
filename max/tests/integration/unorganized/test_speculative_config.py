@@ -73,41 +73,12 @@ def test_speculative_config_model_copy_update() -> None:
     assert config.num_speculative_tokens is None
 
 
-def test_rejection_sampling_strategy_default() -> None:
-    """Verify rejection_sampling_strategy defaults to None.
-
-    Nothing resolves it afterwards either: the acceptance rule in effect is
-    AcceptanceSampler.acceptance_rule.
-    """
-    config = SpeculativeConfig()
-    assert config.rejection_sampling_strategy is None
-
-
-def test_rejection_sampling_strategy_values() -> None:
-    """Verify rejection_sampling_strategy accepts valid values."""
-    assert (
-        SpeculativeConfig(
-            rejection_sampling_strategy="greedy"
-        ).rejection_sampling_strategy
-        == "greedy"
-    )
-    assert (
-        SpeculativeConfig(
-            rejection_sampling_strategy="residual"
-        ).rejection_sampling_strategy
-        == "residual"
-    )
-
-
-def test_uses_greedy_rejection() -> None:
-    """Verify uses_greedy_rejection() returns correct boolean."""
-    assert SpeculativeConfig(
-        rejection_sampling_strategy="greedy"
-    ).uses_greedy_rejection()
-    assert not SpeculativeConfig(
-        rejection_sampling_strategy="residual"
-    ).uses_greedy_rejection()
-    assert not SpeculativeConfig().uses_greedy_rejection()
+def test_rejection_sampling_strategy_is_rejected() -> None:
+    """The removed field fails validation instead of being silently ignored."""
+    with pytest.raises(ValidationError, match="rejection_sampling_strategy"):
+        SpeculativeConfig.model_validate(
+            {"rejection_sampling_strategy": "greedy"}
+        )
 
 
 def test_synthetic_acceptance_rate_defaults_none() -> None:
@@ -230,8 +201,7 @@ def test_acceptance_sampler_reports_the_rule_it_dispatches_to(
 ) -> None:
     """The sampler must name the acceptance rule it will actually run.
 
-    ``rejection_sampling_strategy`` is not read by any speculative path, so
-    the rule in effect is only knowable from the sampler's own dispatch:
+    The rule in effect is only knowable from the sampler's own dispatch:
     synthetic beats stochastic beats greedy.
     """
     with caplog.at_level(logging.INFO, logger="max.pipelines"):

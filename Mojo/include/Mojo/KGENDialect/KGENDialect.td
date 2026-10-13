@@ -21,6 +21,9 @@
 include "mlir/IR/OpBase.td"
 
 def KGENDialect : Dialect {
+  // TODO(MOCO-5011): Migrate assembly formats to strict properties before
+  // upstream removes this opt-out.
+  let useStrictPropertiesInAssemblyFormat = 0;
   let name = "kgen";
 
   let summary = "The 'kgen' dialect";

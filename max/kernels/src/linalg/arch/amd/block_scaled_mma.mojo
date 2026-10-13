@@ -50,7 +50,7 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
         Args:
             mx_format: The MX element format to select.
         """
-        __match mx_format:
+        match mx_format:
             case .FP8_E4M3:
                 self = Self.FLOAT8_E4M3
             case .FP8_E5M2:

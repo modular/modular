@@ -25,7 +25,7 @@ This complements `test_mla_decode_kv_fp8_magnitude_stress.mojo`, which exercises
 the attention READ path; this test covers the quant/cast WRITE boundary that the
 attention microbench cannot see."""
 
-from std.sys import has_nvidia_gpu_accelerator
+from std.sys import current_accelerator
 from max.gpu.host import DeviceContext
 from std.utils.numerics import isnan, max_finite, min_finite
 from internal_utils.fp8_utils import fp8_quantize, cast_saturating
@@ -68,7 +68,7 @@ def _check_kernel():
     # is the S6 bug the default-True clamp cures. If this is FINITE on the
     # target GPU, the isolated mechanism is NOT firing (STOP — needs the e2e
     # nan-check trace). On NVIDIA we assert it IS non-finite (mechanism repros).
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if current_accelerator().is_nvidia_gpu():
         var raw = fp8_quantize[.float8_e4m3fn, use_clamp=False](
             big, Float32(1.0)
         )

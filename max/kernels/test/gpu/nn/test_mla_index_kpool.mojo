@@ -20,6 +20,7 @@ from layout import TileTensor, row_major
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 
 from nn.attention.gpu.mla_index_kpool import (
+    KPOOL_EXPAND_BLOCK_SIZE,
     kpool_compress_kernel,
     kpool_expand_topk_kernel,
     kpool_ring_close_kernel,
@@ -1059,6 +1060,9 @@ def test_expand_topk[
 ](seq_lens: List[Int], cache_lens: List[Int], ctx: DeviceContext) raises:
     """Expand selected pools to token positions and check every column.
 
+    Rows must come out packed: selected pools in selection order, then the
+    tail, then `-1`.
+
     Parameters:
         kpool: Tokens per pool.
         pool_topk: Selected pools per token.
@@ -1104,10 +1108,11 @@ def test_expand_topk[
         off += seq_lens[b]
     iro_host[batch_size] = UInt32(off)
 
-    # A -1 in every row, so the sentinel path runs on every token.
+    # A trailing -1 in every row, and on odd tokens interior -1 holes too, so
+    # packing has gaps to close across the threads' slot runs.
     for t in range(total_seq_len):
         for j in range(pool_topk):
-            if j == pool_topk - 1:
+            if j == pool_topk - 1 or (t % 2 == 1 and j % 5 == 2):
                 pool_host[t * pool_topk + j] = Int32(-1)
             else:
                 pool_host[t * pool_topk + j] = Int32((t * 7 + j * 3) % 32)
@@ -1149,7 +1154,7 @@ def test_expand_topk[
         clen_tile.as_imm(),
         Int32(total_seq_len),
         grid_dim=(total_seq_len, 1, 1),
-        block_dim=(128, 1, 1),
+        block_dim=(KPOOL_EXPAND_BLOCK_SIZE, 1, 1),
     )
     ctx.synchronize()
     ctx.enqueue_copy(out_host, out_dev)
@@ -1159,41 +1164,24 @@ def test_expand_topk[
         for local in range(seq_lens[b]):
             var t = Int(iro_host[b]) + local
             var visible = cache_lens[b] + local + 1
-            var tail_count = visible % kpool
+            var tail_count = (visible % kpool) if always_select_tail else 0
             var tail_start = visible - tail_count
 
-            for col in range(out_width):
-                var got = Int(out_host[t * out_width + col])
-                var want: Int
-                if col < pool_topk * kpool:
-                    var pid = Int(pool_host[t * pool_topk + col // kpool])
-                    # An unselected pool stays unselected in all of its slots.
-                    want = -1 if pid < 0 else pid * kpool + col % kpool
-                else:
-                    var tail_idx = col - pool_topk * kpool
-                    want = (
-                        tail_start + tail_idx if tail_idx < tail_count else -1
-                    )
-                assert_equal(
-                    got,
-                    want,
-                    String("token ", t, " column ", col, " wrong"),
-                )
+            var want = List[Int]()
+            for j in range(pool_topk):
+                var pid = Int(pool_host[t * pool_topk + j])
+                if pid >= 0:
+                    for c in range(kpool):
+                        want.append(pid * kpool + c)
+            for tail_idx in range(tail_count):
+                want.append(tail_start + tail_idx)
+            want.resize(out_width, -1)
 
-            # The tail must never reach past the query's own position.
-            comptime if always_select_tail:
-                for tail_idx in range(tail_width):
-                    var v = Int(
-                        out_host[t * out_width + pool_topk * kpool + tail_idx]
-                    )
-                    assert_true(
-                        v < visible,
-                        String("token ", t, " tail ", v, " past position"),
-                    )
+            for col in range(out_width):
                 assert_equal(
-                    tail_count,
-                    visible - tail_start,
-                    "tail arithmetic disagrees with itself",
+                    Int(out_host[t * out_width + col]),
+                    want[col],
+                    String("token ", t, " column ", col, " wrong"),
                 )
 
     print("  every column matches over", total_seq_len, "tokens")

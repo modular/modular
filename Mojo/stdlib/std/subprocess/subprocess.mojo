@@ -22,7 +22,6 @@ from std.ffi import external_call
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys._libc import FILE_ptr, pclose, popen
 from std.ffi import c_char
-from std.sys.info import CompilationTarget
 
 from std.collections import Span
 

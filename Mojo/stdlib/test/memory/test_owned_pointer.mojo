@@ -23,7 +23,6 @@ from test_utils import (
 from std.testing import (
     assert_equal,
     assert_false,
-    assert_not_equal,
     assert_true,
     TestSuite,
 )

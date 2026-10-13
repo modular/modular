@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.speculators_common import (
@@ -35,6 +36,7 @@ from max.pipelines.architectures.unified_dspark_gemma4_31b.model_config import (
     UnifiedDSparkGemma4_31BConfig,
 )
 from max.pipelines.lib import SamplingConfig
+from max.pipelines.lib.config import SpeculativeConfig, SpeculativeMethod
 from max.pipelines.lib.config.config import (
     _apply_speculative_target_architecture,
     _resolve_default_structured_output_backend,
@@ -88,16 +90,16 @@ def test_dspark_speculators_draft_arch_registered() -> None:
 class TestSpeculativeArchitectureRewrite:
     """The config rewrite for the (Gemma4 target, DSpark draft) pair.
 
-    Mirrors ``TestSpeculativeArchitectureOverride`` in ``test_config_pure``:
-    the method is invoked unbound on a lightweight stand-in exposing only the
-    attributes it reads.
+    Mirrors ``TestSpeculativeArchitectureOverride`` in ``test_config_pure``,
+    with stand-in model manifests but a real ``SpeculativeConfig``, so every
+    predicate the rewrite reads exists here as it does in serving.
     """
 
     @staticmethod
     def _make_config(
         target_arch: str,
         *,
-        speculative: bool = True,
+        method: SpeculativeMethod | None = "dspark",
         draft_arch: str | None = None,
     ) -> SimpleNamespace:
         model = SimpleNamespace(
@@ -109,8 +111,8 @@ class TestSpeculativeArchitectureRewrite:
                 huggingface_config=SimpleNamespace(architectures=[draft_arch])
             )
         spec = (
-            SimpleNamespace(is_dflash=lambda: True, is_dflash2=lambda: False)
-            if speculative
+            SpeculativeConfig(speculative_method=method)
+            if method is not None
             else None
         )
         manifest = {"main": model}
@@ -132,9 +134,19 @@ class TestSpeculativeArchitectureRewrite:
         )
         assert self._resolved_arch(cfg) == "UnifiedDSparkGemma4_31BForCausalLM"
 
+    def test_gemma4_dspark_31b_pair_refuses_dflash(self) -> None:
+        cfg = self._make_config(
+            "Gemma4ForConditionalGeneration",
+            method="dflash",
+            draft_arch="DSparkDraftModel",
+        )
+        with pytest.raises(ValueError, match="--speculative-method dspark"):
+            self._resolved_arch(cfg)
+
     def test_gemma4_mtp_pair_regression(self) -> None:
         cfg = self._make_config(
             "Gemma4ForConditionalGeneration",
+            method="mtp",
             draft_arch="Gemma4AssistantForCausalLM",
         )
         assert self._resolved_arch(cfg) == "UnifiedMTPGemma4ForCausalLM"
@@ -161,7 +173,7 @@ class TestSpeculativeArchitectureRewrite:
     def test_no_speculative_is_noop(self) -> None:
         cfg = self._make_config(
             "Gemma4ForConditionalGeneration",
-            speculative=False,
+            method=None,
             draft_arch="DSparkDraftModel",
         )
         assert self._resolved_arch(cfg) == "Gemma4ForConditionalGeneration"

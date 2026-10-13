@@ -104,6 +104,11 @@ from pydantic import (
 )
 from typing_extensions import NotRequired, TypedDict
 
+from max.serve.schemas._chat_template import (
+    thinking_requested,
+    with_thinking,
+)
+
 # ---------------------------------------------------------------------------
 # Response models.
 #
@@ -331,12 +336,12 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     """Builds a pydantic ``BaseModel`` mirroring an OpenAI ``TypedDict``.
 
     All fields default to ``None`` because OpenAI marks only a few fields
-    (e.g. ``model``, ``messages``, ``input``) as ``Required[...]``; we
+    (such as ``model``, ``messages``, ``input``) as ``Required[...]``; we
     re-declare the truly required ones in the subclass below with no
     default.
 
     Field annotations are widened to ``Optional[T]`` so that clients which
-    explicitly serialize unset fields as ``null`` (e.g. ``"tool_choice":
+    explicitly serialize unset fields as ``null`` (such as ``"tool_choice":
     null``) are accepted as equivalent to omission. OpenAI expresses this
     via ``NotRequired`` on the TypedDict, but the underlying type aliases
     (``ChatCompletionToolChoiceOptionParam`` and friends) are not
@@ -416,7 +421,8 @@ class _MaxRequestExtensions(BaseModel):
             "entries from other requests. Combined with "
             "kv_cache_hash_seed via XOR. Works under any "
             "kv_cache_hash_algo: a cryptographic guarantee under "
-            "sha256/sha256_64, best-effort under ahash64."
+            "sha256 (64-bit key separation on the dKV external tier), "
+            "best-effort under ahash64."
         ),
     )
 
@@ -568,12 +574,10 @@ class CreateChatCompletionRequest(
 
         # Client may set either spelling of the thinking toggle, here we merge
         # both.
-        for key in ("enable_thinking", "thinking"):
-            if key in kwargs:
-                enable_thinking = bool(kwargs[key])
-                break
-        kwargs["enable_thinking"] = enable_thinking
-        kwargs["thinking"] = enable_thinking
+        requested = thinking_requested(kwargs)
+        if requested is not None:
+            enable_thinking = requested
+        kwargs = with_thinking(kwargs, enable_thinking)
         if effort is not None:
             kwargs["reasoning_effort"] = effort
         return kwargs

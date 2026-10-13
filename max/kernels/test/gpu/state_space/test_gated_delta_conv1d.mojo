@@ -17,7 +17,6 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Coord,
-    Idx,
     TensorEngine,
     TensorLayout,
     TileTensor,

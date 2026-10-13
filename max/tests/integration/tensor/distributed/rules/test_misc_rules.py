@@ -15,19 +15,15 @@
 
 from __future__ import annotations
 
-from max.driver import CPU
 from max.dtype import DType
 from max.experimental.sharding import (
     DeviceMapping,
-    DeviceMesh,
-    Replicated,
     TensorLayout,
 )
 from max.experimental.sharding.rules import (
     band_part_rule,
     fold_rule,
     irfft_rule,
-    reject_distributed_rule,
     resize_rule,
 )
 from max.graph import Shape
@@ -112,21 +108,3 @@ class TestIrfftRule:
         layout = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(irfft_rule, layout)
         assert out.placements == (R,)
-
-
-class TestRejectDistributedRule:
-    def test_single_device_ok(self) -> None:
-        """Single-device mesh (num_devices=1) is allowed."""
-        single = DeviceMesh(
-            devices=(CPU(),), mesh_shape=(1,), axis_names=("x",)
-        )
-        m = DeviceMapping(single, (Replicated(),))
-        layout = _layout(m, (4, 8))
-        _, (out,) = pick(reject_distributed_rule, layout, op_name="custom")
-        assert out.placements == (Replicated(),)
-
-    def test_multi_device_replicates(self) -> None:
-        """Multi-device input: rule auto-gathers to fully Replicated."""
-        layout = _layout(M(MESH_1D, R), (4, 8))
-        _, (out,) = pick(reject_distributed_rule, layout, op_name="custom")
-        assert out.placements == (Replicated(),)

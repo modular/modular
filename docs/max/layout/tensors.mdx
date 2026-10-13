@@ -200,7 +200,7 @@ comptime rows = 1024
 comptime columns = 1024
 comptime buf_size = rows * columns
 comptime layout = Layout.row_major(rows, columns)
-var ptr = alloc[Float32](buf_size)
+var ptr = alloc[Float32]({count = buf_size}).unsafe_leak()
 unsafe_memset(ptr, 0, buf_size)
 var tensor = LayoutTensor[.float32, layout](ptr)
 ```
@@ -416,7 +416,7 @@ you can use the `TileType` type alias, with the same tile size parameters.
 
 ```mojo
 var my_tile: tensor.TileType[tile_size, tile_size]
-for i in range (rows):
+for i in range(rows):
     for j in range(columns):
         my_tile = tensor.tile[tile_size, tile_size](i, j)
         # ... do something with the tile ...
@@ -524,7 +524,7 @@ You can query the SIMD width for a data type on the target GPU with
 from std.sys.info import simd_width_of
 from max.gpu.host.compile import get_gpu_target
 
-comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]
+comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]()
 ```
 
 The
@@ -616,7 +616,7 @@ asynchronous copy path isn't currently supported.
 
 ```mojo
 def copy_from_async_example():
-    comptime if not has_apple_gpu_accelerator():
+    comptime if not default_accelerator().is_apple_gpu():
         comptime dtype = DType.float32
         comptime rows = 128
         comptime cols = 128

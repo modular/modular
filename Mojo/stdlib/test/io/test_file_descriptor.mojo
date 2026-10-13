@@ -11,10 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.ffi import c_int
 from std.io import FileDescriptor
 from std.sys._io import stdin, stdout, stderr
 
-from std.testing import TestSuite, assert_false, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
+
+
+def test_value_is_c_int() raises:
+    assert_true(type_of(stdout.value) == c_int)
+    assert_equal(stdout.value, 1)
+    assert_equal(stderr.value, 2)
+    assert_equal(FileDescriptor().value, 1)
 
 
 def test_isatty_with_standard_descriptors() raises:

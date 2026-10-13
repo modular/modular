@@ -12,11 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.string.string_span import _get_kgen_string
+from std.sys.info import CompilationTarget
 
-from ._trait import MaxPluginHooks
+from ._trait import MaxPlugin, MaxPluginHooks
 
 
-struct MetalMaxPlugin(MaxPluginHooks):
+struct MetalMaxPlugin(MaxPlugin):
     """Provides default MAX behavior for Metal targets."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["metal"]()
+    comptime HookFor[target: CompilationTarget] = MetalMaxPluginHooks[target]
+
+
+struct MetalMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
+    pass

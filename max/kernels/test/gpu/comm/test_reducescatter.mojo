@@ -16,16 +16,12 @@ from std.sys import size_of, simd_width_of
 from std.itertools import product
 from std.utils.coord import _coerce_dynamic
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from layout.coord import DynamicCoord
 from std.collections import Optional
 from comm import Signal, MAX_GPUS
 from comm.sync import enable_p2p, init_signal_buffer
-from comm.reducescatter import (
-    reducescatter,
-    ReduceScatterConfig,
-    elementwise_epilogue_type,
-)
+from comm.reducescatter import reducescatter, ReduceScatterConfig
 from internal_utils._testing import test_value_for_gpu_element
 from max.gpu.host import (
     DeviceBuffer,
@@ -261,28 +257,39 @@ def reducescatter_test[
             rebind[SIMD[dtype, _width]](-val),
         )
 
-    # `reducescatter`'s output is a world-view `Array`, not a `StaticTuple`;
-    # convert once (the actual write goes through `outputs_lambda` above,
-    # which still reads the `StaticTuple` directly).
+    # `reducescatter`'s outputs are world-view `Array`s, not a `StaticTuple`;
+    # convert once (`outputs_lambda` above still reads the `StaticTuple`
+    # directly).
     var out_bufs_arr = Array[OutputTileType, ngpus](
         fill_with=lambda (k: Int) -> OutputTileType: out_bufs[k]
     )
+    comptime OutputLayoutType = type_of(out_bufs[0].layout)
+    var out_layouts = Array[OutputLayoutType, ngpus](
+        fill_with=lambda (k: Int) -> OutputLayoutType: out_bufs[k].layout
+    )
 
     comptime for i in range(ngpus):
-        reducescatter[
-            ngpus=ngpus,
-            output_lambda=Optional[elementwise_epilogue_type](
-                outputs_lambda[input_index=i, ...]
-            ) if use_custom_epilogue else None,
-            axis=axis,
-            use_multimem=use_multimem,
-        ](
-            in_bufs,
-            out_bufs_arr,
-            rank_sigs,
-            list_of_ctx[i],
-            my_rank=Optional[Int](i),
-        )
+        comptime if use_custom_epilogue:
+            reducescatter[
+                ngpus=ngpus,
+                output_lambda=outputs_lambda[input_index=i, ...],
+                axis=axis,
+                use_multimem=use_multimem,
+            ](
+                in_bufs,
+                out_layouts,
+                rank_sigs,
+                list_of_ctx[i],
+                my_rank=Optional[Int](i),
+            )
+        else:
+            reducescatter[ngpus=ngpus, axis=axis, use_multimem=use_multimem](
+                in_bufs,
+                out_bufs_arr,
+                rank_sigs,
+                list_of_ctx[i],
+                my_rank=Optional[Int](i),
+            )
 
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()

@@ -12,15 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext, FuncAttribute
-from std.collections import Optional
 from std.math import ceildiv
 from std.random import rand
-from std.sys import align_of
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     ComptimeInt,
+    Coord,
     Idx,
     RowMajorLayout,
     TileTensor,
@@ -28,10 +26,7 @@ from layout import (
 )
 from linalg.matmul.gpu import matmul_kernel_naive, multistage_gemm
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
-from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulKernels
-
-from std.utils import IndexList
 
 
 def multistage_gemm_simple[
@@ -127,31 +122,25 @@ def multistage_gemm_fp32_run[
     ctx.enqueue_copy(c_device, c_host_ptr)
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_tensor)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor.store[alignment=alignment](
-            Coord(idx), rebind[SIMD[dtype, width]](val)
-        )
+    def compute_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val
 
     # The config the vendor BLAS fallback hardcodes (KERN-1812).
     comptime config = MatmulKernels[
         dtype, dtype, dtype, transpose_b
     ]().ampere_256x64_4
 
-    multistage_gemm[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            epilogue_fn
-        ) if use_epilogue else None,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+    comptime if use_epilogue:
+        multistage_gemm[transpose_b=transpose_b, config=config](
+            c_tensor, a_tensor, b_tensor, compute_fn, ctx
+        )
+    else:
+        multistage_gemm[transpose_b=transpose_b, config=config](
+            c_tensor, a_tensor, b_tensor, ctx
+        )
 
     # cuBLAS rejects these shapes, so the reference is the naive GPU kernel,
     # the same one the vendor BLAS fallback uses for small K.

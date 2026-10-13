@@ -34,7 +34,7 @@ from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorEngine, TensorLayout, TileTensor
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
-from std.utils import Index, IndexList
+from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from linalg.utils import elementwise_epilogue_type
@@ -483,12 +483,12 @@ def conv2d_kernel_rdna[
                 )
 
                 if global_row < _M and global_col < _N:
-                    comptime if elementwise_lambda_fn:
+                    comptime if case .Some(epilogue) = elementwise_lambda_fn:
                         comptime elementwise_lambda = (
                             elementwise_lambda_fn.value()
                         )
                         elementwise_lambda[out_type, 1](
-                            Index(global_row, global_col),
+                            (global_row, global_col),
                             c_accum[c_idx][v].cast[out_type](),
                         )
                     else:

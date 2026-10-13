@@ -38,8 +38,6 @@ expresses this.
 """
 
 from std.math import ceildiv, rsqrt
-from std.builtin.device_passable import DevicePassable
-from std.memory import AddressSpace
 from std.atomic import Atomic, Ordering, fence
 from std.sys.info import _is_sm_100x_or_newer, simd_width_of, size_of
 from std.time import global_perf_counter_ns
@@ -55,7 +53,7 @@ from max.gpu import (
     warp_id,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.memory import cp_async_bulk_prefetch
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -73,8 +71,6 @@ from layout import (
     row_major,
     stack_allocation as tt_stack_allocation,
 )
-from std.utils import IndexList
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -530,7 +526,7 @@ def _gemv_partial_norm_fused[
     var n_unnormed = Int(unnormed_output.dim[1]())
     var n = n_normed + n_unnormed
 
-    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[a_type, target=ctx.target]()
     assert (
         n_normed % tile_n == 0
     ), "n_normed must be divisible by tile_n in the fused kernel"

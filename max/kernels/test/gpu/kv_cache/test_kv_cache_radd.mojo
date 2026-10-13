@@ -15,7 +15,7 @@ from std.math import ceildiv
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
 

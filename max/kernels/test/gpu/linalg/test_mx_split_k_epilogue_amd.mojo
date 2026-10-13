@@ -28,9 +28,8 @@ from max.gpu.host import DeviceContext
 from std.memory import bitcast
 from std.random import random_ui64
 from std.testing import assert_equal, assert_true
-from std.utils.index import IndexList
 
-from layout import TileTensor
+from layout import Coord, TileTensor
 from layout.tile_layout import row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE, MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
@@ -209,13 +208,14 @@ def test_split_k_epilogue[
     @inline(.always)
     def record[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]):
+    ](idx: Coord, val: SIMD[_dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # Routing oracle: the reduce hands one scalar per cell, the in-tile
         # `RegTileEpilogue` hands `chunk_width` contiguous columns, so width
         # > 1 can only be a non-split launch.
         comptime if width > 1:
             wide_ptr[0] = Int32(1)
-        var base = idx[0] * N_static + idx[1]
+        var base = Int(idx[0].value()) * N_static + Int(idx[1].value())
         comptime for w in range(width):
             epi_ptr[base + w] = val[w].cast[.float32]() * 2.0 + 1.0
             _ = Atomic[Int32].fetch_add(fire_ptr + base + w, Int32(1))
@@ -387,7 +387,8 @@ def test_dispatch_workspace_cap[
     @inline(.always)
     def probe[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]):
+    ](idx: Coord, val: SIMD[_dtype, width]):
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         comptime if width > 1:
             wide_ptr[0] = Int32(1)
         # Count elements, not calls: the split arm's reduce hands one scalar per

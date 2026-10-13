@@ -17,8 +17,7 @@ Covers the axis-scatter sub-family: ``ScatterOp`` (overwrite) and the reduce
 variants ``ScatterAddOp``/``ScatterMaxOp``/``ScatterMinOp``/``ScatterMulOp``.
 Each scatters ``updates`` into a copy of ``input`` along one ``axis`` according
 to ``indices``; ``ops.scatter*`` builds the copy, so the handler needs no
-explicit memcpy. None of them has a GPU kernel yet, so ``ops.scatter*``
-implicitly transfers to CPU regardless of the input device.
+explicit memcpy.
 
 Two keying schemes, because the two op kinds differ:
 
@@ -71,7 +70,7 @@ def uint_view_dtype(dtype: DType) -> DType:
     """The same-bit-width unsigned int a dtype is bit-cast to for copying.
 
     Raises:
-        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
+        NotImplementedError: For sub-byte dtypes (such as ``float4_e2m1fn``), which
             pack multiple elements per byte and so cannot be reinterpreted
             element-for-element as a whole-byte unsigned int.
     """
@@ -162,16 +161,18 @@ def _reduce_dtypes(device: Device) -> list[DType]:
     """Real dtypes the reduce variants (add/max/min/mul) sweep on *device*.
 
     ``float_dtypes`` (f32/f64 on CPU: 16-bit floats don't compile on CPU;
-    f16/f32/bf16 on GPU) plus every signed/unsigned int. The int set is full on
-    both devices: scatter transfers to CPU, so 8/16-bit int reductions compile
-    on GPU too (unlike ``reduce_axis``, whose reduction runs on the GPU).
-    Derived empirically.
+    f16/f32/bf16 on GPU) plus every signed/unsigned int width. Metal is 32-bit
+    only: the reductions share ``scatter_nd``'s atomic compare-exchange, which
+    has no other width there (KERN-3243).
     """
-    return (
+    dtypes = (
         gc_compile.float_dtypes(device)
         + gc_compile.SIGNED_INT_DTYPES
         + gc_compile.UNSIGNED_INT_DTYPES
     )
+    if device.api == "metal":
+        dtypes = [d for d in dtypes if d.size_in_bits == 32]
+    return dtypes
 
 
 def _data_dtypes(spec: ScatterSpec, device: Device) -> list[DType]:
@@ -270,7 +271,7 @@ def scatter_model(
 
     Lazy by default: compiled on first use and cached for the process lifetime.
     With ``MAX_EAGER_OP_PRECOMPILE=1`` it was precompiled at import and this is a
-    lookup. On the first miss a warm cache is adopted whole (manifest force-load,
+    lookup. On the first miss a warm cache is adopted whole (the warm store,
     else a batched stamp sweep) instead of compiling per target.
 
     Args:

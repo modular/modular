@@ -21,9 +21,8 @@ from std.io.io import _printf
 from std.os import abort
 from std.reflection.type_info import _unqualified_type_name
 from std.sys import size_of
-from std.sys.info import is_gpu
 from std.sys.defines import get_defined_int
-from std.ffi import CStringSpan
+from std.ffi import CStringSpan, c_char
 
 from std.bit import byte_swap
 from std.memory import bitcast, unsafe_memcpy
@@ -438,7 +437,7 @@ struct _FixedWriteBuffer(Writer):
 
         return CStringSpan(
             unsafe_from_ptr=self._data.unsafe_ptr()
-            .unsafe_bitcast[Int8]()
+            .unsafe_bitcast[c_char]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -602,7 +601,7 @@ def _write_hex[
     comptime `u` = Byte(ord("u"))
     comptime `U` = Byte(ord("U"))
 
-    comptime __match amnt_hex_bytes:
+    comptime match amnt_hex_bytes:
         case 2:
             var chars = _hex_digits_to_hex_chars(UInt8(decimal))
             var buf = Array[Byte, 4](uninitialized=True)

@@ -25,7 +25,6 @@ from std.sys import align_of, size_of
 from test_utils import ObservableDel, check_write_to
 from std.testing import (
     assert_equal,
-    assert_not_equal,
     assert_false,
     assert_true,
     TestSuite,

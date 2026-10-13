@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Config parsing for vLLM speculators-format DSpark draft checkpoints.
 
-A speculators DSpark checkpoint (e.g.
+A speculators DSpark checkpoint (such as
 ``RedHatAI/gemma-4-31B-it-speculator.dspark``) has no top-level
 ``model_type`` (MAX's raw-JSON config fallback wraps it in a
 ``PretrainedConfig``), DSpark fields at the top level, and the llama-style

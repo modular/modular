@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from std.math import ceildiv
 from std.random import rand
 from state_space.varlen_selective_scan import (

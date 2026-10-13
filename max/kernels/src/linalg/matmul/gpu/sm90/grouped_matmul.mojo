@@ -23,11 +23,7 @@ from std.sys import size_of
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import (
-    Layout,
-    TileTensor,
-    flatten_leading,
-)
+from layout import TileTensor, coord, flatten_leading
 from layout.tma_async import create_tensor_tile
 
 from std.utils.index import Index, IndexList
@@ -39,7 +35,6 @@ from .matmul import _get_c_smem_layout
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -96,7 +91,6 @@ def grouped_matmul_sm90[
     config: MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -127,7 +121,6 @@ def grouped_matmul_sm90[
         transpose_b: Whether B is stored transposed (must be True).
         wgmma_shape: WGMMA instruction shape (M, N, K).
         config: Full SM90 kernel configuration.
-        elementwise_lambda_fn: Optional epilogue applied to each output tile.
         has_epilogue_fn: Whether `epilogue_fn` stores the output.
         has_compute_fn: Whether `compute_fn` maps each output before it is
             stored.
@@ -165,9 +158,9 @@ def grouped_matmul_sm90[
         config.num_pipeline_stages,
         config.k_group_size,
     ]()
-    comptime c_smem_tile = Index(
+    comptime c_smem_tile = coord[
         c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
-    )
+    ]
 
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -178,13 +171,13 @@ def grouped_matmul_sm90[
     comptime BK = config.block_tile_shape[2]
 
     # Create TMA op for the entire A tensor including all tokens.
-    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    var a_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=a_swizzle](
         ctx, a
     )
 
     # Flatten B tensor into a 2D TileTensor for easier TMA support.
     var b_flat = flatten_leading(b)
-    var b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
+    var b_tma_op = create_tensor_tile[coord[BN, BK], swizzle_mode=b_swizzle](
         ctx, b_flat
     )
 
@@ -192,15 +185,13 @@ def grouped_matmul_sm90[
     # When an epilogue owns every store, `c.ptr` may be dangling, which the
     # descriptor encode rejects, so point it at a 1-element scratch buffer
     # (its extent is never read), as the SM100 kernel does.
-    comptime epilogue_owns_stores = Bool(
-        elementwise_lambda_fn
-    ) or has_epilogue_fn
+    comptime epilogue_owns_stores = has_epilogue_fn
     var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
     var c_desc_ptr = c.ptr.as_unsafe_any_origin()
     comptime if epilogue_owns_stores:
         c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
         c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
-    var c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](
+    var c_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=c_swizzle](
         ctx, TileTensor(c_desc_ptr, c.layout)
     )
 
@@ -232,16 +223,12 @@ def grouped_matmul_sm90[
         use_tma_store=False,
         promotion_frequency=1,
         pdl_level=config.pdl_level(),
-        elementwise_lambda_fn=elementwise_lambda_fn,
         a_engine=type_of(a).Engine,
         b_engine=type_of(b_flat).Engine,
         c_engine=type_of(c).Engine,
         a_offsets_engine=type_of(a_offsets).Engine,
         expert_ids_engine=type_of(expert_ids).Engine,
     ].run_grouped[
-        type_of(a_tma_op).rank,
-        type_of(b_tma_op).rank,
-        type_of(c_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(b_tma_op).tile_shape,
         type_of(c_tma_op).tile_shape,

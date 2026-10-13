@@ -188,9 +188,12 @@ value. The `comptime` keyword here tells Mojo to evaluate the expression inside
 the parentheses (`calculate_something()`) at compile time.
 
 For example, you can use a `comptime` sub-expression when working with the
-`Layout` type, which determines how you store and retrieve data in a
-`LayoutTensor`. Materializing a `Layout` requires dynamic allocation, which
-isn't supported on GPUs. So calling this code on a GPU produces an error:
+legacy `IntTuple`-based `layout.Layout` type, which determines how you store and
+retrieve data in a `LayoutTensor`. For new tensor code, see the
+[`TileTensor` layout guide](https://docs.modular.com/max/tile-tensor/layouts/).
+The following example specifically demonstrates materializing the legacy
+`Layout`, which requires dynamic allocation that isn't supported on GPUs.
+Calling this code on a GPU produces an error:
 
 ```mojo
 comptime layout = Layout.row_major(16, 8)

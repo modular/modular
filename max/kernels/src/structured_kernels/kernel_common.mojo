@@ -32,7 +32,6 @@ from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
     RowMajorLayout,
     TensorLayout,

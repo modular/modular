@@ -87,6 +87,7 @@ class _python_symbols(Symbols):
     dotted_as_names: int
     dotted_name: int
     encoding_decl: int
+    enum_case_stmt: int
     eval_input: int
     except_clause: int
     exec_stmt: int
@@ -254,6 +255,7 @@ def initialize(cache_dir: Union[str, "os.PathLike[str]", None] = None) -> None:
         "__mlir_region",
         "struct",
         "trait",
+        "__enum",
     ]
     mojo_grammar.version = (0, 1)
 

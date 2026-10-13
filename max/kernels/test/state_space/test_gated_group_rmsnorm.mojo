@@ -19,7 +19,7 @@ Nemotron-H, and is read in place.
 from std.math import rsqrt
 from std.sys import size_of
 
-from layout import Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.activations import silu
 from state_space.gated_group_rmsnorm import (
     gated_group_rmsnorm_cpu,

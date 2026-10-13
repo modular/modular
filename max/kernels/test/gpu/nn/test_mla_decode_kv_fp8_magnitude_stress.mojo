@@ -38,22 +38,21 @@ kernel they must still agree AND both be finite. A finite reference + NaN kernel
 
 from std.collections import Optional
 from std.random import randn, seed
-from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from std.utils.numerics import isnan
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.testing import assert_almost_equal, assert_equal
+from std.testing import assert_equal
 
 
 @inline(.always)
@@ -223,7 +222,7 @@ def test[
     ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
-        var k_operand = LayoutTensorMHAOperand(k_ref_device)
+        var k_operand = TileTensorMHAOperand(k_ref_device)
         var null_valid_length = TileTensor(
             MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
             row_major(Idx[0]),
@@ -290,7 +289,7 @@ def test[
         "num_keys=",
         num_keys,
         "np=",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "kv_stress=",
         kv_stress,
         "mask=",

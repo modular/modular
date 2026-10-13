@@ -38,7 +38,10 @@ cross-run clock or cache drift:
 - `--budgets`, a comma list of MB, iterated innermost so a cell's ladder is
   adjacent in time. It is a RUNTIME argument of the op, so the ladder costs no
   recompiles;
-- `--spread`, cache-depth raggedness in percent, as in `bench_fp8_index_prefill`.
+- `--spread`, cache-depth raggedness in percent, as in `bench_fp8_index_prefill`;
+- the remap arm, comptime and innermost: logical indices only, MLA cache rows
+  fused into the top-k beside the logical indices or in place of them, or the
+  standalone remap kernel after it.
 
 Every arm also prints an `MLAIDX` line carrying the chunk geometry it ran
 (`rows_per_chunk`, chunk count, chunk bytes against the device's L2) keyed by the
@@ -59,6 +62,11 @@ from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
 from max.gpu.host import DeviceAttribute, DeviceContext
 from internal_utils import arg_parse
+from kv_cache.paged_sparse_kv_index_remap import (
+    NoRemap,
+    PagedKVRemap,
+    paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch,
+)
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Coord,
@@ -73,6 +81,30 @@ from nn.topk_bitonic import _elems_per_16b
 from nn.attention.mha_mask import MaskName
 from std.math import align_up, ceildiv, clamp
 from std.utils.index import IndexList
+
+
+# Remap arms, run back to back within each budget so their ratios are paired:
+# logical indices only, the physical rows fused into the top-k, the standalone
+# remap kernel after a logical-only top-k, and the fused physical rows without
+# the logical indices.
+comptime _ARM_NONE = 0
+comptime _ARM_FUSED = 1
+comptime _ARM_SPLIT = 2
+comptime _ARM_PHYSICAL = 3
+comptime _NUM_ARMS = 4
+
+
+def _arm_label(label: String, arm: Int) -> String:
+    var name = StaticString("remap=none")
+    if arm == _ARM_FUSED:
+        name = "remap=fused"
+    elif arm == _ARM_SPLIT:
+        name = "remap=split"
+    elif arm == _ARM_PHYSICAL:
+        name = "remap=physical"
+    if label.byte_length() > 0:
+        return String(label, "/", name)
+    return String(name)
 
 
 def _budget_list(s: String) raises -> List[Int]:
@@ -335,6 +367,20 @@ def execute_mla_indexer_paged[
     )
 
     var o_device = ctx.enqueue_create_buffer[.int32](total_seq_len * top_k)
+    # The MLA cache's physical rows. The bench reuses the indexer cache's page
+    # table as the MLA one; production allocates both caches' pages together.
+    var phys_device = ctx.enqueue_create_buffer[.int32](total_seq_len * top_k)
+    var phys_ptr = phys_device.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var logical_ptr = o_device.unsafe_ptr().as_imm()
+    var row_offsets_ptr = input_row_offsets_device.unsafe_ptr().as_imm()
+    var lut_ptr = k_lut_device.unsafe_ptr().as_imm()
+    var paged_remap = PagedKVRemap[page_size](
+        phys_ptr,
+        k_lut_device.unsafe_ptr(),
+        lut_pages_per_seq,
+        batch_size,
+        UInt32(num_blocks),
+    )
 
     var q_tile = TileTensor(
         q_device, row_major(total_seq_len, num_heads, depth)
@@ -360,65 +406,111 @@ def execute_mla_indexer_paged[
         )
         var rows_per_chunk = clamp(budget_bytes // row_bytes, 1, total_seq_len)
 
-        @inline(.always)
-        def kernel_launch(
-            launch_ctx: DeviceContext,
-        ) raises {mut o_tile, imm}:
-            mla_indexer_ragged_float8_paged[
-                DType.float8_e4m3fn,
-                type_of(k_collection),
-                num_heads,
-                depth,
-                top_k,
-                MaskName.CAUSAL.name,
-                scores_dtype,
+        comptime for arm in range(_NUM_ARMS):
+
+            @inline(.always)
+            def kernel_launch(
+                launch_ctx: DeviceContext,
+            ) raises {mut o_tile, imm}:
+                comptime if arm == _ARM_FUSED or arm == _ARM_PHYSICAL:
+                    mla_indexer_ragged_float8_paged[
+                        DType.float8_e4m3fn,
+                        type_of(k_collection),
+                        num_heads,
+                        depth,
+                        top_k,
+                        MaskName.CAUSAL.name,
+                        scores_dtype,
+                        write_logical=(arm == _ARM_FUSED),
+                    ](
+                        o_tile,
+                        q_tile,
+                        qs_tile,
+                        input_row_offsets_tile,
+                        k_collection,
+                        UInt32(0),
+                        launch_ctx,
+                        paged_remap,
+                        budget_bytes,
+                    )
+                else:
+                    mla_indexer_ragged_float8_paged[
+                        DType.float8_e4m3fn,
+                        type_of(k_collection),
+                        num_heads,
+                        depth,
+                        top_k,
+                        MaskName.CAUSAL.name,
+                        scores_dtype,
+                        write_logical=True,
+                    ](
+                        o_tile,
+                        q_tile,
+                        qs_tile,
+                        input_row_offsets_tile,
+                        k_collection,
+                        UInt32(0),
+                        launch_ctx,
+                        NoRemap(),
+                        budget_bytes,
+                    )
+                comptime if arm == _ARM_SPLIT:
+                    paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
+                        "gpu", page_size
+                    ](
+                        phys_ptr,
+                        logical_ptr,
+                        row_offsets_ptr,
+                        lut_ptr,
+                        total_seq_len * top_k,
+                        lut_pages_per_seq,
+                        batch_size,
+                        top_k,
+                        UInt32(num_blocks),
+                        batch_size,
+                        top_k,
+                        1,
+                        launch_ctx,
+                    )
+
+            @inline(.always)
+            def bench_func(mut b: Bencher) raises {imm}:
+                bencher_iter_custom(b, kernel_launch, ctx)
+
+            var name = _run_name[
+                num_heads, depth, page_size, top_k, scores_dtype
             ](
-                o_tile,
-                q_tile,
-                qs_tile,
-                input_row_offsets_tile,
-                k_collection,
-                UInt32(0),
-                launch_ctx,
-                budget_bytes,
+                batch_size,
+                seq_len,
+                cache_len,
+                frozen_cache_len,
+                spread,
+                budget_bytes // (1024 * 1024),
+                _arm_label(label, arm),
             )
+            # `topk_fills_gpu` is the top-k's own dispatch boundary, and the budget
+            # ladder can cross it: a chunk under `sm_count` rows switches the select
+            # from its prefill arm to the prefetching decode one, which is a
+            # different kernel and not an apples-to-apples ladder step.
+            # fmt: off
+            print(
+                "MLAIDX ", name,
+                " | max_num_keys=", max_num_keys,
+                " rows_per_chunk=", rows_per_chunk,
+                " chunks=", ceildiv(total_seq_len, rows_per_chunk),
+                " chunk_bytes=", rows_per_chunk * row_bytes,
+                " l2_bytes=", l2_bytes,
+                " chunk_over_l2=",
+                Float64(rows_per_chunk * row_bytes) / Float64(l2_bytes),
+                " topk_fills_gpu=", rows_per_chunk >= sm_count,
+            )
+            # fmt: on
 
-        @inline(.always)
-        def bench_func(mut b: Bencher) raises {imm}:
-            bencher_iter_custom(b, kernel_launch, ctx)
-
-        var name = _run_name[num_heads, depth, page_size, top_k, scores_dtype](
-            batch_size,
-            seq_len,
-            cache_len,
-            frozen_cache_len,
-            spread,
-            budget_bytes // (1024 * 1024),
-            label,
-        )
-        # `topk_fills_gpu` is the top-k's own dispatch boundary, and the budget
-        # ladder can cross it: a chunk under `sm_count` rows switches the select
-        # from its prefill arm to the prefetching decode one, which is a
-        # different kernel and not an apples-to-apples ladder step.
-        # fmt: off
-        print(
-            "MLAIDX ", name,
-            " | max_num_keys=", max_num_keys,
-            " rows_per_chunk=", rows_per_chunk,
-            " chunks=", ceildiv(total_seq_len, rows_per_chunk),
-            " chunk_bytes=", rows_per_chunk * row_bytes,
-            " l2_bytes=", l2_bytes,
-            " chunk_over_l2=",
-            Float64(rows_per_chunk * row_bytes) / Float64(l2_bytes),
-            " topk_fills_gpu=", rows_per_chunk >= sm_count,
-        )
-        # fmt: on
-
-        if run_benchmark:
-            m.bench_function(bench_func, BenchId(name))
-        else:
-            kernel_launch(ctx)
-            ctx.synchronize()
+            if run_benchmark:
+                m.bench_function(bench_func, BenchId(name))
+            else:
+                kernel_launch(ctx)
+                ctx.synchronize()
 
     _ = q_device
     _ = qs_device
@@ -428,6 +520,7 @@ def execute_mla_indexer_paged[
     _ = ks_block_device
     _ = k_lut_device
     _ = o_device
+    _ = phys_device
 
 
 def main() raises:

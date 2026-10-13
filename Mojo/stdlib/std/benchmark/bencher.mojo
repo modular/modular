@@ -248,7 +248,7 @@ struct Format(ImplicitlyCopyable, Writable):
         Args:
             value: The format to print results.
         """
-        __match value:
+        match value:
             case Format.csv.value:
                 self.value = Format.csv.value
             case Format.tabular.value:
@@ -400,7 +400,7 @@ struct BenchConfig(Copyable):
             var args = argv()
             var i = 1
             while i < len(args):
-                __match args[i]:
+                match args[i]:
                     case "-o":
                         if i + 1 >= len(args):
                             raise Error("Missing value for -o option")
@@ -677,8 +677,8 @@ struct Bench(Writable):
         Args:
             suffix: Suffix string to append to output file name.
         """
-        if self.config.out_file:
-            var stem = String(self.config.out_file.value())
+        if case .Some(out_file) = self.config.out_file:
+            var stem = String(out_file)
             var current_suffix = String("")
             var split = stem.split(".")
             if len(split) > 1:
@@ -908,8 +908,8 @@ struct Bench(Writable):
             return b.elapsed
 
         var full_name = bench_id.func_name
-        if bench_id.input_id:
-            full_name.write("/input_id:", bench_id.input_id.value())
+        if case .Some(input_id) = bench_id.input_id:
+            full_name.write("/input_id:", input_id)
 
         if self.config.show_progress:
             print("Running", full_name)
@@ -918,8 +918,8 @@ struct Bench(Writable):
 
         var res: Report
 
-        if fixed_iterations:
-            res = _run_impl_fixed(benchmark_fn, fixed_iterations.value())
+        if case .Some(fixed_iterations) = fixed_iterations:
+            res = _run_impl_fixed(benchmark_fn, fixed_iterations)
         else:
             res = _run_impl(
                 _RunOptions(
@@ -951,10 +951,10 @@ struct Bench(Writable):
         """
         print(self)
 
-        if self.config.out_file:
+        if case .Some(out_file) = self.config.out_file:
             var orig_format = self.config.format
             self.config.format = self.config.out_file_format
-            with open(self.config.out_file.value(), "w") as f:
+            with open(out_file, "w") as f:
                 f.write(self)
             self.config.format = orig_format
 

@@ -16,9 +16,9 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
-from std.sys import has_apple_gpu_accelerator
+from std.sys import default_accelerator
 
-comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+comptime T = DType.float32 if default_accelerator().is_apple_gpu() else DType.float64
 comptime S = Scalar[T]
 
 
@@ -61,8 +61,8 @@ struct OneS(DevicePassable):
 
 
 def vec_func(
-    in0: Pointer[S, MutAnyOrigin],
-    in1: Pointer[S, MutAnyOrigin],
+    in0: Pointer[S, ImmutAnyOrigin],
+    in1: Pointer[S, ImmutAnyOrigin],
     output: Pointer[S, MutAnyOrigin],
     s: TwoS,
     len_dev: Int32,

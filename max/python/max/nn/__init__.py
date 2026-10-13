@@ -12,18 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 """Neural network modules for MAX.
 
-Graph-based API:
+``max.nn`` layers come in two modes. In graph-based execution, a layer's
+``__call__`` stages its operations into a :class:`~max.graph.Graph`, and MAX
+compiles the finished graph into an optimized executable that runs on
+:class:`~max.driver.Buffer` inputs:
 
 .. code-block:: python
 
-    from max.nn import Linear, AttentionWithRope
-    from max.nn.kv_cache import KVCacheParams
+    import numpy as np
 
-Eager tensor API:
+    from max.dtype import DType
+    from max.engine import InferenceSession
+    from max.graph import DeviceRef, Graph, TensorType
+    from max.nn import Linear
 
-.. code-block:: python
+    input_type = TensorType(DType.float32, ["batch", 64], device=DeviceRef.CPU())
+    with Graph("layer", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        graph.output(Linear(64, 32, DType.float32, DeviceRef.CPU())(x))
 
-    from max.experimental.nn import Module, Linear, Embedding
+    model = InferenceSession().load(
+        graph,
+        weights_registry={"weight": np.zeros((32, 64), dtype=np.float32)},
+    )
+
+In eager execution, :mod:`max.experimental.nn` runs the same layer
+abstractions directly on :class:`~max.experimental.tensor.Tensor` values,
+executing each operation immediately, PyTorch-style.
 """
 
 from .attention import (

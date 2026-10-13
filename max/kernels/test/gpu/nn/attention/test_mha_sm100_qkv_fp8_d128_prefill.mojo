@@ -41,7 +41,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout._fillers import random
 from std.random import randn
 
 from nn.attention.gpu.mha import flash_attention
@@ -51,7 +50,7 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
 )
 
-from std.testing import assert_almost_equal, assert_true
+from std.testing import assert_true
 
 
 # ===-----------------------------------------------------------------------===#

@@ -21,10 +21,11 @@ outputs are byte-identical:
 - ``test_up_proj_dispatch_matmul_ab``: KS224 up-proj reader fed by the slot
   scales ``ep_wait`` writes.
 
-With ``padded_m`` inflated past the runtime per-expert stride and >1 expert,
-the A/B diverges if the matmul reads A-scale slots at the runtime stride
-instead of the graph-const ``a_scales_max_padded_m`` — the producer/consumer
-single source of truth.
+Each reference arm lays its slots out at the runtime per-expert stride, so it
+is right whichever stride the matmul reads with. With ``padded_m`` inflated
+past that stride and >1 expert, the A/B diverges if the matmul reads A-scale
+slots at the runtime stride instead of the graph-const
+``a_scales_max_padded_m`` — the producer/consumer single source of truth.
 
 NOTE: AMD / CDNA-only (preb kernel targets gfx9 CDNA4 / MI355).
 """
@@ -102,14 +103,17 @@ def test_fused_silu_down_matmul_ab(
     """Down-proj stride-consistency guard (the real matmul A/B).
 
     Runs the down-proj ``fused_silu -> grouped_matmul`` two ways and asserts the
-    matmul outputs match:
-      REF:   raw scales + standalone preshuffle (runtime slot stride).
-      FUSED: fused_silu writes slots directly (graph-const ``padded_m`` stride);
-             matmul told ``a_scales_preshuffled=True, a_scales_max_padded_m``.
+    matmul outputs match. In both, fused_silu writes the slots and the matmul is
+    told the stride they were written at (``a_scales_max_padded_m``):
+      REF:   ``align_up(max tokens/expert, 32)``, equal to the runtime stride,
+             so the matmul reads it right whichever stride it uses.
+      FUSED: the inflated graph-const ``padded_m``.
     Same SILU input -> identical scale *values* + identical down_in tokens, so
-    the only difference is the A-scale slot layout/stride; outputs must be
-    identical. With ``padded_m`` > runtime stride and >1 expert, this fails if
-    the matmul ignores ``a_scales_max_padded_m`` and uses the runtime stride.
+    the only difference is the A-scale slot stride; outputs must be identical.
+    With ``padded_m`` > runtime stride and >1 expert, this fails if the matmul
+    ignores ``a_scales_max_padded_m`` and uses the runtime stride. The slot
+    layout fused_silu writes is covered by
+    ``test_mxfp4_fused_silu_scale_fusion.mojo``.
     """
     n_experts = len(tokens_per_expert)
     assert intermediate % 512 == 0 and n_out % 16 == 0
@@ -174,8 +178,12 @@ def test_fused_silu_down_matmul_ab(
         usage_t = graph.inputs[5].tensor
 
         # Same SILU input both ways: identical down_in + identical scale values.
-        down_in, raw_scales = fused_silu_quantized(
-            gate_up_t, row_offsets_t, quant_config, DType.uint8, max_padded_M=0
+        down_in, ref_scales = fused_silu_quantized(
+            gate_up_t,
+            row_offsets_t,
+            quant_config,
+            DType.uint8,
+            max_padded_M=aligned_runtime,
         )
         down_in2, slot_scales = fused_silu_quantized(
             gate_up_t,
@@ -190,14 +198,14 @@ def test_fused_silu_down_matmul_ab(
         c_ref = grouped_dynamic_block_scaled_matmul_amd(
             down_in,
             b_pre,
-            raw_scales,
+            ref_scales,
             b_scales_t,
             row_offsets_t,
             expert_ids_t,
             usage_t,
             estimated_total_m=est_m,
             preshuffled_b=True,
-            a_scales_preshuffled=False,
+            a_scales_max_padded_m=aligned_runtime,
         )
         c_fused = grouped_dynamic_block_scaled_matmul_amd(
             down_in2,
@@ -209,7 +217,6 @@ def test_fused_silu_down_matmul_ab(
             usage_t,
             estimated_total_m=est_m,
             preshuffled_b=True,
-            a_scales_preshuffled=True,
             a_scales_max_padded_m=padded_m,
         )
         # Cast to f32: numpy from_dlpack can't read bfloat16.
@@ -237,9 +244,10 @@ def test_fused_silu_down_matmul_ab(
         atol=0,
         err_msg=(
             "Down-proj matmul output diverged between the fused (slot-stride="
-            f"{padded_m}) and non-fused paths for tokens_per_expert="
-            f"{tokens_per_expert} — the matmul likely read A-scale slots at the"
-            " runtime stride instead of a_scales_max_padded_m."
+            f"{padded_m}) and reference (slot-stride={aligned_runtime}) paths"
+            f" for tokens_per_expert={tokens_per_expert} — the matmul likely"
+            " read A-scale slots at the runtime stride instead of"
+            " a_scales_max_padded_m."
         ),
     )
 
@@ -268,14 +276,14 @@ def test_up_proj_dispatch_matmul_ab(
 ) -> None:
     """Stride-consistency guard for the KS224 up-proj reader.
 
-    The up-proj A-scale is produced by ``ep_wait`` (in slot layout when fused).
+    The up-proj A-scale is produced by ``ep_wait`` in the slot layout.
     This A/B isolates the *matmul reader* contract that ``ep_wait`` feeds, with
     no EP comm machinery (single GPU):
-      REF:   raw dispatched scales + matmul ``a_scales_preshuffled=False``
+      REF:   raw row-major scales + matmul ``a_scales_max_padded_m=0``
              (internal standalone preshuffle, runtime slot stride).
       FUSED: raw scales -> standalone preshuffle with the graph-const
              ``padded_m`` stride (== what ``ep_wait`` writes) -> matmul told
-             ``a_scales_preshuffled=True, a_scales_max_padded_m=padded_m``.
+             ``a_scales_max_padded_m=padded_m``.
     Same quantized tokens + identical scale *values* both ways, so the only
     difference is the A-scale slot layout/stride; outputs must be identical.
     With ``padded_m`` > runtime stride and >1 expert, this fails if the matmul
@@ -347,8 +355,8 @@ def test_up_proj_dispatch_matmul_ab(
         # One quantization → identical tokens + identical raw scale values.
         a_tokens, raw_scales = quantize_dynamic_block_scaled_mxfp4(act_t)
 
-        # FUSED slot scales: standalone preshuffle with the build-time `padded_m`
-        # stride — exactly what `ep_wait` writes under `fuse_a_scale_preshuffle`.
+        # FUSED slot scales: standalone preshuffle with the build-time
+        # `padded_m` stride — exactly the slot layout `ep_wait` writes.
         # The preshuffle op requires its scalar operands on the host CPU.
         padded_m_scalar = ops.constant(
             padded_m, dtype=DType.uint32, device=cpu_ref
@@ -375,7 +383,6 @@ def test_up_proj_dispatch_matmul_ab(
             usage_t,
             estimated_total_m=est_m,
             preshuffled_b=True,
-            a_scales_preshuffled=False,
         )
         c_fused = grouped_dynamic_block_scaled_matmul_amd(
             a_tokens,
@@ -387,7 +394,6 @@ def test_up_proj_dispatch_matmul_ab(
             usage_t,
             estimated_total_m=est_m,
             preshuffled_b=True,
-            a_scales_preshuffled=True,
             a_scales_max_padded_m=padded_m,
         )
         graph.output(c_ref.cast(DType.float32), c_fused.cast(DType.float32))

@@ -23,7 +23,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from max.gpu.memory import external_memory
 from max.gpu.primitives.grid_controls import (
@@ -472,8 +472,8 @@ struct _FusedResidualBlockKernel[
     `enqueue_function` arguments. An argument that conforms to `DevicePassable`
     is re-encoded field by field through each capture's `device_type`, and a
     callback here captures an output `ManagedTensorSlice`, whose `device_type`
-    is `LayoutTensor` -- so the kernel would read its layout and fusion state
-    back out of the wrong bytes. This struct is deliberately not
+    is `TileTensor` and omits fusion fields. Re-encoding would change the
+    callback's capture representation. This struct is deliberately not
     `DevicePassable`, which selects the `enqueue_function` overload that
     bit-copies the payload verbatim. `rowwise`'s `_BlockKernel` crosses its own
     value closures the same way.
@@ -648,11 +648,6 @@ def _enqueue_rms_norm_fused_residual_gpu_block[
         block_dim=launch_block_dim,
         attributes=pdl_launch_attributes(PDLLevel.ON),
         shared_mem_bytes=shared_mem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(
-                ctx.default_device_info.shared_memory_per_multiprocessor - 4096
-            )
-        ),
     )
 
 
@@ -771,7 +766,7 @@ def rms_norm_fused_residual_gpu[
         indices[rank - 1] = col
         return residual_input_fn[simd_width](Coord(indices))
 
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows

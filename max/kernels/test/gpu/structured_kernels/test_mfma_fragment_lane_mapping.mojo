@@ -33,14 +33,10 @@ If it fails, the lane-mapping doc is wrong, and all FP8-cast logic
 downstream is built on bad assumptions.
 """
 
-from max.gpu import lane_id, thread_idx
+from max.gpu import lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import mma as gpu_mma
-from std.memory import AddressSpace
 from std.testing import assert_equal
-
-from layout.tile_layout import row_major
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
 
 
 # v_mfma_f32_32x32x16_bf16 accumulator layout (reference kernel.cpp lines 124-165,

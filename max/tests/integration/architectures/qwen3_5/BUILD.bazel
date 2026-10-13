@@ -134,6 +134,9 @@ modular_py_test(
 
 modular_py_test(
     name = "test_vision_clip_graph",
+    # Compiling the two encoder graphs takes 330 to 400 s on B200 CI, which
+    # is at the 400 s limit for a medium test.
+    size = "large",
     srcs = ["test_vision_clip_graph.py"],
     # The 280 MB signal buffer is a single allocation, so the default per-test
     # GPU budget cannot serve it whatever the encoder size.
@@ -145,6 +148,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
@@ -178,6 +182,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
@@ -298,10 +303,21 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_text_only",
+    srcs = ["test_text_only.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_test(
     name = "test_gdn_prefill_routing",
     srcs = ["test_gdn_prefill_routing.py"],
     deps = [
-        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",

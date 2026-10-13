@@ -13,7 +13,7 @@
 """Implements the temporal-pool patch-merger kernel that reduces vision token sequences via average pooling."""
 
 from std.math import ceildiv, divmod
-from std.sys.info import CompilationTarget, simd_width_of
+from std.sys.info import simd_width_of
 
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext

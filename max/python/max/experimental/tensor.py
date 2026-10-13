@@ -171,55 +171,52 @@ def external_shard_names(name: str, num_shards: int) -> list[str]:
 def _fold_sharded_shape(
     shape: graph.Shape, mapping: DeviceMapping
 ) -> graph.Shape:
-    """Folds per-rank wrappers on ``shape`` into the global shape per mapping."""
+    """Returns the global shape for the per-device dims in ``shape``.
+
+    A dim that a mesh axis splits is the sum of its pieces, and copies along
+    a mesh axis must have the same size. Devices that hold different data,
+    along a mesh axis that splits another tensor axis or is ``Unknown``, may
+    have different sizes for this dim: for example, each data-parallel
+    replica's block table has its own page count. Such a dim has no global
+    size and stays per device.
+    """
     mesh = mapping.mesh
     placements = mapping.placements
     mesh_shape = mesh.mesh_shape
-    n_devices = mesh.num_devices
     folded: list[graph.Dim] = []
-    for ti, d in enumerate(shape):
+    for tensor_axis, d in enumerate(shape):
         if not is_per_shard_dim(d):
             g = graph.Dim(d)
             for mesh_axis, p in enumerate(placements):
-                if p.localized_axis() == ti and isinstance(p, Sharded):
+                if p == Sharded(tensor_axis):
                     g = g * mesh_shape[mesh_axis]
             folded.append(g)
             continue
         cells = list(d.per_shard)
-        if len(cells) != n_devices:
+        if len(cells) != mesh.num_devices:
             raise ValueError(
                 f"sharded dim {d!r} has {len(cells)} entries, expected "
-                f"{n_devices} for mesh {mesh!r}."
+                f"{mesh.num_devices} for mesh {mesh!r}."
             )
         for mesh_axis in range(mesh.ndim - 1, -1, -1):
-            n = mesh_shape[mesh_axis]
-            p = placements[mesh_axis]
-            # A tensor with Unknown placements has no set way of getting the
-            # global shape; all shapes are device-local.
-            localizes_ti = p.localized_axis() == ti or isinstance(p, Unknown)
-            new_cells: list[graph.Dim] = []
-            for start in range(0, len(cells), n):
-                block = cells[start : start + n]
-                if localizes_ti:
-                    new_cells.append(
-                        p.global_dim(
-                            make_per_shard_dim(tuple(block), force_wrap=True)
-                        )
-                    )
-                else:
-                    first = block[0]
-                    for x in block[1:]:
-                        if x != first:
-                            raise ValueError(
-                                f"global_shape: tensor axis {ti} has "
-                                f"per-rank cells {block!r} that disagree "
-                                f"along mesh axis {mesh_axis} (placement "
-                                f"{p!r}); non-localizing mesh axes must "
-                                "hold shape-identical shards."
-                            )
-                    new_cells.append(first)
-            cells = new_cells
-        assert len(cells) == 1
+            axis_size, p = mesh_shape[mesh_axis], placements[mesh_axis]
+            blocks = [
+                cells[i : i + axis_size]
+                for i in range(0, len(cells), axis_size)
+            ]
+            if p == Sharded(tensor_axis):
+                cells = [sum(block[1:], block[0]) for block in blocks]
+            elif all(len(set(block)) == 1 for block in blocks):
+                cells = [block[0] for block in blocks]
+            elif isinstance(p, (Sharded, Unknown)):
+                cells = [make_per_shard_dim(d.per_shard, force_wrap=True)]
+                break
+            else:
+                raise ValueError(
+                    f"global_shape: tensor axis {tensor_axis} has per-device "
+                    f"sizes {d.per_shard!r} that disagree across copies "
+                    f"along mesh axis {mesh_axis} ({p!r})."
+                )
         folded.append(cells[0])
     return graph.Shape(folded)
 
@@ -587,8 +584,8 @@ class Tensor(DLPackArray, HasTensorValue):
     Args:
         data: The value for the tensor. Can be a scalar number, a nested
             Python list, or any DLPack-compatible array (NumPy, PyTorch,
-            etc.). If not provided, exactly one of ``storage`` or ``state``
-            must be supplied.
+            and so on). If not provided, exactly one of ``storage`` or
+            ``state`` must be supplied.
         dtype: The data type for the tensor elements. For DLPack arrays this
             defaults to the array's own dtype; passing a conflicting value
             raises :exc:`ValueError`. For Python scalars and lists, defaults
@@ -904,9 +901,18 @@ class Tensor(DLPackArray, HasTensorValue):
             runtime value.
 
         Raises:
-            ValueError: In eager mode (no active graph) for a symbolic or
-                algebraic dimension, which has no value outside a graph.
+            ValueError: If the dimension has no value. This includes when
+                the dimension is symbolic or algebraic in eager mode (no
+                active graph), since it has no value outside a graph, or
+                when it holds per-device sizes and no global size.
         """
+        if is_per_shard_dim(dim):
+            if dim._global is None:
+                raise ValueError(
+                    f"Tensor.from_dim({dim}): the shards' sizes have no "
+                    "global value."
+                )
+            dim = dim._global
         d = Dim(dim)
         if isinstance(d, StaticDim):
             # The value is known now, so emit a scalar constant. This needs no
@@ -929,29 +935,28 @@ class Tensor(DLPackArray, HasTensorValue):
     @classmethod
     def from_shard_values(
         cls,
-        shard_values: Sequence[GraphValue],
+        shard_values: Sequence[GraphValue | Tensor],
         mapping: DeviceMapping | None = None,
     ) -> Tensor:
-        """Creates a tensor from one or more per-shard graph values.
+        """Creates a tensor from one value per device, moving no data.
 
-        For a single shard value with no mapping, behaves like
-        :meth:`from_graph_value`. For multiple shard values, a
-        :class:`~max.experimental.sharding.DeviceMapping` is required
-        and the result is a distributed tensor.
+        Each value is one device's shard: a graph value, or a single-device
+        tensor in the graph being built. With one value and no mapping, the
+        result is that value as a tensor. With several values, ``mapping`` is
+        required and the result is a distributed tensor on the shards' own
+        devices.
 
         Args:
-            shard_values: Per-device graph values (TensorValue or
-                BufferValue). One per device in the mesh.
-            mapping: Device mapping describing how shards map to mesh
-                devices and their placements. Required when
-                ``len(shard_values) > 1``.
+            shard_values: The shards, one per device of the mesh.
+            mapping: The :class:`~max.experimental.sharding.DeviceMapping` of
+                the result. Required for more than one shard.
 
         Returns:
-            A tensor backed by the provided shard values.
+            A tensor backed by the given shards.
 
         Raises:
-            ValueError: If multiple shard values are given without a mapping.
-            TypeError: If any shard value is not a graph value.
+            ValueError: If several shards are given without a mapping.
+            TypeError: If a shard is neither a graph value nor a tensor.
         """
         if len(shard_values) > 1 and mapping is None:
             raise ValueError(
@@ -959,15 +964,48 @@ class Tensor(DLPackArray, HasTensorValue):
                 "shard values. Pass a DeviceMapping describing how "
                 "shards map to mesh devices."
             )
-        for v in shard_values:
-            if not isinstance(v, GraphValue):
-                raise TypeError(f"{v=} must be a tensor or buffer value")
+        values = []
+        for value in shard_values:
+            if isinstance(value, Tensor):
+                # A buffer stays a buffer, so that ops can write to it.
+                value = (
+                    value.__buffervalue__()
+                    if isinstance(value._backing_value, graph.BufferValue)
+                    else value.__tensorvalue__()
+                )
+            if not isinstance(value, GraphValue):
+                raise TypeError(f"{value=} must be a tensor or buffer value")
+            values.append(value)
         if mapping is None:
-            return current_realization_context().create_unrealized(
-                (shard_values[0],)
+            return current_realization_context().create_unrealized((values[0],))
+        # Shards that the placements declare equal, such as replicated
+        # copies, take the first one's shape; the rebind checks it at runtime.
+        mesh = mapping.mesh
+        differing_axes = [
+            axis
+            for axis, p in enumerate(mapping.placements)
+            if isinstance(p, (Sharded, Unknown))
+        ]
+        first_shards: dict[tuple[int, ...], GraphValue] = {}
+        for index, value in enumerate(values):
+            group = tuple(
+                mesh.device_coord(index, axis) for axis in differing_axes
+            )
+            first_shard = first_shards.setdefault(group, value)
+            if isinstance(value, graph.TensorValue) and (
+                value.shape != first_shard.shape
+            ):
+                values[index] = graph.ops.rebind(value, first_shard.shape)
+        devices = tuple(value.device.to_device() for value in values)
+        if devices != mapping.mesh.devices:
+            # Keeps the mapping's grid of mesh axes on the shards' devices.
+            mesh = mapping.mesh
+            mapping = DeviceMapping(
+                DeviceMesh(devices, mesh.mesh_shape, mesh.axis_names),
+                mapping.placements,
             )
         return current_realization_context().create_unrealized(
-            tuple(shard_values), mapping=mapping
+            tuple(values), mapping=mapping
         )
 
     @classmethod
@@ -1064,7 +1102,7 @@ class Tensor(DLPackArray, HasTensorValue):
         ``constant_external`` per shard and assembles them into a sharded
         Tensor preserving ``self``'s mesh, placements, and global shape.
 
-        Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+        Shard constants are named ``name._shard.0``, ``name._shard.1``, and so on.
 
         Args:
             name: The name of the constant.
@@ -1435,8 +1473,8 @@ class Tensor(DLPackArray, HasTensorValue):
             A 1-D ``Tensor`` containing the evenly spaced values.
 
         Raises:
-            ValueError: If inputs aren't scalar, dynamic scalar inputs omit
-                ``out_dim``, or ``device`` requests sharded placement.
+            ValueError: If inputs aren't scalar, or dynamic scalar inputs
+                omit ``out_dim``.
             RuntimeError: If a statically known interval isn't evenly
                 divisible by ``step``, causing the inferred output length to
                 disagree with the number of generated values.
@@ -1626,7 +1664,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return graph.Shape(
             [
                 make_per_shard_dim(cells[i], global_dim=globals_[i])
-                if i in sharded_axes
+                if i in sharded_axes and not is_per_shard_dim(globals_[i])
                 else globals_[i]
                 for i in range(ndim)
             ]
@@ -1854,7 +1892,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Returns:
             The scalar value from the tensor. The return type matches the tensor's
-            dtype (e.g., float for float32, int for int32).
+            dtype (such as float for float32, int for int32).
 
         Raises:
             TypeError: If the tensor contains more than one element.
@@ -1895,7 +1933,8 @@ class Tensor(DLPackArray, HasTensorValue):
         This method supports three target types:
 
         1. **Device**: Transfers a single-device tensor to the target device.
-           For realized tensors, performs a direct driver-level transfer via
+           A distributed tensor is gathered onto the device. For realized
+           tensors, performs a direct driver-level transfer via
            :meth:`~max.driver.Buffer.to`. For unrealized tensors, inserts a
            :func:`~max.graph.ops.transfer_to` op into the computation graph.
 
@@ -1941,10 +1980,12 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         mapping: DeviceMapping
         if isinstance(target, Device):
-            mapping = DeviceMapping(DeviceMesh.single(target), self.placements)
-        elif isinstance(target, DeviceMesh):
+            return F.transfer_to(self, target)
+        if isinstance(target, DeviceMesh):
             if isinstance(self._mapping, NamedMapping):
                 mapping = self._mapping._resolve(target)
+            elif self.mapping.is_fully_replicated:
+                mapping = DeviceMapping.replicated(target)
             else:
                 mapping = DeviceMapping(target, self.placements)
         elif isinstance(target, DeviceMapping):

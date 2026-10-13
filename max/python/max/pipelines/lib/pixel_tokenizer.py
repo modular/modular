@@ -172,7 +172,7 @@ class PixelGenerationTokenizer(
         model_path: Path to the model/tokenizer.
         pipeline_config: Pipeline configuration with ModelManifest metadata.
         subfolder: Subfolder within the model path for the primary tokenizer.
-        subfolder_2: Optional subfolder for a second tokenizer (e.g. text encoder).
+        subfolder_2: Optional subfolder for a second tokenizer (such as text encoder).
         revision: Git revision/branch to use.
         max_length: Maximum sequence length for the primary tokenizer.
         secondary_max_length: Maximum sequence length for the secondary tokenizer, if used.

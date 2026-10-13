@@ -4,9 +4,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "7ed0d7d42019ab5ad6df8fb89e968ecef24b01a5"
+LLVM_COMMIT = "8d4fc8f1d17e64e1826346a0230a87b50ec371e4"
 
-LLVM_SHA = "bf2223b40829339d16e0be7457e895b637047fd34da79d0a3147db771bc38f32"
+LLVM_SHA = "49ee2a64a7e1111ff00218981d39e00ac1314170624aeafbef5645b598abb792"
 # END_GENERATED
 
 PATCHES = [
@@ -33,14 +33,24 @@ PATCHES = [
     # ConstString is still enough to avoid the crash.
     # TODO(MOTO-1590): drop once the ownership is sound across DSO boundaries.
     "//bazel/public-patches:llvm-revert-lldb-elf-section-name-string.patch",
-    # Revert the config.bzl musl/glibc select() from llvm/llvm-project#207295,
-    # which keys HAVE_BACKTRACE/BACKTRACE_HEADER/HAVE_MALLINFO on libc config
-    # settings. llvm/llvm-project#223549 moved those settings to
-    # @rules_cc//cc/libc:{musl,glibc}, which need rules_cc >= 0.2.25; we pin
-    # 0.2.18, so the labels do not resolve. Restore the unconditional
-    # glibc/macOS defines, which are correct for our builds (we do not target
-    # musl). Drop this once rules_cc is bumped to 0.2.25 or newer.
+    # Drop the overlay's @rules_cc//cc/libc:{musl,glibc} select()s: the
+    # config.bzl HAVE_BACKTRACE/BACKTRACE_HEADER/HAVE_MALLINFO defines
+    # (llvm/llvm-project#207295, #223549) and the Support musl stack-size
+    # linkopt (llvm/llvm-project#223989). Those labels need rules_cc >= 0.2.25;
+    # we pin 0.2.18, so they do not resolve. The unconditional glibc/macOS
+    # defines are correct for our builds (we do not target musl). Drop this
+    # once rules_cc is bumped to 0.2.25 or newer.
     "//bazel/public-patches:llvm-config-musl-select.patch",
+    # llvm/llvm-project#225158 gives the llvm_libxml2_enabled config_setting
+    # group visibility to clang, lld/test and lldb, but leaves its match_any
+    # members private. Bazel checks the members' visibility from the consuming
+    # target, so lldb:ConfigHeader fails to see llvm_libxml2_auto. Let the
+    # three members inherit the package's public default.
+    "//bazel/public-patches:llvm-libxml2-config-setting-visibility.patch",
+    # Default the overlay's feature flags to what every build wants, so no rc
+    # flag names an @llvm-project label. Parsing such a flag fetches the LLVM
+    # source before analysis can start.
+    "//bazel/public-patches:llvm-flag-defaults.patch",
 ]
 
 def _llvm_source_impl(module_ctx):

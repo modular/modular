@@ -18,7 +18,6 @@ from std.utils import IndexList
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
-    Coord,
     Idx,
     TileTensor,
     RowMajorLayout,

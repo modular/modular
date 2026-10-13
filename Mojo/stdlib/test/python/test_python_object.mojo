@@ -395,14 +395,14 @@ def test_none_implicit_conversion() raises:
     assert_equal(String(b), "None")
 
     # Function argument.
-    def takes_python_object(obj: PythonObject) raises -> String:
-        return String(obj)
+    var takes_python_object = lambda (
+        obj: PythonObject
+    ) raises -> String: String(obj)
 
     assert_equal(takes_python_object(None), "None")
 
     # Return value.
-    def returns_none() -> PythonObject:
-        return None
+    var returns_none = lambda () -> PythonObject: None
 
     assert_true(returns_none() is Python.none())
 

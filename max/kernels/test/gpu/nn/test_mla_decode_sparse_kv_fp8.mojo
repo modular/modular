@@ -40,21 +40,13 @@ error.
 """
 
 from std.math import ceildiv, exp
-from std.memory import alloc, bitcast
 from std.random import randn, seed
-from std.sys import size_of
 
 from max.gpu import *
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
@@ -273,6 +265,9 @@ def run_test_sparse_kv_fp8[
     # combine and the non-empty batches stay correct. The empty batch's own
     # output is undefined (skipped in the NaN scan + assert). Default False.
     empty_last_batch: Bool = False,
+    # Pass token positions and let the kernel decode them through the page
+    # table (the graph-op path) instead of precomputed physical rows.
+    logical: Bool = False,
 ](
     name: StringLiteral,
     batch_size: Int,
@@ -658,13 +653,16 @@ def run_test_sparse_kv_fp8[
             var g = bi * q_max_seq_len + s
             for i in range(topk):
                 var t = selected_tokens[g * topk + i]
-                var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
-                var block_id = Int(
-                    lookup_table_host[bi * max_pages_per_batch + page_idx]
-                )
-                h_indices[g * topk + i] = Int32(
-                    block_id * PAGE_SIZE + tok_in_page
-                )
+                comptime if logical:
+                    h_indices[g * topk + i] = Int32(t)
+                else:
+                    var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
+                    var block_id = Int(
+                        lookup_table_host[bi * max_pages_per_batch + page_idx]
+                    )
+                    h_indices[g * topk + i] = Int32(
+                        block_id * PAGE_SIZE + tok_in_page
+                    )
 
     var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
@@ -747,6 +745,7 @@ def run_test_sparse_kv_fp8[
             ragged=True,
             sparse=True,
             fold_shared_index=shared_index,
+            physical_indices=not logical,
         ](
             out_tt,
             q_tt,
@@ -769,6 +768,7 @@ def run_test_sparse_kv_fp8[
             ragged=True,
             sparse=True,
             fold_shared_index=shared_index,
+            physical_indices=not logical,
         ](
             out_tt,
             q_tt,
@@ -2095,9 +2095,14 @@ def run_test_sparse_kv_fp8_extra_kv[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
+    # The sparse dispatch splits the gathered keys, max top-k plus max
+    # extra top-k, not the cache length.
     var dispatch_scalars = compute_mla_dispatch_scalars[
-        num_heads=num_heads, is_fp8_kv=True, half_sms=sm_count // 2
-    ](batch_size, max_cache_len, q_max_seq_len, sm_count)
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+        is_fp8_kv=True,
+        half_sms=sm_count // 2,
+    ](batch_size, max_topk + max_extra_topk, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
         "  num_partitions=",
@@ -3088,6 +3093,45 @@ def main() raises:
             )
 
             # =====================================================
+            # Logical token positions, decoded through the shuffled per-batch
+            # page table inside the kernel (the graph-op path). A wrong batch
+            # row or a missed conversion site gathers another batch's pages.
+            # =====================================================
+            run_test_sparse_kv_fp8[
+                .bfloat16, DType.float8_e4m3fn, 8, logical=True
+            ](
+                "logical_b8_h8_cl2048_topk2048",
+                8,
+                2048,
+                ctx,
+                topk=2048,
+            )
+            run_test_sparse_kv_fp8[
+                .bfloat16, DType.float8_e4m3fn, 8, logical=True
+            ](
+                "logical_b4_h8_cl1024_topk512_seq6",
+                4,
+                1024,
+                ctx,
+                topk=512,
+                q_max_seq_len=6,
+            )
+            run_test_sparse_kv_fp8[
+                DType.bfloat16,
+                DType.float8_e4m3fn,
+                8,
+                shared_index=True,
+                logical=True,
+            ](
+                "logical_shared_fold_b2_h8_cl1024_topk160_seq6",
+                2,
+                1024,
+                ctx,
+                topk=160,
+                q_max_seq_len=6,
+            )
+
+            # =====================================================
             # CausalMask variant.
             # =====================================================
 
@@ -3210,6 +3254,40 @@ def main() raises:
                 ek_topk_2,
                 ek_ecls_2,
                 ek_etopk_2,
+                ctx,
+            )
+
+            # Main top-k values that are not tile multiples pad the main
+            # segment. The long lists split; the short ones (45 + 24 keys,
+            # one page) cannot. The split-K line printed above each launch
+            # says which ran.
+            var ek_cls_3: List[Int] = [512]
+            var ek_topk_3: List[Int] = [300]
+            var ek_ecls_3: List[Int] = [256]
+            var ek_etopk_3: List[Int] = [200]
+            run_test_sparse_kv_fp8_extra_kv[
+                DType.bfloat16, DType.float8_e4m3fn, 16
+            ](
+                "sparse_kv_fp8_extra_kv_b1_h16_topk300_extra200",
+                ek_cls_3,
+                ek_topk_3,
+                ek_ecls_3,
+                ek_etopk_3,
+                ctx,
+            )
+
+            var ek_cls_4: List[Int] = [64, 256]
+            var ek_topk_4: List[Int] = [37, 45]
+            var ek_ecls_4: List[Int] = [64, 128]
+            var ek_etopk_4: List[Int] = [20, 24]
+            run_test_sparse_kv_fp8_extra_kv[
+                DType.bfloat16, DType.float8_e4m3fn, 16
+            ](
+                "sparse_kv_fp8_extra_kv_b2_h16_topk_unaligned",
+                ek_cls_4,
+                ek_topk_4,
+                ek_ecls_4,
+                ek_etopk_4,
                 ctx,
             )
 

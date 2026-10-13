@@ -17,8 +17,8 @@ from std.sys import size_of
 from max.gpu import thread_idx
 from max.gpu.memory import CacheEviction, fence_async_view_proxy
 from max.gpu.sync import syncwarp
-from layout.tma_async import SharedMemBarrier
-from layout import TileTensor
+from layout.tma_async import SharedMemBarrier, TMATensorTile
+from layout import Coord, TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
@@ -43,7 +43,6 @@ from nn.attention.gpu.nvidia.common import (
     KVTMATile,
     MHAPosition,
     OptionalPointer,
-    QTMATile,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -56,6 +55,8 @@ from .smem import SM100AttentionSMem
 
 @inline(.always)
 def fa4_load[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     MaxSeqLenType: OptionallyStaticInt,
     MaskType: MHAMask,
@@ -82,16 +83,7 @@ def fa4_load[
     seq_info: SeqInfo,
     max_seq_len: MaxSeqLenType,
     mask: MaskType,
-    q_tma_op: QTMATile[
-        KVLUTType.dtype,
-        config.swizzle_mode,
-        BM=config.BM // config.num_q,
-        depth=config.qk_depth,
-        group=config.group,
-        decoding=False,
-        fuse_gqa=config.fuse_gqa,
-        num_qk_stages=config.num_qk_stages,
-    ],
+    q_tma_op: TMATensorTile[KVLUTType.dtype, q_tile_shape, q_desc_shape],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,

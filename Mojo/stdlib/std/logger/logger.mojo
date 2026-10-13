@@ -172,7 +172,7 @@ struct Level(
         Args:
             writer: The writer to write to.
         """
-        __match self:
+        match self:
             case .NOTSET:
                 writer.write("NOTSET")
             case .TRACE:

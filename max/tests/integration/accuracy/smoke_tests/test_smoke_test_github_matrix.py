@@ -13,12 +13,18 @@
 
 import inspect
 import json
-import re
 
 from click.testing import CliRunner
 from smoke_tests import smoke_test, smoke_test_github_matrix
 
-_MATRIX_ENTRY = re.compile(r'^    "[^"]+": [^#]+,(  # TODO\([A-Z]+-\d+\))?$')
+
+def _is_valid_matrix_entry(line: str) -> bool:
+    """Checks a line like `"org/model": NIGHTLY | _1xB200,`."""
+    code = line.split("#")[0].rstrip()
+    if not (code.startswith('    "') and code.endswith(",") and '": ' in code):
+        return False
+    tags = code.split('": ', 1)[1].removesuffix(",").split(" | ")
+    return "NIGHTLY" not in tags[1:]
 
 
 def test_custom_model_keys_have_dunder() -> None:
@@ -29,7 +35,7 @@ def test_custom_model_keys_have_dunder() -> None:
     )
 
 
-def test_matrix_entries_are_one_line_with_ticket_only_comments() -> None:
+def test_matrix_entries_are_one_line_with_nightly_first() -> None:
     source = inspect.getsource(smoke_test_github_matrix).splitlines()
     bad = []
     for name in ("HF_MODELS", "CUSTOM_MODELS"):
@@ -39,11 +45,11 @@ def test_matrix_entries_are_one_line_with_ticket_only_comments() -> None:
         for line in source[start + 1 :]:
             if line == "}":
                 break
-            if not _MATRIX_ENTRY.match(line):
+            if not _is_valid_matrix_entry(line):
                 bad.append(line)
     assert not bad, (
-        "Matrix entries must be exactly one line, and the only allowed comment "
-        "is a trailing `# TODO(PROJ-1234)`:\n" + "\n".join(bad)
+        "Matrix entries must be exactly one line, with NIGHTLY, if present, "
+        "as the first tag:\n" + "\n".join(bad)
     )
 
 
@@ -72,14 +78,15 @@ def test_model_aliases_in_custom_models() -> None:
     )
 
 
-def test_nightly_models_are_known_models() -> None:
-    unknown = sorted(
-        smoke_test_github_matrix.NIGHTLY_MODELS
-        - set(smoke_test_github_matrix.MODELS)
+def test_nightly_models_list_hw() -> None:
+    """NIGHTLY is a schedule tag, not HW: alone it runs the model nowhere."""
+    bare = sorted(
+        model
+        for model, tags in smoke_test_github_matrix.MODELS.items()
+        if not tags & set(smoke_test_github_matrix.RUNNERS)
+        and "NIGHTLY" in tags
     )
-    assert not unknown, (
-        f"NIGHTLY_MODELS entries must also appear in MODELS: {unknown}"
-    )
+    assert not bare, f"NIGHTLY models must also list the HW they run on: {bare}"
 
 
 def test_nightly_tier_is_a_subset_of_all() -> None:

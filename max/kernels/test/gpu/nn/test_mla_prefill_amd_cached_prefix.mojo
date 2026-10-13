@@ -37,7 +37,7 @@ Shapes: ``depth=192`` (nope=128, rope=64), 12 heads, batch 1. Per
 """
 
 from std.random import seed
-from std.sys import get_defined_int, has_amd_gpu_accelerator
+from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
 
@@ -49,7 +49,7 @@ comptime PAGE_SIZE = get_defined_int["page_size", 128]()
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             print("=== CONTROL fresh S=9, no cache prefix ===")
             seed(0)
             run_test_paged_prefill[

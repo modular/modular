@@ -14,7 +14,7 @@
 from std.math import erf
 from std.random import randn, seed
 
-from test_utils import compare, libm_call
+from test_utils.math import compare, libm_call
 from std.testing import assert_almost_equal, assert_equal, TestSuite
 
 

@@ -35,7 +35,6 @@ slot reads back as 0 and the bug hides.
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 from max.gpu import block_idx, thread_idx
-from std.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from layout import Coord, TileTensor, row_major
 from nn.sampling import topk_sampling_from_prob, topk_topp_sampling_from_prob

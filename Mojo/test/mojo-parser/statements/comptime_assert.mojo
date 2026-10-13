@@ -64,6 +64,18 @@ def test_assert_with_tstring_message[x: Int]():
     comptime assert x, t"expected positive, got {x}"
 
 
+# CHECK-LABEL: lit.fn @"test_assert_with_parenthesized_tstring_message
+def test_assert_with_parenthesized_tstring_message[x: Int]():
+    # CHECK: kgen.param.assert <{{.*}}>, data_to_str({{.*}}__make_tstring
+    comptime assert x > 0, (t"expected positive number, got {x}")
+
+
+# CHECK-LABEL: lit.fn @"test_assert_with_nested_parenthesized_tstring_message
+def test_assert_with_nested_parenthesized_tstring_message[x: Int]():
+    # CHECK: kgen.param.assert <{{.*}}>, data_to_str({{.*}}__make_tstring
+    comptime assert x > 0, ((t"expected positive number, got {x}"))
+
+
 # CHECK-LABEL: lit.fn @"test_always_true_warning
 def test_always_true_warning():
     # CHECK-NOT: kgen.param.assert

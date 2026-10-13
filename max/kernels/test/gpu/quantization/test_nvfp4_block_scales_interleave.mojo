@@ -16,7 +16,7 @@ from linalg.block_scaled_quantization import (
     block_scales_interleave_fp4,
 )
 from std.testing import assert_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.fp4_utils import (
     SF_ATOM_M,

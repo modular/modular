@@ -19,11 +19,10 @@ from std.sys import bit_width_of
 from std.builtin.dtype import _uint_type_of_width
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
-import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import Dim
 from std.random import Random
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from std.memory import bitcast, unsafe_stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
@@ -246,7 +245,7 @@ def normalize(
     """
     comptime dtype = value.dtype
 
-    comptime __match dtype:
+    comptime match dtype:
         case .int32:
             return normalize(rebind[Int32](value)).cast[result.dtype]()
         case .uint32:
@@ -518,10 +517,10 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     @inline(.always)
     def current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        if self._d_buffers[self._selection]:
+        if case .Some(ptr) = self._d_buffers[self._selection]:
             return DeviceBuffer[Self.dtype](
                 ctx,
-                self._d_buffers[self._selection].unsafe_value(),
+                ptr,
                 self._size,
                 owning=False,
             )
@@ -530,10 +529,10 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     @inline(.always)
     def alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        if self._d_buffers[self._selection ^ 1]:
+        if case .Some(ptr) = self._d_buffers[self._selection ^ 1]:
             return DeviceBuffer[Self.dtype](
                 ctx,
-                self._d_buffers[self._selection ^ 1].unsafe_value(),
+                ptr,
                 self._size,
                 owning=False,
             )

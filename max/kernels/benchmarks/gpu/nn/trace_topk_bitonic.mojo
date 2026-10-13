@@ -344,9 +344,8 @@ def _run[
 
     # The contract is a comptime parameter of `_launch`, so the three arms are
     # three instantiations and the runtime flags only choose between them.
-    @__parameter
     @inline(.always)
-    def sweep(reps: Int) raises:
+    def sweep(reps: Int) raises {var}:
         for _ in range(reps):
             if unordered and not deterministic:
                 _launch[unordered=True, deterministic=False, sched=sched](

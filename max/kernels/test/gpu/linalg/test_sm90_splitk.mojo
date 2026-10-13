@@ -14,10 +14,8 @@ from std.collections import OptionalReg
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from std.memory import alloc
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,

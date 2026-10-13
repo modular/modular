@@ -20,7 +20,6 @@ from std.os import setenv
 """
 
 from std.ffi import c_int, external_call
-from std.sys import CompilationTarget
 
 
 def setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:

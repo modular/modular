@@ -36,6 +36,7 @@ from max._kv_cache_ops import (
     mha_decode_num_partitions,
     mla_dispatch_args_scalar,
 )
+from max._kv_core import LeafShape
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.experimental.sharding import TensorLayout
@@ -75,10 +76,13 @@ from .utils import (
 # on max.nn (BUILD.bazel), so importing back would create a circular
 # bazel dependency. The two definitions are structurally identical
 # Literals, so mypy treats them as the same type at use sites.
-SpeculativeMethod = Literal["eagle", "mtp", "dflash", "dflash2"]
+SpeculativeMethod = Literal["eagle", "mtp", "dflash", "dflash2", "dspark"]
 
-KVHashAlgo = Literal["ahash64", "sha256", "sha256_64"]
+KVHashAlgo = Literal["ahash64", "sha256"]
 """Supported hash algorithms for KV-cache block identity."""
+
+HostStagingAlloc = Literal["registered", "driver"]
+"""How a tiered KV connector allocates its pinned host staging region."""
 
 logger = logging.getLogger("max.pipelines")
 
@@ -150,14 +154,32 @@ class KVCacheGroupId:
             return -1
         return ceildiv(self.window_size - 1, page_size)
 
+    def prefix_hit_shape(self, page_size: int) -> LeafShape:
+        """Returns the prefix-hit rule a leaf of this shape answers with.
+
+        Args:
+            page_size: Tokens per block, which turns ``window_size`` into a
+                block count.
+
+        Returns:
+            The shape :mod:`max._kv_core`'s prefix-hit functions take.
+        """
+        if self.is_scratch():
+            return LeafShape.scratch()
+        if self.is_recurrent():
+            return LeafShape.recurrent()
+        if self.is_full():
+            return LeafShape.full()
+        return LeafShape.sliding_window(self.blocks_in_window(page_size))
+
     def longest_hit(self, page_size: int, resident: Sequence[bool]) -> int:
         """How much of ``resident`` a leaf of this shape can reuse.
 
         Residency in, prefix length out. The answer is counted from the start
         even for a shape that only reads the tail of it, so the caller can
-        compare shapes against one another -- which
-        :func:`~max.pipelines.kv_cache.prefix_hit.longest_joint_prefix_hit`
-        does to settle what a whole tree serves at once.
+        compare shapes against one another, which
+        :func:`max._kv_core.longest_joint_prefix_hit` does to settle what a
+        whole tree serves at once.
 
         ``len(resident)`` bounds the candidate, so narrowing means passing a
         shorter view, not recomputing residency.
@@ -196,56 +218,16 @@ class KVCacheGroupId:
         rejects it, since a query token attending to no historical tokens
         would make every block a hit attention never reads back.
 
+        The rule itself is
+        :meth:`max._kv_core.LeafShape.longest_hit`, applied to
+        :meth:`prefix_hit_shape`, so MAX and Mach share one copy.
+
         Args:
             page_size: Tokens per block, which turns ``window_size`` into a
                 block count.
             resident: Whether each block of the chain is held, positionally.
         """
-        num_hashes = len(resident)
-        if self.is_scratch():
-            # Never published, so it has no opinion and must not shorten what
-            # the leaves that do cache agree on.
-            return num_hashes
-        if self.is_recurrent():
-            # A state is a single published boundary rather than a run, so
-            # the deepest one that stands is the answer.
-            for idx in range(num_hashes - 1, -1, -1):
-                if resident[idx]:
-                    return idx + 1
-            return 0
-        if self.is_full():
-            # Reads its whole history, so the hit is the run from the root.
-            for idx in range(num_hashes):
-                if not resident[idx]:
-                    return idx
-            return num_hashes
-
-        # Sliding window: the hit is a SUFFIX run, so walk back counting a
-        # consecutive run and take the first place it fills the window. A
-        # shallower stopping point covers different blocks, so this cannot be
-        # found by shortening a full-attention answer.
-        blocks_in_window = self.blocks_in_window(page_size)
-        if blocks_in_window < 1:
-            # window_size == 1, a query attending to no history, which would
-            # make every block a hit attention never reads back. __post_init__
-            # rejects that window and so does Mach's KVCacheConfig::validate,
-            # so one arriving here is a caller bug (SERVOPT-1627).
-            raise ValueError(
-                "A sliding-window group spans at least one block; got"
-                f" blocks_in_window={blocks_in_window}. window_size must be"
-                " greater than 1."
-            )
-        run = 0
-        for idx in range(num_hashes - 1, -1, -1):
-            if not resident[idx]:
-                run = 0
-                continue
-            run += 1
-            if run >= blocks_in_window:
-                return idx + run
-        # A run reaching the root is a hit of just that run: nothing sits
-        # below it to be missing.
-        return run
+        return self.prefix_hit_shape(page_size).longest_hit(resident)
 
     def is_recurrent(self) -> bool:
         return self.type == "recurrent"
@@ -355,6 +337,16 @@ class KVConnectorConfigInterface(Protocol):
         ...
 
     @property
+    def host_staging_alloc(self) -> HostStagingAlloc:
+        """Whether the host tier registers host memory or driver-allocates it."""
+        ...
+
+    @property
+    def host_staging_mlock(self) -> bool:
+        """Whether the registered host staging region is locked with ``mlock``."""
+        ...
+
+    @property
     def disk_offload_max_gb(self) -> float | None:
         """Disk budget in GiB; ``None`` sizes it from the device pool."""
         ...
@@ -367,6 +359,16 @@ class KVConnectorConfigInterface(Protocol):
     @property
     def num_disk_workers(self) -> int:
         """Disk I/O worker threads for the tiered connectors."""
+        ...
+
+    @property
+    def num_h2d_onload_lanes(self) -> int:
+        """Concurrent H2D onload lanes for the rust_tiered connector."""
+        ...
+
+    @property
+    def use_disk_direct_io(self) -> bool:
+        """Whether the disk tier's file I/O bypasses the page cache."""
         ...
 
     @property
@@ -385,9 +387,13 @@ class NullKVConnectorConfig:
 
     type: KVConnectorType = KVConnectorType.null
     host_offload_max_gb: float | None = None
+    host_staging_alloc: HostStagingAlloc = "registered"
+    host_staging_mlock: bool = False
     disk_offload_max_gb: float | None = None
     disk_offload_dir: str | None = None
     num_disk_workers: int = 32
+    num_h2d_onload_lanes: int = 1
+    use_disk_direct_io: bool = False
     block_store_endpoint: str | None = None
 
 
@@ -414,6 +420,9 @@ def _validate_is_2d_uint8_buffer(buffer: Buffer) -> None:
 # page-to-page stride has to stay 16-byte aligned; see `scale_align_elems` and
 # the `create_index_scale_tma_tile` assert in `kv_cache/types.mojo`.
 _SCALE_TMA_ALIGN_BYTES = 16
+
+# Recurrent-state kernels take pool row ids as int32.
+_MAX_INT32_ROW_ID = 2**31 - 1
 
 PACKED_PAGE_STRIDE = -1
 """``page_stride`` sentinel meaning the pages are packed."""
@@ -566,7 +575,7 @@ class KVCacheMemory:
     device order.
 
     ``replicated`` indicates that all buffers hold identical bytes. This is true
-    for certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
+    for certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, and so on.
     """
 
     replicated: bool
@@ -621,11 +630,6 @@ class KVCacheBufferInterface(Protocol):
     """Interface for a KV cache buffer (single leaf or a tree of leaves)."""
 
     @property
-    def total_num_pages(self) -> int:
-        """Returns the total number of pages."""
-        ...
-
-    @property
     def all_buffers(self) -> list[Buffer]:
         """Returns all buffers."""
         ...
@@ -639,18 +643,12 @@ class KVCacheBufferInterface(Protocol):
 class MultiKVCacheBuffer(KVCacheBufferInterface):
     """A tree of KVCache buffers for one data-parallel replica.
 
-    ``children`` maps a cache name (e.g. ``"target"``/``"draft"`` for
+    ``children`` maps a cache name (such as ``"target"``/``"draft"`` for
     speculative decoding, or ``"sliding"``/``"global"`` for hybrid models) to
     that cache's buffer for this replica.
     """
 
     children: dict[str, KVCacheBufferInterface]
-
-    @property
-    def total_num_pages(self) -> int:
-        """Returns the total number of pages."""
-        first = next(iter(self.children.values()))
-        return first.total_num_pages
 
     @property
     def all_buffers(self) -> list[Buffer]:
@@ -685,7 +683,7 @@ class KVCacheBuffer(KVCacheBufferInterface):
 
     ``replicates_kv_across_tp`` is ``True`` when the KV data is replicated
     identically across TP shards and ``False`` when it is sharded. The data is
-    replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
+    replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, and so on.
     """
 
     leaf_id: str = field(kw_only=True)
@@ -722,11 +720,6 @@ class KVCacheBuffer(KVCacheBufferInterface):
     :attr:`values_per_layer`). ``scales[shard]`` aliases
     ``scales_per_layer[shard][0]``. ``None`` for a single multi-layer scale
     buffer or an unquantized cache."""
-    is_jenga: bool = False
-    """Whether this buffer is associated with Jenga KV cache
-
-    TODO: Delete this field after reworking KVCacheBufferInterface.
-    """
 
     def __post_init__(self) -> None:
         all_buffers = self.all_buffers
@@ -804,24 +797,11 @@ class KVCacheBuffer(KVCacheBufferInterface):
         if len(unique_shapes) > 1:
             raise ValueError("All scales must have the same shape")
 
-        # Allow the number of pages to be different between values / scales only
-        # for Jenga KV cache.
-        # TODO: Get rid of this hack.
-        unique_num_pages = {b.shape[0] for b in all_buffers}
-        if not self.is_jenga and len(unique_num_pages) > 1:
-            raise ValueError(
-                "Values and scales must have the same number of pages"
-            )
         for value, scale in zip(self.values, self.scales, strict=True):
             if value.device != scale.device:
                 raise ValueError(
                     "Corresponding values and scales must be on the same device"
                 )
-
-    @property
-    def total_num_pages(self) -> int:
-        """Returns the total number of pages across all values and scales."""
-        return self.values[0].shape[0]
 
     @property
     def all_buffers(self) -> list[Buffer]:
@@ -877,11 +857,6 @@ class RecurrentStateBuffer(KVCacheBufferInterface):
                 raise ValueError(f"state leaf {leaf_id!r} has no device pages")
 
     @property
-    def total_num_pages(self) -> int:
-        """Returns the first leaf's block count, including the null block."""
-        return next(iter(self.pages.values()))[0].shape[0]
-
-    @property
     def all_buffers(self) -> list[Buffer]:
         """Returns every leaf's pages, leaf-major then device order."""
         return [buffer for buffers in self.pages.values() for buffer in buffers]
@@ -894,18 +869,24 @@ class RecurrentStateBuffer(KVCacheBufferInterface):
         }
 
 
+FP4_KV_CACHE_QUANTIZATION_GRANULARITY = 16
+
+
 @dataclass
 class KVCacheQuantizationConfig:
     """Configuration for KVCache quantization.
 
-    Currently only FP8 Quantization is supported.
+    Supports FP8 and int8 values with per-block scales, and NVFP4: ``uint8``
+    storage packing two E2M1 values per byte with E4M3 scales.
     """
 
     scale_dtype: DType = DType.float32
     """Data type of quantization scales, if quantization is enabled"""
 
     quantization_granularity: int = 128
-    """Block-size used for KVCache quantization along head-dimension (e.g. 128)."""
+    """Block-size used for KVCache quantization along head-dimension, such as 128.
+
+    Counted in logical elements, so a packed NVFP4 cache uses 16."""
 
 
 @dataclass(frozen=True)
@@ -918,7 +899,7 @@ class BatchCharacteristics:
 
     :meth:`~max.pipelines.kv_cache.PagedKVCacheManager.runtime_inputs` uses
     it to resolve the dispatch
-    key once: e.g. for graph-capture replay, ``max_cache_valid_length`` is
+    key once. For example, for graph-capture replay, ``max_cache_valid_length`` is
     aligned up to a cache length recorded during capture and every data-parallel
     replica must run the identical captured graph. The batch's real values must
     not exceed these.
@@ -1055,11 +1036,15 @@ class PagedKVLeafRegion(KVLeafRegion):
     def blocks_to_reserve(
         self, num_blocks: int, *, enable_prefix_caching: bool
     ) -> int:
-        """Returns ``num_blocks``, capped by the window when the leaf has one."""
+        """Returns ``num_blocks``, capped by the window when the leaf has one.
+
+        A sliding-window leaf only needs the pages holding the tokens its
+        window looks back at, plus the page it is writing now.
+        """
         if self.group_id.is_full():
             return num_blocks
         return min(
-            num_blocks, ceildiv(self.group_id.window_size, self.page_size)
+            num_blocks, self.group_id.blocks_in_window(self.page_size) + 1
         )
 
     def staged_input_shapes(
@@ -1387,11 +1372,11 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
 
         Zero when speculative decoding is disabled; one for autoregressive
         drafts (``eagle``, ``mtp``); equal to ``num_draft_tokens`` for block
-        drafts (``dflash``, ``dflash2``).
+        drafts (``dflash``, ``dflash2``, ``dspark``).
         """
         if self.speculative_method is None:
             return 0
-        elif self.speculative_method in ("dflash", "dflash2"):
+        elif self.speculative_method in ("dflash", "dflash2", "dspark"):
             return self.num_draft_tokens
         elif self.speculative_method in ("mtp", "eagle"):
             return 1
@@ -1407,7 +1392,7 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
 
     @property
     def kv_hash_seed(self) -> bytes | None:
-        """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``.
+        """Resolved 32-byte cluster seed for ``sha256``.
         ``None`` for ``ahash64``."""
         ...
 
@@ -1512,7 +1497,7 @@ class KVCacheParams(KVCacheParamInterface):
     instead of one ``[..., num_layers, ...]`` multi-layer buffer.
 
     Each attention dispatch then binds only its own per-layer buffer, so the
-    pool total can exceed a per-allocation size cap (e.g. a device's maximum
+    pool total can exceed a per-allocation size cap (such as a device's maximum
     single allocation) while every individual buffer stays under it. Defaults
     to ``False`` (one multi-layer buffer), keeping all other backends and
     models byte-identical."""
@@ -1521,7 +1506,7 @@ class KVCacheParams(KVCacheParamInterface):
     """Hash algorithm used for KV-cache block identity."""
 
     kv_hash_seed: bytes | None = None
-    """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``. ``None``
+    """Resolved 32-byte cluster seed for ``sha256``. ``None``
     for ``ahash64``.
 
     Set by ``KVCacheConfig.to_params`` via ``resolve_kv_hash_seed``.
@@ -1627,6 +1612,19 @@ class KVCacheParams(KVCacheParamInterface):
                     " caching to be enabled"
                 )
 
+        if self.is_nvfp4_kv_cache:
+            assert self.kvcache_quant_config is not None
+            if (
+                self.kvcache_quant_config.quantization_granularity
+                != FP4_KV_CACHE_QUANTIZATION_GRANULARITY
+            ):
+                raise ValueError(
+                    "An NVFP4 KV cache has one scale per"
+                    f" {FP4_KV_CACHE_QUANTIZATION_GRANULARITY} elements, got a"
+                    " quantization granularity of"
+                    f" {self.kvcache_quant_config.quantization_granularity}."
+                )
+
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             # Validate FP8 KVCache quantization granularity.
             if (
@@ -1675,12 +1673,35 @@ class KVCacheParams(KVCacheParamInterface):
         return self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
 
     @property
+    def is_nvfp4_kv_cache(self) -> bool:
+        """Whether the cache stores packed NVFP4: ``uint8`` values holding two
+        E2M1 elements each, with E4M3 scales."""
+        return (
+            self.dtype == DType.uint8
+            and self.kvcache_quant_config is not None
+            and self.kvcache_quant_config.scale_dtype == DType.float8_e4m3fn
+        )
+
+    @property
+    def storage_head_dim(self) -> int:
+        """Returns the stored width of one head row in ``dtype`` elements.
+
+        Equals :attr:`head_dim` except for packed NVFP4, which stores two
+        elements per byte.
+        """
+        if self.is_nvfp4_kv_cache:
+            return self.head_dim // 2
+        return self.head_dim
+
+    @property
     def quantized_kv_cache(self) -> bool:
         """Returns whether KV cache quantization is enabled."""
         # Supported quantized-KV storage schemes: FP8_E4M3 (fp32 / e8m0 scales)
         # and int8 (fp16 per-block absmax scales).
         if self.kvcache_quant_config is None:
             return False
+        if self.is_nvfp4_kv_cache:
+            return True
         value_dtypes = (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
@@ -1746,6 +1767,8 @@ class KVCacheParams(KVCacheParamInterface):
             return "bf16"
         elif self.dtype == DType.float8_e4m3fn:
             return "f8_m4e3fn"
+        elif self.is_nvfp4_kv_cache:
+            return "nvfp4"
         else:
             return "f32"
 
@@ -1779,7 +1802,7 @@ class KVCacheParams(KVCacheParamInterface):
             self.num_layers,
             self.slots_per_page,
             self.n_kv_heads_per_device,
-            self.head_dim,
+            self.storage_head_dim,
         ]
 
     @property
@@ -1805,9 +1828,10 @@ class KVCacheParams(KVCacheParamInterface):
         """
         assert self.kvcache_quant_config is not None
         shape_per_block = self.shape_per_block
-        # The final dimension is ceil(head_dim / quantization_granularity).
+        # The final dimension is ceil(head_dim / quantization_granularity),
+        # both in logical elements.
         granularity = self.kvcache_quant_config.quantization_granularity
-        shape_per_block[4] = math.ceil(shape_per_block[4] / granularity)
+        shape_per_block[4] = math.ceil(self.head_dim / granularity)
         return shape_per_block
 
     @property
@@ -1849,7 +1873,7 @@ class KVCacheParams(KVCacheParamInterface):
         """Returns one value row, ``num_heads * head_size * dtype_size``."""
         return (
             self.n_kv_heads_per_device
-            * self.head_dim
+            * self.storage_head_dim
             * self.dtype.size_in_bytes
         )
 
@@ -2309,7 +2333,6 @@ class KVCacheParams(KVCacheParamInterface):
             values_packed=values_packed,
             scales=scales,
             scales_packed=scales_packed,
-            is_jenga=True,
         )
 
 
@@ -2940,6 +2963,18 @@ class RecurrentStateParams(CacheLeafParamInterface):
                     f"leaf {region.leaf_id!r} has {row_bytes} B rows, which"
                     f" do not tile a {slab.num_elements} B slab"
                 )
+                # The pool itself is indexed at 64 bits, but the row ids the
+                # kernels take are int32 (see the KDA ops in
+                # max.nn.state_space.kimi_delta), so a slab with more rows
+                # than that would silently alias deep rows onto the front.
+                if num_rows > _MAX_INT32_ROW_ID:
+                    raise ValueError(
+                        f"leaf {region.leaf_id!r} would have {num_rows} rows"
+                        f" of {row_bytes} B in a {slab.num_elements} B slab,"
+                        f" but kernels address rows with int32 ids, so at most"
+                        f" {_MAX_INT32_ROW_ID} fit; reduce the KV cache memory"
+                        " budget or use a larger row"
+                    )
                 views[region.leaf_id].append(
                     slab.view(region.dtype, [num_rows, *region.row_shape])
                 )
@@ -3245,7 +3280,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     Children may be leaf :class:`KVCacheParams` instances or nested
     :class:`MultiKVCacheParams` subtrees, so arbitrarily deep hierarchies
-    are supported (e.g. ``{target: {sliding, mla}, draft: mha}``). The
+    are supported (such as ``{target: {sliding, mla}, draft: mha}``). The
     whole tree is consumed through the :class:`KVCacheParamInterface` —
     callers never need to know how many blocks that is.
 
@@ -3284,7 +3319,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     kv_hash_algo: KVHashAlgo = "ahash64"
     """Hash algorithm used for block identity."""
     kv_hash_seed: bytes | None = None
-    """Resolved cluster seed for ``sha256``/``sha256_64``."""
+    """Resolved cluster seed for ``sha256``."""
     speculative_method: SpeculativeMethod | None = None
     """Speculative decoding method propagated from ``SpeculativeConfig``."""
     num_draft_tokens: int = 0
@@ -3300,7 +3335,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         Children may be leaf :class:`KVCacheParams` instances, one
         :class:`RecurrentStateParams`, or nested
         :class:`MultiKVCacheParams` trees, enabling arbitrarily deep KV
-        cache hierarchies (e.g. ``{target: {sliding, mla}, draft: mha}``).
+        cache hierarchies (such as ``{target: {sliding, mla}, draft: mha}``).
         All children must share the same ``page_size``,
         ``data_parallel_degree``, ``n_devices``, and
         ``kv_connector_config`` values.
@@ -3615,7 +3650,7 @@ def spec_decode_cache_slack(params: KVCacheParamInterface) -> int:
     A speculative-decode step can over-speculate past the per-request
     ``max_seq_len`` cap into this slack (the KV pool reserves it beyond
     ``max_seq_len``), so any per-request sizing derived from ``max_seq_len``
-    -- the pool's page budget, the sparse-indexer score scratch, etc. -- must
+    -- the pool's page budget, the sparse-indexer score scratch and so on -- must
     add it. Centralized here so ``_compute_seq_len``, pool sizing, and
     ``OverlapTextGenerationPipeline._effective_max_cache_length`` stay in sync.
 
@@ -3660,7 +3695,10 @@ def compute_num_device_blocks(
             ``max_seq_len`` cannot fit in the allocable device blocks. Set
             only when allocating a uniform pool; memory estimation probes
             oversized configs on purpose.
-        include_null_block: Whether to include room for the null block.
+        include_null_block: Whether to include room for the null block. The
+            limited path adds it to the required total; the unlimited path
+            reserves one allocable block for it. A budget that leaves no
+            request page after the null block raises.
 
     Returns:
         The number of blocks that can be allocated for a single replica.
@@ -3707,6 +3745,10 @@ def compute_num_device_blocks(
 
     if max_total_blocks is not None:
         num_blocks = min(num_allocable_blocks, max_total_blocks)
+    elif include_null_block:
+        # The unlimited path sizes the whole pool for requests. Reserve the
+        # null block's page so the capacity it reports leaves room for it.
+        num_blocks = num_allocable_blocks - 1
     else:
         num_blocks = num_allocable_blocks
 
@@ -3728,6 +3770,21 @@ def compute_num_device_blocks(
             f"One page requires {single_page_size_bytes_str} but only "
             f"{cache_memory_str} are available{across_x_devices_str}."
         )
+
+    if include_null_block:
+        # The null block holds no request. The limited path counts it in
+        # num_blocks; the unlimited path already reserved its page out.
+        request_blocks = (
+            num_blocks - 1 if max_total_blocks is not None else num_blocks
+        )
+        if request_blocks < 1:
+            two_pages_str = to_human_readable_bytes(2 * params.bytes_per_block)
+            raise RuntimeError(
+                "Insufficient cache memory to allocate the null block plus"
+                " a single request page.\nThe null block and one request page"
+                f" require {two_pages_str} but only {cache_memory_str} are"
+                f" available{across_x_devices_str}."
+            )
 
     if max_batch_size is not None and max_batch_size > num_allocable_blocks:
         memory_needed_str = to_human_readable_bytes(
@@ -3818,6 +3875,7 @@ def compute_max_seq_len_fitting_in_cache(
         available_cache_memory: The amount of cache memory available across
             all devices.
         include_null_block: Whether to include room for the null block.
+            Reserves one page of the reported capacity for it.
 
     Returns:
         The maximum sequence length that fits, or None where no length

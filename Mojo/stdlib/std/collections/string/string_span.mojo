@@ -13,7 +13,6 @@
 """Implements the `StringSpan` type and related utilities for efficient string operations."""
 
 from std.builtin.builtin_slice import ContiguousSlice
-from std.builtin.format_int import _write_int
 from std.reflection import call_location
 from std.collections import check_bounds, check_slice_bounds, Span
 from std.collections.string._unicode import (
@@ -48,11 +47,7 @@ from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
-from std.memory import (
-    unsafe_memcmp,
-    unsafe_memcpy,
-    pack_bits,
-)
+from std.memory import unsafe_memcmp, pack_bits
 from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
@@ -1029,7 +1024,7 @@ struct StringSpan[origin: ImmOrigin](
         Returns:
             A c-compatible CStringSpan.
         """
-        return {unsafe_from_ptr = self.unsafe_ptr().unsafe_bitcast[Int8]()}
+        return {unsafe_from_ptr = self.unsafe_ptr().unsafe_bitcast[c_char]()}
 
     @inline(.always)
     def as_imm(self) -> Self.Immutable:
@@ -2161,7 +2156,9 @@ struct StringSpan[origin: ImmOrigin](
                     str_len += is_r_n
                 else:
                     str_len -= splat(likely(is_new_line)) & char_len
-                    var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
+                    var is_r_n = unlikely(
+                        prev_b0 == `\r` and b0 == `\n` and str_len == 0
+                    )
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended
                         line_start = line_end

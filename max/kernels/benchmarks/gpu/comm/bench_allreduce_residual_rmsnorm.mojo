@@ -43,12 +43,11 @@ from max.benchmark import (
     bencher_iter_custom,
 )
 from comm import Signal, group_start, group_end
-from comm.allreduce import allreduce, elementwise_epilogue_type
+from comm.allreduce import allreduce
 from comm.allreduce_residual_rmsnorm import (
     allreduce_residual_rmsnorm,
     allreduce_rmsnorm,
 )
-from std.collections import Optional
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
@@ -391,10 +390,9 @@ def _verify_add_results[
                 ),
             )
 
-        allreduce[
-            ngpus=ngpus,
-            output_lambda=Optional[elementwise_epilogue_type](add_epilogue_v),
-        ](in_tensors, out_tensors[i], rank_sigs, list_of_ctx[i])
+        allreduce[ngpus=ngpus, output_lambda=add_epilogue_v](
+            in_tensors, out_tensors[i].layout, rank_sigs, list_of_ctx[i]
+        )
     group_end()
 
     for i in range(ngpus):
@@ -975,14 +973,9 @@ def bench_allreduce_rmsnorm_fp8[
                         ),
                     )
 
-                allreduce[
-                    ngpus=ngpus,
-                    output_lambda=Optional[elementwise_epilogue_type](
-                        add_epilogue
-                    ),
-                ](
+                allreduce[ngpus=ngpus, output_lambda=add_epilogue](
                     in_tensors,
-                    ar_out_tensors[ctx_idx],
+                    ar_out_tensors[ctx_idx].layout,
                     rank_sigs,
                     ctx_inner,
                 )

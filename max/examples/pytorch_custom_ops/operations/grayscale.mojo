@@ -42,11 +42,10 @@ struct Grayscale:
             ctx: Device context for execution.
         """
 
-        @__parameter
         @inline(.always)
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[.uint8, simd_width]:
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
             """Convert RGB pixel to grayscale using perceptual weighting.
 
             Args:
@@ -56,10 +55,9 @@ struct Grayscale:
                 Grayscale value as SIMD vector.
             """
 
-            @__parameter
             def load(
                 idx: IndexList[img_in.rank],
-            ) -> SIMD[.float32, simd_width]:
+            ) {var} -> SIMD[.float32, simd_width]:
                 return img_in.load[simd_width](idx).cast[.float32]()
 
             var idx_l = coord_to_index_list(idx)
@@ -79,4 +77,4 @@ struct Grayscale:
             return min(gray, 255).cast[.uint8]()
 
         # Execute the conversion using parallel foreach
-        foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
+        foreach[target=target, simd_width=1](color_to_grayscale, img_out, ctx)

@@ -19,12 +19,9 @@ from std.sys import argv
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
-from std.memory import unsafe_memset_zero
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -57,7 +54,7 @@ def test[
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "seq_len:",
         seq_len,
         "num_keys:",

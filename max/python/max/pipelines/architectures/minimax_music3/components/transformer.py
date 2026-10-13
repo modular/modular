@@ -39,7 +39,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
     flash_attention_gpu,
 )
 from max.experimental.tensor import Tensor
-from max.graph import TensorType
+from max.graph import DimLike, TensorType
 from max.nn.attention import MHAMaskVariant
 
 from ..model_config import TransformerConfig
@@ -115,7 +115,7 @@ class Attention(Module[..., Tensor]):
 
     def forward(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
         batch, seq = x.shape[0], x.shape[1]
-        shape = [batch, seq, self.heads, self.head_dim]
+        shape: list[DimLike] = [batch, seq, self.heads, self.head_dim]
         query = partial_rotary(F.reshape(self.to_q(x), shape), cos, sin)
         key = partial_rotary(F.reshape(self.to_k(x), shape), cos, sin)
         value = F.reshape(self.to_v(x), shape)

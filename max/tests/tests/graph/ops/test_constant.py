@@ -134,9 +134,7 @@ def test_scalar_constant_float(dtype: DType) -> None:
         const = ops.constant(7.2, dtype, device=DeviceRef.CPU())
         graph.output(const)
 
-        expected = (
-            r"mo.constant {value = #M.dense_array<7\..*> : tensor<([^>]*)>}"
-        )
+        expected = r"mo.constant <#M.dense_array<7\..*> : tensor<([^>]*)>>"
         assert (match := re.search(expected, str(graph._mlir_op)))
         assert match.group(1).lower() == dtype._mlir
 
@@ -147,9 +145,7 @@ def test_scalar_constant_float_negative(dtype: DType) -> None:
         const = ops.constant(-1.0, dtype, device=DeviceRef.CPU())
         graph.output(const)
 
-        expected = (
-            r"mo.constant {value = #M.dense_array<-1\..*> : tensor<([^>]*)>}"
-        )
+        expected = r"mo.constant <#M.dense_array<-1\..*> : tensor<([^>]*)>>"
         assert (match := re.search(expected, str(graph._mlir_op))), str(graph)
         assert match.group(1).lower() == dtype._mlir
 
@@ -160,7 +156,7 @@ def test_scalar_constant_integral(dtype: DType) -> None:
         const = ops.constant(1, dtype, device=DeviceRef.CPU())
         graph.output(const)
 
-        expected = rf"mo.constant {{value = #M.dense_array<1> : tensor<{dtype._mlir}>}}"
+        expected = rf"mo.constant <#M.dense_array<1> : tensor<{dtype._mlir}>>"
         assert re.search(expected, str(graph._mlir_op))
 
 

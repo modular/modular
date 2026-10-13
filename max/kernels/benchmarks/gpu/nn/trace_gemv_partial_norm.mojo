@@ -29,10 +29,8 @@
 #   mojo build -O3 trace_gemv_partial_norm.mojo -o trace_driver
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import alloc
-
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from std.math import ceildiv
 
 from nn.gemv_partial_norm import (

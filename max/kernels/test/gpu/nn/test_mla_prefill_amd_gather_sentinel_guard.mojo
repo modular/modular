@@ -60,14 +60,14 @@ sentinel LUT column.
 from std.math import align_up, ceildiv
 from std.memory import alloc
 from std.random import randn, seed
-from std.sys import get_defined_int, has_amd_gpu_accelerator
+from std.sys import get_defined_int
 from std.testing import assert_almost_equal
 from std.utils.index import IndexList
 
 from max.gpu.host import DeviceContext
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.kv_cache_ragged import (
     generic_flare_mla_decompress_k_cache_ragged_paged,
     generic_flare_mla_prefill_ragged_paged_plan,
@@ -94,7 +94,7 @@ comptime PRE_FILL_SENTINEL = -1.0
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             test_gather_zeros_out_of_range_rows(ctx)
 
 

@@ -39,7 +39,6 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
-    MoveCopyCounter,
 )
 
 from std.utils.numerics import nan

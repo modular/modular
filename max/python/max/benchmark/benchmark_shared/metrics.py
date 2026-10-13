@@ -18,7 +18,7 @@ The lightweight percentile-metric types
 live in :mod:`max.benchmark.benchmark_shared.percentile_metrics` so
 consumers that only need the type definitions can import them without
 pulling in this module's heavier dependency surface (numpy, the rest
-of MAX, transformers, etc.). They are re-exported here so existing
+of MAX, transformers and so on). They are re-exported here so existing
 ``from max.benchmark.benchmark_shared.metrics import …`` callers
 continue to work unchanged.
 """
@@ -133,7 +133,7 @@ class ThroughputMetrics(PercentileMetrics):
     Container for throughput-based metrics with automatic percentile calculations.
 
     For throughput metrics, percentiles are reversed because smaller values
-    are worse for throughput (e.g., p99 represents the 1st percentile).
+    are worse for throughput (for example, p99 represents the 1st percentile).
 
     Structured as a ``PercentileMetrics`` subclass (rather than wrapping one in a
     private attribute) so the computed stats live in dataclass fields: JSON /
@@ -154,8 +154,8 @@ class ThroughputMetrics(PercentileMetrics):
 
         Args:
             data: List of throughput values to calculate percentiles from.
-            scale_factor: Factor to multiply all values by (e.g., for unit conversion).
-            unit: Unit string to display (e.g., "tok/s", "req/s", "MB/s").
+            scale_factor: Factor to multiply all values by (such as for unit conversion).
+            unit: Unit string to display (such as "tok/s", "req/s", "MB/s").
         """
         _validate_data(data)
 
@@ -190,7 +190,7 @@ class StandardPercentileMetrics(PercentileMetrics):
     Container for standard percentile-based metrics with automatic calculations.
 
     For standard metrics, higher percentiles represent worse performance
-    (e.g., p99 represents the 99th percentile).
+    (for example, p99 represents the 99th percentile).
 
     Structured as a ``PercentileMetrics`` subclass (see ``ThroughputMetrics``)
     so the computed stats are serializable dataclass fields; the public API is
@@ -208,8 +208,8 @@ class StandardPercentileMetrics(PercentileMetrics):
 
         Args:
             data: List of values to calculate percentiles from.
-            scale_factor: Factor to multiply all values by (e.g., 1000 for ms conversion).
-            unit: Unit string to display (e.g., "ms", "s", "MB/s").
+            scale_factor: Factor to multiply all values by (such as 1000 for ms conversion).
+            unit: Unit string to display (such as "ms", "s", "MB/s").
         """
         _validate_data(data)
 
@@ -245,7 +245,7 @@ class RatePercentileMetrics(StandardPercentileMetrics):
     Stored and displayed either as a fraction in [0, 1] (``as_percent=False``)
     or a percentage in [0, 100] (``as_percent=True``). Validation enforces the
     corresponding upper bound, which catches both negative values and values
-    above the representation's maximum (e.g. ``cached_tokens > prompt_tokens``).
+    above the representation's maximum (such as ``cached_tokens > prompt_tokens``).
     """
 
     def __init__(
@@ -349,7 +349,7 @@ class BaseBenchmarkMetrics(BaseModel, Metrics):
         """Serialize aggregate metrics to a flat dict.
 
         Produces the key layout that the upload script and the
-        ``--result-filename`` JSON expect (e.g. ``mean_ttft_ms``,
+        ``--result-filename`` JSON expect (such as ``mean_ttft_ms``,
         ``p99_latency_ms``, ``ttft_ms_confidence``, …).
 
         Subclasses should call ``super().to_result_dict()`` and merge in
@@ -897,6 +897,12 @@ class BenchmarkResult(BaseModel):
     peak_gpu_memory_mib: list[float] = Field(default_factory=list)
     available_gpu_memory_mib: list[float] = Field(default_factory=list)
     gpu_utilization: list[float] = Field(default_factory=list)
+    # Per-device utilization split by group (a disaggregated engine's role,
+    # with a node suffix when the role spans nodes); empty when the GPU
+    # source can't tell the devices apart.
+    gpu_utilization_by_group: dict[str, list[float]] = Field(
+        default_factory=dict
+    )
     cpu_metrics: CPUMetrics | None = None
     metrics_by_endpoint: Mapping[str, ParsedMetrics] = Field(
         default_factory=dict
@@ -1105,7 +1111,7 @@ class BenchmarkResult(BaseModel):
         """Serialize aggregate metrics to a flat dict.
 
         Produces the key layout that the upload script and the
-        ``--result-filename`` JSON expect (e.g. ``mean_ttft_ms``,
+        ``--result-filename`` JSON expect (such as ``mean_ttft_ms``,
         ``p99_latency_ms``, ``ttft_ms_confidence``, …).
         """
         d: dict[str, object] = {
@@ -1114,6 +1120,8 @@ class BenchmarkResult(BaseModel):
             "available_gpu_memory_mib": self.available_gpu_memory_mib,
             "gpu_utilization": self.gpu_utilization,
         }
+        if self.gpu_utilization_by_group:
+            d["gpu_utilization_by_group"] = self.gpu_utilization_by_group
         if self.cpu_metrics is not None:
             d["cpu_metrics"] = dataclasses.asdict(self.cpu_metrics)
         if self.metrics_by_endpoint:
@@ -1254,6 +1262,7 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
             peak_gpu_memory_mib=result.peak_gpu_memory_mib,
             available_gpu_memory_mib=result.available_gpu_memory_mib,
             gpu_utilization=result.gpu_utilization,
+            gpu_utilization_by_group=result.gpu_utilization_by_group,
         )
         if (
             result.peak_gpu_memory_mib

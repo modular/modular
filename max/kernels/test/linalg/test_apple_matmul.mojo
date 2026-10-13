@@ -305,8 +305,9 @@ def test_matmul[
     @__copy_capture(c)
     def epilogue_fn[
         _type: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
-        c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
+    ](idx: Coord, val: SIMD[_type, width]) -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c.store(idx, rebind[SIMD[c_type, width]](val + some_constant))
 
     comptime if has_epilogue_fusion:
         errors = test_matmul[
@@ -521,14 +522,11 @@ def test_batched_matmul[
     def epilogue_fn[
         _type: DType,
         width: SIMDLength,
-        rank: Int,
         *,
         alignment: Int = 1,
-    ](coords: IndexList[rank], val: SIMD[_type, width],) -> None:
-        c.store_linear(
-            rebind[IndexList[3]](coords),
-            rebind[SIMD[c.dtype, width]](val + some_constant),
-        )
+    ](coords: Coord, val: SIMD[_type, width],) -> None:
+        comptime assert coords.rank == 3
+        c.store(coords, rebind[SIMD[c.dtype, width]](val + some_constant))
 
     @inline(.always)
     def bench_fn_batched_matmul() raises {var}:

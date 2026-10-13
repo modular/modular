@@ -21,10 +21,11 @@ via `augment_samples_with_images`.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 import random
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import NamedTuple
 
 import numpy as np
@@ -40,6 +41,7 @@ from .types import (
     OpenAIImage,
     RequestSamples,
     Samples,
+    SessionMessage,
     TurnSelector,
     encode_image,
 )
@@ -148,6 +150,7 @@ def augment_samples_with_images(
     image_long_side: DistributionParameter,
     image_aspect_ratio: DistributionParameter,
     turn: TurnSelector = "first",
+    num_turns: DistributionParameter | None = None,
     max_chat_len: int | None = None,
     run_prefix_len: int = 0,
     seed: int | None = None,
@@ -157,18 +160,19 @@ def augment_samples_with_images(
     Dataset-agnostic: operates on the `Samples` any dataset produces, after
     sampling, so datasets never need their own image-generation logic.
 
-    Nothing is counted that will not be sent: a selected request or session
-    whose images could not reach the wire -- no user message to attach them
-    to, or a chat session the driver would abandon for exceeding
-    `max_chat_len` -- is left untouched rather than augmented and reported.
-    Chat-judge workloads are skipped outright, since their driver sends text
-    only.
+    Nothing is counted that will not be sent: a request or session whose
+    images could not reach the wire -- no user message to attach them to, or
+    a chat session the driver would abandon for exceeding `max_chat_len` --
+    is left untouched and the next one in the shuffled order is tried
+    instead. Chat-judge workloads are skipped outright, since their driver
+    sends text only.
 
     Args:
         samples: Already-sampled requests or chat sessions, mutated in place.
         fraction: Fraction (0.0-1.0) of requests (single-turn) or sessions
-            (multi-turn) selected for images. Selection is not a guarantee:
-            see above for when a selected one is left alone.
+            (multi-turn) that get images. Exactly ``fraction * n`` are
+            picked, rounded up or down at random so the mean is exact, and
+            fewer only when too few can carry images.
 
             Drawn per *session* in multi-turn, where
             `augment_samples_with_response_format` draws per turn. The
@@ -182,6 +186,9 @@ def augment_samples_with_images(
         image_aspect_ratio: Distribution for each image's width / height.
         turn: Which user turn(s) in a multi-turn session get images:
             "first", "last", or "every".
+        num_turns: Distribution for the number of user turns in a session
+            that gets images. A longer session is cut to the drawn length; a
+            shorter one is kept. None leaves sessions as sampled.
         max_chat_len: Per-session token budget the multi-turn driver enforces.
             When given, sessions whose images would push them past it before
             their first measured turn are skipped rather than counted.
@@ -215,6 +222,7 @@ def augment_samples_with_images(
     assert count_dist is not None
     assert long_side_dist is not None
     assert aspect_ratio_dist is not None
+    turns_dist = BaseDistribution.from_distribution_parameter(num_turns)
 
     if isinstance(samples, RequestSamples):
         _augment_request_samples(
@@ -243,9 +251,43 @@ def augment_samples_with_images(
             rng,
             max_chat_len,
             run_prefix_len,
+            turns_dist,
         )
     else:
         raise TypeError(f"Unsupported samples type: {type(samples)}")
+
+
+class _Selection(NamedTuple):
+    """Items to try, in order, and how many of them to augment."""
+
+    order: list[int]
+    target: int
+
+
+def _select(population: int, fraction: float, rng: random.Random) -> _Selection:
+    """Shuffles the items and rounds ``fraction * population`` at random.
+
+    A draw per item makes a small population's share swing widely: at 0.068
+    over 40 sessions it often picks none.
+    """
+    expected = fraction * population
+    target = math.floor(expected)
+    if rng.random() < expected - target:
+        target += 1
+    return _Selection(rng.sample(range(population), population), target)
+
+
+def _first_user_turns(
+    messages: Sequence[SessionMessage], turns: int
+) -> list[SessionMessage]:
+    """Returns the messages before the user turn after the first ``turns``."""
+    seen = 0
+    for i, message in enumerate(messages):
+        if message.source == "user":
+            seen += 1
+            if seen > turns:
+                return list(messages[:i])
+    return list(messages)
 
 
 def _prompt_accepts_images(prompt: str | list[ChatMessage]) -> bool:
@@ -271,9 +313,11 @@ def _augment_request_samples(
     augmented = 0
     added_images = 0
     no_user_message = 0
-    for request in samples.requests:
-        if rng.random() >= fraction:
-            continue
+    selection = _select(len(samples.requests), fraction, rng)
+    for index in selection.order:
+        if augmented == selection.target:
+            break
+        request = samples.requests[index]
         if not _prompt_accepts_images(request.prompt_formatted):
             no_user_message += 1
             continue
@@ -360,13 +404,24 @@ def _augment_chat_samples(
     rng: random.Random,
     max_chat_len: int | None = None,
     run_prefix_len: int = 0,
+    turns_dist: BaseDistribution | None = None,
 ) -> None:
     augmented = 0
     added_images = 0
     unmeasurable: list[int | None] = []
-    for session in samples.chat_sessions:
-        if rng.random() >= fraction:
-            continue
+    selection = _select(len(samples.chat_sessions), fraction, rng)
+    for index in selection.order:
+        if augmented == selection.target:
+            break
+        session = samples.chat_sessions[index]
+        if turns_dist is not None:
+            # Cut a copy; the sampled session stays whole if it's rejected.
+            session = dataclasses.replace(
+                session,
+                messages=_first_user_turns(
+                    session.messages, max(round(turns_dist.sample_value()), 1)
+                ),
+            )
         user_turn_indices = [
             i for i, m in enumerate(session.messages) if m.source == "user"
         ]
@@ -407,6 +462,7 @@ def _augment_chat_samples(
             unmeasurable.append(session.id)
             continue
 
+        samples.chat_sessions[index].messages = session.messages
         for idx, (images, added_tokens) in pending.items():
             session.messages[idx].images.extend(images)
             session.messages[idx].num_tokens += added_tokens
@@ -428,24 +484,27 @@ def _augment_chat_samples(
     # one, because the driver resends history.
     total_turns = 0
     carrying_turns = 0
+    carried_images = 0
     for session in samples.chat_sessions:
-        carrying = False
+        carried = 0
         for message in session.messages:
             if message.source != "user":
                 continue
             total_turns += 1
-            if message.images:
-                carrying = True
-            if carrying:
+            carried += len(message.images)
+            if carried:
                 carrying_turns += 1
+                carried_images += carried
     logger.info(
         "Image augmentation: added images to %d/%d chat sessions; across %d"
         " sampled user turns that is %d newly-encoded image(s) (%.3f per"
-        " request) with %.1f%% of turns carrying at least one image part",
+        " request) with %.1f%% of turns carrying at least one image part,"
+        " %.2f image parts on each",
         augmented,
         len(samples.chat_sessions),
         total_turns,
         added_images,
         added_images / total_turns if total_turns else 0.0,
         100.0 * carrying_turns / total_turns if total_turns else 0.0,
+        carried_images / carrying_turns if carrying_turns else 0.0,
     )

@@ -18,7 +18,12 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.matmul.vendor.blas import matmul
 from _cublas.cublaslt import cublasLtGetVersion
-from layout import TileTensor, Coord, CoordLike, Idx, row_major
+from layout import (
+    TileTensor,
+    CoordLike,
+    Idx,
+    row_major,
+)
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,

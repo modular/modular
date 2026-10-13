@@ -27,26 +27,21 @@ block to FP8-E4M3 with FP8-UE8M0 block scales. This test:
 Multiple expert shapes are exercised (single expert, multi-expert with
 ragged token counts) to cover the per-expert offset / SF-block-id math.
 """
-from std.math import align_up, ceildiv, exp, recip
+from std.math import ceildiv, exp, recip
 from max.gpu.host import DeviceContext
 from std.memory import alloc
 from std.memory.unsafe import bitcast
 
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
-    get_scale_factor,
     set_scale_factor,
 )
+from linalg.swiglu_activation import get_swiglu_activation
 from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
 
 
@@ -54,12 +49,9 @@ def _test_silu_mxfp8[
     num_active_experts: Int,
     H: Int,
     clamp_activation: Bool = False,
-](
-    num_tokens_by_expert: List[Int],
-    ctx: DeviceContext,
-    alpha: Float32 = Float32(1.702),
-    limit: Float32 = Float32(7.0),
-) raises:
+    alpha: Float32 = 1.702,
+    limit: Float32 = 7.0,
+](num_tokens_by_expert: List[Int], ctx: DeviceContext,) raises:
     """Run the kernel on a `num_active_experts` × ragged-M workload and
     assert byte-equality with a host-computed reference. When
     `clamp_activation=True` both the kernel and the host reference
@@ -203,7 +195,7 @@ def _test_silu_mxfp8[
                         var g_c = min(g, limit)
                         var u_c = max(min(u, limit), -limit)
                         var sigmoid = recip(Float32(1.0) + exp(-(g_c * alpha)))
-                        zi = (u_c + Float32(1.0)) * g_c * sigmoid
+                        zi = g_c * sigmoid * (u_c + Float32(1.0))
                     else:
                         var silu_g = g * recip(Float32(1.0) + exp(-g))
                         zi = silu_g * u
@@ -261,7 +253,11 @@ def _test_silu_mxfp8[
         scales_offsets_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
-        clamp_activation=clamp_activation,
+        activation=get_swiglu_activation[
+            "swigluoai" if clamp_activation else "silu",
+            alpha,
+            limit if clamp_activation else 0.0,
+        ],
     ]
     ctx.enqueue_function[kernel](
         out_tensor,
@@ -269,8 +265,6 @@ def _test_silu_mxfp8[
         in_immut,
         row_offsets_immut,
         scales_offsets_immut,
-        alpha,
-        limit,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )
@@ -363,9 +357,9 @@ def main() raises:
 
     # Clamped (swigluoai) activation. limit=2.0 sits inside the
     # [-3.5, 3.5] input range so both clamp bounds actually bind.
-    _test_silu_mxfp8[num_active_experts=1, H=128, clamp_activation=True](
-        [49], ctx, alpha=Float32(1.702), limit=Float32(2.0)
-    )
+    _test_silu_mxfp8[
+        num_active_experts=1, H=128, clamp_activation=True, limit=2.0
+    ]([49], ctx)
 
     # Wide-H case: single small expert at a model-scale hidden dim,
     # keeping test runtime manageable while exercising many SF

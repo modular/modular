@@ -40,6 +40,7 @@ modular_py_test(
         # Used as a pytest plugin
         "//max/tests/integration/test_common:registry",
     ],
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",

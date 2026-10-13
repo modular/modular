@@ -270,9 +270,7 @@ def global_dim(d: Dim) -> Dim:
     """Folds a :class:`PerShardDim` into a single global :class:`Dim`.
 
     Returns the wrapper's recorded global when present, else sums the
-    per-shard cells (the common single-mesh-axis :class:`Sharded` case;
-    multi-mesh-axis sharding requires the placement's
-    :meth:`Placement.global_dim`).
+    per-shard cells.
     """
     if not is_per_shard_dim(d):
         return d

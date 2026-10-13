@@ -13,12 +13,12 @@
 
 from std.math import ceildiv
 from std.os import abort
-from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.sys import default_accelerator
 
 from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
 
@@ -135,9 +135,9 @@ def test_matmul[input_types: List[DType]]() raises:
 
 
 def main() raises:
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()
-    elif has_nvidia_gpu_accelerator():
+    elif default_accelerator().is_nvidia_gpu():
         test_matmul[[DType.float8_e4m3fn, DType.bfloat16]]()
     else:
         abort("Unknown GPU Accelerator.")

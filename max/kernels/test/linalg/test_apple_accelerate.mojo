@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from linalg.matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
     apple_matmul,

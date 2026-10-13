@@ -23,8 +23,9 @@ Two runs of the same pytest invocation, told apart only by the environment
   fixture exported, and where it stopped, goes in ``record.json``.
 - **replay**, as the test. The artifacts are in the runfiles, so every compile
   is answered with the one recorded for it. ``record.json`` decides what a miss
-  means: a test that recorded graphs fails loudly, and a test that recorded
-  none declines the store and compiles on the GPU as before.
+  means: a test that ran to its end fails loudly, one that stopped at a
+  hardware need compiles what came after on the GPU, and a test that recorded
+  nothing declines the store and compiles on the GPU as before.
 
 What identifies an artifact is which test or fixture compiled it and in what
 order (see :class:`_Units`), which both runs agree on because they run the same
@@ -79,7 +80,7 @@ if TYPE_CHECKING:
 _RECORD_NAME = "record.json"
 # What the engine calls a compiled artifact, which the key below extends.
 _MEF_SUFFIX = ".mef"
-_RECORD_VERSION = 1
+_RECORD_VERSION = 2
 _MARKER = "compile_on_gpu"
 
 # Where a test got to under virtual devices, which is what replay reads back.
@@ -105,8 +106,8 @@ _NEEDS_HARDWARE_MESSAGES = (
 
 _MARKER_HINT = (
     "If this test cannot be recorded -- it stages device buffers before its "
-    "first load, or executes one graph before building the next -- create its "
-    "device buffers after the load that needs them, or mark it "
+    "first load -- create its device buffers after the load that needs them, "
+    "or mark it "
     "@pytest.mark.compile_on_gpu('reason') to compile it on the GPU."
 )
 
@@ -115,7 +116,9 @@ class _TestRecord(TypedDict):
     """How one test ended under virtual devices."""
 
     outcome: str
+    # What the test and its fixtures exported, and what its body alone did.
     exported: list[str]
+    compiled: list[str]
     reason: str
     phase: str
 
@@ -124,6 +127,9 @@ class _FixtureRecord(TypedDict):
     """What one fixture setup exported under virtual devices."""
 
     exported: list[str]
+    # Whether its setup stopped at a hardware need, so may compile more on
+    # replay than it did here.
+    stopped: bool
 
 
 class _Record(TypedDict):
@@ -157,6 +163,11 @@ class _Units:
         # and on replay the count of graphs that cost nothing to load.
         self.claimed: dict[str, set[str]] = defaultdict(set)
         self.count = 0
+        # Replay only: the units whose record stopped at a hardware need, and
+        # what each compiled before it did. A graph past that point is one the
+        # record never saw, so it compiles here rather than fails.
+        self.stopped: dict[str, frozenset[str]] = {}
+        self.past_stop: dict[str, int] = defaultdict(int)
 
     @contextlib.contextmanager
     def unit(self, context: str) -> Iterator[None]:
@@ -207,7 +218,15 @@ class _Units:
         with self._lock:
             if self._in_process:
                 return None
-        return self.export_key(graph)
+        context, key = self._next_key(graph)
+        with self._lock:
+            recorded = self.stopped.get(context)
+            if recorded is not None and key not in recorded:
+                self.past_stop[context] += 1
+                return None
+            self.claimed[context].add(key)
+            self.count += 1
+        return key
 
     def export_key(self, graph: Graph) -> str:
         """Names the artifact ``graph`` is compiled into.
@@ -222,6 +241,21 @@ class _Units:
         Returns:
             The artifact's name.
         """
+        context, key = self._next_key(graph)
+        with self._lock:
+            self.claimed[context].add(key)
+            self.count += 1
+        return key
+
+    def _next_key(self, graph: Graph) -> tuple[str, str]:
+        """Names the next compile of ``graph`` in the current unit.
+
+        Args:
+            graph: The graph being compiled.
+
+        Returns:
+            The unit, and the artifact's name within it.
+        """
         # The engine's own name for it -- graph name and signature digest --
         # which the unit and the position within it then disambiguate.
         base = _default_key(graph).removesuffix(_MEF_SUFFIX)
@@ -229,11 +263,8 @@ class _Units:
             context = self._context
             ordinal = self._ordinals.get((context, base), 0)
             self._ordinals[(context, base)] = ordinal + 1
-            scope = hashlib.sha256(context.encode()).hexdigest()[:12]
-            key = f"{base}-{scope}-{ordinal}{_MEF_SUFFIX}"
-            self.claimed[context].add(key)
-            self.count += 1
-        return key
+        scope = hashlib.sha256(context.encode()).hexdigest()[:12]
+        return context, f"{base}-{scope}-{ordinal}{_MEF_SUFFIX}"
 
 
 _UNITS = _Units()
@@ -289,10 +320,13 @@ def _union_records(directories: list[Path]) -> _Record:
         # test does not: every shard that reached it recorded its own exports.
         tests.update(recorded["tests"])
         for context, entry in recorded["fixtures"].items():
-            seen = fixtures.setdefault(context, {"exported": []})
+            seen = fixtures.setdefault(
+                context, {"exported": [], "stopped": False}
+            )
             seen["exported"] = sorted(
                 set(seen["exported"]) | set(entry["exported"])
             )
+            seen["stopped"] = seen["stopped"] or entry["stopped"]
     return {"tests": tests, "fixtures": fixtures}
 
 
@@ -325,6 +359,14 @@ elif _MODE == "replay":
     )
     InferenceSession.default_mef_store = _STORE
     _RECORD = _union_records(_DIRECTORIES)
+    # A test that stopped at hardware after compiling, and a fixture that did:
+    # the record saw what they compiled up to that point and nothing after.
+    for _nodeid, _test in _RECORD["tests"].items():
+        if _test["outcome"] == _RECORDED:
+            _UNITS.stopped[_nodeid] = frozenset(_test["compiled"])
+    for _context, _fixture in _RECORD["fixtures"].items():
+        if _fixture["stopped"]:
+            _UNITS.stopped[_context] = frozenset(_fixture["exported"])
 
 # What the record run has seen so far, which is what it writes at the end.
 _TESTS: dict[str, _TestRecord] = {}
@@ -453,6 +495,7 @@ def _note(
     _TESTS[nodeid] = {
         "outcome": outcome,
         "exported": sorted(exported),
+        "compiled": sorted(_UNITS.claimed.get(nodeid, ())),
         "reason": reason,
         "phase": phase,
     }
@@ -499,15 +542,20 @@ def pytest_fixture_setup(
 
     context = _fixture_context(fixturedef.argname, request)
     if _MODE == "record":
+        stopped = False
         try:
             with _UNITS.unit(context):
                 return (yield)
+        except BaseException as error:
+            stopped = _needs_hardware(error)
+            raise
         finally:
             # Even when the fixture failed: what it compiled before reaching
             # hardware is what its tests replay.
             _FIXTURE_CONTEXTS[fixturedef.argname].add(context)
             _FIXTURES[context] = {
-                "exported": sorted(_UNITS.claimed.get(context, ()))
+                "exported": sorted(_UNITS.claimed.get(context, ())),
+                "stopped": stopped,
             }
 
     # A fixture that recorded nothing has nothing to look up, and one that
@@ -717,12 +765,19 @@ def pytest_terminal_summary(terminalreporter: TerminalReporter) -> None:
     # Fixtures are counted separately because that is where the surprise
     # lives: a test can replay every graph its body compiles and still spend
     # minutes in a fixture that compiles one the record run never reached.
+    past_stop = sum(_UNITS.past_stop.values())
     write(
         f"precompile-mefs replay: {_UNITS.count} graphs answered from "
         f"artifacts, {len(_ON_GPU)} tests and {len(_FIXTURES_ON_GPU)} fixtures "
-        f"compiled on the GPU, {len(_DIVERGED)} diverged from the record"
+        f"compiled on the GPU, {past_stop} graphs compiled past where the "
+        f"record stopped, {len(_DIVERGED)} diverged from the record"
     )
     for nodeid, reason in sorted(_ON_GPU.items()):
         write(f"  on GPU {nodeid}: {reason}")
     for context in sorted(_FIXTURES_ON_GPU):
         write(f"  on GPU {context}: the record run never set this fixture up")
+    for context, count in sorted(_UNITS.past_stop.items()):
+        write(
+            f"  on GPU {context}: {count} graphs after the record stopped at a "
+            "hardware need"
+        )

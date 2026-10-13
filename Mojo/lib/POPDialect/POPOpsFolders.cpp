@@ -445,8 +445,7 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
 
 /// We can fold loads of `pop.global_constant` ops.
 OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
-  if (adaptor.getOrdering() != AtomicOrdering::NOT_ATOMIC ||
-      mightBeVolatile()) {
+  if (isAtomicOrMightBeVolatile()) {
     // Don't fold volatile or atomic loads.
     return {};
   }
@@ -504,15 +503,14 @@ OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
 }
 
 LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
-  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC || op.mightBeVolatile()) {
+  if (op.isAtomicOrMightBeVolatile()) {
     // Don't canonicalize atomic or volatile loads.
     return failure();
   }
 
   // Canonicalize "store x -> ptr; tmp = load ptr" into "store; tmp = x".
   if (auto store = dyn_cast_if_present<StoreOp>(op->getPrevNode())) {
-    if ((store.getPtr() == op.getPtr()) &&
-        (store.getOrdering() == AtomicOrdering::NOT_ATOMIC)) {
+    if (store.getPtr() == op.getPtr() && !store.isAtomic()) {
       b.replaceOp(op, store.getArg());
       return success();
     }
@@ -1484,7 +1482,7 @@ SIMDSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
-  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC || op.mightBeVolatile()) {
+  if (op.isAtomicOrMightBeVolatile()) {
     // Don't canonicalize atomic or volatile stores.
     return failure();
   }

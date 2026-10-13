@@ -15,12 +15,7 @@ import std.itertools
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn

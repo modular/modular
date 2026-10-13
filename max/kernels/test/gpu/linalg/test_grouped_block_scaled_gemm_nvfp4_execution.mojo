@@ -30,7 +30,6 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     Idx,
     row_major,

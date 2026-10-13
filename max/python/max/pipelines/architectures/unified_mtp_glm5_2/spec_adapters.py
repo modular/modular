@@ -95,6 +95,7 @@ class Glm5_2MTPProposer:
     carry_dim_names = CarryDimNames(prefix="mtp_step", per_device=True)
     step_hidden_mode = ReturnHiddenStates.LAST_PER_DEVICE
     uses_thinking_phase = True
+    supports_zero_draft_rows = False
 
     def __init__(self, draft: DeepseekV3_2NextN) -> None:
         self.draft = draft
@@ -165,6 +166,9 @@ class Glm5_2MTPProposer:
             batch.ep_inputs,
             prev_topk_indices=draft_input.reuse,
             reuse_prev_topk=True,
+            # Every step reuses step 0's selection, made for the token one
+            # position before step 1's.
+            selection_lag=index,
             split_prefix=f"{self.split_prefix}_draft_step{index}",
         )
         return Proposed(

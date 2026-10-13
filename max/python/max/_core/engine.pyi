@@ -170,6 +170,35 @@ class Model:
     number of inputs doesn't match.
 
     For supported input types and execution errors, see :meth:`execute`.
+
+    For example, load a graph, list its inputs, and run it:
+
+    .. code-block:: python
+
+        import numpy as np
+
+        from max.driver import CPU
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, TensorType
+
+        with Graph(
+            "add_one",
+            input_types=[
+                TensorType(DType.float32, ["batch"], device=DeviceRef.CPU())
+            ],
+        ) as graph:
+            (x,) = graph.inputs
+            graph.output(x + 1.0)
+
+        session = InferenceSession(devices=[CPU()])
+        model = session.load(graph)
+        for tensor in model.input_metadata:
+            print(
+                f"name: {tensor.name}, shape: {tensor.shape},"
+                f" dtype: {tensor.dtype}"
+            )
+        outputs = model.execute(np.ones((2,), np.float32))
     """
 
     @property
@@ -221,7 +250,7 @@ class Model:
 
         Returns a list of strings, one per ``mgp.generic.execute`` kernel in
         the compiled graph.  Each string describes the fused kernel composition,
-        e.g. ``"Epilogue(custom__kv_rope, custom__kv_cache_store)"``.
+        such as ``"Epilogue(custom__kv_rope, custom__kv_cache_store)"``.
         """
 
     @property
@@ -290,7 +319,7 @@ class Model:
         Capture is best-effort and model-dependent. It records the current execution
         path; models that perform unsupported operations during capture (for example,
         host-device synchronization) will fail to capture. Callers should decide which
-        phases are safe to capture (e.g. decode-only in serving).
+        phases are safe to capture (such as decode-only in serving).
         """
 
     def replay(self, graph_keys: int | Sequence[int], *inputs: Buffer) -> None:
@@ -476,7 +505,7 @@ class DebugConfig:
     @property
     def assert_level(self) -> str:
         r"""
-        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost. Takes effect at model build time.
+        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (such as LayoutTensor bounds) at a performance cost. Takes effect at model build time.
         """
 
     @assert_level.setter

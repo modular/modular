@@ -94,10 +94,8 @@ using namespace mlir;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct BuildOptTable : public llvm::opt::PrecomputedOptTable {
-  BuildOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct BuildOptTable : public llvm::opt::OptTable {
+  BuildOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 
 //===----------------------------------------------------------------------===//

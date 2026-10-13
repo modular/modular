@@ -68,6 +68,7 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_apple.mojo": ["//:apple_gpu"],
     "test_apple_mma_8x8.mojo": ["//:apple_gpu"],
     "test_tensor_core_nvidia.mojo": ["//:nvidia_gpu"],
+    "test_quantized_scale_stream.mojo": ["//:nvidia_gpu"],
     "test_tiled_matmul_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_vendor_blas_matmul.mojo": select({
         "//:h100_gpu": [],
@@ -76,10 +77,10 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
     "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
-    "test_layout_mma.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_layout_tensor_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_tensor_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
+    "test_gemm_vectorized_views.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_tile_io.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2834
     "test_tile_io_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2834
 }
@@ -147,19 +148,43 @@ _FILECHECK_EXTRA_DEPS = {
             "test_tensor_core_amd_utils.mojo",  # Imported source, not a test
             "matmul_kernels.mojo",  # Imported source, not a test
             "tensor_core_kernels.mojo",  # Imported source, not a test
+            "test_layout_mma.mojo",  # Dedicated minimal-deps target below
+            "test_tensor_core_bulk_tile.mojo",
+            "test_tensor_core_quantized_b_tile.mojo",
+            "test_local_to_shared_numeric_conversion.mojo",
             # Depend only on `layout` + `std`; given dedicated minimal-deps
             # targets below so they are not coupled to `nn`/`linalg`.
             "test_device_pointer_tile_storage_kernel.mojo",
             "test_optional_device_pointer_tile.mojo",
+            "test_tile_layout_device_launch.mojo",
             # Blackwell-only `TmemEngine` probe; dedicated target below.
             "test_tmem_engine.mojo",
         ],
     )
 ]
 
-# `DevicePointerEngine` probes. They only import `layout` and `std`, so they
-# get dedicated targets with minimal dependencies rather than the heavy
-# `nn`/`linalg`/`kv_cache` set the glob above attaches to every other test.
+# Keep the accumulator oracle independent of unrelated NN and GEMM packages.
+mojo_test(
+    name = "test_layout_mma.mojo.test",
+    size = "large",
+    srcs = ["test_layout_mma.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# `DevicePointerEngine` and `Layout` launch probes. They only import `layout`
+# and `std`, so they get dedicated targets with minimal dependencies rather
+# than the heavy `nn`/`linalg`/`kv_cache` set the glob above attaches to every
+# other test.
 [
     mojo_test(
         name = src + ".test",
@@ -176,6 +201,7 @@ _FILECHECK_EXTRA_DEPS = {
     for src in [
         "test_device_pointer_tile_storage_kernel.mojo",
         "test_optional_device_pointer_tile.mojo",
+        "test_tile_layout_device_launch.mojo",
     ]
 ]
 
@@ -224,3 +250,55 @@ mojo_test(
     )
     for src in _FILECHECK_TESTS
 ]
+
+mojo_test(
+    name = "test_tensor_core_bulk_tile.mojo.test",
+    size = "large",
+    srcs = ["test_tensor_core_bulk_tile.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:nvidia_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_tensor_core_quantized_b_tile.mojo.test",
+    size = "large",
+    srcs = ["test_tensor_core_quantized_b_tile.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_local_to_shared_numeric_conversion.mojo.test",
+    size = "large",
+    srcs = ["test_local_to_shared_numeric_conversion.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)

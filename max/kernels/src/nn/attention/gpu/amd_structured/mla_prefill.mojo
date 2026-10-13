@@ -57,7 +57,9 @@ __extension Attention:
         comptime cache_group = Self.num_heads // cache_num_heads
 
         comptime assert Self.BK == 32 or Self.BK == 64, "BK must be 32 or 64"
-        comptime assert Self.depth == 128, "MLA depth must be 128"
+        # Validated at depth 128; generalizes to any nope depth that tiles
+        # cleanly with BK plus a cleanly-tiling rope (GLM: depth=192, rope=64).
+        comptime assert Self.depth <= 256, "MLA nope depth must be <= 256"
         comptime assert (
             Self.depth % Self.BK == 0
         ), "depth must be a multiple of BK"
@@ -118,7 +120,7 @@ __extension Attention:
             WN=Self.WN,
             BK=Self.BK,
             num_threads=Self.num_threads,
-            depth=Self.depth,
+            depth=Self.output_depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
         ]
@@ -176,8 +178,7 @@ __extension Attention:
 
         # Phase 1: Q_nope @ K^T (depth // BK iterations)
         @inline(.always)
-        @__parameter
-        def mma_qk_nope():
+        def mma_qk_nope() {imm}:
             comptime MmaOp = TiledMmaOp[
                 accum_type,
                 Self.q_type,
@@ -196,8 +197,7 @@ __extension Attention:
 
         # Phase 2: Q_rope @ K_rope^T (rope_depth // BK iterations)
         @inline(.always)
-        @__parameter
-        def mma_qk_rope():
+        def mma_qk_rope() {imm}:
             comptime MmaOp = TiledMmaOp[
                 accum_type,
                 Self.q_type,
@@ -215,8 +215,7 @@ __extension Attention:
                     )
 
         @inline(.always)
-        @__parameter
-        def mma_pv():
+        def mma_pv() {imm}:
             comptime PVMmaOp = TiledMmaOp[
                 accum_type,
                 Self.q_type,
@@ -295,8 +294,9 @@ __extension Attention:
             _ = v_buffer.load_from_dram[next_slot]()
 
         @inline(.always)
-        @__parameter
-        def process_tile[slot: Int, has_next: Bool]():
+        def process_tile[
+            slot: Int, has_next: Bool
+        ]() {mut k_buffer, mut k_rope_buffer, mut self, mut v_buffer, imm}:
             comptime next_slot = 1 - slot
 
             # Wait for K + K_rope loads to complete for this slot.

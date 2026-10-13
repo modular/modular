@@ -80,10 +80,10 @@ class Shardable(Protocol):
 
 
 class Layer:
-    """.. deprecated:: 25.2
+    """Base class for neural network components.
 
-    Base class for neural network components.
-    Use :class:`Module` instead.
+    .. deprecated:: 25.2
+        Use :class:`Module` instead.
 
     Provides functionality for adding hooks to the call function of
     each layer to support testing, debugging or profiling.
@@ -246,54 +246,54 @@ class Module(Layer, ABC):
         once rather than once per repetition, which significantly reduces compile
         time for models with many identical layers.
 
-        Examples:
+        For example, define a small layer, build a subgraph from a
+        representative input, then call it once per repetition with a
+        layer-specific weight ``prefix``:
 
-            Define a small layer, build a subgraph from a representative input,
-            then call it once per repetition with a layer-specific weight
-            ``prefix``:
+        .. code-block:: python
 
-            .. code-block:: python
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+            from max.nn.layer import Module
 
-                from max.dtype import DType
-                from max.graph import DeviceRef, Graph, TensorType, Weight, ops
-                from max.nn.layer import Module
-
-                class Linear(Module):
-                    def __init__(self, in_dims, out_dims):
-                        super().__init__()
-                        self.weight = Weight(
-                            "weight",
-                            DType.float32,
-                            (in_dims, out_dims),
-                            DeviceRef.CPU(),
-                        )
-
-                    def __call__(self, x):
-                        return x @ self.weight.T
-
-                num_layers = 3
-                layer = Linear(4, 4)
-                with Graph(
-                    "build_subgraph_example",
-                    input_types=(
-                        TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
-                    ),
-                ) as graph:
-                    h = graph.inputs[0].tensor
-
-                    # Build the subgraph once from a representative input.
-                    subgraph = layer.build_subgraph(
-                        "linear_block",
-                        inputs=[h],
-                        weight_prefix="layers.0.",
+            class Linear(Module):
+                def __init__(self, in_dims, out_dims, weight_name):
+                    super().__init__()
+                    self.weight = Weight(
+                        weight_name,
+                        DType.float32,
+                        (in_dims, out_dims),
+                        DeviceRef.CPU(),
                     )
 
-                    # Call it once per layer with the correct weight prefix.
-                    for idx in range(num_layers):
-                        outputs = ops.call(subgraph, h, prefix=f"layers.{idx}.")
-                        h = outputs[0].tensor
+                def __call__(self, x):
+                    return x @ self.weight.T
 
-                    graph.output(h)
+            num_layers = 3
+            # Name the representative layer's weight with the first layer's
+            # prefix so build_subgraph() turns it into a placeholder.
+            layer = Linear(4, 4, weight_name="layers.0.weight")
+            with Graph(
+                "build_subgraph_example",
+                input_types=(
+                    TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
+                ),
+            ) as graph:
+                h = graph.inputs[0].tensor
+
+                # Build the subgraph once from a representative input.
+                subgraph = layer.build_subgraph(
+                    "linear_block",
+                    inputs=[h],
+                    weight_prefix="layers.0.",
+                )
+
+                # Call it once per layer with the correct weight prefix.
+                for idx in range(num_layers):
+                    outputs = ops.call(subgraph, h, prefix=f"layers.{idx}.")
+                    h = outputs[0].tensor
+
+                graph.output(h)
 
         Args:
             name: The name of the subgraph. Must be unique within the containing
@@ -387,7 +387,7 @@ class Module(Layer, ABC):
 
         The keys in ``state_dict`` must match the fully-qualified weight
         names used internally by the `Module`. Those names normally
-        follow the attribute hierarchy (e.g.
+        follow the attribute hierarchy (such as
         ``model.layers.0.self_attn.qkv_proj.weight``), but a sublayer
         whose :attr:`_omit_module_attr_name` is ``True`` is *omitted*
         from its descendants' FQNs. The canonical example is
@@ -488,7 +488,7 @@ class Module(Layer, ABC):
 
         Keys follow the same FQN convention as :meth:`load_state_dict`:
         attribute paths through the module tree, with any sublayer that
-        sets :attr:`_omit_module_attr_name` (e.g.
+        sets :attr:`_omit_module_attr_name` (such as
         :class:`~max.nn.StackedLinear` in unfused mode) skipped in the
         prefix.
 
@@ -552,7 +552,7 @@ class Module(Layer, ABC):
         Raises:
             ValueError: If two distinct attribute paths produce the same
                 fully-qualified weight name. This can happen when a
-                module with ``_omit_module_attr_name`` (e.g.
+                module with ``_omit_module_attr_name`` (such as
                 :class:`~max.nn.StackedLinear`) flattens a child name into
                 the parent's namespace and a sibling already claims that
                 name.
@@ -796,75 +796,6 @@ def _validate_weight_value(
         raise ValueError(
             f"Value provided to weight '{name}' had different {diff_str}."
         )
-
-
-def recursive_named_layers(
-    parent: Module, prefix: str = ""
-) -> Iterable[tuple[str, Module]]:
-    """Recursively walks through the layers and generates names.
-
-    A sublayer marked with ``_omit_module_attr_name = True`` does not
-    contribute its attribute name to the prefix passed to its descendants;
-    the children appear in the namespace as if they were directly attached
-    to the name-omitting module's parent. The name-omitting layer itself
-    is still yielded (callers walking the module tree may need to reach
-    it via its full attribute path), but its descendants' names skip the
-    omitted segment.
-
-    .. note::
-       The names yielded here are *layer* names, not weight names. For a
-       name-omitting layer they include the omitted segment (so callers
-       can still reach the layer in the source tree), which means they
-       do **not** match the FQNs that appear in :meth:`Module.state_dict`
-       for that layer's descendants. If you need state-dict-aligned
-       names, walk the weights via :meth:`Module.raw_state_dict` /
-       ``_iter_named_weights`` instead.
-
-    The ``parent`` passed to this function must not itself set
-    ``_omit_module_attr_name``: such a root has no enclosing namespace to
-    flatten into, so the request is ambiguous. Pass the enclosing owner
-    instead.
-    """
-    # See the docstring above: a name-omitting root is not meaningful
-    # here. Catching it as an assertion (rather than silently producing
-    # names under ``prefix``) makes the misuse loud at the call site.
-    assert not parent._omit_module_attr_name, (
-        "recursive_named_layers() called with a "
-        "`_omit_module_attr_name` root module; pass the enclosing parent "
-        "instead."
-    )
-
-    seen = IdentitySet[Module]()
-    # Queue entries are ``(name, prefix_for_children, layer)``:
-    # - ``name`` is the FQN this layer is yielded under (the full attribute
-    #   path, including any omitted segments).
-    # - ``prefix_for_children`` is the FQN prefix used to *build* the
-    #   children's ``name``. For a name-omitting layer this skips its own
-    #   attribute name; for a regular layer it is ``f"{name}."``.
-    queue: deque[tuple[str, str, Module]] = deque()
-    root_child_prefix = f"{prefix}." if prefix else ""
-    queue.append((prefix, root_child_prefix, parent))
-
-    while queue:
-        name, child_prefix, layer = queue.popleft()
-        if layer in seen:
-            continue
-        seen.add(layer)
-
-        yield (name, layer)
-
-        for local_name, child in layer.sublayers.items():
-            child_name = f"{child_prefix}{local_name}"
-            if child._omit_module_attr_name:
-                # The child's own attribute name is dropped from its
-                # descendants' prefixes.
-                grandchild_prefix = child_prefix
-            else:
-                grandchild_prefix = f"{child_prefix}{local_name}."
-            # ``child_name`` keeps the full attribute path even for
-            # name-omitting children so callers can reach them; only the
-            # *grandchildren* see the omission.
-            queue.append((child_name, grandchild_prefix, child))
 
 
 _LOCAL = threading.local()

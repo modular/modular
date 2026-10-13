@@ -174,7 +174,7 @@ WIDE_CPU_SPECS = [
 # output column.
 #
 # Which (op, dtype) pairs have a sub-word state, per each monoid's
-# `join_parallel` in max/kernels/src/algorithm/reduce_op.mojo:
+# `join_parallel` in max/kernels/src/graph_compiler/builtin_kernels/monoids.mojo:
 #   reduce_product  -- no hardware-fast scalar product exists, so every dtype
 #                      takes the combine; fp16/bf16 make the state 2 bytes.
 #   reduce_max/min  -- the fast-reducer dtype list covers only the 32/64-bit

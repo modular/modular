@@ -224,7 +224,7 @@ kgen.func @div(%arg0: !kgen.scalar<si64>, %arg1: !kgen.simd<2, si32>, %arg2: !kg
   %0 = kgen.param.constant: scalar<si4> = <7>
   %1 = kgen.param.constant: scalar<si4> = <-2>
   %2 = kgen.param.constant: scalar<ui4> = <7>
-  %3 = kgen.param.constant: scalar<ui4> = <-2>
+  %3 = kgen.param.constant: scalar<ui4> = <14>
   %4 = kgen.param.constant: scalar<f32> = <"2.5">
   %5 = kgen.param.constant: scalar<f32> = <"2">
 
@@ -313,7 +313,7 @@ kgen.func @rem() -> (!kgen.scalar<si4>, !kgen.scalar<ui4>, !kgen.scalar<f32>, !k
   %0 = kgen.param.constant: scalar<si4> = <7>
   %1 = kgen.param.constant: scalar<si4> = <-2>
   %2 = kgen.param.constant: scalar<ui4> = <7>
-  %3 = kgen.param.constant: scalar<ui4> = <-2>
+  %3 = kgen.param.constant: scalar<ui4> = <14>
   %4 = kgen.param.constant: scalar<f32> = <"2.5">
   %5 = kgen.param.constant: scalar<f32> = <"2">
   %6 = pop.rem %0, %1 : !kgen.scalar<si4>
@@ -347,7 +347,7 @@ kgen.func @min() -> (!kgen.scalar<ui4>, !kgen.scalar<f32>, !kgen.scalar<f32>) {
   // CHECK-DAG: <"-2">
   // CHECK-DAG: <"1.25">
   %0 = kgen.param.constant: scalar<ui4> = <0>
-  %1 = kgen.param.constant: scalar<ui4> = <-1>
+  %1 = kgen.param.constant: scalar<ui4> = <15>
   %2 = kgen.param.constant: scalar<f32> = <"1.25">
   %3 = kgen.param.constant: scalar<f32> = <"-2">
   %4 = kgen.param.constant: scalar<f32> = <"NaN">

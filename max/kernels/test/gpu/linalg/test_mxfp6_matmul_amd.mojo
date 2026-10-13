@@ -55,20 +55,14 @@ from std.memory import bitcast
 from std.random import random_ui64, seed
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
-from std.testing import assert_true
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from std.utils import StaticTuple
-from layout import Coord, Idx, TileTensor
+from layout import Idx, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.matmul.gpu.amd import Shuffler
-from linalg.fp6_utils import (
-    FP6Format,
-    decode_fp6_to_f32,
-    fp6_reference_table,
-    unpack_fp6_x32,
-)
+from linalg.fp6_utils import FP6Format, decode_fp6_to_f32, unpack_fp6_x32
 from linalg.fp6_quantization import quantize_mxfp6_amd
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     mxfp6_block_scaled_matmul_amd,
@@ -431,8 +425,8 @@ def run_case_preb[
 ) raises -> Bool:
     """Same shapes and reference as `run_case`, but drives
     `mxfp6_block_scaled_matmul_amd[preshuffled_b=True]`: B and its scales are
-    preshuffled once (untimed, mirroring the load-time cost
-    `preshuffle_block_scaled_b_dense` pays in production) before the call.
+    preshuffled once (untimed, mirroring the one-time cost
+    `preshuffle_block_scaled_b` pays at model init) before the call.
 
     Only valid for `M > DECODE_M_MAX` (64): the dispatcher silently takes the
     row-major decode path for smaller M regardless of `preshuffled_b`, so

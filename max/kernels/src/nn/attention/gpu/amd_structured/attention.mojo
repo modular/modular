@@ -28,10 +28,9 @@ from std.math.constants import log2e
 from std.math.uutils import udivmod
 from std.memory import bitcast, unsafe_stack_allocation
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
-from std.sys import align_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of
 from std.sys.intrinsics import readfirstlane
 from max.gpu import block_idx, lane_id, thread_idx
-from max.gpu.sync import barrier
 from layout import TileTensor
 from layout import row_major
 from layout.swizzle import Swizzle
@@ -46,7 +45,7 @@ from layout.tensor_core import num_matrix_reg
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
-from std.utils import Index, IndexList
+from std.utils import Index
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .softmax import Softmax
@@ -374,8 +373,11 @@ struct Attention[
             or Self.amd_structured_config.double_buffer_k_only
         ) else 1
     )
+    # V SMEM must cover the wider of K depth and output depth: MLA prefill has
+    # depth=qk_nope < output_depth=v_head_dim (GLM 192<256), or V truncates.
+    comptime _v_smem_depth = max(Self.depth, Self.output_depth)
     comptime _v_smem_physical_depth = ceildiv(
-        Self.depth, Self._bk_smem
+        Self._v_smem_depth, Self._bk_smem
     ) * Self._bk_smem
     comptime _v_smem_size = (
         Self.BN if Self.amd_structured_config.full_kv else Self.BK

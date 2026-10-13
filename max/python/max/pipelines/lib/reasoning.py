@@ -56,7 +56,7 @@ def get_parser_cls(name: str | None) -> type[ReasoningParser] | None:
 
     Returns ``None`` if no parser is registered under that name, or if
     ``name`` is ``None``. Useful for callers that need to invoke
-    class-level hooks (e.g., :meth:`ReasoningParser.reasoning_end_token_id`)
+    class-level hooks (such as :meth:`ReasoningParser.reasoning_end_token_id`)
     without instantiating the parser.
     """
     if name is None:

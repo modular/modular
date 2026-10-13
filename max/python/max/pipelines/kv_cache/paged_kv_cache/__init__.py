@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from .block_manager import PrefixCacheHits
+from ._common import PrefixCacheHits
 from .block_utils import InsufficientBlocksError
 from .cache_manager import BlockCount, ByteCount, PagedKVCacheManager
 from .cache_manager_interface import PagedKVCacheManagerInterface

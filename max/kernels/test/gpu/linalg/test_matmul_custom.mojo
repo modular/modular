@@ -22,8 +22,6 @@ from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
 from std.testing import assert_almost_equal
 
-from std.utils import IndexList
-
 
 def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     print("== run_matmul naive kernel")
@@ -669,11 +667,9 @@ def run_batched_matmul(
     def elementwise_epilogue_fn1[
         c_type: DType,
         width: SIMDLength,
-        rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
-        var coord = Coord(idx)
+    ](coord: Coord, val: SIMD[c_type, width]) -> None:
         c_tensor.store(coord, val.cast[c_tensor.dtype]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn1](
@@ -691,11 +687,9 @@ def run_batched_matmul(
     def elementwise_epilogue_fn2[
         c_type: DType,
         width: SIMDLength,
-        rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[c_type, width]) -> None:
-        var coord = Coord(idx)
+    ](coord: Coord, val: SIMD[c_type, width]) -> None:
         c_tensor_n.store(coord, val.cast[c_tensor_n.dtype]() + 2)
 
     _batched_matmul_gpu[elementwise_epilogue_fn=elementwise_epilogue_fn2](

@@ -101,7 +101,7 @@ def get_parser_cls(name: str | None) -> type[ToolParser] | None:
 
     Returns ``None`` if no parser is registered under that name, or if
     ``name`` is ``None``. Useful for callers that need to read class-level
-    attributes (e.g., structural tag delimiters).
+    attributes (such as structural tag delimiters).
     """
     if name is None:
         return None
@@ -189,10 +189,10 @@ class StructuralTagToolParser(ABC):
 
     Supports two layouts:
 
-    * **Section-wrapped** (e.g. Kimi K2.5, DeepSeek V3, MiniMax M2):
+    * **Section-wrapped** (such as Kimi K2.5, DeepSeek V3, MiniMax M2):
       an outer ``SECTION_BEGIN``/``SECTION_END`` pair wrapping one or more
       inner ``CALL_BEGIN``/``CALL_END`` pairs.
-    * **Flat** (e.g. Gemma 4): only ``CALL_BEGIN``/``CALL_END`` are set;
+    * **Flat** (such as Gemma 4): only ``CALL_BEGIN``/``CALL_END`` are set;
       ``SECTION_BEGIN``/``SECTION_END`` are left empty (the default).
       The base class scans for call pairs directly with no nesting.
 
@@ -386,7 +386,7 @@ class StructuralTagToolParser(ABC):
     ) -> None:
         """No-op: these parsers do not need schema-driven streaming.
 
-        Schema-driven parsers (e.g. MiniMax-M3) override this; see
+        Schema-driven parsers (such as MiniMax-M3) override this; see
         ``ToolParser.set_streaming_tool_schemas`` for when that is required.
         """
         return

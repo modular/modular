@@ -14,7 +14,7 @@
 from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
 from std.utils import IndexList
@@ -48,7 +48,7 @@ def _strided_index[
 
 
 def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     var in_host_stack = Array[Scalar[dtype], 16](fill=0)
     var in_host = Span(in_host_stack)
@@ -127,7 +127,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
 
 def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
     var in_host_stack = Array[Scalar[dtype], 9](fill=0)
     var in_host = Span(in_host_stack)
     var out_host_stack = Array[Scalar[dtype], 9](fill=0)
@@ -198,7 +198,7 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
 def run_elementwise_exact_boundary_uses_simd[
     dtype: DType
 ](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
     comptime if pack_size == 1:
         return
 
@@ -240,7 +240,7 @@ def run_elementwise_exact_boundary_uses_simd[
 
 
 def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
     var in_host_stack = Array[Scalar[dtype], 2 * 4 * 5](fill=0)
     var in_host = Span(in_host_stack)
     var out_host_stack = Array[Scalar[dtype], 2 * 4 * 5](fill=0)
@@ -350,7 +350,7 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
 def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     """Test elementwise operations with zero dimension in 3D tensor."""
     comptime dtype = DType.float32
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     var input_device_ptr = ctx.enqueue_create_buffer[dtype](1)
     var output_device_ptr = ctx.enqueue_create_buffer[dtype](1)

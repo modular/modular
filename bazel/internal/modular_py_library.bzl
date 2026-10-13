@@ -14,6 +14,7 @@ def modular_py_library(
         test_docstring_examples = False,
         docstring_example_deps = [],
         docstring_example_shard_count = None,
+        docstring_example_test_rule = modular_py_test,
         tags = [],
         **kwargs):
     """Creates a py_library target
@@ -36,6 +37,11 @@ def modular_py_library(
             800s, so set this for packages with many examples. Sharding is
             per example (a visible code block plus its invisible checks), so
             every example in a sharded package must be self-contained.
+        docstring_example_test_rule: Macro that creates the docstring-example
+            test. Eager-tensor packages pass `modular_eager_py_test` to adopt
+            the build-warmed eager op cache and the interpret-first
+            executor; it can't be loaded here without a load cycle through
+            //bazel:api.bzl.
         tags: Tags to add to the target
         **kwargs: Extra arguments passed through to py_library
     """
@@ -92,7 +98,13 @@ def modular_py_library(
             for dep in docstring_example_deps
             if Label(dep).package.startswith(native.package_name() + "/")
         ]
-        modular_py_test(
+
+        # Every example is a throwaway graph, so eager packages compile only
+        # what the interpreter refuses instead of background-compiling them all.
+        eager_env = {} if docstring_example_test_rule == modular_py_test else {
+            "MAX_EAGER_EXECUTOR": "fallback-internal",
+        }
+        docstring_example_test_rule(
             name = name + ".docstring_examples",
             timeout = "long",
             srcs = [],
@@ -103,7 +115,7 @@ def modular_py_library(
             env = {
                 "HF_HUB_OFFLINE": "1",
                 "TRANSFORMERS_OFFLINE": "1",
-            },
+            } | eager_env,
             args = [
                 native.package_name(),
                 "-p",
@@ -118,5 +130,5 @@ def modular_py_library(
                 ":" + name,
                 "//max/tests/docstring_examples:sybil_collect",
             ] + docstring_example_deps,
-            tags = ["no-pydeps"],
+            tags = ["no-pydeps", "skip-ci-asan"],
         )

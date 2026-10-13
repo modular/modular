@@ -27,7 +27,6 @@ import time
 import traceback
 from abc import ABC, abstractmethod
 from collections.abc import (
-    Callable,
     Iterable,
     Iterator,
     Mapping,
@@ -35,7 +34,7 @@ from collections.abc import (
     Sequence,
 )
 from dataclasses import dataclass, field
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 import aiohttp
 from max.serve._tool_call_validation import (
@@ -677,9 +676,6 @@ class _TRTLLMChunk(BaseModel):
     text_output: str
 
 
-_ChunkT = TypeVar("_ChunkT", _ChatCompletionChunk, _CompletionChunk)
-
-
 def _extract_chat_delta_text(data: _ChatCompletionChunk) -> str:
     """Extracts all generated text carried by a chat streaming chunk.
 
@@ -707,118 +703,203 @@ def _extract_chat_delta_text(data: _ChatCompletionChunk) -> str:
     )
 
 
+class OpenAIStreamRecorder:
+    """Measures one streamed OpenAI-style response.
+
+    The measurement lands in a :class:`RequestFuncOutput`: TTFT at the first
+    chunk carrying text, one inter-chunk latency and per-chunk TPOT per later
+    text chunk, latency at the last event, and the server's usage counts.
+
+    Args:
+        prompt_len: The prompt length to record on the output.
+        chat: Whether the stream carries chat completion chunks rather than
+            completion chunks.
+        tokenizer: The tokenizer for per-chunk TPOT, or ``None`` to skip it.
+    """
+
+    def __init__(
+        self,
+        *,
+        prompt_len: int,
+        chat: bool,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+    ) -> None:
+        self.output = RequestFuncOutput()
+        self.output.prompt_len = prompt_len
+        self._chunk_type: type[_ChatCompletionChunk | _CompletionChunk] = (
+            _ChatCompletionChunk if chat else _CompletionChunk
+        )
+        self._tokenizer = tokenizer
+        self._generated_text = ""
+        self._ttft = 0.0
+        self._st = time.perf_counter()
+        self.output.request_submit_time = self._st
+        self._most_recent_timestamp = self._st
+        self._has_content = False
+        self._latency = 0.0
+        self._done = False
+
+    @property
+    def done(self) -> bool:
+        """Whether the request finished, was cancelled, or failed."""
+        return self._done
+
+    def on_event(
+        self, data: str, *, arrived: float | None = None
+    ) -> RequestFuncOutput | None:
+        """Records one SSE event's data.
+
+        Args:
+            data: The event's data field.
+            arrived: When the event arrived, as a ``time.perf_counter()``
+                value; ``None`` reads the clock as the event is recorded.
+
+        Returns:
+            ``None`` to keep reading the stream, or the request's output when
+            the event reported an error and the request is over.
+        """
+
+        def now() -> float:
+            return time.perf_counter() if arrived is None else arrived
+
+        self._latency = now() - self._st
+        if data == "[DONE]":
+            return None
+
+        chunk = self._chunk_type.model_validate_json(data)
+
+        if chunk.error:
+            return self.fail(chunk.error.message or data)
+
+        # Parse usage from any chunk that reports it.
+        if chunk.usage:
+            self.output.server_token_stats = ServerTokenStats(
+                prompt_tokens=chunk.usage.prompt_tokens,
+                completion_tokens=chunk.usage.completion_tokens,
+                total_tokens=chunk.usage.total_tokens,
+                cached_tokens=(
+                    chunk.usage.prompt_tokens_details.cached_tokens
+                    if chunk.usage.prompt_tokens_details
+                    else 0
+                ),
+            )
+
+        # Skip content processing for chunks with no choices.
+        if not chunk.choices:
+            return None
+        if isinstance(chunk, _ChatCompletionChunk):
+            if chunk.choices[0].delta.tool_calls:
+                self.output.tool_call_returned = True
+            text_content = _extract_chat_delta_text(chunk)
+        else:
+            text_content = chunk.choices[0].text
+
+        # Only track timing for chunks with actual text
+        if text_content:
+            # A response only counts as content-bearing once it streams actual
+            # text or tool-call fragments. Chunks that carry only a role or
+            # finish_reason, or that put text in a delta field we don't model,
+            # leave this False so the request is flagged rather than recorded
+            # as a success with ttft=0 and no tokens.
+            self._has_content = True
+            timestamp = now()
+            # First token
+            if self._ttft == 0.0:
+                self._ttft = timestamp - self._st
+                self.output.ttft = self._ttft
+
+            # Decoding phase
+            else:
+                itl_value = timestamp - self._most_recent_timestamp
+                self.output.itl.append(itl_value)
+                tpot = _compute_chunk_tpot(
+                    self._tokenizer, text_content, itl_value
+                )
+                if tpot is not None:
+                    self.output.tpot.append(tpot)
+
+            self._most_recent_timestamp = timestamp
+            self._generated_text += text_content
+        return None
+
+    def finish(self) -> RequestFuncOutput:
+        """Marks a fully-received stream complete.
+
+        Returns:
+            The request's output.
+        """
+        self._done = True
+        if not self._has_content:
+            self.output.error = (
+                "No text content captured from the response"
+                " (choices were present but"
+                " delta.reasoning/reasoning_content/content/"
+                "tool_calls were all empty). The model may stream"
+                " text in a field this client does not parse."
+            )
+            self.output.success = False
+        else:
+            self.output.generated_text = self._generated_text
+            self.output.success = True
+            self.output.latency = self._latency
+        return self.output
+
+    def fail(self, error: str) -> RequestFuncOutput:
+        """Marks the request failed.
+
+        Args:
+            error: The failure's description.
+
+        Returns:
+            The request's output.
+        """
+        self._done = True
+        self.output.error = error
+        self.output.success = False
+        return self.output
+
+    def cancel(self) -> RequestFuncOutput:
+        """Marks the request cancelled by the client.
+
+        Resets the output, discarding all collected measurements.
+
+        Returns:
+            The request's output.
+        """
+        self._done = True
+        self.output = RequestFuncOutput(
+            cancelled=True, request_submit_time=time.perf_counter()
+        )
+        return self.output
+
+
 async def _run_openai_stream_request(
     *,
     api_url: str,
     payload: dict[str, Any],
     headers: Mapping[str, str],
     prompt_len: int,
-    chunk_type: type[_ChunkT],
-    content_extractor: Callable[[_ChunkT], str],
+    chat: bool,
     tokenizer: PreTrainedTokenizerBase | None = None,
 ) -> RequestFuncOutput:
-    output = RequestFuncOutput()
-    output.prompt_len = prompt_len
-
-    generated_text = ""
-    ttft = 0.0
-    st = time.perf_counter()
-    output.request_submit_time = st
-    most_recent_timestamp = st
-    has_content = False
-    latency = 0.0
-
+    recorder = OpenAIStreamRecorder(
+        prompt_len=prompt_len, chat=chat, tokenizer=tokenizer
+    )
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
         try:
             async with session.post(
                 url=api_url, json=payload, headers=headers
             ) as response:
-                if response.status == 200:
-                    async for event in iter_events(response.content):
-                        latency = time.perf_counter() - st
-                        if event.data == "[DONE]":
-                            continue
-
-                        data = chunk_type.model_validate_json(event.data)
-
-                        if data.error:
-                            output.error = data.error.message or event.data
-                            output.success = False
-                            return output
-
-                        # Parse usage from any chunk that reports it.
-                        if data.usage:
-                            output.server_token_stats = ServerTokenStats(
-                                prompt_tokens=data.usage.prompt_tokens,
-                                completion_tokens=data.usage.completion_tokens,
-                                total_tokens=data.usage.total_tokens,
-                                cached_tokens=(
-                                    data.usage.prompt_tokens_details.cached_tokens
-                                    if data.usage.prompt_tokens_details
-                                    else 0
-                                ),
-                            )
-
-                        # Skip content processing for chunks with no choices.
-                        if not data.choices:
-                            continue
-                        if (
-                            isinstance(data, _ChatCompletionChunk)
-                            and data.choices[0].delta.tool_calls
-                        ):
-                            output.tool_call_returned = True
-
-                        # Only track timing for chunks with actual text
-                        text_content = content_extractor(data)
-                        if text_content:
-                            # A response only counts as content-bearing once it
-                            # streams actual text or tool-call fragments.
-                            # Chunks that carry only a role or finish_reason,
-                            # or that put text in a delta field we don't model,
-                            # leave this False so the request is flagged rather
-                            # than recorded as a success with ttft=0 and no
-                            # tokens.
-                            has_content = True
-                            timestamp = time.perf_counter()
-                            # First token
-                            if ttft == 0.0:
-                                ttft = time.perf_counter() - st
-                                output.ttft = ttft
-
-                            # Decoding phase
-                            else:
-                                itl_value = timestamp - most_recent_timestamp
-                                output.itl.append(itl_value)
-                                tpot = _compute_chunk_tpot(
-                                    tokenizer, text_content, itl_value
-                                )
-                                if tpot is not None:
-                                    output.tpot.append(tpot)
-
-                            most_recent_timestamp = timestamp
-                            generated_text += text_content
-                    if not has_content:
-                        output.error = (
-                            "No text content captured from the response"
-                            " (choices were present but"
-                            " delta.reasoning/reasoning_content/content/"
-                            "tool_calls were all empty). The model may stream"
-                            " text in a field this client does not parse."
-                        )
-                        output.success = False
-                    else:
-                        output.generated_text = generated_text
-                        output.success = True
-                        output.latency = latency
-                else:
-                    output.error = response.reason or ""
-                    output.success = False
-
+                if response.status != 200:
+                    return recorder.fail(response.reason or "")
+                async for event in iter_events(response.content):
+                    result = recorder.on_event(event.data)
+                    if result is not None:
+                        return result
+                return recorder.finish()
         except Exception:
-            output.success = False
             exc_info = sys.exc_info()
-            output.error = "".join(traceback.format_exception(*exc_info))
-    return output
+            return recorder.fail("".join(traceback.format_exception(*exc_info)))
 
 
 class OpenAICompletionsRequestDriver(RequestDriver):
@@ -861,8 +942,7 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             payload=payload,
             headers=headers,
             prompt_len=request_func_input.prompt_len,
-            chunk_type=_CompletionChunk,
-            content_extractor=lambda data: data.choices[0].text,
+            chat=False,
             tokenizer=self.tokenizer,
         )
 
@@ -1049,8 +1129,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 payload=payload,
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
-                chunk_type=_ChatCompletionChunk,
-                content_extractor=_extract_chat_delta_text,
+                chat=True,
                 tokenizer=self.tokenizer,
             )
         output.tools_offered = "tools" in payload

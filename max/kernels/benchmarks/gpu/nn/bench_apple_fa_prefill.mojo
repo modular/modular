@@ -39,16 +39,13 @@ from max.gpu.host import DeviceContext
 from std.math import sqrt
 
 from layout import (
-    UNKNOWN_VALUE,
     Idx,
-    Layout,
-    LayoutTensor,
     TileTensor,
     row_major,
 )
 
 from nn.attention.mha_mask import CausalMask, NullMask, MHAMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.apple.fa_prefill import fa_prefill_apple
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
@@ -106,8 +103,8 @@ def _bench_prefill[
         v_d, row_major(batch, num_keys, Idx[kv_heads], Idx[depth])
     )
     var o_t = TileTensor(o_d, row_major(batch, seq, Idx[num_heads], Idx[depth]))
-    var k_op = LayoutTensorMHAOperand(k_t)
-    var v_op = LayoutTensorMHAOperand(v_t)
+    var k_op = TileTensorMHAOperand(k_t)
+    var v_op = TileTensorMHAOperand(v_t)
 
     # Dummy valid_length (dense path doesn't read it).
     var vl_d = ctx.enqueue_create_buffer[.uint32](batch + 1)

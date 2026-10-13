@@ -41,7 +41,12 @@ from std.random import random_float64, seed
 
 from max.gpu.host import DeviceContext
 from std.testing import assert_true
-from layout import TileTensor, Coord, Idx, DefaultEngine, row_major
+from layout import (
+    TileTensor,
+    Idx,
+    DefaultEngine,
+    row_major,
+)
 from linalg.matmul.gpu import _matmul_gpu
 
 comptime N = 128

@@ -29,7 +29,6 @@ from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
 from layout import (
     Coord,
-    Idx,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -453,8 +452,7 @@ def dispatch_im2col_matmul_conv3d[
         var c_ptr = output.ptr + _m_offset * N
         var c_tt = TileTensor(c_ptr, row_major(_m_count, N))
 
-        comptime if maybe_epilogue_func:
-            comptime epilogue_5d = maybe_epilogue_func.value()
+        comptime if case .Some(epilogue_5d) = maybe_epilogue_func:
 
             @__parameter
             @inline(.always)
@@ -464,9 +462,12 @@ def dispatch_im2col_matmul_conv3d[
                 _width: SIMDLength,
                 *,
                 alignment: Int = 1,
-            ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-                var full_m = _m_offset + coords_2d[0]
-                var n_idx = coords_2d[1]
+            ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+                comptime assert (
+                    coords_2d.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                var full_m = _m_offset + Int(coords_2d[0].value())
+                var n_idx = Int(coords_2d[1].value())
                 var batch_idx = full_m // DHW_out
                 var sp = full_m - batch_idx * DHW_out
                 var d_idx = sp // HW_out
@@ -474,7 +475,7 @@ def dispatch_im2col_matmul_conv3d[
                 var h_idx = rem2 // W_out
                 var w_idx = rem2 - h_idx * W_out
                 epilogue_5d(
-                    IndexList[5](batch_idx, d_idx, h_idx, w_idx, n_idx),
+                    (batch_idx, d_idx, h_idx, w_idx, n_idx),
                     rebind[SIMD[output_type, _width]](val),
                 )
 

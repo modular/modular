@@ -69,12 +69,7 @@
 # RUN: not %mojo-build --emit object -D EXPECT=error_default_accelerator_in_offload_mismatch --target-accelerator sm_90 %s -o %t 2>&1 | FileCheck %s --check-prefix=CHECK-MISMATCH
 
 from std.compile import compile_info
-from std.sys import (
-    get_defined_string,
-    has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import get_defined_string
 from std.sys.info import current_accelerator, default_accelerator
 from std._gpu.host.info import GPUInfo, TargetAccelerator, get_gpu_target
 
@@ -83,31 +78,34 @@ def main() raises:
     comptime expect = get_defined_string["EXPECT"]()
 
     comptime if expect == "amd" or expect == "amd_default_accelerator":
-        comptime assert has_amd_gpu_accelerator()
-        comptime assert not has_nvidia_gpu_accelerator()
-        comptime assert not has_apple_gpu_accelerator()
+        comptime assert default_accelerator().is_amd_gpu()
+        comptime assert not default_accelerator().is_nvidia_gpu()
+        comptime assert not default_accelerator().is_apple_gpu()
         comptime if expect == "amd_default_accelerator":
             comptime target = TargetAccelerator.default_accelerator
             comptime assert target.gpu_info == GPUInfo.default_accelerator()
     elif expect == "nvidia":
-        comptime assert has_nvidia_gpu_accelerator()
-        comptime assert not has_amd_gpu_accelerator()
-        comptime assert not has_apple_gpu_accelerator()
+        comptime assert default_accelerator().is_nvidia_gpu()
+        comptime assert not default_accelerator().is_amd_gpu()
+        comptime assert not default_accelerator().is_apple_gpu()
     elif expect == "apple":
-        comptime assert has_apple_gpu_accelerator()
-        comptime assert not has_amd_gpu_accelerator()
-        comptime assert not has_nvidia_gpu_accelerator()
+        comptime assert default_accelerator().is_apple_gpu()
+        comptime assert not default_accelerator().is_amd_gpu()
+        comptime assert not default_accelerator().is_nvidia_gpu()
     elif expect == "error_has_functions":
         # CHECK-INVALID-has_functions: GPU architecture 'wombat42' is not supported.
-        comptime assert not has_amd_gpu_accelerator()
-        comptime assert not has_nvidia_gpu_accelerator()
-        comptime assert not has_apple_gpu_accelerator()
+        comptime assert not default_accelerator().is_amd_gpu()
+        comptime assert not default_accelerator().is_nvidia_gpu()
+        comptime assert not default_accelerator().is_apple_gpu()
     elif expect == "error_gpu_info_from_name":
         # CHECK-INVALID-GPUInfo_from_name: GPU architecture 'wombat42' is not supported.
         comptime info = GPUInfo.from_name["wombat42"]()
         comptime assert info.name == "wombat42"
     elif expect == "error_default_accelerator":
         # CHECK-INVALID-default_accelerator: GPU architecture 'wombat42' is not supported.
+        # CHECK-INVALID-default_accelerator: Supported GPU architectures:
+        # CHECK-INVALID-default_accelerator: NVIDIA: sm_52 (Maxwell)
+        # CHECK-INVALID-default_accelerator: Apple: apple-m1 (M1), apple-m1-metal4 (M1 Metal4)
         # Force resolution of `.default_accelerator` to trigger error.
         comptime assert (
             TargetAccelerator.default_accelerator.gpu_info.name != ""
@@ -116,7 +114,8 @@ def main() raises:
         # CHECK-NON-ACCELERATOR: current_accelerator() requires an accelerator compilation target, but the current compilation target is '
         # CHECK-NON-ACCELERATOR-SAME: This function is only valid in code compiled for an accelerator
         # CHECK-NON-ACCELERATOR-SAME: use `default_accelerator()` instead.
-        _ = current_accelerator()
+        comptime value = current_accelerator().is_nvidia_gpu()
+        print(value)  # keep
     elif expect == "current_accelerator_in_offload":
 
         def _is_nvidia_in_offload() -> Bool:

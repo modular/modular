@@ -14,7 +14,7 @@
 """Provides batched matrix multiplication (BMM) for CPU and GPU targets."""
 
 from std.math import align_up, ceildiv, gcd
-from std.sys import align_of, size_of
+from std.sys import size_of
 from std.sys.info import (
     _has_blackwell_tcgen05,
     _is_amd_rdna,
@@ -22,19 +22,31 @@ from std.sys.info import (
     is_nvidia_gpu,
     simd_width_of,
 )
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
+from linalg.fp8_quantization import (
+    blockwise_scaled_fp8_with_epilogue,
+    naive_blockwise_scaled_fp8_matmul,
+)
+from linalg.matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
+    blockwise_fp8_mma_k,
+    blockwise_scaled_fp8_matmul_amd_tile as _blockwise_scaled_fp8_matmul_amd_tile,
+)
 from max.algorithm import elementwise, sync_parallelize
 from max.algorithm.functional import _get_start_indices_of_nth_subvolume
-from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
+from max.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    block_idx,
+    global_idx,
+)
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
+    coord,
     ComptimeInt,
     Coord,
     CoordLike,
     Idx,
-    IntTuple,
     TensorLayout,
     TileTensor,
     coord_to_index_list,
@@ -47,7 +59,7 @@ from std.memory import dealloc
 from std.memory.alloc import Alignment, Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from max.gpu.host.info import H100, _is_sm10x_gpu
+from max.gpu.host.info import H100, MI355X, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -84,13 +96,21 @@ comptime logger = Logger()
 comptime elementwise_epilogue_type = def[
     c_type: DType,
     width: SIMDLength,
-    rank: Int,
     *,
     alignment: Int = 1,
 ](
-    IndexList[rank],
+    Coord,
     SIMD[c_type, width],
 ) capturing -> None
+"""Fused elementwise epilogue over the ORIGINAL (uncollapsed) buffer rank.
+
+Batched matmul collapses the batch dims to run a 2-D kernel, so this does not
+receive the kernel's own coordinate -- unlike
+`linalg.utils.elementwise_epilogue_type`, which is always rank 2. The wrappers
+below un-collapse it back to the caller's own rank. The one exception is
+`_bmm_sm100_blockwise_scaled_fp8_kernel`, which rebuilds a rank-3
+`(batch, m, n)` coordinate and so accepts a rank-3 caller only.
+"""
 
 
 # Similar to _get_start_indices_of_nth_subvolume but returns only the batch
@@ -223,7 +243,7 @@ def _batched_matmul_cpu[
     c_tile: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a_tile: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b_tile: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
@@ -332,10 +352,6 @@ def _batched_matmul_cpu[
         var k,
         imm,
     }:
-        var a_stride_between_batches = a.num_elements() // Int(a.dim[0]())
-        var b_stride_between_batches = b.num_elements() // Int(b.dim[0]())
-        var c_stride_between_batches = c.num_elements() // Int(c.dim[0]())
-
         var batch_task_id, matmul_task_id = divmod(task_id, num_tasks_matmul)
 
         var num_batches = Int(c.dim[0]())
@@ -351,14 +367,8 @@ def _batched_matmul_cpu[
 
         for batch in range(batch_start, batch_start + batches_per_task):
             # Get a 2D view of the 3D Tensor.
-            var c_view = TileTensor(
-                c.ptr + batch * c_stride_between_batches,
-                row_major(Int(c.dim[1]()), Int(c.dim[2]())),
-            )
-            var a_view = TileTensor(
-                a.ptr + batch * a_stride_between_batches,
-                row_major(Int(a.dim[1]()), Int(a.dim[2]())),
-            )
+            var c_view = c[batch, :, :]
+            var a_view = a[batch, :, :]
 
             comptime config = get_kernel_config[a_type, b_type, c_type]()
             comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
@@ -367,10 +377,7 @@ def _batched_matmul_cpu[
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
 
-            var b_view = TileTensor(
-                b.ptr + batch * b_stride_between_batches,
-                row_major(Int(b.dim[1]()), Int(b.dim[2]())),
-            )
+            var b_view = b[batch, :, :]
 
             var batch_coords = _get_start_indices_of_nth_subvolume[2](
                 batch, c_shape
@@ -379,16 +386,18 @@ def _batched_matmul_cpu[
             @__parameter
             def elementwise_lambda_2d[
                 c_type: DType, width: SIMDLength, *, alignment: Int = 1
-            ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
+            ](out_coords: Coord, out_val: SIMD[c_type, width]):
+                comptime assert (
+                    out_coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 # the caller provided the elementwise epilogue def over the original
                 # buffer rank, not the collapsed buffer rank
                 # so un-collapse the batch dims here
-                comptime if elementwise_epilogue_fn:
-                    batch_coords[rank - 1] = out_coords[1]
-                    batch_coords[rank - 2] = out_coords[0]
+                comptime if case .Some(func) = elementwise_epilogue_fn:
+                    batch_coords[rank - 1] = Int(out_coords[1].value())
+                    batch_coords[rank - 2] = Int(out_coords[0].value())
 
-                    comptime func = elementwise_epilogue_fn.value()
-                    func[c_type, width, rank](batch_coords, out_val)
+                    func[c_type, width](Coord(batch_coords), out_val)
 
             var sub_matmul_config = get_partitioned_matmul[
                 a_type, b_type, c_type, config.kernel_rows, config.kernel_cols
@@ -524,14 +533,13 @@ def naive_batched_matmul_kernel[
         var b_val = b_tensor[z, x, ki] if transpose_b else b_tensor[z, ki, x]
         val += a_tensor[z, y, ki].cast[accum_type]() * b_val.cast[accum_type]()
 
-    comptime if elementwise_lambda_fn:
-        comptime elementwise_lambda = elementwise_lambda_fn.value()
+    comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
         var nd_corrds = _get_start_indices_of_nth_subvolume[2](
             z, c_buff_nd_shape
         )
         nd_corrds[rank - 1] = x
         nd_corrds[rank - 2] = y
-        elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
+        elementwise_lambda[c_type, 1](Coord(nd_corrds), val.cast[c_type]())
     else:
         c_tensor[z, y, x] = val.cast[c_type]()
 
@@ -626,15 +634,17 @@ def batched_matmul_kernel_gpu[
     @__parameter
     def elementwise_epilogue_fn_wrapper[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-        comptime if elementwise_lambda_fn:
-            comptime elementwise_epilogue = elementwise_lambda_fn.value()
+    ](out_coords: Coord, val: SIMD[dtype, width]) capturing -> None:
+        comptime assert (
+            out_coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        comptime if case .Some(elementwise_epilogue) = elementwise_lambda_fn:
             var nd_coords = _get_start_indices_of_nth_subvolume[2](
                 block_idx.z, c_buff_nd_shape
             )
-            nd_coords[rank - 1] = out_coords[1]
-            nd_coords[rank - 2] = out_coords[0]
-            elementwise_epilogue(nd_coords, val)
+            nd_coords[rank - 1] = Int(out_coords[1].value())
+            nd_coords[rank - 2] = Int(out_coords[0].value())
+            elementwise_epilogue(Coord(nd_coords), val)
 
     comptime if is_nvidia_gpu():
         multistage_gemm_kernel[
@@ -731,22 +741,22 @@ def _batched_matmul_gpu[
                 ),
             )
 
-            comptime if elementwise_epilogue_fn:
-                comptime elementwise_epilogue = elementwise_epilogue_fn.value()
+            comptime if case .Some(epilogue) = elementwise_epilogue_fn:
 
                 @__parameter
                 @__copy_capture(c_buf)
                 def elementwise_epilogue_fn_wrapper[
                     dtype: DType, width: SIMDLength, *, alignment: Int = 1
-                ](
-                    out_coords: IndexList[2], val: SIMD[dtype, width]
-                ) capturing -> None:
+                ](out_coords: Coord, val: SIMD[dtype, width]) capturing -> None:
+                    comptime assert (
+                        out_coords.rank == 2
+                    ), "the matmul epilogue contract is rank 2"
                     var batch_coords = IndexList[rank](0)
 
-                    batch_coords[rank - 1] = out_coords[1]
-                    batch_coords[rank - 2] = out_coords[0]
+                    batch_coords[rank - 1] = Int(out_coords[1].value())
+                    batch_coords[rank - 2] = Int(out_coords[0].value())
 
-                    elementwise_epilogue(batch_coords, val)
+                    epilogue(Coord(batch_coords), val)
 
                 _matmul_gpu[
                     transpose_b=transpose_b,
@@ -790,8 +800,7 @@ def _batched_matmul_gpu[
                 ctx,
             )
 
-            comptime if elementwise_epilogue_fn:
-                comptime epilogue = elementwise_epilogue_fn.value()
+            comptime if case .Some(epilogue) = elementwise_epilogue_fn:
                 # SM100+ supports 32B load/store to global memory.
                 comptime simd_size = 32 // size_of[c_type]()
 
@@ -808,7 +817,7 @@ def _batched_matmul_gpu[
                     )
                     nd_coords[rank - 1] = collapsed[2]
                     nd_coords[rank - 2] = collapsed[1]
-                    epilogue[alignment=alignment](nd_coords, c_val)
+                    epilogue[alignment=alignment](Coord(nd_coords), c_val)
 
                 elementwise[simd_size, target="gpu"](
                     epilogue_wrapper, Coord(batch_size, m, n), ctx
@@ -1016,6 +1025,7 @@ def batched_matmul[
         comptime assert is_valid_target[target](), "unsupported target"
 
         comptime if is_cpu[target]():
+            var cpu_ctx = DeviceContext._map_assert_cpu_target(context)
             _batched_matmul_cpu[
                 rank,
                 a_buf.dtype,
@@ -1024,7 +1034,7 @@ def batched_matmul[
                 transpose_b=transpose_b,
                 elementwise_epilogue_fn=elementwise_epilogue_fn,
                 saturated_vnni=saturated_vnni,
-            ](c_buf, a_buf, b_buf, ctx=context)
+            ](c_buf, a_buf, b_buf, ctx=cpu_ctx)
         else:
             comptime assert (
                 saturated_vnni == False
@@ -1102,15 +1112,12 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    a_scales_tile_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_tile_rank],
-    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -1121,12 +1128,11 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_scaling_block_n: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c_tensor: TileTensor[c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
         a_scales_type,
-        a_scales_tile_rank,
         a_scales_tile_shape,
         a_scales_desc_shape,
     ],
@@ -1162,13 +1168,14 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     @__parameter
     def elementwise_epilogue_fn_wrapper[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-        comptime if elementwise_lambda_fn:
-            comptime elementwise_epilogue = elementwise_lambda_fn.value()
-            var batch_coords = IndexList[3](block_idx.z)
-            batch_coords[2] = out_coords[1]
-            batch_coords[1] = out_coords[0]
-            elementwise_epilogue(batch_coords, val)
+    ](out_coords: Coord, val: SIMD[dtype, width]) capturing -> None:
+        comptime assert (
+            out_coords.rank == 2
+        ), "the matmul epilogue contract is rank 2"
+        comptime if case .Some(elementwise_epilogue) = elementwise_lambda_fn:
+            elementwise_epilogue(
+                (block_idx.z, out_coords[0], out_coords[1]), val
+            )
 
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         a_type,
@@ -1180,13 +1187,10 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         type_of(c_tt).LayoutType,
         a_scales_layout,
         type_of(b_scales_tt).LayoutType,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,
@@ -1345,13 +1349,13 @@ def bmm_sm100_blockwise_scaled_fp8[
     )
 
     var a_tma_op = create_tensor_tile[
-        Index(1, BM, BK),
+        coord[1, BM, BK],
         swizzle_mode=a_swizzle,
     ](ctx, a_)
 
-    comptime b_tile_shape = Index(1, BN, BK) if transpose_b else Index(
-        1, BK, BN
-    )
+    comptime b_m = BN if transpose_b else BK
+    comptime b_n = BK if transpose_b else BN
+    comptime b_tile_shape = coord[1, b_m, b_n]
 
     var b_tma_op = create_tensor_tile[
         b_tile_shape,
@@ -1359,8 +1363,8 @@ def bmm_sm100_blockwise_scaled_fp8[
     ](ctx, b_)
 
     var a_scales_tma_op = create_tensor_tile[
-        Index(1, 1, BM),
-        __desc_shape=Index(1, 1, BM),
+        coord[1, 1, BM],
+        __desc_shape=coord[1, 1, BM],
     ](ctx, a_scales_)
     # NOTE: desc shape must be specified otherwise a constraint fails
 
@@ -1380,13 +1384,10 @@ def bmm_sm100_blockwise_scaled_fp8[
         type_of(c_).LayoutType,
         type_of(a_scales_).LayoutType,
         type_of(b_scales_).LayoutType,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,
@@ -1415,6 +1416,494 @@ def bmm_sm100_blockwise_scaled_fp8[
     )
 
 
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32((BM // WM) * (BN // WN) * WARP_SIZE)
+    )
+)
+@__name(
+    t"blockwise_scaled_fp8_matmul_amd_batched_BM{BM}_BN{BN}_BK{BK}_WM{WM}_WN{WN}"
+)
+def blockwise_scaled_fp8_matmul_amd_batched_kernel[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    accum_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    a_scale_layout: TensorLayout,
+    b_scale_layout: TensorLayout,
+    *,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    MMA_K: Int,
+    N_SCALE: Int,
+    K_SCALE: Int,
+    N: Int,
+    K: Int,
+](
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_scales: TileTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
+):
+    """One launch for the whole batch of a blockwise-scaled FP8 dense matmul.
+
+    Mirrors the SM100 `_bmm_sm100_blockwise_scaled_fp8_kernel` structure on
+    AMD: `block_idx.z` selects the batch element, `block_idx.y` the M-tile,
+    `block_idx.x` the N-tile, so a batched ``[B, M, N]`` problem is one kernel
+    launch of grid ``(ceildiv(N,BN), ceildiv(M,BM), B)`` instead of ``B`` per-
+    batch launches. The per-tile MMA body is the existing dense body, reused by
+    calling `_blockwise_scaled_fp8_matmul_amd_tile` with per-batch 2D views.
+
+    `c`/`a` carry the compile-time trailing extent (``N``/``K``) into the tile
+    body as a static last dimension, so the tile body's `comptime N =
+    type_of(c).static_shape[1]` and `comptime K = type_of(a).static_shape[1]`
+    still bind. Rows and row strides stay runtime: the MLA absorb output is
+    a strided per-head slab into the latent, so the rank-3 strides are
+    preserved per-batch via `ptr_at_offset(Coord(batch, 0, 0))` (which respects
+    the rank-3 strides) and the 2D layout carries the row stride.
+    """
+    comptime assert accum_type == .float32
+    comptime assert (
+        MMA_M == 16 and MMA_N == 16
+    ), "scale-promotion fragment map assumes MFMA 16x16"
+    comptime assert (
+        BK % K_SCALE == 0
+    ), "a BK slab must hold whole K scale blocks"
+
+    comptime assert c.flat_rank == 3
+    comptime assert a.flat_rank == 3
+    comptime assert b.flat_rank == 3
+    comptime assert a_scales.flat_rank == 3
+    comptime assert b_scales.flat_rank == 3
+
+    var batch = Int(block_idx.z)
+    var m_block = Int(block_idx.y)
+    var n_block = Int(block_idx.x)
+
+    # M is uniform across batches in a batched GEMM; read once. Runtime
+    # trailing extents are host-asserted == the comptime N/K that tiling uses.
+    var M = Int(c.dim(1))
+    var N_rt = Int(c.dim(2))
+    var K_rt = Int(a.dim(2))
+    var M_a_scales = Int(a_scales.dim(2))
+    var N_blocks = ceildiv(N_rt, N_SCALE)
+    var K_blocks = ceildiv(K_rt, K_SCALE)
+
+    # Per-batch 2D views: `ptr_at_offset(Coord(batch,0,0))` respects the rank-3
+    # strides (strided per-head slab), keeping the row stride. c/a get a static
+    # trailing extent (binds the tile body's comptime N/K) and the static unit
+    # column stride the loader assumes (host-asserted).
+    var c_tt = TileTensor(
+        c.ptr_at_offset(Coord(batch, 0, 0)),
+        TileLayout(
+            Coord(Int64(M), Idx[N]),
+            Coord(Int64(Int(c.layout.stride[1]().value())), Idx[1]),
+        ),
+    )
+    var a_tt = TileTensor(
+        a.ptr_at_offset(Coord(batch, 0, 0)),
+        TileLayout(
+            Coord(Int64(M), Idx[K]),
+            Coord(Int64(Int(a.layout.stride[1]().value())), Idx[1]),
+        ),
+    )
+    var b_tt = TileTensor(
+        b.ptr_at_offset(Coord(batch, 0, 0)),
+        TileLayout(
+            Coord(b.layout.shape[1](), b.layout.shape[2]()),
+            Coord(b.layout.stride[1](), b.layout.stride[2]()),
+        ),
+    )
+    var a_scales_tt = TileTensor(
+        a_scales.ptr_at_offset(Coord(batch, 0, 0)),
+        TileLayout(
+            Coord(K_blocks, M_a_scales),
+            Coord(a_scales.layout.stride[1](), a_scales.layout.stride[2]()),
+        ),
+    )
+    var b_scales_tt = TileTensor(
+        b_scales.ptr_at_offset(Coord(batch, 0, 0)),
+        TileLayout(
+            Coord(N_blocks, K_blocks),
+            Coord(b_scales.layout.stride[1](), b_scales.layout.stride[2]()),
+        ),
+    )
+
+    _blockwise_scaled_fp8_matmul_amd_tile[
+        c_type,
+        a_type,
+        b_type,
+        a_scales_type,
+        b_scales_type,
+        accum_type,
+        type_of(c_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
+        type_of(a_scales_tt).LayoutType,
+        type_of(b_scales_tt).LayoutType,
+        type_of(c_tt).Engine,
+        type_of(a_tt).Engine,
+        type_of(b_tt).Engine,
+        type_of(a_scales_tt).Engine,
+        type_of(b_scales_tt).Engine,
+        BM=BM,
+        BN=BN,
+        BK=BK,
+        WM=WM,
+        WN=WN,
+        MMA_M=MMA_M,
+        MMA_N=MMA_N,
+        MMA_K=MMA_K,
+        N_SCALE=N_SCALE,
+        K_SCALE=K_SCALE,
+    ](
+        c_tt,
+        a_tt,
+        b_tt,
+        a_scales_tt,
+        b_scales_tt,
+        m_block,
+        n_block,
+        0,
+        Int(M),
+    )
+
+
+def blockwise_scaled_fp8_matmul_amd_batched[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    //,
+    *,
+    scales_granularity_mnk: IndexList[3],
+    transpose_b: Bool = False,
+](
+    c_: TileTensor[mut=True, c_type, ...],
+    a_: TileTensor[mut=False, a_type, ...],
+    b_: TileTensor[mut=False, b_type, ...],
+    a_scales_: TileTensor[mut=False, a_scales_type, ...],
+    b_scales_: TileTensor[mut=False, b_scales_type, ...],
+    ctx: DeviceContext,
+) raises -> Int:
+    """Enqueues ONE batched blockwise-scaled FP8 dense matmul for gfx950.
+
+    This is the batched counterpart of `blockwise_scaled_fp8_matmul_amd`: the
+    same tile config and the same per-tile body, but `grid.z = batch` issues
+    the whole ``[B, M, N]`` batch as a single dispatch.
+    Reachability is gated by the caller (`_batched_matmul_dynamic_scaled_fp8_
+    amd_tiled`), which mirrors `blockwise_scaled_fp8_with_epilogue`'s AMD gate
+    and falls back to the per-batch path for shapes this kernel cannot tile
+    (e.g. non-fp8 inputs or an unsupported output dtype).
+
+    Args:
+        c_: Rank-3 output ``[B, M, N]``, innermost column stride 1 (asserted).
+            The batch and row strides may be runtime -- the MLA absorb output
+            is a strided per-head slab -- and are preserved per-batch. An
+            e4m3 output is the unit-scale FP8 staging of the absorbed Q for
+            an FP8 latent cache: the fp32 accumulator is cast on store, the
+            same `.cast[c_type]()` the naive kernel does, so no epilogue.
+        a_: Rank-3 LHS ``[B, M, K]``, innermost stride 1, K the static trailing.
+        b_: Rank-3 RHS ``[B, N, K]``, `transpose_b`, innermost stride 1.
+        a_scales_: Rank-3 ``[B, ceildiv(K,K_SCALE), M]``.
+        b_scales_: Rank-3 ``[B, ceildiv(N,N_SCALE), ceildiv(K,K_SCALE)]``.
+        ctx: Device context.
+    """
+    comptime assert transpose_b, "transpose_b must be True"
+    comptime assert (
+        a_type == .float8_e4m3fn and b_type == .float8_e4m3fn
+    ), "tiled blockwise FP8 batched matmul supports only float8_e4m3fn inputs"
+    comptime assert (
+        a_scales_type == .float32 and b_scales_type == .float32
+    ), "tiled blockwise FP8 batched matmul supports only float32 scales"
+    comptime assert (
+        c_type == .bfloat16 or c_type == .float32 or c_type == .float8_e4m3fn
+    ), "tiled blockwise FP8 batched matmul supports only bf16/f32/e4m3 output"
+    comptime assert (
+        scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] == scales_granularity_mnk[2]
+        and scales_granularity_mnk[2] in (64, 128)
+    ), (
+        "tiled blockwise FP8 batched matmul supports only (1,64,64) and"
+        " (1,128,128) granularity"
+    )
+
+    comptime N_SCALE = scales_granularity_mnk[1]
+    comptime K_SCALE = scales_granularity_mnk[2]
+    comptime MMA_M = 16
+    comptime MMA_N = 16
+    comptime MMA_K = blockwise_fp8_mma_k[K_SCALE]()
+    # Mirror the dense AMD tile config: 1 warp/CTA at WM=WN=64 packs more CTAs
+    # per CU (overlaps K-slab barrier stalls), measured 23-48% faster than 128.
+    comptime BM = 64
+    comptime BN = 64
+    # One 128-wide DRAM->LDS slab at either granularity (two 64-K scale blocks
+    # per slab at 64), so the load path is identical for both.
+    comptime BK = 128
+    comptime WM = 64
+    comptime WN = 64
+    comptime accum_type = get_accum_type[c_type]()
+
+    comptime N = type_of(c_).static_shape[2]
+    comptime K = type_of(a_).static_shape[2]
+    comptime assert (
+        N > 0 and K > 0
+    ), "AMD tiled batched dispatch requires static trailing N (c) and K (a)"
+
+    # GENERIC address space, matching the kernel's parameter types.
+    var c = c_.address_space_cast[.GENERIC]()
+    var a = a_.address_space_cast[.GENERIC]()
+    var b = b_.address_space_cast[.GENERIC]()
+    var a_scales = a_scales_.address_space_cast[.GENERIC]()
+    var b_scales = b_scales_.address_space_cast[.GENERIC]()
+
+    var batch_size = Int(c.dim(0))
+    var M = Int(c.dim(1))
+    var N_rt = Int(c.dim(2))
+    var K_rt = Int(a.dim(2))
+
+    # The kernel bakes innermost column stride 1 and the tile body assumes a
+    # K-/N-contiguous tail; guard the runtime slices and extents satisfy that.
+    assert (
+        Int(c.layout.stride[2]().value()) == 1
+    ), "AMD tiled batched dispatch requires c innermost stride 1"
+    assert (
+        Int(a.layout.stride[2]().value()) == 1
+    ), "AMD tiled batched dispatch requires a innermost stride 1"
+    assert (
+        Int(b.layout.stride[2]().value()) == 1
+    ), "AMD tiled batched dispatch requires b innermost stride 1"
+    assert N_rt == N, "AMD tiled batched dispatch: runtime N != comptime N"
+    assert K_rt == K, "AMD tiled batched dispatch: runtime K != comptime K"
+
+    if batch_size == 0 or M == 0 or N == 0 or K == 0:
+        return 0
+
+    comptime kernel = blockwise_scaled_fp8_matmul_amd_batched_kernel[
+        c_type,
+        a_type,
+        b_type,
+        a_scales_type,
+        b_scales_type,
+        accum_type,
+        type_of(c).LayoutType,
+        type_of(a).LayoutType,
+        type_of(b).LayoutType,
+        type_of(a_scales).LayoutType,
+        type_of(b_scales).LayoutType,
+        BM=BM,
+        BN=BN,
+        BK=BK,
+        WM=WM,
+        WN=WN,
+        MMA_M=MMA_M,
+        MMA_N=MMA_N,
+        MMA_K=MMA_K,
+        N_SCALE=N_SCALE,
+        K_SCALE=K_SCALE,
+        N=N,
+        K=K,
+    ]
+
+    comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+    ctx.enqueue_function[kernel](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
+        block_dim=(num_threads, 1, 1),
+    )
+
+    # The whole batch is one kernel launch (grid.z = batch); that is the
+    # single dispatch this launcher returns for the test launch-count gate.
+    return 1
+
+
+@inline(.always)
+def _batched_matmul_dynamic_scaled_fp8_amd_tiled[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    //,
+    *,
+    scales_granularity_mnk: IndexList[3],
+    transpose_b: Bool = False,
+](
+    c_: TileTensor[mut=True, c_type, ...],
+    a_: TileTensor[mut=False, a_type, ...],
+    b_: TileTensor[mut=False, b_type, ...],
+    a_scales_: TileTensor[mut=False, a_scales_type, ...],
+    b_scales_: TileTensor[mut=False, b_scales_type, ...],
+    ctx: DeviceContext,
+) raises -> Int:
+    """
+    Per-batch AMD tiled blockwise scaled FP8 dispatch for the batched path.
+
+    Mirrors `batched_matmul_dynamic_scaled_fp8_naive`'s per-batch loop, but
+    surfaces each per-batch 2D slice as a TileTensor whose trailing extent
+    (N for the output `c_`, K for the inputs `a_`/`b_`) is a compile-time
+    `ComptimeInt`. That static trailing extent is exactly what the tiled
+    `blockwise_scaled_fp8_matmul_amd` kernel reads as a `comptime` parameter,
+    so routing the batched (rank-3) path through `blockwise_scaled_fp8_with_epilogue`
+    here is what makes the tiled AMD kernel reachable from the GLM-5.3 MLA
+    decode absorb GEMMs (which enter through `batched_matmul_dynamic_fp8`, not
+    the 2D `matmul_dynamic_scaled_fp8` path).
+
+    Rows and row strides stay runtime: the absorb output tile is a strided
+    per-head slab into the latent, so a general `Layout` (not `RowMajorLayout`)
+    is used, with only the innermost (column) stride pinned to 1 (host-asserted).
+    When `blockwise_scaled_fp8_with_epilogue`'s AMD gate does not hold -- e.g. K
+    not a multiple of 128 -- it falls back to the naive kernel internally, so
+    this never changes results for shapes it cannot tile.
+    """
+    comptime assert (
+        scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] in (64, 128)
+        and scales_granularity_mnk[2] in (64, 128)
+    ), "Only support (1,64,64) or (1,128,128) scale granularity."
+
+    comptime BLOCK_SCALE_N = scales_granularity_mnk[1]
+    comptime BLOCK_SCALE_K = scales_granularity_mnk[2]
+
+    # Static trailing extents feed the tile body's comptime N/K; the caller's
+    # `comptime if` gates reachability and this assert backstops it.
+    comptime N = type_of(c_).static_shape[2]
+    comptime K = type_of(a_).static_shape[2]
+    comptime assert (
+        N > 0 and K > 0
+    ), "AMD tiled batched dispatch requires static trailing N (c) and K (a)"
+
+    # AMD tile gate (a subset of `blockwise_scaled_fp8_with_epilogue`'s
+    # `amd_blockwise_tiled_ok`; the arch/epilogue terms already hold here).
+    # When it holds, one batched launch (`grid.z = batch`); otherwise fall
+    # through to the per-batch naive loop below (non-fp8 or unsupported output).
+    #
+    # e4m3 output is admitted: the store is a plain unit-scale `.cast[c_type]()`
+    # of the fp32 accumulator (as the naive kernel), so no epilogue is needed.
+    comptime _amd_tiled_ok = (
+        transpose_b
+        and a_type == .float8_e4m3fn
+        and b_type == .float8_e4m3fn
+        and a_scales_type == .float32
+        and b_scales_type == .float32
+        and (
+            c_type == .bfloat16
+            or c_type == .float32
+            or c_type == .float8_e4m3fn
+        )
+        and scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] == scales_granularity_mnk[2]
+        and scales_granularity_mnk[2] in (64, 128)
+    )
+    comptime if _amd_tiled_ok:
+        # One launch for the whole batch -- return its single dispatch count.
+        return blockwise_scaled_fp8_matmul_amd_batched[
+            scales_granularity_mnk=scales_granularity_mnk,
+            transpose_b=transpose_b,
+        ](c_, a_, b_, a_scales_, b_scales_, ctx)
+
+    # ---- per-batch fallback for shapes the AMD tiled kernel cannot tile -----
+
+    # Require GENERIC address space, matching the tiled/naive kernels.
+    var c = c_.address_space_cast[.GENERIC]()
+    var a = a_.address_space_cast[.GENERIC]()
+    var b = b_.address_space_cast[.GENERIC]()
+    var a_scales = a_scales_.address_space_cast[.GENERIC]()
+    var b_scales = b_scales_.address_space_cast[.GENERIC]()
+
+    comptime assert c.flat_rank == 3
+    comptime assert a.flat_rank == 3
+    comptime assert b.flat_rank == 3
+    comptime assert a_scales.flat_rank == 3
+    comptime assert b_scales.flat_rank == 3
+
+    var B = Int(c.dim(0))
+    var M = Int(c.dim(1))
+    var N_rt = Int(c.dim(2))
+    var K_rt = Int(a.dim(2))
+    var M_a_scales = Int(a_scales.dim(2))
+
+    # The per-batch views pin column stride to static 1 and the loader assumes
+    # a contiguous tail; these asserts guard the runtime slices/extents match.
+    assert (
+        Int(c.layout.stride[2]().value()) == 1
+    ), "AMD tiled batched dispatch requires c innermost stride 1"
+    assert (
+        Int(a.layout.stride[2]().value()) == 1
+    ), "AMD tiled batched dispatch requires a innermost stride 1"
+    assert (
+        Int(b.layout.stride[2]().value()) == 1
+    ), "AMD tiled batched dispatch requires b innermost stride 1"
+    assert N_rt == N, "AMD tiled batched dispatch: runtime N != comptime N"
+    assert K_rt == K, "AMD tiled batched dispatch: runtime K != comptime K"
+
+    var c_row_stride = Int64(Int(c.layout.stride[1]().value()))
+    var a_row_stride = Int64(Int(a.layout.stride[1]().value()))
+
+    # Each iteration enqueues one kernel, so the fallback issues exactly ``B``
+    # dispatches; returned so the launch-count gate can tell it from the ``1``.
+    var dispatches = 0
+    for batch in range(B):
+        # Per-batch 2D views (strides preserved from the rank-3 tile); c/a bind
+        # comptime N/K, b and scales keep the source layout's static parts.
+        var c_tt = TileTensor(
+            c.ptr_at_offset(Coord(batch, 0, 0)),
+            TileLayout(Coord(Int64(M), Idx[N]), Coord(c_row_stride, Idx[1])),
+        )
+        var a_tt = TileTensor(
+            a.ptr_at_offset(Coord(batch, 0, 0)),
+            TileLayout(Coord(Int64(M), Idx[K]), Coord(a_row_stride, Idx[1])),
+        )
+        var b_tt = TileTensor(
+            b.ptr_at_offset(Coord(batch, 0, 0)),
+            TileLayout(
+                Coord(b.layout.shape[1](), b.layout.shape[2]()),
+                Coord(b.layout.stride[1](), b.layout.stride[2]()),
+            ),
+        )
+        var a_scales_tt = TileTensor(
+            a_scales.ptr_at_offset(Coord(batch, 0, 0)),
+            TileLayout(
+                Coord(ceildiv(K_rt, BLOCK_SCALE_K), M_a_scales),
+                Coord(a_scales.layout.stride[1](), a_scales.layout.stride[2]()),
+            ),
+        )
+        var b_scales_tt = TileTensor(
+            b_scales.ptr_at_offset(Coord(batch, 0, 0)),
+            TileLayout(
+                Coord(
+                    ceildiv(N_rt, BLOCK_SCALE_N), ceildiv(K_rt, BLOCK_SCALE_K)
+                ),
+                Coord(b_scales.layout.stride[1](), b_scales.layout.stride[2]()),
+            ),
+        )
+
+        # `blockwise_scaled_fp8_with_epilogue` picks tiled or naive.
+        blockwise_scaled_fp8_with_epilogue[
+            transpose_b=transpose_b,
+            scales_granularity_mnk=scales_granularity_mnk,
+        ](c_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx)
+        dispatches += 1
+
+    return dispatches
+
+
 def batched_matmul_dynamic_scaled_fp8_naive[
     c_type: DType,
     a_type: DType,
@@ -1432,7 +1921,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     a_scales: TileTensor[mut=False, a_scales_type, ...],
     b_scales: TileTensor[mut=False, b_scales_type, ...],
     ctx: DeviceContext,
-) raises:
+) raises -> Int:
     """
     Computes a batched blockwise scaled FP8 matrix multiplication using a
     naive per-batch loop that calls the 2D blockwise scaled FP8 kernel for
@@ -1445,7 +1934,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         a_scales_type: LHS scales tensor element dtype.
         b_scales_type: RHS scales tensor element dtype.
         scales_granularity_mnk: Scale granularity `(m, n, k)`; only
-            `(1, 128, 128)` is currently supported.
+            `(1, 64, 64)` and `(1, 128, 128)` are currently supported.
         transpose_b: Whether the RHS input is transposed.
 
     Args:
@@ -1458,23 +1947,28 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     """
     comptime assert (
         scales_granularity_mnk[0] == 1
-        and scales_granularity_mnk[1] == scales_granularity_mnk[2] == 128
-    ), "Only support (1,128,128) scale granularity. Extend it for other cases."
+        and scales_granularity_mnk[1] in (64, 128)
+        and scales_granularity_mnk[2] in (64, 128)
+    ), "Only support (1,64,64) or (1,128,128) scale granularity."
     comptime assert c.flat_rank == 3
     comptime assert a.flat_rank == 3
     comptime assert b.flat_rank == 3
     comptime assert a_scales.flat_rank == 3
     comptime assert b_scales.flat_rank == 3
 
-    comptime BLOCK_SCALE_K = 128
+    comptime BLOCK_SCALE_N = scales_granularity_mnk[1]
+    comptime BLOCK_SCALE_K = scales_granularity_mnk[2]
 
     var B = c.dim(0)
 
+    # One naive dispatch per iteration -> ``B`` total; returned for the
+    # launch-count gate.
+    var dispatches = 0
     for batch in range(B):
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+            scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
         ](
             c[batch, :, :].address_space_cast[.GENERIC](),
             a[batch, :, :].address_space_cast[.GENERIC](),
@@ -1483,6 +1977,9 @@ def batched_matmul_dynamic_scaled_fp8_naive[
             b_scales[batch, :, :].address_space_cast[.GENERIC](),
             ctx,
         )
+        dispatches += 1
+
+    return dispatches
 
 
 def batched_matmul_dynamic_scaled_fp8[
@@ -1512,6 +2009,10 @@ def batched_matmul_dynamic_scaled_fp8[
     SM100 blockwise kernel on Blackwell hardware or falls back to the naive
     per-batch implementation on H100.
 
+    Returns nothing. The private `_impl` this delegates to returns the
+    host-side dispatch count, which the AMD tiled-batched test gates on to
+    prove the per-batch launch loop collapsed into one launch.
+
     Parameters:
         c_type: Output tensor element dtype.
         a_type: LHS input tensor element dtype.
@@ -1536,10 +2037,51 @@ def batched_matmul_dynamic_scaled_fp8[
         b_scales: Rank-3 RHS scales tensor.
         ctx: Device context used to dispatch the kernel.
     """
+    # Dispatch lives in `_impl` (which also returns the launch count) so the
+    # test can call it directly; the public entry omits the count callers ignore.
+    _ = _batched_matmul_dynamic_scaled_fp8_impl[
+        input_scale_granularity=input_scale_granularity,
+        weight_scale_granularity=weight_scale_granularity,
+        m_scale_granularity=m_scale_granularity,
+        n_scale_granularity=n_scale_granularity,
+        k_scale_granularity=k_scale_granularity,
+        transpose_b=transpose_b,
+        target=target,
+    ](c, a, b, a_scales, b_scales, ctx)
+
+
+def _batched_matmul_dynamic_scaled_fp8_impl[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    //,
+    input_scale_granularity: StaticString,
+    weight_scale_granularity: StaticString,
+    m_scale_granularity: Int,
+    n_scale_granularity: Int,
+    k_scale_granularity: Int,
+    transpose_b: Bool = False,
+    target: StaticString = "cpu",
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    a_scales: TileTensor[mut=False, a_scales_type, ...],
+    b_scales: TileTensor[mut=False, b_scales_type, ...],
+    ctx: DeviceContext,
+) raises -> Int:
+    """Test-only mirror that exposes the number of host-side dispatches.
+
+    Kept out of the public API so production call sites are not forced to
+    discard a return value. Only the AMD tiled-batched test imports this.
+    """
     comptime assert (
         _is_sm10x_gpu(ctx.default_device_info)
         or ctx.default_device_info == H100
-    ), "Only support SM100 or SM90"
+        or ctx.target.is_amd_gpu()
+    ), "Only support SM100, SM90, or AMD GPUs"
     comptime assert (
         m_scale_granularity == 1
         and k_scale_granularity in (64, 128)
@@ -1581,6 +2123,19 @@ def batched_matmul_dynamic_scaled_fp8[
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             b_scaling_block_n=n_scale_granularity,
+        ](c, a, b, a_scales, b_scales, ctx)
+        return 1
+
+    elif (
+        ctx.default_device_info == MI355X
+        and type_of(c).static_shape[2] > 0
+        and type_of(a).static_shape[2] > 0
+    ):
+        return _batched_matmul_dynamic_scaled_fp8_amd_tiled[
+            scales_granularity_mnk=Index(
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+            transpose_b=transpose_b,
         ](
             c,
             a,
@@ -1589,9 +2144,8 @@ def batched_matmul_dynamic_scaled_fp8[
             b_scales,
             ctx,
         )
-
     else:
-        batched_matmul_dynamic_scaled_fp8_naive[
+        return batched_matmul_dynamic_scaled_fp8_naive[
             scales_granularity_mnk=Index(
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),

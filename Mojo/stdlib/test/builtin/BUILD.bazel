@@ -34,6 +34,7 @@ _FILECHECK_TESTS = [
 _LIT_TESTS = [
     "test_bool_indexer_compile_fail.mojo",
     "test_debug_assert_no_message_codegen.mojo",
+    "test_default_defaultable_compile_fail.mojo",
     "test_default_equatable_compile_fail.mojo",
     "test_default_hashable_compile_fail.mojo",
     "test_default_writable_compile_fail.mojo",
@@ -44,6 +45,7 @@ _LIT_TESTS = [
     "test_print_long_string.mojo",
     "test_print_stderr.mojo",
     "test_simd_pow_compile_fail.mojo",
+    "test_simd_to_endian_compile_fail.mojo",
     "test_stdin.mojo",
 ]
 

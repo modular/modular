@@ -11,11 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.runtime._asyncrt import (
-    create_raising_task,
-    create_task,
-    _create_task,
-)
+from std.runtime._asyncrt import create_raising_task, create_task
 
 from std.testing import assert_equal, TestSuite
 

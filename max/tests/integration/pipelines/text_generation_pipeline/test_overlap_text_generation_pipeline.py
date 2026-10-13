@@ -27,7 +27,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.context import FUTURE_TOKEN
-from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
+from max.pipelines.kv_cache.paged_kv_cache._common import (
     _compute_seq_len,
 )
 from max.pipelines.lib import (
@@ -52,6 +52,7 @@ from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationInputs,
 )
+from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
 from max.support.math import ceildiv
 
 
@@ -252,6 +253,8 @@ def test_warmup_graph_capture_batch_size(
     pipeline._kv_manager.effective_max_seq_length = 100 * 128
     pipeline._spec_decode_state = None
     pipeline._kv_manager.num_caches = 1
+    pipeline._graph_capture_runner = None
+    assert not pipeline.graph_capture_ready
 
     with patch(
         "max.pipelines.lib.pipeline_variants.overlap_text_generation"
@@ -261,6 +264,8 @@ def test_warmup_graph_capture_batch_size(
         mock_runner_instance.warmup_pre_ready = MagicMock()
 
         pipeline.warmup_graph_capture()
+
+        assert pipeline.graph_capture_ready
 
         call_kwargs = MockRunner.call_args.kwargs
         assert call_kwargs["model"] is mock_model.model
@@ -298,7 +303,9 @@ def test_warmup_graph_capture_passes_the_table_up_to_the_capture_cap() -> None:
     pipeline._kv_manager.num_caches = 1
     pipeline._spec_decode_state = MagicMock()
     pipeline._spec_decode_state.num_speculative_tokens = 3
-    pipeline._widths_by_batch_size = [[3], [3], [1, 3], [1, 3]]
+    pipeline._spec_width_policy = SpecWidthPolicy(
+        num_speculative_tokens=3, by_batch_size=[0, 3, 1, 1]
+    )
 
     module = "max.pipelines.lib.pipeline_variants.overlap_text_generation"
     with (
@@ -308,7 +315,7 @@ def test_warmup_graph_capture_passes_the_table_up_to_the_capture_cap() -> None:
         pipeline.warmup_graph_capture()
 
     call_kwargs = MockRunner.call_args.kwargs
-    assert call_kwargs["widths_by_batch_size"] == [[3], [3], [1, 3]]
+    assert call_kwargs["widths_by_batch_size"] == [[3], [3], [1]]
 
 
 def _make_effective_cache_length_pipeline(

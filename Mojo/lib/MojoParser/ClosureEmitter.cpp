@@ -1590,10 +1590,10 @@ static FailureOr<ASTType> getDeviceType(ASTType hostType, ASTDecl &scope,
   if (aliasDecls.empty())
     return failure();
 
-  auto aliasOp =
-      dyn_cast_or_null<AliasDeclOp>(aliasDecls.front()->getIfOperation());
-  if (!aliasOp || !aliasOp.getType())
+  auto *aliasDecl = dyn_cast<AliasASTDecl>(aliasDecls.front());
+  if (!aliasDecl || !aliasDecl->getOp().getType())
     return failure();
+  AliasDeclOp aliasOp = aliasDecl->getOp();
 
   MLIRContext *ctx = shared.getContext();
   auto traitSymbol = TraitSymbolAttr::get(devicePassableDecl->getSymbolRef());
@@ -1863,19 +1863,11 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
                                                      /*isMut=*/false);
       argConvention = ArgConvention::ImmMem;
       break;
-    case CaptureConvention::kConventionMove: {
-      TypeConvention passability = ASTType(fieldType).getRegisterPassability(
-          nestedFnDecl.getLoc(), shared);
-      if (passability == TypeConvention::RegisterPassableTrivial) {
-        argType = fieldType;
-        argConvention = ArgConvention::OwnedReg;
-      } else {
-        argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
-                                                       /*isMut=*/true);
-        argConvention = ArgConvention::OwnedMem;
-      }
+    case CaptureConvention::kConventionMove:
+      argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
+                                                     /*isMut=*/true);
+      argConvention = ArgConvention::OwnedMem;
       break;
-    }
     }
 
     initArgumentTypes.push_back(argType);
@@ -1893,13 +1885,16 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   argNames.push_back(StringAttr::get(ctx, "self"));
   argPassingKinds.push_back(PassingKind::Implicit);
 
+  // The initializer only stores the captures; it never accesses memory through
+  // them. Mark it `@__unsafe_nested_origins_read_only` so that closure can
+  // capture the same origin multiple times.
   builder.setInsertionPointToEnd(&structOp.getFields().front());
   auto [initFnOp, initDecl] = synthesizeFunction(
       structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
       argConventions, PogListAttr::get(ctx, argNames, argPassingKinds),
       NoneType::get(ctx), SpecialFunctionKind::kInit, smLoc, builder,
       /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
-      InlineLevel::Automatic);
+      InlineLevel::Automatic, /*isNestedOriginsReadOnly=*/true);
 
   // Generate the constructor body.
   if (initFnOp) {
@@ -1945,9 +1940,6 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
         break;
       case ArgConvention::OwnedMem:
         argValue = MRValue(arg);
-        break;
-      case ArgConvention::OwnedReg:
-        argValue = SRValue(arg);
         break;
       default:
         llvm_unreachable("unexpected argument convention for a value capture");
@@ -2056,14 +2048,29 @@ static TypeConvention meetCaptureConvention(TypeConvention lhs,
 }
 
 static TypeConvention typeConventionOf(SharedState &shared,
-                                       LIT::StructType structType) {
+                                       LIT::StructType structType,
+                                       ASTDecl &nestedFnDecl) {
   ASTDecl &structDecl =
       shared.declResolver->getDeclForTypeSymbol(structType.getSymbol());
   StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
-  return structDeclOp.isRegisterPassableTrivial()
-             ? TypeConvention::RegisterPassableTrivial
-         : structDeclOp.isRegisterPassable() ? TypeConvention::RegisterPassable
-                                             : TypeConvention::MemoryOnly;
+  if (structDeclOp.isRegisterPassableTrivial())
+    return TypeConvention::RegisterPassableTrivial;
+  if (structDeclOp.isRegisterPassable())
+    return TypeConvention::RegisterPassable;
+
+  // A conditional `RegisterPassable` conformance (e.g. `Tuple`'s) leaves the
+  // declaration MemoryOnly, but this capture is a particular instantiation:
+  // prove the conformance against its parameter bindings and the capturing
+  // scope's `conforms_to` assumptions, as `isMovable`/`isCopyable` do.
+  if (structDeclOp.getRegisterPassableConstraintAttr()) {
+    SmallVector<ConstraintAttr> assumptions =
+        ASTDecl::getAssumptionsFromScope(&nestedFnDecl);
+    if (ASTType(structType)
+            .provenConformsToBuiltinTrait(
+                "RegisterPassable", nestedFnDecl.getLoc(), shared, assumptions))
+      return TypeConvention::RegisterPassable;
+  }
+  return TypeConvention::MemoryOnly;
 }
 
 static TypeConvention typeConventionOf(SharedState &shared, ParamType paramType,
@@ -2185,7 +2192,8 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
         captureTypeAttr = TypeParamAttr::get(mlirType, anyType);
 
       if (auto structType = sugarDynCast<StructType>(mlirType)) {
-        updateCaptureConvention(typeConventionOf(shared, structType));
+        updateCaptureConvention(
+            typeConventionOf(shared, structType, nestedFnDecl));
       } else if (sugarIsa<TraitType>(mlirType)) {
         shared.emitError(nestedFnDecl.getLoc(),
                          "cannot capture a value of trait type yet because "
@@ -2805,7 +2813,7 @@ static AliasDeclOp getDeviceTypeAlias(SharedState &shared, llvm::SMLoc loc) {
       StringAttr::get(shared.getContext(), kDeviceType));
   assert(aliasDecls.size() == 1 &&
          "DevicePassable trait should define one device_type alias");
-  return cast<AliasDeclOp>(aliasDecls.front()->getIfOperation());
+  return cast<AliasASTDecl>(aliasDecls.front())->getOp();
 }
 
 void ClosureEmitter::addConformanceToDevicePassable(

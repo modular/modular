@@ -2,7 +2,7 @@
 
 // `LowerLIT` captures a stable snapshot of the source signature in the
 // `sourceFuncTypeGenerator` attribute, wrapped in a `TypeParamAttr`
-// (`#kgen.type<...>`) so `LowerLITTypes` lowers it in the value domain. Its POG
+// (`#kgen.type<...>`) so its type lowering takes it in the value domain. Its POG
 // metadata is stripped along with the live signature's, but the parameter and
 // argument/result types are preserved. `-verify-parameters` running in the
 // pipeline confirms the snapshot verifies.
@@ -27,7 +27,7 @@ lit.fn @param_gen<w: index>(%arg0: !kgen.simd<w, f32>) -> !kgen.simd<w, f32> {
 
 // -----
 
-// Lit-level types inside the snapshot are lowered by `LowerLITTypes`: the
+// Lit-level types inside the snapshot are lowered by `LowerLIT` too: the
 // `!lit.ref` argument becomes a `!kgen.pointer` inside the snapshot's body type.
 // CHECK-LABEL: kgen.generator @ref_arg
 // CHECK-SAME:    sourceFuncTypeGenerator = #kgen.type<(!kgen.pointer<index>) -> ()> : !kgen.type

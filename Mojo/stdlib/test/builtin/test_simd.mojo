@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import size_of
-from std.sys.info import CompilationTarget, Endian, is_64bit
+from std.sys.info import Endian, is_64bit
 
 from std.bit import count_leading_zeros
 from std.memory import alloc, dealloc, ThinAllocation, Layout
@@ -2330,6 +2330,82 @@ def test_vector_from_bytes_as_bytes() raises:
         True, True, False, True, False, True, True, True
     )
     assert_equal(v8_bool, SIMD[.bool, 8].from_bytes(v8_bool.as_bytes()))
+
+
+def test_to_endian() raises:
+    # Literal expected bytes, so the checks hold on a target of either order.
+    var big = UInt16(0x1234).to_endian[.big]().as_bytes()
+    assert_equal(big[0], 0x12)
+    assert_equal(big[1], 0x34)
+    var little = UInt16(0x1234).to_endian[.little]().as_bytes()
+    assert_equal(little[0], 0x34)
+    assert_equal(little[1], 0x12)
+
+    # Each element is encoded separately, in element order.
+    var vector = SIMD[.uint32, 2](0x01020304, 0x05060708).to_endian[.big]()
+    var vector_bytes = vector.as_bytes()
+    for i in range(8):
+        assert_equal(vector_bytes[i], UInt8(i + 1))
+
+    assert_equal(Int32(0x01020304).to_endian[.native()](), 0x01020304)
+    assert_equal(UInt8(0xAB).to_endian[.big](), 0xAB)
+    assert_equal(UInt8(0xAB).to_endian[.little](), 0xAB)
+
+    def matches_as_bytes[endian: Endian, dtype: DType](x: Scalar[dtype]) raises:
+        var via_to_endian = x.to_endian[endian]().as_bytes()
+        var via_as_bytes = x.as_bytes[endian=endian]()
+        for i in range(size_of[Scalar[dtype]]()):
+            assert_equal(via_to_endian[i], via_as_bytes[i])
+
+    def matches_as_bytes_in_every_order[dtype: DType](x: Scalar[dtype]) raises:
+        matches_as_bytes[.native()](x)
+        matches_as_bytes[.big](x)
+        matches_as_bytes[.little](x)
+
+    matches_as_bytes_in_every_order(Int16(-2))
+    matches_as_bytes_in_every_order(UInt16(0xBEEF))
+    matches_as_bytes_in_every_order(Int32(-123456789))
+    matches_as_bytes_in_every_order(UInt32(0xDEADBEEF))
+    matches_as_bytes_in_every_order(Int64(-0x0102030405060708))
+    matches_as_bytes_in_every_order(UInt64(0x0102030405060708))
+
+
+def test_from_endian() raises:
+    # Bytes as they arrive off the wire, read into a native value first.
+    assert_equal(
+        UInt16.from_endian[.big](UInt16.from_bytes([0x1F, 0x90])), 8080
+    )
+    assert_equal(
+        UInt16.from_endian[.little](UInt16.from_bytes([0x90, 0x1F])), 8080
+    )
+    assert_equal(
+        Int32.from_endian[.big](Int32.from_bytes([0xFF, 0xFF, 0xFF, 0xFE])),
+        -2,
+    )
+
+    def roundtrip[endian: Endian, dtype: DType](x: Scalar[dtype]) raises:
+        assert_equal(
+            Scalar[dtype].from_endian[endian](x.to_endian[endian]()), x
+        )
+
+    def roundtrip_in_every_order[dtype: DType](x: Scalar[dtype]) raises:
+        roundtrip[.native()](x)
+        roundtrip[.big](x)
+        roundtrip[.little](x)
+
+    roundtrip_in_every_order(UInt8(0x7F))
+    roundtrip_in_every_order(Int16(-1000))
+    roundtrip_in_every_order(UInt32(0x12345678))
+    roundtrip_in_every_order(Int64(-0x0102030405060708))
+
+    var vector = SIMD[.int64, 4](1, -2, 3, -4)
+    assert_equal(
+        SIMD[.int64, 4].from_endian[.big](vector.to_endian[.big]()), vector
+    )
+    assert_equal(
+        SIMD[.int64, 4].from_endian[.little](vector.to_endian[.little]()),
+        vector,
+    )
 
 
 def test_native_endian_is_target_order() raises:

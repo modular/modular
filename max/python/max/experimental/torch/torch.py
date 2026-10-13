@@ -18,7 +18,7 @@ from __future__ import annotations
 import inspect
 import itertools
 import threading
-from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent import futures
 from functools import partial
 from pathlib import Path
@@ -218,8 +218,6 @@ class CustomOpLibrary:
 
 ParametersDict = Mapping[str, bool | int | str | DType]
 ParameterKey = tuple[str, bool | int | str | DType]
-
-CompiledModelKey = tuple[Hashable, ...]
 
 
 class CustomOp:

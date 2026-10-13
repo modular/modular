@@ -1443,7 +1443,7 @@ struct FA4Config[
         # - mma must wait for each P stage barrier before processing
         self.num_pv_stages = 2
 
-        var smem_use = 4
+        var smem_use = 0
         # Compute misc_mbars fixed size (barriers that don't scale with num_kv_stages):
         # - S consumers: 2 * num_pv_stages (num_pv_stages per warp group)
         # - S producers: 2 (1 per warp group)
@@ -1502,8 +1502,8 @@ struct FA4Config[
         # `num_q` or `BM` (the correction store is indexed by CTA-wide `tid`,
         # not by `BM`). A `BM`-derived size only happens to be right at
         # BM==128/256; for the warp-specialized MMA_M=32 path (BM=32) it would
-        # under-reserve and the trailing mbar / tmem_addr regions overflow
-        # into unmapped __shared__ on init.
+        # under-reserve and the trailing mbar region overflows into unmapped
+        # __shared__ on init.
         smem_use += (
             2
             * WARPGROUP_SIZE

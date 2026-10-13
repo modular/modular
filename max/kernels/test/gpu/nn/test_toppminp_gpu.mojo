@@ -20,7 +20,6 @@ from std.benchmark import Bench, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Coord,
     DefaultEngine,
     TileTensor,
     row_major,

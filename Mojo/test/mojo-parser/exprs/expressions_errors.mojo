@@ -137,6 +137,11 @@ def test_var_decl_patterns(cond: Bool):
 
   y = (var 42) # expected-error {{'var' patterns are only valid on the left side of an assignment}}
 
+
+def test_value_pattern_expression(value: Int):
+  _ = ==value # expected-error {{prefix '==' is only valid in a pattern}}
+
+
 import std.builtin
 def test_member_access() raises:
     # MOCO-2006: This crashed because it was trying to synthesize the vardecl in
@@ -388,6 +393,7 @@ def no_unused_values_in_def() raises:
   var bcd = *_
 
   _ = *x # expected-error {{can't use starred expression here}}
+  _ = [*x] # expected-error {{can't use starred expression here}}
 
 # expected-note @+1 {{function declared here}}
 def func_with_static_param[x: Int]() -> Int:
@@ -474,9 +480,21 @@ def tuple_pattern(a: Int) raises:
   # expected-error @+1 {{cannot unpack value of type 'Int' into 2 values}}
   (b, c) = a
 
-def list_pattern():
-  # expected-error @+1 {{'Int' value has no attribute '__len__'}}
+struct LengthOnly(Sized):
+  def __len__(self) -> Int:
+    return 1
+
+
+def list_pattern(value: LengthOnly) raises:
+  # expected-error @+1 {{'LengthOnly' value has no attribute '__getitem__'}}
+  [_] = value
+  # expected-error @+1 {{value of type 'Int' does not conform to 'Sized'}}
   [_] = 4
+
+
+def multiple_starred_list_pattern(value: List[Int]) raises:
+  # expected-error @+1 {{multiple starred expressions in list pattern}}
+  [*a, *b] = value
 
 
 # Issue https://github.com/modular/mojo/issues/1917
@@ -900,6 +918,105 @@ def transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNon
   # DLValue.
   # expected-error @+1 {{expression does not designate a value with an origin}}
   _ = vararg[1]^
+
+struct HoldsMem(Movable):
+  var field: CopyAndInitMemType
+  def __init__(out self): self.field = CopyAndInitMemType()
+  def peek_self(self): pass
+  def peek_ref_self(ref self): pass
+
+struct ConvertsFromMem(Movable):
+  @implicit
+  def __init__(out self, var other: CopyAndInitMemType): pass
+
+struct BorrowsFromMem(Movable):
+  @implicit
+  def __init__(out self, imm src: CopyAndInitMemType): pass
+
+def take_imm(imm_arg: CopyAndInitMemType): pass
+def take_ref(ref ref_arg: CopyAndInitMemType): pass
+def take_var(var var_arg: CopyAndInitMemType): pass
+def take_imm_int(int_arg: Int): pass
+def take_imm_variadic(*elts: CopyAndInitMemType): pass
+def take_imm_converted(converted: ConvertsFromMem): pass
+def take_imm_borrow_converted(converted: BorrowsFromMem): pass
+
+comptime MemAlias = CopyAndInitMemType
+
+# Transfers into borrowed arguments leave the value alive.
+def transfer_into_borrowed_args():
+  var a = CopyAndInitMemType()
+  take_imm(a^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var b = CopyAndInitMemType()
+  take_ref(b^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var c = CopyAndInitMemType()
+  take_imm((c^)) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var d = CopyAndInitMemType()
+  take_imm_variadic(d^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var e = HoldsMem()
+  take_imm(e.field^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var f = HoldsMem()
+  f^.peek_self() # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var g = HoldsMem()
+  g^.peek_ref_self() # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  # Parentheses around the transfer don't hide it.
+  var k = CopyAndInitMemType()
+  take_imm(((k^))) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var l = CopyAndInitMemType()
+  take_ref((l^)) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var m = HoldsMem()
+  (m^).peek_self() # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var n = HoldsMem()
+  (n^).peek_ref_self() # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  # Matching the alias's sugar to the argument type isn't a conversion.
+  var o: MemAlias = CopyAndInitMemType()
+  take_imm(o^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  # The existing "has no effect" warnings are not duplicated.
+  take_imm(CopyAndInitMemType()^) # expected-warning {{transfer from an owned value has no effect and can be removed}}
+  var someInt = 4
+  take_imm_int(someInt^) # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
+  take_imm_borrow_converted(CopyAndInitMemType()^) # expected-warning {{transfer from an owned value has no effect and can be removed}}
+
+  # These consume the value, so they don't warn.
+  var h = CopyAndInitMemType()
+  take_var(h^)
+
+  # `i` is moved due to the implicit conversion to `ConvertsFromMem`, so this shouldn't warn.
+  var i = CopyAndInitMemType()
+  take_imm_converted(i^)
+
+  # The implicit conversion only borrows `j`, so the transfer has no effect.
+  # The warning names the argument at the call site, not the conversion's.
+  var j = CopyAndInitMemType()
+  take_imm_borrow_converted(j^) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+# Transfers outside of call arguments that only borrow the value.
+def transfer_into_borrows() raises:
+  var a = HoldsMem()
+  take_imm(a^.field) # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var b = HoldsMem()
+  _ = b^.field # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var c = (CopyAndInitMemType(), CopyAndInitMemType())
+  var x: CopyAndInitMemType
+  var y: CopyAndInitMemType
+  x, y = c^ # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
+
+  var d: List[CopyAndInitMemType] = [CopyAndInitMemType(), CopyAndInitMemType()]
+  [x, y] = d^ # expected-warning {{this value is borrowed here, so the transfer has no effect and can be removed}}
 
 # Issue #1708: https://github.com/modular/mojo/issues/1708
 # Issue #1699: https://github.com/modular/mojo/issues/1699
@@ -1349,7 +1466,7 @@ struct Color(ImplicitlyCopyable):
   def __init__(out self):
     pass
 
-def takes_color(c: Color):  # expected-note {{function declared here}}
+def takes_color(c: Color):
   pass
 
 def takes_colors(colors: List[Color]):
@@ -1388,7 +1505,6 @@ def test_inferred_attribute_ref():
   var wrong: Color = .size
 
   # expected-error @below {{cannot implicitly convert 'Int' value to 'Color'}}
-  # expected-error @below {{invalid call to 'takes_color': cannot resolve inferred attribute reference}}
   takes_color(.size)
 
 def test_dtype_error_message():

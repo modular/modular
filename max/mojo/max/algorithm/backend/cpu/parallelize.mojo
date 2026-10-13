@@ -32,7 +32,7 @@ from max.gpu.host import DeviceContext
 @inline(.always)
 def sync_parallelize[
     FuncType: def(Int) raises -> None,
-](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
+](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext.CPU] = None):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
 
@@ -74,7 +74,7 @@ def sync_parallelize[
         return
 
     try:
-        var cpu_ctx = ctx.or_else(DeviceContext(api="cpu"))
+        var cpu_ctx = ctx.or_else(DeviceContext.cpu())
         cpu_ctx.enqueue_cpu_range(func_wrapped, count=num_work_items)
         cpu_ctx.synchronize()
     except e:
@@ -84,7 +84,7 @@ def sync_parallelize[
 @inline(.always)
 def parallelize[
     FuncType: def(Int) -> None,
-](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
+](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext.CPU] = None):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
 
@@ -106,7 +106,7 @@ def parallelize[
     func: FuncType,
     num_work_items: Int,
     num_workers: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Executes func(0) ... func(num_work_items-1) as sub-tasks in parallel, and
     returns when all are complete.
@@ -130,7 +130,7 @@ def _parallelize_impl[
     func: FuncType,
     num_work_items: Int,
     num_workers: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Distributes work items across workers by coalescing consecutive items
     into chunks and executing them in parallel via `sync_parallelize`.
@@ -172,7 +172,7 @@ def _parallelize_impl[
 def _get_num_workers(
     problem_size: Int,
     grain_size: Int = 32768,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) -> Int:
     """Returns a number of workers to run in parallel for given problem_size,
     accounting for the available worker threads of the current runtime.
@@ -204,7 +204,7 @@ def parallelize_over_rows[
     shape: IndexList,
     axis: Int,
     grain_size: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Parallelize func over non-axis dims of shape.
 

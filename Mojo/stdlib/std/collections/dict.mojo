@@ -49,7 +49,6 @@ from std.memory.alloc import Layout
 
 from ._swisstable import (
     CTRL_DELETED,
-    CTRL_EMPTY,
     INITIAL_CAPACITY,
     SwissTable,
     SwissTableEntry,

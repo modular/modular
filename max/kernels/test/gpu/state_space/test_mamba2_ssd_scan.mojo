@@ -30,11 +30,7 @@ from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
 )
-from std.sys import (
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-    size_of,
-)
+from std.sys import size_of
 from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
 
@@ -684,9 +680,7 @@ def test_mamba2_ssd_dstate_split() raises:
     split targets and a DSTATE=16 tiling.
     """
     with DeviceContext() as ctx:
-        comptime if not (
-            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
-        ):
+        comptime if not (ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()):
             return
         run_mamba2_ssd[.bfloat16, 128, 2](
             nheads=96,
@@ -743,9 +737,7 @@ def test_mamba2_ssd_dstate_split_strided_with_initial_state() raises:
     """Nemotron-3.5-Lightning shapes: a seeded initial state, and x/B/C as
     strided column slices, for batch-64 decode and a short ragged prefill."""
     with DeviceContext() as ctx:
-        comptime if not (
-            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
-        ):
+        comptime if not (ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()):
             return
         run_mamba2_ssd[.bfloat16, 128, 8, init_state=True](
             nheads=64,
@@ -771,9 +763,7 @@ def test_mamba2_ssd_dstate_split_chunk_boundaries() raises:
     """Sequences around the staged chunk size (8 tokens) that mix full chunks
     with a scalar tail, with and without an initial state."""
     with DeviceContext() as ctx:
-        comptime if not (
-            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
-        ):
+        comptime if not (ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()):
             return
         run_mamba2_ssd[.bfloat16, 128, 8, init_state=True](
             nheads=64,
@@ -805,9 +795,7 @@ def test_mamba2_ssd_dstate_split_chunk_boundaries() raises:
 def test_mamba2_ssd_no_D_no_bias() raises:
     """Empty D and dt_bias drop their terms."""
     with DeviceContext() as ctx:
-        comptime if not (
-            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
-        ):
+        comptime if not (ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()):
             return
         run_mamba2_ssd[.bfloat16, 16, 8, has_D=False, has_dt_bias=False](
             nheads=8,
@@ -882,7 +870,7 @@ def test_mamba2_ssd_bf16_state() raises:
             seq_lengths=Index(64, 33),
             ctx=ctx,
         )
-        comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu():
             run_mamba2_ssd[
                 .bfloat16, 128, 8, state_dtype=.bfloat16, init_state=True
             ](

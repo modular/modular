@@ -17,13 +17,10 @@ from std.math import ceildiv
 from std.memory import bitcast
 from std.random import rand
 from std.sys.intrinsics import llvm_intrinsic
-from std.utils import IndexList
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     CoordLike,
-    Layout,
     TileTensor,
     Idx,
     row_major,

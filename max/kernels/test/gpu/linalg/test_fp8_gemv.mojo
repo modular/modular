@@ -38,7 +38,7 @@ from std.random import random_float64, random_si64, seed
 from std.utils import IndexList
 from max.gpu.host import DeviceContext, HostBuffer
 
-from layout import TileTensor
+from layout import Coord, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
@@ -186,9 +186,12 @@ def _run_fp8_matmul_epilogue(
     @inline(.always)
     def epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var epi_ptr, var N}:
+    ](idx: Coord, val: SIMD[dtype, width]) {var epi_ptr, var N}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var out = val.cast[.float32]() * 2 + 1
-        epi_ptr.unsafe_store[width=width](idx[0] * N + idx[1], out)
+        epi_ptr.unsafe_store[width=width](
+            Int(idx[0].value()) * N + Int(idx[1].value()), out
+        )
 
     enqueue_apple_fp8_matmul[c_type=.float32](out_tt, act_tt, weight_tt, ctx)
     enqueue_apple_fp8_matmul[c_type=.float32, has_epilogue_fn=True](

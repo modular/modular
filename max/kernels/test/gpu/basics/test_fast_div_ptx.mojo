@@ -25,7 +25,8 @@ def contains_fastdiv_div_sequence(asm: String, width: Int = 32) raises -> Bool:
     var w = String(width)
     var fastdiv_pattern = String(
         r"ld\.global\.b" + w + r"\s+[^;]+;\s*"
-        r"mov\.b" + w + r"\s+[^;]+;\s*"
+        # The magic constant may be folded into `mul.hi` as an immediate.
+        r"(?:mov\.b" + w + r"\s+[^;]+;\s*)?"
         r"mul\.hi\.u" + w + r"\s+[^;]+;\s*"
         r"sub\.s" + w + r"\s+[^;]+;\s*"
         r"shr\.u" + w + r"\s+[^;]+;\s*"

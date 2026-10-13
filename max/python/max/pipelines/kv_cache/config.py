@@ -23,6 +23,7 @@ from max.config import ConfigFileModel
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
+    HostStagingAlloc,
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
@@ -39,12 +40,34 @@ from pydantic import ConfigDict, Field, PrivateAttr
 if TYPE_CHECKING:
     from max.pipelines.modeling.config_enums import SupportedEncoding
 
-# KV-cache dtype by explicit `kv_cache_format` override.
+# KV-cache dtype by explicit `kv_cache_format` override. FP4 (NVFP4) is
+# stored as packed uint8; an architecture opts in by also giving its cache
+# params NVFP4 scales. Kernels reject a uint8 cache that arrives without them.
 _KV_CACHE_FORMAT_TO_DTYPE: dict[str, DType] = {
     "float32": DType.float32,
     "bfloat16": DType.bfloat16,
     "float8_e4m3fn": DType.float8_e4m3fn,
+    "float4_e2m1fn": DType.uint8,
+    "float4_e2m1": DType.uint8,
 }
+
+
+def is_fp4_kv_cache_format(kv_cache_format: str | None) -> bool:
+    """Returns whether ``kv_cache_format`` names the NVFP4 KV cache format.
+
+    Args:
+        kv_cache_format: A ``kv_cache_format`` or ``indexer_kv_cache_format``
+            value, or ``None``.
+
+    Returns:
+        ``True`` for ``float4_e2m1fn`` and its alias ``float4_e2m1``.
+    """
+    return (
+        kv_cache_format is not None
+        and _KV_CACHE_FORMAT_TO_DTYPE.get(kv_cache_format.lower())
+        == DType.uint8
+    )
+
 
 # Default KV-cache dtype for each quantization encoding. Quantized weight
 # formats keep the cache in a compute dtype (bf16/f32) rather than the weight
@@ -87,7 +110,8 @@ def cache_dtype_for_encoding(
         if dtype is None:
             raise ValueError(
                 f"Unrecognized kv_cache_format override: '{kv_cache_format}'. "
-                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
+                "Supported values are 'float32', 'bfloat16', 'float8_e4m3fn',"
+                " and 'float4_e2m1fn'."
             )
         return dtype
     if not quantization_encoding:
@@ -135,6 +159,44 @@ class KVConnectorConfig(ConfigFileModel):
     """Maximum host memory in GiB for KV cache offloading. ``None`` sizes it to
     1.5 times the device page pool."""
 
+    host_staging_alloc: HostStagingAlloc = Field(
+        default="registered",
+        description=(
+            "How the tiered connector allocates its pinned host staging "
+            "region. ``registered`` maps ordinary host memory and registers it "
+            "with the GPU. ``driver`` allocates it from the GPU driver in "
+            "chunks, so kernel memory compaction cannot migrate it; on AMD "
+            "this also needs ``HSA_USERPTR_FOR_PAGED_MEM=0`` in the "
+            "environment."
+        ),
+    )
+    """How the tiered connector allocates its pinned host staging region.
+
+    ``registered`` (the default) maps ordinary anonymous host memory and
+    registers it with the GPU. Those pages stay movable, so when the kernel
+    compacts memory it can migrate them, and on AMD each migration evicts the
+    process's GPU queues until the registration is revalidated.
+
+    ``driver`` allocates the region as pinned host memory from the GPU driver,
+    in chunks of whole huge blocks. On AMD the HIP runtime still backs such
+    allocations with movable user pages unless ``HSA_USERPTR_FOR_PAGED_MEM=0``
+    is set before it initializes; with it set they are driver-owned and count
+    against the driver's system memory limit, which every process on the node
+    shares. Only the tiered connectors (``rust_tiered`` / ``mojo_tiered``) read
+    this.
+    """
+
+    host_staging_mlock: bool = Field(
+        default=False,
+        description=(
+            "``mlock`` the registered host staging region. Only protects it "
+            "from compaction when the node sets "
+            "vm.compact_unevictable_allowed=0. Not allowed with "
+            "host_staging_alloc='driver'."
+        ),
+    )
+    """Whether the registered host staging region is locked with ``mlock``."""
+
     disk_offload_dir: str | None = Field(
         default=None,
         description=(
@@ -172,6 +234,30 @@ class KVConnectorConfig(ConfigFileModel):
         ),
     )
     """Number of disk I/O worker threads for the tiered connectors."""
+
+    num_h2d_onload_lanes: int = Field(
+        default=1,
+        gt=0,
+        description=(
+            "Number of concurrent host-to-device KV onload copies for the "
+            "rust_tiered connector. Each lane owns an H2D aux stream and "
+            "does one memcpy+sync at a time. 1 is the historical single-copy "
+            "FIFO. 2 overlaps two host-hit onloads so they do not queue on "
+            "one copy."
+        ),
+    )
+    """Concurrent H2D onload lanes for the rust_tiered connector."""
+    use_disk_direct_io: bool = Field(
+        default=False,
+        description=(
+            "Open the disk cache files with O_DIRECT so offload bypasses the "
+            "page cache. There is no buffered fallback: startup fails if "
+            "direct I/O does not work. Requires 4096-byte-aligned leaf "
+            "blocks and is incompatible with host_staging_alloc='driver' on "
+            "AMD."
+        ),
+    )
+    """Whether the disk tier's reads and writes bypass the page cache (O_DIRECT)."""
 
     block_store_endpoint: str | None = Field(
         default=None,
@@ -251,7 +337,13 @@ class KVCacheConfig(ConfigFileModel):
         default=None,
         description=(
             "Override the default data type for the KV cache. "
-            "Supported values: ``float32``, ``bfloat16``, ``float8_e4m3fn``."
+            "Supported values: ``float32``, ``bfloat16``, ``float8_e4m3fn``, "
+            "``float4_e2m1fn`` (alias ``float4_e2m1``). ``float4_e2m1fn`` "
+            "is NVFP4: two E2M1 values per byte with an E4M3 scale per 16 "
+            "values. It is supported only by architectures that implement "
+            "it (MiniMax-M3 sparse attention on NVIDIA SM100), and there it "
+            "also puts the indexer cache in NVFP4 unless "
+            "``indexer_kv_cache_format`` says otherwise."
         ),
     )
     """An override for the default data type of the KV cache."""
@@ -261,11 +353,14 @@ class KVCacheConfig(ConfigFileModel):
         description=(
             "Override the MiniMax sparse-indexer (IndexK) cache dtype, "
             "independent of ``kv_cache_format``. "
-            "Supported values: ``bfloat16``, ``float8_e4m3fn``. "
-            "``None`` (default) keeps IndexK in bfloat16 so "
-            "``--kv-cache-format=float8_e4m3fn`` still means main GQA FP8 "
-            "plus indexer BF16. Ignored by architectures without an "
-            "indexer cache. FP8 IndexK is scale-free and AMD-only."
+            "Supported values: ``bfloat16``, ``float8_e4m3fn``, "
+            "``float4_e2m1fn`` (alias ``float4_e2m1``). ``None`` (default) "
+            "follows the main cache when it is ``float4_e2m1fn`` and is "
+            "bfloat16 otherwise, so ``--kv-cache-format=float8_e4m3fn`` "
+            "still means main GQA FP8 plus indexer BF16. Ignored by "
+            "architectures without an indexer cache. FP8 IndexK is "
+            "scale-free and AMD-only. FP4 IndexK is NVIDIA SM100-only and "
+            "needs ``--kv-cache-format=float4_e2m1fn``."
         ),
     )
     """Independent IndexK cache dtype for MiniMax sparse attention."""
@@ -290,10 +385,10 @@ class KVCacheConfig(ConfigFileModel):
         description=(
             "Hash algorithm used for KV-cache block identity. "
             "``ahash64`` (default) is fast and non-cryptographic; "
-            "``sha256`` is a cryptographic 256-bit hasher; both support "
-            "an optional seed/salt for prefix-cache isolation. "
-            "``sha256_64`` truncates the SHA-256 chain to 64 bits for "
-            "protocol compatibility."
+            "``sha256`` is a cryptographic 256-bit hasher (the dKV "
+            "external tier keys blocks by the first 64 bits of the "
+            "digest); both support an optional seed/salt for "
+            "prefix-cache isolation."
         ),
     )
     """Hash algorithm used for KV-cache block identity."""
@@ -302,8 +397,8 @@ class KVCacheConfig(ConfigFileModel):
         default=None,
         description=(
             "Optional 64-character hex string (32 bytes), a cluster-wide "
-            "seed for kv_cache_hash_algo. If omitted, sha256/sha256_64 "
-            "generate a random seed at startup; ahash64 does not, so "
+            "seed for kv_cache_hash_algo. If omitted, sha256 "
+            "generates a random seed at startup; ahash64 does not, so "
             "existing deployments are unaffected unless set explicitly."
         ),
     )

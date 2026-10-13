@@ -414,7 +414,7 @@ struct ClusterShape(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .SHAPE_AUTO:
                 writer.write_string("SHAPE_AUTO")
             case .SHAPE_1x1x1:
@@ -670,7 +670,7 @@ struct MatmulAlgorithmCapability(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .SPLITK_SUPPORT:
                 writer.write_string("SPLITK_SUPPORT")
             case .REDUCTION_SCHEME_MASK:
@@ -763,7 +763,7 @@ struct PointerMode(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .HOST:
                 writer.write_string("HOST")
             case .DEVICE:
@@ -922,7 +922,7 @@ struct Search(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .BEST_FIT:
                 writer.write_string("BEST_FIT")
             case .LIMITED_BY_ALGO_ID:
@@ -984,7 +984,7 @@ struct ReductionScheme(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .NONE:
                 writer.write_string("NONE")
             case .INPLACE:
@@ -1416,7 +1416,7 @@ struct cublasLtMatmulDescAttributes_t(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .CUBLASLT_MATMUL_DESC_COMPUTE_TYPE:
                 writer.write_string("CUBLASLT_MATMUL_DESC_COMPUTE_TYPE")
             case .CUBLASLT_MATMUL_DESC_SCALE_TYPE:
@@ -1846,7 +1846,7 @@ struct Preference(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .SEARCH_MODE:
                 writer.write_string("SEARCH_MODE")
             case .MAX_WORKSPACE_BYTES:
@@ -1961,7 +1961,7 @@ struct AlgorithmConfig(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .ID:
                 writer.write_string("ID")
             case .TILE_ID:
@@ -2090,7 +2090,7 @@ struct InnerShape(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .UNDEFINED:
                 writer.write_string("UNDEFINED")
             case .MMA884:
@@ -2156,7 +2156,7 @@ struct cublasLtMatmulMatrixScale_t(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .MATRIX_SCALE_SCALAR_32F:
                 writer.write_string("MATRIX_SCALE_SCALAR_32F")
             case .MATRIX_SCALE_VEC16_UE4M3:
@@ -2300,7 +2300,7 @@ struct LayoutAttribute(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .TYPE:
                 writer.write_string("TYPE")
             case .ORDER:
@@ -2492,7 +2492,7 @@ struct Stages(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .STAGES_UNDEFINED:
                 writer.write_string("STAGES_UNDEFINED")
             case .STAGES_16x1:
@@ -2795,7 +2795,7 @@ struct Epilogue(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .DEFAULT:
                 writer.write_string("DEFAULT")
             case .RELU:
@@ -2892,7 +2892,7 @@ struct PointerModeMask(TrivialRegisterPassable, Writable):
         return not (self == other)
 
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .HOST:
                 writer.write_string("HOST")
             case .DEVICE:
@@ -3594,7 +3594,7 @@ struct Tile(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .TILE_UNDEFINED:
                 writer.write_string("TILE_UNDEFINED")
             case .TILE_8x8:
@@ -3954,7 +3954,7 @@ struct TransformDescriptor(TrivialRegisterPassable, Writable):
 
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
-        __match self:
+        match self:
             case .SCALE_TYPE:
                 writer.write_string("SCALE_TYPE")
             case .POINTER_MODE:

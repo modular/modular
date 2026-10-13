@@ -144,12 +144,6 @@ def run_kv_cache_2m_iadd(
         devices=[device_ref],
     )
 
-    # The cache starts zeroed, which iadd needs since it adds to what is
-    # already there.
-    kv_runtime_inputs = paged_kv_cache_inputs(
-        kv_params, prompt_lens, total_num_pages=16
-    )
-
     kv_symbolic_inputs = kv_params.flattened_kv_inputs()
 
     with Graph(
@@ -179,6 +173,13 @@ def run_kv_cache_2m_iadd(
         graph.output(ops.constant(0, DType.int32, device=DeviceRef.CPU()))
 
     compiled = session.load(graph)
+
+    # Allocated after the load: a precompile record run compiles the graph in
+    # a CPU build action and stops at the first device allocation. The cache
+    # starts zeroed, which iadd needs since it adds to what is already there.
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=16
+    )
 
     # Prepare inputs
     input_row_offsets = np.array(

@@ -12,70 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Implements tensor math operations."""
 
-import std.math
-
 import max.algorithm.reduction as reduction
 from std.math.math import max as b_max
 from std.sys import align_of
 from layout import (
     Coord,
+    DefaultEngine,
     Idx,
-    IntTuple,
-    Layout,
-    LayoutTensor,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
     stack_allocation,
 )
-
-
-@inline(.always)
-def outer_product_acc(
-    res: LayoutTensor[mut=True, ...],
-    lhs: LayoutTensor,
-    rhs: LayoutTensor,
-):
-    """Updates result tensor with the outer product of two vectors.
-
-    Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
-    `res` is a matrix.
-
-    Args:
-        res: The result matrix to accumulate into, shape (M, N).
-        lhs: The left-hand side vector, shape (M,).
-        rhs: The right-hand side vector, shape (N,).
-
-    Constraints:
-
-        All tensors must have statically known shapes.
-        `res` must be rank 2.
-        `lhs` and `rhs` must be rank 1.
-        `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
-    """
-
-    comptime assert (
-        res.layout.known_shape()
-        and lhs.layout.known_shape()
-        and rhs.layout.known_shape()
-    ), "outer_product_acc expects inputs with statically known shapes"
-    comptime assert res.rank == 2, "Only rank 2 res is allowed."
-    comptime assert lhs.rank == 1, "Only rank 1 lhs is allowed."
-    comptime assert rhs.rank == 1, "Only rank 1 rhs is allowed."
-
-    comptime dtype = res.dtype
-
-    comptime M = res.shape[0]()
-    comptime N = res.shape[1]()
-
-    comptime assert lhs.shape[0]() == M, "lhs shape mismatch"
-    comptime assert rhs.shape[0]() == N, "rhs shape mismatch"
-
-    comptime for i in range(M):
-        comptime for j in range(N):
-            res[i, j] += rebind[res.element_type](
-                lhs[i].cast[dtype]()
-            ) * rebind[res.element_type](rhs[j].cast[dtype]())
 
 
 @inline(.always)
@@ -129,275 +76,61 @@ def outer_product_acc(
 
 
 @inline(.always)
-def _reduce[
-    axis: Int,
-    init_func: def[dtype: DType, width: Int]() thin -> SIMD[dtype, width],
-    func: def[dtype: DType, width: SIMDLength](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) thin -> (SIMD[dtype, width]),
-](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
-    comptime assert (
-        inp.layout.known_shape() and outp.layout.known_shape()
-    ), "_reduce expects inputs with statically know shapes"
-    comptime assert (
-        inp.rank - 1 == outp.rank
-    ), "_reduce expects output of rank = inp.rank - 1"
-
-    comptime for dim in range(axis):
-        comptime if dim != axis:
-            comptime assert dim != UNKNOWN_VALUE
-            comptime assert (
-                inp.shape[dim]() == outp.shape[dim]()
-            ), "_reduce expects none reduction dims to be the same"
-
-    comptime for dim in range(axis + 1, inp.rank):
-        comptime if dim != axis:
-            comptime assert dim != UNKNOWN_VALUE
-            comptime assert (dim - 1) != UNKNOWN_VALUE
-            comptime assert (
-                inp.shape[dim]() == outp.shape[dim - 1]()
-            ), "_reduce expects none reduction dims to be the same"
-
-    # TODO(KERN-777): We need to relax this constraine.
-    comptime assert inp.rank == 2, "Only rank-2 _reduce is supported"
-
-    comptime if inp.rank == 2 and axis == 1:
-        comptime for i in range(inp.shape[0]()):
-            var reduce_val = init_func[outp.dtype, outp.element_size]()
-
-            comptime for j in range(inp.shape[1]()):
-                reduce_val = func(
-                    reduce_val,
-                    rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
-                )
-
-            outp[i] = reduce_val
-
-    elif inp.rank == 2 and axis == 0:
-        comptime for j in range(inp.shape[1]()):
-            var reduce_val = init_func[outp.dtype, outp.element_size]()
-
-            comptime for i in range(inp.shape[0]()):
-                reduce_val = func(
-                    reduce_val,
-                    rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
-                )
-
-            outp[j] = reduce_val
-
-
-@inline(.always)
-def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
-    """Computes sum reduction along specified axis.
-
-    Reduces the input tensor by summing elements along the specified axis
-    and stores the result in the output tensor.
-
-    Parameters:
-        axis: The axis to sum along.
-
-    Args:
-        inp: The input tensor to sum.
-        outp: The output tensor to store sum results.
-
-    Constraints:
-        All tensors must have statically known shapes.
-        `outp.rank` must equal `inp.rank - 1`.
-        Non-reduction dimensions must match between inp and outp.
-        Currently only supports rank-2 inputs.
-
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    from layout.math import sum
-
-    data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
-    tensor = LayoutTensor[.int32, Layout.row_major(2, 3)](data)
-    print(tensor)
-    print("-----")
-    print(sum[0](tensor))
-    ```
-
-    Output:
-
-    ```plaintext
-    0 1 2
-    3 4 5
-    -----
-    3 5 7
-    ```
-    """
-
-    def sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
-        return 0
-
-    def sum_func[
-        dtype: DType, width: SIMDLength
-    ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return a + b
-
-    _reduce[axis, sum_init, sum_func](inp, outp)
-
-
-@inline(.always)
-def max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
-    """Computes maximum reduction along specified axis.
-
-    Reduces the input tensor by taking maximum elements along the specified
-    axis and stores the result in the output tensor.
-
-    Parameters:
-        axis: The axis to take maximum along.
-
-    Args:
-        inp: The input tensor to reduce.
-        outp: The output tensor to store maximum results.
-
-    Constraints:
-        All tensors must have statically known shapes.
-        `outp.rank` must equal `inp.rank - 1`.
-        Non-reduction dimensions must match between `inp` and `outp`.
-        Currently only supports rank-2 inputs.
-    """
-
-    def max_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
-        return SIMD[dtype, width].MIN
-
-    def max_func[
-        dtype: DType, width: SIMDLength
-    ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        return b_max(a, b)
-
-    _reduce[axis, max_init, max_func](inp, outp)
-
-
-def _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
-    var res_shape = IntTuple()
-    for dim in range(0, axis):
-        res_shape.append(Int(in_layout.shape[dim]))
-    for dim in range(axis + 1, in_layout.rank()):
-        res_shape.append(Int(in_layout.shape[dim]))
-    return Layout.row_major(res_shape)
-
-
-@inline(.always)
-def max[
-    axis: Int
-](
-    inp: LayoutTensor,
-    out res: LayoutTensor[
-        inp.dtype,
-        _reduce_res_row_major_shape(axis, inp.layout),
-        MutAnyOrigin,
-        address_space=inp.address_space,
-        element_layout=inp.element_layout,
-        layout_int_type=inp.layout_int_type,
-        linear_idx_type=inp.linear_idx_type,
+def max(
+    x: TileTensor,
+    y: TileTensor[x.dtype, x.LayoutType, ...],
+    out result: TileTensor[
+        x.dtype,
+        x.LayoutType,
+        MutUntrackedOrigin,
+        Engine=DefaultEngine[element_width=x.element_size],
+        address_space=x.address_space,
     ],
 ):
-    """Computes maximum reduction along specified axis, returning a new tensor.
-
-    Reduces the input tensor by taking maximum elements along the specified
-    axis and returns a new tensor with the results.
-
-    Parameters:
-        axis: The axis to take maximum along.
-
-    Args:
-        inp: The input tensor to reduce.
-
-    Returns:
-        A new tensor containing the maximum values along the specified axis.
-
-    Constraints:
-        All tensors must have statically known shapes.
-        Result will have rank equal to `inp.rank` - 1.
-        Non-reduction dimensions in the result match the input.
-        Currently only supports rank-2 inputs.
-    """
-
-    var res_tensor = type_of(res).stack_allocation()
-    max[axis](inp, res_tensor)
-    return res_tensor
-
-
-@inline(.always)
-def max[
-    dtype: DType, layout: Layout
-](
-    x: LayoutTensor[dtype, layout, ...], y: LayoutTensor[dtype, layout, ...]
-) -> type_of(x).MutableAnyType:
-    """Computes element-wise maximum of two tensors.
-
-    Returns a new tensor containing the element-wise maximum between the
-    input tensors.
-
-    Parameters:
-        dtype: The data type of the input tensors.
-        layout: The layout of the input tensors.
+    """Computes element-wise maxima into a new tensor with the input layout.
 
     Args:
         x: First input tensor.
-        y: Second input tensor.
+        y: Second input tensor with the same dtype, layout, and element width.
 
     Returns:
-        A new tensor containing the element-wise maximum.
+        An independently allocated tensor with the input layout and SIMD width.
 
     Constraints:
-        Input tensors must have statically known shapes and matching layouts.
+        Shapes and strides must be static, and strides must be nonnegative.
     """
-
+    comptime assert x.all_dims_known, "max expects a statically known layout"
     comptime assert (
-        x.layout.all_dims_known()
-    ), "max expects tensor of statically know shape"
-    var res_tensor = type_of(x).stack_allocation()
+        x.element_size == y.element_size
+    ), "max expects inputs with the same element size"
+    comptime for axis in range(x.flat_rank):
+        comptime assert (
+            x.LayoutType.static_stride[axis] >= 0
+        ), "max expects nonnegative strides"
 
-    comptime for i in range(res_tensor.layout.size()):
-        comptime idx = x.layout(i)
-        res_tensor.ptr[idx] = b_max(x.ptr[idx], y.ptr[idx])
-    return res_tensor
-
-
-@inline(.always)
-def sum[
-    axis: Int,
-](
-    inp: LayoutTensor,
-    out res: LayoutTensor[
-        inp.dtype,
-        _reduce_res_row_major_shape(axis, inp.layout),
-        MutAnyOrigin,
-        address_space=inp.address_space,
-        element_layout=inp.element_layout,
-        layout_int_type=inp.layout_int_type,
-        linear_idx_type=inp.linear_idx_type,
-    ],
-):
-    """Computes sum reduction along specified axis, returning a new tensor.
-
-    Reduces the input tensor by summing elements along the specified axis
-    and returns a new tensor with the results.
-
-    Parameters:
-        axis: The axis to sum along.
-
-    Args:
-        inp: The input tensor to sum.
-
-    Returns:
-        A new tensor containing the sum values along the specified axis.
-
-    Constraints:
-        All tensors must have statically known shapes.
-        Result will have rank equal to `inp.rank` - 1.
-        Non-reduction dimensions in the result match the input.
-        Currently only supports rank-2 inputs.
-    """
-
-    var res_tensor = type_of(res).stack_allocation()
-    sum[axis](inp, res_tensor)
-    return res_tensor
+    # Cosize includes each cell's first scalar, not its remaining SIMD lanes.
+    comptime storage_size = b_max(
+        1, x.LayoutType.static_cosize + x.element_size - 1
+    )
+    var storage = stack_allocation[
+        x.dtype,
+        address_space=x.address_space,
+        alignment=align_of[x.ElementType](),
+    ](row_major[storage_size]())
+    var res = type_of(result)(
+        storage.unsafe_ptr().unsafe_bitcast[x.ElementType](), x.layout
+    )
+    comptime for i in range(x.LayoutType.static_product):
+        var offset = x.layout(Idx[i])
+        # Strided SIMD cells may have only scalar alignment.
+        var a = x.raw_load[width=x.element_size, alignment=align_of[x.dtype]()](
+            offset
+        )
+        var b = y.raw_load[width=x.element_size, alignment=align_of[y.dtype]()](
+            offset
+        )
+        res.raw_store(offset, b_max(a, b))
+    return res
 
 
 @inline(.always)
@@ -515,6 +248,19 @@ def sum[
     Returns:
         A rank-1 tensor with the input dtype and SIMD element width. Adjacent
         elements have disjoint storage.
+
+    Examples:
+
+    ```mojo
+    from std.collections import Array
+    from layout import TileTensor, row_major
+    from layout.math import sum
+
+    var data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
+    var tensor = TileTensor(data, row_major[2, 3]())
+    var result = sum[0](tensor)
+    print(result[0], result[1], result[2])  # 3 5 7
+    ```
     """
     comptime size = Coord[inp.LayoutType._shape_types[1 - axis]].static_product
     var result = stack_allocation[

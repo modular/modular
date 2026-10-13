@@ -242,7 +242,7 @@ class GrammarBackend(Protocol):
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         """Build a matcher from a compiled grammar handle or grammar string.
 
-        The string form is a raw serialized grammar (e.g. a tool-call grammar).
+        The string form is a raw serialized grammar (such as a tool-call grammar).
         """
         ...
 
@@ -517,7 +517,7 @@ def build_xgrammar_tool_grammar(
 ) -> str:
     """Build a serialized xgrammar tool-call grammar (StructuralTag JSON).
 
-    Uses xgrammar's built-in per-model tool-call format (e.g. ``"kimi"``),
+    Uses xgrammar's built-in per-model tool-call format (such as ``"kimi"``),
     which frames the model's tool-call envelope and constrains each call's
     arguments to that tool's JSON schema. The returned JSON string is passed
     as a grammar to :meth:`XgrammarBackend.create_matcher`.
@@ -527,7 +527,7 @@ def build_xgrammar_tool_grammar(
     ``tool_calls | json_response`` alternation).
 
     Args:
-        model_format: xgrammar model-format key (e.g. ``"kimi"``).
+        model_format: xgrammar model-format key (such as ``"kimi"``).
         tools: OpenAI-style tool dicts (``{"type": "function", "function": ...}``).
         tool_choice: ``"auto"``, ``"required"``, or a named choice.
         response_format_schema: Optional JSON schema for a ``response_format``

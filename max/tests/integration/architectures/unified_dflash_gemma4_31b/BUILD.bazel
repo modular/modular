@@ -34,6 +34,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/unified_dflash_gemma4_31b",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
         requirement("numpy"),
         requirement("transformers"),

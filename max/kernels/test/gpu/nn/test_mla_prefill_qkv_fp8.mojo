@@ -14,19 +14,12 @@
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from std.random import randn
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def test_prefill[
@@ -40,6 +33,7 @@ def test_prefill[
     cache_num_heads: Int,
     batch_size: Int = 1,
     use_causal_mask: Bool = True,
+    v_depth: Int = kv_depth,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
         "test_mla_prefill",
@@ -59,6 +53,8 @@ def test_prefill[
         depth,
         "kv_depth:",
         kv_depth,
+        "v_depth:",
+        v_depth,
         "cache_depth:",
         cache_depth,
         "cache_num_heads:",
@@ -69,8 +65,8 @@ def test_prefill[
 
     var q_size = batch_size * seq_len * num_heads * depth
     var k_size = batch_size * num_keys * num_heads * kv_depth
-    var v_size = k_size
-    var o_size = batch_size * seq_len * num_heads * kv_depth
+    var v_size = batch_size * num_keys * num_heads * v_depth
+    var o_size = batch_size * seq_len * num_heads * v_depth
     var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
 
     var q_ptr = ctx.enqueue_create_host_buffer[qkv_type](q_size)
@@ -140,7 +136,7 @@ def test_prefill[
     )
     var v = TileTensor(
         v_bf16_ptr,
-        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[v_depth])),
     )
     var cache = TileTensor(
         cache_bf16_ptr,
@@ -155,7 +151,7 @@ def test_prefill[
     )
     var output = TileTensor(
         output_ptr,
-        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     # device pointers
@@ -190,7 +186,7 @@ def test_prefill[
     )
     var v_device = TileTensor(
         v_device_ptr,
-        row_major((batch_size * num_keys, Idx[num_heads], Idx[kv_depth])),
+        row_major((batch_size * num_keys, Idx[num_heads], Idx[v_depth])),
     )
     var cache_device = TileTensor(
         cache_device_ptr,
@@ -205,7 +201,7 @@ def test_prefill[
     )
     var output_device = TileTensor(
         output_device_ptr,
-        row_major((batch_size * seq_len, Idx[num_heads], Idx[kv_depth])),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[v_depth])),
     )
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
@@ -250,6 +246,7 @@ def test_prefill[
 
     # create reference K and V
     # unlike flare_mla_prefill, K_ref and V_ref each head is of size depth (not kv_depth)
+    comptime assert v_depth <= depth, "v_depth must not exceed the padded depth"
     var k_ref_ptr = ctx.enqueue_create_host_buffer[.bfloat16](
         batch_size * num_keys * num_heads * depth
     )
@@ -271,16 +268,18 @@ def test_prefill[
         output_ref_ptr, row_major(batch_size, seq_len, num_heads, depth)
     )
 
-    # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
+    # the first kv_depth elements of each head in K_ref are the same as K;
+    # the first v_depth elements of each head in V_ref are the same as V.
     for b in range(batch_size):
         for s in range(num_keys):
             for h in range(num_heads):
-                for d in range(kv_depth):
-                    k_ref[b, s, h, d] = k[b * num_keys + s, h, d]
-                    v_ref[b, s, h, d] = v[b * num_keys + s, h, d]
+                for dk in range(kv_depth):
+                    k_ref[b, s, h, dk] = k[b * num_keys + s, h, dk]
+                for dv in range(v_depth):
+                    v_ref[b, s, h, dv] = v[b * num_keys + s, h, dv]
 
-    # the rest of the elements in K_ref are broadcasted from the last (depth - kv_depth) elements of the head in cache
-    # the rest of the elements in V_ref are zeros
+    # Pad K_ref and zero V_ref out to the canonical reference depth.
+    # K_ref relays the last (depth - kv_depth) elements of the head in cache.
     for b in range(batch_size):
         for s in range(num_keys):
             for h in range(num_heads):
@@ -288,7 +287,8 @@ def test_prefill[
                     k_ref[b, s, h, d + kv_depth] = cache[
                         b, s, 0, cache_depth - (depth - kv_depth) + d
                     ][0]
-                    v_ref[b, s, h, d + kv_depth] = 0
+                for d in range(depth - v_depth):
+                    v_ref[b, s, h, d + v_depth] = 0
 
     # Create bf16 Q on device for the naive reference kernel.
     # This uses the roundtripped values (bf16 -> fp8 -> bf16) so both
@@ -334,8 +334,8 @@ def test_prefill[
         row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device)
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device)
+    var k_ref_operand = TileTensorMHAOperand(k_ref_device)
+    var v_ref_operand = TileTensorMHAOperand(v_ref_device)
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
@@ -360,7 +360,7 @@ def test_prefill[
 
     # view output as a rank 4 buffer
     var output_rank4 = TileTensor(
-        output_ptr, row_major(batch_size, seq_len, num_heads, kv_depth)
+        output_ptr, row_major(batch_size, seq_len, num_heads, v_depth)
     )
 
     # compare output with reference
@@ -368,18 +368,22 @@ def test_prefill[
     #  - 3 mantissa bits vs 7, so each multiply has ~16x coarser rounding
     #  - softmax probabilities stored as FP8 in TMEM lose precision
     #  - error accumulates across KV tiles (seq_len/BN iterations)
+    var max_error = Float32(0)
     for b in range(batch_size):
         for s in range(seq_len):
             for h in range(num_heads):
-                for d in range(kv_depth):
+                for d in range(v_depth):
                     var lhs = output_rank4[b, s, h, d]
                     var rhs = output_ref[b, s, h, d]
+                    var diff = abs(Float32(lhs[0]) - Float32(rhs[0]))
+                    max_error = max(max_error, diff)
                     assert_almost_equal(
                         lhs,
                         rhs,
                         atol=5e-2,
                         rtol=2e-2,
                     )
+    print("max_error:", max_error)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -482,6 +486,45 @@ def test_mla_prefill_qkv_fp8[
         cache_num_heads=1,
         batch_size=batch_size,
     ](120, 240, ctx)
+    test_prefill_glm[
+        qkv_type,
+        k_rope_type,
+        output_type,
+        batch_size=batch_size,
+    ](ctx)
+
+
+def test_prefill_glm[
+    qkv_type: DType,
+    k_rope_type: DType,
+    output_type: DType,
+    batch_size: Int = 1,
+](ctx: DeviceContext) raises:
+    """GLM-5.3 shape: qk_nope=192, qk_rope=64, v_head_dim=256."""
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        output_type,
+        depth=256,
+        num_heads=8,
+        kv_depth=192,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        v_depth=256,
+    ](128, 128, ctx)
+    test_prefill[
+        qkv_type,
+        k_rope_type,
+        output_type,
+        depth=256,
+        num_heads=8,
+        kv_depth=192,
+        cache_depth=576,
+        cache_num_heads=1,
+        batch_size=batch_size,
+        v_depth=256,
+    ](150, 150, ctx)
 
 
 def main() raises:

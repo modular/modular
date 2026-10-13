@@ -20,15 +20,20 @@ from typing import NamedTuple, Protocol
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
+from ..activation import GatedActivation
 from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
+    MXFP6_LANE_BYTES,
     block_scales_interleave,
     grouped_dynamic_block_scaled_matmul_amd,
+    grouped_dynamic_block_scaled_matmul_amd_swiglu_quant,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_dynamic_scaled_mxfp6_matmul,
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
     grouped_quantize_dynamic_block_scaled,
+    preshuffle_block_scaled_b,
+    preshuffle_block_scaled_b_scales,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_block_scaled_mxfp6,
     quantize_dynamic_scaled_float8,
@@ -70,7 +75,6 @@ class QuantStrategy(Protocol):
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
-        a_scales_preshuffled: bool = False,
         a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
         """Runs grouped matmul for routed experts."""
@@ -103,12 +107,28 @@ class QuantStrategy(Protocol):
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
-        clamp_activation: bool = False,
-        swiglu_alpha: float = 0.0,
-        swiglu_limit: float = 0.0,
+        activation: GatedActivation | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies gating and quantizes activations for the down proj."""
         ...
+
+
+def _gated_activation_ops(
+    gate_up: TensorValue, activation: GatedActivation
+) -> TensorValue:
+    """Computes ``activation.fused_activation`` on ``[gate | up]`` rows with
+    graph ops, matching the fused kernels' math."""
+    moe_dim = int(gate_up.shape[1]) // 2
+    gate = gate_up[:, :moe_dim]
+    up = gate_up[:, moe_dim:]
+    if activation.fused_activation == "gelu_tanh":
+        return ops.gelu(gate, approximate="tanh") * up
+    if activation.limit != 0.0:
+        gate = ops.min(gate, activation.limit)
+        up = ops.min(ops.max(up, -activation.limit), activation.limit)
+    if activation.fused_activation == "swigluoai":
+        return gate * ops.sigmoid(gate * activation.alpha) * (up + 1.0)
+    return ops.silu(gate) * up
 
 
 class Fp8Strategy:
@@ -167,14 +187,12 @@ class Fp8Strategy:
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
-        a_scales_preshuffled: bool = False,
         a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
         """Runs grouped FP8 matmul for the routed experts.
 
-        ``a_scales_preshuffled``/``a_scales_max_padded_m`` are accepted for
-        ``QuantStrategy`` conformance; they only apply to the MXFP4 EP scale
-        fusion and are ignored here.
+        ``a_scales_max_padded_m`` is accepted for ``QuantStrategy``
+        conformance; it only applies to the MX EP paths and is ignored here.
         """
         hidden, input_scales, expert_start, expert_ids, usage_stats = (
             expert_inputs
@@ -207,27 +225,19 @@ class Fp8Strategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
-        clamp_activation: bool = False,
-        swiglu_alpha: float = 0.0,
-        swiglu_limit: float = 0.0,
+        activation: GatedActivation | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies the SiLU gate and returns quantized activations.
+        """Applies the gated activation and returns quantized activations.
 
-        The gate is plain graph ops feeding the row-bounded quantize, which
-        the graph compiler fuses into a single kernel.
+        The activation is plain graph ops feeding the row-bounded quantize,
+        which the graph compiler fuses into a single kernel.
 
-        ``max_padded_M`` and the ``clamp_activation``/``swiglu_*`` args are
-        accepted for ``QuantStrategy`` conformance; they only apply to the
-        MXFP4 EP path and are ignored here.
+        ``max_padded_M`` is accepted for ``QuantStrategy`` conformance; it only
+        applies to the MX EP paths and is ignored here.
         """
-        assert not clamp_activation, (
-            "clamped SwiGLU-OAI activation is only supported on the MXFP4 EP"
-            " path"
-        )
         _, _, expert_start_indices, expert_ids, _ = expert_inputs
-        moe_dim = int(gate_up_projs.shape[1]) // 2
-        activated = (
-            ops.silu(gate_up_projs[:, :moe_dim]) * gate_up_projs[:, moe_dim:]
+        activated = _gated_activation_ops(
+            gate_up_projs, activation or GatedActivation()
         )
         assert self.config.input_scale.block_size is not None
         return self.grouped_quantize(
@@ -321,14 +331,12 @@ class NvMxf4f8Strategy:
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
-        a_scales_preshuffled: bool = False,
         a_scales_max_padded_m: int = 0,
     ) -> TensorValue:
         """Runs grouped NVIDIA block-scaled matmul with per-expert scales.
 
-        ``a_scales_preshuffled``/``a_scales_max_padded_m`` are accepted for
-        ``QuantStrategy`` conformance; they only apply to the MXFP4 EP scale
-        fusion and are ignored here.
+        ``a_scales_max_padded_m`` is accepted for ``QuantStrategy``
+        conformance; it only applies to the MX EP paths and is ignored here.
         """
         if self.is_nvfp4 and expert_scales is None:
             raise ValueError("NVFP4 requires expert_scales")
@@ -389,20 +397,13 @@ class NvMxf4f8Strategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
-        clamp_activation: bool = False,
-        swiglu_alpha: float = 0.0,
-        swiglu_limit: float = 0.0,
+        activation: GatedActivation | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies SiLU gate then quantizes the result.
+        """Applies the gated activation then quantizes the result.
 
-        ``max_padded_M`` and the ``clamp_activation``/``swiglu_*`` args are
-        accepted for ``QuantStrategy`` conformance; they only apply to the
-        MXFP4 EP path and are ignored here.
+        ``max_padded_M`` is accepted for ``QuantStrategy`` conformance; it only
+        applies to the MX EP paths and is ignored here.
         """
-        assert not clamp_activation, (
-            "clamped SwiGLU-OAI activation is only supported on the MXFP4 EP"
-            " path"
-        )
         _, _, expert_start_indices, scales_offsets, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -411,6 +412,7 @@ class NvMxf4f8Strategy:
             self.dtype,
             input_scales,
             scales_offsets,
+            activation=activation,
         )
 
     def prepare_swiglu_operands(
@@ -491,9 +493,7 @@ class NvMxf4f8Strategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...],
         estimated_total_m: TensorValue | None = None,
-        use_swigluoai: bool = False,
-        swiglu_alpha: float = 0.0,
-        swiglu_limit: float = 0.0,
+        activation: GatedActivation | None = None,
         a_row_scales: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Runs the fused quantized grouped matmul + SwiGLU + quant kernel.
@@ -521,10 +521,8 @@ class NvMxf4f8Strategy:
                 ``(hidden, hidden_scales, expert_start, scales_offsets,
                 expert_ids, usage_stats)``.
             estimated_total_m: Estimated total non-padded token count.
-            use_swigluoai: Whether to use the OAI-style clamped SwiGLU activation
-                function.
-            swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
-            swiglu_limit: The limit value for the clamped SwiGLU activation function.
+            activation: The gated activation the kernel fuses, forwarded to
+                ``grouped_matmul_blocked_swiglu``.
             a_row_scales: Optional BF16 scale per ``hidden`` row, applied with
                 the expert scale before the SwiGLU. NVFP4 only.
 
@@ -551,34 +549,24 @@ class NvMxf4f8Strategy:
             expert_scales=prepared.expert_scales,
             c_input_scales=prepared.c_input_scales,
             estimated_total_m=estimated_total_m,
-            clamp_activation=use_swigluoai,
-            swiglu_alpha=swiglu_alpha,
-            swiglu_limit=swiglu_limit,
+            activation=activation,
             a_row_scales=a_row_scales,
         )
 
 
 class BlockScaledStrategy:
-    """MXFP4 quantization for MoE.
+    """MXFP4 and MXFP8 quantization for MoE on AMD.
 
-    When `preshuffled_b=True`, the MOGG MXFP4 grouped-matmul op dispatches
-    to the preshuffled-B kernel variant (`block_scaled_grouped_matmul_amd_preb`),
-    which expects B in the 5D layout from `Shuffler.preshuffle_b_5d`. The
-    caller is responsible for applying that preshuffle at weight load
-    time (e.g. Kimi K2.5's `weight_adapters.py:_batch_preshuffle_experts`).
-    Models without a preshuffle weight adapter must leave
-    `preshuffled_b=False` so the dense row-major kernel is used.
+    Runs the preshuffled-B grouped matmul
+    (`block_scaled_grouped_matmul_amd_preb`). Weights and scales arrive
+    row-major, as the checkpoint stores them; the graph permutes them into the
+    preb layout, and the graph compiler hoists that into model init, as it
+    does the NVIDIA scale interleave.
     """
 
-    def __init__(
-        self,
-        config: QuantConfig,
-        dtype: DType,
-        preshuffled_b: bool = False,
-    ):
+    def __init__(self, config: QuantConfig, dtype: DType):
         self.config = config
         self.dtype = dtype
-        self.preshuffled_b = preshuffled_b
 
     def quantize(
         self,
@@ -619,7 +607,6 @@ class BlockScaledStrategy:
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
-        a_scales_preshuffled: bool = False,
         a_scales_max_padded_m: int = 0,
         decode_grid_m_cap: int = 0,
         decode_grid_m_rows: int = 0,
@@ -635,18 +622,81 @@ class BlockScaledStrategy:
 
         return grouped_dynamic_block_scaled_matmul_amd(
             hidden,
-            weight,
+            preshuffle_block_scaled_b(weight),
             hidden_scales,
             weight_scales,
             expert_start,
             expert_ids,
             usage_stats.to(DeviceRef.CPU()),
             estimated_total_m=estimated_total_m,
-            preshuffled_b=self.preshuffled_b,
-            a_scales_preshuffled=a_scales_preshuffled,
+            preshuffled_b=True,
             a_scales_max_padded_m=a_scales_max_padded_m,
             decode_grid_m_cap=decode_grid_m_cap,
             decode_grid_m_rows=decode_grid_m_rows,
+        )
+
+    def grouped_matmul_swiglu_quant(
+        self,
+        weight: TensorValue,
+        weight_scales: TensorValue,
+        expert_inputs: tuple[TensorValue, ...] = (),
+        estimated_total_m: TensorValue | None = None,
+        a_scales_max_padded_m: int = 0,
+        decode_grid_m_cap: int = 0,
+        decode_grid_m_rows: int = 0,
+        out_scales_max_padded_m: int = 0,
+        activation: GatedActivation | None = None,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Runs gemm1 with the gated activation and the MXFP8 requantize
+        folded into its epilogue.
+
+        Returns the activation already quantized plus its E8M0 block scales,
+        so the caller skips the standalone activation kernel. Output N is half
+        the matmul's N, since each (gate, up) pair collapses to one value.
+
+        Args:
+            weight: The gate/up weight, sigma-permuted on N so gate and up sit
+                in adjacent columns. Split halves cannot be paired in-register
+                and are rejected by the kernel's layout assumptions.
+            weight_scales: Matching sigma-permuted E8M0 weight scales.
+            expert_inputs: The EP dispatch 5-tuple.
+            estimated_total_m: Row-count estimate used to pick the band.
+            a_scales_max_padded_m: Nonzero when the input A-scales already sit
+                in the per-expert slot layout: their build-time slot stride, so
+                the standalone preshuffle is skipped.
+            decode_grid_m_cap: Band cap for the decode grid.
+            decode_grid_m_rows: Worst-case rows one expert can receive.
+            out_scales_max_padded_m: Per-expert slot stride for the EMITTED
+                scales. Nonzero selects the 4D slot layout that gemm2 reads
+                without a preshuffle; zero emits plain row-major.
+            activation: The gated activation the epilogue fuses, forwarded to
+                ``grouped_dynamic_block_scaled_matmul_amd_swiglu_quant``.
+
+        Returns:
+            The MXFP8 activation and its E8M0 block scales.
+        """
+        (
+            hidden,
+            hidden_scales,
+            expert_start,
+            expert_ids,
+            usage_stats,
+        ) = expert_inputs
+
+        return grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
+            hidden,
+            preshuffle_block_scaled_b(weight),
+            hidden_scales,
+            weight_scales,
+            expert_start,
+            expert_ids,
+            usage_stats.to(DeviceRef.CPU()),
+            estimated_total_m=estimated_total_m,
+            a_scales_max_padded_m=a_scales_max_padded_m,
+            decode_grid_m_cap=decode_grid_m_cap,
+            decode_grid_m_rows=decode_grid_m_rows,
+            out_scales_max_padded_m=out_scales_max_padded_m,
+            activation=activation,
         )
 
     def prepare_weight_scales(
@@ -655,7 +705,11 @@ class BlockScaledStrategy:
         down: TensorValue,
         device: DeviceRef,
     ) -> tuple[TensorValue, TensorValue]:
-        return gate_up, down
+        """Permutes the scales into the preb kernel's layout."""
+        return (
+            preshuffle_block_scaled_b_scales(gate_up.to(device)),
+            preshuffle_block_scaled_b_scales(down.to(device)),
+        )
 
     def fused_silu_quantize(
         self,
@@ -663,11 +717,9 @@ class BlockScaledStrategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
-        clamp_activation: bool = False,
-        swiglu_alpha: float = 0.0,
-        swiglu_limit: float = 0.0,
+        activation: GatedActivation | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies SiLU (or clamped SwiGLU-OAI) gate then MXFP4 quantizes."""
+        """Applies the gated activation then MXFP4-quantizes, in one kernel."""
         _, _, expert_start_indices, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,
@@ -676,9 +728,7 @@ class BlockScaledStrategy:
             self.dtype,
             input_scales,
             max_padded_M=max_padded_M,
-            clamp_activation=clamp_activation,
-            swiglu_alpha=swiglu_alpha,
-            swiglu_limit=swiglu_limit,
+            activation=activation,
         )
 
 
@@ -687,8 +737,8 @@ class Mxfp6Strategy:
 
     Preshuffled-B only: an FP6 lane fragment is 24 bytes, which the kernel
     reads plane-split, and the dense row-major grouped kernel has no path for
-    that layout. The weight loader must apply
-    ``preshuffle_block_scaled_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
+    that layout. The graph permutes the row-major weights into it, as
+    :class:`BlockScaledStrategy` does.
 
     Unlike :class:`Mxfp4Strategy` there is no fused activation kernel, so the
     down-projection input is produced as bf16 SwiGLU followed by a standalone
@@ -733,18 +783,11 @@ class Mxfp6Strategy:
         expert_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         estimated_total_m: TensorValue | None = None,
-        a_scales_preshuffled: bool = False,
         a_scales_max_padded_m: int = 0,
         decode_grid_m_cap: int = 0,
         decode_grid_m_rows: int = 0,
     ) -> TensorValue:
         """Runs the grouped MXFP6 matmul with per-expert scales."""
-        if a_scales_preshuffled and a_scales_max_padded_m <= 0:
-            raise ValueError(
-                "a_scales_max_padded_m must be > 0 when a_scales_preshuffled"
-                " is set for MXFP6"
-            )
-
         (
             hidden,
             hidden_scales,
@@ -755,7 +798,7 @@ class Mxfp6Strategy:
 
         return grouped_dynamic_scaled_mxfp6_matmul(
             hidden,
-            weight,
+            preshuffle_block_scaled_b(weight, lane_bytes=MXFP6_LANE_BYTES),
             hidden_scales,
             weight_scales,
             expert_start,
@@ -765,7 +808,6 @@ class Mxfp6Strategy:
             estimated_total_m=estimated_total_m,
             decode_grid_m_cap=decode_grid_m_cap,
             decode_grid_m_rows=decode_grid_m_rows,
-            a_scales_preshuffled=a_scales_preshuffled,
             a_scales_max_padded_m=a_scales_max_padded_m,
         )
 
@@ -775,7 +817,11 @@ class Mxfp6Strategy:
         down: TensorValue,
         device: DeviceRef,
     ) -> tuple[TensorValue, TensorValue]:
-        return gate_up, down
+        """Permutes the scales into the preb kernel's layout."""
+        return (
+            preshuffle_block_scaled_b_scales(gate_up.to(device)),
+            preshuffle_block_scaled_b_scales(down.to(device)),
+        )
 
     def fused_silu_quantize(
         self,
@@ -783,11 +829,9 @@ class Mxfp6Strategy:
         input_scales: TensorValue | None = None,
         expert_inputs: tuple[TensorValue, ...] = (),
         max_padded_M: int = 0,
-        clamp_activation: bool = False,
-        swiglu_alpha: float = 0.0,
-        swiglu_limit: float = 0.0,
+        activation: GatedActivation | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies SiLU gating and MXFP6-quantizes, in one fused kernel.
+        """Applies the gated activation and MXFP6-quantizes, in one kernel.
 
         Emits ``ep.fused_silu.mxfp6`` (``fused_silu_mxfp6_kernel``), matching
         how MXFP4 and MXFP8 drive this step. It replaces a bf16 SwiGLU built
@@ -796,13 +840,11 @@ class Mxfp6Strategy:
         per MoE layer per device (456 of each at dp=2/ep=8) and an extra
         ``mo.quantize.dynamic.block.scaled.mxfp6``.
 
-        ``max_padded_M`` > 0 enables the down-proj A-scale fold: the kernel
-        writes the E8M0 scale straight into the grouped matmul's per-expert
-        slot, dropping the standalone preshuffle. The slot layout is shared
-        across MX formats (``scale_4d_slot_byte_off`` keys on ``K_SCALES`` and
-        ``MXFP6_SF_VECTOR_SIZE`` is 32 like FP4/FP8), so the reader is
-        unchanged. The up-proj fold stays MXFP4-only -- its producer is the EP
-        dispatch path, which has no FP6 slot writer.
+        The kernel writes the E8M0 scale straight into the grouped matmul's
+        per-expert slot at the ``max_padded_M`` stride. The slot layout is
+        shared across MX formats (``scale_4d_slot_byte_off`` keys on
+        ``K_SCALES`` and ``MXFP6_SF_VECTOR_SIZE`` is 32 like FP4/FP8), so the
+        reader is unchanged.
         """
         _, _, expert_start_indices, _, _ = expert_inputs
         return fused_silu_quantized(
@@ -812,9 +854,7 @@ class Mxfp6Strategy:
             self.dtype,
             input_scales,
             max_padded_M=max_padded_M,
-            clamp_activation=clamp_activation,
-            swiglu_alpha=swiglu_alpha,
-            swiglu_limit=swiglu_limit,
+            activation=activation,
         )
 
 

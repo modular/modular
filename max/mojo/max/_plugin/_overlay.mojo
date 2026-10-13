@@ -13,7 +13,7 @@
 
 from std._plugin.selector import PluginSelector
 
-from ._trait import DefaultMaxPlugin, MaxPluginHooks
+from ._trait import DefaultMaxPlugin
 from .cuda import CudaMaxPlugin
 from .hip import HipMaxPlugin
 from .metal import MetalMaxPlugin

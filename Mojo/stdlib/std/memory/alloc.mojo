@@ -125,7 +125,7 @@ def main():
 ```
 """
 
-from std.format._utils import FormatStruct, Named, TypeNames
+from std.format._utils import FormatStruct, Named
 from std.memory import MaybeUninit
 from std.memory.memory import _free, _malloc
 from std.os import abort

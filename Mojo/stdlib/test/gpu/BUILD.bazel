@@ -3,6 +3,7 @@ load("//bazel:api.bzl", "lit_tests", "mojo_test")
 package(default_visibility = ["//visibility:private"])
 
 _LIT_TESTS = [
+    "test_gpu_target_folding.mojo",
     "test_target_accelerator_detection.mojo",
 ]
 

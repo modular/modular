@@ -27,4 +27,4 @@ code-size cost for hooks the active backend does not set.
 """
 
 from ._impl import CurrentPlugin, PluginForTarget
-from ._trait import DefaultPlugin, PluginHooks
+from ._trait import StdPlugin, DefaultPlugin, DefaultPluginHooks, PluginHooks

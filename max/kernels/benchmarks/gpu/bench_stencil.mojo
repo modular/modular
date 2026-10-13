@@ -23,7 +23,6 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from layout import (
-    Coord,
     Idx,
     TileTensor,
     coord_to_index_list,

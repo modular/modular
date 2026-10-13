@@ -23,8 +23,67 @@ import enum
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
-NVFP4_GROUP_SIZE = 16
+from max.dtype import DType
+from max.nn.quant_config import (
+    NVFP4_BLOCK_SIZE,
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+from max.pipelines.weights.quant import read_modelopt_quantized_layers
+
+NVFP4_GROUP_SIZE = NVFP4_BLOCK_SIZE
 """Inputs covered by one NVFP4 block scale."""
+
+
+class Parallelism(enum.Enum):
+    """How a linear layer's weight is split across the tensor-parallel axis."""
+
+    REPLICATED = "replicated"
+    """Every device holds the whole weight."""
+
+    COLUMN = "column"
+    """Each device holds a share of the output rows."""
+
+    ROW = "row"
+    """Each device holds a share of the input columns, and the outputs are
+    partial sums."""
+
+
+# The checkpoint's dense linear modules, by name suffix, and how each is
+# split. Routed experts are stacked rather than built as linear layers.
+_LINEAR_PARALLELISM: dict[str, Parallelism] = {
+    ".mixer.in_proj": Parallelism.COLUMN,
+    ".mixer.out_proj": Parallelism.ROW,
+    ".shared_experts.up_proj": Parallelism.COLUMN,
+    ".shared_experts.down_proj": Parallelism.ROW,
+    # The MLP mixers are replicated.
+    ".mixer.up_proj": Parallelism.REPLICATED,
+    ".mixer.down_proj": Parallelism.REPLICATED,
+}
+
+
+def linear_parallelism(module: str) -> Parallelism:
+    """Returns how a quantizable dense linear module is split.
+
+    Args:
+        module: The module's checkpoint path.
+
+    Raises:
+        NotImplementedError: If the module is not built as a quantizable
+            linear layer, such as an attention projection.
+    """
+    if module == "lm_head":
+        return Parallelism.COLUMN
+    for suffix, parallelism in _LINEAR_PARALLELISM.items():
+        if module.endswith(suffix):
+            return parallelism
+    raise NotImplementedError(
+        f"'{module}' is quantized, but Nemotron-H builds it in BF16 only"
+    )
 
 
 class ModuleFormat(enum.Enum):
@@ -40,6 +99,21 @@ class ModuleFormat(enum.Enum):
     """Packed E2M1 weight, an E4M3 scale per 16 inputs and a float32 global
     scale. There is no input scale: activations stay BF16."""
 
+
+FP8_STATIC_TENSOR_QUANT = QuantConfig(
+    input_scale=InputScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        origin=ScaleOrigin.STATIC,
+        dtype=DType.float32,
+    ),
+    weight_scale=WeightScaleSpec(
+        granularity=ScaleGranularity.TENSOR, dtype=DType.float32
+    ),
+    mlp_quantized_layers=set(),
+    attn_quantized_layers=set(),
+    format=QuantFormat.COMPRESSED_TENSORS_FP8,
+)
+"""The quant config of a :attr:`ModuleFormat.FP8_STATIC_TENSOR` linear."""
 
 _ALGO_FORMATS: dict[str, ModuleFormat] = {
     "FP8": ModuleFormat.FP8_STATIC_TENSOR,
@@ -68,19 +142,43 @@ class NemotronHQuantScheme:
         """Returns the format ``module`` is stored in."""
         return self.quantized.get(module, ModuleFormat.BF16)
 
-    def has_nvfp4_routed_experts(self, mixer: str, num_experts: int) -> bool:
-        """Returns whether every routed expert projection of a mixer is NVFP4.
+    def routed_experts_format(
+        self, mixer: str, num_experts: int
+    ) -> ModuleFormat:
+        """Returns the one format every routed expert of a mixer is stored in.
 
         Args:
             mixer: The mixer's checkpoint path, ``backbone.layers.1.mixer``.
             num_experts: The number of routed experts.
+
+        Raises:
+            NotImplementedError: If the experts are FP8, or stored in more
+                than one format. The grouped matmul reads all of a mixer's
+                experts in one format, BF16 or NVFP4.
         """
-        return all(
+        formats = {
             self.format_of(f"{mixer}.experts.{e}.{proj}")
-            is ModuleFormat.NVFP4_WEIGHT_ONLY
             for e in range(num_experts)
             for proj in ("up_proj", "down_proj")
-        )
+        }
+        if len(formats) != 1 or ModuleFormat.FP8_STATIC_TENSOR in formats:
+            raise NotImplementedError(
+                f"'{mixer}' stores its routed experts as "
+                f"{sorted(f.name for f in formats)}; Nemotron-H reads them "
+                "all BF16 or all NVFP4"
+            )
+        return formats.pop()
+
+    def check_dense_modules(self) -> None:
+        """Checks that every quantized dense module is one built quantized.
+
+        Raises:
+            NotImplementedError: If a quantized module, such as an attention
+                projection, is built in BF16 only.
+        """
+        for module in self.quantized:
+            if ".experts." not in module:
+                linear_parallelism(module)
 
     def check_weights(self, weight_names: Collection[str]) -> None:
         """Checks the checkpoint's tensors against the declared formats.
@@ -130,40 +228,20 @@ def parse_quant_scheme(
         The scheme.
 
     Raises:
-        NotImplementedError: If the config uses an algorithm Nemotron-H does
-            not read.
-        ValueError: If a ``MIXED_PRECISION`` config has no
-            ``quantized_layers`` map.
+        ValueError: If the config is not modelopt ``MIXED_PRECISION``, has
+            no ``quantized_layers`` map, or quantizes a module with an
+            algorithm or group size Nemotron-H does not read.
     """
     if not hf_quant_config:
         return NemotronHQuantScheme(quantized={})
-    quant_algo = hf_quant_config.get("quant_algo")
-    if quant_algo != "MIXED_PRECISION":
-        raise NotImplementedError(
-            f"Nemotron-H cannot read quant_algo {quant_algo!r}; only "
-            "modelopt 'MIXED_PRECISION' checkpoints are supported."
-        )
-    quantized_layers = hf_quant_config.get("quantized_layers")
-    if not isinstance(quantized_layers, Mapping) or not quantized_layers:
-        raise ValueError(
-            "quant_algo 'MIXED_PRECISION' needs a 'quantized_layers' map "
-            "naming each module's algorithm, and the config has none"
-        )
-    quantized: dict[str, ModuleFormat] = {}
-    for module, entry in quantized_layers.items():
-        algo = entry.get("quant_algo") if isinstance(entry, Mapping) else None
-        fmt = _ALGO_FORMATS.get(algo) if isinstance(algo, str) else None
-        if fmt is None:
-            raise NotImplementedError(
-                f"'{module}' is quantized as {algo!r}; Nemotron-H reads "
-                f"{sorted(_ALGO_FORMATS)} only."
-            )
-        if fmt is ModuleFormat.NVFP4_WEIGHT_ONLY:
-            group_size = entry.get("group_size")
-            if group_size != NVFP4_GROUP_SIZE:
-                raise NotImplementedError(
-                    f"'{module}' declares NVFP4 group_size {group_size!r}; "
-                    f"only {NVFP4_GROUP_SIZE} is supported."
-                )
-        quantized[str(module)] = fmt
-    return NemotronHQuantScheme(quantized=quantized)
+    modules = read_modelopt_quantized_layers(
+        hf_quant_config,
+        allowed={("FP8", None), ("W4A16_NVFP4", NVFP4_GROUP_SIZE)},
+        model_name="Nemotron-H",
+    )
+    return NemotronHQuantScheme(
+        quantized={
+            module: _ALGO_FORMATS[quant.quant_algo]
+            for module, quant in modules.items()
+        }
+    )

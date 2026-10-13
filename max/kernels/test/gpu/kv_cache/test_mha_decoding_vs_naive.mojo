@@ -26,20 +26,18 @@
 from std.math import rsqrt
 from std.memory import bitcast
 from std.random import seed
-from std.collections import Set
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
-    PagedKVCacheCollection,
 )
-from layout import Coord, Idx, row_major
+from layout import Idx, row_major
 from layout._fillers import random
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from std.testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal
 
 
 def compute_hash[

@@ -18,7 +18,7 @@ scope: it is a different transport with different costs, and the single-node
 path is the one these kernels are tuned for.
 
 Each vendor is driven through the token formats it actually dispatches with --
-BF16 and MXFP8 on both, NVFP4 on NVIDIA, MXFP4 on AMD. Two shapes run per
+BF16 on both, NVFP4 on NVIDIA, MXFP8 and MXFP4 on AMD. Two shapes run per
 format: a decode-sized point, where cost is per launch, and a prefill-sized
 point, where it is per byte. They are different regimes, and an optimization
 can help one while doing nothing for the other.
@@ -43,11 +43,7 @@ Correctness is not checked here; `test_p2p_ep_dispatch.mojo` owns that.
 
 from std.os import getenv
 from std.random import random_float64, seed
-from std.sys import (
-    get_defined_int,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import get_defined_int, default_accelerator
 
 
 # Routing mode is read at run time, not baked in: measuring an optimization
@@ -103,26 +99,20 @@ from shmem.ep import (
 )
 from shmem.ep_comm import (
     BF16TokenFormat,
-    BlockwiseFP8TokenFormat,
-    EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
     MXTokenFormat,
     NVBlockScaledTokenFormat,
     TokenFormat,
 )
-from std.testing import assert_almost_equal, assert_equal
 
 from std.math import align_up
 from linalg.fp4_utils import (
-    E2M1_TO_FLOAT32,
     MXFP4_SF_VECTOR_SIZE,
     NVFP4_SF_VECTOR_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
-    get_scale_factor,
 )
-from max.gpu.host.info import _is_sm10x_gpu, MI355X
 
 
 def zipf_expert_weights[
@@ -506,25 +496,10 @@ struct MXDispatchTest[
     comptime n_local_experts = Self.n_experts // Self.n_ranks
     comptime k_scales = Self.hidden_size // MXFP4_SF_VECTOR_SIZE
 
-    comptime scales_padded_size = Self.max_recv_num_tokens + Self.n_local_experts * SF_MN_GROUP_SIZE
-
-    # Measure the KS224 up-proj fold, which is what MiniMax-M3 runs on CDNA4:
-    # the scale store lands in the grouped matmul's `scale_4d` slot rather
-    # than a row-major scale row, and the two have different store patterns.
-    # The slot layout is a CDNA4 MFMA layout, so NVIDIA keeps the row-major
-    # path it actually dispatches with.
-    comptime fuse_a_scale_preshuffle = has_amd_gpu_accelerator()
-    comptime max_padded_m = align_up(
-        Self.n_tokens_per_rank * Self.n_ranks, 32
-    ) if Self.fuse_a_scale_preshuffle else 0
-    comptime scales_rows = (
-        Self.n_local_experts * Self.max_padded_m
-    ) if Self.fuse_a_scale_preshuffle else Self.max_recv_num_tokens
-    comptime scales_per_slot = (
-        Self.n_local_experts * Self.max_padded_m * Self.k_scales
-    ) if Self.fuse_a_scale_preshuffle else (
-        Self.scales_padded_size * Self.k_scales
-    )
+    # Scales land in per-expert `scale_4d` slots sized for every rank's tokens.
+    comptime max_padded_m = align_up(Self.n_tokens_per_rank * Self.n_ranks, 32)
+    comptime scales_rows = Self.n_local_experts * Self.max_padded_m
+    comptime scales_per_slot = Self.scales_rows * Self.k_scales
 
     comptime is_fp4 = Self.quant_dtype == DType.uint8
     comptime quant_last_dim = (
@@ -544,7 +519,6 @@ struct MXDispatchTest[
         scales_layout=type_of(Self.output_scales_layout),
         Self.hidden_size,
         Self.top_k,
-        fuse_a_scale_preshuffle=Self.fuse_a_scale_preshuffle,
     ]
 
     var device_output_bufs_list: List[DeviceBuffer[Self.quant_dtype]]
@@ -723,56 +697,46 @@ def bench_dispatch_common[
             )
 
     @inline(.always)
-    @__parameter
-    def get_send_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
+    def get_send_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises {imm}:
         return type_of(result)(ptr=(send_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @inline(.always)
-    @__parameter
-    def get_recv_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
+    def get_recv_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises {imm}:
         return type_of(result)( ptr=(recv_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @inline(.always)
-    @__parameter
-    def get_recv_count_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
+    def get_recv_count_ptrs_tensor(slot_idx: Int, out result: TileTensor[.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises {imm}:
         return type_of(result)(ptr=(recv_count_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @inline(.always)
-    @__parameter
-    def get_atomic_counters_tensor( dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(counters_layout), MutAnyOrigin]) raises:
+    def get_atomic_counters_tensor( dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(counters_layout), MutAnyOrigin]) raises {mut atomic_counters_list, imm}:
         return type_of(result)(
             ptr=(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * counters_size).as_unsafe_any_origin(), layout=counters_layout
         )
 
     @inline(.always)
-    @__parameter
-    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
+    def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises {imm}:
         return type_of(result)(ptr=(device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k).as_unsafe_any_origin(), layout=topk_ids_layout)
 
     @inline(.always)
-    @__parameter
-    def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(input_tokens_layout), ImmutAnyOrigin]) raises:
+    def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(input_tokens_layout), ImmutAnyOrigin]) raises {imm}:
         return type_of(result)(ptr=(device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size).as_unsafe_any_origin(), layout=input_tokens_layout)
 
     @inline(.always)
-    @__parameter
-    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
+    def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises {mut device_row_offsets_bufs_list, imm}:
         return type_of(result)(ptr=(device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1)).as_unsafe_any_origin(), layout=row_offsets_layout)
 
     @inline(.always)
-    @__parameter
-    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
+    def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises {mut device_expert_ids_bufs_list, imm}:
         return type_of(result)(ptr=(device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts).as_unsafe_any_origin(), layout=expert_ids_layout)
 
     @inline(.always)
-    @__parameter
-    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
+    def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises {mut device_src_token_info_bufs_list, imm}:
         return type_of(result)(ptr=(device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(), layout=src_token_info_layout)
     # fmt: on
 
     @inline(.always)
-    @__parameter
-    def run_dispatch_async(dev_idx: Int, slot_idx: Int) raises:
+    def run_dispatch_async(dev_idx: Int, slot_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         ep_dispatch_async_kernel_api[
             token_fmt_type,
@@ -793,8 +757,7 @@ def bench_dispatch_common[
         )
 
     @inline(.always)
-    @__parameter
-    def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
+    def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         var format_handler = dispatch_test.get_token_handler(
             dev_idx, slot_idx, ctx
@@ -817,13 +780,12 @@ def bench_dispatch_common[
         )
 
     @inline(.always)
-    def run_e2e(dev_idx: Int, slot_idx: Int) raises:
+    def run_e2e(dev_idx: Int, slot_idx: Int) raises {imm}:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
 
     @inline(.always)
-    @__parameter
-    def run_fused_dispatch(dev_idx: Int, slot_idx: Int) raises:
+    def run_fused_dispatch(dev_idx: Int, slot_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         var format_handler = dispatch_test.get_token_handler(
             dev_idx, slot_idx, ctx
@@ -851,8 +813,7 @@ def bench_dispatch_common[
         )
 
     @inline(.always)
-    @__parameter
-    def clean_up(dev_idx: Int) raises:
+    def clean_up(dev_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_memset(atomic_counters_list[dev_idx], Int32(0))
         ctx.enqueue_memset(recv_count_bufs_list[dev_idx], UInt64.MAX_FINITE)
@@ -878,7 +839,7 @@ def bench_dispatch_common[
     # First, bench the dispatch kernel overhead
 
     @inline(.always)
-    def call_fn_dispatch(ctx: DeviceContext, cache_iter: Int) raises {}:
+    def call_fn_dispatch(ctx: DeviceContext, cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.id())
         run_dispatch_async(dev_id, cache_iter)
 
@@ -918,7 +879,7 @@ def bench_dispatch_common[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_dispatch_wait(ctx: DeviceContext, cache_iter: Int) raises {}:
+    def call_fn_dispatch_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.id())
         run_dispatch_async_wait(dev_id, cache_iter)
 
@@ -967,7 +928,7 @@ def bench_dispatch_common[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_e2e_split(ctx: DeviceContext, cache_iter: Int) raises {}:
+    def call_fn_e2e_split(ctx: DeviceContext, cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.id())
         run_e2e(dev_id, cache_iter + 1)
 
@@ -1012,7 +973,7 @@ def bench_dispatch_common[
         list_of_ctx[dev_i].synchronize()
 
     @inline(.always)
-    def call_fn_e2e_fused(ctx: DeviceContext, cache_iter: Int) raises {}:
+    def call_fn_e2e_fused(ctx: DeviceContext, cache_iter: Int) raises {imm}:
         var dev_id = Int(ctx.id())
         run_fused_dispatch(dev_id, cache_iter + 1)
 
@@ -1178,16 +1139,16 @@ def bench_all_formats[
         n_tokens_per_rank=n_tokens_per_rank,
     ](list_of_ctx)
 
-    bench_dispatch_mxfp8[
-        hidden_size=HIDDEN,
-        top_k=TOP_K,
-        n_experts=N_EXPERTS,
-        n_ranks=n_ranks,
-        n_slots=n_slots,
-        n_tokens_per_rank=n_tokens_per_rank,
-    ](list_of_ctx)
+    comptime if list_of_ctx.T.target.is_amd_gpu():
+        bench_dispatch_mxfp8[
+            hidden_size=HIDDEN,
+            top_k=TOP_K,
+            n_experts=N_EXPERTS,
+            n_ranks=n_ranks,
+            n_slots=n_slots,
+            n_tokens_per_rank=n_tokens_per_rank,
+        ](list_of_ctx)
 
-    comptime if has_amd_gpu_accelerator():
         bench_dispatch_mxfp4[
             hidden_size=HIDDEN,
             top_k=TOP_K,
@@ -1197,8 +1158,8 @@ def bench_all_formats[
             n_tokens_per_rank=n_tokens_per_rank,
         ](list_of_ctx)
     else:
-        # NVIDIA dispatches FP4 through the block-scaled format, not the MX
-        # one; the two differ in scale layout and in dispatch_wait tile shape.
+        # NVIDIA dispatches FP4 and MXFP8 through the block-scaled format,
+        # which differs from MX in scale layout and dispatch_wait tile shape.
         bench_dispatch_nvfp4[
             hidden_size=HIDDEN,
             top_k=TOP_K,
@@ -1218,7 +1179,8 @@ def main() raises:
         raise Error("Cannot enable P2P Mem Access!")
 
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        default_accelerator().is_nvidia_gpu()
+        or default_accelerator().is_amd_gpu()
     ), "Only NVIDIA and AMD GPUs are supported"
 
     if DeviceContext.number_of_devices() != n_ranks:

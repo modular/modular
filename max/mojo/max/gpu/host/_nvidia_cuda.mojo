@@ -14,14 +14,7 @@
 from std.ffi import external_call
 
 from max.gpu.host import DeviceContext, DeviceFunction, DeviceStream
-from max.gpu.host.device_context import (
-    _CString,
-    _checked,
-    _DeviceBufferPtr,
-    _DeviceContextPtr,
-    _DeviceFunctionPtr,
-    _DeviceStreamPtr,
-)
+from max.gpu.host.device_context import _CString, _checked
 
 
 struct _CUctx_st:

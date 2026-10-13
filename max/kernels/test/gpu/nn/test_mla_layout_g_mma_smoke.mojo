@@ -60,12 +60,12 @@ for the design context.
 
 from std.math import ceildiv
 from std.memory import alloc
-from std.random import rand, randn, seed
+from std.random import randn, seed
 from std.sys import size_of
 
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import B200, _is_sm10x_gpu
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import (
@@ -87,9 +87,9 @@ from max.gpu.compute.arch.tcgen05 import (
 from layout import (
     ComptimeInt,
     Coord,
-    Idx,
     RowMajorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -102,7 +102,7 @@ from linalg.arch.sm100.mma import smem_descriptor
 from linalg.matmul.gpu import matmul_kernel_naive
 from nn.attention.gpu.nvidia.sm100.attention_utils import bulk_mma_ws, elect
 from std.testing import assert_true
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 # ---------------------------------------------------------------------------
 # Shared compile-time constants
@@ -183,15 +183,13 @@ comptime PV_TOTAL_SMEM = PV_META_OFFSET + 32
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def qk_smoke_kernel[
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
 ](
-    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_shape, b_desc_shape],
     c_output: TileTensor[
         ACC_TYPE,
         RowMajorLayout[ComptimeInt[QK_M], ComptimeInt[QK_N]],
@@ -344,15 +342,13 @@ def qk_smoke_kernel[
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def pv_smoke_kernel[
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
 ](
-    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_shape, b_desc_shape],
     c_output: TileTensor[
         ACC_TYPE,
         RowMajorLayout[ComptimeInt[PV_M], ComptimeInt[PV_N]],
@@ -571,20 +567,16 @@ def test_qk_smoke(ctx: DeviceContext) raises:
 
     # ---- TMA descriptors ----
     var a_tma_op = create_tensor_tile[
-        Index(QK_M, QK_K),
-        swizzle_mode=QK_SWIZZLE,
+        coord[QK_M, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, a_inp.device_tensor())
     var b_tma_op = create_tensor_tile[
-        Index(QK_N, QK_K),
-        swizzle_mode=QK_SWIZZLE,
+        coord[QK_N, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, b_inp.device_tensor())
 
     # ---- Launch ----
     comptime kernel = qk_smoke_kernel[
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
     ]
@@ -767,19 +759,15 @@ def test_pv_smoke(ctx: DeviceContext) raises:
     b_inp.to_device()
 
     var a_tma_op = create_tensor_tile[
-        Index(PV_M, PV_K),
-        swizzle_mode=PV_SWIZZLE,
+        coord[PV_M, PV_K], swizzle_mode=PV_SWIZZLE
     ](ctx, a_inp.device_tensor())
     var b_tma_op = create_tensor_tile[
-        Index(PV_N, PV_K),
-        swizzle_mode=PV_SWIZZLE,
+        coord[PV_N, PV_K], swizzle_mode=PV_SWIZZLE
     ](ctx, b_inp.device_tensor())
 
     comptime kernel = pv_smoke_kernel[
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
     ]

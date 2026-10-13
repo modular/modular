@@ -38,7 +38,6 @@ from smoke_tests.eval_runner import (
     print_samples,
     safe_model_name,
     test_single_request,
-    validate_hf_token,
     write_results,
 )
 
@@ -130,8 +129,6 @@ def endpoint_smoke_test(
         ./bazelw run //...:endpoint_smoke_test -- my-model \\
             --base-url https://gateway.example.com
     """
-    validate_hf_token()
-
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
 

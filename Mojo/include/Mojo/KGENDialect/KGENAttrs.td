@@ -2147,44 +2147,42 @@ def KGEN_TargetParamAttr : KGEN_ExprAttr<"TargetParam", "target"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_GetTargetPluginAttr : KGEN_ExprAttr<"GetTargetPlugin",
-    "get_target_plugin"> {
-  let summary = "Get the opaque plugin payload carried by a target.";
+    "get_target_plugin",
+    [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                 ["evaluateWithContext"]>]> {
+  let summary = "Get a target's opaque plugin payload or a fallback.";
   let description = [{
-    The `#kgen.get_target_plugin` attribute returns the `opaque_plugin` payload
-    of a target if the plugin type matches the requested type.
-
-    Example:
-
-    ```mlir
-    kgen.generator @plugin_for<t0: target>() {
-      kgen.param.constant: !kgen.param_list<!kgen.type> =
-        <#kgen.get_target_plugin<t0> : !kgen.param_list<!kgen.type>>
-      hlcf.return
-    }
-    ```
+    The `#kgen.get_target_plugin` attribute returns the `opaque_plugin`
+    payload of a target if the plugin type matches the requested type. If a
+    concrete target has no payload, it returns the fallback value. It remains
+    unresolved for a target parameter. A payload whose type differs from the
+    requested type is a parse error, unless either type still mentions
+    parameters, in which case it also remains unresolved.
   }];
 
   let parameters = (ins
     "TypedAttr":$target,
+    "TypedAttr":$fallback,
     AttributeSelfTypeParameter<"", "Type">:$type
   );
 
   let assemblyFormat = [{
-    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `>`
+    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,`
+        custom<ColonTypeParamValue>($fallback) `>`
   }];
 
   let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return a GetTargetPluginAttr.
     AttrBuilderWithInferredContext<(ins
-      "TypedAttr":$target, "Type":$type), "", "TypedAttr">,
+      "TypedAttr":$target, "TypedAttr":$fallback, "Type":$type), "", "TypedAttr">,
 
-    // Verbose form with MLIRContext, needed for ODS constructors.
-    AttrBuilder<(ins "TypedAttr":$target, "Type":$type), [{
-      return get(target, type);
-    }], "TypedAttr">,
+    // Verbose form with MLIRContext, needed for ODS constructors. Defined by
+    // hand so that the checked form can diagnose a mismatched payload type.
+    AttrBuilder<(ins
+      "TypedAttr":$target, "TypedAttr":$fallback, "Type":$type), "",
+      "TypedAttr">,
   ];
 
+  let genVerifyDecl = 1;
   let skipDefaultBuilders = 1;
 }
 

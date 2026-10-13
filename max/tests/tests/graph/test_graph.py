@@ -220,7 +220,7 @@ def test_profile_scope_skips_constants_and_weights() -> None:
     for line in asm.splitlines():
         if (
             "mo.constant.external" in line
-            or "mo.constant {value" in line
+            or "mo.constant <" in line
             or "mo.output" in line
         ):
             assert "profile_scope" not in line

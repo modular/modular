@@ -18,7 +18,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from std.hashlib.hasher import Hasher
 from std.os import abort
-from std.sys import CompilationTarget, bit_width_of, size_of
+from std.sys import bit_width_of
 
 comptime _mIsSigned = __mlir_attr.`#kgen.simd<1> : !kgen.scalar<ui8>`
 comptime _mIsInteger = __mlir_attr.`#kgen.simd<128> : !kgen.scalar<ui8>`
@@ -352,7 +352,7 @@ struct DType(
         if str.startswith("DType."):
             return Self._from_str(str.removeprefix("DType."))
 
-        __match str:
+        match str:
             case "bool":
                 return DType.bool
             case "int":
@@ -428,7 +428,7 @@ struct DType(
         # `write_string` rather than `write`: `write` promotes each literal to a
         # `String`, so all 27 arms would carry a stack slot, a small-string
         # branch and a refcounted teardown.
-        __match self:
+        match self:
             case .bool:
                 return writer.write_string("bool")
             case .int:
@@ -715,7 +715,7 @@ struct DType(
         comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
-        comptime __match dtype:
+        comptime match dtype:
             case DType.float4_e2m1fn:
                 return 1
             case DType.float6_e2m3fn:
@@ -972,7 +972,7 @@ def _int_type_of_width[width: Int]() -> DType:
         256,
     ), "width must be either 8, 16, 32, 64, 128, or 256"
 
-    comptime __match width:
+    comptime match width:
         case 8:
             return DType.int8
         case 16:

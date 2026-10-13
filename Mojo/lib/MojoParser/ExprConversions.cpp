@@ -414,9 +414,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
           MBValue(thunk.getArgument(thunkVariadicArgIndex));
 
       // Emit: the_pack[index]
-      auto indexAttr = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
-      CValue indexCValue = emitter.emitInt(
-          ASTExprAnd<PValue>{PValue(indexAttr), &node}, EC_ConversionThunk);
+      CValue indexCValue =
+          emitter.emitInt(indexInVariadic, useLoc, EC_ConversionThunk);
       SyntheticNode indexSynthNode(useLoc, indexCValue);
       SyntheticNode packSynthNode(useLoc, packRefMBValue);
       Operand subscriptOperand(&indexSynthNode, useLoc,
@@ -2448,7 +2447,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
   // If the value is a t-string, convert it to String first. TString cannot be
   // implicitly converted to StringSpan, but String has an explicit constructor
   // that accepts TString.
-  if (isa<TStringExprNode>(expr)) {
+  if (isa<TStringExprNode>(expr->getWithoutParens())) {
     auto stringType = shared.lookupBuiltinType("String", declScope, loc)
                           .getWithoutParameters(shared);
     if (val.getType().getDecl(shared) != stringType.getDecl(shared)) {

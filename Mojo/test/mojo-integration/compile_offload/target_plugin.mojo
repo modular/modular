@@ -34,9 +34,12 @@ comptime ParametricTargetWithTypeListPlugin[
     `> : !kgen.target`,
 ]
 
-# Plugin getter that expects a TypeList of AnyType as the payload.
-comptime GetTargetPlugin[T: AnyType, Target: _TargetType]: T = __mlir_attr[
-    `#kgen.get_target_plugin<`, Target, `> : `, +T
+# Plugin getter that expects a TypeList of AnyType as the payload. The fallback
+# is never selected here because every target carries a payload.
+comptime GetTargetPlugin[
+    T: AnyType, Target: _TargetType, Fallback: T
+]: T = __mlir_attr[
+    `#kgen.get_target_plugin<`, Target, `, :`, +T, ` `, Fallback, `> : `, +T
 ]
 
 
@@ -47,7 +50,11 @@ def check_plugin[
     Expected: TypeList[Trait=AnyType, ...]
 ](ptr: Pointer[Int, MutAnyOrigin]):
     comptime actual = TypeList[
-        GetTargetPlugin[_MLIR.KGENParamListType[AnyType], _current_target()]
+        GetTargetPlugin[
+            _MLIR.KGENParamListType[AnyType],
+            _current_target(),
+            TypeList.of[Float32]().values,
+        ]
     ]()
     comptime assert actual.length == Expected.length, "plugin length mismatch"
 

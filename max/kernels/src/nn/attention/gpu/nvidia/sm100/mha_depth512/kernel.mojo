@@ -27,30 +27,20 @@ Warp assignment (384 threads = 12 warps, 3 warp groups of 128):
     Warps 10-11: Spare (no-op)
 """
 
-from std.math import align_up, ceildiv, min
-from std.sys import size_of
+from std.math import min
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     thread_idx,
     warp_id,
 )
-from max.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from max.gpu.memory import external_memory, fence_mbarrier_init
+from max.gpu.memory import fence_mbarrier_init
 from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
-    tcgen05_release_allocation_lock,
-)
-from layout.tma_async import (
-    SharedMemBarrier,
-    RaggedTMA3DTile,
-)
+from layout import Coord
+from layout.tma_async import RaggedTMA3DTile, TMATensorTile
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
-    SharedMemPointer,
-    MBarType,
+    attn_tmem_addr,
     elect,
     kv_sub_tile_rows,
     o_store_tma_blocks_per_op,
@@ -62,7 +52,6 @@ from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     Pack,
     PositionSummary,
-    QTMATile,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -87,6 +76,8 @@ from .softmax_warp import depth512_softmax
 
 
 struct SM100MHADepth512[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -106,6 +97,12 @@ struct SM100MHADepth512[
     sub-kernel that shares a single `Depth512AttentionSMem` allocation.
 
     Parameters:
+        q_tile_shape: Q-tile smem shape (inferred Coord); threads the
+            rank-3 prefill or rank-4 fused-GQA shape from dispatch so the
+            struct supports both via the same `TMATensorTile` parameter
+            (KGEN cannot fold a Coord-valued conditional).
+        q_desc_shape: Q descriptor shape (inferred Coord); mirrors
+            `q_tile_shape` for the global-memory TMA layout.
         KVLUTType: MHA operand describing the KV cache lookup table; its
             `dtype` is the Q, K, V element type and its `page_size` drives
             the KV sub-tile row counts.
@@ -181,15 +178,14 @@ struct SM100MHADepth512[
         t"sm100_mha_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
     def kernel(
-        q_tma_op: QTMATile[
-            Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
-            BM=Self.config.BM,
-            depth=Self.config.qk_depth,
-            group=Self.config.group,
-            decoding=False,
-            fuse_gqa=Self.fuse_gqa,
-            num_qk_stages=Self.config.num_qk_stages,
+        # Q-tile shape is threaded in as inferred `Coord` params so the
+        # struct supports both the rank-3 prefill shape (`fuse_gqa=False`)
+        # and the rank-4 fused-GQA decoding shape (`fuse_gqa=True`)
+        # without an in-struct Coord ternary (KGEN does not fold those).
+        # Dispatch picks the alias (`q_tma_prefill` or `q_tma_fused`) and
+        # passes its tile/desc shapes here.
+        q_tma_op: TMATensorTile[
+            Self.KVLUTType.dtype, Self.q_tile_shape, Self.q_desc_shape
         ],
         k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -265,18 +261,12 @@ struct SM100MHADepth512[
         # ---- Initialization (per-CTA, then cluster sync) ----------------
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        __match warp_idx:
+        match warp_idx:
             case 0:
                 # Initialize all barriers.
                 Depth512MBars[Self.config.num_kv_stages, Self.config.split_o](
                     smem.mbar_base()
                 ).init(lane_idx=Int32(thread_idx.x))
-            case 1:
-                # TMEM allocation (pair-CTA cooperative).
-                tcgen05_alloc[Int32(Self.cta_group)](
-                    smem.tmem_addr_ptr(),
-                    UInt32(Self.config.sm100_tmem_cols),
-                )
             case 2:
                 var e = elect()
                 if e != 0:
@@ -289,21 +279,9 @@ struct SM100MHADepth512[
         fence_mbarrier_init()
         cluster_sync()
 
-        # Read the TMEM base from SMEM EXACTLY ONCE here, where the prologue
-        # `cluster_sync()` (preceded by `tcgen05_alloc`'s SMEM store +
-        # MEMBAR.ALL) has provably published it, and carry it in a register to
-        # every consumer warp (softmax/correction/mma) as an explicit argument.
-        # Do NOT let the consumers re-read `smem.tmem_addr_ptr()` in their
-        # bodies: SASS showed the in-body re-reads (the P@V O-operand load deep
-        # in the MMA loop) gated only on KV-pipeline barriers, not on the alloc
-        # publish, so under SM co-residency with the TP `allreduce_1stage` grid
-        # (graph capture) a re-read could observe a stale/pre-alloc slot value
-        # -> garbage TMEM base -> invalid `UTCHMMA` operand ->
-        # CUDA_ERROR_ILLEGAL_INSTRUCTION. Reading once post-barrier and passing
-        # by register (matches the proven `SM100MHA2Q` FA4 structure) removes
-        # every in-body slot reload. Value is identical to the old per-warp
-        # reads (same published base), so single-shot is bit-identical.
-        var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+        # Read the TMEM base once and carry it in a register to every consumer
+        # warp (softmax/correction/mma), matching `SM100MHA2Q`.
+        var tmem_addr = attn_tmem_addr[cluster_size=Self.cta_group]()
 
         # ---- Warp dispatch -----------------------------------------------
 
@@ -419,10 +397,6 @@ struct SM100MHADepth512[
             ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
-                tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](
-                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
-                )
                 return
             var pos: PositionSummary = PositionSummary.create[
                 ragged=Self.ragged,
@@ -478,13 +452,15 @@ struct SM100MHADepth512[
             # the pattern at `sm100/kernel.mojo:447-483`.
             if cta_rank == UInt32(0):
                 depth512_load[
-                    Self.KVLUTType,
-                    Self.MaskType,
-                    Self.qkv_type,
-                    Self.config,
-                    Self.ValidLengthType,
-                    Self._is_cache_length_accurate,
-                    Self.MaxSeqLenType,
+                    q_tile_shape=q_tma_op.tile_shape,
+                    q_desc_shape=q_tma_op.desc_shape,
+                    KVLUTType=Self.KVLUTType,
+                    MaskType=Self.MaskType,
+                    qkv_dtype=Self.qkv_type,
+                    config=Self.config,
+                    ValidLengthType=Self.ValidLengthType,
+                    _is_cache_length_accurate=Self._is_cache_length_accurate,
+                    MaxSeqLenType=Self.MaxSeqLenType,
                     is_leader=True,
                 ](
                     smem,
@@ -500,13 +476,15 @@ struct SM100MHADepth512[
                 )
             else:
                 depth512_load[
-                    Self.KVLUTType,
-                    Self.MaskType,
-                    Self.qkv_type,
-                    Self.config,
-                    Self.ValidLengthType,
-                    Self._is_cache_length_accurate,
-                    Self.MaxSeqLenType,
+                    q_tile_shape=q_tma_op.tile_shape,
+                    q_desc_shape=q_tma_op.desc_shape,
+                    KVLUTType=Self.KVLUTType,
+                    MaskType=Self.MaskType,
+                    qkv_dtype=Self.qkv_type,
+                    config=Self.config,
+                    ValidLengthType=Self.ValidLengthType,
+                    _is_cache_length_accurate=Self._is_cache_length_accurate,
+                    MaxSeqLenType=Self.MaxSeqLenType,
                     is_leader=False,
                 ](
                     smem,

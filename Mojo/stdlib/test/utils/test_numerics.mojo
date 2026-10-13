@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys.info import CompilationTarget, is_64bit
+from std.ffi import _external_call_const
+from std.sys.info import is_64bit
 
 from std.testing import (
     TestSuite,
@@ -466,6 +467,100 @@ def test_nextafter() raises:
         nextafter(SIMD[.float64, 2](-1, -1), SIMD[.float64, 2](0, 0)),
         SIMD[.float64, 2](-0.99999999999999988, -0.99999999999999988),
     )
+
+
+def _nextafter_libm_ref[
+    dt: DType
+](x: Scalar[dt], toward: Scalar[dt]) -> Scalar[dt]:
+    comptime name = "nextafter" + ("f" if dt == .float32 else "")
+    return _external_call_const[name, Scalar[dt]](x, toward)
+
+
+def _assert_nextafter_matches_libm[
+    dt: DType
+](x: Scalar[dt], toward: Scalar[dt]) raises:
+    var got = Scalar[dt](nextafter(SIMD[dt, 1](x), SIMD[dt, 1](toward))[0])
+    var want = _nextafter_libm_ref[dt](x, toward)
+    assert_equal(
+        got.to_bits(),
+        want.to_bits(),
+        String(t"nextafter({x}, {toward}) = {got}, expected {want}"),
+    )
+
+
+def test_nextafter_matches_libm() raises:
+    # The pure-Mojo bit walk must agree with the system libm bit for bit on
+    # every input class: normals, subnormals, both zero signs, signed
+    # infinities, sign-boundary neighbours, and equal-input cases.
+    comptime f32_bits: List[UInt32] = [
+        0x00000000,  # +0
+        0x80000000,  # -0
+        0x00000001,  # smallest subnormal
+        0x80000001,  # -smallest subnormal
+        0x007FFFFF,  # largest subnormal
+        0x807FFFFF,  # -largest subnormal
+        0x00800000,  # smallest normal
+        0x80800000,  # -smallest normal
+        0x3F800000,  # 1.0
+        0xBF800000,  # -1.0
+        0x3F7FFFFF,  # value just below 1.0
+        0xBF7FFFFF,  # value just above -1.0
+        0x7F7FFFFF,  # largest finite
+        0xFF7FFFFF,  # -largest finite
+        0x7F800000,  # +inf
+        0xFF800000,  # -inf
+        0x40490FDB,  # pi
+        0xC0490FDB,  # -pi
+    ]
+    comptime f64_bits: List[UInt64] = [
+        0x0000000000000000,
+        0x8000000000000000,
+        0x0000000000000001,
+        0x8000000000000001,
+        0x000FFFFFFFFFFFFF,
+        0x800FFFFFFFFFFFFF,
+        0x0010000000000000,
+        0x8010000000000000,
+        0x3FF0000000000000,
+        0xBFF0000000000000,
+        0x3FEFFFFFFFFFFFFF,
+        0xBFEFFFFFFFFFFFFF,
+        0x7FEFFFFFFFFFFFFF,
+        0xFFEFFFFFFFFFFFFF,
+        0x7FF0000000000000,
+        0xFFF0000000000000,
+        0x400921FB54442D18,
+        0xC00921FB54442D18,
+    ]
+
+    comptime for xi in range(len(f32_bits)):
+        comptime x = Float32(from_bits=f32_bits[xi])
+        comptime for yi in range(len(f32_bits)):
+            comptime y = Float32(from_bits=f32_bits[yi])
+            comptime if not (isnan(x) or isnan(y)):
+                _assert_nextafter_matches_libm[.float32](x, y)
+    comptime for xi in range(len(f64_bits)):
+        comptime x = Float64(from_bits=f64_bits[xi])
+        comptime for yi in range(len(f64_bits)):
+            comptime y = Float64(from_bits=f64_bits[yi])
+            comptime if not (isnan(x) or isnan(y)):
+                _assert_nextafter_matches_libm[.float64](x, y)
+
+    # A runtime pseudo-random sweep over arbitrary bit patterns reaches every
+    # input class by construction; NaN pairs are skipped, which the reference
+    # cannot order.
+    var s = UInt64(0x9E3779B97F4A7C15)
+    for _ in range(2048):
+        s = s * 6364136223846793005 + 1442695040888963407
+        var x = Float64(from_bits=s)
+        s = s * 6364136223846793005 + 1442695040888963407
+        var y = Float64(from_bits=s)
+        if not (isnan(x) or isnan(y)):
+            _assert_nextafter_matches_libm[.float64](x, y)
+        var x32 = Float32(from_bits=UInt32(s & 0xFFFFFFFF))
+        var y32 = Float32(from_bits=UInt32(s >> 32))
+        if not (isnan(x32) or isnan(y32)):
+            _assert_nextafter_matches_libm[.float32](x32, y32)
 
 
 def test_nextafter_at_comptime() raises:

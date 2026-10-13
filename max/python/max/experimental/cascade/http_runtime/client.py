@@ -190,7 +190,7 @@ class HttpRuntimeProxy(Runtime):
 
         Inside an ``async with`` block on this proxy the pooled session
         opened by :py:meth:`__aenter__` is reused. Outside that context
-        -- e.g. after :py:class:`HttpRuntimeProxy` has been unpickled
+        -- for example, after :py:class:`HttpRuntimeProxy` has been unpickled
         from a wire-side handle and is used directly without being
         explicitly entered -- this yields a fresh single-use session and
         tears it down on exit. Concurrent users still see a single

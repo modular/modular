@@ -31,7 +31,7 @@ from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import CacheOperation
 from std.memory.unsafe import bitcast
 
-from layout import Coord, Idx, TileTensor, DefaultEngine
+from layout import TileTensor
 from layout._utils import make_amd_buffer_resource
 
 from .block_scaled_preshuffle_layouts import Shuffler

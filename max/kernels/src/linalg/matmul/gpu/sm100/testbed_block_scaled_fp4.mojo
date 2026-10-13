@@ -21,7 +21,7 @@ from std.sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc, bitcast, dealloc, ThinAllocation
+from std.memory import alloc, bitcast, dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.random import rand, random_ui64, seed
 from internal_utils import assert_almost_equal
@@ -351,11 +351,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         width: SIMDLength,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_tensor.store_linear[alignment=alignment * size_of[c_type](),](
-            idx, scaled
-        )
+        c_tensor.store[alignment=alignment * size_of[c_type]()](idx, scaled)
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn

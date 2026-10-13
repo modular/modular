@@ -166,6 +166,9 @@ def _collect_error_chain(exc: BaseException) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.compile_on_gpu(
+    "asserts on the error its compile raises, which only compiling reproduces"
+)
 def test_unfused_build_error() -> None:
     """CPU: ops.add on rank-9 tensors triggers compile error (rank > kMaxRank)."""
     shape_9d = [1, 1, 1, 1, 1, 1, 1, 1, 1]
@@ -201,6 +204,9 @@ def test_unfused_build_error() -> None:
     assert canonicalized == expected
 
 
+@pytest.mark.compile_on_gpu(
+    "asserts on the error its compile raises, which only compiling reproduces"
+)
 @pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
 def test_fused_build_error() -> None:
     """GPU: rank-9 tensors in fused region trigger compile error."""

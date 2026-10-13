@@ -86,6 +86,10 @@ static SMRange getRangeForText(SMLoc loc, StringRef text) {
 static constexpr StringRef kMissingDocMessage =
     "Unexpected empty documentation string";
 
+/// The title of the code action that appends a `case` arm per value of a
+/// `match` subject its cases leave uncovered.
+static constexpr StringRef kAddMissingCasesTitle = "Add missing cases";
+
 //===----------------------------------------------------------------------===//
 // Inlay Hints
 //===----------------------------------------------------------------------===//
@@ -605,6 +609,9 @@ public:
   void onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
              llvm::SMRange range) override;
 
+  void onMatchMissingCases(llvm::SMRange matchRange, SMLoc insertLoc,
+                           StringRef arms) override;
+
 private:
   /// The main doc for which parsing was initiated.
   MojoDocument &mainDoc;
@@ -673,6 +680,12 @@ void LSPParserListener::onRef(ArrayRef<ASTDecl *> decls, StringRef spelling,
       llvm::map_to_vector(decls,
                           [](ASTDecl *decl) -> MojoASTDeclRef { return decl; }),
       mainDoc.translateParserLoc(range), spelling);
+}
+
+void LSPParserListener::onMatchMissingCases(llvm::SMRange matchRange,
+                                            SMLoc insertLoc, StringRef arms) {
+  mainDoc.addMatchMissingCases(mainDoc.translateParserLoc(matchRange),
+                               mainDoc.translateParserLoc(insertLoc), arms);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1107,6 +1120,22 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
 // MojoDocument: Code Action
 //===----------------------------------------------------------------------===//
 
+/// Returns true if the client accepts code actions of the given kind, i.e. the
+/// kind or one of its parents is requested, or nothing specific is.
+static bool isCodeActionKindAllowed(const lsp::CodeActionContext &context,
+                                    StringRef kind) {
+  if (context.only.empty())
+    return true;
+  return llvm::any_of(context.only, [&](StringRef base) {
+    return kind.consume_front(base) && (kind.empty() || kind.starts_with("."));
+  });
+}
+
+void MojoDocument::addMatchMissingCases(SMRange matchRange, SMLoc insertLoc,
+                                        StringRef arms) {
+  matchesWithMissingCases.push_back({matchRange, insertLoc, arms.str()});
+}
+
 void MojoDocument::getCodeActions(
     const lsp::URIForFile &uri, const lsp::Range &pos,
     const lsp::CodeActionContext &context,
@@ -1123,23 +1152,52 @@ void MojoDocument::getCodeActions(
 std::vector<lsp::CodeAction>
 MojoDocument::getCodeActionsSync(SMRange range,
                                  const lsp::CodeActionContext &context) {
-  // Create actions for any diagnostics in this file.
   std::vector<lsp::CodeAction> actions;
-  for (auto &diag : context.diagnostics) {
-    if (diag.source != "mojo")
-      continue;
 
-    // Find the fixits for this diagnostic.
-    auto fixitIt = fixits.find(diag.message);
-    if (fixitIt == fixits.end())
-      continue;
-    auto it = fixitIt->second.find(diag.range);
-    if (it == fixitIt->second.end())
-      continue;
-    for (auto &action : it->second) {
-      actions.emplace_back(action);
-      actions.back().diagnostics = {diag};
+  // Create actions for any diagnostics in this file.
+  if (isCodeActionKindAllowed(context, lsp::CodeAction::kQuickFix)) {
+    for (auto &diag : context.diagnostics) {
+      if (diag.source != "mojo")
+        continue;
+
+      // Find the fixits for this diagnostic.
+      auto fixitIt = fixits.find(diag.message);
+      if (fixitIt == fixits.end())
+        continue;
+      auto it = fixitIt->second.find(diag.range);
+      if (it == fixitIt->second.end())
+        continue;
+      for (auto &action : it->second) {
+        actions.emplace_back(action);
+        actions.back().diagnostics = {diag};
+      }
     }
+  }
+
+  // Offer to add the missing cases of a `match` whose header contains the
+  // requested position. This needs no diagnostic, so it also covers a match
+  // with no cases yet.
+  if (!isCodeActionKindAllowed(context, lsp::CodeAction::kRefactor))
+    return actions;
+  const char *pos = range.Start.getPointer();
+  for (const MatchMissingCases &match : matchesWithMissingCases) {
+    if (pos < match.matchRange.Start.getPointer() ||
+        pos > match.matchRange.End.getPointer())
+      continue;
+    std::optional<lsp::URIForFile> uri = getURIFromLoc(match.insertLoc);
+    if (!uri)
+      continue;
+    lsp::TextEdit edit{
+        .range =
+            lsp::Range(sourceMgr, SMRange(match.insertLoc, match.insertLoc)),
+        .newText = match.arms,
+    };
+    lsp::CodeAction action;
+    action.title = kAddMissingCasesTitle.str();
+    action.kind = lsp::CodeAction::kRefactor.str();
+    action.edit.emplace();
+    action.edit->changes[uri->uri().str()].push_back(std::move(edit));
+    actions.push_back(std::move(action));
   }
   return actions;
 }
@@ -1579,7 +1637,7 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
 
   switch (*declKind) {
   case PublicDeclKind::DK_PublicAliasDecl: {
-    auto aliasOp = cast<AliasDeclOp>(symDecl->getIfOperation());
+    AliasDeclOp aliasOp = cast<AliasASTDecl>(&*symDecl)->getOp();
     if (Attribute aliasValue = aliasOp.getValueAttr()) {
       // Try to decipher a token kind from the alias value.
       if (isa<ModuleAttr>(aliasValue))
@@ -1628,31 +1686,64 @@ static std::optional<int64_t> getConstantAddressSpace(TypedAttr value) {
   return std::nullopt;
 }
 
-/// Return the address space bound to the given type, if exactly one of its
-/// parameters is an `AddressSpace` and that parameter is concrete.
-static std::optional<int64_t> getAddressSpaceFromTypeParams(ASTType type) {
-  TypedAttr addressSpace;
-  for (TypedAttr binding : type.getParamBindings()) {
-    if (!binding)
-      continue;
-    auto structType = KGEN::sugarDynCast<StructType>(binding.getType());
+/// Return the address space bound anywhere in the given type: on a `!lit.ref`
+/// or as an `AddressSpace` parameter, whether of the type itself or of a type
+/// nested in its parameters, so that `Array[SharedPtr, 2]` reports the address
+/// space of its element type. Generic references are ignored; nearly every
+/// value lives in one, so reporting them would mark everything. A generic
+/// `AddressSpace` parameter is still reported. With several distinct address
+/// spaces, or one that is not a constant, there is no single one to report.
+static std::optional<int64_t> findAddressSpace(Type type) {
+  // The address space recorded so far, if any.
+  std::optional<int64_t> space;
+  // Record an address space found in the type, interrupting the walk when
+  // there is no single one to report anymore: when `found` is not a constant,
+  // or differs from one recorded before. `recorded` tells the walk how to
+  // proceed otherwise.
+  auto record = [&](std::optional<int64_t> found, WalkResult recorded) {
+    if (!found || (space && *space != *found))
+      return WalkResult::interrupt();
+    space = found;
+    return recorded;
+  };
+  mlir::AttrTypeWalker walker;
+  // An `AddressSpace` value carries its address space; nothing nested in it
+  // can add another.
+  walker.addWalk([&](Attribute attr) -> WalkResult {
+    auto value = dyn_cast<TypedAttr>(attr);
+    if (!value)
+      return WalkResult::advance();
+    auto structType = KGEN::sugarDynCast<StructType>(value.getType());
     if (!structType ||
         structType.getSymbol().getLeafReference().strref() != "AddressSpace")
-      continue;
-    // With several address spaces there's no single one to report.
-    if (addressSpace)
-      return std::nullopt;
-    addressSpace = binding;
-  }
-  return getConstantAddressSpace(addressSpace);
+      return WalkResult::advance();
+    return record(getConstantAddressSpace(value), WalkResult::skip());
+  });
+  walker.addWalk([&](RefType ref) -> WalkResult {
+    std::optional<int64_t> found =
+        getConstantAddressSpace(ref.getAddressSpace());
+    if (found && *found != 0)
+      return record(found, WalkResult::advance());
+    return WalkResult::advance();
+  });
+  // Only the canonical form of sugar carries meaning: the sugared form
+  // records how a value was spelled, and some of its parts are not values
+  // at all, such as the type in `AddressSpace.LOCAL`. Registered last, so
+  // it runs before the callbacks above see the sugar.
+  walker.addWalk([&](KGEN::SugarAttr sugar) -> WalkResult {
+    if (walker.walk<mlir::WalkOrder::PreOrder>(sugar.getCanonical())
+            .wasInterrupted())
+      return WalkResult::interrupt();
+    return WalkResult::skip();
+  });
+  WalkResult result = walker.walk<mlir::WalkOrder::PreOrder>(type);
+  return result.wasInterrupted() ? std::nullopt : space;
 }
 
 /// Return the address space of the given symbol, if it has one. This is the
-/// address space of the reference that holds the value, or, for a value in the
-/// generic address space, the address space parameter of its type (e.g.
-/// `UnsafePointer[..., address_space=AddressSpace.SHARED]`). Generic is only
-/// reported from a type parameter; nearly every value lives in a generic
-/// reference, so reporting that would mark everything.
+/// address space of the reference that holds the value or the address space
+/// parameter of its type (e.g. `UnsafePointer[..., address_space=SHARED]`),
+/// including one nested in a type parameter such as an array's element type.
 static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
   if (!symbol.approximateViewKind)
     return std::nullopt;
@@ -1684,16 +1775,7 @@ static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
   }
   if (!type)
     return std::nullopt;
-
-  if (auto refType = KGEN::sugarDynCast<RefType>(type.mlirType)) {
-    std::optional<int64_t> addressSpace =
-        getConstantAddressSpace(refType.getAddressSpace());
-    if (addressSpace && *addressSpace != 0)
-      return addressSpace;
-    type = refType.getElementType();
-  }
-
-  return getAddressSpaceFromTypeParams(type);
+  return findAddressSpace(type);
 }
 
 std::optional<std::vector<SemanticToken>>
@@ -2975,18 +3057,10 @@ void MojoServer::getCodeActions(
     LSPResponder<std::vector<lsp::CodeAction>> responder) {
   lsp::URIForFile uri = params.textDocument.uri;
 
-  // Check whether a particular CodeActionKind is included in the response.
-  auto isKindAllowed = [only(params.context.only)](StringRef kind) {
-    if (only.empty())
-      return true;
-    return llvm::any_of(only, [&](StringRef base) {
-      return kind.consume_front(base) &&
-             (kind.empty() || kind.starts_with("."));
-    });
-  };
-
-  // We provide a code action for fixes on the specified diagnostics.
-  if (!isKindAllowed(lsp::CodeAction::kQuickFix))
+  // We provide fixes for the specified diagnostics and refactorings at the
+  // requested position.
+  if (!isCodeActionKindAllowed(params.context, lsp::CodeAction::kQuickFix) &&
+      !isCodeActionKindAllowed(params.context, lsp::CodeAction::kRefactor))
     return responder.reply(std::vector<lsp::CodeAction>());
 
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))

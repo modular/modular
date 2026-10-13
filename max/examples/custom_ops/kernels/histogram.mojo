@@ -24,7 +24,6 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.host.info import is_cpu
-from max.gpu.host import DeviceBuffer
 from std.memory import unsafe_stack_allocation
 
 from extensibility import InputTensor, ManagedTensorSlice, OutputTensor

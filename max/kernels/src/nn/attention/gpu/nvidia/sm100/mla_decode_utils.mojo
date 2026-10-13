@@ -45,13 +45,10 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.primitives.warp import _vote_nvidia_helper
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import TileTensor, row_major, Idx, stack_allocation
+from layout import TileTensor, row_major, Idx, stack_allocation, coord
+from std.utils.coord import coord_to_index_list
 from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
 from layout.tma_async import (
     create_tensor_tile,
     PipelineState,
@@ -66,6 +63,7 @@ from nn.attention.gpu.nvidia.common import (
 from nn.attention.mha_mask import MHAMask, MASK_VALUE
 from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
+from kv_cache.types import kv_sub_tile_rows, kv_tma_fold_chunks
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
@@ -99,9 +97,8 @@ comptime QOTMATile[
     dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
 ] = TMATensorTile[
     dtype,
-    2,
-    IndexList[2](BM, BK),
-    _default_desc_shape[2, dtype, (BM, BK), swizzle_mode](),
+    coord[BM, BK],
+    _default_desc_shape[dtype, coord[BM, BK], swizzle_mode](),
     is_k_major=True,
 ]
 
@@ -140,7 +137,7 @@ def tma_tile_qo[
 
     res = rebind[QOTMATile[dtype, BM, BK, swizzle_mode]](
         create_tensor_tile[
-            IndexList[2](BM, BK),
+            coord[BM, BK],
             swizzle_mode=swizzle_mode,
         ](ctx, tensor)
     )
@@ -157,9 +154,8 @@ comptime ORaggedTMATile[
     dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
 ] = TMATensorTile[
     dtype,
-    3,
-    IndexList[3](1, BM, BK),
-    _default_desc_shape[3, dtype, (1, BM, BK), swizzle_mode](),
+    coord[1, BM, BK],
+    _default_desc_shape[dtype, coord[1, BM, BK], swizzle_mode](),
     is_k_major=True,
 ]
 
@@ -207,7 +203,9 @@ def tma_tile_o[
         DeviceBuffer(ctx, ptr.unsafe_offset(-depth * BM), 1, owning=False),
         IndexList[3](rows + 1, BM, depth),
         IndexList[3](depth, depth, 1),
-        _default_desc_shape[3, dtype, (1, BM, BK), swizzle_mode](),
+        coord_to_index_list(
+            _default_desc_shape[dtype, coord[1, BM, BK], swizzle_mode]()
+        ),
     )
 
 
@@ -239,9 +237,7 @@ def store_row_coords[
 # not triggered. With BN_QK=64, tile_bytes = 256 which is already 128-aligned.
 comptime ScalesTMATile[BN_QK: Int] = TMATensorTile[
     DType.float32,
-    2,
-    IndexList[2](1, BN_QK),
-    IndexList[2](1, BN_QK),
+    coord[1, BN_QK],
     is_k_major=True,
 ]
 
@@ -278,9 +274,9 @@ def tma_tile_scales[
     var tensor = TileTensor(ptr, rt_layout)
     res = rebind[ScalesTMATile[BN_QK]](
         create_tensor_tile[
-            IndexList[2](1, BN_QK),
+            coord[1, BN_QK],
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-            __desc_shape=IndexList[2](1, BN_QK),
+            __desc_shape=coord[1, BN_QK],
         ](ctx, tensor)
     )
 
@@ -412,6 +408,32 @@ def fp8_p_bias[fp8_p: Bool](threshold: Float32) -> Float32:
     return (
         8 + fp8_p_rescale_threshold[fp8_p](threshold)
     ) if fp8_p else Float32(0)
+
+
+@inline(.always)
+def mla_decode_k_fold_chunks[
+    kv_dtype: DType, config: MLA_SM100_Decode_Config
+]() -> Int:
+    """Returns the depth-chunk fold factor for the dense decode K descriptor.
+
+    The SW128 box is at most one 64-element atom wide, so a 64 x 576 bf16 stage
+    otherwise takes 9 TMAs. The chunk-outer rank-4 fold writes byte-identical
+    SMEM in one TMA. Only the bf16 kernel issues K through `tma_copy_k` with
+    this fold; the native-fp8 kernels share the descriptor but issue rank-3
+    copies, so fp8 KV always gets 1. The descriptor builder and the
+    `tma_copy_k` issue site must both use this value.
+    """
+    comptime if kv_dtype != DType.bfloat16:
+        return 1
+    return kv_tma_fold_chunks[
+        kv_dtype,
+        config.kv_tma_swizzle_mode,
+        BK=config.input_q_depth,
+        head_size=config.input_q_depth,
+        box_rows=kv_sub_tile_rows(config.BK_PV, config.page_size),
+        smem_BN=config.BN_QK,
+        page_size=config.page_size,
+    ]()
 
 
 # ------------------------------------------------------------------------------
@@ -615,8 +637,7 @@ struct MLA_SM100_Decode_Config:
         else:
             self.num_threads = WARPGROUP_SIZE * 3
 
-        # 4 bytes for the TMEM base pointer
-        var smem_use = 4
+        var smem_use = 0
         self.tmem_used = Self.TMEM_CORR_LI + 1
         self.decoding_warp_split_k = decoding_warp_split_k
         self.page_size = page_size
@@ -752,12 +773,11 @@ struct MLA_SM100_Decode_Config:
             # stage and its barrier pair does. Spend the leftover there only.
             if native_fp8_unified_gather:
                 var extra_kv_stage = smem_per_kv + 2 * Self.mbar_size
-                # The sparse dispatch adds idx_bars, idx_smem and the TMEM
-                # pointer on top of `smem_used`; reserve them or the deeper
-                # ring overflows the carveout at launch rather than here.
+                # The sparse dispatch adds idx_bars and idx_smem on top of
+                # `smem_used`; reserve them or the deeper ring overflows the
+                # carveout at launch rather than here.
                 var sparse_reserve = (
                     2 * self.num_kv_stages * Self.mbar_size
-                    + 4
                     + self.num_kv_stages * self.BN_QK * 4
                 )
                 var leftover = (
@@ -889,6 +909,177 @@ def rows_owned[config: MLA_SM100_Decode_Config](block_x: Int) -> Int:
     return min(config.out_rows, config.num_q_heads - block_x * config.BM)
 
 
+@inline(.always)
+def sparse_kv_row[
+    physical_indices: Bool
+](kv_lut: Some[MHAOperand], batch_idx: UInt32, index: Int32) -> Int32:
+    """Returns the KV TMA row a sparse index names, or `-1` for an unused slot.
+
+    Parameters:
+        physical_indices: Whether `index` is an already-paged
+            `physical_block * page_size + offset` row (the indexer's physical
+            rows, or latent sparse attention's flat rows) rather than a token
+            position within `batch_idx`'s entry.
+
+    Args:
+        kv_lut: Cache operand the index addresses.
+        batch_idx: Batch entry the index belongs to; unread when
+            `physical_indices`.
+        index: The sparse index, `-1` for an unused slot.
+
+    Returns:
+        The TMA row, or `-1`.
+    """
+    comptime if physical_indices:
+        if index == -1:
+            return -1
+        return kv_lut.get_tma_row(index)
+    else:
+        return kv_lut.sparse_tma_row(batch_idx, index)
+
+
+@fieldwise_init
+struct SparseRowLayout(TrivialRegisterPassable):
+    """Describes how a sparse index producer packs one token's row.
+
+    Every producer packs its valid entries first and pads with `-1`, so the
+    number of valid entries is a closed-form function of how many keys the
+    token sees. The decode mask uses it to keep `-1` slots out of the
+    softmax without reading the indices.
+
+    A k-pool producer (`kpool_expand_topk_kernel`) selects up to
+    `pool_topk` pools of `kpool` keys, then, with `select_tail`, the
+    `visible % kpool` keys no complete pool covers yet. `kpool = 1` is a
+    plain top-k row; `pool_topk = 0` leaves its length unbounded, since the
+    kernel's slot count already caps it.
+    """
+
+    var kpool: Int
+    """Keys per selected pool; 1 for plain top-k."""
+    var pool_topk: Int
+    """Maximum number of selected pools; 0 for no bound."""
+    var select_tail: Bool
+    """Whether the row appends the incomplete trailing pool."""
+
+    def __init__(out self):
+        """Creates the plain top-k layout, which adds no bound."""
+        self.kpool = 1
+        self.pool_topk = 0
+        self.select_tail = True
+
+    def is_bounded(self) -> Bool:
+        """Returns whether `valid_len` can be shorter than its argument.
+
+        Returns:
+            True when the layout bounds a row below the token's key count.
+        """
+        return self.kpool > 1 or self.pool_topk > 0
+
+    @inline(.always)
+    def valid_len(self, visible: Int) -> Int:
+        """Returns the number of valid entries in a row.
+
+        Args:
+            visible: Number of keys visible to the token the row was
+                computed for.
+
+        Returns:
+            The row's valid length; slots at or past it hold `-1`.
+        """
+        if self.kpool == 1:
+            if self.pool_topk == 0:
+                return visible
+            return min(visible, self.pool_topk)
+        var pools, tail = divmod(visible, self.kpool)
+        var n = self.kpool * min(pools, self.pool_topk)
+        if self.select_tail:
+            n += tail
+        return n
+
+    @inline(.always)
+    def row_limit(self, visible: Int, selection_lag: Int) -> Int:
+        """Returns the valid length of a row read `selection_lag` tokens late.
+
+        Args:
+            visible: Number of keys visible to the reading token.
+            selection_lag: Positions between the token the row was computed
+                for and the reading token.
+
+        Returns:
+            The row's valid length, or `Int.MAX` when nothing bounds it.
+        """
+        if not (self.is_bounded() or selection_lag != 0):
+            return Int.MAX
+        return self.valid_len(max(visible - selection_lag, 0))
+
+
+@inline(.always)
+def _sparse_row_packed[
+    sparse_row: SparseRowLayout
+](
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+    indices_stride: Int,
+    q_token_idx: Int,
+    visible: Int,
+    selection_lag: Int,
+    sparse_topk: Int,
+) -> Bool:
+    var n = sparse_row.row_limit(visible, selection_lag)
+    if not d_indices or n == Int.MAX:
+        return True
+    var row = d_indices.value() + q_token_idx * indices_stride
+    if min(n, sparse_topk) > 0 and row[min(n, sparse_topk) - 1] < 0:
+        return False
+    # At or past the slot count, the scan stops before the padding.
+    return n >= sparse_topk or row[n] == -1
+
+
+@inline(.always)
+def assert_sparse_row_packed[
+    sparse_row: SparseRowLayout
+](
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+    indices_stride: Int,
+    q_token_idx: Int,
+    visible: Int,
+    selection_lag: Int,
+    sparse_topk: Int,
+):
+    """Asserts that a token's sparse row is packed as `sparse_row` states.
+
+    Only runs with all assertions enabled. A producer that drops a causal key
+    makes the closed-form length overcount, and the softmax then scores the
+    trailing `-1` slots as zero keys instead of masking them.
+
+    The message is a literal on purpose: formatting runtime values needs a
+    2 KB local buffer, and CUDA 13.1 ptxas segfaults compiling that callee
+    from a warp-specialized branch after `setmaxnreg`.
+
+    Parameters:
+        sparse_row: The producer's row layout.
+
+    Args:
+        d_indices: The `[total_q_tokens, indices_stride]` sparse indices.
+        indices_stride: Row stride of `d_indices`.
+        q_token_idx: Global index of the token whose row is checked.
+        visible: Number of keys the token sees.
+        selection_lag: Positions between the token the row was computed for
+            and this one.
+        sparse_topk: The kernel's slot count for the sequence.
+    """
+    debug_assert(
+        _sparse_row_packed[sparse_row](
+            d_indices,
+            indices_stride,
+            q_token_idx,
+            visible,
+            selection_lag,
+            sparse_topk,
+        ),
+        "sparse row is not packed to its closed-form valid length",
+    )
+
+
 # ------------------------------------------------------------------------------
 # Offset position struct
 # ------------------------------------------------------------------------------
@@ -947,6 +1138,11 @@ struct OffsetPosition[
     # which only equals the logical count when topk >= actual_tokens; sparse
     # causal masking uses `cache_len_logical()` off this field instead.
     var actual_num_keys: Int
+    # Valid main-cache sparse slots (clamped topk). With `has_extra_kv` the
+    # main segment is padded to a whole `BN_QK` tile so every tile belongs to
+    # one cache; the padding slots `[sparse_topk, align_up(sparse_topk,
+    # BN_QK))` are masked and never gathered.
+    var sparse_topk: Int
 
     @inline(.always)
     def __init__(
@@ -979,6 +1175,7 @@ struct OffsetPosition[
         self.num_keys_this_split = 0
         self.q_token_idx = 0
         self.actual_num_keys = 0
+        self.sparse_topk = 0
 
         # Decode block_idx.z into split_idx and batch_idx
         # Grid layout: block_z = batch_size * num_partitions
@@ -1109,9 +1306,11 @@ struct OffsetPosition[
 
             # Clamp topk to actual available tokens.
             topk = min(topk, actual_tokens)
+            self.sparse_topk = topk
 
             # Extra KV: always-attend tokens from a separate cache.
             var extra_topk: Int = 0
+            var main_slots = topk
             comptime if Self.has_extra_kv:
                 comptime if Self.has_variable_topk:
                     extra_topk = Int(
@@ -1119,12 +1318,13 @@ struct OffsetPosition[
                     )
                 else:
                     extra_topk = sparse_extra_indices_stride
+                main_slots = align_up(topk, Self.config.BN_QK)
 
-            # Override num_keys with the sparse token count.
-            self.num_keys = topk + extra_topk
+            # Override num_keys with the sparse slot count.
+            self.num_keys = main_slots + extra_topk
 
-            # Recompute split-K boundaries for the sparse token count.
-            var total_topk = topk + extra_topk
+            # Recompute split-K boundaries for the sparse slot count.
+            var total_topk = main_slots + extra_topk
             comptime if Self.decoding_warp_split_k:
                 comptime page_size = Self.config.split_page_size
                 var total_pages_s = ceildiv(total_topk, page_size)
@@ -1155,6 +1355,38 @@ struct OffsetPosition[
         # be used (not cache_len()) for sparse causal masking by LOGICAL
         # key position once topk < actual context length.
         return max(self.actual_num_keys - self.seq_len, 0)
+
+    @inline(.always)
+    def assert_row_packed[
+        sparse_row: SparseRowLayout
+    ](
+        self,
+        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        indices_stride: Int,
+        selection_lag: Int,
+    ):
+        """Asserts from one grid thread that this token's row is packed.
+
+        See `assert_sparse_row_packed`.
+
+        Parameters:
+            sparse_row: The producer's row layout.
+
+        Args:
+            d_indices: The `[total_q_tokens, indices_stride]` sparse indices.
+            indices_stride: Row stride of `d_indices`.
+            selection_lag: Positions between the token the row was computed
+                for and this one.
+        """
+        if thread_idx.x == 0 and block_idx.x == 0 and self.split_idx == 0:
+            assert_sparse_row_packed[sparse_row](
+                d_indices,
+                indices_stride,
+                self.q_token_idx,
+                self.cache_len_logical() + block_idx.y + 1,
+                selection_lag,
+                self.sparse_topk,
+            )
 
     @inline(.always)
     def start_pos(self, cache_start_pos: UInt32) -> UInt32:
@@ -3612,6 +3844,17 @@ struct MLA_SM100_Decode_Common[
         # so slots >= this bound must be masked without a read or they run off
         # the end of the q_token's row.
         logical_indices_len: Int = 0,
+        # Slots `[gap_lo, gap_hi)` are masked: the padding between the main
+        # sparse segment and the extra-KV segment (see
+        # `OffsetPosition.sparse_topk`).
+        gap_lo: Int = 0,
+        gap_hi: Int = 0,
+        # Slots `[row_slot_limit, main_slots_hi)` are masked: the `-1`
+        # padding past the row's valid length (`SparseRowLayout`), below the
+        # causal horizon. Slots from `main_slots_hi` on are the extra-KV
+        # segment, which the row's length does not describe.
+        row_slot_limit: Int = Int.MAX,
+        main_slots_hi: Int = Int.MAX,
     ) -> Scalar[Self.AccumType]:
         # Tile / column base this thread covers in num_keys in global KV cache
         # For split-K: kv_start_row + tiles_done * BN_QK gives global position
@@ -3637,7 +3880,22 @@ struct MLA_SM100_Decode_Common[
                 causal_limit = cache_len + Int(score_row) + 1
         else:
             causal_limit = num_keys
-        var keys_remaining = causal_limit - col_base
+        # The causal horizon counts keys, not slots: past the padding gap,
+        # the slot sits `gap_hi - gap_lo` slots after the key it holds, so
+        # extra-KV keys keep the position they had before the main segment
+        # was padded. A half-tile never straddles the 64-aligned `gap_hi`.
+        # A sparse horizon can also pass the last slot, whose index is a
+        # clamped repeat, so the slot count bounds it as well.
+        var key_base = col_base
+        var keys_remaining: Int
+        comptime if CausalMask:
+            if gap_hi > gap_lo and col_base >= gap_hi:
+                key_base = col_base - (gap_hi - gap_lo)
+            keys_remaining = min(causal_limit - key_base, num_keys - col_base)
+            if col_base < main_slots_hi:
+                keys_remaining = min(keys_remaining, row_slot_limit - col_base)
+        else:
+            keys_remaining = causal_limit - col_base
         var n_valid = max(min(keys_remaining, half_load), 0)
         # Build mask_bits with lowest n_valid bits = 1
         var mask_bits_64: UInt64 = (UInt64(1) << UInt64(n_valid)) - UInt64(1)
@@ -3652,7 +3910,7 @@ struct MLA_SM100_Decode_Common[
         # [0, half_load].
         comptime if SlidingWindowSize > 0:
             var per_row_lo: Int = causal_limit - SlidingWindowSize
-            var n_invalid_low: Int = max(per_row_lo - col_base, 0)
+            var n_invalid_low: Int = max(per_row_lo - key_base, 0)
             n_invalid_low = min(n_invalid_low, half_load)
             var low_mask_64: UInt64 = (
                 UInt64(1) << UInt64(n_invalid_low)
@@ -3673,10 +3931,8 @@ struct MLA_SM100_Decode_Common[
         # (comptime) but don't actually thread a logical index buffer (e.g.
         # direct-kernel tests, or sparse kernels not yet wired for it) fall
         # back to the prior slot-count behavior instead of a null deref.
-        var use_sparse_causal_logical: Bool = False
         comptime if SparseCausalLogical:
-            use_sparse_causal_logical = Bool(logical_indices)
-            if use_sparse_causal_logical:
+            if case .Some(logical_ptr) = logical_indices:
                 # Decide visibility for the whole group up front and hand the
                 # element loop the same `mask_bits` word every other mask
                 # produces. Deciding it per element instead put the read
@@ -3695,7 +3951,7 @@ struct MLA_SM100_Decode_Common[
                 var n_readable = max(
                     min(logical_indices_len - col_base, half_load), 0
                 )
-                var logical_row = logical_indices.unsafe_value() + (
+                var logical_row = logical_ptr + (
                     q_token_idx * logical_indices_stride + col_base
                 )
                 # `pos <= causal_limit - 1` in 32 bits is `pos <
@@ -3727,6 +3983,14 @@ struct MLA_SM100_Decode_Common[
                         logical_bits |= UInt32(1) << UInt32(slot)
                     slot += 1
                 mask_bits = logical_bits
+
+        if gap_hi > gap_lo:
+            var g0 = min(max(gap_lo - col_base, 0), half_load)
+            var g1 = min(max(gap_hi - col_base, 0), half_load)
+            var gap_64: UInt64 = ((UInt64(1) << UInt64(g1)) - UInt64(1)) ^ (
+                (UInt64(1) << UInt64(g0)) - UInt64(1)
+            )
+            mask_bits &= ~UInt32(gap_64 & UInt64(0xFFFF_FFFF))
 
         comptime for i in range(0, half_load):
             # rank1-style mask_r2p: turn bit into predicate and use it to select
@@ -3777,6 +4041,10 @@ struct MLA_SM100_Decode_Common[
         # into BM=64 under fold_q=True. Needed for the ragged LSE -inf fill
         # loop. Only consumed inside `comptime if fold_q` branches.
         q_len_fold: Int = 1,
+        # How the sparse producer packs each row; bounds every row by its
+        # valid length (see `SparseRowLayout`). Not applied under fold_q,
+        # whose rows share one list.
+        sparse_row: SparseRowLayout = SparseRowLayout(),
     ](
         tmem_addr: UInt32,
         s_bars: DecodeSM100MiscMBars[
@@ -3837,6 +4105,9 @@ struct MLA_SM100_Decode_Common[
         logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
         logical_indices_stride: Int = 0,
         logical_indices_len: Int = 0,
+        # Positions between the token the sparse row was computed for and
+        # this one, for a selection reused at a later position.
+        selection_lag: Int = 0,
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime MaskTypeName: String = Self.MaskType.get_type_name()
@@ -3902,6 +4173,11 @@ struct MLA_SM100_Decode_Common[
         # positions. See cache_len_logical() docstring.
         var cache_len: Int = offset_position.cache_len_logical()
         var start_pos: UInt32 = offset_position.start_pos(cache_start_pos)
+        var gap_lo: Int = 0
+        var gap_hi: Int = 0
+        comptime if _op_sparse and _op_has_extra_kv:
+            gap_lo = offset_position.sparse_topk
+            gap_hi = align_up(gap_lo, Self.config.BN_QK)
 
         # S consumer / P producer (N-stage wrappers, works for any num_sp_stages)
         var s_cons = DecodeSConsumerN[num_sp_stages](s_bars.consumer())
@@ -3928,6 +4204,15 @@ struct MLA_SM100_Decode_Common[
             score_row = UInt32(row)
         else:
             score_row = UInt32(block_idx.y)
+
+        var row_slot_limit: Int = Int.MAX
+        var main_slots_hi: Int = Int.MAX
+        comptime if _op_sparse and CausalMask and not fold_q:
+            row_slot_limit = sparse_row.row_limit(
+                cache_len + Int(score_row) + 1, selection_lag
+            )
+            comptime if _op_has_extra_kv:
+                main_slots_hi = gap_hi
 
         var mi: Scalar[Self.AccumType] = min_or_neg_inf[Self.AccumType]()
         var li: Scalar[Self.AccumType] = 0.0
@@ -4103,6 +4388,10 @@ struct MLA_SM100_Decode_Common[
                     logical_indices_stride=logical_indices_stride,
                     q_token_idx=offset_position.q_token_idx,
                     logical_indices_len=logical_indices_len,
+                    gap_lo=gap_lo,
+                    gap_hi=gap_hi,
+                    row_slot_limit=row_slot_limit,
+                    main_slots_hi=main_slots_hi,
                 )
             else:
                 current_max = Self.apply_mask[

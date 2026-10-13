@@ -82,6 +82,7 @@ class DFlashMiMoV2Proposer:
     """
 
     samples_from_anchor = False
+    supports_zero_draft_rows = False
 
     def __init__(
         self,

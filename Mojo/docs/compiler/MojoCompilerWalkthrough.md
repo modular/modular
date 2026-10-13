@@ -2,6 +2,9 @@
 
 A comprehensive guide for compiler engineers new to the KGEN/Mojo codebase.
 
+**Resources:**
+[Dec 2025 Onsite Walkthrough Live](https://www.youtube.com/watch?v=tWWgCxRKuYo)
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -11,7 +14,7 @@ A comprehensive guide for compiler engineers new to the KGEN/Mojo codebase.
 5. [Phase 3: Pre-Elaboration Optimization](#phase-3-pre-elaboration-optimization)
 6. [Phase 4: Elaboration (Monomorphization)](#phase-4-elaboration-monomorphization)
 7. [Phase 5: Post-Elaboration Lowering & Optimization](#phase-5-post-elaboration-lowering--optimization)
-8. [Phase 6: Lowering to LLVM](#phase-6-lowering-to-llvm)`
+8. [Phase 6: Lowering to LLVM](#phase-6-lowering-to-llvm)
 9. [Mojo Packages and Precompiled Files](#mojo-packages-and-precompiled-files)
 10. [Debug Information](#debug-information)
     - [Parametric Debug Info](#parametric-debug-info)
@@ -1405,4 +1408,5 @@ def foo():
 
 - [Region-Based Control Flow in MLIR (starts at 5:24)](https://youtu.be/vvVR3FyU9TE?si=0j2MgCRJXNX-1enj&t=324)
 - [Mojo Compiler Overview (first 18 mins)](https://www.youtube.com/watch?v=Invd_dxC2RU)
+- [Mojo's Attribute-Based Expression System](https://www.youtube.com/watch?v=4DKInnobCjY)
 - [Mojo DebugInfo (starts at 10:47)](https://youtu.be/9jfukpjCPIg?si=lSz9ZN_AbzsnVcm8&t=647)

@@ -71,7 +71,7 @@ def main() raises:
                 ctx.get_attribute(DeviceAttribute.MAX_REGISTERS_PER_BLOCK),
             )
 
-        comptime if not ctx.target.is_amd_gpu() or ctx.target.is_apple_gpu():
+        comptime if not (ctx.target.is_amd_gpu() or ctx.target.is_apple_gpu()):
             # Not currently defined for AMD and Apple GPUs
 
             print(

@@ -18,6 +18,7 @@ from max.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
 from linalg.fp4_utils import block_scaled_umma_kind, is_w4a8_operand_pair
+from linalg.swiglu_activation import swiglu, swiglu_activation_type
 from .grouped_matmul_swiglu_nvfp4 import grouped_matmul_swiglu_nvfp4_dispatch
 from .grouped_matmul_swiglu_mxfp8 import grouped_matmul_swiglu_mxfp8_dispatch
 from ..structured_kernels.row_scales import NullRowScales, RowScales
@@ -27,7 +28,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel.ON,
-    clamp_activation: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
     RowScalesT: RowScales = NullRowScales,
 ](
     c: TileTensor,
@@ -44,8 +45,6 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
     num_active_experts: Int,
     estimated_total_m: Int,
     ctx: DeviceContext,
-    alpha: Float32 = Float32(0.0),
-    limit: Float32 = Float32(0.0),
     a_row_scales: RowScalesT = NullRowScales(),
 ) raises:
     """Dispatches grouped block-scaled matmul with fused SwiGLU by dtype.
@@ -59,9 +58,8 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
         transpose_b: Whether B is transposed (must be True).
         target: Target device (unused, for MOGG interface compatibility).
         pdl_level: Programmatic dependent launch level.
-        clamp_activation: Activation flavor. `False` for plain SwiGLU
-            (`silu(g)·u`), `True` for the clamped `swigluoai` form. When
-            `True`, pass the `alpha`/`limit` runtime args.
+        activation: Gated activation applied in the fused epilogue, selected
+            at compile time (defaults to `swiglu`).
         RowScalesT: Per-row input scales type. Defaults to the no-op
             `NullRowScales`; only NVFP4 supports others.
 
@@ -98,12 +96,6 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
         estimated_total_m: Estimated total non-padded token count,
             used to size the BF16 scratch buffer.
         ctx: Device context.
-        alpha: Runtime α for the clamped activation. Ignored when
-            `clamp_activation=False`. For `swigluoai` models pass the
-            HF config `swiglu_alpha` value.
-        limit: Runtime L for the clamped activation. Ignored when
-            `clamp_activation=False`. For `swigluoai` models pass the
-            HF config `swiglu_limit` value.
         a_row_scales: Per-row input scales, one per `a` row (NVFP4 only).
     """
 
@@ -126,7 +118,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             transpose_b=transpose_b,
             target=target,
             pdl_level=pdl_level,
-            clamp_activation=clamp_activation,
+            activation=activation,
             RowScalesT=RowScalesT,
         ](
             c,
@@ -143,8 +135,6 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             num_active_experts,
             estimated_total_m,
             ctx,
-            alpha,
-            limit,
             a_row_scales,
         )
     elif scaling_kind == UMMAKind.KIND_MXF8F6F4:
@@ -152,7 +142,7 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             transpose_b=transpose_b,
             target=target,
             pdl_level=pdl_level,
-            clamp_activation=clamp_activation,
+            activation=activation,
         ](
             c,
             c_swiglu_scales,
@@ -167,8 +157,6 @@ def grouped_matmul_block_scaled_swiglu_sm100_dispatch[
             num_active_experts,
             estimated_total_m,
             ctx,
-            alpha,
-            limit,
         )
     else:
         raise Error(t"Unsupported scaling kind: {scaling_kind}")

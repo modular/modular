@@ -35,7 +35,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    has_amd_gpu_accelerator,
     size_of,
     simd_width_of,
 )
@@ -273,7 +272,7 @@ def _verify_results[
                 max_ulp,
             )
         )
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(

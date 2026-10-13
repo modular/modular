@@ -67,6 +67,7 @@ def _get_run_name[
     use_random_seq_lengths: Bool,
     cache_len: Int,
     use_random_cache_lengths: Bool,
+    max_cache_len: Int,
 ) -> String:
     return String(
         "fused_qkv_ragged_flash_attention",
@@ -91,6 +92,8 @@ def _get_run_name[
         cache_len,
         ", use_random_cache_lengths=",
         use_random_cache_lengths,
+        ", max_cache_len=",
+        max_cache_len,
         ", cross_attention=",
         cross_attention,
         ", sink=",
@@ -116,6 +119,7 @@ def execute_kv_cache_ragged_flash_attention[
     use_random_seq_lengths: Bool,
     cache_len: Int,
     use_random_cache_lengths: Bool,
+    max_cache_len: Int,
     run_benchmark: Bool,
     num_partitions: Int,
     verify: Bool,
@@ -178,6 +182,8 @@ def execute_kv_cache_ragged_flash_attention[
         total_seq_len += curr_seq_length
 
     input_row_offsets_host_ptr[batch_size] = total_seq_len
+    if max_cache_len > 0:
+        max_context_length = max(max_context_length, max_cache_len + seq_len)
 
     # Device allocations and copies for row offsets
     var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
@@ -489,6 +495,7 @@ def execute_kv_cache_ragged_flash_attention[
                     use_random_seq_lengths,
                     cache_len,
                     use_random_cache_lengths,
+                    max_cache_len,
                 )
             ),
             [ThroughputMeasure(BenchMetric.flops, flop_count)],
@@ -626,6 +633,7 @@ def main() raises:
     var seq_len = arg_parse("seq_len", 1)
     var cache_len = arg_parse("cache_len", 1)
     var use_random_cache_lengths = arg_parse("use_random_cache_lengths", False)
+    var max_cache_len = Int(arg_parse("max_cache_len", 0))
     var run_benchmark = arg_parse("run_benchmark", True)
     # 0 == auto (the `mha.mojo` decode heuristic); >= 1 pins the count.
     var num_partitions = Int(arg_parse("num_partitions", 0))
@@ -654,6 +662,7 @@ def main() raises:
                 use_random_seq_lengths,
                 cache_len,
                 use_random_cache_lengths,
+                max_cache_len,
                 run_benchmark,
                 num_partitions,
                 verify,

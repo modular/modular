@@ -13,18 +13,14 @@
 
 
 from std.math.uutils import ualign_down
-from std.sys import size_of, has_amd_gpu_accelerator
+from std.sys import size_of
 
 from comm.allgather import allgather
 from comm import Signal
 from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from std.testing import assert_equal, assert_true
 
 
@@ -134,7 +130,7 @@ def all_gather_test[
             uniform = False
             break
 
-    if uniform and has_amd_gpu_accelerator():
+    if uniform and list_of_ctx.T.target.is_amd_gpu():
         # Reset outputs for vendor test
         for device_idx in range(ngpus):
             for input_idx in range(ngpus):

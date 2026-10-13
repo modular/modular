@@ -36,7 +36,12 @@ from std.random import rand, random_float64, seed
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import create_flat_kv_tma_tile
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Idx,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,

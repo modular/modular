@@ -1020,6 +1020,14 @@ def POP_LoadOp : POPOp<"load", [
         return boolAttr.getValue();
       return true;
     }
+    /// Return true if this has an atomic ordering.
+    bool isAtomic() {
+      return getOrdering() != AtomicOrdering::NOT_ATOMIC;
+    }
+    /// Return true if this is atomic, or is known or might be volatile.
+    bool isAtomicOrMightBeVolatile() {
+      return isAtomic() || mightBeVolatile();
+    }
   }];
 }
 
@@ -1097,6 +1105,14 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
       if (auto boolAttr = llvm::dyn_cast<BoolAttr>(getIsVolatileAttr()))
         return boolAttr.getValue();
       return true;
+    }
+    /// Return true if this has an atomic ordering.
+    bool isAtomic() {
+      return getOrdering() != AtomicOrdering::NOT_ATOMIC;
+    }
+    /// Return true if this is atomic, or is known or might be volatile.
+    bool isAtomicOrMightBeVolatile() {
+      return isAtomic() || mightBeVolatile();
     }
   }];
 }

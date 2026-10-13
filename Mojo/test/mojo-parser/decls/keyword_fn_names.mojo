@@ -165,10 +165,11 @@ def __async():
 def __await():
     pass
 
-# Unprefixed `async` and `await` are ordinary identifiers.
+# expected-error @+1 {{'async' cannot be used as a function name in this context}}
 def async():
     pass
 
+# expected-error @+1 {{'await' cannot be used as a function name in this context}}
 def await():
     pass
 
@@ -250,6 +251,10 @@ def __is_run_in_comptime_interpreter():
 
 # expected-error @+1 {{'__match' cannot be used as a function name in this context}}
 def __match():
+    pass
+
+# expected-error @+1 {{'__enum' cannot be used as a function name in this context}}
+def __enum():
     pass
 
 

@@ -27,7 +27,6 @@ from max.gpu.host import DeviceContext
 
 from layout import (
     Coord,
-    Idx,
     DefaultEngine,
     TileTensor,
     coord_to_index_list,
@@ -133,9 +132,9 @@ def test_case_batched[
         out_idxs_shape.flattened_length()
     )
 
-    var num_blocks_per_input_: Int = ceildiv(
-        N, block_size
-    ) if not num_blocks_per_input else num_blocks_per_input.value()
+    var num_blocks_per_input_: Int = num_blocks_per_input.or_else(
+        ceildiv(N, block_size)
+    )
     var local_topk_shape = IndexList[2](batch_size, num_blocks_per_input_ * K)
     var device_local_topk_vals = ctx.enqueue_create_buffer[dtype](
         local_topk_shape.flattened_length()
@@ -607,8 +606,8 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
 
 def print_test_case(test_case: TestCase):
     var num_blocks_per_in_msg = "auto"
-    if test_case.num_blocks_per_input:
-        num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
+    if case .Some(num_blocks_per_input) = test_case.num_blocks_per_input:
+        num_blocks_per_in_msg = String(num_blocks_per_input)
     print(
         "==== Running Top-K "
         + (test_case.name + " " if test_case.name else "")
@@ -629,11 +628,11 @@ def print_test_case(test_case: TestCase):
 
 def print_test_case(test_case: TestCaseMultiRank):
     var num_blocks_per_in_msg = "auto"
-    if test_case.num_blocks_per_input:
-        num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
+    if case .Some(num_blocks_per_input) = test_case.num_blocks_per_input:
+        num_blocks_per_in_msg = String(num_blocks_per_input)
     var block_size_msg = "auto"
-    if test_case.block_size:
-        block_size_msg = String(test_case.block_size.value())
+    if case .Some(block_size) = test_case.block_size:
+        block_size_msg = String(block_size)
     print(
         "==== Running Top-K sampling=",
         test_case.sampling,

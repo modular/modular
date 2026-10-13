@@ -1009,8 +1009,8 @@ struct TestCase[_sampling: Bool, _largest: Bool = True, _block_size: Int = 256](
 
 def print_test_case(test_case: TestCase):
     var num_blocks_per_in_msg = "auto"
-    if test_case.num_blocks_per_input:
-        num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
+    if case .Some(num_blocks_per_input) = test_case.num_blocks_per_input:
+        num_blocks_per_in_msg = String(num_blocks_per_input)
     print(
         "==== Running Top-K sampling=",
         test_case.sampling,

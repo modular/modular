@@ -27,6 +27,7 @@ from types import UnionType
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import click
+import click.testing
 import cyclopts
 import pytest
 import yaml
@@ -405,3 +406,31 @@ def test_cyclopts_flat_binding_constructs_a_new_instance() -> None:
     assert args.max_length == 1234
     assert default_args.model_path == ""
     assert default_args.max_length is None
+
+
+@pytest.mark.parametrize(
+    ("flag", "field"),
+    [
+        ("--use-dummy-weights", "header_only_weights"),
+        ("--draft-use-dummy-weights", "draft_header_only_weights"),
+    ],
+)
+def test_use_dummy_weights_flag_routes_to_header_only_weights(
+    flag: str, field: str
+) -> None:
+    """The user-facing flag names the effect; the field names the mechanism."""
+    seen: dict[str, Any] = {}
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None:
+        seen.update(kwargs)
+
+    result = click.testing.CliRunner().invoke(cli, [flag])
+    assert result.exit_code == 0, result.output
+    assert seen[field] is True
+    assert "header_only_weights" not in {
+        opt.lstrip("-").replace("-", "_")
+        for param in cli.params
+        for opt in param.opts
+    }

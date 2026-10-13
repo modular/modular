@@ -14,8 +14,14 @@ max.pipelines.modeling.types
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.modeling.types.pipeline_variants
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    pipelines.modeling.types.pipeline_variants
 
@@ -27,7 +33,9 @@ Pipeline base
    :toctree: generated
    :template: autosummary/class.rst
 
+   ChatEncoderOutcomesProbe
    InputModality
+   LabelScoringTokenizer
    Pipeline
    PipelineInputs
    PipelineInputsType
@@ -37,8 +45,12 @@ Pipeline base
    PipelinesFactory
    PipelineTask
    PipelineTokenizer
+   PreprocessCacheStatsProbe
+   PreprocessedImageProbe
+   TokenIds
    TokenizerEncoded
    UnboundContextType
+   VisionPreprocessCacheStats
 
 Text generation
 ---------------
@@ -49,6 +61,7 @@ Text generation
    :template: autosummary/class.rst
 
    BatchType
+   CompletedBatchStats
    ImageContentPart
    MessageContent
    TextContentPart

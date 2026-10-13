@@ -36,9 +36,9 @@ OR-equivalent test groups (49 tests, 1:1 with OR dashboard slugs):
     K. Misc (4)               — large-prompt, developer-role, assistant-prefill, fast-apply
 
 Bonus tests (beyond OR's catalog):
-    L. Streaming Variants (10) — SSE validation, tool streaming (with arg validation),
+    L. Streaming Variants (9)  — SSE validation, tool streaming (with arg validation),
                                  JSON streaming (with schema validation), function streaming,
-                                 reasoning+tool streaming, reasoning+required streaming,
+                                 reasoning+required streaming,
                                  usage, finish_reason
     M. Extra Misc (2)          — seed_determinism, n_multiple_choices
     + health_check
@@ -1872,7 +1872,7 @@ class ProviderBaseline(BaseScenario):
         return results
 
     # =====================================================================
-    # L. Streaming Variants (7 bonus tests)
+    # L. Streaming Variants (9 bonus tests)
     # =====================================================================
 
     async def _streaming_variants(
@@ -1942,13 +1942,13 @@ class ProviderBaseline(BaseScenario):
                 **self._exchange_verbose(pl_bs, resp),
             )
 
-        # Streaming tool calls — validate tool deltas, assembled args are JSON, no markers
-        pl_tcs = self._with_tools(model, "What is 2 + 2?")
+        # Streaming tool-call-step-1 — validate tool deltas, assembled args are JSON, no markers
+        pl_tcs = self._req(model, WEATHER_PROMPT, tools=[WEATHER_TOOL])
         resp = await client.post_streaming(pl_tcs)
         if resp.status == 200 and resp.chunks:
             has_tool = _stream_has_tool_delta(resp.chunks)
             if not has_tool:
-                v, d = Verdict.INTERESTING, "No tool_calls in stream"
+                v, d = Verdict.FAIL, "tool_calls absent from stream"
             else:
                 errors = []
                 # Check function name
@@ -1957,7 +1957,7 @@ class ProviderBaseline(BaseScenario):
                     errors.append(
                         "No function name seen in any tool_calls delta"
                     )
-                elif names[0] != "calculate":
+                elif names[0] != "get_current_weather":
                     errors.append(f"Wrong function name: {names[0]!r}")
                 # Check assembled arguments are valid JSON
                 args_map = _assemble_stream_tool_args(resp.chunks)
@@ -1989,7 +1989,7 @@ class ProviderBaseline(BaseScenario):
         else:
             v, d = self._core_verdict(resp.status)
         result(
-            "tool_call_streaming",
+            "tool_call_step1_streaming",
             v,
             status_code=resp.status,
             detail=d,
@@ -2176,45 +2176,6 @@ class ProviderBaseline(BaseScenario):
             status_code=resp.status,
             detail=d,
             **self._exchange_verbose(pl_stf, resp),
-        )
-
-        # Streaming reasoning + tool call — reasoning enabled, auto tool choice
-        pl_srt = self._with_tools(model, "What is 2 + 2?")
-        pl_srt.update(_reasoning_kwargs(enabled=True))
-        resp = await client.post_streaming(pl_srt)
-        if resp.status == 200 and resp.chunks:
-            has_tool = _stream_has_tool_delta(resp.chunks)
-            if not has_tool:
-                v, d = (
-                    Verdict.INTERESTING,
-                    "No tool_calls in reasoning+streaming",
-                )
-            else:
-                errors = []
-                args_map = _assemble_stream_tool_args(resp.chunks)
-                for idx, args_str in args_map.items():
-                    try:
-                        json.loads(args_str)
-                    except (json.JSONDecodeError, TypeError) as e:
-                        errors.append(f"tool[{idx}] args not JSON: {e}")
-                    marker_err = _check_no_markers(args_str)
-                    if marker_err:
-                        errors.append(marker_err)
-                if errors:
-                    v, d = Verdict.FAIL, "; ".join(errors[:3])
-                else:
-                    v, d = (
-                        Verdict.PASS,
-                        "reasoning+streaming tool_calls, valid JSON args",
-                    )
-        else:
-            v, d = self._core_verdict(resp.status)
-        result(
-            "streaming_reasoning_tool_call",
-            v,
-            status_code=resp.status,
-            detail=d,
-            **self._exchange_verbose(pl_srt, resp),
         )
 
         # Streaming reasoning + tool_choice=required

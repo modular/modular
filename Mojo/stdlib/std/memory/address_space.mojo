@@ -81,7 +81,7 @@ struct AddressSpace(
 
     @inline(.always)
     def _get_enum_discriminant(self) -> Int:
-        __match Int(self._value):
+        match Int(self._value):
             case 0:
                 return 0
             case 1:
@@ -127,8 +127,8 @@ struct AddressSpace(
             `name` must be defined by the active `PluginHooks` backend;
             otherwise this is a compile-time error.
         """
-        comptime if CurrentPlugin.address_space_fn[name]:
-            return CurrentPlugin.address_space_fn[name].value()
+        comptime if case .Some(space) = CurrentPlugin.address_space_fn[name]:
+            return space
         else:
             comptime assert False, "unknown address space: '" + name + "'"
 
@@ -178,7 +178,7 @@ struct AddressSpace(
         Args:
             writer: The object to write to.
         """
-        __match self:
+        match self:
             case .GENERIC:
                 writer.write("AddressSpace.GENERIC")
             case .GLOBAL:

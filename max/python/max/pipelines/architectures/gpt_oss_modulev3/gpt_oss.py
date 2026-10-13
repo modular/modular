@@ -35,6 +35,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
 )
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import GptOssAttention
 from .layers.moe import GptOssMoE
@@ -46,7 +47,7 @@ from .model_config import GptOssConfig
 class GptOssTextModel(
     Module[
         [Tensor, PagedCacheValues, PagedCacheValues, Tensor, Tensor],
-        tuple[Tensor, ...],
+        ModuleV3Outputs,
     ]
 ):
     """The GPT OSS language model.
@@ -160,7 +161,7 @@ class GptOssTextModel(
         global_kv: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         h = self.embed_tokens(tokens)
         kv_by_type = {
             "sliding_attention": sliding_kv,
@@ -187,10 +188,10 @@ class GptOssTextModel(
 
         # For now, simplified to return last token only
         # TODO: Handle VARIABLE and ALL logits cases for distributed processing
-        return (last_logits,)
+        return ModuleV3Outputs(next_token_logits=last_logits)
 
 
-class GptOss(Module[..., tuple[Tensor, ...]]):
+class GptOss(Module[..., ModuleV3Outputs]):
     """The GPT OSS model."""
 
     def __init__(
@@ -209,7 +210,7 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         kv_inputs = iter(x._graph_value for x in variadic_args)
         assert isinstance(self.kv_params, MultiKVCacheParams)
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(

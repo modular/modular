@@ -108,10 +108,8 @@ from max.gpu import (
 )
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu.host import DeviceContext
-from max.gpu.host.compile import CompilationTarget
 from max.gpu.sync import s_waitcnt
 from std.math import ceildiv
-from std.memory import AddressSpace
 from std.sys import get_defined_bool, get_defined_int, size_of
 from std.sys.intrinsics import readfirstlane
 from std.utils import StaticTuple
@@ -1058,26 +1056,28 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             # one of the 4 distinct SSA values).
             @inline(.always)
             def _put[s: Int](var v: _FRAG) {mut f0, mut f1, mut f2, mut f3}:
-                comptime if s == 0:
-                    f0 = v
-                elif s == 1:
-                    f1 = v
-                elif s == 2:
-                    f2 = v
-                else:
-                    f3 = v
+                comptime match s:
+                    case 0:
+                        f0 = v
+                    case 1:
+                        f1 = v
+                    case 2:
+                        f2 = v
+                    case _:
+                        f3 = v
 
             # Read ring slot `s`.
             @inline(.always)
             def _get[s: Int]() {imm} -> _FRAG:
-                comptime if s == 0:
-                    return f0
-                elif s == 1:
-                    return f1
-                elif s == 2:
-                    return f2
-                else:
-                    return f3
+                comptime match s:
+                    case 0:
+                        return f0
+                    case 1:
+                        return f1
+                    case 2:
+                        return f2
+                    case _:
+                        return f3
 
             # PROLOGUE: prime the first `_RING` slots (no MFMA yet).
             # CADENCE: for the first `_PF_NEXT_K` slots, consume the K fragment
@@ -1331,25 +1331,27 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             def _vput[
                 s: Int
             ](var v: _VFRAG) {mut vf0, mut vf1, mut vf2, mut vf3}:
-                comptime if s == 0:
-                    vf0 = v
-                elif s == 1:
-                    vf1 = v
-                elif s == 2:
-                    vf2 = v
-                else:
-                    vf3 = v
+                comptime match s:
+                    case 0:
+                        vf0 = v
+                    case 1:
+                        vf1 = v
+                    case 2:
+                        vf2 = v
+                    case _:
+                        vf3 = v
 
             @inline(.always)
             def _vget[s: Int]() {imm} -> _VFRAG:
-                comptime if s == 0:
-                    return vf0
-                elif s == 1:
-                    return vf1
-                elif s == 2:
-                    return vf2
-                else:
-                    return vf3
+                comptime match s:
+                    case 0:
+                        return vf0
+                    case 1:
+                        return vf1
+                    case 2:
+                        return vf2
+                    case _:
+                        return vf3
 
             # QK-TAIL V PREFETCH (reference 12/20 split, OPT-IN). Prime the
             # first `_VAHEAD` V fragments HERE (C_V_PREFETCH, ref asm L411-429),
@@ -1679,12 +1681,9 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         softmax.normalize_output(o_reg)
 
         comptime _o_view_layout = Self._MmaOp.O_T_LAYOUT
-        var o_normalized_view = TileTensor[
-            .float32,
-            type_of(_o_view_layout),
-            MutUntrackedOrigin,
-            address_space=.LOCAL,
-        ](o_reg.ptr, _o_view_layout)
+        # Zero-cost re-tag of `o_reg` (O_LAYOUT, col_l) as its transposed
+        # row_l view (O_T_LAYOUT) over the same per-lane storage.
+        var o_normalized_view = o_reg.reshape(_o_view_layout)
         var epilogue_writer = RegTileEpilogue[out_dtype, 1](o_warp_2d)
         # int32 clamp: `seq_len`/`block_tile_idx`/`w_id` originate as Int32
         # (`q.dim[1]`, `block_idx.y`/`w_qo_start//BM`, `warp_id()`) and the

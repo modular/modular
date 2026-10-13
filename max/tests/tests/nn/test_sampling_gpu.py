@@ -985,6 +985,13 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
         device=DeviceRef.from_device(device), draft_proposal="argmax"
     )
     argmax_model = session.load(argmax_graph)
+    sampled_graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        draft_proposal="sampled",
+        vocab_size=vocab_size,
+    )
+    sampled_model = session.load(sampled_graph)
+
     argmax_out = argmax_model.execute(
         *_stochastic_sampler_inputs(
             device,
@@ -995,13 +1002,6 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
             temperature_np,
         )
     )
-
-    sampled_graph = build_stochastic_acceptance_sampler_graph(
-        device=DeviceRef.from_device(device),
-        draft_proposal="sampled",
-        vocab_size=vocab_size,
-    )
-    sampled_model = session.load(sampled_graph)
     sampled_out = sampled_model.execute(
         *_sampled_stochastic_sampler_inputs(
             device,

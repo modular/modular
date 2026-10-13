@@ -23,13 +23,9 @@ from std.sys import align_of, simd_width_of
 from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 import max.gpu.primitives.warp as warp
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
-from max.gpu.primitives.grid_controls import (
-    PDL,
-    PDLLevel,
-    pdl_launch_attributes,
-)
+from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from layout import (
     Coord,
     TensorLayout,
@@ -228,9 +224,7 @@ def _rms_norm_fused_fp8_gpu[
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime base_simd_width = simd_width_of[
-        in_dtype, target=get_gpu_target()
-    ]()
+    comptime base_simd_width = simd_width_of[in_dtype, target=ctx.target]()
 
     # Dispatch: select SIMD width and kernel strategy based on column count
     @inline(.always)

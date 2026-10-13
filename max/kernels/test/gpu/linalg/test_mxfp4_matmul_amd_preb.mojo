@@ -23,7 +23,7 @@ Usage:
 """
 
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
-from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext
 from max.gpu.memory import CacheOperation
 from max.gpu.host.info import MI355X
 from std.math import ceildiv
@@ -34,7 +34,6 @@ from std.utils import StaticTuple
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     Idx,
     TensorLayout,
     TensorEngine,

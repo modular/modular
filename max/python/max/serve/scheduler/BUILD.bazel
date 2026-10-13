@@ -7,7 +7,6 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     deps = [
         "//max/python/max:_core",
-        "//max/python/max/driver",
         "//max/python/max/nn",
         "//max/python/max/pipelines/audio",
         "//max/python/max/pipelines/context",

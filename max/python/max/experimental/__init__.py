@@ -24,8 +24,8 @@ each consume the one below:
   action data model, a cost model, and the ``auto_reshard`` policy.
 
 The distributed :class:`~max.experimental.tensor.Tensor` ties them together.
-
-Example:
+The following example calls ``Tensor.ones()`` to build a 4x8 tensor and
+passes it to ``F.matmul`` along with its transpose:
 
 .. code-block:: python
 

@@ -330,7 +330,7 @@ def run_max_indexer(
         freqs_cis_arg = (
             rope.freqs_cis if not slice_freqs_cis else rope.freqs_cis[:seq_len]
         )
-        result = indexer(
+        result, _ = indexer(
             x_in,
             qr_in,
             freqs_cis_arg,
@@ -338,7 +338,9 @@ def run_max_indexer(
             indexer_k_collection,
             layer_idx,
             mask_variant,
+            write_logical=True,
         )
+        assert result is not None
 
         graph.output(result)
 

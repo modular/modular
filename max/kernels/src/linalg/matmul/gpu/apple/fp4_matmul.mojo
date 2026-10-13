@@ -52,7 +52,6 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
 from std.sys import align_of
-from std.utils import IndexList
 
 from layout import TensorEngine, TileTensor, Idx
 from layout.tile_layout import Layout, TensorLayout, row_major
@@ -587,8 +586,7 @@ struct AppleM5Fp4MatMul[
                 v_fp32: SIMD[.float32, 4],
             ) {imm}:
                 var y = v_fp32.cast[Self.c_type]()
-                comptime if Self.elementwise_lambda_fn:
-                    comptime epilogue = Self.elementwise_lambda_fn.value()
+                comptime if case .Some(epilogue) = Self.elementwise_lambda_fn:
                     if acol + 3 < n:
                         epilogue[Self.c_type, 4, alignment=elem_align](
                             (arow, acol), y
@@ -596,7 +594,7 @@ struct AppleM5Fp4MatMul[
                     else:
                         for e in range(min(4, n - acol)):
                             epilogue[Self.c_type, 1](
-                                IndexList[2](arow, acol + e),
+                                (arow, acol + e),
                                 SIMD[Self.c_type, 1](y[e]),
                             )
                 else:
