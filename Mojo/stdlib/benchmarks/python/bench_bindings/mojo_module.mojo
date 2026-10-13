@@ -139,14 +139,14 @@ def add_raw_fastcall(
 @export
 def bool_pass_raw_fastcall(
     py_self: PyObjectPtr,
-    args: UnsafePointer[PyObjectPtr, MutExternalOrigin],
+    args: Pointer[PyObjectPtr, MutUntrackedOrigin],
     nargs: Py_ssize_t,
-) -> PyObjectPtr:
+) abi("C") -> PyObjectPtr:
     # Lower bound for `bool_pass_def`: check truthiness, pick the singleton,
     # IncRef, return. No `Bool` / `PythonObject` wrappers.
     ref cpy = Python().cpython()
     var ptr = (
-        cpy.Py_True() if cpy.PyObject_IsTrue(args[0]) != 0 else cpy.Py_False()
+        cpy.Py_True() if cpy.PyObject_IsTrue(args[]) != 0 else cpy.Py_False()
     )
     cpy.Py_IncRef(ptr)
     return ptr
