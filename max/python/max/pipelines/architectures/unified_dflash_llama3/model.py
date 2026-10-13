@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -36,6 +37,7 @@ from max.pipelines.lib import (
     UnifiedSpecDecodeInputs,
 )
 from max.pipelines.lib._hf_config import PretrainedConfig
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -50,7 +52,6 @@ from .batch_processor import UnifiedDflashLlama3BatchProcessor
 from .model_config import (
     UnifiedDflashLlama3Config,
     parse_dflash_draft_hf_config,
-    resolve_dflash_num_speculative_tokens,
 )
 from .unified_dflash_llama3 import (
     UnifiedDflashLlama3 as UnifiedDflashLlama3Module,
@@ -79,16 +80,21 @@ class UnifiedDflashLlama3Inputs(UnifiedSpecDecodeInputs):
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
         )
         return buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=False, supports_structured_output=False
+            include_in_thinking_phase=False,
+            supports_structured_output=False,
         )
 
 
 class UnifiedDflashLlama3Model(
     _UnifiedSpecDecodeModelMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedDflashLlama3Config],
 ):
     """Unified DFlash Llama3: target + draft in one compiled graph."""
 
@@ -107,15 +113,16 @@ class UnifiedDflashLlama3Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        # The drafter's trained width, resolved from the draft checkpoint;
-        # exposed for the overlap pipeline's spec-decode buffers.
+        assert pipeline_config.speculative is not None
         self.resolved_num_speculative_tokens = (
-            resolve_dflash_num_speculative_tokens(pipeline_config)
+            pipeline_config.speculative.draft_width
         )
         super().__init__(
             pipeline_config,
@@ -123,10 +130,11 @@ class UnifiedDflashLlama3Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
+            adapter=adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 
@@ -142,6 +150,7 @@ class UnifiedDflashLlama3Model(
         # The KV bake in ``PipelineModelWithKVCache.__init__`` reads the raw
         # speculative section, where the unset width would bake
         # num_draft_tokens=0; rebake at the drafter's trained width.
+        assert pipeline_config.speculative is not None
         return replace(
             Llama3Config.construct_kv_params(
                 huggingface_config,
@@ -150,9 +159,7 @@ class UnifiedDflashLlama3Model(
                 kv_cache_config,
                 cache_dtype,
             ),
-            num_draft_tokens=resolve_dflash_num_speculative_tokens(
-                pipeline_config, warn=False
-            ),
+            num_draft_tokens=pipeline_config.speculative.draft_width,
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -190,7 +197,9 @@ class UnifiedDflashLlama3Model(
         resolved_spec = self.resolved_num_speculative_tokens
         assert resolved_spec is not None
 
-        target_config = Llama3Config.initialize(self.pipeline_config)
+        target_config = Llama3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         target_config.finalize(
             huggingface_config=target_hf_config,
             state_dict=state_dict,
@@ -205,7 +214,10 @@ class UnifiedDflashLlama3Model(
         )
 
         draft_config = Llama3Config.initialize_from_config(
-            self.pipeline_config, draft_hf_config, draft_model_config
+            self.pipeline_config,
+            draft_hf_config,
+            draft_model_config,
+            max_seq_len=self.max_seq_len,
         )
         # ``initialize_from_config`` defaults the draft to ``gpu:0``;
         # pin to the target's device(s) so the weights co-locate
@@ -228,6 +240,7 @@ class UnifiedDflashLlama3Model(
             target=target_config,
             draft=draft_config,
             speculative_config=self.pipeline_config.speculative,
+            resolved_num_speculative_tokens=resolved_spec,
             target_layer_ids=list(dflash_hf.target_layer_ids),
             mask_token_id=int(dflash_hf.mask_token_id),
             block_size=int(dflash_hf.block_size or 0),
@@ -248,10 +261,9 @@ class UnifiedDflashLlama3Model(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedDflashLlama3Config,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDflashLlama3Config)
 
         nn_model = UnifiedDflashLlama3Module(model_config)
 
@@ -278,8 +290,22 @@ class UnifiedDflashLlama3Model(
             "unified_dflash_llama3",
             input_types=nn_model.input_types(),
         ) as graph:
-            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(inputs)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                kv_collections=graph_inputs.kv("target"),
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                draft_probs_full=graph_inputs.draft_probs_full,
+            )
             graph.output(*outputs)
 
         return graph, weights_registry

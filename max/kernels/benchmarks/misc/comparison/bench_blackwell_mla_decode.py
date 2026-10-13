@@ -50,6 +50,7 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     MLAKVCacheParams,
     PagedCacheValues,
+    packed_page_stride,
 )
 
 LINE = "=" * 80
@@ -177,9 +178,12 @@ def calculate_mla_memory_bytes(
     q_bytes_per_element = _bytes_per_element(q_dtype)
 
     # Output is always bf16 for FP8 inputs, otherwise same as input dtype
-    if dtype in [torch.float8_e4m3fn, torch.float8_e5m2]:
-        output_bytes_per_element = 2
-    elif dtype in [torch.bfloat16, torch.float16]:
+    if dtype in [
+        torch.float8_e4m3fn,
+        torch.float8_e5m2,
+        torch.bfloat16,
+        torch.float16,
+    ]:
         output_bytes_per_element = 2
     else:
         output_bytes_per_element = 4
@@ -710,6 +714,7 @@ def bench_max(
                 lookup_table.tensor,
                 max_prompt_length.tensor,
                 max_cache_length.tensor,
+                page_stride=packed_page_stride(blocks.buffer),
             )
 
             result = flare_mla_decode_ragged_scaled(
@@ -762,6 +767,7 @@ def bench_max(
                 lookup_table.tensor,
                 max_prompt_length.tensor,
                 max_cache_length.tensor,
+                page_stride=packed_page_stride(blocks.buffer),
             )
 
             result = flare_mla_decode_ragged(

@@ -16,7 +16,7 @@ from std.sys import size_of
 from std.math import align_up
 
 from max.gpu.primitives.cluster import cluster_mask_base
-from std.gpu import block_id_in_cluster
+from max.gpu import block_id_in_cluster
 from max.gpu.host._tensormap import SwizzleMode
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -43,7 +43,7 @@ from linalg.fp4_utils import (
 def _create_mma_desc_k_major[
     dtype: DType, swizzle_mode: TensorMapSwizzle
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
+    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptor:
     """Creates an MMA descriptor for K-major layout directly from swizzle mode.
 
@@ -57,7 +57,7 @@ def _create_mma_desc_k_major[
 
 
 @fieldwise_init("implicit")
-struct Major(TrivialRegisterPassable):
+struct Major(EnumLike, TrivialRegisterPassable):
     """Selects the major (contiguous) dimension for an MMA operand tile layout.
 
     Used to configure whether the K dimension or the MN dimension is the
@@ -68,6 +68,25 @@ struct Major(TrivialRegisterPassable):
 
     comptime K = Major(0)
     comptime MN = Major(1)
+
+    # The implicit fieldwise initializer accepts raw values outside the two
+    # named cases, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of["K".value, "MN".value].values
+    comptime _enum_case_types = TypeList.splat[2, NoneType].values
+
+    def _get_enum_discriminant(self) -> Int:
+        """Return the active case index."""
+        return self.val
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Return the payload of case `id`. Major cases carry no payload."""
+        comptime assert False, "Major has no payload"
 
     def __eq__(self, rhs: Major) -> Bool:
         return self.val == rhs.val
@@ -88,24 +107,27 @@ def max_contiguous_tile_shape[
 
     comptime assert rank == 2, "Only 2D tensors are supported!"
 
-    comptime if major == Major.K:
-        # Tile shape is (MN, K), max K is based on swizzle.
-        return IntTuple(tile_shape[0], swizzle_mode.bytes() // size_of[dtype]())
-    elif major == Major.MN:
-        # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
-        # canonical layout.
-        # The following are rare in practice but worth checking.
-        # TODO: this may not work for swizzle.NONE, need to double-check
-        # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
-        return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
-    else:
-        comptime assert False, "Invalid major"
+    comptime match major:
+        case .K:
+            # Tile shape is (MN, K), max K is based on swizzle.
+            return IntTuple(
+                tile_shape[0], swizzle_mode.bytes() // size_of[dtype]()
+            )
+        case .MN:
+            # Tile shape is (K, MN), max MN is based on swizzle, max K is 8 based on
+            # canonical layout.
+            # The following are rare in practice but worth checking.
+            # TODO: this may not work for swizzle.NONE, need to double-check
+            # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
+            return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
+        case _:
+            comptime assert False, "Invalid major"
 
 
 def _create_mma_desc_pair[
     dtype: DType, //, canonical_layout: Layout, swizzle_mode: TensorMapSwizzle
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
+    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     # Extract the stride values from the canonical layout
     # The canonical layout is expected to have at least 2 dimensions
@@ -119,7 +141,7 @@ def _create_mma_desc_pair[
     return MMASmemDescriptorPair.create[SBO, LBO, swizzle_mode](ptr)
 
 
-@always_inline
+@inline(.always)
 def smem_descriptor[
     dtype: DType,
     //,
@@ -130,7 +152,7 @@ def smem_descriptor[
     is_k_major: Bool,
     page_dense: Bool = False,
 ](
-    ptr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
+    ptr: UnsafePointer[Scalar[dtype], address_space=.SHARED, ...]
 ) -> MMASmemDescriptorPair:
     """Creates an MMASmemDescriptorPair for an SM100 MMA operand tile in shared memory.
 
@@ -180,7 +202,7 @@ struct MmaOpSM100_SS[
     mma_shape: IndexList[3],
     /,
     *,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -211,7 +233,7 @@ struct MmaOpSM100_SS[
     var idesc: UMMAInsDescriptor[Self._get_umma_kind[Self.a_type]()]
     var mask: UInt16
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         comptime assert (
             Self.transpose_b
@@ -266,10 +288,10 @@ struct MmaOpSM100_SS[
             comptime if Self.cta_group == 2:
                 self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
-    @always_inline
+    @inline(.always)
     def make_a_desc(
         self,
-        a: TileTensor[address_space=AddressSpace.SHARED, ...],
+        a: TileTensor[address_space=.SHARED, ...],
     ) -> MMASmemDescriptor:
         """Build the K-major MMA descriptor for an A operand tile.
 
@@ -286,10 +308,10 @@ struct MmaOpSM100_SS[
         """
         return _create_mma_desc_k_major[a.dtype, Self.a_swizzle](a.ptr)
 
-    @always_inline
+    @inline(.always)
     def make_b_desc(
         self,
-        b: TileTensor[address_space=AddressSpace.SHARED, ...],
+        b: TileTensor[address_space=.SHARED, ...],
     ) -> MMASmemDescriptor:
         """Build the K-major MMA descriptor for a B operand tile.
 
@@ -303,11 +325,11 @@ struct MmaOpSM100_SS[
         """
         return _create_mma_desc_k_major[b.dtype, Self.b_swizzle](b.ptr)
 
-    @always_inline
+    @inline(.always)
     def mma(
         self,
-        a: TileTensor[address_space=AddressSpace.SHARED, ...],
-        b: TileTensor[address_space=AddressSpace.SHARED, ...],
+        a: TileTensor[address_space=.SHARED, ...],
+        b: TileTensor[address_space=.SHARED, ...],
         c_tmem: UInt32,
         init_c: Bool,
     ):
@@ -324,7 +346,7 @@ struct MmaOpSM100_SS[
             self.make_a_desc(a), self.make_b_desc(b), c_tmem, init_c
         )
 
-    @always_inline
+    @inline(.always)
     def mma_from_desc(
         self,
         a_desc: MMASmemDescriptor,
@@ -374,33 +396,34 @@ struct MmaOpSM100_SS[
                 c_scale=c_scale,
             )
 
-    @always_inline
+    @inline(.always)
     def commit(
         self,
-        ptr_mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+        ptr_mbar: UnsafePointer[address_space=.SHARED, ...],
     ):
         comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
         else:
             mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
 
-    @always_inline
+    @inline(.always)
     def wait(self):
         pass
 
     @staticmethod
     def _get_umma_kind[dtype: DType]() -> UMMAKind:
-        comptime if dtype == DType.float32:
-            return UMMAKind.KIND_TF32
-        elif dtype in (DType.float16, DType.bfloat16):
-            return UMMAKind.KIND_F16
-        elif dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
-            return UMMAKind.KIND_F8F6F4
-        else:
-            comptime assert False, String(
-                "Unsupported/not implemented operand type for UMMA: ",
-                String(dtype),
-            )
+        comptime match dtype:
+            case .float32:
+                return UMMAKind.KIND_TF32
+            case .float16 | DType.bfloat16:
+                return UMMAKind.KIND_F16
+            case .float8_e4m3fn | DType.float8_e5m2:
+                return UMMAKind.KIND_F8F6F4
+            case _:
+                comptime assert False, String(
+                    t"Unsupported/not implemented operand type for UMMA:"
+                    t" {dtype}"
+                )
 
         return UMMAKind(-1)
 
@@ -416,7 +439,7 @@ struct MmaOpSM100_BlockScaled_SS[
     mma_shape: IndexList[3],
     /,
     *,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -451,7 +474,7 @@ struct MmaOpSM100_BlockScaled_SS[
     var idesc: UMMAInsDescriptor[Self.scaling_kind]
     var mask: UInt16
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         comptime assert Self.scaling_kind in (
             UMMAKind.KIND_MXF8F6F4,
@@ -521,13 +544,13 @@ struct MmaOpSM100_BlockScaled_SS[
             comptime if Self.cta_group == 2:
                 self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
-    @always_inline
+    @inline(.always)
     def mma(
         self,
-        a: TileTensor[address_space=AddressSpace.SHARED, ...],
-        b: TileTensor[address_space=AddressSpace.SHARED, ...],
-        sfa_smem: TileTensor[address_space=AddressSpace.SHARED, ...],
-        sfb_smem: TileTensor[address_space=AddressSpace.SHARED, ...],
+        a: TileTensor[address_space=.SHARED, ...],
+        b: TileTensor[address_space=.SHARED, ...],
+        sfa_smem: TileTensor[address_space=.SHARED, ...],
+        sfb_smem: TileTensor[address_space=.SHARED, ...],
         c_tmem: UInt32,
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
@@ -688,31 +711,27 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_scale=c_scale,
                 )
 
-    @always_inline
+    @inline(.always)
     def commit(
         self,
-        ptr_mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+        ptr_mbar: UnsafePointer[address_space=.SHARED, ...],
     ):
         comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
         else:
             mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
 
-    @always_inline
+    @inline(.always)
     def wait(self):
         pass
 
-    @always_inline
+    @inline(.always)
     def _copy_sf_to_tmem_tt[
         sf_dtype: DType,
         SFLayoutType: TensorLayout,
         TILE_MN: Int,
         tile_k_idx: Int,
-    ](
-        self,
-        sf_smem: TileTensor[address_space=AddressSpace.SHARED, ...],
-        sf_tmem: UInt32,
-    ):
+    ](self, sf_smem: TileTensor[address_space=.SHARED, ...], sf_tmem: UInt32,):
         """TileTensor overload for copying scale factors to TMEM via tcgen05_cp.
 
         Only valid for MMA_N % 64 == 0.  For smaller MMA_N, the caller

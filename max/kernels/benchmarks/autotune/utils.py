@@ -87,7 +87,7 @@ def _get_gpu_count(target_accelerator: str = "") -> int | None:
     if prefix:
         vis = os.environ.get(prefix, "").strip()
         if vis:
-            return min(hw_count, len(set(v.strip() for v in vis.split(","))))
+            return min(hw_count, len({v.strip() for v in vis.split(",")}))
     return hw_count
 
 

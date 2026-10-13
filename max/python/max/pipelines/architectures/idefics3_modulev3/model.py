@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -39,12 +39,13 @@ from max.pipelines.lib import (
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
 )
-from transformers.models.auto.configuration_auto import AutoConfig
 
 from .batch_processor import Idefics3ModuleV3BatchProcessor
+from .inputs import Idefics3Inputs
 from .model_config import Idefics3Config
 from .text_model.idefics3_text import Idefics3Language
 from .vision_model.idefics3_vision import Idefics3VisionModel
@@ -75,23 +76,6 @@ def _assert_image_embeddings_invariant(
     )
 
 
-@dataclass
-class Idefics3Inputs(ModelInputs):
-    """Inputs for the Idefics3 model."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-
-    # Vision inputs
-    pixel_values: Buffer | None = None
-    image_token_indices: Buffer | None = None
-
-    @property
-    def has_vision_inputs(self) -> bool:
-        return self.pixel_values is not None
-
-
 class Idefics3Model(
     ModuleV3MultiGraphPipelineModelWithKVCache[TextAndVisionContext]
 ):
@@ -101,21 +85,6 @@ class Idefics3Model(
     batch_processor_cls: ClassVar[type[Idefics3ModuleV3BatchProcessor]] = (
         Idefics3ModuleV3BatchProcessor
     )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Uses ``max_length`` when set, else ``text_config.max_position_embeddings`` (config bounds)."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        text_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return getattr(text_config, "max_position_embeddings", 4096)
 
     vision_model: Callable[..., Any] | None
     """The compiled vision model."""
@@ -130,6 +99,8 @@ class Idefics3Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -140,9 +111,10 @@ class Idefics3Model(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.vision_model, self.language_model = self.load_model()
@@ -168,7 +140,9 @@ class Idefics3Model(
     ) -> Idefics3Config:
         del state_dict
 
-        idefics3_config = Idefics3Config.initialize(self.pipeline_config)
+        idefics3_config = Idefics3Config.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         idefics3_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=self._language_weights_dict,
@@ -276,7 +250,7 @@ class Idefics3Model(
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         # Unpack outputs (V3 returns Tensor objects with .driver_tensor).

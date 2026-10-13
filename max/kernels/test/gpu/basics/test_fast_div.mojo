@@ -13,19 +13,18 @@
 
 
 from max.algorithm.functional import elementwise
-from std.gpu import *
+from max.gpu import *
 from max.gpu.host import DeviceContext
 from std.testing import *
 
 from std.utils.fast_div import FastDiv
-from std.utils.index import Index, IndexList
 
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, row_major
 
 
 def test_fast_div() raises:
     var divisor = 7
-    var fast_div = FastDiv[DType.uint32](divisor)
+    var fast_div = FastDiv[.uint32](divisor)
 
     for i in range(1000):
         assert_equal(
@@ -37,7 +36,7 @@ def test_fast_div() raises:
 
 def test_fast_div_uint64() raises:
     var divisor = 7
-    var fast_div = FastDiv[DType.uint64](divisor)
+    var fast_div = FastDiv[.uint64](divisor)
 
     for i in range(1000):
         assert_equal(
@@ -57,7 +56,7 @@ def test_fast_div_uint64() raises:
         )
 
     # Test power-of-2 divisor with uint64.
-    var fast_div_pow2 = FastDiv[DType.uint64](16)
+    var fast_div_pow2 = FastDiv[.uint64](16)
     for i in range(1000):
         var val = large_base + i
         assert_equal(
@@ -68,7 +67,7 @@ def test_fast_div_uint64() raises:
 
 
 def test_fast_div_print() raises:
-    var fast_div = FastDiv[DType.uint32](33)
+    var fast_div = FastDiv[.uint32](33)
     assert_equal(
         """div: 33
 mprime: 4034666248
@@ -84,9 +83,9 @@ log2_shift: 6
 def run_elementwise[type: DType](ctx: DeviceContext) raises:
     comptime length = 256
 
-    var divisors_stack = Array[Scalar[type], length](uninitialized=True)
+    var divisors_stack = Array[Scalar[type], length](fill={})
     var divisors = TileTensor(divisors_stack, row_major[length]())
-    var remainders_stack = Array[Scalar[type], length](uninitialized=True)
+    var remainders_stack = Array[Scalar[type], length](fill={})
     var remainders = TileTensor(remainders_stack, row_major[length]())
 
     var out_divisors = ctx.enqueue_create_buffer[type](length)
@@ -95,7 +94,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
     var out_divisors_buffer = TileTensor(out_divisors, row_major(length))
     var out_remainders_buffer = TileTensor(out_remainders, row_major(length))
 
-    @always_inline
+    @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         comptime fast_div = FastDiv[type](4)
         var idx = idx0[0].value()
@@ -131,5 +130,5 @@ def main() raises:
     test_fast_div_uint64()
     test_fast_div_print()
     with DeviceContext() as ctx:
-        run_elementwise[DType.uint32](ctx)
-        run_elementwise[DType.uint64](ctx)
+        run_elementwise[.uint32](ctx)
+        run_elementwise[.uint64](ctx)

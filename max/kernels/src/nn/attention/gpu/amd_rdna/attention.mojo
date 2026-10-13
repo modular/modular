@@ -23,7 +23,7 @@ from std.math import ceildiv, recip
 from std.math.uutils import umod, ufloordiv
 from std.math.constants import log2e
 from std.algorithm.functional import unswitch
-from std.gpu import block_idx, lane_id, thread_idx
+from max.gpu import block_idx, lane_id, thread_idx
 from std.memory import unsafe_stack_allocation
 from std.sys import align_of, simd_width_of
 from std.utils import IndexList
@@ -47,7 +47,6 @@ from .buffers import (
     QRegisterBufferRDNA,
     OutputRegisterBufferRDNA,
     PRegisterBufferRDNA,
-    RDNA_AB_FRAG_SIZE,
     RDNA_CD_FRAG_SIZE,
 )
 from .config import (
@@ -63,7 +62,7 @@ from .utils import get_warp_coords, pad
 comptime RDNA_K_GROUP_SIZE = 1
 
 
-@always_inline
+@inline(.always)
 def _mask_apply_rdna[
     masked: Bool,
     accum_type: DType,
@@ -87,12 +86,7 @@ def _mask_apply_rdna[
     scale: Float32,
     mask: mask_t,
     p_reg_tile: TileTensor[
-        mut=True,
-        accum_type,
-        _,
-        _,
-        address_space=AddressSpace.LOCAL,
-        linear_idx_type=_,
+        mut=True, accum_type, _, _, address_space=.LOCAL, linear_idx_type=_
     ],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
@@ -148,7 +142,7 @@ def _mask_apply_rdna[
                         + group_idx if token_gen else block_idx.x
                     )
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                        IndexList[4, element_type=DType.uint32](
+                        IndexList[4, element_type=.uint32](
                             block_idx.z,
                             q_head_idx,
                             Int(score_seq_with_start_pos),
@@ -356,14 +350,10 @@ struct AttentionRDNA[
     var softmax: Self.SoftmaxType
 
     var k_smem_ptr: UnsafePointer[
-        Scalar[Self.k_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     var v_smem_ptr: UnsafePointer[
-        Scalar[Self.v_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     var q_buffer: Self.QRegisterBufferType
@@ -391,35 +381,35 @@ struct AttentionRDNA[
     var cache_start_pos: Int
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _padded_depth() -> Int:
         return pad[Self.v_t.dtype, Self.depth, Self.depth]()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def q_head_idx() -> Int:
         return Self.attention_config.q_head_idx()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def q_tile_idx() -> Int:
         return Self.attention_config.q_tile_idx()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def kv_head_idx() -> Int:
         return Self.attention_config.kv_head_idx()
 
-    @always_inline
+    @inline(.always)
     def zero_p_buffer(self):
         self.p_reg_buffer.zero()
 
-    @always_inline
+    @inline(.always)
     def get_batch_idx(self) -> Int:
         return self.batch_idx
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_tensor_core_mma_qk(
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
@@ -432,7 +422,7 @@ struct AttentionRDNA[
         return type_of(result)()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_tensor_core_mma_pv(
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
@@ -445,7 +435,7 @@ struct AttentionRDNA[
         return type_of(result)()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def make_kv_tile[
         operand_t: MHAOperand,
         //,
@@ -455,7 +445,12 @@ struct AttentionRDNA[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         kv_tile_num_rows: UInt32,
-    ) -> TileTensor[operand_t.dtype, Self.KvTileLayout, ImmutAnyOrigin]:
+    ) -> TileTensor[
+        operand_t.dtype,
+        Self.KvTileLayout,
+        ImmutAnyOrigin,
+        Engine=operand_t.Engine,
+    ]:
         return operand.block_paged_tile[Int(Self.BN)](
             batch_idx,
             start_tok_idx,
@@ -472,7 +467,7 @@ struct AttentionRDNA[
     # `mma_qk` / `mma_pv` are inlined into the prefill / decode kernels
     # where the concrete K/V buffer types are known.
 
-    @always_inline
+    @inline(.always)
     def mask_status(
         self,
         kv_tile_start_row: UInt32,
@@ -480,32 +475,32 @@ struct AttentionRDNA[
         comptime if Self.token_gen:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
                 ),
-                IndexList[2, element_type=DType.uint32](1, Self.BN),
+                IndexList[2, element_type=.uint32](1, Self.BN),
             )
         else:
             return self.mask.status(
                 UInt32(self.batch_idx),
-                IndexList[2, element_type=DType.uint32](
+                IndexList[2, element_type=.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                IndexList[2, element_type=DType.uint32](Self.BM, Self.BN),
+                IndexList[2, element_type=.uint32](Self.BM, Self.BN),
             )
 
-    @always_inline
+    @inline(.always)
     def mask_advance(mut self):
         comptime if not Self.token_gen:
             self.mask_warp_col += UInt32(Self.BN)
 
-    @always_inline
+    @inline(.always)
     def mask_skip_tile(self, status: TileMaskStatus) -> Bool:
         return status == TileMaskStatus.FULL_MASK
 
-    @always_inline
+    @inline(.always)
     def mask_skip_and_advance(
         mut self,
         kv_tile_start_row: UInt32,
@@ -517,16 +512,15 @@ struct AttentionRDNA[
                 return True
         return False
 
-    @always_inline
+    @inline(.always)
     def mask_apply(
         mut self,
         kv_tile_start_row: UInt32,
         kv_tile_num_rows: UInt32,
         not_last_iter: Bool,
     ):
-        @always_inline
-        @__parameter
-        def _mask_apply_impl[masked: Bool]():
+        @inline(.always)
+        def _mask_apply_impl[masked: Bool]() {imm}:
             _mask_apply_rdna[
                 masked=masked,
                 accum_type=Self.accum_type,
@@ -556,14 +550,14 @@ struct AttentionRDNA[
 
         comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var mask_status = self.mask_status(kv_tile_start_row)
-            unswitch[_mask_apply_impl](
-                mask_status == TileMaskStatus.PARTIAL_MASK
+            unswitch(
+                mask_status == TileMaskStatus.PARTIAL_MASK, _mask_apply_impl
             )
         else:
             _mask_apply_impl[masked=True]()
         self.mask_advance()
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
@@ -590,13 +584,13 @@ struct AttentionRDNA[
         self.k_smem_ptr = unsafe_stack_allocation[
             Self._k_smem_size,
             Self.k_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
         self.v_smem_ptr = unsafe_stack_allocation[
             Self._v_smem_size,
             Self.v_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
 
@@ -606,7 +600,7 @@ struct AttentionRDNA[
             var p_ptr = unsafe_stack_allocation[
                 Self.BM * Self.BK,
                 Self.q_type,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
@@ -615,7 +609,7 @@ struct AttentionRDNA[
             var p_ptr = unsafe_stack_allocation[
                 Self._p_smem_size,
                 Self.q_type,
-                address_space=AddressSpace.SHARED,
+                address_space=.SHARED,
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
@@ -692,7 +686,7 @@ struct AttentionRDNA[
             )
             _ = self.softmax.rowsum_tensor.fill(0)
 
-    @always_inline
+    @inline(.always)
     def online_softmax(mut self):
         """One online softmax iteration: max → exp → sum → correction
         → update output."""
@@ -703,7 +697,7 @@ struct AttentionRDNA[
         var warp_scratch = TileTensor[
             Self.accum_type,
             type_of(Self._warp_scratch_layout),
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),
             Self._warp_scratch_layout,
@@ -719,7 +713,7 @@ struct AttentionRDNA[
             warp_scratch,
         )
 
-    @always_inline
+    @inline(.always)
     def apply_softmax_denominator(self):
         """Divide the output accumulator by the softmax row sum, in-place."""
         comptime for m_mma in range(Self.num_m_mmas):
@@ -730,7 +724,7 @@ struct AttentionRDNA[
                         n_mma * Self.num_m_mmas + m_mma, i
                     ] *= rowsum_inv
 
-    @always_inline
+    @inline(.always)
     def store_output(self):
         """Store output from registers to global memory."""
         var warp_row: Int = get_warp_coords[Self.BN, Self.WN]()[0]
@@ -738,8 +732,7 @@ struct AttentionRDNA[
 
         var reg_tile = self.out_reg_buffer.get_reg_tile()
         var lane = lane_id()
-        var row_group = lane // 16
-        var col_within_mma = lane % 16
+        var row_group, col_within_mma = divmod(lane, 16)
 
         # Decode rows = heads in GQA group (stride=output_depth).
         # Prefill rows = seq positions (stride=num_heads*output_depth).
@@ -777,7 +770,7 @@ struct AttentionRDNA[
                             Self.output_type
                         ]()
 
-    @always_inline
+    @inline(.always)
     def copy_fragment_to_smem[chunk_idx: Int](self):
         """Copy one chunk of P to shared memory.
 
@@ -787,7 +780,7 @@ struct AttentionRDNA[
         """
         self.p_reg_buffer.copy_to_shared[chunk_idx]()
 
-    @always_inline
+    @inline(.always)
     def store_partition_info(
         self,
         num_partitions: Int,

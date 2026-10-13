@@ -20,6 +20,7 @@ Text generation
    :template: autosummary/class.rst
 
    BatchType
+   CompletedBatchStats
    ImageContentPart
    MessageContent
    TextContentPart
@@ -29,6 +30,16 @@ Text generation
    TextGenerationRequestMessage
    TextGenerationRequestTool
    VideoContentPart
+
+Audio generation
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   AudioGenerationInputs
 
 Embeddings
 ----------

@@ -1,7 +1,7 @@
 # LayoutTensor examples
 
 This directory contains examples to accompany
-[Using LayoutTensor](https://docs.modular.com/layout/tensors/).
+[Using LayoutTensor](https://max.modular.com/layout/tensors/).
 
 If you have [Pixi](https://pixi.sh/latest/) installed, you can
 execute the examples by running the following commands:

@@ -855,14 +855,31 @@ class BasicReasoningAndToolUsage(BaseScenario):
 
             response = _accumulate_stream(resp.chunks or [])
             failures = _run_all_checks(response, case)
+            shape = (
+                f"finish={response.finish_reason}"
+                f" tool_calls={len(response.tool_calls)}"
+                f" content={len(response.content)}ch"
+                f" reasoning={len(response.reasoning)}ch"
+            )
             if failures:
+                # A check names the field it judged, but the cause is often in
+                # another (e.g. JSON content cut short because the rest went to
+                # reasoning), so a failure carries the whole reassembled stream.
                 results.append(
                     self.make_result(
                         self.name,
                         case.name,
                         Verdict.FAIL,
                         status_code=resp.status,
-                        detail="; ".join(failures),
+                        detail=f"{'; '.join(failures)} [{shape}]",
+                        response_body=json.dumps(
+                            {
+                                "content": response.content,
+                                "reasoning": response.reasoning,
+                                "tool_calls": response.tool_calls,
+                                "usage": response.usage,
+                            }
+                        ),
                     )
                 )
             else:
@@ -872,12 +889,7 @@ class BasicReasoningAndToolUsage(BaseScenario):
                         case.name,
                         Verdict.PASS,
                         status_code=resp.status,
-                        detail=(
-                            f"finish={response.finish_reason}"
-                            f" tool_calls={len(response.tool_calls)}"
-                            f" content={len(response.content)}ch"
-                            f" reasoning={len(response.reasoning)}ch"
-                        ),
+                        detail=shape,
                     )
                 )
         return results

@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -39,11 +40,13 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.interfaces.pipeline_model import (
     AlwaysSignalBuffersMixin,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
+from ..gemma4.block_spec_adapters import SLIDING_KV
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..llama3.weight_adapters import _convert_safetensor_with_model_config
 from ..unified_eagle_llama3.weight_adapters import (
@@ -54,7 +57,6 @@ from .model_config import (
     UnifiedDflashGemma4_31BConfig,
     _with_num_draft_tokens,
     construct_dflash_draft_kv_params,
-    resolve_dflash_num_speculative_tokens,
 )
 from .unified_dflash_gemma4_31b import (
     UnifiedDflashGemma4_31B as UnifiedDflashGemma4_31BModule,
@@ -84,17 +86,21 @@ class UnifiedDflashGemma4_31BInputs(UnifiedSpecDecodeInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
         )
         return buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=True
+            include_in_thinking_phase=True,
         )
 
 
 class UnifiedDflashGemma4_31BModel(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedDflashGemma4_31BConfig],
 ):
     """Unified DFlash Gemma4: target + draft in one compiled graph."""
 
@@ -113,15 +119,16 @@ class UnifiedDflashGemma4_31BModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        # The drafter's trained width, resolved from the draft checkpoint;
-        # exposed for the overlap pipeline's spec-decode buffers.
+        assert pipeline_config.speculative is not None
         self.resolved_num_speculative_tokens = (
-            resolve_dflash_num_speculative_tokens(pipeline_config)
+            pipeline_config.speculative.draft_width
         )
         super().__init__(
             pipeline_config,
@@ -129,10 +136,11 @@ class UnifiedDflashGemma4_31BModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
+            adapter=adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 
@@ -148,6 +156,7 @@ class UnifiedDflashGemma4_31BModel(
         # The KV bake in ``PipelineModelWithKVCache.__init__`` reads the raw
         # speculative section, where the unset width would bake
         # num_draft_tokens=0; rebake at the drafter's trained width.
+        assert pipeline_config.speculative is not None
         return _with_num_draft_tokens(
             Gemma4ForConditionalGenerationConfig.construct_kv_params(
                 huggingface_config,
@@ -156,7 +165,7 @@ class UnifiedDflashGemma4_31BModel(
                 kv_cache_config,
                 cache_dtype,
             ),
-            resolve_dflash_num_speculative_tokens(pipeline_config, warn=False),
+            pipeline_config.speculative.draft_width,
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -181,7 +190,7 @@ class UnifiedDflashGemma4_31BModel(
         self, state_dict: dict[str, Any]
     ) -> UnifiedDflashGemma4_31BConfig:
         unified_config = UnifiedDflashGemma4_31BConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         unified_config.validate_dflash_fields()
         target_hf_config = self.huggingface_config
@@ -246,10 +255,9 @@ class UnifiedDflashGemma4_31BModel(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedDflashGemma4_31BConfig,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDflashGemma4_31BConfig)
 
         nn_model = UnifiedDflashGemma4_31BModule(
             model_config,
@@ -283,8 +291,30 @@ class UnifiedDflashGemma4_31BModel(
             "unified_dflash_gemma4_31b",
             input_types=nn_model.input_types(),
         ) as graph:
-            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(inputs)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target", "full_attention"),
+                passthrough_kv={
+                    SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+                },
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                draft_probs_full=graph_inputs.draft_probs_full,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
             graph.output(*outputs)
 
         return graph, weights_registry

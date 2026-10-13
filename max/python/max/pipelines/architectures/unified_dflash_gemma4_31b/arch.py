@@ -15,6 +15,7 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.speculative._dflash import dflash_draft_width
 
 from ..gemma4.memory_planner import Gemma4MemoryPlanner
 from ..gemma4.tokenizer import Gemma4Tokenizer
@@ -46,13 +47,14 @@ unified_dflash_gemma4_31b_arch = SupportedArchitecture(
     config=UnifiedDflashGemma4_31BConfig,
     memory_planner=Gemma4MemoryPlanner,
     supports_device_graph_capture=True,
+    # The unified graph commits per-row (dummy-draft prefill rows
+    # commit their prompt chunk), so mixed prefill+decode batches may
+    # keep verifying drafts.
+    supports_spec_decode_mixed_batches=True,
     batching=UnifiedDflashGemma4_31BBatchProcessor,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    # Backend resolution runs after the registry rewrites the arch name, so
-    # the base gemma4 arch's declaration never applies here; pin it or tool
-    # grammars silently fall through to the global default.
-    default_structured_output_backend="xgrammar",
+    checkpoint_draft_width=dflash_draft_width,
 )
 
 # The generic draft-side registration ("DFlashDraftModel") lives in the

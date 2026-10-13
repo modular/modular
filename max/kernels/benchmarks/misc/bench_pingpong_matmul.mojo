@@ -37,7 +37,6 @@ from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
     amd_ping_pong_matmul as ping_pong_matmul,
 )
-from std.utils import IndexList
 
 
 def _get_run_name[
@@ -99,7 +98,7 @@ def bench_matmul[
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
-    @always_inline
+    @inline(.always)
     def get_size(shape: Coord) -> Int:
         return Int(shape[0].value()) * Int(shape[1].value())
 
@@ -115,11 +114,19 @@ def bench_matmul[
     cb_a.init_on_device(init_type, ctx)
     cb_b.init_on_device(init_type, ctx)
 
-    @__parameter
-    @__copy_capture(cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
-    @always_inline
-    def bench_func(mut b: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_func(
+        mut b: Bencher,
+    ) {
+        var cb_a,
+        var cb_b,
+        var cb_c,
+        var shape_c,
+        var shape_a,
+        var shape_b,
+        imm,
+    }:
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
@@ -132,16 +139,19 @@ def bench_matmul[
             )
 
             @__parameter
-            @always_inline
+            @inline(.always)
             @__copy_capture(tensor_c)
             def test_lambda_add_coords_prod[
                 _dtype: DType,
                 width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
-            ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
+                comptime assert (
+                    idx.rank == 2
+                ), "the matmul epilogue contract is rank 2"
                 # FIXME(mojo-compiler): restore the comptime-assert below
                 # once the Mojo `Int.__ge__` comptime-cycle bug is fixed.
                 # The assert is always true here (tensor_c is the 2D output
@@ -156,7 +166,7 @@ def bench_matmul[
                 # only `>=` in this comptime + parametric-capturing-closure
                 # combination does. See commit e65f549ada3 for the audit.
                 # comptime assert tensor_c.flat_rank >= 2
-                var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
+                var x = tensor_c.load[width=width](idx).cast[_dtype]()
                 var y = val * x
                 return y
 
@@ -210,7 +220,8 @@ def bench_matmul[
         * Int(shape_c[1].value())
         * Int(shape_a[1].value()),
     )
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[
                 dtype,
@@ -265,7 +276,7 @@ def create_matmul_bench[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
 
     var M = Int(arg_parse("M", 1))
     comptime N = get_defined_int["N", 1]()

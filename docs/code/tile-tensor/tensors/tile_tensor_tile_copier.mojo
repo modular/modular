@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: max/tile-tensor/tensors.mdx
 
-from std.gpu import (
+from max.gpu import (
     thread_idx,
     block_idx,
     global_idx,
@@ -41,12 +41,12 @@ def tile_copier_example() raises:
 
     def kernel(tensor: TileTensor[dtype, type_of(input_layout), MutAnyOrigin]):
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         comptime tile_layout = row_major[block_size, block_size]()
-        var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
-        ](tile_layout)
+        var shared_tile = stack_allocation[dtype, address_space=.SHARED](
+            tile_layout
+        )
 
         comptime thread_layout = row_major[
             WARP_SIZE // simd_width, simd_width

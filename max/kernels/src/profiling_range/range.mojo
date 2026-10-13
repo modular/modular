@@ -13,7 +13,7 @@
 """Mojo `Range` context manager for libkineto activity spans.
 
 `Range` wraps the `KGEN_CompilerRT_Range{Begin,End,IsEnabled}` FFI bridge from
-`KGEN/lib/CompilerRT/RangeBridge.cpp`. Use it as a context manager to emit a
+`Mojo/lib/CompilerRT/RangeBridge.cpp`. Use it as a context manager to emit a
 libkineto activity span: `__enter__` opens the span and `__exit__` closes it.
 
 `Range` mirrors `max.runtime.tracing.Trace`: the span is opened in `__enter__`
@@ -32,7 +32,7 @@ span begun without a matching end (mirrors the C++ RAII discipline).
 from std.ffi import external_call
 
 
-@always_inline
+@inline(.always)
 def is_enabled() -> Bool:
     """Reports whether the libkineto profiler is currently enabled.
 
@@ -74,9 +74,10 @@ struct Range(ImplicitlyCopyable):
             ...  # graph build code runs inside the span
     ```
 
-    A future update will add a `category` parameter (mirroring
-    `max.runtime.tracing.Trace[level, category]`) and a `StringSlice` name
-    overload for dynamically-built names (e.g. `Range("kernel_" + variant)`).
+    `max.runtime.tracing.Trace` now records libkineto spans natively when the
+    profiler is live, so new instrumentation should prefer `Trace` — it also
+    feeds the other tracing backends. `Range` remains for code that wants a
+    profiler-only span with no `Trace` machinery.
     """
 
     var _name: StaticString
@@ -95,7 +96,7 @@ struct Range(ImplicitlyCopyable):
     external code would unbalance libkineto's bookkeeping.
     """
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, name: StaticString, color: UInt32 = 0):
         """Records the span name and color; opening is deferred to `__enter__`.
 
@@ -113,7 +114,7 @@ struct Range(ImplicitlyCopyable):
         # entered (or entered while disabled) never closes a span in __exit__.
         self._began = False
 
-    @always_inline
+    @inline(.always)
     def __enter__(mut self):
         """Begin a libkineto activity span if the profiler is enabled.
 
@@ -137,7 +138,7 @@ struct Range(ImplicitlyCopyable):
             # span must never set this to True.
             self._began = True
 
-    @always_inline
+    @inline(.always)
     def __exit__(self):
         """Close the libkineto activity span if `__enter__` opened one.
 

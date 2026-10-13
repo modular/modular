@@ -21,14 +21,17 @@ path.
 """
 
 import importlib.util
+import json
 import math
 import sys
-from typing import Any
+import time
+from typing import Any, Literal
 
 import numpy as np
 import pytest
 from max import _xgrammar as xgr
 from max._xgrammar.structural_tag import (
+    AnyTextFormat,
     ConstStringFormat,
     JSONSchemaFormat,
     OrFormat,
@@ -142,6 +145,108 @@ def test_json_schema_path_through_shim() -> None:
     assert int(bitmask[0]) != -1
 
 
+def _nested_object_schema(depth: int) -> str:
+    head = "".join(
+        f'{{"type": "object", "properties": {{"p{i}":' for i in range(depth)
+    )
+    return head + '{"type": "string"}' + "}}" * depth
+
+
+def _compile_cpu_seconds(compiler: xgr.GrammarCompiler, schema: str) -> float:
+    started = time.process_time()
+    compiled = compiler.compile_json_schema(schema, reject_unsupported=True)
+    elapsed = time.process_time() - started
+    assert isinstance(compiled, xgr.CompiledGrammar)
+    return elapsed
+
+
+def test_deep_nesting_compile_cost_scales_subcubically() -> None:
+    # CPU-time ratios exclude host scheduling noise from this complexity check.
+    compiler = _compiler()
+    compiler.compile_json_schema('{"type": "null"}', reject_unsupported=True)
+    shallow = _compile_cpu_seconds(compiler, _nested_object_schema(100))
+    deep = _compile_cpu_seconds(compiler, _nested_object_schema(400))
+    assert shallow > 0
+    assert deep / shallow < 30
+
+
+def test_near_identical_subschemas_do_not_share() -> None:
+    # Conflating these two keys would leak one maxLength into the other.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "properties":'
+        ' {"a": {"type": "object", "properties":'
+        ' {"x": {"type": "string", "maxLength": 5}}},'
+        ' "b": {"type": "object", "properties":'
+        ' {"x": {"type": "string", "maxLength": 6}}}},'
+        ' "required": ["a", "b"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": {"x": "12345"}, "b": {"x": "123456"}}')
+    assert not _accepts(compiled, '{"a": {"x": "123456"}, "b": {"x": "1"}}')
+
+
+def test_property_name_escapes_cannot_forge_a_cache_key() -> None:
+    forged_name = 'a":{},"b'
+    # Without key escaping, the one-name map serializes identically to the
+    # two-name map. Compiling them as siblings exercises the cache lookup.
+    compiled = _compiler().compile_json_schema(
+        json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "object",
+                        "properties": {forged_name: {}},
+                        "additionalProperties": False,
+                    },
+                    "y": {
+                        "type": "object",
+                        "properties": {"a": {}, "b": {}},
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["x", "y"],
+            }
+        ),
+        reject_unsupported=True,
+    )
+    assert _accepts(
+        compiled,
+        json.dumps({"x": {forged_name: None}, "y": {"a": 1, "b": 2}}),
+    )
+    assert not _accepts(
+        compiled,
+        json.dumps({"x": {}, "y": {forged_name: None}}),
+    )
+
+
+def test_property_key_with_embedded_quote_enforces_value_type() -> None:
+    key = 'foo"bar'
+    compiled = _compiler().compile_json_schema(
+        json.dumps(
+            {
+                "properties": {key: {"$ref": "#/definitions/foo%22bar"}},
+                "definitions": {key: {"type": "number"}},
+            }
+        )
+    )
+    assert _accepts(compiled, json.dumps({key: 1}))
+    assert not _accepts(compiled, json.dumps({key: "1"}))
+
+
+def test_property_key_with_embedded_backslash_enforces_value_type() -> None:
+    key = "a\\b"
+    compiled = _compiler().compile_json_schema(
+        json.dumps(
+            {
+                "properties": {key: {"type": "number"}},
+            }
+        )
+    )
+    assert _accepts(compiled, json.dumps({key: 1}))
+    assert not _accepts(compiled, json.dumps({key: "1"}))
+
+
 # Rejection of unenforceable keywords is opt-in: it happens only when the caller
 # passes reject_unsupported=True. The default (exercised by the guard tests below)
 # falls back to best-effort decoding instead.
@@ -176,6 +281,228 @@ def test_local_ref_compiles() -> None:
     assert _accepts(compiled, '"a"')
 
 
+# An embedded resource: "sub" declares its own "$id" and its own "$defs/x", so
+# the "#/$defs/x" inside it names sub's string, not the document's integer.
+# Resolving against the document root binds the wrong one of the two.
+_EMBEDDED_RESOURCE_SCHEMA = (
+    '{"$defs": {"x": {"type": "integer"},'
+    ' "sub": {"$id": "https://example.com/sub",'
+    ' "$defs": {"x": {"type": "string"}},'
+    ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+    ' "required": ["v"]}},'
+    ' "$ref": "#/$defs/sub"}'
+)
+
+
+def test_ref_under_nested_id_refused() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            _EMBEDDED_RESOURCE_SCHEMA, reject_unsupported=True
+        )
+
+
+def test_hash_ref_under_nested_id_refused() -> None:
+    # A bare "#" is a fragment too: inside an embedded resource it means that
+    # resource's root, not the document's.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"sub": {"$id": "https://example.com/sub",'
+            ' "type": "object", "properties": {"v": {"$ref": "#"}}}},'
+            ' "type": "object", "properties": {"w": {"$ref": "#/$defs/sub"}}}',
+            reject_unsupported=True,
+        )
+
+
+def test_ref_reached_through_nested_id_refused() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "properties": {"inner": {"type": "object",'
+            ' "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}}}},'
+            ' "type": "object",'
+            ' "properties": {"w": {"$ref": "#/$defs/sub/properties/inner"}},'
+            ' "required": ["w"]}',
+            reject_unsupported=True,
+        )
+
+
+def test_same_ref_text_in_both_resources_refused() -> None:
+    # The root's "#/$defs/x" parses first, so a scope-blind parse cache would
+    # hand its answer to sub's identically spelled one.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}},'
+            ' "type": "object",'
+            ' "properties": {"a": {"$ref": "#/$defs/x"},'
+            ' "b": {"$ref": "#/$defs/sub"}},'
+            ' "required": ["a", "b"]}',
+            reject_unsupported=True,
+        )
+
+
+# The refusal is a property of the document, not of any one reference: a
+# declaration below the root is refused even where every reference in the
+# document happens to be a root-resource one. Resolving those correctly needs a
+# base URI per subschema, which this converter does not compute.
+def test_unused_nested_id_refuses_the_document() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "string"},'
+            ' "unused": {"$id": "https://example.com/unused",'
+            ' "type": "integer"}},'
+            ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_beside_unused_nested_id_refuses_the_document() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "string"},'
+            ' "unused": {"$id": "https://example.com/unused", "type": "integer"}},'
+            ' "allOf": [{"$ref": "#/$defs/x"}]}',
+            reject_unsupported=True,
+        )
+
+
+# An unknown extension keyword is an annotation whose value is arbitrary JSON,
+# so an "$id" member inside it is a name and declares nothing.
+def test_annotation_keyword_id_does_not_declare_a_resource() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "x-metadata": {"$id": "not-a-schema"}}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_empty_nested_id_refuses_the_document() -> None:
+    # "" is a valid URI-reference, so this is a declaration with empty text
+    # rather than no declaration, and sub's own "x" is what its $ref names.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "", "$defs": {"x": {"type": "string"}},'
+            ' "$ref": "#/$defs/x"}},'
+            ' "$ref": "#/$defs/sub"}',
+            reject_unsupported=True,
+        )
+
+
+def test_definition_named_id_does_not_open_resource() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"$defs": {"$id": {"type": "string"}},'
+        ' "allOf": [{"$ref": "#/$defs/$id"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_definition_named_id_can_contain_embedded_resource() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "$id": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "$ref": "#/$defs/x"}},'
+            ' "$ref": "#/$defs/$id"}',
+            reject_unsupported=True,
+        )
+
+
+def test_ref_under_root_id_still_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"$id": "https://example.com/root",'
+        ' "$defs": {"x": {"type": "string"}},'
+        ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+        ' "required": ["v"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"v": "a"}')
+    assert not _accepts(compiled, '{"v": 1}')
+
+
+# The root's "$id" text repeated below the root, on instance data. "examples"
+# holds values rather than subschemas, so the scan does not descend into it and
+# the only declaration in this document is the root's own.
+_ROOT_ID_IN_INSTANCE_DATA_SCHEMA = (
+    '{"$id": "https://example/root",'
+    ' "examples": [{"$id": "https://example/root"}],'
+    ' "$defs": {"x": {"type": "string"}},'
+    ' "$ref": "#/$defs/x"}'
+)
+
+
+def test_ref_under_root_id_repeated_below_root_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        _ROOT_ID_IN_INSTANCE_DATA_SCHEMA, reject_unsupported=True
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_root_id_repeated_below_root_permissive_unchanged() -> None:
+    compiled = _compiler().compile_json_schema(_ROOT_ID_IN_INSTANCE_DATA_SCHEMA)
+    assert _accepts(compiled, '"a"')
+
+
+def test_instance_id_does_not_rebase_allof_ref() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"examples": [{"$id": "https://example.com/instance"}],'
+        ' "$defs": {"x": {"type": "string"}},'
+        ' "allOf": [{"$ref": "#/$defs/x"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_ref_under_duplicate_root_id_refused() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$id": "https://example.com/root",'
+            ' "$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/root",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "type": "object", "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}},'
+            ' "$ref": "#/$defs/sub"}',
+            reject_unsupported=True,
+        )
+
+
+def test_ref_under_nested_id_permissive_unchanged() -> None:
+    compiled = _compiler().compile_json_schema(_EMBEDDED_RESOURCE_SCHEMA)
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
 def test_dynamic_ref_rejected() -> None:
     # $dynamicRef is a reference (it resolves to a subschema the instance must
     # satisfy), not a no-op annotation; with no other type keyword it would fall
@@ -184,6 +511,232 @@ def test_dynamic_ref_rejected() -> None:
         _compiler().compile_json_schema(
             '{"$dynamicRef": "#node"}', reject_unsupported=True
         )
+
+
+def test_dynamic_and_recursive_ref_with_type_rejected() -> None:
+    for keyword in ("$dynamicRef", "$recursiveRef"):
+        with pytest.raises(
+            Exception, match=f"unsupported schema keyword: \\{keyword}"
+        ):
+            _compiler().compile_json_schema(
+                f'{{"type": "integer", "{keyword}": "#"}}',
+                reject_unsupported=True,
+            )
+
+
+def test_legacy_id_keyword_rejected() -> None:
+    # Draft 4 spells the identifier "id", so a nested one declares a resource
+    # on the same terms as "$id", and the refusal quotes the keyword the
+    # document actually used rather than one it never wrote.
+    with pytest.raises(Exception) as excinfo:
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "definitions": {"x": {"type": "integer"},'
+            ' "sub": {"id": "sub", "definitions": {"x": {"type": "string"}},'
+            ' "type": "object", "properties": {"v": {"$ref": "#/definitions/x"}},'
+            ' "required": ["v"]}}, "$ref": "#/definitions/sub"}',
+            reject_unsupported=True,
+        )
+    message = str(excinfo.value)
+    assert "declares a resource below the document root" in message
+    assert '"id" "sub"' in message
+    assert "$id" not in message
+
+
+def test_draft_03_refused_as_an_unmodelled_dialect() -> None:
+    # Draft 3 names resources with "id" and puts subschemas under "extends",
+    # which the scan does not walk. Reading it as a modern document would walk
+    # past the resource this one declares, so the dialect is refused instead.
+    with pytest.raises(Exception, match='unsupported "\\$schema" dialect'):
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-03/schema#",'
+            ' "type": "string", "extends": {"id": "sub"}}',
+            reject_unsupported=True,
+        )
+
+
+def test_custom_schema_uri_spelling_a_draft_is_not_that_draft() -> None:
+    # A vendor URI that merely spells a draft is not that draft, and is not a
+    # dialect this converter models either, so the document is refused rather
+    # than read under a guessed identifier spelling.
+    with pytest.raises(Exception, match='unsupported "\\$schema" dialect'):
+        _compiler().compile_json_schema(
+            '{"$schema": "https://example.com/schemas/draft-04-migration/v1",'
+            ' "$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "$ref": "#/$defs/x"}},'
+            ' "$ref": "#/$defs/sub"}',
+            reject_unsupported=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "metaschema",
+    [
+        "http://json-schema.org/draft-06/schema#",
+        "http://json-schema.org/draft-07/schema#",
+        "https://json-schema.org/draft/2019-09/schema",
+        "https://json-schema.org/draft/2020-12/schema",
+    ],
+)
+def test_recognized_modern_metaschemas_compile(metaschema: str) -> None:
+    compiled = _compiler().compile_json_schema(
+        json.dumps(
+            {
+                "$schema": metaschema,
+                "definitions": {"s": {"type": "string"}},
+                "$ref": "#/definitions/s",
+            }
+        ),
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_modern_dialect_bare_id_is_not_an_identifier() -> None:
+    # Draft 6 renamed the identifier to "$id" and left "id" an ordinary
+    # annotation, so a draft 7 subschema carrying one declares no resource.
+    compiled = _compiler().compile_json_schema(
+        '{"$schema": "http://json-schema.org/draft-07/schema#",'
+        ' "definitions": {"s": {"id": "metadata", "type": "string"}},'
+        ' "$ref": "#/definitions/s"}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_malformed_root_legacy_id_rejected() -> None:
+    # The root's identifier declares nothing to refuse, but an unreadable one
+    # is unreadable there too.
+    with pytest.raises(Exception, match='"id" must be a string'):
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "id": {}, "type": "string"}',
+            reject_unsupported=True,
+        )
+
+
+def test_permissive_raw_percent_pointer_unchanged() -> None:
+    # Upstream read a fragment raw, so a member whose name carries a literal
+    # "%" still resolves when unsupported-schema rejection is off.
+    compiled = _compiler().compile_json_schema(
+        '{"definitions": {"x%": {"type": "string"}}, "$ref": "#/definitions/x%"}'
+    )
+    assert _accepts(compiled, '"a"')
+
+
+def test_root_legacy_id_still_compiles() -> None:
+    # A root "id" names the document's sole resource, exactly as a root "$id"
+    # does, so every fragment still resolves against the document.
+    compiled = _compiler().compile_json_schema(
+        '{"$schema": "http://json-schema.org/draft-04/schema#",'
+        ' "id": "https://example.com/root",'
+        ' "definitions": {"x": {"type": "string"}},'
+        ' "$ref": "#/definitions/x"}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_percent_encoded_pointer_separator_compiles() -> None:
+    # RFC 6901 evaluates a fragment once percent-decoded, so encoding the
+    # pointer's own separators names the same place as writing them plainly.
+    compiled = _compiler().compile_json_schema(
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#%2F$defs%2Fx"}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
+def test_percent_encoded_local_ref_compiles() -> None:
+    for schema in (
+        '{"$defs": {"a b": {"type": "string"}}, "$ref": "#/$defs/a%20b"}',
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/%24defs/x"}',
+        '{"$defs": {"a": {"b": {"type": "string"}},'
+        ' "a/b": {"type": "integer"}}, "$ref": "#/$defs/a%2Fb"}',
+    ):
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, '"a"')
+        assert not _accepts(compiled, "1")
+
+
+@pytest.mark.parametrize("ref", ["#/x%", "#/x%GG"])
+def test_malformed_percent_ref_rejected(ref: str) -> None:
+    with pytest.raises(
+        Exception,
+        match=r"malformed percent escape.*must be followed by two hexadecimal digits",
+    ):
+        _compiler().compile_json_schema(
+            json.dumps({"$ref": ref}), reject_unsupported=True
+        )
+
+
+def test_malformed_id_rejected_without_recursive_scan() -> None:
+    with pytest.raises(Exception, match='"\\$id" must be a string'):
+        _compiler().compile_json_schema(
+            '{"$defs": {"s": {"$id": {"$id": {"$id": "leaf"}},'
+            ' "type": "string"}}, "$ref": "#/$defs/s"}',
+            reject_unsupported=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("schema", "error"),
+    [
+        (
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": {}, "properties":'
+            ' {"v": {"$ref": "#/$defs/x"}}}},'
+            ' "$ref": "#/$defs/sub/properties/v"}',
+            '"\\$id" must be a string',
+        ),
+        (
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "definitions": {"x": {"type": "integer"},'
+            ' "sub": {"id": "sub", "properties":'
+            ' {"v": {"$ref": "#/definitions/x"}}}},'
+            ' "$ref": "#/definitions/sub/properties/v"}',
+            "declares a resource below the document root",
+        ),
+    ],
+)
+def test_ref_path_validates_ancestor_identifier(
+    schema: str, error: str
+) -> None:
+    with pytest.raises(Exception, match=error):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+@pytest.mark.parametrize(
+    ("schema", "error"),
+    [
+        (
+            '{"$defs": {"sub": {"$id": {},'
+            ' "properties": {"v": {"type": "integer"}}}},'
+            ' "allOf": [{"$ref": "#/$defs/sub/properties/v"}]}',
+            '"\\$id" must be a string',
+        ),
+        (
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "definitions": {"sub": {"id": "sub",'
+            ' "properties": {"v": {"type": "integer"}}}},'
+            ' "allOf": [{"$ref": "#/definitions/sub/properties/v"}]}',
+            "declares a resource below the document root",
+        ),
+    ],
+)
+def test_allof_ref_path_validates_ancestor_identifier(
+    schema: str, error: str
+) -> None:
+    with pytest.raises(Exception, match=error):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
 
 
 def test_unknown_keyword_without_type_rejected() -> None:
@@ -360,23 +913,118 @@ def test_unsupported_keyword_compiles_by_default() -> None:
     assert isinstance(compiled, xgr.CompiledGrammar)
 
 
-def test_oneof_two_branches_rejected() -> None:
-    # oneOf is only approximated as anyOf; reject under strict mode.
+def test_oneof_type_disjoint_compiles_and_enforces() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "string"}, {"type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "1")
+    assert not _accepts(compiled, "true")
+    assert not _accepts(compiled, "null")
+
+
+def test_oneof_const_disjoint_compiles_and_enforces() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": "a"}, {"const": "b"}]}', reject_unsupported=True
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, '"b"')
+    assert not _accepts(compiled, '"ab"')
+
+
+def test_const_enum_control_char_string_is_escaped() -> None:
+    # A const/enum string value with a control char must render as its escaped
+    # JSON form; the grammar must reject the raw control byte (invalid JSON).
+    nl = _compiler().compile_json_schema(
+        json.dumps({"const": "a\nb"}), reject_unsupported=True
+    )
+    assert _accepts(nl, '"a\\nb"')  # escaped newline -> valid JSON, accepted
+    assert not _accepts(nl, '"a\nb"')  # raw newline -> invalid JSON, rejected
+
+    en = _compiler().compile_json_schema(
+        json.dumps({"enum": ["a\nb"]}), reject_unsupported=True
+    )
+    assert _accepts(en, '"a\\nb"')
+    assert not _accepts(en, '"a\nb"')
+
+    nul = _compiler().compile_json_schema(
+        json.dumps({"const": "x\x00y"}), reject_unsupported=True
+    )
+    assert _accepts(nul, '"x\\u0000y"')  # escaped NUL -> valid, accepted
+    assert not _accepts(nul, '"x\x00y"')  # raw NUL -> invalid, rejected
+
+
+def test_oneof_enum_disjoint_compiles_and_enforces() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"enum": ["a", "b"]}, {"enum": [1]}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "1")
+    assert not _accepts(compiled, "true")
+
+
+def test_oneof_discriminated_objects_compile_and_enforce() -> None:
+    # Distinct required discriminator values make the branches disjoint.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": ['
+        '{"type": "object", "required": ["a"], '
+        '"properties": {"a": {"const": "a"}}}, '
+        '{"type": "object", "required": ["a"], '
+        '"properties": {"a": {"const": "b"}}}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "a"}')
+    assert _accepts(compiled, '{"a": "b"}')
+    assert not _accepts(compiled, '{"a": 1}')
+
+
+def test_oneof_integer_number_overlap_rejected() -> None:
     with pytest.raises(Exception):
         _compiler().compile_json_schema(
-            '{"oneOf": [{"type": "string"}, {"type": "number"}]}',
+            '{"oneOf": [{"type": "integer"}, {"type": "number"}]}',
             reject_unsupported=True,
         )
 
 
-def test_allof_two_nontrivial_branches_rejected() -> None:
-    # Two enforceable allOf members cannot be merged into one grammar.
+def test_oneof_untyped_branch_rejected() -> None:
+    # Type-specific keywords do not imply that an untyped branch has that type.
     with pytest.raises(Exception):
         _compiler().compile_json_schema(
-            '{"allOf": [{"type": "string", "minLength": 1}, '
-            '{"type": "string", "maxLength": 10}]}',
+            '{"oneOf": [{"type": "number"}, {"minimum": 0}]}',
             reject_unsupported=True,
         )
+
+
+def test_oneof_overlapping_compiles_when_permissive() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "integer"}, {"type": "number"}]}'
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_oneof_sibling_of_anyof_not_dropped() -> None:
+    # Dispatch must not drop a sibling union.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"anyOf": [{"type": "string"}], '
+            '"oneOf": [{"type": "integer"}, {"type": "number"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_two_nontrivial_branches_merged() -> None:
+    # Two enforceable members conjoin into one schema: the length bound each
+    # contributes is enforced, not just the first.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "string", "minLength": 2}, '
+        '{"type": "string", "maxLength": 3}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"ab"')
+    assert not _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '"abab"')
 
 
 def test_allof_with_only_empty_branch_compiles() -> None:
@@ -400,11 +1048,11 @@ def test_allof_with_false_member_rejected() -> None:
         _compiler().compile_json_schema('{"allOf": [false]}')
 
 
-def test_allof_with_additional_properties_rejected() -> None:
-    # Any additionalProperties sibling of an enforceable allOf is dropped by the
-    # exclusive dispatch and cannot be merged; reject it regardless of value
-    # (bool or schema) rather than emit a grammar looser than the schema.
-    for value in ("false", "true", '{"type": "string"}'):
+def test_allof_with_restricting_additional_properties_rejected() -> None:
+    # additionalProperties governs the keys its own object leaves unnamed. The
+    # base here names none, so it accepts only {}; folding the member's "a" in
+    # would make the merged schema accept an object the base forbids.
+    for value in ("false", '{"type": "string"}'):
         with pytest.raises(Exception):
             _compiler().compile_json_schema(
                 '{"type": "object", "allOf": [{"properties": {"a": {"type": '
@@ -413,15 +1061,149 @@ def test_allof_with_additional_properties_rejected() -> None:
             )
 
 
-def test_allof_with_sibling_object_keyword_rejected() -> None:
-    # A non-additionalProperties object applicator (here required) sibling of an
-    # enforceable allOf is silently dropped by dispatch; reject the combination.
+def test_oneof_type_array_arms_disjoint_compiles() -> None:
+    # A "type" array is a union of types; ["string","null"] and integer share none.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": ["string", "null"]}, {"type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "null")
+    assert _accepts(compiled, "7")
+
+
+def test_oneof_type_array_arms_overlapping_rejected() -> None:
+    # integer is a subset of number, so the arms overlap inside the array.
     with pytest.raises(Exception):
         _compiler().compile_json_schema(
-            '{"type": "object", "allOf": [{"properties": {"a": {"type": '
-            '"string"}}}], "required": ["a"]}',
+            '{"oneOf": [{"type": ["integer", "null"]}, {"type": "number"}]}',
             reject_unsupported=True,
         )
+
+
+def test_oneof_const_versus_type_disjoint_compiles() -> None:
+    # A finite arm against a typed arm: "a" is not an integer.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": "a"}, {"type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "7")
+    assert not _accepts(compiled, '"b"')
+
+
+def test_oneof_fractional_const_versus_integer_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": 2.5}, {"type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, "2.5")
+    assert _accepts(compiled, "2")
+
+
+def test_oneof_const_versus_type_overlapping_rejected() -> None:
+    # 1 is a number, so the finite arm falls inside the typed arm.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"const": 1}, {"type": "number"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_huge_enums_rejected_not_hung() -> None:
+    # Branch counts and enum sizes come from the request, and the proof is
+    # quadratic in both. Over budget must refuse, not run for minutes.
+    a = json.dumps(list(range(10000)))
+    b = json.dumps(list(range(10000, 20000)))
+    started = time.monotonic()
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"enum": ' + a + '}, {"enum": ' + b + "}]}",
+            reject_unsupported=True,
+        )
+    assert time.monotonic() - started < 10
+
+
+def test_oneof_many_discriminator_candidates_rejected_not_hung() -> None:
+    keys = [f"k{i}" for i in range(50000)]
+    option = {
+        "type": "object",
+        "required": keys,
+        "properties": {key: {"const": 0} for key in keys},
+    }
+    schema = json.dumps({"oneOf": [option, option]})
+    started = time.monotonic()
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+    assert time.monotonic() - started < 10
+
+
+def test_allof_conflicting_id_rejected() -> None:
+    # $id rebases $ref resolution, so two members declaring different ones
+    # disagree about something an instance can observe.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"$id": "https://example.com/a", "type": "string"}, '
+            '{"$id": "https://example.com/b", "minLength": 1}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_matching_id_refused() -> None:
+    # Agreeing on the identifier does not make the document one resource: both
+    # members still declare one below the root, and a fragment written in
+    # either would name a place inside it.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"$id": "https://example.com/a", "type": "string"}, '
+            '{"$id": "https://example.com/a", "minLength": 2}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_mixed_integer_and_float_consts_compiles() -> None:
+    # 1 and 2.5 are disjoint. The proof must compare numbers, not picojson's
+    # storage tag, which differs between an integer and a float literal.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": 1}, {"const": 2.5}]}', reject_unsupported=True
+    )
+    assert _accepts(compiled, "1")
+    assert _accepts(compiled, "2.5")
+    assert not _accepts(compiled, "3")
+
+
+def test_oneof_equal_integer_and_float_consts_rejected() -> None:
+    # 1 and 1.0 are the same value, so the branches are not disjoint.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"const": 1}, {"const": 1.0}]}', reject_unsupported=True
+        )
+
+
+def test_allof_with_open_additional_properties_merged() -> None:
+    # additionalProperties: true restricts nothing, so nothing is lost by
+    # folding the member's declared property in beside it.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "allOf": [{"properties": {"a": {"type": '
+        '"string"}}}], "additionalProperties": true}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "b"}')
+    assert not _accepts(compiled, '{"a": 1}')
+
+
+def test_allof_with_sibling_object_keyword_merged() -> None:
+    # A required sibling of an allOf binds the member's declared property: the
+    # merge is what makes the two visible to one ObjectSpec.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "allOf": [{"properties": {"a": {"type": '
+        '"string"}}}], "required": ["a"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "b"}')
+    assert not _accepts(compiled, "{}")
 
 
 def test_if_then_rejected() -> None:
@@ -453,8 +1235,6 @@ def test_anyof_compiles() -> None:
 
 
 def test_unsupported_keyword_in_tag_compiles_by_default() -> None:
-    # Same permissive default on the structural-tag path: JSONSchemaFormat
-    # defaults reject_unsupported to False.
     tag = xgr.StructuralTag(
         format=JSONSchemaFormat(
             json_schema={
@@ -617,6 +1397,17 @@ def test_format_ipv4_enforced() -> None:
     )
     assert _accepts(compiled, '"1.1.1.1"')
     assert not _accepts(compiled, '"a"')
+
+
+def test_format_email_quoted_local_part() -> None:
+    # The format regex matches the decoded string, so a quoted local part is
+    # spelled with one JSON escape per quote.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "email"}'
+    )
+    assert _accepts(compiled, json.dumps('"john"@example.com'))
+    assert _accepts(compiled, json.dumps('"a b"@x.com'))
+    assert not _accepts(compiled, json.dumps('\\"john\\"@example.com'))
 
 
 def test_format_ipv4_octet_range_enforced() -> None:
@@ -992,6 +1783,156 @@ def test_dot_excludes_forbidden() -> None:
     assert not _accepts(compiled, '"a"b"')
 
 
+def test_dot_admits_json_escapes() -> None:
+    # A pattern matches the decoded string, so the characters `.` admits but
+    # JSON must escape are admitted as their escapes.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^.+$"}'
+    )
+    for s in ('say "hi"', "a\\b", "a\tb", "a\x01b"):
+        assert _accepts(compiled, json.dumps(s))
+    assert not _accepts(compiled, '"a\x01b"')
+
+
+def test_dot_refuses_line_terminators() -> None:
+    # ECMA-262 `.` matches no line terminator, raw or spelled as an escape.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^.+$"}'
+    )
+    for s in ("a\nb", "a\rb", "a\u2028b", "a\u2029b"):
+        assert not _accepts(compiled, json.dumps(s, ensure_ascii=False)), s
+    for text in ('"a\\u000ab"', '"a\\u2028b"'):
+        assert not _accepts(compiled, text), text
+
+
+def test_negated_class_refuses_its_own_escapes() -> None:
+    # A negated class admits the escape of each JSON-unsafe character it
+    # admits, and not the escape of a character it excludes.
+    for pattern, refused, admitted in (
+        ('^[^"]+$', 'a"b', "a\\b"),
+        ("^[^\\\\]+$", "a\\b", 'a"b'),
+        ("^[^\\n]+$", "a\nb", "a\tb"),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        assert not _accepts(compiled, json.dumps(refused)), pattern
+        assert _accepts(compiled, json.dumps(admitted)), pattern
+
+
+def test_negated_shorthands_admit_escapes() -> None:
+    for pattern, admitted, refused in (
+        ("^\\D+$", ('a"b', "a\\b", "a\nb"), ("a1b",)),
+        ("^\\W+$", ('"', "\\", "\n"), ("a",)),
+        ("^\\S+$", ('a"b', "a\\b", "a[b"), ("a\nb", "a b")),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        for s in admitted:
+            assert _accepts(compiled, json.dumps(s)), (pattern, s)
+        for s in refused:
+            assert not _accepts(compiled, json.dumps(s)), (pattern, s)
+
+
+def test_counted_repeat_admits_only_escape_free_text() -> None:
+    # Under a counted repeat these atoms keep the escape-free class: plain
+    # text passes and a character that needs an escape does not.
+    for pattern, admitted, refused in (
+        ("^.{1,100}$", "plain text", 'say "hi"'),
+        ('^[^"]{1,100}$', "plain text", "a\\b"),
+        ("^\\S{1,8}$", "a[b", "a\\b"),
+        ("^(a.){1,3}$", "abac", 'a"'),
+        ("^((.)+){2}$", "ab", "a\\b"),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        assert _accepts(compiled, json.dumps(admitted)), pattern
+        assert not _accepts(compiled, json.dumps(refused)), pattern
+
+
+def _pair_vocab() -> list[str]:
+    # Every printable ASCII character and pair of them, so a fill the
+    # precomputed masks do not cover costs far more than one they do.
+    printable = [chr(c) for c in range(0x20, 0x7F)]
+    return ["<eos>", *printable, *(a + b for a in printable for b in printable)]
+
+
+def _fill_cpu_seconds(
+    compiler: xgr.GrammarCompiler, pattern: str, vocab_size: int
+) -> float:
+    compiled = compiler.compile_json_schema(
+        json.dumps({"type": "string", "pattern": pattern})
+    )
+    matcher = xgr.GrammarMatcher(compiled)
+    assert matcher.accept_string('"')
+    bitmask = xgr.allocate_token_bitmask(1, vocab_size)
+    started = time.process_time()
+    for _ in range(50):
+        assert matcher.fill_next_token_bitmask(bitmask)
+        assert matcher.accept_string("a")
+    return time.process_time() - started
+
+
+def test_counted_repeat_fill_costs_what_an_unbounded_fill_costs() -> None:
+    # Escape alternatives under a counted repeat defeat the precomputed token
+    # masks, and each fill then cost about 100x an unbounded one here. CPU
+    # time and the best of three runs keep host noise out of the ratio.
+    vocab = _pair_vocab()
+    compiler = xgr.GrammarCompiler(
+        xgr.TokenizerInfo(
+            vocab, vocab_type=xgr.VocabType.RAW, stop_token_ids=[0]
+        )
+    )
+    counted = min(
+        _fill_cpu_seconds(compiler, "^.{1,100}$", len(vocab)) for _ in range(3)
+    )
+    unbounded = min(
+        _fill_cpu_seconds(compiler, "^.+$", len(vocab)) for _ in range(3)
+    )
+    assert unbounded > 0
+    assert counted / unbounded < 10, (counted, unbounded)
+
+
+def test_top_level_alternation_keeps_the_quotes() -> None:
+    # Each branch of a top-level alternation opens and closes the string.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^[a-z]+$|^[0-9]+$"}'
+    )
+    assert _accepts(compiled, '"abc"')
+    assert _accepts(compiled, '"123"')
+    assert not _accepts(compiled, '"12a"')
+
+
+def test_top_level_alternation_in_a_key_pattern_keeps_the_quotes() -> None:
+    # The key of a patternProperties or propertyNames pattern is a quoted
+    # string too, so each branch opens and closes the key.
+    for schema in (
+        {
+            "type": "object",
+            "patternProperties": {"^a$|^b$": {"type": "integer"}},
+        },
+        {"type": "object", "propertyNames": {"pattern": "^a$|^b$"}},
+    ):
+        compiled = _compiler().compile_json_schema(json.dumps(schema))
+        assert _accepts(compiled, '{"a": 1}'), schema
+        assert _accepts(compiled, '{"b": 2}'), schema
+        assert not _accepts(compiled, '{"c": 1}'), schema
+
+
+def test_alternation_with_branch_anchors_is_measured() -> None:
+    # The length analysis drops the anchors that start and end each branch,
+    # so the pattern's lengths are measured against the bound.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^a$|^bb$", "maxLength": 5}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, '"bb"')
+    assert not _accepts(compiled, '"ab"')
+
+
 def test_pattern_allowed_escape_compiles() -> None:
     # `\d` is not in the ECMA-escape reject set, so it compiles and enforces.
     compiled = _compiler().compile_json_schema(
@@ -1179,19 +2120,35 @@ def test_required_undeclared_key_open_object_compiles() -> None:
 
 
 def test_allof_other_sibling_keywords_rejected() -> None:
+    # Key-language siblings survive the merge only to be refused downstream:
+    # patternProperties and propertyNames would each need their key language
+    # intersected with the member's declared names, and unevaluatedProperties
+    # closes the base to keys the member declares.
     base = '{"type":"object","allOf":[{"properties":{"a":{"type":"string"}}}],'
     for sibling in (
-        '"properties":{"b":{"type":"string"}}',
         '"patternProperties":{"x.*":{"type":"string"}}',
         '"propertyNames":{"pattern":"a"}',
-        '"minProperties":1',
-        '"maxProperties":3',
         '"unevaluatedProperties":false',
     ):
         with pytest.raises(Exception):
             _compiler().compile_json_schema(
                 base + sibling + "}", reject_unsupported=True
             )
+
+
+def test_allof_countable_sibling_keywords_merged() -> None:
+    # A sibling that only counts or names properties composes with the member's
+    # declared set, so it merges.
+    base = '{"type":"object","allOf":[{"properties":{"a":{"type":"string"}}}],'
+    for sibling in (
+        '"properties":{"b":{"type":"string"}}',
+        '"minProperties":1',
+        '"maxProperties":3',
+    ):
+        compiled = _compiler().compile_json_schema(
+            base + sibling + "}", reject_unsupported=True
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
 
 
 def test_allof_single_enforceable_branch_enforced() -> None:
@@ -1238,6 +2195,398 @@ def test_allof_active_conditional_member_rejected() -> None:
         )
 
 
+def test_allof_three_members_merged() -> None:
+    # Three object members, each contributing one required property: the fold
+    # has to union all three, not stop once it has merged a pair.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": ['
+        '{"type": "object", "properties": {"a": {"type": "integer"}}, '
+        '"required": ["a"]}, '
+        '{"type": "object", "properties": {"b": {"type": "integer"}}, '
+        '"required": ["b"]}, '
+        '{"type": "object", "properties": {"c": {"type": "integer"}}, '
+        '"required": ["c"]}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": 1, "b": 1, "c": 1}')
+    assert not _accepts(compiled, '{"a": 1, "b": 1}')
+
+
+def test_allof_property_declared_by_two_members_intersected() -> None:
+    # A property both members declare must satisfy both declarations. The
+    # declarations become an allOf on that property, merged one level down.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "object", "properties": {"a": {"type": '
+        '"string"}}}, {"type": "object", "properties": {"a": {"minLength": '
+        '2}}}], "required": ["a"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "ab"}')
+    assert not _accepts(compiled, '{"a": "b"}')
+    assert not _accepts(compiled, '{"a": 11}')
+
+
+def test_allof_conflicting_type_rejected() -> None:
+    # No single "type" expresses the intersection, and this IR has no type
+    # intersection to fall back on.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "string"}, {"type": "integer"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_two_additional_properties_schemas_intersected() -> None:
+    # An unnamed key must satisfy both members' value schemas. The two become
+    # an allOf on that value, merged one level down, so both still bind. The
+    # boundary check is what makes this well defined: it has already refused
+    # any member whose declared names differ, so both govern the same keys.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "object", "additionalProperties": {"type": '
+        '"string"}}, {"type": "object", "additionalProperties": '
+        '{"minLength": 2}}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"k": "ab"}')
+    assert not _accepts(compiled, '{"k": "a"}')
+    assert not _accepts(compiled, '{"k": 1}')
+
+
+def test_allof_additional_properties_false_closes_the_object() -> None:
+    # false accepts no value, so however the other member describes the unnamed
+    # keys the conjunction admits none: the merged object is closed.
+    for schema in (
+        '{"allOf": [{"type": "object", "additionalProperties": false}, '
+        '{"type": "object", "additionalProperties": {"type": "string"}}]}',
+        '{"allOf": [{"type": "object", "additionalProperties": {"type": '
+        '"string"}}, {"type": "object", "additionalProperties": false}]}',
+    ):
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, "{}")
+        assert not _accepts(compiled, '{"k": "ab"}')
+
+
+def test_allof_additional_properties_asymmetric_names_still_refused() -> None:
+    # The intersection above is only sound while both members govern the same
+    # keys, so a member that declares a name the other does not stays refused.
+    with pytest.raises(Exception, match="forbids unlisted properties"):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "object", "properties": {"x": {"type": '
+            '"string"}, "y": {"type": "string"}}, "additionalProperties": '
+            '{"type": "string"}}, {"type": "object", "properties": {"x": '
+            '{"type": "string"}}, "additionalProperties": {"minLength": 2}}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_property_forbidden_by_one_member_forbidden_in_merge() -> None:
+    # false accepts nothing, so a property one member forbids stays forbidden
+    # however the other declares it -- and required makes that unsatisfiable.
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "object", "properties": {"a": {"type": '
+        '"string"}, "b": {"type": "string"}}}, {"type": "object", '
+        '"properties": {"a": false}}], "required": ["b"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"b": "1"}')
+    assert not _accepts(compiled, '{"a": "1", "b": "1"}')
+
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "object", "properties": {"a": {"type": '
+            '"string"}}}, {"type": "object", "properties": {"a": false}}], '
+            '"required": ["a"]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_under_restricting_unevaluated_properties_rejected() -> None:
+    # unevaluatedProperties is defined over what every applicator evaluated; a
+    # flat object no longer carries that, so the conjunction is not merged.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"type": "object", "unevaluatedProperties": false, '
+            '"allOf": [{"required": ["b"]}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_pattern_and_length_from_two_members_rejected() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "string", "pattern": "a+"}, '
+            '{"type": "string", "minLength": 2}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_pattern_implying_the_length_bounds_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^a{3,5}$", "maxLength": 10}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"aaa"')
+    assert not _accepts(compiled, '"aa"')
+    assert not _accepts(compiled, '"aaaaaa"')
+
+
+def test_pattern_disjoint_from_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="no length in common"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "pattern": "^a{5,}$", "maxLength": 3}',
+            reject_unsupported=True,
+        )
+
+
+def test_pattern_overlapping_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "pattern": "a+", "minLength": 2}',
+            reject_unsupported=True,
+        )
+
+
+def test_unbounded_repeat_with_one_required_match_keeps_min_length() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "pattern": "^a{1,}$", "minLength": 2}',
+            reject_unsupported=True,
+        )
+
+
+def test_string_length_bounds_must_fit_the_enforceable_range() -> None:
+    for schema in (
+        '{"type": "string", "minLength": -1}',
+        '{"type": "string", "maxLength": -1}',
+        '{"type": "string", "pattern": "^a$", "minLength": 2147483648}',
+    ):
+        with pytest.raises(
+            Exception, match="non-negative integer in the enforceable range"
+        ):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_allof_pattern_implying_the_length_bounds_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"allOf": [{"type": "string", "pattern": "^a{3,5}$"}, '
+        '{"maxLength": 10}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"aaa"')
+    assert not _accepts(compiled, '"aa"')
+
+
+def test_allof_pattern_disjoint_from_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="no length in common"):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "string", "pattern": "^a{5,}$"}, '
+            '{"maxLength": 3}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_union_base_length_bound_not_dropped_by_a_branch_pattern() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"type": "string", "pattern": "^a+$"}, '
+            '{"type": "null"}], "maxLength": 1}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_implying_the_length_bounds_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "date", "maxLength": 32}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"2026-01-31"')
+
+
+def test_format_disjoint_from_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="no length in common"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "format": "date", "maxLength": 3}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_overlapping_the_length_bounds_rejected() -> None:
+    with pytest.raises(Exception, match="each admit lengths the other forbids"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "format": "email", "maxLength": 20}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_beside_pattern_rejected() -> None:
+    for schema in (
+        '{"type": "string", "format": "email", "pattern": "a+"}',
+        '{"allOf": [{"type": "string", "format": "email"}, {"pattern": "a+"}]}',
+    ):
+        with pytest.raises(Exception, match="only one is enforced"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_unenforceable_format_beside_pattern_rejected() -> None:
+    with pytest.raises(Exception, match="unsupported string format"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "format": "phone", "pattern": "a+"}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_beside_pattern_rejected_on_an_older_draft() -> None:
+    # The converter enforces format regardless of the declared draft.
+    with pytest.raises(Exception, match="only one is enforced"):
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-04/schema#",'
+            ' "type": "string", "format": "email", "pattern": "a+"}',
+            reject_unsupported=True,
+        )
+
+
+def test_format_beside_pattern_permissive_keeps_the_pattern() -> None:
+    for string_format in ("email", "phone"):
+        compiled = _compiler().compile_json_schema(
+            f'{{"type": "string", "format": "{string_format}",'
+            ' "pattern": "a+"}'
+        )
+        assert _accepts(compiled, '"aa"'), string_format
+        assert not _accepts(compiled, '"b"'), string_format
+
+
+def test_non_ascii_pattern_with_length_bounds_rejected() -> None:
+    # Length is counted in characters and the automaton counts bytes, so a
+    # pattern that can leave ASCII is refused rather than measured in the
+    # wrong unit.
+    with pytest.raises(Exception, match="cannot be measured"):
+        _compiler().compile_json_schema(
+            '{"type": "string", "pattern": "^\\u00e9+$", "maxLength": 3}',
+            reject_unsupported=True,
+        )
+
+
+def test_multichar_escape_length_analysis_fails_closed() -> None:
+    schema = json.dumps(
+        {"type": "string", "pattern": r"^\u0041$", "minLength": 2}
+    )
+    with pytest.raises(Exception, match="cannot be measured"):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_misplaced_anchor_length_analysis_fails_closed() -> None:
+    schema = json.dumps({"type": "string", "pattern": "a^b", "minLength": 3})
+    with pytest.raises(Exception, match="cannot be measured"):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+@pytest.mark.parametrize("pattern", [r"^\^\$$", r"^[$^]{2}$"])
+def test_valid_anchor_placements_still_measured(pattern: str) -> None:
+    schema = json.dumps({"type": "string", "pattern": pattern, "minLength": 2})
+    compiled = _compiler().compile_json_schema(schema, reject_unsupported=True)
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_huge_quantifier_with_length_bounds_refused_quickly() -> None:
+    for schema in (
+        '{"type": "string", "pattern": "^a{100000000}$",'
+        ' "maxLength": 100000000}',
+        '{"allOf": [{"type": "string", "pattern": "^a{100000000}$"},'
+        ' {"maxLength": 100000000}]}',
+        '{"oneOf": [{"type": "string", "pattern": "^a{100000000}$"},'
+        ' {"type": "null"}], "maxLength": 100000000}',
+    ):
+        started = time.process_time()
+        with pytest.raises(Exception, match="cannot be measured"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+        assert time.process_time() - started < 1.0
+
+
+def test_quantifier_beyond_integer_range_is_refused() -> None:
+    for pattern in (
+        "^a{999999999999999999999999}$",
+        "^a{1,999999999999999999999999}$",
+    ):
+        with pytest.raises(Exception, match="cannot be measured"):
+            _compiler().compile_json_schema(
+                f'{{"type": "string", "pattern": "{pattern}", "maxLength": 1}}',
+                reject_unsupported=True,
+            )
+
+
+def test_length_measurement_budget_is_shared_across_union_branches() -> None:
+    branches = ",".join(
+        f'{{"type": "string", "pattern": "^{index:04d}a{{1,500}}$"}}'
+        for index in range(32)
+    )
+    with pytest.raises(Exception, match="cannot be measured"):
+        _compiler().compile_json_schema(
+            f'{{"anyOf": [{branches}], "maxLength": 10000}}',
+            reject_unsupported=True,
+        )
+
+
+def test_moderate_quantifier_with_length_bounds_still_measured() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^a{1,500}$", "maxLength": 9999}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"aa"')
+    assert not _accepts(compiled, '""')
+
+
+def test_string_tier_alone_still_compiles() -> None:
+    for schema in (
+        '{"type": "string", "pattern": "^a{3,5}$"}',
+        '{"type": "string", "minLength": 2, "maxLength": 4}',
+        '{"type": "string", "format": "date"}',
+    ):
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_pattern_and_length_bounds_permissive_unchanged() -> None:
+    # Without reject_unsupported the converter keeps upstream's bargain: the
+    # first tier wins and the rest are dropped.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "a+", "minLength": 2}'
+    )
+    assert _accepts(compiled, '"a"')
+
+
+def test_allof_lone_ref_member_still_compiles() -> None:
+    # The pydantic wrapper shape, bare and with the annotation pydantic adds.
+    # $defs and description beside the $ref are bookkeeping, not competing
+    # constraints, so the merge leaves the ref alone and its target still binds.
+    defs = '{"$defs": {"s": {"type": "string", "minLength": 2}}, '
+    for tail in (
+        '"allOf": [{"$ref": "#/$defs/s"}]}',
+        '"allOf": [{"$ref": "#/$defs/s"}], "description": "wrapped"}',
+    ):
+        compiled = _compiler().compile_json_schema(
+            defs + tail, reject_unsupported=True
+        )
+        assert _accepts(compiled, '"ab"')
+        assert not _accepts(compiled, '"a"')
+
+
+def test_allof_ref_member_beside_other_constraint_enforced() -> None:
+    # Inlining the target removes the $ref before dispatch sees it, so the other
+    # member's constraint survives instead of being dropped.
+    compiled = _compiler().compile_json_schema(
+        '{"$defs": {"s": {"type": "string"}}, '
+        '"allOf": [{"$ref": "#/$defs/s"}, {"minLength": 2}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"ab"')
+    assert not _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+
 def test_allof_zero_enforceable_with_object_sibling_compiles() -> None:
     # allOf is all no-op (0 enforceable) so the sibling-reject guard is skipped;
     # the object siblings are the effective schema and it compiles.
@@ -1274,10 +2623,10 @@ def test_ambiguous_object_number_keywords_rejected() -> None:
         )
 
 
-def test_tool_call_rejects_non_multiple_of_keyword() -> None:
+def test_tool_call_carries_reject_unsupported() -> None:
     # The tool-call path (triggered tags -> JSONSchemaFormat content) carries
     # reject_unsupported through the tag JSON, so an unenforceable arg schema
-    # (oneOf is only approximated) is rejected there too.
+    # (a oneOf whose branches are not provably disjoint) is rejected there too.
     tag = xgr.StructuralTag(
         format=TriggeredTagsFormat(
             triggers=["<t>"],
@@ -1286,7 +2635,7 @@ def test_tool_call_rejects_non_multiple_of_keyword() -> None:
                     begin="<t>",
                     content=JSONSchemaFormat(
                         json_schema={
-                            "oneOf": [{"type": "string"}, {"type": "number"}]
+                            "oneOf": [{"type": "number"}, {"minimum": 0}]
                         },
                         reject_unsupported=True,
                     ),
@@ -1357,6 +2706,39 @@ def test_tool_call_anyof_non_object_branch_rejected() -> None:
     with pytest.raises(Exception):
         _compiler().compile_structural_tag(
             _toolcall({"anyOf": [{"type": "object"}, {"type": "string"}]})
+        )
+
+
+def test_tool_call_oneof_object_branches_accepted() -> None:
+    # Object-root verification recurses through oneOf the same way it does
+    # through anyOf: all-object branches ARE an object root.
+    compiled = _compiler().compile_structural_tag(
+        _toolcall(
+            {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["a"],
+                        "properties": {"a": {"const": "a"}},
+                    },
+                    {
+                        "type": "object",
+                        "required": ["a"],
+                        "properties": {"a": {"const": "b"}},
+                    },
+                ]
+            }
+        )
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+def test_tool_call_oneof_non_object_branch_rejected() -> None:
+    # The counterpart: a provably-disjoint oneOf still fails the object root
+    # when a branch is a scalar.
+    with pytest.raises(Exception):
+        _compiler().compile_structural_tag(
+            _toolcall({"oneOf": [{"type": "string"}, {"type": "integer"}]})
         )
 
 
@@ -1999,6 +3381,81 @@ def test_cache_key_distinguishes_property_names_default_type() -> None:
     assert not _accepts(compiled, '{"b": 1, "a": {1: 1}}')
 
 
+def test_property_names_non_string_shape_rejected() -> None:
+    for property_names in (
+        {"type": ["integer", "string"]},
+        {"type": ["string"]},
+        {"anyOf": [{"type": "string"}, {"type": ["integer"]}]},
+    ):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": property_names,
+        }
+        with pytest.raises(Exception, match="non-string"):
+            _gemma_compile(schema)
+        with pytest.raises(Exception, match="non-string"):
+            _compiler().compile_json_schema(json.dumps(schema))
+
+
+def test_property_names_non_string_const_enum_rejected() -> None:
+    for property_names in (
+        {"const": 42},
+        {"const": True},
+        {"const": None},
+        {"enum": [1, 2]},
+        {"enum": ["a", 2]},
+        {"enum": [None]},
+    ):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": property_names,
+        }
+        with pytest.raises(Exception, match="non-string"):
+            _gemma_compile(schema)
+        with pytest.raises(Exception, match="non-string"):
+            _compiler().compile_json_schema(json.dumps(schema))
+
+
+def test_property_names_string_const_enum_accepted() -> None:
+    for property_names in ({"const": "foo"}, {"enum": ["a", "b"]}):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": property_names,
+        }
+        _gemma_compile(schema)
+        _compiler().compile_json_schema(json.dumps(schema))
+
+
+def test_property_names_allof_folds_to_string_shape() -> None:
+    for accepted in (
+        {"allOf": [{"type": "string"}]},
+        {"allOf": [{"type": "string"}, {"minLength": 1}]},
+        {"allOf": [{"const": "foo"}]},
+    ):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": accepted,
+        }
+        _compiler().compile_json_schema(json.dumps(schema))
+    for rejected in (
+        {"allOf": [{"type": "number"}]},
+        {"allOf": [{"type": "string"}, {"type": "number"}]},
+    ):
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+            "propertyNames": rejected,
+        }
+        with pytest.raises(
+            Exception, match="must be an object that validates string"
+        ):
+            _compiler().compile_json_schema(json.dumps(schema))
+
+
 def test_cache_key_not_forgeable_via_property_name() -> None:
     # A property name may contain quotes and colons that make one
     # subschema's text resemble a structurally different sibling's. Such
@@ -2078,6 +3535,113 @@ def test_gemma_4_property_names_with_pattern_properties_rejected() -> None:
         )
 
 
+def test_pattern_properties_with_additional_properties_rejected() -> None:
+    # patternProperties + additionalProperties (non-false) needs per-key
+    # priority: a matching key takes the pattern's subschema, a non-matching
+    # key falls back to additionalProperties. The fallback arm needs the
+    # complement of a regex as a key pattern, which xgrammar cannot express.
+    # Reject the combination under reject_unsupported rather than emit an
+    # unsound un-excluded fallback (which would accept a matching key with
+    # the additionalProperties value) or silently drop the fallback.
+    #
+    # All open forms are rejected: a schema value, an empty schema (which
+    # accepts any value, same as true), and boolean true.
+    schema_base = (
+        '{"type":"object",'
+        '"patternProperties":{"^[a-z]+$":{"type":"string"}},'
+        '"additionalProperties":'
+    )
+    for addl in ('{"type":"integer"}', "{}", "true"):
+        with pytest.raises(Exception, match="patternProperties"):
+            _compiler().compile_json_schema(
+                schema_base + addl + "}",
+                reject_unsupported=True,
+            )
+
+
+def test_pattern_properties_with_additional_properties_false_compiles() -> None:
+    # additionalProperties:false closes the object: no fallback arm exists,
+    # so the reject guard does not fire and the schema compiles under
+    # reject_unsupported. The pattern is still enforced -- a matching key
+    # must conform to the pattern's subschema, and a non-matching key is
+    # not admitted at all.
+    compiled = _compiler().compile_json_schema(
+        '{"type":"object",'
+        '"patternProperties":{"^[a-z]+$":{"type":"string"}},'
+        '"additionalProperties":false}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a":"a"}')
+    assert not _accepts(compiled, '{"a":1}')
+    assert not _accepts(compiled, '{"1":1}')
+
+
+def test_gemma_4_property_names_ref_max_length_zero_rejected() -> None:
+    # The propertyNames bare-key guards must inspect the COMPLETE schema, not
+    # only the literal propertyNames object: a $ref to a maxLength:0 subschema
+    # admits only the empty key and must be rejected the same as a literal
+    # maxLength:0.
+    with pytest.raises(Exception, match="propertyNames"):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"$ref": "#/$defs/k"},
+                "$defs": {"k": {"maxLength": 0}},
+            }
+        )
+
+
+def test_gemma_4_property_names_ref_explicit_min_length_zero_rejected() -> None:
+    # min-length guard through a $ref: an explicit minLength:0 behind a ref
+    # affirmatively permits the empty key and must be rejected.
+    with pytest.raises(Exception, match="minLength"):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"$ref": "#/$defs/k"},
+                "$defs": {"k": {"type": "string", "minLength": 0}},
+            }
+        )
+
+
+def test_gemma_4_property_names_anyof_empty_pattern_rejected() -> None:
+    # empty-match guard through a combinator: an anyOf branch whose pattern
+    # matches the empty string can emit a zero-length bare key through the
+    # union, so the guard must see into the combinator and reject.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"anyOf": [{"pattern": "^a*$"}]},
+            }
+        )
+
+
+def test_gemma_4_property_names_allof_forbidden_char_rejected() -> None:
+    # forbidden-char guard through a combinator: an allOf member pattern that
+    # needs a structural byte (`:`) not allowed in a bare key must be rejected.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"allOf": [{"pattern": "^a:b$"}]},
+            }
+        )
+
+
+def test_gemma_4_property_names_ref_bare_safe_compiles() -> None:
+    # The complete-schema resolution must not over-reject: a $ref to a
+    # bare-safe key schema still compiles.
+    compiled = _gemma_compile(
+        {
+            "type": "object",
+            "propertyNames": {"$ref": "#/$defs/k"},
+            "$defs": {"k": {"type": "string", "pattern": "^[a-z_]+$"}},
+        }
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
 def test_xml_root_forbidden_key_excluded_from_additional_branch() -> None:
     # The XML formats must honor forbidden (false-schema) keys like every
     # other format: `bar` must never be emittable, even though
@@ -2114,6 +3678,675 @@ def test_xml_root_declared_key_excluded_from_additional_branch() -> None:
     compiled = _compiler().compile_structural_tag(tag)
     assert _accepts(compiled, "<parameter=foo>1</parameter>")
     assert not _accepts(compiled, "<parameter=foo>x</parameter>")
+
+
+_XmlStyle = Literal[
+    "qwen_xml", "minimax_xml", "deepseek_xml", "glm_xml", "minimax_m3_xml"
+]
+_M3_PREFIX = "]<]minimax[>["
+
+
+def _xml_length_schema(
+    min_length: int, max_length: int | None
+) -> dict[str, Any]:
+    state: dict[str, Any] = {"type": "string", "minLength": min_length}
+    if max_length is not None:
+        state["maxLength"] = max_length
+    return {
+        "type": "object",
+        "properties": {"state": state},
+        "required": ["state"],
+    }
+
+
+def _compile_xml_length(
+    min_length: int,
+    max_length: int | None,
+    *,
+    style: _XmlStyle = "qwen_xml",
+    xml_tag_prefix: str = "",
+    reject_unsupported: bool = False,
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=_xml_length_schema(min_length, max_length),
+            style=style,
+            xml_tag_prefix=xml_tag_prefix,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+def _qwen_state(value: str) -> str:
+    return f"<parameter=state>{value}</parameter>"
+
+
+def _m3_state(value: str) -> str:
+    return f"{_M3_PREFIX}<state>{value}{_M3_PREFIX}</state>"
+
+
+def test_xml_bare_value_length_bound_exact() -> None:
+    # A bare XML value is a byte run closed by a literal (`</parameter>`), not
+    # by a quote, so the bound has to be counted against the run while the
+    # run is kept from spelling the delimiter.
+    compiled = _compile_xml_length(2, 2)
+    assert _accepts(compiled, _qwen_state("NY"))
+    assert not _accepts(compiled, _qwen_state("N"))
+    assert not _accepts(compiled, _qwen_state("NYC"))
+
+
+def test_xml_tag_prefix_bare_value_length_bound_exact() -> None:
+    # Tag-prefixed style: the close is `prefix</key>`, so the delimiter that
+    # ends the value is the prefix itself.
+    compiled = _compile_xml_length(
+        2, 2, style="minimax_m3_xml", xml_tag_prefix=_M3_PREFIX
+    )
+    assert _accepts(compiled, _m3_state("NY"))
+    assert not _accepts(compiled, _m3_state("N"))
+    assert not _accepts(compiled, _m3_state("NYC"))
+
+
+def test_xml_bare_value_bound_longer_than_delimiter() -> None:
+    # The bound may exceed the delimiter's length: the exclusion automaton, not
+    # the bound, keeps the delimiter out of the run.
+    compiled = _compile_xml_length(1, 64)
+    assert _accepts(compiled, _qwen_state("a" * 64))
+    assert not _accepts(compiled, _qwen_state("a" * 65))
+    # A prefix of the delimiter is ordinary content.
+    assert _accepts(compiled, _qwen_state("a</param b"))
+    # The delimiter itself ends the value, so what follows is not a value.
+    assert not _accepts(compiled, _qwen_state("ab</parameter>cd"))
+
+
+def test_xml_bare_value_bound_is_framed_as_its_reader_reads_it() -> None:
+    # Framing whitespace is part of the value to a parser that keeps it
+    # (MiniMax-M3), so a bounded value gets none.
+    compiled = _compile_xml_length(
+        2, 2, style="minimax_m3_xml", xml_tag_prefix=_M3_PREFIX
+    )
+    assert not _accepts(compiled, _m3_state("\nNY\n"))
+    assert not _accepts(compiled, _m3_state(" NY"))
+    # The Qwen templates write a newline on each side of a value and its
+    # readers strip them, so a bounded Qwen value keeps that framing; without
+    # it the model could not close the value the way it writes it.
+    qwen = _compile_xml_length(2, 2)
+    assert _accepts(qwen, _qwen_state("\nNY\n"))
+    assert not _accepts(qwen, _qwen_state("\nNYC\n"))
+    # An unbounded value keeps its framing.
+    loose = _compile_xml_length(0, None)
+    assert _accepts(loose, _qwen_state("\nNY\n"))
+
+
+def test_xml_bare_value_bound_rejects_edge_whitespace() -> None:
+    # A parser that strips would read an all-space run as "", below minLength,
+    # so whitespace may not begin or end the run. Inside it is content.
+    compiled = _compile_xml_length(2, 2)
+    assert not _accepts(compiled, _qwen_state("  "))
+    assert not _accepts(compiled, _qwen_state(" N"))
+    assert not _accepts(compiled, _qwen_state("N "))
+    three = _compile_xml_length(3, 3)
+    assert _accepts(three, _qwen_state("N Y"))
+    assert _accepts(three, _qwen_state("N\tY"))
+    assert not _accepts(three, _qwen_state("\tNY"))
+    assert not _accepts(three, _qwen_state("NY\x1f"))
+
+
+def test_xml_bare_value_bound_rejects_unicode_edge_whitespace() -> None:
+    # Python's str.strip() also removes multi-byte whitespace, so those code
+    # points are excluded from the edges too, and still count when inside.
+    compiled = _compile_xml_length(2, 2)
+    for space in ("\u00a0", "\u2003", "\u3000", "\u0085"):
+        assert not _accepts(compiled, _qwen_state(f"{space}N"))
+        assert not _accepts(compiled, _qwen_state(f"N{space}"))
+    three = _compile_xml_length(3, 3)
+    assert _accepts(three, _qwen_state("N\u00a0Y"))
+    assert _accepts(three, _qwen_state("N\u3000Y"))
+    # A code point that merely shares a lead byte with a whitespace character.
+    assert _accepts(compiled, _qwen_state("\u00e9N"))
+    assert _accepts(compiled, _qwen_state("N\u2014"))
+
+
+def test_xml_bare_value_bound_masks_tokens_by_remaining_length() -> None:
+    # The compiled token masks, not just byte acceptance, honor the bound.
+    compiled = _compile_xml_length(2, 2)
+    matcher = xgr.GrammarMatcher(compiled)
+    assert matcher.accept_string("<parameter=state>a")
+    bitmask = xgr.allocate_token_bitmask(1, len(_VOCAB))
+    matcher.fill_next_token_bitmask(bitmask)
+    allowed = {
+        tok for tok in _VOCAB if _gemma_bit_set(bitmask[0], _VOCAB.index(tok))
+    }
+    assert {"a", "b", "1"} <= allowed
+    assert not {" ", "true", "null"} & allowed
+    assert matcher.accept_string("b")
+    matcher.fill_next_token_bitmask(bitmask)
+    # At the bound only the framing before the close is left.
+    assert [
+        tok
+        for i, tok in enumerate(_VOCAB[:-1])
+        if _gemma_bit_set(bitmask[0], i)
+    ] == [" "]
+
+
+def _compile_xml_property(
+    state: dict[str, Any],
+    *,
+    style: _XmlStyle = "qwen_xml",
+    xml_tag_prefix: str = "",
+    defs: dict[str, Any] | None = None,
+) -> xgr.CompiledGrammar:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"state": state},
+        "required": ["state"],
+    }
+    if defs is not None:
+        schema["$defs"] = defs
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema, style=style, xml_tag_prefix=xml_tag_prefix
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+_BOUNDED = {"type": "string", "minLength": 2, "maxLength": 2}
+
+
+def test_xml_bound_through_ref_is_framed_tightly() -> None:
+    compiled = _compile_xml_property(
+        {"$ref": "#/$defs/code"},
+        style="minimax_m3_xml",
+        xml_tag_prefix=_M3_PREFIX,
+        defs={"code": _BOUNDED},
+    )
+    assert _accepts(compiled, _m3_state("NY"))
+    assert not _accepts(compiled, _m3_state("\nNY\n"))
+    assert not _accepts(compiled, _m3_state("NYC"))
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"anyOf": [_BOUNDED, {"type": "null"}]},
+        {"type": ["string", "null"], "minLength": 2, "maxLength": 2},
+        {"allOf": [_BOUNDED]},
+    ],
+    ids=["anyOf", "type-array", "allOf"],
+)
+def test_xml_bound_through_wrapper_is_framed_tightly(
+    state: dict[str, Any],
+) -> None:
+    # A wrapper rule that reaches a bounded value is framed tightly as a whole.
+    compiled = _compile_xml_property(
+        state, style="minimax_m3_xml", xml_tag_prefix=_M3_PREFIX
+    )
+    assert _accepts(compiled, _m3_state("NY"))
+    assert not _accepts(compiled, _m3_state("\nNY\n"))
+    assert not _accepts(compiled, _m3_state("NYC"))
+    # Qwen's readers strip the framing, so its wrapped bound keeps it.
+    qwen = _compile_xml_property(state)
+    assert _accepts(qwen, _qwen_state("\nNY\n"))
+    assert not _accepts(qwen, _qwen_state("\nNYC\n"))
+
+
+_BYTE_VOCAB = [chr(c) for c in range(32, 127)] + [
+    "<0xC3>",
+    "<0xA9>",
+    "<0x80>",
+    "<eos>",
+]
+_BYTE_ID = {tok: i for i, tok in enumerate(_BYTE_VOCAB)}
+
+
+def _byte_fallback_matcher(state: dict[str, Any]) -> xgr.GrammarMatcher:
+    info = xgr.TokenizerInfo(
+        _BYTE_VOCAB,
+        vocab_type=xgr.VocabType.BYTE_FALLBACK,
+        stop_token_ids=[_BYTE_ID["<eos>"]],
+    )
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"state": state},
+                "required": ["state"],
+            },
+            style="qwen_xml",
+        )
+    )
+    compiled = xgr.GrammarCompiler(info).compile_structural_tag(tag)
+    return xgr.GrammarMatcher(compiled)
+
+
+def _accept_tokens(matcher: xgr.GrammarMatcher, tokens: list[str]) -> bool:
+    return all(matcher.accept_token(_BYTE_ID[tok]) for tok in tokens)
+
+
+def test_xml_bare_value_bound_counts_split_byte_tokens_as_one() -> None:
+    # A byte-fallback tokenizer emits one code point as several tokens; the
+    # counter charges it once, and only accepts it whole.
+    open_tag = list("<parameter=state>")
+    close_tag = list("</parameter>")
+    m = _byte_fallback_matcher(
+        {"type": "string", "minLength": 1, "maxLength": 1}
+    )
+    assert _accept_tokens(m, open_tag + ["<0xC3>", "<0xA9>"] + close_tag)
+    assert m.is_completed()
+    # A stray continuation byte is not a character.
+    m = _byte_fallback_matcher(
+        {"type": "string", "minLength": 2, "maxLength": 2}
+    )
+    assert _accept_tokens(m, open_tag + ["a"])
+    assert not m.accept_token(_BYTE_ID["<0x80>"])
+    # A truncated sequence cannot be closed.
+    m = _byte_fallback_matcher(
+        {"type": "string", "minLength": 1, "maxLength": 1}
+    )
+    assert _accept_tokens(m, open_tag + ["<0xC3>"])
+    assert not m.accept_token(_BYTE_ID["<"])
+
+
+def test_xml_additional_property_bound_keeps_qwen_framing() -> None:
+    compiled = _compiler().compile_structural_tag(
+        xgr.StructuralTag(
+            format=JSONSchemaFormat(
+                json_schema={
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 2,
+                    },
+                },
+                style="qwen_xml",
+            )
+        )
+    )
+    assert _accepts(compiled, "<parameter=foo>NY</parameter>")
+    assert _accepts(compiled, "<parameter=foo>\nNY\n</parameter>")
+    assert not _accepts(compiled, "<parameter=foo>NYC</parameter>")
+
+
+_UNEXACT_BARE_VALUES = [
+    {"type": "string", "pattern": "^.+$"},
+    {"type": "string", "pattern": "^[^/]+$"},
+    {"type": "string", "pattern": "^https"},
+    {"type": "string", "pattern": "[a-z]+$"},
+    {"type": "string", "format": "email"},
+]
+
+
+def _compile_rejecting_xml_property(
+    state: dict[str, Any], style: _XmlStyle
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"state": state},
+                "required": ["state"],
+            },
+            style=style,
+            reject_unsupported=True,
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+@pytest.mark.parametrize("state", _UNEXACT_BARE_VALUES)
+def test_xml_bare_value_regex_guards_are_qwen_only(
+    state: dict[str, Any],
+) -> None:
+    # Under reject_unsupported, a qwen_xml bare value refuses a pattern or
+    # format that can spell its close delimiter's first byte, and a pattern
+    # not anchored at both ends. Other XML styles convert them as before.
+    with pytest.raises(Exception, match="bare XML tool-call value"):
+        _compile_rejecting_xml_property(state, "qwen_xml")
+    for style in ("minimax_xml", "glm_xml"):
+        compiled = _compile_rejecting_xml_property(state, style)
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+_NESTED_ANY_PARAMETERS = [
+    ({"type": "object"}, '{"a": ["x", {"b": null}]}', '{"a": 1 zzz}'),
+    (
+        {"type": "object", "properties": {"a": {}}},
+        '{"a": ["x", {"b": null}]}',
+        '{"a": 1 zzz}',
+    ),
+    ({"type": "array"}, '[1, ["x", {"b": null}]]', "[1 zzz]"),
+    (
+        {"type": "object", "additionalProperties": {}},
+        '{"a": "x", "c": {"b": 2}}',
+        '{"a": 1 zzz}',
+    ),
+]
+
+
+def _xml_frame(style: _XmlStyle, value: str) -> str:
+    if style == "minimax_xml":
+        return f'<parameter name="m">{value}</parameter>'
+    if style == "glm_xml":
+        return f"<arg_key>m</arg_key><arg_value>{value}</arg_value>"
+    if style == "deepseek_xml":
+        bar = "\uff5c"
+        return (
+            f'<{bar}DSML{bar}parameter name="m" string="false">'
+            f"{value}</{bar}DSML{bar}parameter>"
+        )
+    return f"<parameter=m>{value}</parameter>"
+
+
+def _compile_one_parameter(
+    parameter: dict[str, Any], style: _XmlStyle
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"m": parameter},
+                "required": ["m"],
+            },
+            style=style,
+            # Strict mode would close these objects and arrays outright.
+            strict_mode=False,
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+@pytest.mark.parametrize("style", ["qwen_xml", "minimax_xml", "glm_xml"])
+@pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
+def test_xml_nested_any_value_is_json(
+    style: _XmlStyle, parameter: dict[str, Any], valid: str, runaway: str
+) -> None:
+    # An any-typed value inside a parameter's JSON is itself JSON; a bare-value
+    # string there would run to the value's close delimiter and admit any text.
+    compiled = _compile_one_parameter(parameter, style)
+    assert _accepts(compiled, _xml_frame(style, valid))
+    assert not _accepts(compiled, _xml_frame(style, runaway))
+
+
+def test_xml_top_level_any_value_stays_bare_on_qwen() -> None:
+    compiled = _compile_one_parameter({}, "qwen_xml")
+    assert _accepts(compiled, _xml_frame("qwen_xml", "free text, {a: 1 zzz"))
+
+
+@pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
+def test_xml_nested_any_value_unchanged_on_deepseek(
+    parameter: dict[str, Any], valid: str, runaway: str
+) -> None:
+    # TODO(qwen-hotfix-9 follow-up): deepseek_xml shares the widening fixed for
+    # the other XML styles; the runaway assertion flips when it gets the fix.
+    compiled = _compile_one_parameter(parameter, "deepseek_xml")
+    assert _accepts(compiled, _xml_frame("deepseek_xml", valid))
+    assert _accepts(compiled, _xml_frame("deepseek_xml", runaway))
+
+
+def _pattern_keyed(pattern: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "patternProperties": {pattern: {"type": "string"}},
+    }
+
+
+def _compile_xml_arguments(
+    schema: dict[str, Any],
+    *,
+    style: _XmlStyle = "qwen_xml",
+    xml_tag_prefix: str = "",
+    reject_unsupported: bool = True,
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema,
+            style=style,
+            xml_tag_prefix=xml_tag_prefix,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    return _qwen_compiler().compile_structural_tag(tag)
+
+
+def _one_parameter(parameter: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"m": parameter},
+        "required": ["m"],
+    }
+
+
+def test_xml_pattern_properties_below_the_parameter_compile() -> None:
+    # Below a qwen_xml parameter tag an object's keys are JSON, so a key
+    # pattern compiles as it does for the json style.
+    compiled = _compile_xml_arguments(
+        _one_parameter(_pattern_keyed("^[a-z_]+$"))
+    )
+    assert _accepts(compiled, '<parameter=m>\n{"abc_def":"x"}\n</parameter>')
+    assert not _accepts(compiled, '<parameter=m>{"ABC":"x"}</parameter>')
+    assert not _accepts(compiled, '<parameter=m>{"abc":1}</parameter>')
+    assert not _accepts(
+        compiled, '<parameter=m>{"</parameter>":"x"}</parameter>'
+    )
+
+
+def test_xml_pattern_properties_on_xml_keys_stay_refused() -> None:
+    refusal = "patternProperties with empty properties on an XML object"
+    with pytest.raises(Exception, match=refusal):
+        _compile_xml_arguments(_pattern_keyed("^[a-z_]+$"))
+    # MiniMax-M3 spells an object's keys as tags at every depth.
+    with pytest.raises(Exception, match=refusal):
+        _compile_xml_arguments(
+            _one_parameter(_pattern_keyed("^[a-z_]+$")),
+            style="minimax_m3_xml",
+            xml_tag_prefix=_M3_PREFIX,
+        )
+
+
+@pytest.mark.parametrize("style", ["qwen_xml", "minimax_xml", "glm_xml"])
+def test_xml_properties_beside_pattern_properties_unchanged(
+    style: _XmlStyle,
+) -> None:
+    # Declared keys beside a key pattern need a per-key intersection, so the
+    # schema parser refuses them at any depth before the XML converter runs.
+    both = _pattern_keyed("^[a-z_]+$")
+    both["properties"] = {"a": {"type": "string"}}
+    for schema in (both, _one_parameter(both)):
+        with pytest.raises(Exception, match="declared or required properties"):
+            _compile_xml_arguments(schema, style=style)
+        compiled = _compile_xml_arguments(
+            schema, style=style, reject_unsupported=False
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+@pytest.mark.parametrize("style", ["minimax_xml", "glm_xml", "deepseek_xml"])
+@pytest.mark.parametrize("pattern", ["^.+$", "^[^/]+$", "^[a-z</>]+$"])
+def test_xml_nested_key_pattern_that_can_spell_the_close_is_refused(
+    style: _XmlStyle, pattern: str
+) -> None:
+    # These styles' readers may scan a parameter's value to its first close
+    # delimiter, so no key below the tag may spell it.
+    with pytest.raises(Exception, match="closing delimiter"):
+        _compile_xml_arguments(
+            _one_parameter(_pattern_keyed(pattern)), style=style
+        )
+
+
+@pytest.mark.parametrize(
+    "pattern,key",
+    [
+        ("^.*$", "</parameter>"),
+        ("^.+$", "</parameter>"),
+        ("^[^/]+$", "<parameter=m>"),
+        ("^[a-z</>]+$", "</parameter>"),
+    ],
+)
+def test_xml_qwen_nested_key_pattern_may_spell_the_close(
+    pattern: str, key: str
+) -> None:
+    # FormatSpec's Qwen reader reads an object-valued parameter as one
+    # balanced JSON value, so a key inside it may spell `</parameter>`, as a
+    # string value already may.
+    compiled = _compile_xml_arguments(_one_parameter(_pattern_keyed(pattern)))
+    assert _accepts(compiled, f'<parameter=m>\n{{"{key}":"x"}}\n</parameter>')
+
+
+@pytest.mark.parametrize(
+    "pattern,key",
+    [("\\wcole", "xcole"), ("[a-z]cole", "ecole"), ("^[A-Z_]+$", "ABC")],
+)
+def test_xml_closed_pattern_keyed_any_values_hold_every_key(
+    pattern: str, key: str
+) -> None:
+    # JSON-Schema-Test-Suite ecmascript-regex cases 16 and 17, plus an
+    # anchored pattern: every key of a closed object is held, not just the
+    # first.
+    compiled = _compile_one_parameter(
+        {
+            "type": "object",
+            "patternProperties": {pattern: True},
+            "additionalProperties": False,
+        },
+        "qwen_xml",
+    )
+    assert _accepts(compiled, _xml_frame("qwen_xml", f'{{"{key}": [1]}}'))
+    assert not _accepts(compiled, _xml_frame("qwen_xml", '{"value": 1}'))
+    assert not _accepts(
+        compiled, _xml_frame("qwen_xml", f'{{"{key}": 1, "value": 2}}')
+    )
+
+
+def test_xml_bare_value_bound_counts_code_points() -> None:
+    # JSON Schema counts code points; the automaton counts UTF-8 lead bytes.
+    compiled = _compile_xml_length(2, 2)
+    assert _accepts(compiled, _qwen_state("日本"))
+    assert not _accepts(compiled, _qwen_state("日本語"))
+    six = _compile_xml_length(6, 6)
+    assert not _accepts(six, _qwen_state("日本"))
+    assert _accepts(six, _qwen_state("日本語日本語"))
+
+
+def test_xml_bare_value_bound_deepseek_delimiter_length() -> None:
+    # deepseek_xml's close is 22 bytes but 18 code points. Bounds around that
+    # length are exact either way, since the delimiter is excluded rather than
+    # out-counted.
+    # \uff5c is the fullwidth vertical line, spelled as an escape so the
+    # delimiter stays byte-exact without an ambiguous literal in source.
+    open_tag = '<\uff5cDSML\uff5cparameter name="state" string="true">'
+    close_tag = "</\uff5cDSML\uff5cparameter>"
+    assert len(close_tag.encode()) == 22 and len(close_tag) == 18
+    for max_length in (18, 19, 21):
+        compiled = _compile_xml_length(1, max_length, style="deepseek_xml")
+        assert _accepts(compiled, f"{open_tag}{'a' * max_length}{close_tag}")
+        assert not _accepts(
+            compiled, f"{open_tag}{'a' * (max_length + 1)}{close_tag}"
+        )
+
+
+def test_xml_bare_value_min_length_only() -> None:
+    compiled = _compile_xml_length(3, None)
+    assert _accepts(compiled, _qwen_state("abc"))
+    assert _accepts(compiled, _qwen_state("a" * 200))
+    assert not _accepts(compiled, _qwen_state("ab"))
+
+
+def test_xml_bare_value_zero_min_length_allows_empty() -> None:
+    compiled = _compile_xml_length(0, 2)
+    assert _accepts(compiled, _qwen_state(""))
+    assert _accepts(compiled, _qwen_state("NY"))
+    assert not _accepts(compiled, _qwen_state("NYC"))
+    assert not _accepts(_compile_xml_length(1, 2), _qwen_state(""))
+
+
+def test_xml_bare_value_bound_past_budget_keeps_min_length() -> None:
+    # Each automaton state costs a token mask at compile time, so an upper
+    # bound the budget cannot afford is dropped with a warning; the lower bound
+    # still holds. A strict caller is refused instead.
+    compiled = _compile_xml_length(2, 100_000)
+    assert _accepts(compiled, _qwen_state("NY"))
+    assert _accepts(compiled, _qwen_state("a" * 500))
+    assert not _accepts(compiled, _qwen_state("N"))
+    with pytest.raises(Exception, match="too large to enforce"):
+        _compile_xml_length(2, 100_000, reject_unsupported=True)
+    # A lower bound past the budget leaves the value unbounded.
+    loose = _compile_xml_length(100_000, None)
+    assert _accepts(loose, _qwen_state("N"))
+
+
+def test_xml_bare_value_bound_near_budget_compiles() -> None:
+    # 13 trie states x (2 * 70 + 1) constraint states sits just under the cap.
+    compiled = _compile_xml_length(1, 70)
+    assert _accepts(compiled, _qwen_state("a" * 70))
+    assert not _accepts(compiled, _qwen_state("a" * 71))
+
+
+def test_tag_dispatch_length_bound_ebnf() -> None:
+    # The primitive behind the bare-value bound, spelled directly.
+    ebnf = (
+        'root ::= "[" body "]"\n'
+        'body ::= TagDispatch(loop_after_dispatch=false, excludes=("]"), '
+        'min_length=1, max_length=3, exclude_edges=(" ",))\n'
+    )
+    compiled = _compiler().compile_grammar(ebnf)
+    assert _accepts(compiled, "[ab]")
+    assert _accepts(compiled, "[a b]")
+    assert not _accepts(compiled, "[]")
+    assert not _accepts(compiled, "[abcd]")
+    assert not _accepts(compiled, "[ a]")
+    assert not _accepts(compiled, "[a ]")
+    # A multi-byte code point is one edge character.
+    nbsp = _compiler().compile_grammar(
+        'root ::= "[" body "]"\n'
+        'body ::= TagDispatch(loop_after_dispatch=false, excludes=("]"), '
+        'min_length=1, exclude_edges=("\\u00a0",))\n'
+    )
+    assert _accepts(nbsp, "[a\u00a0b]")
+    assert not _accepts(nbsp, "[\u00a0b]")
+    assert not _accepts(nbsp, "[a\u00a0]")
+    # -1 spells the default upper bound.
+    unbounded = _compiler().compile_grammar(
+        'root ::= "[" body "]"\n'
+        'body ::= TagDispatch(loop_after_dispatch=false, excludes=("]"), '
+        "min_length=2, max_length=-1)\n"
+    )
+    assert _accepts(unbounded, "[" + "a" * 50 + "]")
+    assert not _accepts(unbounded, "[a]")
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (
+            '("<a>", root), min_length=1',
+            "require a TagDispatch without tags",
+        ),
+        ("min_length=2, max_length=1", "max_length must be -1 or at least"),
+        ("min_length=-2", "min_length must be non-negative"),
+        ("max_length=1000000", "state budget"),
+        ("min_length=1000000", "state budget"),
+        ('exclude_edges=("ab",)', "single-character string literal"),
+        ("min_length=true", "must be an integer literal"),
+    ],
+)
+def test_tag_dispatch_length_bound_ebnf_rejects(
+    args: str, message: str
+) -> None:
+    ebnf = f"root ::= TagDispatch({args})\n"
+    with pytest.raises(Exception, match=message):
+        _compiler().compile_grammar(ebnf)
+
+
+def test_tag_dispatch_many_edges_rejected_before_allocation() -> None:
+    # The edge trie multiplies the counter's states, so a small bound with
+    # many edge code points is refused by the same budget as a large bound.
+    # Spacing the code points by 64 gives each its own three-byte prefix.
+    edges = ", ".join(f'"{chr(0x10000 + 64 * i)}"' for i in range(1500))
+    ebnf = f"root ::= TagDispatch(min_length=1, exclude_edges=({edges}))\n"
+    with pytest.raises(Exception, match="state budget"):
+        _compiler().compile_grammar(ebnf)
 
 
 def test_bare_key_alphabet_overlapping_key_terminator_rejected() -> None:
@@ -2718,23 +4951,17 @@ def _gemma_tool_with_params(params: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _gemma_compile(params: dict[str, Any]) -> xgr.CompiledGrammar:
-    # No test-level flag walker: the gemma_4 builtin tag already sets
-    # require_object_root and reject_unsupported on every arg-schema
-    # JSONSchemaFormat (model-scoped enable in JSON_CONFIG), so the flags are
-    # real on the gemma path without a stand-in.
     tag = xgr.get_builtin_structural_tag(
         "gemma_4",
         tools=_gemma_tool_with_params(params),
         tool_choice="required",
         reasoning=False,
+        reject_unsupported=True,
     )
     return _gemma_compiler().compile_structural_tag(tag)
 
 
 def test_gemma_4_tool_call_rejects_unsupported_keyword_without_walker() -> None:
-    # The JSON_CONFIG enable makes reject_unsupported real on the gemma path:
-    # an unenforceable keyword (multipleOf) in an arg schema is rejected
-    # fail-closed, with NO test-level flag walker.
     with pytest.raises(Exception):
         _gemma_compile(
             {
@@ -2753,9 +4980,6 @@ def test_gemma_4_tool_call_non_object_root_rejected_without_walker() -> None:
 
 
 def test_qwen_tool_call_permits_unsupported_keyword_by_default() -> None:
-    # Scoping: the enable is gemma-only. A non-gemma model's builtin tag leaves
-    # reject_unsupported at its False default, so an unenforceable keyword
-    # (multipleOf) falls back to unconstrained decoding and still compiles.
     tag = xgr.get_builtin_structural_tag(
         "qwen_3_5",
         tools=_qwen_tool(
@@ -3116,4 +5340,879 @@ def test_gemma_4_property_names_with_additional_properties_false_rejects_key() -
     bad = _gemma_matcher_params(params)
     assert not _accept_ids(
         bad, _gemma_encode("<|tool_call>call:f{queryParams:{abc:")
+    )
+
+
+def _excludes_vocab_compiler() -> xgr.GrammarCompiler:
+    # The shared _VOCAB has no c/d/e, and the exclude tries below need them.
+    # Insert before "<eos>" so it stays the last entry, as stop_token_ids below
+    # assumes.
+    vocab = [*_VOCAB[:-1], "c", "d", "e", "x", _VOCAB[-1]]
+    return xgr.GrammarCompiler(
+        xgr.TokenizerInfo(
+            vocab,
+            vocab_type=xgr.VocabType.RAW,
+            stop_token_ids=[len(vocab) - 1],
+        )
+    )
+
+
+def test_excludes_overlapping_prefixes() -> None:
+    # Back edges used to fall back only to the start state and its depth-one
+    # children, losing any suffix of length >= 2. Following "abc" down the "abce"
+    # branch forgot it had just read "bc", so "abcd" slipped past an exclude of
+    # "bcd" -- letting the model emit exactly what the grammar forbids.
+    tag = xgr.StructuralTag(format=AnyTextFormat(excludes=["bcd", "abce"]))
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    # "abcd" contains "bcd", so it must be rejected. This is the regression.
+    assert not _accepts(compiled, "abcd")
+    # The pattern that owns the branch is still excluded.
+    assert not _accepts(compiled, "abce")
+    # And a string containing neither is still accepted.
+    assert _accepts(compiled, "abxe")
+
+
+def test_anyof_base_additional_properties_not_folded_into_branch() -> None:
+    # additionalProperties is defined against the names its OWN object declares,
+    # so folding a copy into a branch closes over the wrong set. The base here
+    # declares nothing and closes the object, so base AND branch admits only {};
+    # the fold used to accept {"a": "a"}.
+    with pytest.raises(Exception, match="forbids unlisted properties"):
+        _compiler().compile_json_schema(
+            '{"anyOf": [{"type": "object", "properties":'
+            ' {"a": {"type": "string"}}}], "additionalProperties": false}',
+            reject_unsupported=True,
+        )
+
+
+def test_anyof_base_additional_properties_over_own_names_compiles() -> None:
+    # The rule is name-aware, not a ban on additionalProperties beside a union:
+    # when the closing side declares the names itself, the fold is exact.
+    compiled = _compiler().compile_json_schema(
+        '{"anyOf": [{"required": ["a"]}], "type": "object", "properties":'
+        ' {"a": {"type": "string"}}, "additionalProperties": false}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "x"}')
+    assert not _accepts(compiled, '{"a": "x", "b": 1}')
+
+
+def test_anyof_open_base_still_folds() -> None:
+    # additionalProperties: true names nothing and closes nothing, so there is
+    # no boundary to misplace and the fold stays available.
+    compiled = _compiler().compile_json_schema(
+        '{"anyOf": [{"type": "object", "properties":'
+        ' {"a": {"type": "string"}}}], "additionalProperties": true}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "x"}')
+
+
+def test_anyof_base_items_boundary_not_folded_into_branch() -> None:
+    # Same defect on the array side: base "items": false closes over the base's
+    # own prefixItems (none), so folding it into a branch that sets prefixItems
+    # would let the branch's positional entries through.
+    with pytest.raises(Exception, match="forbids extra items"):
+        _compiler().compile_json_schema(
+            '{"anyOf": [{"type": "array", "prefixItems":'
+            ' [{"type": "string"}]}], "items": false}',
+            reject_unsupported=True,
+        )
+
+
+def test_anyof_base_unevaluated_properties_not_folded() -> None:
+    # unevaluatedProperties depends on which properties each applicator
+    # evaluated, and a flattened branch no longer records that, so the fold
+    # cannot represent it at all.
+    with pytest.raises(Exception, match="unevaluatedProperties"):
+        _compiler().compile_json_schema(
+            '{"anyOf": [{"type": "object", "properties":'
+            ' {"a": {"type": "string"}}}], "unevaluatedProperties": false}',
+            reject_unsupported=True,
+        )
+
+
+def test_exclusive_keyword_not_folded_across_sides() -> None:
+    # A base keyword folded beside a branch's const is dropped by the
+    # dispatch, so the fold refuses it for either union spelling.
+    for schema in (
+        '{"anyOf": [{"const": "ab"}], "minLength": 5}',
+        '{"oneOf": [{"const": "ab"}], "minLength": 5}',
+    ):
+        with pytest.raises(Exception, match='combines "const"'):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_exclusive_keyword_beside_sibling_union_rejected() -> None:
+    # $ref, const and enum win the dispatch outright and the sibling union is
+    # never looked at again, so its branches are dropped rather than enforced.
+    # No fold-time guard can see this: ParseAnyOf never runs on that path.
+    for schema in (
+        '{"const": "ab", "anyOf": [{"const": "zz"}]}',
+        '{"enum": ["ab"], "anyOf": [{"const": "zz"}]}',
+        '{"$defs": {"n": {"type": "integer"}}, "$ref": "#/$defs/n",'
+        ' "oneOf": [{"type": "string"}]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_ref_beside_same_object_sibling_rejected() -> None:
+    # A sibling in the SAME object shares the $ref's source, so the cross-side
+    # fold check cannot see it, yet the dispatch drops it just the same. Draft 7
+    # ignores such a sibling and 2019-09 conjoins it, so neither reading is safe
+    # to guess. The last shape arrives through a single-member allOf, where the
+    # fold has nothing to compare against.
+    for schema in (
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+        ' "maxLength": 3}',
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+        ' "pattern": "^zz$"}',
+        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+        ' "type": "integer"}',
+        '{"$defs": {"i": {"type": "object", "properties":'
+        ' {"a": {"type": "string"}}}},'
+        ' "allOf": [{"$ref": "#/$defs/i", "minProperties": 1}]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_dropped_sibling_rejected() -> None:
+    # ParseConst and ParseEnum read no sibling, so a sibling that rules out one
+    # of the listed values is dropped on every draft, not just one. const also
+    # outranks enum, so a schema setting both keeps only const.
+    for schema in (
+        '{"type": "string", "const": "abcd", "maxLength": 1}',
+        '{"enum": ["a", "b"], "minLength": 5}',
+        '{"type": "integer", "enum": ["a"]}',
+        '{"const": "a", "enum": ["a", "b"]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_satisfied_sibling_compiles() -> None:
+    cases = (
+        ('{"type": "string", "enum": ["a", "ab"], "maxLength": 2}', '"ab"'),
+        ('{"enum": ["ab"], "minLength": 2}', '"ab"'),
+        (
+            '{"type": "object", "enum": [{"a": 1}], "required": ["a"]}',
+            '{"a":1}',
+        ),
+        # Two bytes, one character.
+        ('{"enum": ["\u00e9"], "maxLength": 1}', '"\u00e9"'),
+    )
+    for schema, accepted in cases:
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, accepted), schema
+        assert not _accepts(compiled, '"zzz"'), schema
+
+
+def test_finite_value_beside_violated_sibling_rejected() -> None:
+    for schema in (
+        # One character, two bytes.
+        '{"enum": ["\u00e9"], "minLength": 2}',
+        '{"type": "object", "enum": [{}], "required": ["a"]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_malformed_sibling_rejected() -> None:
+    for schema in (
+        '{"enum": [1], "minLength": -1}',
+        '{"enum": [1], "maxLength": -1}',
+        '{"enum": ["a"], "minLength": -1}',
+        '{"enum": [1], "required": [1]}',
+        '{"enum": [{"a": 1}], "required": ["a", "a"]}',
+        '{"enum": ["a"], "type": ["string", "string"]}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_sibling_walk_is_budgeted() -> None:
+    repeats = 70000
+    schema = (
+        '{"enum": [1], "required": ['
+        + ",".join(f'"a{i}"' for i in range(repeats))
+        + "]}"
+    )
+    with pytest.raises(Exception, match="takes dispatch priority"):
+        _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_finite_value_beside_undecidable_sibling_rejected() -> None:
+    for schema in (
+        '{"enum": ["a"], "pattern": "^a$"}',
+        '{"enum": ["a"], "nullable": true}',
+        '{"enum": [{"a": "xy"}],'
+        ' "properties": {"a": {"type": "string", "maxLength": 2}}}',
+        '{"type": "integer", "enum": [5, 7], "minimum": 5}',
+    ):
+        with pytest.raises(Exception, match="takes dispatch priority"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_enum_with_annotation_only_sibling_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "enum": ["a"], "enumDescriptions": ["first"]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '"b"')
+
+
+def test_enum_with_sibling_type_still_compiles() -> None:
+    # An enum beside a plain type keyword is the single most common schema shape
+    # there is, and dropping a type that every enumerated value already
+    # satisfies widens nothing.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "enum": ["a", "b"]}', reject_unsupported=True
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, '"c"')
+
+
+def test_exclusive_keyword_with_annotation_siblings_compiles() -> None:
+    # An annotation constrains no instance, and $defs is a container for what
+    # the $ref names rather than a constraint on the instance, so neither
+    # sibling can be dropped by the dispatch.
+    compiled = _compiler().compile_json_schema(
+        '{"$ref": "#/$defs/x", "description": "d",'
+        ' "$defs": {"x": {"type": "string"}}}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert not _accepts(compiled, "1")
+
+    compiled = _compiler().compile_json_schema(
+        '{"const": 5, "title": "n"}', reject_unsupported=True
+    )
+    assert _accepts(compiled, "5")
+    assert not _accepts(compiled, "6")
+
+
+def test_allof_boundary_check_sees_through_union() -> None:
+    # A member names a property through an applicator just as plainly as
+    # through a sibling "properties". The allOf boundary check used to look
+    # only at literal "properties" and merged straight past this.
+    with pytest.raises(Exception, match="forbids unlisted properties"):
+        _compiler().compile_json_schema(
+            '{"allOf": [{"type": "object", "additionalProperties": false},'
+            ' {"anyOf": [{"properties": {"a": {"type": "string"}}}]}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_excludes_match_beginning_inside_another_branch() -> None:
+    # The output-link half, a different defect from the failure-link one above:
+    # failure links decide where matching RESUMES, output links whether a pattern
+    # ENDED. With excludes {"ab", "xaby"}, "xab" walks the "xaby" branch and never
+    # lands on "ab"'s end state.
+    tag = xgr.StructuralTag(format=AnyTextFormat(excludes=["ab", "xaby"]))
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    assert not _accepts(compiled, "xab")
+    assert not _accepts(compiled, "ab")
+    # A string containing neither excluded pattern is still accepted.
+    assert _accepts(compiled, "xy")
+
+
+def test_excludes_output_links_are_transitive() -> None:
+    # The failure chain can pass through several states before reaching the
+    # excluded end, so the propagation has to close over itself: "zxab" fails
+    # to "xab", which is only a match because it fails to "ab".
+    tag = xgr.StructuralTag(
+        format=AnyTextFormat(excludes=["ab", "xaby", "zxabyy"])
+    )
+    compiled = _excludes_vocab_compiler().compile_structural_tag(tag)
+
+    assert not _accepts(compiled, "zxab")
+    assert not _accepts(compiled, "xab")
+    assert _accepts(compiled, "zxy")
+
+
+def test_allof_bare_ref_with_base_keyword_compiles() -> None:
+    # Unlike the lone-ref case above, the base here carries a real keyword, so
+    # the target and the base both become contributors. That is the conjunction
+    # the merge used to refuse rather than inline.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "definitions": {"addr": {"type": "object",'
+        ' "properties": {"street": {"type": "string"}},'
+        ' "required": ["street"]}},'
+        ' "allOf": [{"$ref": "#/definitions/addr"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"street": "a"}')
+    assert not _accepts(compiled, "{}")
+
+
+def test_allof_ref_plus_extension_unions_required() -> None:
+    # The OpenAPI inheritance idiom. Both members name a required key, so the
+    # merge has to union them rather than let one win.
+    compiled = _compiler().compile_json_schema(
+        '{"definitions": {"addr": {"type": "object", "properties":'
+        ' {"street": {"type": "string"}}, "required": ["street"]}},'
+        ' "allOf": [{"$ref": "#/definitions/addr"},'
+        ' {"properties": {"zip": {"type": "string"}}, "required": ["zip"]}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"street": "a", "zip": "1"}')
+    assert not _accepts(compiled, '{"street": "a"}')
+    assert not _accepts(compiled, '{"zip": "1"}')
+
+
+def test_allof_nested_and_flat_spellings_agree() -> None:
+    # Wrapping a member in its own allOf says nothing new, so the grammar must not
+    # change. The flatten is one pass for this reason: a second pass merges the
+    # nested member into an already-merged object, and since the object grammar
+    # fixes one key order, the two spellings would demand different orders.
+    flat = (
+        '{"type": "object", "allOf": ['
+        '{"properties": {"a": {"type": "string"}}, "required": ["a"]},'
+        '{"properties": {"b": {"type": "string"}}, "required": ["b"]}]}'
+    )
+    nested = (
+        '{"type": "object", "allOf": ['
+        '{"allOf": [{"properties": {"a": {"type": "string"}},'
+        ' "required": ["a"]}]},'
+        '{"properties": {"b": {"type": "string"}}, "required": ["b"]}]}'
+    )
+    doc = '{"a": "x", "b": "y"}'
+    for schema in (flat, nested):
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        assert _accepts(compiled, doc)
+
+
+def test_allof_recursive_ref_refused() -> None:
+    # Inlining a definition that reaches itself does not terminate.
+    with pytest.raises(Exception, match="reaches itself"):
+        _compiler().compile_json_schema(
+            '{"definitions": {"node": {"type": "object",'
+            ' "allOf": [{"$ref": "#/definitions/node"}]}},'
+            ' "allOf": [{"$ref": "#/definitions/node"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_with_sibling_constraint_still_refused() -> None:
+    # Only a BARE $ref inlines. A $ref carrying a sibling constraint is the shape
+    # where draft 7 ignores the sibling and 2019-09 conjoins it.
+    with pytest.raises(Exception, match='combines "\\$ref"'):
+        _compiler().compile_json_schema(
+            '{"definitions": {"addr": {"type": "object", "properties":'
+            ' {"street": {"type": "string"}}}},'
+            ' "allOf": [{"$ref": "#/definitions/addr", "minProperties": 2},'
+            ' {"properties": {"zip": {"type": "string"}}}]}',
+            reject_unsupported=True,
+        )
+
+
+# Two definitions whose names collide unless RFC 6901 escapes are decoded: the
+# pointer "#/$defs/a~1b" names "a/b", and "#/$defs/a~01b" names "a~1b".
+_ESCAPED_KEY_DEFS = (
+    '"$defs": {"a/b": {"type": "object",'
+    ' "properties": {"x": {"type": "string"}}, "required": ["x"]},'
+    ' "a~1b": {"type": "object",'
+    ' "properties": {"y": {"type": "string"}}, "required": ["y"]}}'
+)
+
+
+def test_allof_ref_pointer_decodes_escaped_slash() -> None:
+    # "~1" is "/", so the inlined target is the "a/b" definition. Comparing the
+    # token literally would inline "a~1b" and enforce the wrong schema.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", '
+        + _ESCAPED_KEY_DEFS
+        + ', "allOf": [{"$ref": "#/$defs/a~1b"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"x": "a"}')
+    assert not _accepts(compiled, '{"y": "a"}')
+
+
+def test_allof_ref_pointer_decodes_escaped_tilde() -> None:
+    # The decoy of the test above: "~0" is "~", so "a~01b" names the literal
+    # "a~1b" definition, the one the undecoded comparison would have picked.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", '
+        + _ESCAPED_KEY_DEFS
+        + ', "allOf": [{"$ref": "#/$defs/a~01b"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"y": "a"}')
+    assert not _accepts(compiled, '{"x": "a"}')
+
+
+def test_allof_ref_pointer_empty_token_names_empty_key() -> None:
+    # An empty reference token names the "" member, so "#/$defs/" is a pointer
+    # two levels deep, not a one-level pointer with a stray separator.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "$defs": {"": {"type": "object",'
+        ' "properties": {"x": {"type": "string"}}, "required": ["x"]}},'
+        ' "allOf": [{"$ref": "#/$defs/"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"x": "a"}')
+
+
+def test_allof_ref_pointer_malformed_escape_refused() -> None:
+    # A "~" carries "0" or "1" and nothing else, so "a~2b" resolves to no
+    # target and the $ref survives the merge for the dispatch check to refuse.
+    with pytest.raises(Exception, match='combines "\\$ref"'):
+        _compiler().compile_json_schema(
+            '{"type": "object", '
+            + _ESCAPED_KEY_DEFS
+            + ', "allOf": [{"$ref": "#/$defs/a~2b"}]}',
+            reject_unsupported=True,
+        )
+
+
+@pytest.mark.parametrize("ref", ["#/x%", "#/x%GG"])
+def test_allof_malformed_percent_ref_rejected(ref: str) -> None:
+    with pytest.raises(
+        Exception,
+        match=r"malformed percent escape.*must be followed by two hexadecimal digits",
+    ):
+        _compiler().compile_json_schema(
+            json.dumps({"type": "object", "allOf": [{"$ref": ref}]}),
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_pointer_through_array_refused() -> None:
+    # The walk traverses object members only, so a pointer that indexes an array
+    # resolves to no target rather than to a guessed element.
+    with pytest.raises(Exception, match='combines "\\$ref"'):
+        _compiler().compile_json_schema(
+            '{"type": "object", "$defs": {"list": [{"type": "object",'
+            ' "properties": {"x": {"type": "string"}}, "required": ["x"]}]},'
+            ' "allOf": [{"$ref": "#/$defs/list/0"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_under_nested_id_refused() -> None:
+    # An "$id" below the root starts a new base URI, and a "#/..." $ref then
+    # points into that resource rather than into the document. The merge does
+    # not track base URIs, so it refuses instead of resolving against the root.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"type": "object", "$defs": {"s": {"$id": "https://example.com/s",'
+            ' "type": "object", "properties": {"x": {"type": "string"}},'
+            ' "required": ["x"]}},'
+            ' "allOf": [{"$ref": "#/$defs/s"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_declared_under_nested_id_refused() -> None:
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "integer"},'
+            ' "sub": {"$id": "https://example.com/sub",'
+            ' "$defs": {"x": {"type": "string"}},'
+            ' "allOf": [{"$ref": "#/$defs/x"}]}},'
+            ' "$ref": "#/$defs/sub"}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_sibling_id_does_not_rebase_a_contributor() -> None:
+    # The flatten merges every contributor key into one object, "$id" included,
+    # so a sibling's identifier would otherwise scope references the second
+    # contributor inlined from the root resource. Refusing the document keeps
+    # the merge from having to carry a base URI it never computed.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "string"},'
+            ' "obj": {"type": "object",'
+            ' "properties": {"v": {"$ref": "#/$defs/x"}},'
+            ' "required": ["v"]}},'
+            ' "allOf": [{"$id": "https://example.com/sub", "type": "object"},'
+            ' {"$ref": "#/$defs/obj"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_beside_id_refused() -> None:
+    # "$id" on the member holding the $ref rebases that $ref itself, which the
+    # bare-ref test would otherwise wave through as a mere annotation.
+    with pytest.raises(
+        Exception, match="declares a resource below the document root"
+    ):
+        _compiler().compile_json_schema(
+            '{"type": "object", "$defs": {"s": {"type": "object",'
+            ' "properties": {"x": {"type": "string"}}, "required": ["x"]}},'
+            ' "allOf": [{"$ref": "#/$defs/s",'
+            ' "$id": "https://example.com/other"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_beside_malformed_id_rejected() -> None:
+    with pytest.raises(Exception, match='"\\$id" must be a string'):
+        _compiler().compile_json_schema(
+            '{"$defs": {"s": {"type": "string"}},'
+            ' "allOf": [{"$id": {}, "$ref": "#/$defs/s"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_annotation_only_malformed_id_rejected() -> None:
+    with pytest.raises(Exception, match='"\\$id" must be a string'):
+        _compiler().compile_json_schema(
+            '{"type": "string", "allOf": [{"$id": {}}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_allof_ref_under_root_id_still_inlines() -> None:
+    # The root's own "$id" names the document, so a "#/..." $ref still points
+    # into it. Refusing this shape would reject the common annotated schema.
+    compiled = _compiler().compile_json_schema(
+        '{"$id": "https://example.com/root", "type": "object",'
+        ' "$defs": {"s": {"type": "object",'
+        ' "properties": {"x": {"type": "string"}}, "required": ["x"]}},'
+        ' "allOf": [{"$ref": "#/$defs/s"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"x": "a"}')
+    assert not _accepts(compiled, "{}")
+
+
+def test_allof_empty_schema_does_not_close_the_object() -> None:
+    # `additionalProperties: {}` imposes nothing, so it does not close the object
+    # and the merge may proceed. Only `false` closes it.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "additionalProperties": {},'
+        ' "allOf": [{"properties": {"a": {"type": "string"}}}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "x"}')
+    with pytest.raises(Exception, match="forbids unlisted properties"):
+        _compiler().compile_json_schema(
+            '{"type": "object", "additionalProperties": false,'
+            ' "allOf": [{"properties": {"a": {"type": "string"}}}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_nullable_string_with_length_bound() -> None:
+    # A declared type bounds the branch while its other constraints still apply.
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "string", "maxLength": 4}, {"type": "null"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"abcd"')
+    assert _accepts(compiled, "null")
+    assert not _accepts(compiled, '"abcde"')
+    assert not _accepts(compiled, "1")
+
+
+def test_oneof_nullable_object() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "object", "properties": {"a": {"type": "string"}},'
+        ' "required": ["a"]}, {"type": "null"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '{"a": "x"}')
+    assert _accepts(compiled, "null")
+    assert not _accepts(compiled, "{}")
+    assert not _accepts(compiled, "1")
+
+
+def test_oneof_same_type_arms_refused() -> None:
+    # Bounds are not part of the disjointness proof.
+    with pytest.raises(Exception, match="non-provably-disjoint"):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"type": "string", "maxLength": 4},'
+            ' {"type": "string", "minLength": 6}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_branch_without_declared_type_refused() -> None:
+    # `properties` also admits every non-object, so it does not imply `object`.
+    with pytest.raises(Exception, match="non-provably-disjoint"):
+        _compiler().compile_json_schema(
+            '{"oneOf": [{"properties": {"a": {"type": "string"}}},'
+            ' {"type": "null"}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_union_base_string_tier_judged_across_sides() -> None:
+    for schema in (
+        '{"anyOf": [{"type": "string", "pattern": "^a+$"},'
+        ' {"type": "null"}], "maxLength": 1}',
+        '{"oneOf": [{"type": "string", "maxLength": 1},'
+        ' {"type": "null"}], "pattern": "^a+$"}',
+    ):
+        with pytest.raises(
+            Exception, match="each admit lengths the other forbids"
+        ):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_union_base_pattern_within_length_bound_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "string", "pattern": "^a$"},'
+        ' {"type": "null"}], "maxLength": 10}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "null")
+    assert not _accepts(compiled, '"aa"')
+
+
+def test_union_base_length_bound_folds_without_a_pattern() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"type": "string"}, {"type": "null"}], "maxLength": 1}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "null")
+    assert not _accepts(compiled, '"aa"')
+
+
+def test_oneof_finite_arm_with_dropped_sibling_refused() -> None:
+    for schema in (
+        '{"oneOf": [{"const": "a", "type": "number"}, {"const": "b"}]}',
+        '{"oneOf": [{"enum": ["a"], "minLength": 5}, {"const": "b"}]}',
+        '{"oneOf": [{"const": "a", "enum": ["b"]}, {"const": "b"}]}',
+    ):
+        with pytest.raises(Exception, match="non-provably-disjoint"):
+            _compiler().compile_json_schema(schema, reject_unsupported=True)
+
+
+def test_oneof_discriminator_with_dropped_sibling_refused() -> None:
+    with pytest.raises(Exception, match="non-provably-disjoint"):
+        _compiler().compile_json_schema(
+            '{"oneOf": ['
+            '{"type": "object", "required": ["k"],'
+            ' "properties": {"k": {"const": "a", "type": "number"}}}, '
+            '{"type": "object", "required": ["k"],'
+            ' "properties": {"k": {"const": "b"}}}]}',
+            reject_unsupported=True,
+        )
+
+
+def test_oneof_finite_arm_with_redundant_siblings_compiles() -> None:
+    compiled = _compiler().compile_json_schema(
+        '{"oneOf": [{"const": "a", "type": "string", "title": "A"},'
+        ' {"const": 1, "type": "integer"}]}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, "1")
+    assert not _accepts(compiled, '"b"')
+
+
+_VARKEY_STYLE_NAMES: dict[str, Any] = {
+    "m2": "minimax_xml",
+    "glm": "glm_xml",
+    "qwen": "qwen_xml",
+}
+
+
+def _varkey_frame(style: str, key: str, value: str) -> str:
+    if style == "m2":
+        return f'<parameter name="{key}">{value}</parameter>'
+    if style == "glm":
+        return f"<arg_key>{key}</arg_key><arg_value>{value}</arg_value>"
+    return f"<parameter={key}>{value}</parameter>"
+
+
+# A byte vocab wide enough to spell any key/value plus the JSON structural bytes.
+_VARKEY_VOCAB = (
+    ["{", "}", '"', ":", " ", "\t", "\n"]
+    + [chr(c) for c in range(33, 127)]
+    + ["<eos>"]
+)
+_VARKEY_VOCAB = list(dict.fromkeys(_VARKEY_VOCAB))
+_VARKEY_ID = {tok: i for i, tok in enumerate(_VARKEY_VOCAB)}
+
+
+def _varkey_compiled(
+    style: str, schema: dict[str, Any], reject_unsupported: bool = False
+) -> xgr.CompiledGrammar:
+    info = xgr.TokenizerInfo(
+        _VARKEY_VOCAB,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[_VARKEY_ID["<eos>"]],
+    )
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema,
+            style=_VARKEY_STYLE_NAMES[style],
+            require_object_root=True,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    return xgr.GrammarCompiler(info).compile_structural_tag(tag)
+
+
+def _varkey_schema(property_names: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": {"const": "V"},
+        "propertyNames": property_names,
+    }
+
+
+_VARKEY_STYLES = ["m2", "glm", "qwen"]
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_const_pins_key(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"const": "foo"}))
+    m = xgr.GrammarMatcher(compiled)
+    assert (
+        m.accept_string(_varkey_frame(style, "foo", "V")) and m.is_completed()
+    )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "bar", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_enum_restricts_key(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"enum": ["foo", "bar"]}))
+    for good in ("foo", "bar"):
+        m = xgr.GrammarMatcher(compiled)
+        assert (
+            m.accept_string(_varkey_frame(style, good, "V"))
+            and m.is_completed()
+        )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "baz", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_max_length_bounds_key(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"maxLength": 3}))
+    m = xgr.GrammarMatcher(compiled)
+    assert (
+        m.accept_string(_varkey_frame(style, "abc", "V")) and m.is_completed()
+    )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "abcd", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_min_length_bounds_key(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"minLength": 3}))
+    m = xgr.GrammarMatcher(compiled)
+    assert (
+        m.accept_string(_varkey_frame(style, "abc", "V")) and m.is_completed()
+    )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "ab", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_plain_additional_properties_key_is_free(style: str) -> None:
+    compiled = _varkey_compiled(
+        style, {"type": "object", "additionalProperties": {"const": "V"}}
+    )
+    for key in ("anything", "other_key"):
+        m = xgr.GrammarMatcher(compiled)
+        assert (
+            m.accept_string(_varkey_frame(style, key, "V")) and m.is_completed()
+        )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_pattern_enforced(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"pattern": "^a+$"}))
+    m = xgr.GrammarMatcher(compiled)
+    assert (
+        m.accept_string(_varkey_frame(style, "aaa", "V")) and m.is_completed()
+    )
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "bbb", "V"))
+        and bad.is_completed()
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_property_names_format_enforced(style: str) -> None:
+    compiled = _varkey_compiled(style, _varkey_schema({"format": "email"}))
+    bad = xgr.GrammarMatcher(compiled)
+    assert not (
+        bad.accept_string(_varkey_frame(style, "foo", "V"))
+        and bad.is_completed()
+    )
+
+
+# TODO(CENG-1076): support patternProperties without properties in XML formats.
+@pytest.mark.xfail(
+    strict=True,
+    raises=Exception,
+    reason="patternProperties without properties in XML formats is planned",
+)
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_single_pattern_properties_compiles(style: str) -> None:
+    _varkey_compiled(
+        style,
+        {
+            "type": "object",
+            "patternProperties": {"\\wcole": {"const": "V"}},
+        },
+        reject_unsupported=True,
+    )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_multi_pattern_properties_fails_closed(style: str) -> None:
+    with pytest.raises(Exception):
+        _varkey_compiled(
+            style,
+            {
+                "type": "object",
+                "patternProperties": {
+                    "^a+$": {"const": "V"},
+                    "^b+$": {"const": "W"},
+                },
+            },
+            reject_unsupported=True,
+        )
+
+
+@pytest.mark.parametrize("style", _VARKEY_STYLES)
+def test_varkey_pattern_properties_permissive_compiles(style: str) -> None:
+    # Without reject_unsupported, XML variable-key patternProperties is emitted
+    # best-effort rather than rejected; it must at least compile without error.
+    _varkey_compiled(
+        style,
+        {
+            "type": "object",
+            "patternProperties": {"\\wcole": {"const": "V"}},
+        },
     )

@@ -56,5 +56,12 @@ def mojo_test(
         toolchains = toolchains + ["//bazel/internal:current_gpu_toolchain"],
         env = env,
         testonly = True,
+        # Compile the same way as the test; only the test rule has a `test`
+        # exec group.
+        exec_properties = {
+            k: v
+            for k, v in exec_properties.items()
+            if not k.startswith("test.")
+        },
         **kwargs
     )

@@ -18,7 +18,6 @@ import functools
 import logging
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 from max.driver import Buffer, Device
@@ -37,10 +36,12 @@ from max.pipelines.lib import (
     ModuleV3PipelineModel,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
 from .batch_processor import Qwen3EmbeddingModuleV3BatchProcessor
+from .inputs import Qwen3EmbeddingInputs
 from .layers import (
     Qwen3AttentionNoCache,
     Qwen3Embedding,
@@ -50,20 +51,6 @@ from .layers import (
 from .model_config import Qwen3EmbeddingConfig
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class Qwen3EmbeddingInputs(ModelInputs):
-    """Input structure for Qwen3 embedding models."""
-
-    tokens: Buffer
-    """Input token IDs [total_seq_len]"""
-
-    input_row_offsets: Buffer
-    """Row offsets for ragged tensors [batch_size + 1]"""
-
-    return_n_logits: Buffer
-    """Number of logits to return (kept for interface compatibility)"""
 
 
 class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
@@ -91,6 +78,8 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
@@ -101,8 +90,10 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model()
 
@@ -117,7 +108,6 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> None:
         del state_dict
-        return None
 
     def _prepare_state_dict(
         self, state_dict: dict[str, Any], model_config: Any
@@ -143,7 +133,6 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
         huggingface_config = self.huggingface_config
 
         head_dim = huggingface_config.head_dim
-        max_seq_len = self.pipeline_config.model.max_length or 32768
         norm_eps = getattr(huggingface_config, "rms_norm_eps", 1e-6)
         attention_multiplier = getattr(
             huggingface_config,
@@ -155,7 +144,7 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             dim=huggingface_config.hidden_size,
             n_heads=huggingface_config.num_attention_heads,
             theta=huggingface_config.rope_theta,
-            max_seq_len=max_seq_len,
+            max_seq_len=self.max_seq_len,
             device=self.devices[0],
             head_dim=head_dim,
             interleaved=False,

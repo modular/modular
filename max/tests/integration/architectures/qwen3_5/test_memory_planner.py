@@ -13,10 +13,9 @@
 
 """Tests for the Qwen3.5 memory planner's max_batch_size inference.
 
-Qwen3.5 has per-request GPU state (GatedDeltaNet conv + recurrent pools)
-beyond the KV cache, so the framework's default ``max_batch_size`` inference
-can OOM. The planner infers a memory-safe default during memory planning and
-the state-pool reservation must use that inferred value.
+A GatedDeltaNet state occupies pages of the KV pool, so it is reserved as no
+activation memory. The per-request cost still bounds the batch size, and the
+cases below pin its dtype: bf16 even under a quantized encoding.
 """
 
 from types import SimpleNamespace
@@ -31,6 +30,14 @@ from max.pipelines.architectures.qwen3_5.memory_planner import (
     Qwen3_5MemoryPlanner,
 )
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
+from max.pipelines.architectures.qwen3_5.quantization import (
+    Qwen3_5QuantScheme,
+)
+
+# 3 linear layers of a conv window and a recurrent state, at bf16:
+#   conv      = (2 * 128 * 16 + 128 * 48) * (4 - 1)  = 30_720 elements
+#   recurrent = 48 * 128 * 128                       = 786_432 elements
+_STATE_BYTES = 3 * (30_720 + 786_432) * 2
 
 _LAYER_TYPES = [
     "linear_attention",
@@ -40,7 +47,13 @@ _LAYER_TYPES = [
 ]
 
 
-def _qwen_config() -> Qwen3_5Config:
+def _qwen_config(
+    *,
+    dtype: DType = DType.bfloat16,
+    declared_dtype: DType | None = None,
+    quant_scheme: Qwen3_5QuantScheme | None = None,
+    state_pool_dtype: DType | None = None,
+) -> Qwen3_5Config:
     kv_params = MHAKVCacheParams(
         dtype=DType.bfloat16,
         n_kv_heads=8,
@@ -62,7 +75,10 @@ def _qwen_config() -> Qwen3_5Config:
         intermediate_size=128,
         interleaved_rope_weights=True,
         vocab_size=1000,
-        dtype=DType.bfloat16,
+        dtype=dtype,
+        declared_dtype=declared_dtype,
+        quant_scheme=quant_scheme,
+        state_pool_dtype=state_pool_dtype,
         model_quantization_encoding=None,
         quantization_config=None,
         kv_params=kv_params,
@@ -81,11 +97,13 @@ def _devices(free_memory: int) -> list[Device]:
     )
 
 
-def _pipeline_config(max_batch_size: int | None) -> Mock:
+def _pipeline_config(
+    max_batch_size: int | None, encoding: str = "bfloat16"
+) -> Mock:
     pipeline_config = Mock()
     pipeline_config.runtime.max_batch_size = max_batch_size
     pipeline_config.model.kv_cache.device_memory_utilization = 0.9
-    pipeline_config.model.quantization_encoding = "bfloat16"
+    pipeline_config.model.quantization_encoding = encoding
     # A resolved (no-op) cast makes encoding selection take the fast path.
     pipeline_config.model._resolved_dtype_cast = (None, None)
     return pipeline_config
@@ -119,29 +137,112 @@ def test_infer_max_batch_size_delegates_to_config() -> None:
     assert inferred is not None and inferred >= 1
 
 
-def test_activation_memory_uses_inferred_max_batch_size() -> None:
+def test_the_state_is_not_reserved_outside_the_pool() -> None:
+    """Reserving here would subtract the same bytes the pool already holds."""
     planner = Qwen3_5MemoryPlanner(_qwen_config())
-    pipeline_config = _pipeline_config(max_batch_size=None)
-    inferred = planner.infer_max_batch_size(
-        pipeline_config, _devices(free_memory=10 * 1024**3), 1024**3
-    )
-    assert inferred is not None
 
-    activation = planner.estimate_activation_memory(
-        pipeline_config, _hf_config()
+    assert (
+        planner.estimate_activation_memory(
+            _pipeline_config(max_batch_size=16), _hf_config()
+        )
+        == 0
     )
 
-    # 3 linear layers; conv (64 * 3) + recurrent (4*8*8) elements per layer
-    # at 2 bytes each = 2688 bytes per request.
-    assert activation == inferred * 2688
+
+def test_a_state_still_costs_what_the_batch_bound_thinks_it_does() -> None:
+    # `infer_optimal_batch_size` divides the budget by this, and the model
+    # checks its declared leaf geometry against it at load.
+    assert _qwen_config()._per_request_state_bytes() == _STATE_BYTES
 
 
-def test_activation_memory_prefers_user_max_batch_size() -> None:
-    planner = Qwen3_5MemoryPlanner(_qwen_config())
-    pipeline_config = _pipeline_config(max_batch_size=16)
-
-    activation = planner.estimate_activation_memory(
-        pipeline_config, _hf_config()
+def _nvfp4_scheme() -> Qwen3_5QuantScheme:
+    """A scheme whose quantized bases are packed uint8 over a bf16 compute."""
+    return Qwen3_5QuantScheme(
+        mlp=None,
+        attn=None,
+        mlp_layers=frozenset(),
+        attn_layers=frozenset(),
+        quantize_lm_head=False,
+        compute_dtype=DType.bfloat16,
     )
 
-    assert activation == 16 * 2688
+
+def test_nvfp4_state_is_costed_at_the_compute_dtype() -> None:
+    """Quantizing the weights must not shrink what a state is thought to cost.
+
+    The state holds no quantized tensors, so it stays bf16 while ``dtype``
+    becomes 1-byte packed ``uint8``.
+    """
+    config = _qwen_config(dtype=DType.uint8, declared_dtype=DType.bfloat16)
+
+    # Not half of it: the state is bf16 even though the weights are 4-bit.
+    assert config._per_request_state_bytes() == _STATE_BYTES
+
+
+def test_nvfp4_state_uses_the_scheme_once_finalize_has_run() -> None:
+    """After ``finalize`` the resolved scheme carries the compute dtype.
+
+    ``declared_dtype`` covers the pre-``finalize`` window that memory
+    planning runs in; both windows must agree.
+    """
+    config = _qwen_config(dtype=DType.uint8, quant_scheme=_nvfp4_scheme())
+
+    assert config._per_request_state_bytes() == _STATE_BYTES
+
+
+def test_inferred_batch_size_is_not_inflated_by_a_quantized_encoding() -> None:
+    """Quantizing the weights must not change the inferred batch size.
+
+    ``infer_optimal_batch_size`` divides the budget by the per-request state
+    cost, so reading the 1-byte storage dtype there doubled the batch it
+    considered safe -- the opposite of the conservative direction. The pools
+    are bf16 in both configs, so both must infer the same bound.
+    """
+    # Sized so the result lands below the `min(512, ...)` clamp; above it
+    # both configs saturate and the difference is invisible.
+    devices = _devices(free_memory=8 * 1024**3)
+    weights_size = 5 * 1024**3
+
+    bf16 = _qwen_config().infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+    nvfp4 = _qwen_config(
+        dtype=DType.uint8, declared_dtype=DType.bfloat16
+    ).infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+
+    assert nvfp4 == bf16
+
+
+def test_float32_state_doubles_what_it_costs() -> None:
+    """``state_pool_dtype="float32"`` doubles the state, so must double the cost.
+
+    The cost is read through ``state_dtype``; a path bound to the model dtype
+    would cost half.
+    """
+    config = _qwen_config(state_pool_dtype=DType.float32)
+
+    assert config._per_request_state_bytes() == 2 * _STATE_BYTES
+
+
+def test_float32_state_pools_shrink_the_inferred_batch_size() -> None:
+    """A 4-byte pool costs twice as much per request, so fewer fit.
+
+    ``infer_optimal_batch_size`` divides by the per-request cost; if that
+    cost ignored the override the inferred bound would be twice what the
+    device can hold.
+    """
+    devices = _devices(free_memory=8 * 1024**3)
+    weights_size = 5 * 1024**3
+
+    bf16 = _qwen_config().infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+    fp32 = _qwen_config(
+        state_pool_dtype=DType.float32
+    ).infer_optimal_batch_size(
+        devices, weights_size=weights_size, device_memory_utilization=0.9
+    )
+
+    assert fp32 == bf16 // 2

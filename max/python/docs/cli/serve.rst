@@ -29,11 +29,11 @@ compatible ``--task`` value (for example ``embeddings_generation`` for
 ``/v1/embeddings``).
 
 To run inference without an HTTP server, see
-`max generate </max/cli/generate>`_ (text completion) or
-`max encode </max/cli/encode>`_ (embeddings).
+`max generate </cli/generate>`_ (text completion) or
+`max encode </cli/encode>`_ (embeddings).
 
 For details about the endpoint APIs provided by the server, see [the MAX REST
-API reference](/max/rest-api/).
+API reference](/rest-api/).
 
 Running on multiple GPUs
 ------------------------
@@ -75,7 +75,7 @@ the form ``path/to/module:module_name``:
     For a full example using the
     [`--custom-architectures`](#--custom-architectures-custom_architectures) flag,
     see [Serve custom model architectures
-    ](/max/develop/serve-custom-model-architectures).
+    ](/develop/serve-custom-model-architectures).
 
     :::
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import BitSet, Array
-from std.math import align_up, ceildiv
+from std.math import align_up
 
 
 def _compute_unshareable[
@@ -42,13 +42,16 @@ def _compute_shareable_rows[
     result[i].test(j) == True iff can_share[i * N + j] == 1, i.e. allocations
     i and j have non-overlapping lifetimes and may share a memory block.
     """
-    result = Array[BitSet[N], N](uninitialized=True)
-    for i in range(N):
+
+    @inline(.always)
+    def result_init(i: Int) {imm can_share} -> BitSet[N]:
         var row: BitSet[N] = {}
         for j in range(N):
             if can_share[i * N + j]:
                 row.set(j)
-        result[i] = row^
+        return row^
+
+    result = Array[_, N](fill_with=result_init)
 
 
 def _maximum(alignments: Array[Int, _]) -> Int:
@@ -175,14 +178,14 @@ struct BufferPlanState[
         self.num_reused = 0
         self.offsets = Array[Int, Self.num_allocs](fill=0)
 
-    @always_inline
+    @inline(.always)
     def take_results(
         deinit self,
     ) -> Tuple[Int, Array[Int, Self.num_allocs]]:
         assert self.allocated == Self.num_allocs
         return self.pool_size, self.offsets.copy()
 
-    @always_inline
+    @inline(.always)
     def stats(self) -> BufferPlanStats:
         """Returns a lightweight snapshot of planning statistics for logging."""
         return BufferPlanStats(
@@ -213,12 +216,12 @@ struct BufferPlanState[
                 best_size = self.blocks[block_idx].size
                 result = block_idx
 
-    @always_inline
+    @inline(.always)
     def append_result(mut self, index: Int, value: Int):
         self.offsets[index] = value
         self.allocated += 1
 
-    @always_inline
+    @inline(.always)
     def shareable_set(self, index: Int) -> BitSet[Self.num_allocs]:
         assert Self.enable_sharing, "unable to get shareable set"
         return self.shareable_sets[index].copy()
@@ -253,7 +256,7 @@ struct BufferPlanState[
         else:
             self.allocate_new_block(result_idx, alloc_size)
 
-    @always_inline
+    @inline(.always)
     def allocate_greedy[start: Int = 0](mut self, sizes: Array[Int, _]):
         comptime if not Self.enable_sharing:
             # No allocations can be shared; skip the greedy search entirely.

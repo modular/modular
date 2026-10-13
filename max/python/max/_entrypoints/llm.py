@@ -232,9 +232,9 @@ async def _async_worker(
     settings: Settings,
 ) -> None:
     pipeline_config = PipelineConfig.from_args(pipeline_args)
-    tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
-        pipeline_config
-    )
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
+    tokenizer = retrieved.tokenizer
+    model_factory = retrieved.factory
     model_name = pipeline_config.model.model_path
 
     # Start the model worker process.
@@ -268,6 +268,7 @@ async def _async_worker(
             metric_client=metric_client,
             model_worker_interface=model_worker_interface,
             zmq_endpoint_base=zmq_endpoint_base,
+            memory_plan=retrieved.memory_plan,
         ) as model_worker,
     ):
         pipeline = TokenGeneratorPipeline(

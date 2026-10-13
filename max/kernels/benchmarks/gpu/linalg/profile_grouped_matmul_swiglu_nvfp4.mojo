@@ -30,13 +30,16 @@
 #                            scatter (numerically a hair more accurate; not
 #                            byte-identical).
 #
+# `-D row_scales=true` passes bf16 per-row input scales to the matmul of the
+# unfused chain and of the fused match_bf16 path.
+#
 # Cache-busting on the four big tensors (B weights, B-scales, A activations,
 # A-scales) so each iter reads cold HBM. Small auxiliaries (offsets,
 # expert_ids, expert_scales, input_scales) stay L2-hot.
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.memory import UnsafePointer, alloc, dealloc
+from std.memory import alloc, dealloc
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from max.benchmark import bencher_iter_custom
@@ -47,9 +50,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from internal_utils import arg_parse
 from internal_utils._cache_busting import CacheBustingBuffer
@@ -68,13 +71,20 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.grouped_1d1d_m
     GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK,
     RealSwiGLUOutput,
 )
+from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
+    RealRowScales,
+)
 from shmem.ep_comm import fused_silu_nvfp4_interleaved_kernel
 from structured_kernels.trace_buf import GmemTrace, NullTrace
 
 
 def _string_to_int_list(s: String) raises -> List[Int]:
-    """Parse `[a, b, c]` (or `a,b,c`) into a `List[Int]`."""
-    var stripped = s.strip("[]")
+    """Parse `[a, b, c]`, `a,b,c` or `a;b;c` into a `List[Int]`.
+
+    kbench splits a swept value on commas, so a per-group list that is
+    itself swept must separate its entries with semicolons.
+    """
+    var stripped = s.strip("[]").replace(";", ",")
     var out = List[Int]()
     for tok in stripped.split(","):
         try:
@@ -114,6 +124,7 @@ def main() raises:
     comptime tokens_per_expert_default = get_defined_int[
         "tokens_per_expert", 128
     ]()
+    comptime row_scales = get_defined_bool["row_scales", False]()
     var fused = arg_parse("fused", fused_default)
     var match_bf16 = arg_parse("match_bf16", match_bf16_default)
     var matmul_only = arg_parse("matmul_only", False)
@@ -325,23 +336,23 @@ def main() raises:
         ctx.enqueue_memset(s_buf, Scalar[scales_dtype](0))
 
         # Per-expert offsets / IDs (small, host-built once).
-        var a_offsets_host_alloc = alloc[Scalar[DType.uint32]](
+        var a_offsets_host_alloc = alloc[UInt32](
             {count = num_active_experts + 1}
         ).into_managed()
         var a_offsets_host = a_offsets_host_alloc.unsafe_ptr()
-        var a_scale_offsets_host_alloc = alloc[Scalar[DType.uint32]](
+        var a_scale_offsets_host_alloc = alloc[UInt32](
             {count = num_active_experts}
         ).into_managed()
         var a_scale_offsets_host = a_scale_offsets_host_alloc.unsafe_ptr()
-        var expert_ids_host_alloc = alloc[Scalar[DType.int32]](
+        var expert_ids_host_alloc = alloc[Int32](
             {count = num_active_experts}
         ).into_managed()
         var expert_ids_host = expert_ids_host_alloc.unsafe_ptr()
-        var expert_scales_host_alloc = alloc[Scalar[DType.float32]](
+        var expert_scales_host_alloc = alloc[Float32](
             {count = num_experts}
         ).into_managed()
         var expert_scales_host = expert_scales_host_alloc.unsafe_ptr()
-        var input_scales_host_alloc = alloc[Scalar[DType.float32]](
+        var input_scales_host_alloc = alloc[Float32](
             {count = num_active_experts}
         ).into_managed()
         var input_scales_host = input_scales_host_alloc.unsafe_ptr()
@@ -361,19 +372,17 @@ def main() raises:
         for i in range(num_active_experts):
             input_scales_host[i] = 1.0 + Float32(i + 1) * 0.01
 
-        var a_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+        var a_offsets_dev = ctx.enqueue_create_buffer[.uint32](
             num_active_experts + 1
         )
-        var a_scale_offsets_dev = ctx.enqueue_create_buffer[DType.uint32](
+        var a_scale_offsets_dev = ctx.enqueue_create_buffer[.uint32](
             num_active_experts
         )
-        var expert_ids_dev = ctx.enqueue_create_buffer[DType.int32](
+        var expert_ids_dev = ctx.enqueue_create_buffer[.int32](
             num_active_experts
         )
-        var expert_scales_dev = ctx.enqueue_create_buffer[DType.float32](
-            num_experts
-        )
-        var input_scales_dev = ctx.enqueue_create_buffer[DType.float32](
+        var expert_scales_dev = ctx.enqueue_create_buffer[.float32](num_experts)
+        var input_scales_dev = ctx.enqueue_create_buffer[.float32](
             num_active_experts
         )
 
@@ -390,78 +399,73 @@ def main() raises:
         var trace_buf_size = trace_num_blocks * Int(
             GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
         )
-        var trace_buf_dev = ctx.enqueue_create_buffer[DType.uint64](
-            trace_buf_size
-        )
+        var trace_buf_dev = ctx.enqueue_create_buffer[.uint64](trace_buf_size)
         ctx.enqueue_memset(trace_buf_dev, UInt64(0))
+
+        var row_scales_dev = ctx.enqueue_create_buffer[.bfloat16](M)
+        ctx.enqueue_memset(row_scales_dev, BFloat16(1.0))
 
         ctx.synchronize()
 
         def _ri(v: Int) -> Int64:
             return Int64(v)
 
-        comptime b_shape = row_major(
-            Coord(Idx[num_experts], Idx[N], Idx[packed_K])
-        )
+        comptime b_shape = row_major(Idx[num_experts], Idx[N], Idx[packed_K])
         comptime b_scales_shape = row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups_b],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups_b],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
 
         var a_offsets_tt = TileTensor(
             a_offsets_dev,
-            row_major(Coord(_ri(num_active_experts + 1))),
+            row_major(_ri(num_active_experts + 1)),
         ).as_unsafe_any_origin()
         var a_scale_offsets_tt = TileTensor(
             a_scale_offsets_dev,
-            row_major(Coord(_ri(num_active_experts))),
+            row_major(_ri(num_active_experts)),
         ).as_unsafe_any_origin()
         var expert_ids_tt = TileTensor(
             expert_ids_dev,
-            row_major(Coord(_ri(num_active_experts))),
+            row_major(_ri(num_active_experts)),
         ).as_unsafe_any_origin()
         var expert_scales_tt = TileTensor(
             expert_scales_dev,
-            row_major(Coord(Idx[num_experts])),
+            row_major(Idx[num_experts]),
         ).as_unsafe_any_origin()
         var input_scales_tt = TileTensor(
             input_scales_dev,
-            row_major(Coord(_ri(num_active_experts))),
+            row_major(_ri(num_active_experts)),
         ).as_unsafe_any_origin()
 
         var c_bf16_tt = TileTensor(
-            c_bf16_buf, row_major(Coord(_ri(M), Idx[N]))
+            c_bf16_buf, row_major(_ri(M), Idx[N])
         ).as_unsafe_any_origin()
         var o_tt = TileTensor(
-            o_buf, row_major(Coord(_ri(M), Idx[packed_H]))
+            o_buf, row_major(_ri(M), Idx[packed_H])
         ).as_unsafe_any_origin()
         var s_tt = TileTensor(
             s_buf,
             row_major(
-                Coord(
-                    _ri(a_scale_dim0),
-                    Idx[k_groups_swiglu],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                _ri(a_scale_dim0),
+                Idx[k_groups_swiglu],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         ).as_unsafe_any_origin()
 
         # Pre-build the SwiGLU output carrier for the fused dispatch.
         # Bypassing `grouped_matmul_swiglu_nvfp4_dispatch` keeps the per-iter
         # dummy-buffer alloc + SF memset out of the timed region.
-        var c_packed_ptr = rebind[UnsafePointer[UInt8, MutAnyOrigin]](o_tt.ptr)
+        var c_packed_ptr = rebind[MutPointer[UInt8, MutAnyOrigin]](o_tt.ptr)
         var c_swiglu_scales_ptr = rebind[
-            UnsafePointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
+            MutPointer[Scalar[NVFP4_SF_DTYPE], MutAnyOrigin]
         ](s_tt.ptr)
-        var c_input_scales_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
+        var c_input_scales_ptr = rebind[ImmPointer[Float32, ImmutAnyOrigin]](
             input_scales_tt.ptr
         )
         var swiglu_out = RealSwiGLUOutput[
@@ -481,7 +485,7 @@ def main() raises:
             trace_buf_dev.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-        @always_inline
+        @inline(.always)
         def kernel_launch(
             ctx: DeviceContext, iteration: Int
         ) raises {
@@ -496,7 +500,7 @@ def main() raises:
         }:
             var a_tt = TileTensor(
                 cb_a.offset_ptr(iteration),
-                row_major(Coord(_ri(M), Idx[packed_K])),
+                row_major(_ri(M), Idx[packed_K]),
             ).as_unsafe_any_origin()
             var b_tt = TileTensor(
                 cb_b.offset_ptr(iteration), b_shape
@@ -504,13 +508,11 @@ def main() raises:
             var a_scales_tt = TileTensor(
                 cb_a_scales.offset_ptr(iteration),
                 row_major(
-                    Coord(
-                        _ri(a_scale_dim0),
-                        Idx[k_groups],
-                        Idx[SF_ATOM_M[0]],
-                        Idx[SF_ATOM_M[1]],
-                        Idx[SF_ATOM_K],
-                    )
+                    _ri(a_scale_dim0),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 ),
             ).as_unsafe_any_origin()
             var b_scales_tt = TileTensor(
@@ -544,6 +546,35 @@ def main() raises:
                             ctx,
                             swiglu_out,
                             trace_buf_gmem,
+                        )
+                    elif row_scales:
+                        grouped_matmul_nvfp4_dispatch[
+                            transpose_b=True,
+                            fuse_swiglu=True,
+                            SwiGLUOutputT=type_of(swiglu_out),
+                            swiglu_match_bf16=True,
+                            swiglu_disable_compute=swiglu_disable_compute,
+                            swiglu_use_inplace=swiglu_use_inplace,
+                            RowScalesT=RealRowScales,
+                        ](
+                            c_bf16_tt,
+                            a_tt,
+                            b_tt,
+                            a_scales_tt,
+                            b_scales_tt,
+                            a_offsets_tt,
+                            a_scale_offsets_tt,
+                            expert_ids_tt,
+                            expert_scales_tt,
+                            num_active_experts,
+                            M,
+                            ctx,
+                            swiglu_out,
+                            a_row_scales=RealRowScales(
+                                rebind[ImmPointer[BFloat16, ImmutAnyOrigin]](
+                                    row_scales_dev.unsafe_ptr()
+                                )
+                            ),
                         )
                     else:
                         grouped_matmul_nvfp4_dispatch[
@@ -619,26 +650,50 @@ def main() raises:
                             swiglu_out,
                         )
             else:
-                grouped_matmul_nvfp4_dispatch[transpose_b=True](
-                    c_bf16_tt,
-                    a_tt,
-                    b_tt,
-                    a_scales_tt,
-                    b_scales_tt,
-                    a_offsets_tt,
-                    a_scale_offsets_tt,
-                    expert_ids_tt,
-                    expert_scales_tt,
-                    num_active_experts,
-                    M,
-                    ctx,
-                )
+                comptime if row_scales:
+                    grouped_matmul_nvfp4_dispatch[
+                        transpose_b=True,
+                        RowScalesT=RealRowScales,
+                    ](
+                        c_bf16_tt,
+                        a_tt,
+                        b_tt,
+                        a_scales_tt,
+                        b_scales_tt,
+                        a_offsets_tt,
+                        a_scale_offsets_tt,
+                        expert_ids_tt,
+                        expert_scales_tt,
+                        num_active_experts,
+                        M,
+                        ctx,
+                        a_row_scales=RealRowScales(
+                            rebind[ImmPointer[BFloat16, ImmutAnyOrigin]](
+                                row_scales_dev.unsafe_ptr()
+                            )
+                        ),
+                    )
+                else:
+                    grouped_matmul_nvfp4_dispatch[transpose_b=True](
+                        c_bf16_tt,
+                        a_tt,
+                        b_tt,
+                        a_scales_tt,
+                        b_scales_tt,
+                        a_offsets_tt,
+                        a_scale_offsets_tt,
+                        expert_ids_tt,
+                        expert_scales_tt,
+                        num_active_experts,
+                        M,
+                        ctx,
+                    )
 
                 comptime hw_info = ctx.default_device_info
-                var c_immut = c_bf16_tt.as_immut()
-                var a_offsets_immut = a_offsets_tt.as_immut()
-                var a_scale_offsets_immut = a_scale_offsets_tt.as_immut()
-                var input_scales_immut = input_scales_tt.as_immut()
+                var c_immut = c_bf16_tt.as_imm()
+                var a_offsets_immut = a_offsets_tt.as_imm()
+                var a_scale_offsets_immut = a_scale_offsets_tt.as_imm()
+                var input_scales_immut = input_scales_tt.as_imm()
 
                 comptime swiglu_kernel = fused_silu_nvfp4_interleaved_kernel[
                     fp4_dtype,
@@ -678,13 +733,13 @@ def main() raises:
                             attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
 
-        @__parameter
-        @always_inline
-        def bench_func(mut b: Bencher) raises:
+        @inline(.always)
+        def bench_func(mut b: Bencher) raises {imm}:
             bencher_iter_custom(b, kernel_launch, ctx)
 
         var m = Bench()
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(run_name),
             [
                 ThroughputMeasure(BenchMetric.flops, Int(total_flops)),
@@ -731,7 +786,7 @@ def main() raises:
         # Issue latency = X_S − X_D. Real-work span = X_E − X_S.
         # Slot 0 (= L0_D) is the kernel-never-ran sentinel.
         if trace and fused:
-            var trace_host_alloc = alloc[Scalar[DType.uint64]](
+            var trace_host_alloc = alloc[UInt64](
                 {count = trace_buf_size}
             ).into_managed()
             var trace_host = trace_host_alloc.unsafe_ptr()

@@ -50,18 +50,19 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
         Args:
             mx_format: The MX element format to select.
         """
-        if mx_format == MXFormat.FP8_E4M3:
-            self = Self.FLOAT8_E4M3
-        elif mx_format == MXFormat.FP8_E5M2:
-            self = Self.FLOAT8_E5M2
-        elif mx_format == MXFormat.FP6_E2M3:
-            self = Self.FLOAT6_E2M3
-        elif mx_format == MXFormat.FP6_E3M2:
-            self = Self.FLOAT6_E3M2
-        elif mx_format == MXFormat.FP4_E2M1:
-            self = Self.FLOAT4_E2M1
-        else:
-            abort("invalid MX format")
+        match mx_format:
+            case .FP8_E4M3:
+                self = Self.FLOAT8_E4M3
+            case .FP8_E5M2:
+                self = Self.FLOAT8_E5M2
+            case .FP6_E2M3:
+                self = Self.FLOAT6_E2M3
+            case .FP6_E3M2:
+                self = Self.FLOAT6_E3M2
+            case .FP4_E2M1:
+                self = Self.FLOAT4_E2M1
+            case _:
+                abort("invalid MX format")
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -111,16 +112,16 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
         abort("invalid matrix format")
 
 
-@always_inline
+@inline(.always)
 def cdna4_block_scaled_mfma[
     a_scale_byte_index: Int32,
     b_scale_byte_index: Int32,
     a_matrix_format: CDNA4F8F6F4MatrixFormat,
     b_matrix_format: CDNA4F8F6F4MatrixFormat,
 ](
-    mut d: SIMD[DType.float32, _],
-    a: SIMD[DType.uint8, _],
-    b: SIMD[DType.uint8, _],
+    mut d: SIMD[.float32, _],
+    a: SIMD[.uint8, _],
+    b: SIMD[.uint8, _],
     packed_scale_word_a: Int32,
     packed_scale_word_b: Int32,
 ):
@@ -148,10 +149,10 @@ def cdna4_block_scaled_mfma[
     # scale word: 0 -> bits 7:0, 1 -> 15:8, 2 -> 23:16, 3 -> 31:24.
     d = llvm_intrinsic[
         intrinsic,
-        SIMD[DType.float32, d.length],
+        SIMD[.float32, d.length],
     ](
-        bitcast[DType.int32, a.length // size_of[DType.int32]()](a),
-        bitcast[DType.int32, b.length // size_of[DType.int32]()](b),
+        bitcast[.int32, a.length // size_of[DType.int32]()](a),
+        bitcast[.int32, b.length // size_of[DType.int32]()](b),
         d,
         a_matrix_format,
         b_matrix_format,

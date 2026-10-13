@@ -245,7 +245,7 @@ class ConnectionExhaustion(BaseScenario):
         )
         per_response_statuses = []
         for line in pipe_result.body.splitlines():
-            if line.startswith("HTTP/1.1 ") or line.startswith("HTTP/1.0 "):
+            if line.startswith(("HTTP/1.1 ", "HTTP/1.0 ")):
                 parts = line.split()
                 if len(parts) >= 2 and parts[1].isdigit():
                     per_response_statuses.append(int(parts[1]))

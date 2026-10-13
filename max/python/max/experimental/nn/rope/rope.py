@@ -137,7 +137,6 @@ class RotaryEmbedding(Module[..., Tensor]):
         yield "dim", self.dim
         yield "max_sequence_length", self.max_sequence_length
 
-    @F.functional
     def forward(self, x: Tensor, start_pos: DimLike = 0) -> Tensor:
         """Applies rotary positional embeddings (RoPE) to `x`.
 
@@ -165,7 +164,6 @@ class RotaryEmbedding(Module[..., Tensor]):
 class TransposedRotaryEmbedding(RotaryEmbedding):
     """Applies RoPE using a transposed head-dimension layout."""
 
-    @F.functional
     def forward(self, x: Tensor, start_pos: DimLike = 0) -> Tensor:
         """Applies rotary positional embeddings (RoPE) to `x`.
 

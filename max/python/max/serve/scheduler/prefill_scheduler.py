@@ -13,9 +13,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.pipelines.context import TextContext, TextGenerationOutput
@@ -27,6 +29,7 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
+    MemoryPlan,
     PipelineConfig,
     TextGenerationPipeline,
 )
@@ -39,10 +42,14 @@ from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
     CancelRequest,
+    PrefillFailure,
+    PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
+    check_di_supports,
 )
 from max.serve.scheduler.interface import Scheduler
+from max.serve.telemetry.metrics import METRICS
 from max.serve.worker_interface._zmq_queue import ClientIdentity
 
 from .base import SchedulerProgress
@@ -50,15 +57,50 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger
+from .utils import SchedulerLogger, _trace_batch, held_blocks_per_leaf
 
 logger = logging.getLogger("max.serve")
+
+# Decode-clock ping-back protocol for isolating DI dispatch latency (queue
+# wait, CE time, ZMQ round trips) without comparing clocks across the
+# decode/prefill nodes. Off by default -- two extra ZMQ messages per
+# request is unwanted steady-state overhead outside an active
+# investigation.
+_DI_LATENCY_PING_ENABLED = os.getenv("MAX_SERVE_DI_LATENCY_PING", "0") == "1"
+
+
+def _pages_to_transfer(
+    src_blocks: Mapping[str, list[int]], dst_blocks: Mapping[str, list[int]]
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Pairs each leaf's pages with decode's, skipping ones decode holds.
+
+    Decode marks the pages its prefix cache already holds with ``-1``.
+    """
+    if src_blocks.keys() != dst_blocks.keys():
+        raise ValueError(
+            f"Prefill leaves {list(src_blocks)} do not match decode leaves "
+            f"{list(dst_blocks)}"
+        )
+    src_idxs: dict[str, list[int]] = {}
+    dst_idxs: dict[str, list[int]] = {}
+    for leaf_id, dst in dst_blocks.items():
+        src = src_blocks[leaf_id]
+        if len(src) != len(dst):
+            raise ValueError(
+                f"Leaf {leaf_id!r} holds {len(src)} pages on prefill but "
+                f"{len(dst)} on decode"
+            )
+        num_cached = dst.count(-1)
+        src_idxs[leaf_id] = src[num_cached:]
+        dst_idxs[leaf_id] = dst[num_cached:]
+        assert -1 not in dst_idxs[leaf_id]
+    return src_idxs, dst_idxs
 
 
 @dataclass
 class TransferDest:
     engine_name: str
-    dst_block_ids: list[int]
+    dst_block_ids: dict[str, list[int]]
     dst_replica_idx: int
 
 
@@ -81,6 +123,7 @@ class PrefillScheduler(Scheduler):
         kv_cache: PagedKVCacheManagerInterface,
         dispatcher: PrefillDispatcherServer,
     ) -> None:
+        check_di_supports(kv_cache)
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
         self.kv_cache = kv_cache
@@ -97,6 +140,11 @@ class PrefillScheduler(Scheduler):
         )
 
         self.outstanding_cancelled_requests: set[RequestID] = set()
+
+        # request_id -> time.monotonic() at enqueue, popped the first time
+        # the request enters an executed CE batch. Feeds the
+        # di_prefill_queue_wait_time metric; prefill-local, no wire cost.
+        self._enqueue_time: dict[RequestID, float] = {}
 
         # Maps req_id → (context, src_replica_idx) for CE-complete requests
         # whose first generated token hasn't materialized yet due to the overlap scheduling
@@ -162,6 +210,12 @@ class PrefillScheduler(Scheduler):
                 dst_replica_idx=message.dst_replica_idx,
             ),
         )
+        self._enqueue_time[message.id] = time.monotonic()
+        if _DI_LATENCY_PING_ENABLED:
+            self.dispatcher.send_reply_nowait(
+                PrefillProgressPing(id=message.id, event="arrived"),
+                identity,
+            )
 
     def cleanup_active_transfers(self) -> None:
         """Cleans up completed transfers from the active transfers dictionary.
@@ -174,8 +228,8 @@ class PrefillScheduler(Scheduler):
         for active in self.active_transfers.values():
             if self.transfer_engine.is_complete(active.transfer):
                 self.transfer_engine.cleanup_transfer(active.transfer)
-                blocks_released = len(
-                    self.kv_cache.get_req_blocks(active.context)
+                blocks_released = held_blocks_per_leaf(
+                    self.kv_cache, active.context
                 )
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
                 self.kv_cache.release(active.context)
@@ -184,8 +238,9 @@ class PrefillScheduler(Scheduler):
                 self.pipeline.release(active.context.request_id)
                 to_be_deleted.append(active.context.request_id)
                 logger.debug(
-                    "KV transfer complete for request %s: releasing %d blocks "
-                    "back to prefill pool. Remaining in-flight transfers: %d.",
+                    "KV transfer complete for request %s: releasing blocks "
+                    "per leaf %s back to prefill pool. Remaining in-flight "
+                    "transfers: %d.",
                     active.context.request_id,
                     blocks_released,
                     len(self.active_transfers) - len(to_be_deleted),
@@ -216,17 +271,26 @@ class PrefillScheduler(Scheduler):
             src_replica_idx: The replica the request is on for Prefill
         """
         req_id = context.request_id
+        if _DI_LATENCY_PING_ENABLED:
+            # Peek (not pop) the identity: this is the CE-complete signal
+            # for the ping-back protocol, sent before the pop below so
+            # cancelled requests still get a ping matching their arrival one.
+            ping_identity, _ = self.request_id_to_reply_context[req_id]
+            self.dispatcher.send_reply_nowait(
+                PrefillProgressPing(id=req_id, event="ce_done"),
+                ping_identity,
+            )
         identity, transfer_dest = self.request_id_to_reply_context.pop(req_id)
 
         # If cancelled, release the request's blocks instead of transferring them.
         if req_id in self.outstanding_cancelled_requests:
             self.outstanding_cancelled_requests.remove(req_id)
-            blocks_held = len(self.kv_cache.get_req_blocks(context))
+            blocks_held = held_blocks_per_leaf(self.kv_cache, context)
             self.kv_cache.release(context)
             self.pipeline.release(req_id)
             logger.warning(
                 "Dropping cancelled request %s before KV transfer: released "
-                "%d blocks on replica %d.",
+                "blocks per leaf %s on replica %d.",
                 req_id,
                 blocks_held,
                 src_replica_idx,
@@ -238,18 +302,11 @@ class PrefillScheduler(Scheduler):
             transfer_dest.engine_name
         ]
 
-        # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = self.kv_cache.get_req_blocks(context)
-        dst_idxs = transfer_dest.dst_block_ids
-        assert len(src_idxs) == len(dst_idxs)
-
-        # Transfer only the blocks that are not already on decode node.
-        num_already_cached_blocks = dst_idxs.count(-1)
-        src_idxs = src_idxs[num_already_cached_blocks:]
-        dst_idxs = dst_idxs[num_already_cached_blocks:]
-        assert dst_idxs.count(-1) == 0
-
+        src_idxs, dst_idxs = _pages_to_transfer(
+            self.kv_cache.get_req_blocks_per_leaf(context),
+            transfer_dest.dst_block_ids,
+        )
         transfer_data = self.transfer_engine.initiate_send_transfer(
             remote_metadata,
             src_idxs,
@@ -263,7 +320,7 @@ class PrefillScheduler(Scheduler):
             transfer=transfer_data,
         )
         transfer_pinned = sum(
-            len(self.kv_cache.get_req_blocks(at.context))
+            self.kv_cache.num_req_blocks(at.context)
             for at in self.active_transfers.values()
         )
         block_count = self.kv_cache.block_count(src_replica_idx)
@@ -285,11 +342,11 @@ class PrefillScheduler(Scheduler):
             f"Invalid Context: Expected start_idx to be greater than 0. Found: {context}"
         )
 
-        # Extract draft tokens from Eagle/MTP speculative decoding state.
-        # These let the decode node seed its first spec-decode iteration
-        # instead of starting with an empty draft cache.  When speculative
-        # decoding is active, the unified Eagle/MTP model always populates
-        # draft_tokens_to_verify during CE; error if it hasn't.
+        # Extract the draft tokens CE proposed. These let the decode node
+        # seed its first spec-decode iteration instead of starting with an
+        # empty draft cache. When speculative decoding is active, the unified
+        # target+draft graph always populates draft_tokens_to_verify during
+        # CE; error if it hasn't.
         draft_tokens: list[int] | None = None
         if (
             self.scheduler_config.num_speculative_tokens > 0
@@ -302,8 +359,8 @@ class PrefillScheduler(Scheduler):
                 raise ValueError(
                     f"Expected draft tokens on context {req_id} after CE "
                     f"with speculative decoding enabled, but none were "
-                    f"populated. Check that the unified Eagle/MTP pipeline "
-                    f"is wired in for prefill_only."
+                    f"populated. Check that the unified speculative "
+                    f"pipeline is wired in for prefill_only."
                 )
             draft_tokens = context.spec_decoding_state.draft_tokens_to_verify
 
@@ -329,7 +386,8 @@ class PrefillScheduler(Scheduler):
         """
         # Execute the Batch
         assert len(inputs.batches) > 0
-        responses = self.pipeline.execute(inputs)
+        with _trace_batch("prefill", inputs):
+            responses = self.pipeline.execute(inputs)
 
         self.batch_constructor.advance_requests(inputs)
 
@@ -407,15 +465,18 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        # The DI protocol has no failure reply, so the decode node is not
-        # notified; route-side validation makes this unreachable in practice.
         for failed_id, error in self.batch_constructor.take_grammar_failed():
-            self.request_id_to_reply_context.pop(failed_id, None)
-            logger.error(
-                "Dropping prefill request %s: grammar build failed after "
-                "route-side validation passed: %s",
-                failed_id,
-                error,
+            # Never reaches an executed CE batch, so drop its queue-wait
+            # entry here rather than leaving it to accumulate.
+            self._enqueue_time.pop(failed_id, None)
+            reply_context = self.request_id_to_reply_context.pop(
+                failed_id, None
+            )
+            if reply_context is None:
+                continue
+            identity, _ = reply_context
+            self.dispatcher.send_reply_nowait(
+                PrefillFailure(id=failed_id, error=error), identity
             )
 
         # With the overlap pipeline, a pending _prev_batch must be drained
@@ -429,6 +490,17 @@ class PrefillScheduler(Scheduler):
 
         # Schedule the batch
         t0 = time.monotonic()
+        # Attribute queue wait to every request entering its first executed
+        # CE batch, right as that batch is about to run.
+        # Pop-on-first-sight means chunked-prefill continuations (already
+        # popped on their first chunk) don't re-fire.
+        for replica_batch in inputs.batches:
+            for context in replica_batch:
+                enqueued_at = self._enqueue_time.pop(context.request_id, None)
+                if enqueued_at is not None:
+                    METRICS.di_prefill_queue_wait_time(
+                        (t0 - enqueued_at) * 1000
+                    )
         with Tracer(f"_schedule({inputs})"):
             num_terminated_reqs = self.schedule(inputs)
         t1 = time.monotonic()
@@ -469,17 +541,10 @@ def load_prefill_scheduler(
     pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     settings: Settings,
+    memory_plan: MemoryPlan | None,
 ) -> PrefillScheduler:
-    # Validate speculative decoding configuration for prefill-only mode.
     spec_config = pipeline_config.speculative
     if spec_config is not None:
-        if not (spec_config.is_eagle() or spec_config.is_mtp()):
-            raise ValueError(
-                f"Unsupported speculative method "
-                f"'{spec_config.speculative_method}' with "
-                f"pipeline_role='prefill_only'. Only 'eagle' and 'mtp' "
-                f"are supported."
-            )
         logger.info(
             "Prefill-only mode with speculative decoding "
             f"(method={spec_config.speculative_method})."
@@ -487,7 +552,7 @@ def load_prefill_scheduler(
 
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
-        pipeline_config, pipeline.max_batch_size
+        pipeline_config, pipeline.max_batch_size, memory_plan
     )
 
     # Decode incoming prefill requests into the architecture's concrete

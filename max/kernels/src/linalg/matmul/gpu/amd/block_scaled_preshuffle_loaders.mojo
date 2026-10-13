@@ -26,11 +26,12 @@ fragment / scale word the MFMA needs at its `(lane_nlane, lane_klane)` slot.
     by logical `(mn, k_scale)` through `scale_4d_layout`.
 """
 
-from std.gpu.intrinsics import AMDBufferResource
+from max.gpu import lane_id
+from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import CacheOperation
 from std.memory.unsafe import bitcast
 
-from layout import Coord, Idx, TileTensor
+from layout import TileTensor
 from layout._utils import make_amd_buffer_resource
 
 from .block_scaled_preshuffle_layouts import Shuffler
@@ -66,8 +67,11 @@ struct PreshuffledBLoader[
 
     var bc: AMDBufferResource
 
-    @always_inline
-    def __init__(out self, b_gmem_tile: TileTensor[DType.uint8, ...]):
+    @inline(.always)
+    def __init__(
+        out self,
+        b_gmem_tile: TileTensor[.uint8, ...],
+    ):
         """Builds the V# from a preshuffled per-expert B byte buffer.
 
         Args:
@@ -77,10 +81,10 @@ struct PreshuffledBLoader[
         """
         self.bc = make_amd_buffer_resource(b_gmem_tile)
 
-    @always_inline
+    @inline(.always)
     def load_fragment(
         self, n: Int, k_byte: Int
-    ) -> SIMD[DType.uint8, Self.reg_bytes]:
+    ) -> SIMD[.uint8, Self.reg_bytes]:
         """Loads one lane's B fragment at logical `(n, k_byte)`.
 
         For one MFMA dispatch a lane calls this with
@@ -96,7 +100,7 @@ struct PreshuffledBLoader[
             n: Logical N row index into the `[N, K_BYTES]` tile.
             k_byte: Logical K byte index into the `[N, K_BYTES]` tile.
         """
-        var frag = SIMD[DType.uint8, Self.reg_bytes](0)
+        var frag = SIMD[.uint8, Self.reg_bytes](0)
 
         comptime for p in range(Self.num_planes):
             comptime pb = Shuffler[1].plane_bytes[Self.lane_bytes, p]()
@@ -109,11 +113,71 @@ struct PreshuffledBLoader[
                 ](0, n, k_byte)
             )
             frag = frag.insert[offset=p * 16](
-                self.bc.load[DType.uint8, pb, cache_policy=Self.cache_policy](
-                    off
-                )
+                self.bc.load[.uint8, pb, cache_policy=Self.cache_policy](off)
             )
         return frag
+
+    @inline(.always)
+    def lane_plane_off[plane: Int = 0](self, n: Int, lane_k_byte: Int) -> Int32:
+        """Returns the K-invariant per-lane part of one plane's address.
+
+        Pair with `load_at`, which supplies the wave-uniform whole-tile part.
+        Splitting the address this way lets a caller hoist the per-lane term
+        out of an unrolled K loop instead of rematerialising it per tile.
+
+        `b_plane_byte_off` is additive in `k0`: every other term depends only
+        on `n` and the lane's own K offset, and the `k0 * tile_bytes` stride is
+        the same for all planes because `tile_bytes` is derived from
+        `lane_bytes`, not from the plane width. So a multi-plane fragment
+        (FP6's 16 + 8) splits per plane exactly as a single-plane one does.
+
+        Parameters:
+            plane: Which plane of the lane fragment to address.
+
+        Args:
+            n: Logical N row index into the `[N, K_BYTES]` tile.
+            lane_k_byte: The lane's own K byte offset within its K tile,
+                i.e. `(lane // 16) * lane_bytes`.
+        """
+        comptime assert plane < Self.num_planes, "plane out of range"
+        return Int32(
+            Shuffler[1].b_plane_byte_off[
+                N=Self.N,
+                K_BYTES=Self.K_BYTES,
+                lane_bytes=Self.lane_bytes,
+                plane=plane,
+            ](0, n, lane_k_byte)
+        )
+
+    @inline(.always)
+    def load_at[
+        plane: Int = 0
+    ](self, lane_off: Int32, k_byte_uniform: Int) -> SIMD[
+        .uint8, Shuffler[1].plane_bytes[Self.lane_bytes, plane]()
+    ]:
+        """Loads one plane at `lane_off` plus a wave-uniform K offset.
+
+        `k_byte_uniform` is a whole number of `(n0, k0)` tiles, so it rides
+        `soffset` while `lane_off` stays in `voffset`. The tile stride is a
+        function of `lane_bytes` alone, so it is shared by every plane; only
+        the loaded width narrows on a partial plane (FP6's second is 8 bytes).
+
+        Parameters:
+            plane: Which plane of the lane fragment to load.
+
+        Args:
+            lane_off: The per-lane offset from `lane_plane_off`.
+            k_byte_uniform: Logical K byte base of the tile, wave-uniform and
+                a multiple of the K0 tile width.
+        """
+        comptime assert plane < Self.num_planes, "plane out of range"
+        comptime K0_BYTES = Shuffler[1].MFMA_K_LANES * Self.lane_bytes
+        comptime TILE_BYTES = Shuffler[1].MFMA_MN_LANES * K0_BYTES
+        comptime PB = Shuffler[1].plane_bytes[Self.lane_bytes, plane]()
+        return self.bc.load[.uint8, PB, cache_policy=Self.cache_policy](
+            lane_off,
+            scalar_offset=Int32((k_byte_uniform // K0_BYTES) * TILE_BYTES),
+        )
 
 
 struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
@@ -132,8 +196,11 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
 
     var bc: AMDBufferResource
 
-    @always_inline
-    def __init__(out self, scale_gmem_tile: TileTensor[DType.uint8, ...]):
+    @inline(.always)
+    def __init__(
+        out self,
+        scale_gmem_tile: TileTensor[.uint8, ...],
+    ):
         """Builds the V# from a preshuffled per-expert scale byte buffer.
 
         Args:
@@ -143,7 +210,7 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
         """
         self.bc = make_amd_buffer_resource(scale_gmem_tile)
 
-    @always_inline
+    @inline(.always)
     def load_packed(self, mn: Int, k_scale: Int) -> Int32:
         """Loads the packed Int32 scale word containing logical `(mn, k_scale)`.
 
@@ -165,5 +232,35 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
                 K_SCALES=Self.K_SCALES, packed_mode=True
             ](mn, k_scale)
         )
-        var v = self.bc.load[DType.uint8, 4](byte_off)
-        return bitcast[DType.int32, 1](v)[0]
+        var v = self.bc.load[.uint8, 4](byte_off)
+        return bitcast[.int32, 1](v)[0]
+
+    @inline(.always)
+    def load_group[
+        GROUP: Int
+    ](self, mn_base: Int, k_pair_base: Int) -> SIMD[.uint8, GROUP * 4]:
+        """Loads `GROUP` consecutive packed-scale atoms with one VMEM op.
+
+        Consecutive `k_pair` atoms are contiguous 256-byte blocks, so one
+        `GROUP * 4`-byte load per lane tiles `GROUP` of them across a wave64.
+
+        The window is lane-transposed: lane `l` holds the words `load_packed`
+        would give lanes `GROUP*l .. GROUP*l + GROUP - 1`, and the caller must
+        undo that.
+
+        Parameters:
+            GROUP: Atoms per window; `GROUP * 4` must be a legal load width.
+
+        Args:
+            mn_base: Logical MN index of the window's atom row; must be
+                16-aligned so the lane term is the whole in-atom offset.
+            k_pair_base: First `k_pair` of the window.
+        """
+        comptime assert GROUP == 4, "scale group load must be one dwordx4"
+        var byte_off = Int32(
+            Shuffler[1].scale_4d_byte_off[
+                K_SCALES=Self.K_SCALES, packed_mode=True
+            ](mn_base, k_pair_base * Shuffler[1].S_K_BLOCK)
+            + Int(lane_id()) * (GROUP * 4)
+        )
+        return self.bc.load[.uint8, GROUP * 4](byte_off)

@@ -43,14 +43,14 @@ pattern, a `cluster_sync()` publishes it, every CTA reads **every** peer's smem
 `[P,P,W]` matrix against the sentinel-filled buffer.
 """
 
-from std.gpu import thread_idx
-from std.gpu.primitives.id import cluster_dim as rt_cluster_dim
+from max.gpu import thread_idx
+from max.gpu.primitives.id import cluster_dim as rt_cluster_dim
 from max.gpu.host import DeviceContext, Dim
 from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
-from nn.attention.gpu.nvidia.sm100.attention_utils import load_cluster_smem
+from max.gpu.primitives.cluster import load_cluster_smem
 
 
 comptime BASE = 1000
@@ -63,12 +63,12 @@ comptime SENTINEL = UInt32(0xFFFFFFFF)
 # size is supplied only at launch (`cluster_dim=`). NO `P` type parameter — the
 # count is the runtime arg `p_count`, so a single compiled kernel serves every P.
 def dyn_dsmem_kernel(
-    output: UnsafePointer[UInt32, MutAnyOrigin],
-    cdim_out: UnsafePointer[UInt32, MutAnyOrigin],
+    output: MutPointer[UInt32, MutAnyOrigin],
+    cdim_out: MutPointer[UInt32, MutAnyOrigin],
     p_count: UInt32,
 ):
     var smem = unsafe_stack_allocation[
-        W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
+        W, DType.uint32, address_space=.SHARED, alignment=16
     ]()
 
     var me = block_rank_in_cluster()
@@ -94,7 +94,7 @@ def dyn_dsmem_kernel(
         var me_i = Int(me)
         var p_i = Int(p_count)
         for r in range(p_i):
-            var v = load_cluster_smem[DType.uint32, W](smem, UInt32(r))
+            var v = load_cluster_smem[.uint32, W](smem, UInt32(r))
             comptime for w in range(W):
                 output[(me_i * p_i + r) * W + w] = v[w]
 
@@ -104,14 +104,14 @@ def dyn_dsmem_kernel(
 
 def run_dyn_dsmem_test[P: Int](ctx: DeviceContext) raises:
     var n = P * P * W
-    var out_dev = ctx.enqueue_create_buffer[DType.uint32](n)
+    var out_dev = ctx.enqueue_create_buffer[.uint32](n)
 
     # Sentinel-fill so a missing write is caught (not mistaken for a valid 0).
     with out_dev.map_to_host() as h:
         for i in range(n):
             h[i] = SENTINEL
 
-    var cdim_dev = ctx.enqueue_create_buffer[DType.uint32](P)
+    var cdim_dev = ctx.enqueue_create_buffer[.uint32](P)
     with cdim_dev.map_to_host() as h:
         for i in range(P):
             h[i] = SENTINEL

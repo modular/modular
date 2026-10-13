@@ -152,8 +152,8 @@ def test_nvfp4_quantization[
                     for m in range(SF_ATOM_K):
                         var coord = Coord(i, j, k, l, m)
                         assert_equal(
-                            scales_tensor_host_ref[coord].cast[DType.float64](),
-                            scales_tensor_host[coord].cast[DType.float64](),
+                            scales_tensor_host_ref[coord].cast[.float64](),
+                            scales_tensor_host[coord].cast[.float64](),
                         )
 
     var output_tensor_host_ref = TileTensor(

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -26,7 +27,7 @@ from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.lib.utils import upper_bounded_default
+from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -34,8 +35,31 @@ from max.pipelines.modeling.config_enums import (
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+logger = logging.getLogger("max.pipelines")
 
-def _glm_rope_scaling(huggingface_config: AutoConfig) -> dict[str, Any] | None:
+
+def glm_unpadded_vocab_size(
+    pipeline_config: PipelineConfig,
+) -> int | None:
+    """Returns the tokenizer's token count, or ``None`` to skip tail masking."""
+    try:
+        tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+            pipeline_config.model.huggingface_model_repo
+        )
+    except Exception as e:
+        # Skipping the mask leaves the untrained tail sampleable, so say so
+        # rather than degrading silently.
+        logger.warning(
+            "GLM-5.x: could not read the tokenizer vocab size (%s); the "
+            "padded vocab tail will not be masked.",
+            e,
+        )
+        return None
+
+    return len(tokenizer)
+
+
+def glm_rope_scaling(huggingface_config: AutoConfig) -> dict[str, Any] | None:
     """Return YaRN rope_scaling for MAX, or None for standard RoPE.
 
     GLM-5.x repos declare ``rope_parameters`` with ``rope_type: "default"``
@@ -79,6 +103,8 @@ class Glm5_1Config(DeepseekV3_2Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initialize config, mapping GLM default RoPE to ``rope_scaling=None``."""
         model_config = model_config or pipeline_config.model
@@ -140,14 +166,11 @@ class Glm5_1Config(DeepseekV3_2Config):
             norm_topk_prob=config.norm_topk_prob,
             hidden_act=config.hidden_act,
             max_position_embeddings=config.max_position_embeddings,
-            max_seq_len=upper_bounded_default(
-                upper_bound=config.max_position_embeddings,
-                default=model_config.max_length,
-            ),
+            max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=get_rope_theta(config),
-            rope_scaling=_glm_rope_scaling(config),
+            rope_scaling=glm_rope_scaling(config),
             rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
@@ -162,4 +185,5 @@ class Glm5_1Config(DeepseekV3_2Config):
                 config, "indexer_rope_interleave", False
             ),
             quantization_encoding=quantization_encoding,
+            unpadded_vocab_size=glm_unpadded_vocab_size(pipeline_config),
         )

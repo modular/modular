@@ -24,6 +24,7 @@ from unittest.mock import Mock, mock_open, patch
 import msgspec
 import pytest
 from huggingface_hub import errors as hf_hub_errors
+from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 from max.benchmark.benchmark_shared.datasets import (
     DATASET_REGISTRY,
     ArtificialAnalysisBenchmarkDataset,
@@ -54,19 +55,33 @@ from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
     TokenizerPool,
     _init_encoder,
 )
+from max.benchmark.benchmark_shared.datasets.agentic_tools import (
+    ToolConfig,
+)
+from max.benchmark.benchmark_shared.datasets.all import (
+    _resolve_agentic_tool_profiles,
+)
 from max.benchmark.benchmark_shared.datasets.chat_judge import (
     ChatJudgeBenchmarkDataset,
+)
+from max.benchmark.benchmark_shared.datasets.image_augmentation import (
+    augment_samples_with_images,
 )
 
 # Import the module under test
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
-    build_chat_samples_from_user_text_pool,
+    build_fitted_chat_samples,
     resolve_constant_delay_ms,
 )
 from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
     NEMOTRON_OPENCODE_REPO_ID,
     AnthropicTool,
     _anthropic_tool_to_openai,
+)
+from max.benchmark.benchmark_shared.datasets.types import (
+    ChatSamples,
+    OpenAIImage,
+    SessionMessage,
 )
 from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -114,6 +129,33 @@ def _fake_loader(
     return _FakeTokenizer(model_max_length=model_max_length or 4096)
 
 
+class _RoundTripTokenizer(_FakeTokenizer):
+    """Fake tokenizer whose decode(encode(x)) == x.
+
+    `_FakeTokenizer.decode` returns filler, which hides which pool a body came
+    from.
+    """
+
+    def encode(
+        self, text: str, add_special_tokens: bool = False, **_: object
+    ) -> list[int]:
+        return [ord(c) for c in text] or [32]
+
+    def decode(
+        self, ids: list[int], skip_special_tokens: bool = False, **_: object
+    ) -> str:
+        return "".join(chr(i) for i in ids)
+
+
+def _round_trip_loader(
+    name_or_path: str,
+    model_max_length: int | None,
+    trust_remote_code: bool,
+    revision: str | None,
+) -> _RoundTripTokenizer:
+    return _RoundTripTokenizer(model_max_length=model_max_length or 4096)
+
+
 def _raising_loader(
     name_or_path: str,
     model_max_length: int | None,
@@ -150,6 +192,25 @@ def test_init_encoder_exits_quietly_on_loader_failure() -> None:
     finally:
         root.handlers[:] = saved_handlers
         root.setLevel(saved_level)
+
+
+@pytest.mark.parametrize("disable_tqdm", [False, True])
+def test_tokenizer_pool_progress_keeps_input_order(
+    disable_tqdm: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Results stay in input order across many chunks, and the labelled
+    progress bar goes to stderr unless `disable_tqdm` is set."""
+    tok = _FakeTokenizer()
+    texts = ["x" * (4 + i % 97) for i in range(1000)]
+
+    with TokenizerPool(
+        tok, loader=_fake_loader, disable_tqdm=disable_tqdm
+    ) as pool:
+        lens = pool.encode_lens(texts, desc="test-progress")
+
+    assert lens == [len(text) for text in texts]
+    bar_shown = "test-progress" in capsys.readouterr().err
+    assert bar_shown is not disable_tqdm
 
 
 def test_dataset_registry_structure() -> None:
@@ -218,7 +279,7 @@ def test_dataset_registry_class_names_exist() -> None:
     """Test that all referenced class names exist in globals."""
     from max.benchmark.benchmark_shared import datasets
 
-    for _, dataset_info in DATASET_REGISTRY.items():
+    for dataset_info in DATASET_REGISTRY.values():
         class_name = dataset_info.class_name
         assert hasattr(datasets, class_name), (
             f"Class {class_name} not found in benchmark_shared.datasets"
@@ -448,6 +509,36 @@ def test_random_sample_requests() -> None:
     assert len(samples.requests) == 2
     for request in samples.requests:
         assert isinstance(request, SampledRequest)
+
+
+def test_random_sample_requests_with_images() -> None:
+    """--random-image-count/--random-image-size still work after the
+    _generate_random_image extraction into image_augmentation.py."""
+    tok = _FakeTokenizer(model_max_length=200)
+    dataset = BenchmarkDataset.from_flags(dataset_name="random")
+    assert isinstance(dataset, RandomBenchmarkDataset)
+
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=3,
+            tokenizer=tok,
+            pool=pool,
+            input_len="50",
+            output_len="10",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            image_size="64,64",
+            image_count=2,
+        )
+
+    assert len(samples.requests) == 3
+    for request in samples.requests:
+        assert len(request.encoded_images) == 2
+        for image in request.encoded_images:
+            assert image["type"] == "image_url"
+            assert image["image_url"]["url"].startswith(
+                "data:image/jpeg;base64,"
+            )
 
 
 def test_shared_contexts_empty_when_no_sys_prompt() -> None:
@@ -1008,10 +1099,61 @@ def test_instruct_coder_multiturn_fit_distributions(
         for assistant in session.messages[1::2]:
             assert assistant.source == "assistant"
             assert assistant.num_tokens == 20
-            assert assistant.delay_until_next_message == 100.0
+        # Each reply carries the delay before the turn that follows it; the
+        # last reply has no such turn.
+        assert [m.delay_until_next_message for m in session.messages[1::2]] == [
+            100.0,
+            100.0,
+            None,
+        ]
         for user in session.messages[0::2]:
             assert user.source == "user"
             assert user.num_tokens == 80
+
+
+@patch.object(InstructCoderBenchmarkDataset, "_load_pairs")
+def test_instruct_coder_multiturn_compatible_with_image_augmentation(
+    mock_load_pairs: Mock,
+) -> None:
+    """MXTOOLS-398: instruct-coder's --fit-distributions sessions can have
+    the general, dataset-agnostic image augmentation mixed in on top,
+    without instruct-coder needing its own image-generation logic."""
+    body = "hello world " * 80
+    mock_load_pairs.return_value = [(body, "line\n" * 60)] * 400
+
+    tok = _FakeTokenizer(model_max_length=50_000)
+    dataset = InstructCoderBenchmarkDataset()
+    dataset.dataset_path = "/tmp/instruct_coder_mock.json"
+
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = dataset.gen_multiturn_sessions(
+            num_sessions=4,
+            tokenizer=tok,
+            pool=pool,
+            shuffle=False,
+            fit_length_distributions=True,
+            num_turns="DU(3,3)",
+            input_len="80",
+            output_len="20",
+            delay_between_turns_dist="100",
+            sys_prompt_ratio=0.0,
+        )
+
+    augment_samples_with_images(
+        samples,
+        fraction=1.0,
+        image_count=1,
+        image_long_side=256,
+        image_aspect_ratio=1.0,
+        turn="first",
+    )
+
+    assert len(samples.chat_sessions) == 4
+    for session in samples.chat_sessions:
+        user_messages = [m for m in session.messages if m.source == "user"]
+        assert len(user_messages[0].images) == 1
+        for later in user_messages[1:]:
+            assert len(later.images) == 0
 
 
 def _write_chat_judge_file(path: Path) -> None:
@@ -1082,17 +1224,15 @@ def test_chat_judge_gen_chat_sessions_no_delay_by_default(
     assert all(m.delay_until_next_message is None for m in session.messages)
 
 
-def test_pool_wraps_with_pass_marker_when_exhausted() -> None:
-    """When planned turns exceed the pool, the iterator wraps and each new
-    pass prepends a ``[N] `` marker to the user body so cycled prompts stay
-    cache-distinct while still satisfying ``num_sessions``."""
+def test_every_user_body_is_marked_distinct() -> None:
+    """Every body carries its own ``[N] `` marker, wrap or no wrap."""
     tok = _FakeTokenizer(model_max_length=50_000)
     pool_texts = ["alpha body text", "beta body text", "gamma body text"]
     num_sessions = 5
     turns_per_session = 2  # 10 total turns, pool only has 3 -> wraps
 
     with TokenizerPool(tok, loader=_fake_loader) as pool:
-        samples = build_chat_samples_from_user_text_pool(
+        samples = build_fitted_chat_samples(
             pool=pool,
             user_text_pool=pool_texts,
             num_sessions=num_sessions,
@@ -1115,19 +1255,10 @@ def test_pool_wraps_with_pass_marker_when_exhausted() -> None:
 
     assert len(user_contents) == num_sessions * turns_per_session
 
-    # First pass through the pool: no marker.
-    for content in user_contents[: len(pool_texts)]:
-        assert not content.startswith("["), (
-            f"first-pass content should have no marker, got: {content!r}"
-        )
-
-    # Subsequent turns are stamped with their pass number.
-    expected_prefixes = ["[1] ", "[1] ", "[1] ", "[2] ", "[2] ", "[2] ", "[3] "]
-    for content, prefix in zip(
-        user_contents[len(pool_texts) :], expected_prefixes, strict=False
-    ):
-        assert content.startswith(prefix), (
-            f"expected {prefix!r} prefix, got: {content!r}"
+    # Numbered from the first body, monotonically, across the whole run.
+    for index, content in enumerate(user_contents):
+        assert content.startswith(f"[{index}] "), (
+            f"expected '[{index}] ' prefix, got: {content!r}"
         )
 
     # Marker token budget reservation keeps on-the-wire length close to target.
@@ -1138,6 +1269,33 @@ def test_pool_wraps_with_pass_marker_when_exhausted() -> None:
         for msg in session.messages[0::2]
     ):
         assert abs(user.num_tokens - target_in) <= 4
+
+
+def test_a_truncated_session_still_ends_without_a_delay() -> None:
+    """A truncated session's last reply carries no delay.
+
+    Truncation cuts the plan short, so the emitted last reply is not the
+    planned last one.
+    """
+    tok = _FakeTokenizer(model_max_length=200)
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=["alpha body text", "beta body text"],
+            num_sessions=2,
+            num_turns="3",  # only turn 0 fits the context budget
+            input_len="80",
+            output_len="20",
+            delay_between_turns_dist="30000",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            shuffle_pool=False,
+            log_prefix="test",
+        )
+    assert samples.chat_sessions, "expected truncated-but-usable sessions"
+    for session in samples.chat_sessions:
+        assert session.messages[-1].source == "assistant"
+        assert session.messages[-1].delay_until_next_message is None
 
 
 def test_truncated_sessions_logged_once_in_aggregate(
@@ -1156,7 +1314,7 @@ def test_truncated_sessions_logged_once_in_aggregate(
     )
     with caplog.at_level(logging.INFO, logger=module):
         with TokenizerPool(tok, loader=_fake_loader) as pool:
-            samples = build_chat_samples_from_user_text_pool(
+            samples = build_fitted_chat_samples(
                 pool=pool,
                 user_text_pool=pool_texts,
                 num_sessions=num_sessions,
@@ -1666,3 +1824,352 @@ def test_hf_hub_download_does_not_retry_offline_miss() -> None:
         with pytest.raises(hf_hub_errors.LocalEntryNotFoundError):
             hf_hub_download_with_retry(repo_id="org/d")
     assert mock_download.call_count == 1
+
+
+def _has_system_block(content: str) -> bool:
+    # build_scaled_user_message joins [system, body] with a blank line, and
+    # emits a single part when there is no system block.
+    return "\n\n" in content
+
+
+def test_system_prefix_lands_on_the_first_turn_only() -> None:
+    """A session resends its history, so a later system block is a duplicate."""
+    tok = _FakeTokenizer(model_max_length=50_000)
+
+    with TokenizerPool(tok, loader=_fake_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"body-{i} " * 40 for i in range(20)],
+            num_sessions=3,
+            num_turns="4",
+            input_len="400",
+            output_len="20",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0.5,
+            max_num_unique_sys_prompt=1,
+            shuffle_pool=False,
+            log_prefix="test-sys",
+        )
+
+    assert samples.chat_sessions
+    for session in samples.chat_sessions:
+        users = [m for m in session.messages if m.source == "user"]
+        assert len(users) == 4
+        assert _has_system_block(users[0].content)
+        for later in users[1:]:
+            assert not _has_system_block(later.content)
+
+    # The prefix must still reach warmup now that only turn 0 carries one.
+    assert samples.shared_contexts
+
+
+# ---------------------------------------------------------------------------
+# Agent rounds and text pools
+# ---------------------------------------------------------------------------
+
+
+def _tools(input_len: str = "40") -> list[ToolConfig]:
+    return [
+        ToolConfig.model_validate({"input-len": input_len, "output-len": "10"})
+    ]
+
+
+def _build(
+    tok: object,
+    loader: object,
+    *,
+    user_pool: list[str],
+    tool_pool: list[str] | None = None,
+    num_turns: str = "2",
+    rounds: str | None = "3",
+    sessions: int = 3,
+) -> ChatSamples:
+    with TokenizerPool(tok, loader=loader) as pool:  # type: ignore[arg-type]
+        return build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=user_pool,
+            num_sessions=sessions,
+            num_turns=num_turns,
+            input_len="40",
+            output_len="10",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            tools=_tools() if rounds is not None else None,
+            agentic_rounds_per_turn=rounds,
+            tool_text_pool=tool_pool,
+            log_prefix="test",
+        )
+
+
+def test_agent_rounds_draw_from_the_tool_pool() -> None:
+    """Rounds take their bodies from the tool pool, human turns from theirs.
+
+    The tool entries are all under ``min_input_len``: a real result can be one
+    or two tokens, so the pool filter that guards the human pool must not run
+    here. If it did, these would be dropped and the human pool silently reused.
+    """
+    tok = _RoundTripTokenizer(model_max_length=100_000)
+    samples = _build(
+        tok,
+        _round_trip_loader,
+        user_pool=[f"HUMAN-{i} " * 20 for i in range(8)],
+        tool_pool=["ok", "0", "ab", "xy"],
+    )
+    assert samples.chat_sessions
+    for session in samples.chat_sessions:
+        users = [m for m in session.messages if m.source == "user"]
+        assert len(users) == 8, "2 human turns, each followed by 3 rounds"
+        assert sum("HUMAN-" in m.content for m in users) == 2
+        assert [m.is_agentic for m in users].count(True) == 6
+        # Round-trip tokenizer scales by repeating, so the seed text survives.
+        rounds = [m.content for m in users if m.is_agentic]
+        assert all("HUMAN-" not in body for body in rounds)
+        assert all(
+            any(seed in body for seed in ("ok", "0", "ab", "xy"))
+            for body in rounds
+        )
+
+
+def test_tool_cycle_is_independent_of_the_human_cycle() -> None:
+    """A shared cycle would perturb the tool pool as the human pool wraps."""
+    tok = _RoundTripTokenizer(model_max_length=100_000)
+    samples = _build(
+        tok,
+        _round_trip_loader,
+        user_pool=[f"HUMAN-{i} " * 20 for i in range(2)],  # wraps at once
+        tool_pool=[f"TOOL-{i} " * 20 for i in range(500)],  # never wraps
+        sessions=6,
+    )
+    drawn = [
+        m.content.split("TOOL-")[1].split()[0]
+        for s in samples.chat_sessions
+        for m in s.messages
+        if m.source == "user" and "TOOL-" in m.content
+    ]
+    # 6 sessions x 2 turns x 3 rounds against a 500-entry pool, so the tool
+    # cycle never wraps and every round takes a fresh entry -- which a cycle
+    # shared with the fast-wrapping human pool could not do.
+    assert len(drawn) == 36
+    assert len(set(drawn)) == len(drawn)
+
+
+def test_full_flag_path_builds_the_documented_shape() -> None:
+    """S U A (U* A* ...) U A (U* A* ...), driven the way the CLI drives it."""
+    args = ServingBenchmarkConfig(
+        model="m",
+        dataset_name="instruct-coder",
+        fit_distributions=True,
+        num_chat_sessions=2,
+        agentic_tool_profiles={
+            "tools": [{"input-len": "40", "output-len": "10", "delay": "250"}]
+        },
+        agentic_rounds_per_turn="3",
+    )
+    tools = _resolve_agentic_tool_profiles(args)
+    assert tools is not None
+
+    tok = _RoundTripTokenizer(model_max_length=100_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"HUMAN-{i} " * 20 for i in range(8)],
+            num_sessions=2,
+            num_turns="2",
+            input_len="40",
+            output_len="10",
+            delay_between_turns_dist="30000",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            tools=tools,
+            agentic_rounds_per_turn=args.agentic_rounds_per_turn,
+            tool_text_pool=[f"TOOL-{i} " * 20 for i in range(60)],
+            log_prefix="test",
+        )
+
+    for session in samples.chat_sessions:
+        kinds = [
+            "U*" if m.is_agentic else "U"
+            for m in session.messages
+            if m.source == "user"
+        ]
+        assert kinds == ["U", "U*", "U*", "U*", "U", "U*", "U*", "U*"]
+        # Only the reply that closes a block waits on the human.
+        delays = [
+            m.delay_until_next_message
+            for m in session.messages
+            if m.source == "assistant"
+        ]
+        # Each reply carries the delay before whatever follows it: tool
+        # latency inside a block, human think-time before the next
+        # question. The session's last reply has nothing to follow it.
+        assert delays == [
+            250.0,
+            250.0,
+            250.0,
+            30000.0,
+            250.0,
+            250.0,
+            250.0,
+            None,
+        ]
+
+
+def _round_input_lens(samples: ChatSamples) -> list[int]:
+    return [
+        m.num_tokens
+        for s in samples.chat_sessions
+        for m in s.messages
+        if m.source == "user" and m.is_agentic
+    ]
+
+
+def _weighted_tools() -> list[ToolConfig]:
+    """Two tools whose input lengths tell them apart, 3:1 by weight."""
+    return [
+        ToolConfig.model_validate(
+            {"weight": 3, "input-len": "40", "output-len": "10"}
+        ),
+        ToolConfig.model_validate(
+            {"weight": 1, "input-len": "400", "output-len": "10"}
+        ),
+    ]
+
+
+def test_block_output_lengths_rotate_onto_the_calls() -> None:
+    """The block's decodes are tool calls; its answer to the human is last.
+
+    An assistant message inside the loop is the call to the *next* tool, so it
+    takes that tool's ``output-len``. Only the block's final assistant is the
+    prose answer, which is what ``--random-output-len`` describes.
+    """
+    tools = [
+        ToolConfig.model_validate(
+            {"input-len": "40", "output-len": "11", "delay": "200"}
+        )
+    ]
+    tok = _RoundTripTokenizer(model_max_length=1_000_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"HUMAN-{i} " * 30 for i in range(12)],
+            num_sessions=1,
+            num_turns="1",
+            input_len="50",
+            output_len="333",
+            delay_between_turns_dist="4000",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            tools=tools,
+            agentic_rounds_per_turn="2",
+            tool_text_pool=[f"TOOL-{i} " * 25 for i in range(12)],
+            log_prefix="test",
+        )
+    decodes = [
+        m.num_tokens
+        for m in samples.chat_sessions[0].messages
+        if m.source == "assistant"
+    ]
+    assert decodes == [11, 11, 333], (
+        "each in-loop decode is a tool call sized by its tool; the human's"
+        " output-len belongs to the final answer"
+    )
+
+
+def test_a_block_without_rounds_keeps_its_own_output_len() -> None:
+    """The rotation is the identity with no rounds, so S U A U A is intact."""
+    tok = _RoundTripTokenizer(model_max_length=1_000_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"HUMAN-{i} " * 30 for i in range(12)],
+            num_sessions=1,
+            num_turns="3",
+            input_len="50",
+            output_len="333",
+            delay_between_turns_dist="4000",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            log_prefix="test",
+        )
+    decodes = [
+        m.num_tokens
+        for m in samples.chat_sessions[0].messages
+        if m.source == "assistant"
+    ]
+    assert decodes == [333, 333, 333]
+
+
+@pytest.mark.parametrize(
+    ("tools", "rounds"),
+    [(None, "3"), (_tools(), None)],
+    ids=["rounds-without-tools", "tools-without-rounds"],
+)
+def test_agentic_arguments_are_required_together(
+    tools: list[ToolConfig] | None, rounds: str | None
+) -> None:
+    """Half a pair used to parse and then build a plain multiturn workload."""
+    tok = _RoundTripTokenizer(model_max_length=100_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        with pytest.raises(ValueError, match="must be given together"):
+            build_fitted_chat_samples(
+                pool=pool,
+                user_text_pool=["BODY " * 20],
+                num_sessions=1,
+                num_turns="1",
+                input_len="40",
+                output_len="10",
+                delay_between_turns_dist=None,
+                sys_prompt_ratio=0.0,
+                max_num_unique_sys_prompt=1,
+                tools=tools,
+                agentic_rounds_per_turn=rounds,
+            )
+
+
+def test_round_tool_mix_follows_the_weights() -> None:
+    tok = _RoundTripTokenizer(model_max_length=1_000_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"BODY-{i} " * 40 for i in range(50)],
+            num_sessions=40,
+            num_turns="2",
+            input_len="40",
+            output_len="10",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            tools=_weighted_tools(),
+            agentic_rounds_per_turn="25",
+            log_prefix="test",
+        )
+
+    lens = _round_input_lens(samples)
+    assert len(lens) == 40 * 2 * 25
+    light = sum(1 for n in lens if n < 100)
+    # 3:1 over 2000 draws; binomial sd is ~20, so this is generous.
+    assert 0.70 < light / len(lens) < 0.80
+
+
+def test_session_message_images_defaults_to_empty() -> None:
+    """SessionMessage.images defaults to empty so existing multi-turn
+    workloads are unaffected until a later stage populates it."""
+    message = SessionMessage(source="user", content="hi", num_tokens=1)
+    assert message.images == []
+
+
+def test_session_message_images_can_be_populated() -> None:
+    image: OpenAIImage = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/jpeg;base64,AAA"},
+    }
+    message = SessionMessage(
+        source="user", content="hi", num_tokens=1, images=[image]
+    )
+    assert message.images == [image]

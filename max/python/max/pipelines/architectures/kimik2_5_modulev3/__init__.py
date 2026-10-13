@@ -16,7 +16,8 @@ from .arch import (
     kimik2_5_modulev3_arch,
     kimivl_modulev3_arch,
 )
-from .model import KimiK2_5Model, KimiK2_5ModelInputs
+from .inputs import KimiK2_5ModelInputs
+from .model import KimiK2_5Model
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig, VisionConfig
 from .reasoning import KimiK2_5ReasoningParser
 from .tool_parser import KimiToolParser

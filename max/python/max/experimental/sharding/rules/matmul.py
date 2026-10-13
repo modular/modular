@@ -19,8 +19,8 @@ from max.experimental.sharding.placements import Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.graph.dim import Dim, StaticDim
 
-from ..action import ActionSet, AxisAssignment
-from ..cost import P, R, build_action_set
+from ..action import AxisAssignment
+from ..cost import P, R
 
 
 def _is_size_one(dim: Dim) -> bool:
@@ -77,20 +77,20 @@ def _mm_rows(lhs: TensorLayout, rhs: TensorLayout) -> list[AxisAssignment]:
     out_rank = max(lhs.rank, rhs.rank)
     M_out, N_out = out_rank - 2, out_rank - 1
 
-    rows: list[AxisAssignment] = [AxisAssignment((R, R), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R, R), (R,))]
     for d in _shared_batch(lhs, rhs):
-        rows.append(AxisAssignment((Sharded(d), Sharded(d)), Sharded(d)))
+        rows.append(AxisAssignment((Sharded(d), Sharded(d)), (Sharded(d),)))
     for d in _lhs_batch(lhs, rhs):
-        rows.append(AxisAssignment((Sharded(d), R), Sharded(d)))
+        rows.append(AxisAssignment((Sharded(d), R), (Sharded(d),)))
     for d in _rhs_batch(lhs, rhs):
-        rows.append(AxisAssignment((R, Sharded(d)), Sharded(d)))
+        rows.append(AxisAssignment((R, Sharded(d)), (Sharded(d),)))
     rows.extend(
         [
-            AxisAssignment((Sharded(M_lhs), R), Sharded(M_out)),
-            AxisAssignment((R, Sharded(N_rhs)), Sharded(N_out)),
-            AxisAssignment((Sharded(K_lhs), Sharded(K_rhs)), P),
-            AxisAssignment((P, R), P),
-            AxisAssignment((R, P), P),
+            AxisAssignment((Sharded(M_lhs), R), (Sharded(M_out),)),
+            AxisAssignment((R, Sharded(N_rhs)), (Sharded(N_out),)),
+            AxisAssignment((Sharded(K_lhs), Sharded(K_rhs)), (P,)),
+            AxisAssignment((P, R), (P,)),
+            AxisAssignment((R, P), (P,)),
         ]
     )
     return rows
@@ -99,40 +99,40 @@ def _mm_rows(lhs: TensorLayout, rhs: TensorLayout) -> list[AxisAssignment]:
 def _vv_rows() -> list[AxisAssignment]:
     """Vector x vector: (K,) @ (K,) -> scalar; both contract on K."""
     return [
-        AxisAssignment((R, R), R),
-        AxisAssignment((Sharded(0), Sharded(0)), P),
-        AxisAssignment((P, R), P),
-        AxisAssignment((R, P), P),
+        AxisAssignment((R, R), (R,)),
+        AxisAssignment((Sharded(0), Sharded(0)), (P,)),
+        AxisAssignment((P, R), (P,)),
+        AxisAssignment((R, P), (P,)),
     ]
 
 
 def _vm_rows(rhs: TensorLayout) -> list[AxisAssignment]:
     """Vector x matrix: (K,) @ (..., K, N) -> (..., N)."""
-    rows: list[AxisAssignment] = [AxisAssignment((R, R), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R, R), (R,))]
     for d in range(rhs.rank - 2):
-        rows.append(AxisAssignment((R, Sharded(d)), Sharded(d)))
+        rows.append(AxisAssignment((R, Sharded(d)), (Sharded(d),)))
     rows.append(
-        AxisAssignment((R, Sharded(rhs.rank - 1)), Sharded(rhs.rank - 2))
+        AxisAssignment((R, Sharded(rhs.rank - 1)), (Sharded(rhs.rank - 2),))
     )
-    rows.append(AxisAssignment((Sharded(0), Sharded(rhs.rank - 2)), P))
-    rows.extend([AxisAssignment((P, R), P), AxisAssignment((R, P), P)])
+    rows.append(AxisAssignment((Sharded(0), Sharded(rhs.rank - 2)), (P,)))
+    rows.extend([AxisAssignment((P, R), (P,)), AxisAssignment((R, P), (P,))])
     return rows
 
 
 def _mv_rows(lhs: TensorLayout) -> list[AxisAssignment]:
     """Matrix x vector: (..., M, K) @ (K,) -> (..., M)."""
-    rows: list[AxisAssignment] = [AxisAssignment((R, R), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R, R), (R,))]
     for d in range(lhs.rank - 2):
-        rows.append(AxisAssignment((Sharded(d), R), Sharded(d)))
+        rows.append(AxisAssignment((Sharded(d), R), (Sharded(d),)))
     rows.append(
-        AxisAssignment((Sharded(lhs.rank - 2), R), Sharded(lhs.rank - 2))
+        AxisAssignment((Sharded(lhs.rank - 2), R), (Sharded(lhs.rank - 2),))
     )
-    rows.append(AxisAssignment((Sharded(lhs.rank - 1), Sharded(0)), P))
-    rows.extend([AxisAssignment((P, R), P), AxisAssignment((R, P), P)])
+    rows.append(AxisAssignment((Sharded(lhs.rank - 1), Sharded(0)), (P,)))
+    rows.extend([AxisAssignment((P, R), (P,)), AxisAssignment((R, P), (P,))])
     return rows
 
 
-def matmul_rule(lhs: TensorLayout, rhs: TensorLayout) -> ActionSet:
+def matmul_rule(lhs: TensorLayout, rhs: TensorLayout) -> list[AxisAssignment]:
     """Strategies for ``matmul``: vector-vector / vector-matrix / matrix-matrix variants."""
     if lhs.rank == 1 and rhs.rank == 1:
         rows = _vv_rows()
@@ -142,16 +142,15 @@ def matmul_rule(lhs: TensorLayout, rhs: TensorLayout) -> ActionSet:
         rows = _mv_rows(lhs)
     else:
         rows = _mm_rows(lhs, rhs)
-    return build_action_set(rows, layouts=(lhs, rhs))
+    return rows
 
 
-def outer_rule(lhs: TensorLayout, rhs: TensorLayout) -> ActionSet:
+def outer_rule(lhs: TensorLayout, rhs: TensorLayout) -> list[AxisAssignment]:
     """Strategies for ``outer``: 1-D x 1-D -> 2-D outer product."""
-    rows = [
-        AxisAssignment((R, R), R),
-        AxisAssignment((Sharded(0), R), Sharded(0)),
-        AxisAssignment((R, Sharded(0)), Sharded(1)),
-        AxisAssignment((P, R), P),
-        AxisAssignment((R, P), P),
+    return [
+        AxisAssignment((R, R), (R,)),
+        AxisAssignment((Sharded(0), R), (Sharded(0),)),
+        AxisAssignment((R, Sharded(0)), (Sharded(1),)),
+        AxisAssignment((P, R), (P,)),
+        AxisAssignment((R, P), (P,)),
     ]
-    return build_action_set(rows, layouts=(lhs, rhs))

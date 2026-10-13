@@ -47,22 +47,25 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import hashlib
-import logging
 import weakref
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from max import _core, driver
 from max._core.dialects import builtin
 from max._mlir_context import in_default_mlir_context
+from max.driver._hazard import (
+    render_producer_error,
+    stamp_device_write,
+)
 from max.dtype import DType
 from max.experimental import _passes
 from max.experimental.executor import (
     CompilingExecutor,
     Executor,
     InterpreterExecutor,
+    UnsupportedGraphError,
     default_executor,
 )
 from max.experimental.support import (
@@ -82,7 +85,6 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Graph,
-    Type,
     Value,
     ops,
 )
@@ -123,55 +125,51 @@ def set_seed(value: int) -> None:
 # ─── Shared signal-buffer cache (allocated once per device set) ──────────
 
 
-# maxsize=4: one entry per unique device-set configuration.  Most users
-# have a single configuration; testing may use a few more.  On eviction
-# the next call re-allocates (expensive but correct).
+def _signal_bytes() -> int:
+    """Returns the size in bytes of one signal buffer."""
+    # Imported here because ``max.nn`` depends on this package.
+    from max.nn.comm.allreduce import (  # type: ignore[import-not-found]
+        Signals,
+    )
+
+    return Signals.NUM_BYTES
+
+
+def _allocate_signals(device_ids: tuple[int, ...]) -> list[driver.Buffer]:
+    """Allocates and initializes one signal buffer per device."""
+    from max.nn.comm.allreduce import Signals
+
+    return Signals.allocate([driver.Accelerator(id=i) for i in device_ids])
+
+
+def _signal_buffer_types(device_ids: tuple[int, ...]) -> list[BufferType]:
+    """Returns the graph input types of the signal buffers of ``device_ids``.
+
+    This allocates nothing. A graph declares the signal buffers as inputs
+    when it is built, which may happen on a machine without the devices.
+    """
+    return [
+        BufferType(
+            dtype=DType.uint8,
+            shape=(_signal_bytes(),),
+            device=DeviceRef.GPU(id=i),
+        )
+        for i in device_ids
+    ]
+
+
+# One entry per set of devices. Most programs use one set; tests may use a
+# few. An evicted entry is allocated again on the next call.
 @functools.lru_cache(maxsize=4)
 def _cached_signal_buffers(
     device_ids: tuple[int, ...],
 ) -> tuple[list[driver.Buffer], list[BufferType]]:
-    """Returns (runtime_buffers, buffer_types) for the given GPU device IDs.
+    """Returns the signal buffers and their types for the given devices.
 
-    Signal buffers are 1025 MB each — far too expensive to re-allocate per
-    eager graph.  ``lru_cache`` ensures they are allocated once for each
-    unique device set and reused for all subsequent graphs.
-
-    Using ``lru_cache`` on an immutable key (tuple of ints) is thread-safe
-    and avoids mutable module-level state.  In pytest-xdist each worker is
-    a separate process, so there are no cross-worker conflicts.
+    Signal buffers are large, so they are allocated once per set of devices
+    and shared by every graph that runs on those devices.
     """
-    # Signal buffers: 1 MB signal + 256 MB communication scratch per GPU.
-    # Must stay in sync with ``Signals.NUM_BYTES`` in ``max.nn.comm.allreduce``
-    # and the Mojo ``Signal`` struct size. 1 GiB scratch supports
-    # hidden_dim * max_batch_input_tokens * dtype_bytes up to ~1 GiB
-    # (e.g., Kimi-K2.5 at hidden_dim=20480, max_batch_input_tokens=16384).
-    _NUM_BYTES = (1 + 1024) * 1024 * 1024
-
-    try:
-        driver.enable_all_peer_access()
-    except RuntimeError:
-        logging.getLogger(__name__).warning(
-            "Failed to enable peer-to-peer GPU access. "
-            "Collective operations will fall back to slower paths."
-        )
-
-    accelerators = [driver.Accelerator(id=i) for i in device_ids]
-    runtime_bufs = [
-        driver.Buffer.zeros(
-            shape=(_NUM_BYTES,), dtype=DType.uint8, device=accel
-        )
-        for accel in accelerators
-    ]
-    for accel in accelerators:
-        accel.synchronize()
-
-    buf_types = [
-        BufferType(
-            dtype=DType.uint8, shape=(_NUM_BYTES,), device=DeviceRef.GPU(id=i)
-        )
-        for i in device_ids
-    ]
-    return runtime_bufs, buf_types
+    return _allocate_signals(device_ids), _signal_buffer_types(device_ids)
 
 
 def _make_unrealized(
@@ -182,8 +180,7 @@ def _make_unrealized(
     """Wraps graph values into a Tensor, dispatching to sharded constructor if needed."""
     state = RealizationState(values, ctx)
     if mapping is not None and mapping.mesh.num_devices > 1:
-        placements = mapping.to_placements()
-        return Tensor._from_unrealized_shards(state, mapping.mesh, placements)
+        return Tensor._from_unrealized_shards(state, mapping)
     return Tensor(state=state)
 
 
@@ -305,16 +302,33 @@ class EagerRealizationContext(RealizationContext):
         # All graph inputs (tensor data + signal buffers) go through
         # self.sources — signal buffers are registered there by
         # ensure_signal_buffers().
-        input_buffers = [
-            self.sources[inp._mlir_value].driver_tensor for inp in graph.inputs
-        ]
+        input_buffers: list[driver.Buffer] = []
+        mutated_inputs: list[driver.Buffer] = []
+        # graph.inputs excludes what remove_unused_arguments dropped.
+        for inp in graph.inputs:
+            buffer = self.sources[inp._mlir_value].driver_tensor
+            input_buffers.append(buffer)
+            if isinstance(inp, BufferValue):
+                mutated_inputs.append(buffer)
 
-        results = self._executor.execute(graph, input_buffers)
+        try:
+            results = self._executor.execute(graph, input_buffers)
+        except UnsupportedGraphError:
+            # Nothing was enqueued, so nothing needs poisoning.
+            raise
+        except BaseException as executor_error:
+            # Enqueued work can still land in a mutated source.
+            stamp_device_write(
+                mutated_inputs,
+                error=render_producer_error(executor_error),
+            )
+            raise
 
         # Update tensors to realized.
         # Each tensor consumes num_shards consecutive results (1 for
         # unsharded, N for sharded).
         result_idx = 0
+        written = list(mutated_inputs)
         for tensor in outputs:
             n = tensor.num_shards
             extracted = results[result_idx : result_idx + n]
@@ -326,6 +340,7 @@ class EagerRealizationContext(RealizationContext):
             tensor._storages = tuple(cast(list[driver.Buffer], extracted))
             tensor._state = None
             result_idx += n
+            written.extend(tensor._storages)
 
         # Update mutated buffer inputs to realized
         for source in self.sources.values():
@@ -333,6 +348,10 @@ class EagerRealizationContext(RealizationContext):
             # Mark the tensor as realized again.
             if source._state and source._state.ctx is self:
                 source._state = None
+
+        # Must precede the seed read below, which is a host read of one of
+        # these buffers.
+        stamp_device_write(written, input_buffers)
 
         new_seed, *outputs = outputs
         set_seed(new_seed.item())
@@ -507,21 +526,11 @@ class LazyRealizationContext(EagerRealizationContext):
         self.graph.__exit__(exception_type, exception, traceback)
 
 
-def _fresh_subgraph_name(graph: Graph, base: str) -> str:
-    """Returns ``base`` or a numbered variant not yet registered on ``graph``."""
-    if base not in graph._subgraphs:
-        return base
-    i = 1
-    while f"{base}_{i}" in graph._subgraphs:
-        i += 1
-    return f"{base}_{i}"
-
-
 class GraphRealizationContext(RealizationContext):
     """A realization context for ahead-of-time graph compilation.
 
     This context is used when building computation graphs that will be compiled
-    and executed later (e.g., during :meth:`~max.experimental.nn.Module.compile`). Tensors in this
+    and executed later (such as during :meth:`~max.experimental.nn.Module.compile`). Tensors in this
     context remain as symbolic graph values and cannot be realized.
 
     Unlike eager contexts, this context does not support executing operations
@@ -540,17 +549,20 @@ class GraphRealizationContext(RealizationContext):
     graph: Graph
     """The graph being constructed in this context."""
     signal_buffers: list[BufferValue] | None
-    #: Subgraph dedup table; armed by ``Module.compile``, ``None`` inlines.
+    #: Subgraph dedup table; armed by the root trace, ``None`` inlines.
     subgraph_cache: dict[Any, Any] | None
     #: Output tree structure per keyed subgraph, so a caller that reuses a
     #: cached subgraph (skipping its body trace) can still rebuild the call's
     #: results. Keyed by the same dedup key as :attr:`subgraph_cache`.
     subgraph_out_defs: dict[str, Any]
+    #: What names here are relative to: the enclosing call's prefix, or ``""``.
+    prefix: str
 
     def __init__(
         self,
         graph: Graph,
         signal_buffers: list[BufferValue] | None = None,
+        prefix: str = "",
     ):
         """Initializes the graph realization context.
 
@@ -558,11 +570,13 @@ class GraphRealizationContext(RealizationContext):
             graph: The graph to construct operations in.
             signal_buffers: GPU signal buffer graph values for
                 multi-device collective ops.
+            prefix: What names recorded in this graph are relative to.
         """
         self.graph = graph
         self.signal_buffers = signal_buffers
         self.subgraph_cache = None
         self.subgraph_out_defs = {}
+        self.prefix = prefix
 
     async def realize_all(self) -> list[Tensor]:
         """Raises TypeError - graph contexts cannot realize tensors.
@@ -686,72 +700,22 @@ def lazy() -> Generator[None]:
         yield
 
 
-def define_subgraph(
-    ctx: GraphRealizationContext | LazyRealizationContext,
-    name: str,
-    input_types: Sequence[Type[Any]],
-    build_body: Callable[[list[Value[Any]]], Sequence[Value[Any]]],
-    *,
-    key: str | None = None,
-) -> Graph:
-    """Defines a deduplicated subgraph on ``ctx`` and returns it.
+def subgraph_context() -> (
+    GraphRealizationContext | LazyRealizationContext | None
+):
+    """The context a subgraph would be defined on here, or what inlines instead.
 
-    Works for any graph-building context — ahead-of-time graph or lazy — since
-    it reasons only in graph values and so is independent of when ``ctx``
-    realizes. ``build_body(inputs) -> outputs`` traces the body.
-
-    Bodies are deduplicated so a repeated call reuses one definition. When
-    ``key`` is given, it is the dedup key: two calls with the same ``key`` share
-    a definition and the caller vouches that their bodies match. When ``key`` is
-    ``None``, the body's IR hash is the key, so only bodies that print to
-    identical IR share.
-
-    ``ctx``'s signal buffers are appended as trailing subgraph inputs so
-    collectives in the body work; the caller passes the matching signal values
-    (``ctx.signal_buffers``) when it emits :func:`~max.graph.ops.call`.
+    Returns:
+        The root trace context when one is capturing and armed for
+        deduplication, and :obj:`None` when a body belongs inline.
     """
-    cache = ctx.subgraph_cache
-    if cache is None:
-        raise TypeError("define_subgraph requires the root trace context.")
-
-    if key is not None and (subgraph := cache.get(key)) is not None:
-        return subgraph
-
-    signals = ctx.signal_buffers or []
-    name = _fresh_subgraph_name(ctx.graph, key or name)
-    subgraph = ctx.graph.add_subgraph(
-        name,
-        input_types=[*input_types, *(b.type for b in signals)],
-        custom_extensions=ctx.graph.kernel_libraries_paths,
-        devices=list(ctx.graph.device_chains),
-    )
-    n = len(input_types)
-    child = GraphRealizationContext(
-        subgraph,
-        signal_buffers=[i.buffer for i in subgraph.inputs[n:]] or None,
-    )
-    # child.subgraph_cache stays None, so a nested call in the body inlines.
-    with realization_context(child), child:
-        subgraph.output(*build_body(list(subgraph.inputs[:n])))
-
-    if key is None:
-        # No user key: dedup on the body's IR. Blank only the first ``"{name}"``
-        # (the op's own sym_name), leaving an identical name string in the body
-        # (e.g. a custom op) untouched, so an identical body hashes the same
-        # regardless of its fresh name.
-        asm = subgraph._mlir_op.get_asm(
-            assume_verified=True,
-            enable_debug_info=False,
-            print_generic_op_form=True,
-            use_local_scope=True,
-        ).replace(f'"{name}"', '"_"', 1)
-        key = hashlib.sha256(asm.encode()).hexdigest()
-    if key in cache:
-        ctx.graph._subgraphs.pop(name, None)
-        subgraph._mlir_op.erase()
-        return cache[key]
-    cache[key] = subgraph
-    return subgraph
+    ctx = current_realization_context(None)
+    if (
+        isinstance(ctx, (GraphRealizationContext, LazyRealizationContext))
+        and ctx.subgraph_cache is not None
+    ):
+        return ctx
+    return None
 
 
 __all__ = [

@@ -16,7 +16,7 @@ from std.math import iota
 from std.sys import exit, has_accelerator
 
 from max.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 
 comptime num_elements = 20
 
@@ -63,9 +63,7 @@ def main() raises:
         var ctx = DeviceContext()
 
         # Create a buffer in host (CPU) memory to store our input data
-        var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
-            num_elements
-        )
+        var host_buffer = ctx.enqueue_create_host_buffer[.float32](num_elements)
 
         # Wait for buffer creation to complete.
         ctx.synchronize()
@@ -75,9 +73,7 @@ def main() raises:
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
-        var device_buffer = ctx.enqueue_create_buffer[DType.float32](
-            num_elements
-        )
+        var device_buffer = ctx.enqueue_create_buffer[.float32](num_elements)
 
         # Copy data from host memory to device memory for GPU processing.
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)

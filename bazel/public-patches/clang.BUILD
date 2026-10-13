@@ -19,11 +19,25 @@ filegroup(
     srcs = glob(["bin/*ld*"]),
 )
 
+# Shared libraries the toolchain binaries load at runtime -- currently the ICU 70
+# that LLVM's prebuilt lld links, bundled into lib/ by
+# bazel/third-party/sysroot/update-toolchains.sh and reached via each binary's
+# $ORIGIN/../lib rpath. These must be staged as inputs wherever the tools run
+# (sandboxed + remote link actions), so they are wired into the linker driver
+# tool's data in bazel/internal/cc-toolchain/tools.
+filegroup(
+    name = "runtime_libs",
+    srcs = glob(
+        ["lib/*.so*"],
+        allow_empty = True,
+    ),
+)
+
 filegroup(
     name = "include",
     srcs = [
-        "lib/clang/22/include",
-        "lib/clang/22/share",  # sanitizer default ignore lists
+        "lib/clang/23/include",
+        "lib/clang/23/share",  # sanitizer default ignore lists
     ],
 )
 
@@ -34,7 +48,7 @@ directory(
 
 filegroup(
     name = "resource_directory_filegroup",
-    srcs = ["lib/clang/22"],
+    srcs = ["lib/clang/23"],
 )
 
 directory(

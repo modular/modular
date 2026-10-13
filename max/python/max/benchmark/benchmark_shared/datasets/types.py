@@ -76,10 +76,9 @@ class ChatMessage(BaseModel):
     # TODO: wire sys_prompt_ratio support with "system" role through the
     # multi-turn path.
     role: str
-    # content is always list[TextContentBlock] in prompts produced by this
-    # codebase.  The str variant exists to match the OpenAI spec and to support
-    # _prepend_run_prefix_to_formatted_prompt, which handles both shapes
-    # defensively.
+    # Usually list[TextContentBlock], but not guaranteed: agentic-code passes
+    # plain-string content straight through from its dataset. Consumers that
+    # index or append to content must handle both shapes.
     content: str | list[TextContentBlock | ImageContentBlock]
 
 
@@ -127,6 +126,16 @@ class PixelGenerationSampledRequest(SampledRequest):
 
 MessageSource = Literal["user", "assistant", "system"]
 
+# Which user turn(s) of a multi-turn session an augmentation may act on.
+#
+# The selector is shared; the unit each augmentation's fraction draws in is
+# not. Draw per session when the payload persists into later turns, per turn
+# when it does not: images ride in the message history, a response_format is
+# per-request. That also decides whether "first" survives a warmed session --
+# the prefix loop resends its images but never sets response_format
+# (CENG-1086).
+TurnSelector = Literal["first", "last", "every"]
+
 
 @dataclass
 class SessionMessage:
@@ -134,6 +143,18 @@ class SessionMessage:
     content: str
     num_tokens: int
     delay_until_next_message: float | None = None
+    # An agent-loop round; the wire role is still "user".
+    is_agentic: bool = False
+    # Any image tokens are already counted in `num_tokens`, so consumers
+    # must not add them again.
+    images: list[OpenAIImage] = field(default_factory=list)
+    # Constrains this turn's response when set. Only a "user" message carries
+    # one; an assistant message is replayed history and asks the server for
+    # nothing.
+    response_format: ResponseFormat | None = None
+    # Sent as this turn's chat-completions ``tools`` field. Like
+    # ``response_format``, only a "user" message carries one.
+    tools: list[dict[str, Any]] | None = None
 
 
 @dataclass
@@ -144,7 +165,7 @@ class ChatSession:
 
     @property
     def num_turns(self) -> int:
-        """Number of user-initiated turns (model invocations) in the session."""
+        """Model invocations, agent-loop rounds included: the request count."""
         return sum(1 for m in self.messages if m.source == "user")
 
 

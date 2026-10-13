@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """GPU implementation of stencil computation."""
 
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.math.uutils import udivmod
@@ -110,9 +110,9 @@ def _stencil_impl_gpu[
     ), "Only stencil spatial axes [1, 2] are supported"
 
     # GPU kernel implementation
-    @always_inline
+    @inline(.always)
     def stencil_kernel() {
-        imm shape,
+        var shape,
         var input_shape,
         var map_func,
         var map_strides_func,

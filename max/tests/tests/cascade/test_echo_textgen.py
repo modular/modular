@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.experimental.cascade import GenerateRequest, LocalRuntime
+from max.experimental.cascade import LocalRuntime, TextGenOptions
 from max.experimental.cascade.core.pipeline_method import _pipeline_method_scope
 from max.experimental.cascade.pipelines.echo_textgen import (
     EchoTextGenPipeline,
@@ -34,7 +34,7 @@ async def test_echo_transformer_replays_prompt() -> None:
     prompt = np.array([10, 20, 30], dtype=np.int32)
     async with LocalRuntime() as rt, _pipeline_method_scope():
         transformer = await rt.deploy(EchoTransformer())
-        req = GenerateRequest(num_tokens=3)
+        req = TextGenOptions(num_tokens=3)
         chunks = [c async for c in await transformer.decode(req, prompt)]
 
     # One token per chunk, replaying the prompt in order.
@@ -50,7 +50,7 @@ async def test_echo_transformer_cycles_and_matches_num_tokens() -> None:
     prompt = np.array([1, 2], dtype=np.int32)
     async with LocalRuntime() as rt, _pipeline_method_scope():
         transformer = await rt.deploy(EchoTransformer())
-        req = GenerateRequest(num_tokens=5)
+        req = TextGenOptions(num_tokens=5)
         tokens = [
             int(np.asarray(c).reshape(-1)[0])
             async for c in await transformer.decode(req, prompt)
@@ -65,7 +65,7 @@ async def test_echo_transformer_empty_prompt() -> None:
     prompt = np.array([], dtype=np.int32)
     async with LocalRuntime() as rt, _pipeline_method_scope():
         transformer = await rt.deploy(EchoTransformer())
-        req = GenerateRequest(num_tokens=4)
+        req = TextGenOptions(num_tokens=4)
         chunks = [c async for c in await transformer.decode(req, prompt)]
 
     assert chunks == []

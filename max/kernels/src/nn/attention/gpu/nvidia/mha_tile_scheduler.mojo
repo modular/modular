@@ -23,11 +23,11 @@ from std.collections import OptionalReg
 
 from std.atomic import Atomic
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from max.gpu.host.info import H100
-from std.gpu import block_idx, thread_idx
-from std.gpu.primitives.id import cluster_dim
+from max.gpu import block_idx, thread_idx
+from max.gpu.primitives.id import cluster_dim
 from max.gpu.sync import barrier, named_barrier
 from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 
@@ -53,11 +53,11 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     # Whether work tile is completely OOB.
     var is_valid_tile: Bool
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         return self.is_valid_tile
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
@@ -86,7 +86,7 @@ struct SeqInfo(TrivialRegisterPassable):
     var head_idx: UInt32
     var prompt_idx: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self, seq_len: UInt32, start_of_seq: UInt32, work: WorkInfo
     ):
@@ -96,12 +96,12 @@ struct SeqInfo(TrivialRegisterPassable):
         self.head_idx = work.head_idx
         self.prompt_idx = work.prompt_idx
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         return self.seq_len > self.prompt_offset
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def create[
         ValidLengthType: OptionalPointer,
         //,
@@ -143,11 +143,11 @@ struct MHASchedulerSynchronization(TrivialRegisterPassable):
     comptime ALL = Self(2)  # use when all threads are synced
     comptime DEFAULT = Self.PRODUCER  # default is currently copy-async
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
@@ -166,29 +166,25 @@ struct MHATileState(TrivialRegisterPassable):
     var idx: UInt32
 
     @__allow_legacy_any_origin_fields
-    var sidx_ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]
+    var sidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED]
     var max_idx: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         idx: UInt32,
-        sidx_ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        sidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         max_idx: UInt32,
     ):
         self.idx = idx
         self.sidx_ptr = sidx_ptr
         self.max_idx = max_idx
 
-    @always_inline
+    @inline(.always)
     def is_valid(self, idx: UInt32) -> Bool:
         return idx < self.max_idx
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         return self.is_valid(self.idx)
 
@@ -215,7 +211,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
     var valid_length: Self.ValidLengthType
     var max_seq_len: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         batch_size: UInt32,
@@ -228,7 +224,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         self.valid_length = valid_length
         self.max_seq_len = max_seq_len
 
-    @always_inline
+    @inline(.always)
     def _index_to_coords[
         num_heads: UInt32,
         schedule: MHASchedule,
@@ -240,7 +236,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
 
         return self._index_to_coords_default[num_heads](idx)
 
-    @always_inline
+    @inline(.always)
     def _index_to_coords_default[
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
@@ -265,7 +261,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
 
         return (prompt_tile_idx, head_idx, prompt_idx)
 
-    @always_inline
+    @inline(.always)
     def _index_to_coords_prompt_rotate[
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
@@ -282,7 +278,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
 
         return (prompt_tile_idx, head_idx, prompt_idx)
 
-    @always_inline
+    @inline(.always)
     def get_current_work_info[
         tile_shape: UInt32,
         num_heads: UInt32,
@@ -304,7 +300,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
             is_valid,
         )
 
-    @always_inline
+    @inline(.always)
     def unsafe_get_current_work_info[
         tile_shape: UInt32,
         num_heads: UInt32,
@@ -325,11 +321,11 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
             True,
         )
 
-    @always_inline
+    @inline(.always)
     def max_idx(self, num_heads: UInt32) -> UInt32:
         return self.max_num_prompt_tiles * self.batch_size * num_heads
 
-    @always_inline
+    @inline(.always)
     def get_current_work_info[
         tile_shape: UInt32,
         num_heads: UInt32,
@@ -340,17 +336,17 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def grid_dim[
         num_heads: UInt32
     ](max_num_prompt_tiles: UInt32, batch_size: UInt32) -> Tuple[Int, Int, Int]:
         return (Int(max_num_prompt_tiles), Int(num_heads), Int(batch_size))
 
-    @always_inline
+    @inline(.always)
     def seq_info(self, work: WorkInfo) -> SeqInfo:
         return SeqInfo.create(work, self.valid_length, self.max_seq_len)
 
-    @always_inline
+    @inline(.always)
     def unsafe_seq_info[
         tile_shape: UInt32,
         num_heads: UInt32,
@@ -361,7 +357,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         ](idx)
         return SeqInfo.create(work, self.valid_length, self.max_seq_len)
 
-    @always_inline
+    @inline(.always)
     def unsafe_seq_info[
         tile_shape: UInt32,
         num_heads: UInt32,
@@ -400,7 +396,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def advance[
         ValidLengthType: OptionalPointer,
         //,
@@ -434,7 +430,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
         ...
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
@@ -447,15 +443,13 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def initial_state[
         ValidLengthType: OptionalPointer,
         //,
     ](
         self,
-        ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         """Create the initial state object.
@@ -472,7 +466,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
         """
         ...
 
-    @always_inline
+    @inline(.always)
     def unsafe_seq_info[
         ValidLengthType: OptionalPointer,
         //,
@@ -483,7 +477,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct MHASchedule(TrivialRegisterPassable):
+struct MHASchedule(EnumLike, TrivialRegisterPassable):
     """Enumerates the scheduling strategy for mapping work tiles to thread blocks.
 
     `DEFAULT` orders tiles to maximize KV-cache locality; `PROMPT_ROTATE`
@@ -496,11 +490,32 @@ struct MHASchedule(TrivialRegisterPassable):
     comptime DEFAULT = Self(0)
     comptime PROMPT_ROTATE = Self(1)
 
-    @always_inline
+    comptime _enum_case_names = ParameterList.of[
+        "DEFAULT".value,
+        "PROMPT_ROTATE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "MHASchedule has no payload"
+
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
@@ -561,7 +576,7 @@ struct TransientScheduler[
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self](self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -579,15 +594,15 @@ struct TransientScheduler[
             + "]"
         )
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         self.num_partitions = 1
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, num_partitions: UInt32):
         self.num_partitions = num_partitions
 
-    @always_inline
+    @inline(.always)
     def get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
         # Each cluster of `cluster_size` CTAs owns one Q-tile; recover the tile
         # index by dividing out the cluster. For the dynamic split-K path the
@@ -629,7 +644,7 @@ struct TransientScheduler[
             True,
         )
 
-    @always_inline
+    @inline(.always)
     def get_current_work_info[
         ValidLengthType: OptionalPointer,
         //,
@@ -638,7 +653,7 @@ struct TransientScheduler[
     ) -> WorkInfo:
         return self.get_current_work_info(ts.max_num_prompt_tiles)
 
-    @always_inline
+    @inline(.always)
     def advance[
         ValidLengthType: OptionalPointer,
         //,
@@ -653,7 +668,7 @@ struct TransientScheduler[
         return None
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
@@ -668,7 +683,7 @@ struct TransientScheduler[
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def grid_dim(
         batch_size: UInt32,
         max_num_prompt_tiles: UInt32,
@@ -691,20 +706,18 @@ struct TransientScheduler[
             Int(batch_size),
         )
 
-    @always_inline
+    @inline(.always)
     def initial_state[
         ValidLengthType: OptionalPointer,
         //,
     ](
         self,
-        ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
-        return MHATileState.__init__(0, ptr, 1)
+        return MHATileState(0, ptr, 1)
 
-    @always_inline
+    @inline(.always)
     def unsafe_seq_info[
         ValidLengthType: OptionalPointer,
         //,
@@ -751,7 +764,7 @@ struct TileScheduler[
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self](self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -767,11 +780,11 @@ struct TileScheduler[
             + "]"
         )
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         pass
 
-    @always_inline
+    @inline(.always)
     def get_current_work_info[
         ValidLengthType: OptionalPointer,
         //,
@@ -782,7 +795,7 @@ struct TileScheduler[
             Self.tile_shape, Self.num_heads, Self.schedule
         ](state)
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work(
         self,
         ts: MHATileSummary,
@@ -793,7 +806,7 @@ struct TileScheduler[
             Self.tile_shape, Self.num_heads, Self.schedule
         ](state.idx)
 
-    @always_inline
+    @inline(.always)
     def advance[
         ValidLengthType: OptionalPointer,
         //,
@@ -813,35 +826,33 @@ struct TileScheduler[
         ](state.idx)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        var bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+        var bx, by, bz = MHATileSummary[NullPointer[.uint32]].grid_dim[
             Self.num_heads
         ](max_num_prompt_tiles, batch_size)
         var size = min(Int(Self.num_ctas), bx * by * bz)
         return (size, 1, 1)
 
-    @always_inline
+    @inline(.always)
     def initial_state[
         ValidLengthType: OptionalPointer,
         //,
     ](
         self,
-        ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         return MHATileState(
             UInt32(block_idx.x), ptr, tile_summary.max_idx(Self.num_heads)
         )
 
-    @always_inline
+    @inline(.always)
     def unsafe_seq_info[
         ValidLengthType: OptionalPointer,
         //,
@@ -878,21 +889,19 @@ struct QueuedTileScheduler[
 
     # Linear work tile index i.e. idx-th work among all possible workload.
     @__allow_legacy_any_origin_fields
-    var gidx_ptr: UnsafePointer[
-        UInt32, MutAnyOrigin, address_space=AddressSpace.GLOBAL
-    ]
+    var gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.GLOBAL]
 
     comptime may_advance: Bool = True
     comptime mha_schedule: MHASchedule = Self.schedule
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         gidx_ptr: UnsafePointer[UInt32, MutAnyOrigin],
     ):
-        self.gidx_ptr = gidx_ptr.address_space_cast[AddressSpace.GLOBAL]()
+        self.gidx_ptr = gidx_ptr.address_space_cast[.GLOBAL]()
 
-    @always_inline
+    @inline(.always)
     def get_current_work_info[
         ValidLengthType: OptionalPointer,
         //,
@@ -903,7 +912,7 @@ struct QueuedTileScheduler[
             Self.tile_shape, Self.num_heads, Self.schedule
         ](state)
 
-    @always_inline
+    @inline(.always)
     def advance[
         ValidLengthType: OptionalPointer,
         //,
@@ -981,28 +990,26 @@ struct QueuedTileScheduler[
         ](state)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def grid_dim(
         batch_size: UInt32, max_num_prompt_tiles: UInt32
     ) -> Tuple[Int, Int, Int]:
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        var bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+        var bx, by, bz = MHATileSummary[NullPointer[.uint32]].grid_dim[
             Self.num_heads
         ](max_num_prompt_tiles, batch_size)
         var size = min(Int(Self.num_ctas), bx * by * bz)
         return (size, 1, 1)
 
-    @always_inline
+    @inline(.always)
     def initial_state[
         ValidLengthType: OptionalPointer,
         //,
     ](
         self,
-        ptr: UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ],
+        ptr: UnsafePointer[UInt32, MutAnyOrigin, address_space=.SHARED],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
         var state = MHATileState(
@@ -1013,7 +1020,7 @@ struct QueuedTileScheduler[
             state.sidx_ptr.store(state.idx)
         return state
 
-    @always_inline
+    @inline(.always)
     def unsafe_seq_info[
         ValidLengthType: OptionalPointer,
         //,
@@ -1037,9 +1044,9 @@ struct QueuedTileScheduler[
             encoder: The device specific type encoder.
             target: The target address to store the device type.
         """
-        encoder.encode(self, target)
+        encoder.encode_fields[Self](self, target)
 
-    @no_inline
+    @inline(.never)
     @staticmethod
     def get_type_name() -> String:
         """Gets the name of the host type (the one implementing this trait).

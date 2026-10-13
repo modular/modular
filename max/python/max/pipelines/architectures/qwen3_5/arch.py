@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import dataclasses
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.qwen3vl_moe.context import (
     Qwen3VLTextAndVisionContext,
 )
 from max.pipelines.lib import SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Qwen3_5BatchProcessor
 from .memory_planner import Qwen3_5MemoryPlanner
@@ -30,7 +32,7 @@ from .weight_adapters import convert_qwen3_5_state_dict
 qwen3_5_arch = SupportedArchitecture(
     name="Qwen3_5ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["Qwen/Qwen3.5-27B"],
+    example_repo_ids=["Qwen/Qwen3.5-27B", "Qwen/Qwen3.8-27B"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Qwen3_5Config.DEFAULT_ENCODING,
     supported_encodings=Qwen3_5Config.SUPPORTED_ENCODINGS,
@@ -40,14 +42,27 @@ qwen3_5_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3_5_state_dict,
     },
-    required_arguments={
-        "enable_prefix_caching": False,  # TODO: Remove when Deltanet supports prefix caching
-    },
+    # Declaring the state leaves is what selects the Jenga pool.
+    checkpoints_recurrent_state=True,
     config=Qwen3_5Config,
     batching=Qwen3_5BatchProcessor,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
     memory_planner=Qwen3_5MemoryPlanner,
-    supports_device_graph_capture=False,
+    # A warmup probe's state pages are freed with its KV, so a sweep of probes
+    # cannot exhaust them.
+    supports_device_graph_capture=True,
+)
+
+
+# Text-only checkpoints saved from the language model alone (model_type
+# "qwen3_5_text", such as the Mapika decision models) put the text config at
+# the top level and have no vision tower. They share the Qwen3.5 layout, so
+# this architecture serves them under their own architectures[0] name.
+qwen3_5_text_arch = dataclasses.replace(
+    qwen3_5_arch,
+    name="Qwen3_5ForCausalLM",
+    example_repo_ids=["Mapika/decider-0.8b", "Mapika/decider-2b"],
+    input_modalities={InputModality.TEXT},
 )

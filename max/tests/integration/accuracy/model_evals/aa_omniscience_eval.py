@@ -51,6 +51,7 @@ from eval_common import (
     build_chat_kwargs,
     dump_jsonl,
     dump_score,
+    finish_stats,
     judge,
     make_client,
     run_parallel,
@@ -231,6 +232,8 @@ def score(results: list[dict[str, Any]]) -> dict[str, Any]:
         "truncated": truncated,
         "mean_output_tokens_finished": mean_finished,
         "p50_output_tokens_finished": p50_finished,
+        # Grading here is the four-way ``verdict``; only CORRECT is a hit.
+        **finish_stats(results, is_correct=lambda r: r["verdict"] == "CORRECT"),
     }
 
 

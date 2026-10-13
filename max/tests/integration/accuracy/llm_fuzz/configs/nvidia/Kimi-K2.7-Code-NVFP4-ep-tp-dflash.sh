@@ -26,6 +26,10 @@
 # --max-num-steps, --enable-prefix-caching, --device-memory-utilization,
 # and any draft quantization override (the draft checkpoint is bf16).
 
+# Launch via //max_private:max_private. The tiered KV connector below is
+# backed by the Rust kv_tier_connector pyo3 extension, which only the
+# private target bundles; the public one dies at startup importing it.
+use_max_private=1
 batch_size=64
 max_length=262144
 
@@ -38,8 +42,7 @@ extra_pipelines_args=(
   --speculative-method=dflash
   --num-speculative-tokens=7
   --kv-cache-format=float8_e4m3fn
-  --kv-connector=tiered
-  --kv-connector-config '{"host_kvcache_swap_space_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered","disk_offload_max_gb":1024}'
+  --kv-connector-config '{"type":"tiered","host_offload_max_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered","disk_offload_max_gb":1024}'
   --reasoning-parser=kimik2_5
   --tool-parser=kimik2_5
   --enable-structured-output

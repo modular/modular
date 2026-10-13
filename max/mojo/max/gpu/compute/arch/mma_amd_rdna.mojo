@@ -21,7 +21,7 @@ Reference: https://gpuopen.com/learn/wmma_on_rdna3/
 from std.sys import llvm_intrinsic
 from std.sys.info import _is_amd_rdna3, _is_amd_rdna4
 from std.memory import bitcast
-from std.gpu import lane_id
+from std._gpu import lane_id
 
 # Import helper functions from parent module
 from ..mma import _has_type, _has_shape, _unsupported_mma_op
@@ -32,7 +32,7 @@ from ..mma import _has_type, _has_shape, _unsupported_mma_op
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
@@ -47,7 +47,7 @@ def _load_matrix_a_amd_rdna[
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_x = lane & 15
-    var a = SIMD[DType.float16, 16]()
+    var a = SIMD[.float16, 16]()
 
     comptime for i in range(16):
         var a_idx = ldm * (tile_row + thread_x) + tile_col + i
@@ -56,7 +56,7 @@ def _load_matrix_a_amd_rdna[
     return a
 
 
-@always_inline
+@inline(.always)
 def _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
@@ -71,7 +71,7 @@ def _load_matrix_a_amd_rdna[
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_x = lane & 15
-    var a = SIMD[DType.bfloat16, 16]()
+    var a = SIMD[.bfloat16, 16]()
 
     comptime for i in range(16):
         var a_idx = ldm * (tile_row + thread_x) + tile_col + i
@@ -80,7 +80,7 @@ def _load_matrix_a_amd_rdna[
     return a
 
 
-@always_inline
+@inline(.always)
 def _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
@@ -95,7 +95,7 @@ def _load_matrix_b_amd_rdna[
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_y = lane & 15
-    var b = SIMD[DType.float16, 16]()
+    var b = SIMD[.float16, 16]()
 
     comptime for i in range(16):
         var b_idx = ldm * (tile_row + i) + tile_col + thread_y
@@ -104,7 +104,7 @@ def _load_matrix_b_amd_rdna[
     return b
 
 
-@always_inline
+@inline(.always)
 def _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
@@ -119,7 +119,7 @@ def _load_matrix_b_amd_rdna[
     comptime assert m == 16 and n == 16 and k == 16
     var lane = lane_id()
     var thread_y = lane & 15
-    var b = SIMD[DType.bfloat16, 16]()
+    var b = SIMD[.bfloat16, 16]()
 
     comptime for i in range(16):
         var b_idx = ldm * (tile_row + i) + tile_col + thread_y
@@ -128,13 +128,13 @@ def _load_matrix_b_amd_rdna[
     return b
 
 
-@always_inline
+@inline(.always)
 def load_matrix_a_amd_rdna16x16x16(
     a_ptr: Pointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float16, 16]:
+) -> SIMD[.float16, 16]:
     """Loads 16×16×16 matrix A tile for RDNA (Wave32) architecture.
 
     This function is optimized for AMD RDNA GPUs (Radeon RX 7000 series)
@@ -158,13 +158,13 @@ def load_matrix_a_amd_rdna16x16x16(
     return _load_matrix_a_amd_rdna[16, 16, 16](a_ptr, tile_row, tile_col, ldm)
 
 
-@always_inline
+@inline(.always)
 def load_matrix_a_amd_rdna16x16x16(
     a_ptr: Pointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.bfloat16, 16]:
+) -> SIMD[.bfloat16, 16]:
     """Loads 16×16×16 matrix A tile for RDNA (Wave32) architecture.
 
     This function is optimized for AMD RDNA GPUs (Radeon RX 7000 series)
@@ -188,13 +188,13 @@ def load_matrix_a_amd_rdna16x16x16(
     return _load_matrix_a_amd_rdna[16, 16, 16](a_ptr, tile_row, tile_col, ldm)
 
 
-@always_inline
+@inline(.always)
 def load_matrix_b_amd_rdna16x16x16(
     b_ptr: Pointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.float16, 16]:
+) -> SIMD[.float16, 16]:
     """Loads 16×16×16 matrix B tile for RDNA (Wave32) architecture.
 
     This function is optimized for AMD RDNA GPUs (Radeon RX 7000 series)
@@ -218,13 +218,13 @@ def load_matrix_b_amd_rdna16x16x16(
     return _load_matrix_b_amd_rdna[16, 16, 16](b_ptr, tile_row, tile_col, ldm)
 
 
-@always_inline
+@inline(.always)
 def load_matrix_b_amd_rdna16x16x16(
     b_ptr: Pointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-) -> SIMD[DType.bfloat16, 16]:
+) -> SIMD[.bfloat16, 16]:
     """Loads 16×16×16 matrix B tile for RDNA (Wave32) architecture.
 
     This function is optimized for AMD RDNA GPUs (Radeon RX 7000 series)
@@ -253,7 +253,7 @@ def load_matrix_b_amd_rdna16x16x16(
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs AMD RDNA3+ WMMA (Wave Matrix Multiply-Accumulate) operations.
 
@@ -368,7 +368,6 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
           - Section 7.5 (8-bit Math) for FP8/BF8 details
     """
 
-    @__parameter
     def get_intrinsic_name() -> String:
         # ===------------------------------------------------------------------===#
         # F32 = F16 * F16 + F32 (16x16x16)
@@ -388,13 +387,22 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 comptime type_name = "f16" if a.dtype == DType.float16 else "bf16"
                 return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         elif (
             a.dtype.is_float8()
             and b.dtype.is_float8()
-            and c.dtype == DType.float32
-            and d.dtype == DType.float32
+            and c.dtype == .float32
+            and d.dtype == .float32
         ):
             comptime if _is_amd_rdna4():
                 # E4M3 formats map to fp8, E5M2 formats map to bf8
@@ -424,17 +432,35 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 elif a_is_e5m2 and b_is_e4m3:
                     return "llvm.amdgcn.wmma.f32.16x16x16.bf8.fp8"
                 else:
-                    _unsupported_mma_op(d, a, b, c)
+                    _unsupported_mma_op[
+                        d.dtype,
+                        d.length,
+                        a.dtype,
+                        a.length,
+                        b.dtype,
+                        b.length,
+                        c.dtype,
+                        c.length,
+                    ]()
                     return ""
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         elif (
             _is_amd_rdna3()
             and a.dtype.is_float8()
             and b.dtype.is_float8()
-            and c.dtype == DType.float32
-            and d.dtype == DType.float32
+            and c.dtype == .float32
+            and d.dtype == .float32
         ):
             comptime if _has_shape[4](a.length, b.length, c.length, d.length):
                 return "llvm.amdgcn.wmma.f32.16x16x16.f16"
@@ -446,13 +472,22 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             ):
                 return "llvm.amdgcn.wmma.f32.16x16x16.f16"
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         elif (
-            (a.dtype == DType.int8 or a.dtype == DType.uint8)
-            and (b.dtype == DType.int8 or b.dtype == DType.uint8)
-            and c.dtype == DType.int32
-            and d.dtype == DType.int32
+            (a.dtype == .int8 or a.dtype == .uint8)
+            and (b.dtype == .int8 or b.dtype == .uint8)
+            and c.dtype == .int32
+            and d.dtype == .int32
         ):
             comptime if _is_amd_rdna3() or _is_amd_rdna4():
                 comptime if _has_shape[(16, 16, 8, 8)](
@@ -460,16 +495,35 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 ):
                     return "llvm.amdgcn.wmma.i32.16x16x16.iu8"
                 else:
-                    _unsupported_mma_op(d, a, b, c)
+                    _unsupported_mma_op[
+                        d.dtype,
+                        d.length,
+                        a.dtype,
+                        a.length,
+                        b.dtype,
+                        b.length,
+                        c.dtype,
+                        c.length,
+                    ]()
+
                     return ""
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         elif (
-            a.dtype == DType._uint4
-            and b.dtype == DType._uint4
-            and c.dtype == DType.int32
-            and d.dtype == DType.int32
+            a.dtype == ._uint4
+            and b.dtype == ._uint4
+            and c.dtype == .int32
+            and d.dtype == .int32
         ):
             comptime if _is_amd_rdna3() or _is_amd_rdna4():
                 comptime if _has_shape[(16, 16, 8, 8)](
@@ -477,25 +531,52 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 ):
                     return "llvm.amdgcn.wmma.i32.16x16x16.iu4"
                 else:
-                    _unsupported_mma_op(d, a, b, c)
+                    _unsupported_mma_op[
+                        d.dtype,
+                        d.length,
+                        a.dtype,
+                        a.length,
+                        b.dtype,
+                        b.length,
+                        c.dtype,
+                        c.length,
+                    ]()
                     return ""
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         else:
-            _unsupported_mma_op(d, a, b, c)
+            _unsupported_mma_op[
+                d.dtype,
+                d.length,
+                a.dtype,
+                a.length,
+                b.dtype,
+                b.length,
+                c.dtype,
+                c.length,
+            ]()
             return ""
 
     comptime if _is_amd_rdna3() and a.dtype.is_float8():
         comptime target_dtype = DType.bfloat16 if (
-            a.dtype == DType.float8_e5m2 or a.dtype == DType.float8_e5m2fnuz
+            a.dtype == .float8_e5m2 or a.dtype == .float8_e5m2fnuz
         ) else DType.float16
         comptime intrinsic_suffix = "bf16" if (
-            a.dtype == DType.float8_e5m2 or a.dtype == DType.float8_e5m2fnuz
+            a.dtype == .float8_e5m2 or a.dtype == .float8_e5m2fnuz
         ) else "f16"
 
         comptime if a.length == 16 and b.length == 16:
-            var result = c.cast[DType.float32]()
+            var result = c.cast[.float32]()
             comptime intrinsic_name = "llvm.amdgcn.wmma.f32.16x16x16." + intrinsic_suffix
 
             comptime for i in range(4):
@@ -505,9 +586,9 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 var c_chunk = result.slice[4, offset=offset]()
                 var a_converted = a_chunk.cast[target_dtype]()
                 var b_converted = b_chunk.cast[target_dtype]()
-                var r_chunk = llvm_intrinsic[
-                    intrinsic_name, SIMD[DType.float32, 4]
-                ](a_converted, b_converted, c_chunk)
+                var r_chunk = llvm_intrinsic[intrinsic_name, SIMD[.float32, 4]](
+                    a_converted, b_converted, c_chunk
+                )
                 result = result.insert[offset=offset](r_chunk)
 
             d = rebind[type_of(d)](result)
@@ -532,7 +613,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         # gfx12 pick this lane's 8-wide half of the replicated 16-wide fragment.
         var second_half = _is_amd_rdna4() and (lane_id() & 16) != 0
 
-        comptime if a.dtype == DType.float16:
+        comptime if a.dtype == .float16:
             comptime if _is_amd_rdna4():
                 var a8 = a.slice[8, offset=8]() if second_half else a.slice[
                     8, offset=0
@@ -549,11 +630,11 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                     a, b, c
                 )
                 d = rebind[type_of(d)](r)
-        elif a.dtype == DType.bfloat16:
+        elif a.dtype == .bfloat16:
             # BF16 fragments are passed to the intrinsic as packed int16.
             comptime if _is_amd_rdna4():
-                var ai = bitcast[DType.int16, 16](a)
-                var bi = bitcast[DType.int16, 16](b)
+                var ai = bitcast[.int16, 16](a)
+                var bi = bitcast[.int16, 16](b)
                 var a8 = ai.slice[8, offset=8]() if second_half else ai.slice[
                     8, offset=0
                 ]()
@@ -566,7 +647,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 d = rebind[type_of(d)](r)
             else:
                 var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
-                    bitcast[DType.int16, 16](a), bitcast[DType.int16, 16](b), c
+                    bitcast[.int16, 16](a), bitcast[.int16, 16](b), c
                 )
                 d = rebind[type_of(d)](r)
         elif a.dtype.is_float8():
@@ -578,10 +659,10 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 8, offset=0
             ]()
             var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
-                bitcast[DType.int32, 2](a8), bitcast[DType.int32, 2](b8), c
+                bitcast[.int32, 2](a8), bitcast[.int32, 2](b8), c
             )
             d = rebind[type_of(d)](r)
-        elif a.dtype == DType.int8 or a.dtype == DType.uint8:
+        elif a.dtype == .int8 or a.dtype == .uint8:
             # iu8: the interleaved `i1` signedness and trailing `i1` clamp are
             # immediates; A/B pack to `<4 x i32>` (gfx11) or `<2 x i32>` (gfx12).
             comptime a_signed = a.dtype == DType.int8
@@ -595,9 +676,9 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 ]()
                 var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
                     a_signed,
-                    bitcast[DType.int32, 2](a8),
+                    bitcast[.int32, 2](a8),
                     b_signed,
-                    bitcast[DType.int32, 2](b8),
+                    bitcast[.int32, 2](b8),
                     c,
                     False,
                 )
@@ -605,9 +686,9 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
                     a_signed,
-                    bitcast[DType.int32, 4](a),
+                    bitcast[.int32, 4](a),
                     b_signed,
-                    bitcast[DType.int32, 4](b),
+                    bitcast[.int32, 4](b),
                     c,
                     False,
                 )
@@ -623,9 +704,9 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 ]()
                 var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
                     False,
-                    bitcast[DType.int32, 1](a8),
+                    bitcast[.int32, 1](a8),
                     False,
-                    bitcast[DType.int32, 1](b8),
+                    bitcast[.int32, 1](b8),
                     c,
                     False,
                 )
@@ -633,12 +714,21 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             else:
                 var r = llvm_intrinsic[intrinsic_name, SIMD[c.dtype, 8]](
                     False,
-                    bitcast[DType.int32, 2](a),
+                    bitcast[.int32, 2](a),
                     False,
-                    bitcast[DType.int32, 2](b),
+                    bitcast[.int32, 2](b),
                     c,
                     False,
                 )
                 d = rebind[type_of(d)](r)
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()

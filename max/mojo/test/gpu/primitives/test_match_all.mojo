@@ -19,17 +19,17 @@ three backends: NVIDIA's `match.all.sync`, the CDNA `readfirstlane`/ballot fold,
 and the Apple Silicon shuffle check.
 """
 
-from std.gpu import lane_id
-from std.gpu.globals import WARP_SIZE
+from max.gpu import lane_id
+from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
-from std.gpu.primitives.warp import match_all
+from max.gpu.primitives.warp import match_all
 from std.testing import assert_equal, TestSuite
 
 
 def _match_all_probe[
     dtype: DType,
 ](
-    values: Pointer[Scalar[dtype], MutAnyOrigin],
+    values: Pointer[Scalar[dtype], ImmutAnyOrigin],
     out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
@@ -43,13 +43,13 @@ def _check[
 ](ctx: DeviceContext, name: String, values: List[Scalar[dtype]]) raises:
     var n = len(values)
     var v_host = ctx.enqueue_create_host_buffer[dtype](n)
-    var out_host = ctx.enqueue_create_host_buffer[DType.uint64](n)
+    var out_host = ctx.enqueue_create_host_buffer[.uint64](n)
     ctx.synchronize()
     for i in range(n):
         v_host[i] = values[i]
 
     var v_dev = ctx.enqueue_create_buffer[dtype](n)
-    var out_dev = ctx.enqueue_create_buffer[DType.uint64](n)
+    var out_dev = ctx.enqueue_create_buffer[.uint64](n)
     ctx.enqueue_copy(v_dev, v_host)
     ctx.enqueue_function[_match_all_probe[dtype]](
         v_dev, out_dev, grid_dim=1, block_dim=n

@@ -37,6 +37,7 @@ modular_py_library(
     ],
     imports = ["."],
     deps = [
+        ":test_helpers",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -65,10 +66,6 @@ modular_eager_py_test(
     cpu_only = True,
     # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
     env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
-    ignore_extra_deps = [
-        # lazy import
-        "//max/python/max/_interpreter_ops",
-    ],
     imports = ["."],
     per_test_shard_count = {
         "module/test_compiled_simulated_cpu.py": 9,
@@ -83,7 +80,6 @@ modular_eager_py_test(
         ":test_base",
         ":test_helpers",
         "//max/python/max:tensor",
-        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -126,16 +122,10 @@ modular_eager_py_test(
         "functional/test_*_simulated_gpu.py",
         "module/test_*_simulated_gpu.py",
     ]),
-    # See tests_simulated_cpu (SDLC-4307).
-    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
-    ignore_extra_deps = [
-        # lazy import
-        "//max/python/max/_interpreter_ops",
-    ],
     imports = ["."],
     tags = ["gpu"],
     target_compatible_with = select({
@@ -146,7 +136,6 @@ modular_eager_py_test(
     deps = [
         ":test_base",
         ":test_helpers",
-        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/experimental",
     ],
@@ -224,3 +213,30 @@ modular_eager_py_test(
     )
     for src in glob(["module/test_*_multi_gpu.py"])
 ]
+
+# Regression test for a `call_on_mesh` result landing under the wrong
+# device (see `_join` in dispatch.py) -- needs only 2 real, distinct
+# devices, unlike the 4-GPU tests above.
+modular_eager_py_test(
+    name = "functional/test_dispatch_device_mismatch_2gpu",
+    size = "enormous",
+    srcs = ["functional/test_dispatch_device_mismatch_2gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_multi_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/experimental",
+        requirement("numpy"),
+    ],
+)

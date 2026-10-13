@@ -27,24 +27,27 @@ def gated_group_rmsnorm(
     eps: float,
     group_size: int,
 ) -> TensorValue:
-    """Fused gated group-RMSNorm (HF ``Zamba2RMSNormGated``, ``norm_before_gate=False``).
+    """Fuses the gated group-RMSNorm (HF ``Zamba2RMSNormGated`` with
+    ``norm_before_gate=False``) into a single dispatch.
 
-    Collapses ``cast(y->f32) -> silu(gate)*y -> group rms_norm -> *norm_weight ->
-    cast`` into one dispatch. ``y`` and ``gate`` are ``[N, intermediate]``;
-    ``norm_weight`` is fp32 ``[intermediate]``. Each contiguous ``group_size``
-    slice of the intermediate axis is normalized independently. Returns the model
-    dtype (``y.dtype``), so the downstream ``out_proj`` cast is a no-op.
+    Collapses ``cast(y->f32) -> silu(gate)*y -> group rms_norm ->
+    *norm_weight -> cast`` into one op. ``y`` and ``gate`` are
+    ``[N, intermediate]``; ``norm_weight`` is fp32 ``[intermediate]``.
+    Each contiguous ``group_size`` slice of the intermediate axis is
+    normalized independently. Returns the model dtype (``y.dtype``), so
+    the downstream ``out_proj`` cast is a no-op.
 
     Args:
-        y: ``[N, intermediate]`` SSD scan output (model dtype).
-        gate: ``[N, intermediate]`` gate projection (any float dtype; may be a
-            strided split view of the fused in-proj).
-        norm_weight: ``[intermediate]`` fp32 RMSNorm weight.
-        eps: Epsilon inside ``rsqrt(mean_sq + eps)``.
-        group_size: Width of each normalized group (``intermediate // n_groups``).
+        y: The ``[N, intermediate]`` SSD scan output (model dtype).
+        gate: The ``[N, intermediate]`` gate projection (any float dtype;
+            may be a strided split view of the fused in-proj).
+        norm_weight: The ``[intermediate]`` fp32 RMSNorm weight.
+        eps: The epsilon inside ``rsqrt(mean_sq + eps)``.
+        group_size: The width of each normalized group
+            (``intermediate // n_groups``).
 
     Returns:
-        ``[N, intermediate]`` in ``y.dtype``.
+        The ``[N, intermediate]`` result in ``y.dtype``.
     """
     device = y.device
     out_type = TensorType(y.dtype, [y.shape[0], y.shape[1]], device)

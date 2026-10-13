@@ -13,7 +13,7 @@
 
 """Figures 13.16, 13.18, 13.19, 13.20: Circular buffer merge kernel implementation in Mojo."""
 
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -67,9 +67,9 @@ def co_rank(
 
 def co_rank_circular(
     k: Int,
-    A: UnsafePointer[Scalar[DType.int32], _, address_space=AddressSpace.SHARED],
+    A: UnsafePointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Scalar[DType.int32], _, address_space=AddressSpace.SHARED],
+    B: UnsafePointer[Int32, _, address_space=.SHARED],
     n: Int,
     A_S_start: Int,
     B_S_start: Int,
@@ -120,9 +120,9 @@ def co_rank_circular(
 
 
 def merge_sequential_circular(
-    A: UnsafePointer[Scalar[DType.int32], _, address_space=AddressSpace.SHARED],
+    A: UnsafePointer[Int32, _, address_space=.SHARED],
     m: Int,
-    B: UnsafePointer[Scalar[DType.int32], _, address_space=AddressSpace.SHARED],
+    B: UnsafePointer[Int32, _, address_space=.SHARED],
     n: Int,
     C: UnsafePointer[Int32, MutAnyOrigin],
     A_S_start: Int,
@@ -196,13 +196,13 @@ def merge_circular_buffer_kernel(
     # Allocate shared memory
     var A_S = unsafe_stack_allocation[
         1024,
-        Scalar[DType.int32],
-        address_space=AddressSpace.SHARED,
+        Int32,
+        address_space=.SHARED,
     ]()
     var B_S = unsafe_stack_allocation[
         1024,
-        Scalar[DType.int32],
-        address_space=AddressSpace.SHARED,
+        Int32,
+        address_space=.SHARED,
     ]()
 
     # Block-level co-rank (same as tiled version)
@@ -212,8 +212,8 @@ def merge_circular_buffer_kernel(
     var C_next = min((block_idx.x + 1) * ceildiv(m + n, grid_size), m + n)
 
     if thread_idx.x == 0:
-        A_S[0] = Scalar[DType.int32](co_rank(C_curr, A, m, B, n))
-        A_S[1] = Scalar[DType.int32](co_rank(C_next, A, m, B, n))
+        A_S[0] = Int32(co_rank(C_curr, A, m, B, n))
+        A_S[1] = Int32(co_rank(C_next, A, m, B, n))
 
     barrier()
 
@@ -251,9 +251,7 @@ def merge_circular_buffer_kernel(
                 A_S[
                     (A_S_start + (tile_size - A_S_consumed) + i + thread_idx.x)
                     % tile_size
-                ] = Scalar[DType.int32](
-                    A[Int(A_curr) + A_consumed + i + thread_idx.x]
-                )
+                ] = Int32(A[Int(A_curr) + A_consumed + i + thread_idx.x])
 
         # Loading B_S_consumed elements into B_S
         for i in range(0, B_S_consumed, Int(128)):  # blockDim.x = 128
@@ -264,9 +262,7 @@ def merge_circular_buffer_kernel(
                 B_S[
                     (B_S_start + (tile_size - B_S_consumed) + i + thread_idx.x)
                     % tile_size
-                ] = Scalar[DType.int32](
-                    B[B_curr + B_consumed + i + thread_idx.x]
-                )
+                ] = Int32(B[B_curr + B_consumed + i + thread_idx.x])
 
         barrier()
 
@@ -400,9 +396,9 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_A = ctx.enqueue_create_buffer[DType.int32](m)
-    var d_B = ctx.enqueue_create_buffer[DType.int32](n)
-    var d_C = ctx.enqueue_create_buffer[DType.int32](total)
+    var d_A = ctx.enqueue_create_buffer[.int32](m)
+    var d_B = ctx.enqueue_create_buffer[.int32](n)
+    var d_C = ctx.enqueue_create_buffer[.int32](total)
 
     # Copy to device
     ctx.enqueue_copy(d_A, h_A)

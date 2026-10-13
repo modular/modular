@@ -23,7 +23,12 @@ from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
 from max.nn.kv_cache.utils import MHAAttnKey
 
 N_KV_HEADS = 8
-MLA_NUM_HEADS = [8, 16, 64, 128]
+# Every head count ``compute_mla_dispatch_scalars_runtime`` enumerates. A count
+# missing an arm raises out of both the resolver and the reference graph, so
+# this list is what keeps the enumeration reachable end to end; that the arm
+# forwards to the specialization it names is pinned on the Mojo side, in
+# ``max/kernels/test/gpu/nn/test_mla_decode_split_policy.mojo``.
+MLA_NUM_HEADS = [8, 12, 16, 24, 32, 48, 64, 128]
 TEST_CASES = [
     (1, 17, 128),
     (4, 17, 768),
@@ -158,13 +163,15 @@ def mla_params(
 
 
 @pytest.fixture(scope="module")
-def mla_params_fp8(gpu_device_ref: DeviceRef) -> MLAKVCacheParams:
+def mla_params_fp8(
+    gpu_device_ref: DeviceRef, mla_num_heads: int
+) -> MLAKVCacheParams:
     return MLAKVCacheParams(
         dtype=DType.float8_e4m3fn,
         head_dim=576,
         num_layers=1,
         devices=[gpu_device_ref],
-        num_q_heads=128,
+        num_q_heads=mla_num_heads,
     )
 
 
@@ -192,10 +199,12 @@ def reference_mla_model(
 
 @pytest.fixture(scope="module")
 def reference_mla_model_fp8(
-    gpu_session: InferenceSession, gpu_device_ref: DeviceRef
+    gpu_session: InferenceSession,
+    gpu_device_ref: DeviceRef,
+    mla_num_heads: int,
 ) -> Model:
     return _build_reference_mla_model(
-        gpu_session, gpu_device_ref, num_heads=128, is_fp8_kv=True
+        gpu_session, gpu_device_ref, num_heads=mla_num_heads, is_fp8_kv=True
     )
 
 

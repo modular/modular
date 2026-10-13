@@ -38,15 +38,13 @@ expresses this.
 """
 
 from std.math import ceildiv, rsqrt
-from std.builtin.device_passable import DevicePassable
-from std.memory import AddressSpace
 from std.atomic import Atomic, Ordering, fence
 from std.sys.info import _is_sm_100x_or_newer, simd_width_of, size_of
 from std.time import global_perf_counter_ns
 
 import max.gpu.primitives.block as block
-import std.gpu.primitives.warp as warp
-from std.gpu import (
+import max.gpu.primitives.warp as warp
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -55,7 +53,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.memory import cp_async_bulk_prefetch
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -68,12 +66,11 @@ from layout import (
     Coord,
     Idx,
     TensorLayout,
+    TensorEngine,
     TileTensor,
     row_major,
     stack_allocation as tt_stack_allocation,
 )
-from std.utils import IndexList
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -137,6 +134,11 @@ def gemv_partial_norm_kernel[
     a_layout: TensorLayout,
     b_layout: TensorLayout,
     gamma_layout: TensorLayout,
+    normed_engine: TensorEngine,
+    unnormed_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    gamma_engine: TensorEngine,
     TraceBufT: TraceBuf,
     //,
     simd_width: Int,
@@ -145,12 +147,18 @@ def gemv_partial_norm_kernel[
     enable_trace: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    normed_output: TileTensor[c_type, normed_layout, MutAnyOrigin],
-    unnormed_output: TileTensor[c_type, unnormed_layout, MutAnyOrigin],
-    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
-    gamma: TileTensor[a_type, gamma_layout, ImmutAnyOrigin],
-    finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    normed_output: TileTensor[
+        c_type, normed_layout, MutAnyOrigin, Engine=normed_engine
+    ],
+    unnormed_output: TileTensor[
+        c_type, unnormed_layout, MutAnyOrigin, Engine=unnormed_engine
+    ],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    gamma: TileTensor[
+        a_type, gamma_layout, ImmutAnyOrigin, Engine=gamma_engine
+    ],
+    finish_counter: MutPointer[Int32, MutAnyOrigin],
     trace_buf: TraceBufT,
     eps: Float32,
     n: Int32,
@@ -177,6 +185,11 @@ def gemv_partial_norm_kernel[
         a_layout: Layout of `act`.
         b_layout: Layout of `weight`.
         gamma_layout: Layout of `gamma`.
+        normed_engine: Engine policy of `normed_output`.
+        unnormed_engine: Engine policy of `unnormed_output`.
+        a_engine: Engine policy of `act`.
+        b_engine: Engine policy of `weight`.
+        gamma_engine: Engine policy of `gamma`.
         TraceBufT: Trace-buffer implementation (`NullTrace` or
             `GmemTrace`). Pass `NullTrace` for zero-overhead untraced
             runs.
@@ -231,18 +244,18 @@ def gemv_partial_norm_kernel[
     comptime if enable_trace:
         if tid == 0:
             trace_buf.store(
-                Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 0,
+                block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 0,
                 UInt64(global_perf_counter_ns()),
             )
 
     var tile_w = tt_stack_allocation[
         dtype=b_type,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
         alignment=simd_width * size_of[b_type](),
     ](row_major[tile_n, simd_width]())
-    var acc = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.LOCAL
-    ](row_major[1, tile_n]()).fill(0)
+    var acc = tt_stack_allocation[dtype=accum_type, address_space=.LOCAL](
+        row_major[1, tile_n]()
+    ).fill(0)
 
     comptime WeightVecType = SIMD[b_type, simd_width]
     comptime NativeVecType = SIMD[a_type, simd_width]
@@ -253,7 +266,7 @@ def gemv_partial_norm_kernel[
     comptime if enable_trace:
         if tid == 0:
             trace_buf.store(
-                Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 1,
+                block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 1,
                 UInt64(global_perf_counter_ns()),
             )
 
@@ -287,9 +300,9 @@ def gemv_partial_norm_kernel[
     comptime k_warp_num = num_threads // WARP_SIZE
     var wid = warp_id()
     var lid = lane_id()
-    var shmem = tt_stack_allocation[
-        dtype=accum_type, address_space=AddressSpace.SHARED
-    ](row_major[1, tile_n * k_warp_num]())
+    var shmem = tt_stack_allocation[dtype=accum_type, address_space=.SHARED](
+        row_major[1, tile_n * k_warp_num]()
+    )
 
     comptime for ni in range(tile_n):
         var val = warp.sum(acc[0, ni])
@@ -300,7 +313,7 @@ def gemv_partial_norm_kernel[
     comptime if enable_trace:
         if tid == 0:
             trace_buf.store(
-                Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 2,
+                block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 2,
                 UInt64(global_perf_counter_ns()),
             )
 
@@ -339,7 +352,7 @@ def gemv_partial_norm_kernel[
 
             comptime if enable_trace:
                 trace_buf.store(
-                    Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 3,
+                    block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 3,
                     UInt64(global_perf_counter_ns()),
                 )
 
@@ -353,7 +366,7 @@ def gemv_partial_norm_kernel[
             ](finish_counter, Int32(1))
             comptime if enable_trace:
                 trace_buf.store(
-                    Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 4,
+                    block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 4,
                     UInt64(global_perf_counter_ns()),
                 )
             is_last_block = prev_global == num_normed_blocks - Int32(1)
@@ -388,7 +401,7 @@ def gemv_partial_norm_kernel[
             comptime if enable_trace:
                 if tid == 0:
                     trace_buf.store(
-                        Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 5,
+                        block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 5,
                         UInt64(global_perf_counter_ns()),
                     )
 
@@ -410,7 +423,7 @@ def gemv_partial_norm_kernel[
             comptime if enable_trace:
                 if tid == 0:
                     trace_buf.store(
-                        Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 6,
+                        block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 6,
                         UInt64(global_perf_counter_ns()),
                     )
 
@@ -420,7 +433,7 @@ def gemv_partial_norm_kernel[
             comptime if enable_trace:
                 if tid == 0:
                     trace_buf.store(
-                        Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 7,
+                        block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 7,
                         UInt64(global_perf_counter_ns()),
                     )
 
@@ -436,7 +449,7 @@ def gemv_partial_norm_kernel[
             comptime if enable_trace:
                 if tid == 0:
                     trace_buf.store(
-                        Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 8,
+                        block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 8,
                         UInt64(global_perf_counter_ns()),
                     )
 
@@ -444,7 +457,7 @@ def gemv_partial_norm_kernel[
             # between successive kernel launches provides visibility
             # for the next launch's readers.
             if tid == 0:
-                finish_counter[0] = Scalar[DType.int32](0)
+                finish_counter.unsafe_store(Int32(0))
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -452,7 +465,7 @@ def gemv_partial_norm_kernel[
     comptime if enable_trace:
         if tid == 0:
             trace_buf.store(
-                Int(block_idx.y) * GEMV_TRACE_EVENTS_PER_BLOCK + 9,
+                block_idx.y * GEMV_TRACE_EVENTS_PER_BLOCK + 9,
                 UInt64(global_perf_counter_ns()),
             )
 
@@ -479,7 +492,7 @@ def _gemv_partial_norm_fused[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    finish_counter: UnsafePointer[mut=True, Scalar[DType.int32], _],
+    finish_counter: MutPointer[Int32, _],
     trace_buf: TraceBufT,
     ctx: DeviceContext,
 ) raises:
@@ -495,6 +508,11 @@ def _gemv_partial_norm_fused[
     comptime assert act.rank == 2 and weight.rank == 2
     comptime assert normed_output.rank == 2 and unnormed_output.rank == 2
     comptime assert gamma.flat_rank == 1
+    comptime assert normed_output.element_size == 1
+    comptime assert unnormed_output.element_size == 1
+    comptime assert act.element_size == 1
+    comptime assert weight.element_size == 1
+    comptime assert gamma.element_size == 1
 
     var m = Int(act.dim[0]())
     assert m == 1, (
@@ -508,7 +526,7 @@ def _gemv_partial_norm_fused[
     var n_unnormed = Int(unnormed_output.dim[1]())
     var n = n_normed + n_unnormed
 
-    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[a_type, target=ctx.target]()
     assert (
         n_normed % tile_n == 0
     ), "n_normed must be divisible by tile_n in the fused kernel"
@@ -529,6 +547,11 @@ def _gemv_partial_norm_fused[
         a_layout=type_of(act).LayoutType,
         b_layout=type_of(weight).LayoutType,
         gamma_layout=type_of(gamma).LayoutType,
+        normed_engine=type_of(normed_output).Engine,
+        unnormed_engine=type_of(unnormed_output).Engine,
+        a_engine=type_of(act).Engine,
+        b_engine=type_of(weight).Engine,
+        gamma_engine=type_of(gamma).Engine,
         TraceBufT=TraceBufT,
         simd_width=simd_width,
         tile_n=tile_n,
@@ -544,7 +567,7 @@ def _gemv_partial_norm_fused[
         gamma,
         finish_counter,
         trace_buf,
-        eps.cast[DType.float32](),
+        eps.cast[.float32](),
         Int32(n),
         Int32(k),
         Int32(n_normed),
@@ -567,7 +590,7 @@ def _gemv_partial_norm_unfused_with_scratch[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    y_scratch: UnsafePointer[mut=True, Scalar[c_type], _],
+    y_scratch: MutPointer[Scalar[c_type], _],
     ctx: DeviceContext,
 ) raises:
     """Unfused 2-launch path using caller-provided y scratch.
@@ -596,26 +619,28 @@ def _gemv_partial_norm_unfused_with_scratch[
     var n_normed = Int(gamma.dim[0]())
     var n = Int(weight.dim[0]())
 
-    var y_layout = row_major(Coord(m, n))
+    var y_layout = row_major(m, n)
     var y = TileTensor[c_type, type_of(y_layout)](y_scratch, y_layout)
 
     _matmul_gpu[transpose_b=transpose_b](y, act, weight, ctx)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(y)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[c_type, width]:
         var idx = y.layout(coords)
-        return y.ptr.load[width=width](idx)
+        return y.ptr.unsafe_load[width=width](idx)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(normed_output)
     @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) -> None:
         var idx = normed_output.layout(coords)
-        normed_output.ptr.store[width=width, alignment=alignment](idx, val)
+        normed_output.ptr.unsafe_store[width=width, alignment=alignment](
+            idx, val
+        )
 
     var gamma_c = rebind[TileTensor[c_type, gamma.LayoutType, gamma.origin]](
         gamma
@@ -697,8 +722,8 @@ def gemv_and_partial_norm[
     var n = n_normed + n_unnormed
 
     comptime if fused:
-        var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
-        ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
+        var counter_buf = ctx.enqueue_create_buffer[.int32](1)
+        ctx.enqueue_memset(counter_buf, Int32(0))
         _gemv_partial_norm_fused[
             transpose_b=transpose_b,
             pdl_level=pdl_level,
@@ -746,7 +771,7 @@ def gemv_and_partial_norm_unfused_with_scratch[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    y_scratch: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    y_scratch: MutPointer[Scalar[c_type], MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     """Unfused 2-launch path with caller-provided y scratch.
@@ -818,7 +843,7 @@ def gemv_and_partial_norm_with_scratch[
     weight: TileTensor[mut=False, a_type, ...],
     gamma: TileTensor[mut=False, a_type, ...],
     eps: Float32,
-    finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    finish_counter: MutPointer[Int32, MutAnyOrigin],
     ctx: DeviceContext,
     trace_buf: TraceBufT = NullTrace(),
 ) raises:

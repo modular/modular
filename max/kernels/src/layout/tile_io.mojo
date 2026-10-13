@@ -12,22 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 """Trait and utilities for copying data between `TileTensor`s."""
 
-from std.bit import log2_floor
 from std.collections import Optional, OptionalReg
-from std.gpu import block_dim, lane_id, thread_idx
-from max.gpu.memory import CacheEviction, async_copy
+from max.gpu import block_dim, lane_id, thread_idx
+from max.gpu.memory import CacheEviction, Fill
 from std.math.uutils import umod
-from std.os import abort
-from std.sys import align_of, size_of
+from std.sys import align_of
 
-from layout import Idx
+from layout import Coord, Idx
 from .layout_tensor import ThreadScope
 from .swizzle import Swizzle
 from .tile_layout import Layout
 from .tile_tensor import TileTensor
+from .tensor_engine import DefaultEngine
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _get_worker_idx[thread_scope: ThreadScope]() -> Int:
     """Returns the worker index for the current thread scope.
 
@@ -74,15 +73,8 @@ trait TileCopier:
 
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` into `dst`.
 
@@ -119,15 +111,8 @@ trait AsyncTileCopier:
 
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Asynchronously copies `src` into `dst`.
 
@@ -167,18 +152,11 @@ struct GenericToSharedTileCopier[
     comptime dst_address_space = AddressSpace.SHARED
     """Destination `AddressSpace` this copier writes to."""
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in generic memory into `dst` in shared memory.
 
@@ -234,18 +212,11 @@ struct SharedToGenericTileCopier[
     comptime dst_address_space = AddressSpace.GENERIC
     """Destination `AddressSpace` this copier writes to."""
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in shared memory into `dst` in generic memory.
 
@@ -274,28 +245,23 @@ struct SharedToGenericTileCopier[
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
-        comptime if not Self.swizzle:
-            dst_fragments.copy_from(
-                src_fragments.bitcast[dst_fragments.dtype]()
-            )
-        else:
+        comptime if case .Some(swizzle_fn) = Self.swizzle:
             comptime simd_size = src.element_size
             comptime src_align = align_of[SIMD[src.dtype, simd_size]]()
             comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
-            comptime swizzle_fn = Self.swizzle.value()
 
             var src_frag_offset = Scalar[src.linear_idx_type](
                 src_fragments._distance(src)
             )
             comptime num_stores_per_thread = (
-                src_fragments.LayoutType.static_product // simd_size
+                src_fragments.LayoutType.static_product
             )
 
             comptime for i in range(num_stores_per_thread):
                 var src_idx = src_fragments.layout[
                     linear_idx_type=src.linear_idx_type
-                ](Idx[i * simd_size])
-                var dst_idx = dst_fragments.layout(Idx[i * simd_size])
+                ](Idx[i])
+                var dst_idx = dst_fragments.layout(Idx[i])
                 var src_idx_base = umod(
                     src_idx,
                     Scalar[src.linear_idx_type](swizzle_fn.size()),
@@ -309,6 +275,10 @@ struct SharedToGenericTileCopier[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx).cast[dst.dtype]()
                 dst_fragments.raw_store[alignment=dst_align](dst_idx, src_vec)
+        else:
+            dst_fragments.copy_from(
+                src_fragments.bitcast[dst_fragments.dtype]()
+            )
 
 
 @fieldwise_init
@@ -333,18 +303,11 @@ struct GenericToLocalTileCopier[
     comptime dst_address_space = AddressSpace.LOCAL
     """Destination `AddressSpace` this copier writes to."""
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in generic memory into `dst` in local memory.
 
@@ -392,18 +355,11 @@ struct LocalToGenericTileCopier[
     comptime dst_address_space = AddressSpace.GENERIC
     """Destination `AddressSpace` this copier writes to."""
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in local memory into `dst` in generic memory.
 
@@ -453,18 +409,11 @@ struct SharedToLocalTileCopier[
     comptime dst_address_space = AddressSpace.LOCAL
     """Destination `AddressSpace` this copier writes to."""
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in shared memory into `dst` in local memory.
 
@@ -493,8 +442,8 @@ struct LocalToSharedTileCopier[
 ](ImplicitlyCopyable, Movable, TileCopier):
     """A `TileCopier` that moves a tile from registers into shared memory.
 
-    The AMD `row_major` prefetch pattern and fp32 -> half precision
-    downcast are not supported.
+    Supports numeric FP32 to FP16 or BF16 conversion. The AMD `row_major`
+    prefetch pattern is not supported.
 
     Parameters:
         thread_layout: Layout describing how threads are organized over
@@ -512,18 +461,11 @@ struct LocalToSharedTileCopier[
     comptime dst_address_space = AddressSpace.SHARED
     """Destination `AddressSpace` this copier writes to."""
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Copies `src` in local memory into `dst` in shared memory.
 
@@ -531,7 +473,10 @@ struct LocalToSharedTileCopier[
             dst: Destination tile in shared memory.
             src: Source tile in local memory.
         """
-        comptime assert src.dtype == dst.dtype, "src and dst dtype must match."
+        comptime assert src.dtype == dst.dtype or (
+            src.dtype == .float32
+            and (dst.dtype == .float16 or dst.dtype == .bfloat16)
+        ), "Only matching dtypes or FP32 to FP16/BF16 are supported."
         comptime assert src.element_size == dst.element_size
 
         comptime num_busy_threads = Self.thread_layout.size()
@@ -543,24 +488,29 @@ struct LocalToSharedTileCopier[
 
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
-        comptime if not Self.swizzle:
-            dst_fragments.copy_from(src.bitcast[dst_fragments.dtype]())
-        else:
+        comptime if src.dtype != dst.dtype:
+            comptime assert src.LayoutType.all_dims_known
+            comptime assert dst_fragments.LayoutType.all_dims_known
+            comptime assert (
+                src.LayoutType.static_product
+                == dst_fragments.LayoutType.static_product
+            )
+
+        comptime if case .Some(swizzle_fn) = Self.swizzle:
             comptime simd_size = src.element_size
             comptime src_align = align_of[SIMD[src.dtype, simd_size]]()
             comptime dst_align = align_of[SIMD[dst.dtype, simd_size]]()
-            comptime swizzle_fn = Self.swizzle.value()
 
             var dst_frag_offset = Scalar[dst.linear_idx_type](
                 dst_fragments._distance(dst)
             )
-            comptime num_vecs = src.LayoutType.static_product // simd_size
+            comptime num_vecs = src.LayoutType.static_product
 
             comptime for i in range(num_vecs):
-                var src_idx = src.layout(Idx[i * simd_size])
+                var src_idx = src.layout(Idx[i])
                 var dst_idx = dst_fragments.layout[
                     linear_idx_type=dst.linear_idx_type
-                ](Idx[i * simd_size])
+                ](Idx[i])
                 var dst_idx_base = umod(
                     dst_idx,
                     Scalar[dst.linear_idx_type](swizzle_fn.size()),
@@ -573,6 +523,11 @@ struct LocalToSharedTileCopier[
                     width=simd_size, alignment=src_align
                 ](src_idx).cast[dst.dtype]()
                 dst.raw_store[alignment=dst_align](swizzled_idx, src_vec)
+        else:
+            comptime if src.dtype == dst.dtype:
+                dst_fragments.copy_from(src.bitcast[dst_fragments.dtype]())
+            else:
+                dst_fragments.copy_from(src)
 
 
 @fieldwise_init
@@ -624,18 +579,11 @@ struct GenericToSharedAsyncTileCopier[
     comptime dst_address_space = AddressSpace.SHARED
     """Destination `AddressSpace` this copier writes to."""
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def copy(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
     ):
         """Asynchronously copies `src` in generic memory into `dst` in shared
         memory.
@@ -653,18 +601,11 @@ struct GenericToSharedAsyncTileCopier[
         """
         self.copy_bounded(dst, src, None)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def copy_bounded(
         self,
-        dst: TileTensor[
-            mut=True,
-            address_space=Self.dst_address_space,
-            ...,
-        ],
-        src: TileTensor[
-            address_space=Self.src_address_space,
-            ...,
-        ],
+        dst: TileTensor[mut=True, address_space=Self.dst_address_space, ...],
+        src: TileTensor[address_space=Self.src_address_space, ...],
         src_num_valid_rows: OptionalReg[Int],
     ):
         """Asynchronously copies `src` into `dst` with an optional explicit
@@ -688,39 +629,6 @@ struct GenericToSharedAsyncTileCopier[
                 correct partial-tile zero-fill by passing the runtime clip
                 directly. Only consulted when `masked` is `True`.
         """
-        comptime assert (
-            src.dtype == dst.dtype
-        ), "src dtype and dst dtype must be the same."
-        comptime assert src.element_size == dst.element_size
-
-        comptime element_size = src.element_size
-        comptime element_size_bytes = size_of[src.dtype]() * element_size
-        comptime assert element_size_bytes in (
-            4,
-            8,
-            16,
-        ), "async copy only supports 4, 8, or 16 byte vector elements."
-
-        # The swizzle's `base` parameter sets how many least-significant
-        # bits of the offset are kept constant. cp.async requires the
-        # destination address to be aligned to `element_size` scalars,
-        # so the swizzle must not permute bits below `log2(element_size)`.
-        # `make_swizzle[..., access_size=element_size]` constructs a
-        # swizzle that satisfies this (it sets `base = log2_floor(access_size)`);
-        # a hand-rolled `Swizzle(bits, base, shift)` with
-        # `base < log2_floor(element_size)` would silently produce
-        # misaligned offsets and trigger CUDA_ERROR_MISALIGNED_ADDRESS.
-        comptime if Self.swizzle:
-            comptime assert Self.swizzle.value().base >= log2_floor(
-                element_size
-            ), (
-                "swizzle.base is too small for the requested element_size:"
-                " cp.async would receive misaligned offsets. Construct the"
-                " swizzle with `make_swizzle[..., access_size=element_size]`"
-                " (or a hand-rolled `Swizzle(bits, base, shift)` with"
-                " `base >= log2_floor(element_size)`)."
-            )
-
         comptime num_busy_threads = Self.thread_layout.size()
         var worker_idx = _get_worker_idx[Self.thread_scope]()
 
@@ -731,142 +639,40 @@ struct GenericToSharedAsyncTileCopier[
         var src_fragments = src.distribute[Self.thread_layout](worker_idx)
         var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
 
-        # The trailing `bitcast` materializes the pointee type to a concrete
-        # `Scalar[src.dtype]` so `async_copy`'s `dtype` parameter infers
-        # cleanly; without it the inferred dtype is a comptime expression
-        # that fails to unify across the two pointer arguments.
-        # `TensorStorage.unsafe_ptr` is a raising trait method (it aborts for
-        # storage that cannot expose a raw pointer); this copier runs in a
-        # non-raising context, so mirror the old `TileTensor.ptr` accessor by
-        # trapping any failure here.
-        comptime dtype = src.dtype
-        var src_global_ptr: UnsafePointer[
-            Scalar[dtype], ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
-        ]
-        var dst_shared_ptr: UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
-        ]
-        try:
-            src_global_ptr = (
-                type_of(src_fragments)
-                .Storage.unsafe_ptr(src_fragments._storage)
-                .address_space_cast[AddressSpace.GLOBAL]()
-                .unsafe_mut_cast[False]()
-                .unsafe_origin_cast[ImmutAnyOrigin]()
-                .bitcast[Scalar[dtype]]()
-            )
-            dst_shared_ptr = (
-                type_of(dst_fragments)
-                .Storage.unsafe_ptr(dst_fragments._storage)
-                .unsafe_mut_cast[True]()
-                .address_space_cast[AddressSpace.SHARED]()
-                .unsafe_origin_cast[MutAnyOrigin]()
-                .bitcast[Scalar[dtype]]()
-            )
-        except e:
-            abort(t"tile_io async copy storage pointer access failed: {e}")
-
-        # Per-thread fragments are sized in logical (post-vectorize) elements,
-        # so `static_product` already counts cp.async issues, not scalars: each
-        # iteration issues one `element_size_bytes`-wide async copy covering
-        # `element_size` scalars. For non-vectorized inputs (`element_size ==
-        # 1`) this degenerates to one scalar-sized async copy per element.
-        comptime num_issues = src_fragments.LayoutType.static_product
-
         # For masked copies we bound `src_idx` by the absolute end of the
         # valid src region: `src.dim[0]() * row_stride - src_frag_offset`.
         # `row_stride` is the leading-dim stride; for row-major tiles this
-        # equals the column count. The bound is computed in `Int` to keep
-        # the comparison free of scalar-dtype unification fights.
-        comptime row_stride_static = src.LayoutType.static_stride[0]
-        var src_frag_offset = Int(src_fragments._distance(src))
-        # The valid-row count drives the masked zero-fill bound. By default it
-        # is `src.dim[0]()` (legacy behavior). A caller may override it with an
-        # explicit runtime value when `src`'s own dim0 is static (e.g. a
-        # `.tile[...]` sub-view, which does not runtime-clip dim0 the way the
-        # legacy `LayoutTensor` iterator did).
-        var src_num_rows = (
-            src_num_valid_rows.value() if src_num_valid_rows else Int(
-                src.dim[0]()
-            )
-        )
-        var src_idx_bound = (
-            src_num_rows * Int(row_stride_static) - src_frag_offset
-        )
+        # equals the column count.
+        comptime idx_type = type_of(src_fragments).linear_idx_type
+        var src_idx_bound = Scalar[idx_type]()
+        comptime if Self.masked:
+            # The valid-row count drives the masked zero-fill bound. By default
+            # it is `src.dim[0]()` (legacy behavior). A caller may override it
+            # with an explicit runtime value when `src`'s own dim0 is static
+            # (e.g. a `.tile[...]` sub-view, which does not runtime-clip dim0
+            # the way the legacy `LayoutTensor` iterator did).
+            var src_num_rows = src_num_valid_rows.or_else(Int(src.dim[0]()))
+            src_idx_bound = Scalar[idx_type](
+                src_num_rows * Int(src.LayoutType.static_stride[0])
+            ) - Scalar[idx_type](src_fragments._distance(src))
 
-        # When swizzling, the destination address is computed in absolute
-        # tile coordinates (relative to `dst.ptr`), then rebased back to the
-        # fragment by subtracting `dst_frag_offset`. The unswizzled path uses
-        # the per-fragment offset directly.
+        # When swizzling, `copy_from_async` computes the destination address in
+        # absolute tile coordinates and rebases it back onto the fragment, so
+        # it needs the fragment's offset from the tile base.
+        var base_offset = Scalar[type_of(dst_fragments).linear_idx_type]()
         comptime if Self.swizzle:
-            comptime swizzle_fn = Self.swizzle.value()
-            var dst_frag_offset = dst_fragments._distance(dst)
-            var dst_frag_offset_typed = Scalar[dst.linear_idx_type](
-                dst_frag_offset
-            )
-            comptime for i in range(num_issues):
-                var src_idx = Int(src_fragments.layout(Idx[i]))
-                var dst_idx_raw = dst_fragments.layout[
-                    linear_idx_type=dst.linear_idx_type
-                ](Idx[i])
-                var dst_idx_base = umod(
-                    dst_idx_raw,
-                    Scalar[dst.linear_idx_type](swizzle_fn.size()),
-                )
-                var dst_idx_diff = dst_idx_raw - dst_idx_base
-                var swizzled_idx = (
-                    swizzle_fn(dst_frag_offset_typed + dst_idx_base)
-                    + Scalar[dst.linear_idx_type](dst_idx_diff)
-                    - dst_frag_offset_typed
-                )
+            base_offset = dst_fragments._distance(dst)
 
-                comptime if Self.masked:
-                    var src_copy_size = Int32(element_size_bytes) if (
-                        src_idx < src_idx_bound
-                    ) else Int32(0)
-                    async_copy[
-                        element_size_bytes,
-                        fill=Scalar[src.dtype](0),
-                        eviction_policy=Self.eviction_policy,
-                    ](
-                        src_global_ptr + src_idx,
-                        dst_shared_ptr + Int(swizzled_idx),
-                        src_copy_size,
-                    )
-                else:
-                    async_copy[
-                        element_size_bytes,
-                        eviction_policy=Self.eviction_policy,
-                    ](
-                        src_global_ptr + src_idx,
-                        dst_shared_ptr + Int(swizzled_idx),
-                    )
-        else:
-            comptime for i in range(num_issues):
-                var src_idx = Int(src_fragments.layout(Idx[i]))
-                var dst_idx = Int(dst_fragments.layout(Idx[i]))
-
-                comptime if Self.masked:
-                    var src_copy_size = Int32(element_size_bytes) if (
-                        src_idx < src_idx_bound
-                    ) else Int32(0)
-                    async_copy[
-                        element_size_bytes,
-                        fill=Scalar[src.dtype](0),
-                        eviction_policy=Self.eviction_policy,
-                    ](
-                        src_global_ptr + src_idx,
-                        dst_shared_ptr + dst_idx,
-                        src_copy_size,
-                    )
-                else:
-                    async_copy[
-                        element_size_bytes,
-                        eviction_policy=Self.eviction_policy,
-                    ](
-                        src_global_ptr + src_idx,
-                        dst_shared_ptr + dst_idx,
-                    )
+        dst_fragments.copy_from_async[
+            is_masked=Self.masked,
+            swizzle=Self.swizzle,
+            fill=Fill.ZERO,
+            eviction_policy=Self.eviction_policy,
+        ](
+            src_fragments,
+            src_idx_bound=src_idx_bound,
+            base_offset=base_offset,
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -897,7 +703,7 @@ struct GenericToSharedAsyncTileCopier[
 #     are left to the follow-up that ports those callers.
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def copy_dram_to_sram[
     thread_layout: Layout,
     *,
@@ -905,12 +711,8 @@ def copy_dram_to_sram[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.SHARED,
-        ...,
-    ],
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    dst: TileTensor[mut=True, address_space=.SHARED, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ):
     """Synchronously copies a tile from DRAM (generic memory) to SRAM (shared).
 
@@ -937,19 +739,15 @@ def copy_dram_to_sram[
     ]().copy(dst, src)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def copy_sram_to_dram[
     thread_layout: Layout,
     *,
     swizzle: Optional[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    src: TileTensor[address_space=AddressSpace.SHARED, ...],
+    dst: TileTensor[mut=True, address_space=.GENERIC, ...],
+    src: TileTensor[address_space=.SHARED, ...],
 ):
     """Synchronously copies a tile from SRAM (shared memory) to DRAM (generic).
 
@@ -976,19 +774,15 @@ def copy_sram_to_dram[
     ]().copy(dst, src)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def copy_local_to_dram[
     thread_layout: Layout,
     *,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.GENERIC,
-        ...,
-    ],
-    src: TileTensor[address_space=AddressSpace.LOCAL, ...],
+    dst: TileTensor[mut=True, address_space=.GENERIC, ...],
+    src: TileTensor[address_space=.LOCAL, ...],
 ):
     """Synchronously copies a tile from registers (LOCAL) to DRAM (generic).
 
@@ -1013,19 +807,100 @@ def copy_local_to_dram[
     ]().copy(dst, src)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
+def copy_local_to_dram[
+    thread_layout: Layout,
+    *,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](
+    dst: TileTensor[mut=True, address_space=.GENERIC, ...],
+    src: TileTensor[address_space=.LOCAL, ...],
+    valid_rows: Int,
+):
+    """Copies register vectors into the valid rows of a generic-memory tile.
+
+    Clamps the signed row bound to the destination height. Unlike the
+    unbounded overload, this path uses natural scalar alignment for vector
+    loads and stores, including when every row is valid.
+
+    Parameters:
+        thread_layout: Canonical row-major, flat rank-two thread layout.
+        num_threads: Number of participating threads, with the same filtering
+            semantics as the unbounded overload.
+        thread_scope: Scope used to obtain the worker index.
+
+    Args:
+        dst: Flat rank-two FP32 tile with contiguous two-scalar vectors.
+        src: Static FP32 register layout with the same distributed vector count.
+        valid_rows: Number of valid destination rows, relative to `dst`.
+
+    Constraints:
+        Uses `DefaultEngine` with vector width two. Destination dimensions
+        must be positive, static, and divisible by the thread dimensions.
+        Source scalar offsets must describe disjoint contiguous vectors.
+        Destination column stride must be two; its positive row stride must
+        cover the entire row. Bases and scalar offsets require FP32 alignment.
+        Allocations and signed index types must accommodate the full layout.
+        BLOCK workers that wrap the thread layout require distinct destination
+        views and register owners, as in independent warp copies.
+    """
+    comptime assert src.dtype == .float32 and dst.dtype == .float32
+    comptime assert src.Engine == DefaultEngine[element_width=2]
+    comptime assert dst.Engine == DefaultEngine[element_width=2]
+    comptime assert src.rank == 2 and src.flat_rank == 2
+    comptime assert dst.rank == 2 and dst.flat_rank == 2
+    comptime assert src.LayoutType.all_dims_known
+    comptime assert dst.LayoutType.shape_known
+    comptime assert thread_layout.rank == 2
+    comptime assert thread_layout.shape_known and thread_layout.stride_known
+    comptime rows = dst.LayoutType.static_shape[0]
+    comptime cols = dst.LayoutType.static_shape[1]
+    comptime thread_rows = thread_layout.static_shape[0]
+    comptime thread_cols = thread_layout.static_shape[1]
+    comptime assert rows > 0 and cols > 0
+    comptime assert thread_rows > 0 and thread_cols > 0
+    comptime assert thread_layout.static_stride[0] == thread_cols
+    comptime assert thread_layout.static_stride[1] == 1
+    comptime assert rows % thread_rows == 0 and cols % thread_cols == 0
+    comptime assert dst.LayoutType.static_stride[1] == 2
+    comptime assert src.LayoutType.static_product == (
+        rows * cols // thread_layout.size()
+    )
+    debug_assert(Int(dst.layout.stride[0]().value()) >= 2 * cols)
+
+    var row_bound = min(rows, max(0, valid_rows))
+    if row_bound == 0:
+        return
+    var worker_idx = _get_worker_idx[thread_scope]()
+    comptime if num_threads > thread_layout.size():
+        if worker_idx >= thread_layout.size():
+            return
+
+    var thread_row = (worker_idx // thread_cols) % thread_rows
+    var thread_col = worker_idx % thread_cols
+    comptime fragment_rows = rows // thread_rows
+    comptime for i in range(src.LayoutType.static_product):
+        var row = thread_row + (i % fragment_rows) * thread_rows
+        if row < row_bound:
+            var col = thread_col + (i // fragment_rows) * thread_cols
+            dst._store_storage[alignment=4](
+                dst.layout[linear_idx_type=dst.linear_idx_type](
+                    Coord(row, col)
+                ),
+                rebind[dst.ElementType](src[(i)]),
+            )
+
+
+@inline(.nodebug)
 def copy_dram_to_local[
     thread_layout: Layout,
     *,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.LOCAL,
-        ...,
-    ],
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    dst: TileTensor[mut=True, address_space=.LOCAL, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
 ):
     """Synchronously copies a tile from DRAM (generic memory) to registers.
 
@@ -1050,7 +925,7 @@ def copy_dram_to_local[
     ]().copy(dst, src)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def copy_local_to_shared[
     thread_layout: Layout,
     *,
@@ -1058,18 +933,14 @@ def copy_local_to_shared[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.SHARED,
-        ...,
-    ],
-    src: TileTensor[address_space=AddressSpace.LOCAL, ...],
+    dst: TileTensor[mut=True, address_space=.SHARED, ...],
+    src: TileTensor[address_space=.LOCAL, ...],
 ):
     """Synchronously copies a tile from registers (LOCAL) to SRAM (shared).
 
-    Delegates to `LocalToSharedTileCopier`. The AMD `row_major` prefetch
-    pattern and fp32 -> half-precision downcast of the legacy free function
-    are not supported here.
+    Delegates to `LocalToSharedTileCopier`, including numeric FP32 to FP16
+    or BF16 conversion. The legacy AMD `row_major` prefetch pattern is not
+    supported here.
 
     Parameters:
         thread_layout: Layout describing how threads are organized over the
@@ -1092,18 +963,14 @@ def copy_local_to_shared[
     ]().copy(dst, src)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def copy_sram_to_local[
     thread_layout: Layout,
     *,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.LOCAL,
-        ...,
-    ],
-    src: TileTensor[address_space=AddressSpace.SHARED, ...],
+    dst: TileTensor[mut=True, address_space=.LOCAL, ...],
+    src: TileTensor[address_space=.SHARED, ...],
 ):
     """Synchronously copies a tile from SRAM (shared memory) to registers.
 
@@ -1125,7 +992,7 @@ def copy_sram_to_local[
     ]().copy(dst, src)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def copy_dram_to_sram_async[
     thread_layout: Layout,
     *,
@@ -1135,12 +1002,8 @@ def copy_dram_to_sram_async[
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst: TileTensor[
-        mut=True,
-        address_space=AddressSpace.SHARED,
-        ...,
-    ],
-    src: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    dst: TileTensor[mut=True, address_space=.SHARED, ...],
+    src: TileTensor[address_space=.GENERIC, ...],
     src_num_valid_rows: OptionalReg[Int] = None,
 ):
     """Asynchronously copies a tile from DRAM (generic memory) to SRAM (shared).

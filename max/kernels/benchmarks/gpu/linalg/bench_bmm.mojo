@@ -17,7 +17,6 @@ from std.sys import (
     get_defined_int,
     simd_width_of,
 )
-from std.sys.info import has_amd_gpu_accelerator
 
 from layout import Coord, TileTensor, row_major, CoordLike, Idx
 import linalg.matmul.vendor.blas as vendor_blas
@@ -30,15 +29,13 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
     init_vector_launch,
 )
 from linalg.bmm import _batched_matmul_gpu
-
-from std.utils import IndexList
 
 
 def _ri(v: Int) -> Int64:
@@ -87,8 +84,7 @@ comptime epilogue_func_type = def[
 ](SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
-@always_inline
-@__parameter
+@inline(.always)
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,
@@ -136,22 +132,20 @@ def bench_bmm[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(Coord(b, m, k)),
+        row_major(b, m, k),
     ).as_unsafe_any_origin()
 
     var b_device = TileTensor(
         b_device_buffer,
         row_major(
-            Coord(
-                b,
-                Idx[NType.static_value if transpose_b else KType.static_value],
-                Idx[KType.static_value if transpose_b else NType.static_value],
-            )
+            b,
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         ),
     ).as_unsafe_any_origin()
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(Coord(b, m, n)),
+        row_major(b, m, n),
     ).as_unsafe_any_origin()
 
     # Initialize data on the device
@@ -159,22 +153,21 @@ def bench_bmm[
     init_vector_launch[a_type](b_device_buffer, b_size, init_type, ctx)
 
     @__parameter
-    @always_inline
+    @inline(.always)
     @__copy_capture(c_device)
     def epilogue_fn[
         dtype: DType,
         width: SIMDLength,
-        rank: Int,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[rank], val: SIMD[dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[dtype, width]) capturing -> None:
         comptime func = lambda_fn.value()
         var update_val = func(val)
-        c_device.store_linear(idx, update_val.cast[c_device.dtype]())
+        c_device.store(idx, update_val.cast[c_device.dtype]())
 
-    comptime pack_size = simd_width_of[c_type, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[c_type, target=ctx.target]()
 
-    @always_inline
+    @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
         var val = c_device.load[width=simd_width](idx)
         comptime element_lambda = lambda_fn.value()
@@ -185,31 +178,25 @@ def bench_bmm[
             update_val,
         )
 
-    @__parameter
-    @__copy_capture(a_device, b_device, c_device)
-    @always_inline
-    def bench_func(mut bench: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_func(
+        mut bench: Bencher,
+    ) {var a_device, var b_device, var c_device, imm}:
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             comptime if use_vendor_blas:
-                comptime if has_amd_gpu_accelerator():
-                    var c_buffer = TileTensor(
-                        c_device.ptr, row_major(Coord(m, n))
-                    )
-                    var a_buffer = TileTensor(
-                        a_device.ptr, row_major(Coord(m, k))
-                    )
+                comptime if ctx.target.is_amd_gpu():
+                    var c_buffer = TileTensor(c_device.ptr, row_major(m, n))
+                    var a_buffer = TileTensor(a_device.ptr, row_major(m, k))
                     var b_buffer = TileTensor(
                         b_device.ptr,
                         row_major(
-                            Coord(
-                                Idx[
-                                    NType.static_value if transpose_b else KType.static_value
-                                ],
-                                Idx[
-                                    KType.static_value if transpose_b else NType.static_value
-                                ],
-                            )
+                            Idx[
+                                NType.static_value if transpose_b else KType.static_value
+                            ],
+                            Idx[
+                                KType.static_value if transpose_b else NType.static_value
+                            ],
                         ),
                     )
 
@@ -235,19 +222,17 @@ def bench_bmm[
                             i * Int(k.value()) * Int(n.value())
                         )
 
-                        var c_buffer = TileTensor(c_ptr, row_major(Coord(m, n)))
-                        var a_buffer = TileTensor(a_ptr, row_major(Coord(m, k)))
+                        var c_buffer = TileTensor(c_ptr, row_major(m, n))
+                        var a_buffer = TileTensor(a_ptr, row_major(m, k))
                         var b_buffer = TileTensor(
                             b_ptr,
                             row_major(
-                                Coord(
-                                    Idx[
-                                        NType.static_value if transpose_b else KType.static_value
-                                    ],
-                                    Idx[
-                                        KType.static_value if transpose_b else NType.static_value
-                                    ],
-                                )
+                                Idx[
+                                    NType.static_value if transpose_b else KType.static_value
+                                ],
+                                Idx[
+                                    KType.static_value if transpose_b else NType.static_value
+                                ],
                             ),
                         )
 
@@ -289,7 +274,8 @@ def bench_bmm[
 
         bencher_iter_custom(bench, kernel_launch, ctx)
 
-    bench.bench_function[bench_func](
+    bench.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[
                 c_type,
@@ -357,8 +343,8 @@ def create_bmm_bench[
 
 
 def main() raises:
-    comptime a_type = get_defined_dtype["atype", DType.bfloat16]()
-    comptime c_type = get_defined_dtype["ctype", DType.bfloat16]()
+    comptime a_type = get_defined_dtype["atype", .bfloat16]()
+    comptime c_type = get_defined_dtype["ctype", .bfloat16]()
 
     var b = Int(arg_parse("B", 1))
     var m = Int(arg_parse("M", 1))

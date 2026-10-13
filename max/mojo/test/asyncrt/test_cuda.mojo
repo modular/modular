@@ -101,9 +101,9 @@ def _run_cuda_external_function(ctx: DeviceContext) raises:
 
     # Signature of externally compiled kernel function
     def vec_add_sig(
-        in0: Pointer[Float32, MutAnyOrigin],
-        in1: Pointer[Float32, MutAnyOrigin],
-        output: Pointer[Float32, MutAnyOrigin],
+        in0: Pointer[Float32, ImmutAnyOrigin],
+        in1: Pointer[Float32, ImmutAnyOrigin],
+        output: Pointer[Float32, ImmutAnyOrigin],
         len: Int,
     ):
         pass
@@ -168,11 +168,11 @@ $L__BB0_2:
     comptime LEN = 1024
     comptime BLOCK_DIM = 32
 
-    var lhs = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var lhs = ctx.enqueue_create_buffer[.float32](LEN)
     lhs.enqueue_fill(2.0)
-    var rhs = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var rhs = ctx.enqueue_create_buffer[.float32](LEN)
     rhs.enqueue_fill(1.0)
-    var out = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var out = ctx.enqueue_create_buffer[.float32](LEN)
 
     var func = ctx.load_function[vec_add_sig](
         function_name="_Z9vectorAddPKfS0_Pfi",
@@ -210,7 +210,7 @@ def _run_cuda_external_function_distinct_entry_points(
     print("_run_cuda_external_function_distinct_entry_points()")
 
     def kernel_sig(
-        output: Pointer[Float32, MutAnyOrigin],
+        output: Pointer[Float32, ImmutAnyOrigin],
         len: Int,
     ):
         pass
@@ -292,8 +292,8 @@ $L__BB1_2:
         function_name="kernel_b", asm=ptx
     )
 
-    var out_a = ctx.enqueue_create_buffer[DType.float32](LEN)
-    var out_b = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var out_a = ctx.enqueue_create_buffer[.float32](LEN)
+    var out_b = ctx.enqueue_create_buffer[.float32](LEN)
 
     ctx.enqueue_function(
         func_a,

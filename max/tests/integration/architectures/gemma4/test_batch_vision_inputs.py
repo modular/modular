@@ -30,7 +30,10 @@ from max.pipelines.architectures.gemma4.batch_vision_inputs import (
 )
 from max.pipelines.architectures.gemma4.context import Gemma4Context
 from max.pipelines.context import ImageMetadata, TokenBuffer
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
+from max.pipelines.lib.vision_encoder_cache import (
+    VisionCachePlan,
+    VisionEncoderCache,
+)
 
 _HIDDEN = 4
 
@@ -217,7 +220,13 @@ def test_select_narrows_to_active_window() -> None:
     assert [img.start_idx for img in ctx.next_images_in_window] == [4]
 
     ve_cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(
-        max_entries=4
+        plan=VisionCachePlan(
+            bytes_per_device=1024 * 1024,
+            hidden_size=_HIDDEN,
+            dtype=DType.float32,
+        ),
+        devices=[CPU()],
+        block_tokens=4,
     )
     selection = ve_cache.select([ctx])
 
@@ -235,7 +244,13 @@ def test_prepare_vision_outputs_skips_deferred_image() -> None:
     ctx = _two_image_windowed_context()
 
     ve_cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(
-        max_entries=4
+        plan=VisionCachePlan(
+            bytes_per_device=1024 * 1024,
+            hidden_size=_HIDDEN,
+            dtype=DType.float32,
+        ),
+        devices=[CPU()],
+        block_tokens=4,
     )
     encoder_out = [
         Buffer.from_numpy(np.ones((4, _HIDDEN), dtype=np.float32)).to(CPU())

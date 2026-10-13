@@ -56,7 +56,7 @@ And dispatches based on compile-time architecture detection:
 comptime if is_nvidia_gpu():
     _mma_nvidia(d, a, b, c)
 elif is_amd_gpu():
-    _mma_amd[block_size](d, a, b, c)
+    _mma_amd(d, a, b, c)
 elif is_apple_m5():
     _mma_apple(d, a, b, c)
 ```

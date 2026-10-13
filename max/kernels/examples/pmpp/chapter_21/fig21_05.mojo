@@ -21,17 +21,17 @@ Note: Scatter pattern has poor parallelism for few atoms and requires
 atomic operations which can be a performance bottleneck.
 """
 
-from std.math import sqrt
+from std.math import ceildiv, sqrt
 from std.atomic import Atomic
-from std.gpu import block_idx, thread_idx, block_dim
+from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 
 from dcs_utils import GridDim, init_atoms, verify_grid
 
 
 def cenergy_scatter_kernel(
-    energygrid: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    atoms: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    energygrid: UnsafePointer[Float32, MutAnyOrigin],
+    atoms: UnsafePointer[Float32, ImmutAnyOrigin],
     grid_x_dev: Int32,
     grid_y_dev: Int32,
     gridspacing: Float32,
@@ -145,8 +145,8 @@ def main() raises:
         h_energygrid_gpu[i] = 0.0
 
     # Allocate device memory
-    var d_atoms = ctx.enqueue_create_buffer[DType.float32](atoms_size)
-    var d_energygrid = ctx.enqueue_create_buffer[DType.float32](grid_size)
+    var d_atoms = ctx.enqueue_create_buffer[.float32](atoms_size)
+    var d_energygrid = ctx.enqueue_create_buffer[.float32](grid_size)
 
     # Copy atoms to device
     ctx.enqueue_copy(d_atoms, h_atoms)
@@ -160,7 +160,7 @@ def main() raises:
 
     # Launch config: one thread per atom
     var block_size = 256
-    var num_blocks = (numatoms + block_size - 1) // block_size
+    var num_blocks = ceildiv(numatoms, block_size)
 
     ctx.enqueue_function[cenergy_scatter_kernel](
         d_energygrid,

@@ -32,9 +32,9 @@ Tensor layout (all row-major):
 
 from std.math import clamp, floor
 
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TensorEngine, TileTensor
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ from layout import TensorLayout, TileTensor
 # ---------------------------------------------------------------------------
 
 
-@always_inline
+@inline(.always)
 def _cubic_weight(x: Float32) -> Float32:
     """Catmull-Rom cubic weight (a = -0.75), matching PyTorch F.interpolate."""
     var a: Float32 = -0.75
@@ -67,20 +67,33 @@ def _gpu_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    OutputEngine: TensorEngine,
     XLayoutType: TensorLayout,
     x_origin: ImmOrigin,
+    XEngine: TensorEngine,
     WeightLayoutType: TensorLayout,
     weight_origin: ImmOrigin,
+    WeightEngine: TensorEngine,
     GridLayoutType: TensorLayout,
     grid_origin: ImmOrigin,
+    GridEngine: TensorEngine,
     TimeLayoutType: TensorLayout,
     time_origin: ImmOrigin,
+    TimeEngine: TensorEngine,
 ](
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
-    x: TileTensor[dtype, XLayoutType, x_origin],
-    weight: TileTensor[dtype, WeightLayoutType, weight_origin],
-    grid_thws: TileTensor[DType.int64, GridLayoutType, grid_origin],
-    time_weight: TileTensor[DType.float32, TimeLayoutType, time_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Engine=OutputEngine
+    ],
+    x: TileTensor[dtype, XLayoutType, x_origin, Engine=XEngine],
+    weight: TileTensor[
+        dtype, WeightLayoutType, weight_origin, Engine=WeightEngine
+    ],
+    grid_thws: TileTensor[
+        .int64, GridLayoutType, grid_origin, Engine=GridEngine
+    ],
+    time_weight: TileTensor[
+        .float32, TimeLayoutType, time_origin, Engine=TimeEngine
+    ],
     N: Int32,
     dim: Int32,
     H: Int32,
@@ -114,6 +127,11 @@ def _gpu_kernel[
     comptime assert weight.flat_rank == 3
     comptime assert grid_thws.flat_rank == 2
     comptime assert time_weight.flat_rank == 2
+    comptime assert output.element_size == 1
+    comptime assert x.element_size == 1
+    comptime assert weight.element_size == 1
+    comptime assert grid_thws.element_size == 1
+    comptime assert time_weight.element_size == 1
 
     var pos_idx = block_idx.x
 
@@ -156,7 +174,7 @@ def _gpu_kernel[
     for d in range(thread_idx.x, _dim, block_dim.x):
         var pos_val: Float32
         if no_interp:
-            pos_val = Float32(weight[hh, ww, d])
+            pos_val = Float32(weight[hh, ww, d][0])
         else:
             var val: Float32 = 0
             comptime for i in range(4):
@@ -165,15 +183,15 @@ def _gpu_kernel[
                 comptime for j in range(4):
                     var xp = clamp(iw_floor + j - 1, 0, _W - 1)
                     var wx = _cubic_weight(Float32(j) - 1.0 - dx)
-                    val += Float32(weight[yp, xp, d]) * wy * wx
+                    val += Float32(weight[yp, xp, d][0]) * wy * wx
             pos_val = val
 
         var time_val: Float32 = 0
         if t > 1:
-            time_val = time_weight[tt, d]
+            time_val = time_weight[tt, d][0]
 
         output[pos_idx, d] = Scalar[dtype](
-            Float32(x[pos_idx, d]) + pos_val + time_val
+            Float32(x[pos_idx, d][0]) + pos_val + time_val
         )
 
 
@@ -188,8 +206,8 @@ def learnable_2d_interp_pos_emb[
     output: TileTensor[mut=True, dtype, ...],
     x: TileTensor[dtype, ...],
     weight: TileTensor[dtype, ...],
-    grid_thws: TileTensor[DType.int64, ...],
-    time_weight: TileTensor[DType.float32, ...],
+    grid_thws: TileTensor[.int64, ...],
+    time_weight: TileTensor[.float32, ...],
     ctx: DeviceContext,
 ) raises:
     """Applies learnable 2D interpolated position embedding on GPU.
@@ -227,21 +245,26 @@ def learnable_2d_interp_pos_emb[
         dtype,
         output.LayoutType,
         output.origin,
+        output.Engine,
         x.LayoutType,
         ImmOrigin(x.origin),
+        x.Engine,
         weight.LayoutType,
         ImmOrigin(weight.origin),
+        weight.Engine,
         grid_thws.LayoutType,
         ImmOrigin(grid_thws.origin),
+        grid_thws.Engine,
         time_weight.LayoutType,
         ImmOrigin(time_weight.origin),
+        time_weight.Engine,
     ]
     ctx.enqueue_function[kernel](
         output,
-        x.as_immut(),
-        weight.as_immut(),
-        grid_thws.as_immut(),
-        time_weight.as_immut(),
+        x.as_imm(),
+        weight.as_imm(),
+        grid_thws.as_imm(),
+        time_weight.as_imm(),
         Int32(N),
         Int32(dim),
         Int32(H),

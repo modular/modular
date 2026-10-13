@@ -199,8 +199,8 @@ struct FusedSwiGLUMatmulConfig[
             b200_smem - output_smem - clc_smem - mma_output_smem - extra
         ) // AB_smem_per_stage
 
-        if num_pipeline_stages:
-            self.num_pipeline_stages = num_pipeline_stages.value()
+        if case .Some(num_pipeline_stages) = num_pipeline_stages:
+            self.num_pipeline_stages = num_pipeline_stages
         else:
             self.num_pipeline_stages = align_down(max_stages, k_group_size)
 
@@ -468,9 +468,10 @@ def choose_swiglu_config[
                 mma_mn[1] = mma_n
     else:
 
-        @__parameter
-        @always_inline
-        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        @inline(.always)
+        def select_mma_mn(
+            M: Int, N: Int, _swapAB: Bool = False
+        ) {mut min_num_waves, mut mma_mn, mut swapAB, imm}:
             var N_aligned = align_up(N, 16)
             var max_mma_n = min(N_aligned, 256)
             var min_mma_n = min(N_aligned, 32)

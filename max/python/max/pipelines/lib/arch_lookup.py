@@ -25,47 +25,55 @@ import importlib
 import logging
 import os
 import sys
-from collections.abc import Callable
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeAlias
 
+from max.experimental.nn import Module
 from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.speculative.config import SpeculativeMethod
 
+from .interfaces.pipeline_model import PipelineModel
+from .pipeline_executor import PipelineExecutor
 from .tokenizer import TextTokenizer
 
 if TYPE_CHECKING:
-    from max.experimental.nn import Module
     from max.graph.weights import WeightsAdapter, WeightsFormat
     from max.pipelines.context import (
+        AudioContext,
         PixelContext,
         TextAndVisionContext,
         TextContext,
     )
+    from max.pipelines.diffusion.config import TaylorSeerDefaults
     from max.pipelines.kv_cache.memory_planner import MemoryPlanner
     from max.pipelines.modeling.config_enums import SupportedEncoding
     from max.pipelines.modeling.types import (
         EmbeddingsContext,
         PipelineTokenizer,
     )
+    from max.pipelines.speculative import SpeculativeConfig
     from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
     from .config import PipelineConfig
     from .interfaces import ArchConfig
-    from .interfaces.pipeline_model import PipelineModel
-    from .pipeline_executor import PipelineExecutor
 
 logger = logging.getLogger("max.pipelines")
 
 __all__ = [
     "PipelineModelType",
+    "Speculator",
     "SupportedArchitecture",
+    "select_speculator",
 ]
 
-PipelineModelType: TypeAlias = (
-    "type[PipelineModel[Any]] "
-    "| type[PipelineExecutor[Any, Any, Any]] "
-    "| type[Module[Any, Any]]"
-)
+PipelineModelType: TypeAlias = type[
+    PipelineModel[Any] | PipelineExecutor[Any, Any, Any] | Module[Any, Any]
+]
+"""The class of a model implementation that an architecture registers. A
+:class:`PipelineModel`, a :class:`PipelineExecutor`, or a
+:class:`~max.experimental.nn.Module`.
+"""
 
 
 @dataclass(frozen=False)
@@ -80,48 +88,49 @@ class SupportedArchitecture:
     New architectures should be registered into the :obj:`PipelineRegistry`
     using the :obj:`~PipelineRegistry.register()` method.
 
-    Example:
-        .. code-block:: python
+    For example, define the components of a custom architecture:
 
-            from max.graph.weights import WeightsFormat
-            from max.pipelines.context import TextContext
-            from max.pipelines.lib.interfaces.pipeline_model import (
-                ModelOutputs,
-                PipelineModel,
-            )
-            from max.pipelines.lib.registry import SupportedArchitecture
-            from max.pipelines.lib.tokenizer import TextTokenizer
-            from max.pipelines.modeling.types import PipelineTask
+    .. code-block:: python
 
-            # A concrete PipelineModel subclass. Registration stores the class
-            # itself, so it is never instantiated here.
-            class MyModel(PipelineModel[TextContext]):
-                def execute(self, model_inputs) -> ModelOutputs:
-                    raise NotImplementedError
+        from max.graph.weights import WeightsFormat
+        from max.pipelines.context import TextContext
+        from max.pipelines.lib.interfaces.pipeline_model import (
+            ModelOutputs,
+            PipelineModel,
+        )
+        from max.pipelines.lib.registry import SupportedArchitecture
+        from max.pipelines.lib.tokenizer import TextTokenizer
+        from max.pipelines.modeling.types import PipelineTask
 
-            class MyModelConfig:
-                pass
+        # A concrete PipelineModel subclass. Registration stores the class
+        # itself, so it is never instantiated here.
+        class MyModel(PipelineModel[TextContext]):
+            def execute(self, model_inputs) -> ModelOutputs:
+                raise NotImplementedError
 
-            my_architecture = SupportedArchitecture(
-                name="MyModelForCausalLM",  # Must match your Hugging Face model class name
-                example_repo_ids=[
-                    "your-org/your-model-name",  # Add example model repository IDs
-                ],
-                default_encoding="q4_k",
-                supported_encodings={
-                    "q4_k",
-                    "bfloat16",
-                    # Add other encodings your model supports
-                },
-                pipeline_model=MyModel,
-                tokenizer=TextTokenizer,
-                context_type=TextContext,
-                config=MyModelConfig,  # Architecture-specific config class
-                default_weights_format=WeightsFormat.safetensors,
-                multi_gpu_supported=True,  # Set based on your implementation capabilities
-                required_arguments={"some_arg": True},
-                task=PipelineTask.TEXT_GENERATION,
-            )
+        class MyModelConfig:
+            pass
+
+        my_architecture = SupportedArchitecture(
+            name="MyModelForCausalLM",  # Must match your Hugging Face model class name
+            example_repo_ids=[
+                "your-org/your-model-name",  # Add example model repository IDs
+            ],
+            default_encoding="q4_k",
+            supported_encodings={
+                "q4_k",
+                "bfloat16",
+                # Add other encodings your model supports
+            },
+            pipeline_model=MyModel,
+            tokenizer=TextTokenizer,
+            context_type=TextContext,
+            config=MyModelConfig,  # Architecture-specific config class
+            default_weights_format=WeightsFormat.safetensors,
+            multi_gpu_supported=True,  # Set based on your implementation capabilities
+            required_arguments={"some_arg": True},
+            task=PipelineTask.TEXT_GENERATION,
+        )
     """
 
     name: str
@@ -154,11 +163,16 @@ class SupportedArchitecture:
     default_weights_format: WeightsFormat
     """The weights format expected by the `pipeline_model`."""
 
-    context_type: type[TextContext] | type[EmbeddingsContext]
+    context_type: type[
+        TextContext | EmbeddingsContext | PixelContext | AudioContext
+    ]
     """The context class type that this architecture uses for managing request state and inputs.
 
-    This should be a class (not an instance) that implements either the `TextContext`
-    or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
+    This should be a class (not an instance) carrying the state and inputs of
+    one request, in whichever form the architecture's task calls for: a
+    `TextContext` or `EmbeddingsContext` protocol implementation for token and
+    embedding models, or a `PixelContext` or `AudioContext` subclass for the
+    media tasks.
     """
 
     config: type[ArchConfig]
@@ -184,7 +198,7 @@ class SupportedArchitecture:
     """The set of input modalities this architecture accepts.
 
     Defaults to text-only. Multimodal architectures should declare all
-    supported input types explicitly, e.g.
+    supported input types explicitly, such as
     ``{InputModality.TEXT, InputModality.IMAGE}`` for vision-language models.
     """
 
@@ -192,6 +206,12 @@ class SupportedArchitecture:
         default_factory=dict
     )
     """A dictionary specifying required values for PipelineConfig options."""
+
+    checkpoints_recurrent_state: bool = False
+    """Whether this architecture carries recurrent state a prefix hit must resume.
+
+    A prefix hit is safe only where the state that consumed exactly that
+    prefix is restored with it."""
 
     context_validators: list[
         Callable[[TextContext | TextAndVisionContext | PixelContext], None]
@@ -261,6 +281,39 @@ class SupportedArchitecture:
     registration time via :attr:`~max.pipelines.lib.interfaces.pipeline_model.PipelineModel.batch_processor_cls`.
     Ragged text models should subclass
     :class:`~max.pipelines.lib.interfaces.batch_processor.RaggedBatchProcessor`.
+
+    Every token-generation model needs a batch processor. It's easiest to
+    use or subclass an existing one (for example,
+    ``batching=Llama3BatchProcessor``).
+
+    .. code-block:: python
+
+        from max.pipelines.lib.interfaces.batch_processor import (
+            SingleReplicaRaggedBatchProcessor,
+        )
+
+        class MyBatchProcessor(SingleReplicaRaggedBatchProcessor):
+            def _make_inputs(
+                self,
+                *,
+                tokens,
+                input_row_offsets,
+                return_n_logits,
+                kv_cache_inputs,
+                signal_buffers,
+            ):
+                ...  # Build the ModelInputs.
+
+        # Pass ``batching=MyBatchProcessor`` to ``SupportedArchitecture``
+        # when registering the architecture.
+
+    .. invisible-code-block: python
+
+        from max.pipelines.lib.interfaces.batch_processor import (
+            BatchProcessor,
+        )
+
+        assert issubclass(MyBatchProcessor, BatchProcessor)
     """
 
     reasoning_parser: str | None = None
@@ -270,7 +323,7 @@ class SupportedArchitecture:
     :func:`max.pipelines.lib.reasoning.register`. When set, the pipeline
     config will fall back to this value for ``runtime.reasoning_parser`` if
     the user did not explicitly configure one. Different model architectures
-    emit reasoning content in different formats (e.g., Kimi K2.5 wraps
+    emit reasoning content in different formats (for example, Kimi K2.5 wraps
     reasoning in ``<think>...</think>``), so the appropriate default is
     architecture-specific.
 
@@ -281,12 +334,36 @@ class SupportedArchitecture:
     default_structured_output_backend: str | None = None
     """Optional default structured output backend for this architecture.
 
-    When set (e.g., ``"llguidance"`` or ``"xgrammar"``), the pipeline config
+    When set to ``"xgrammar"``, the pipeline config
     will use this value for ``sampling.structured_output_backend`` if the
     user did not explicitly configure one. This allows architectures that
     work better with a specific backend to override the global default.
 
     If None, the global default from ``SamplingConfig`` is used.
+    """
+
+    default_structured_output_any_whitespace: bool | None = None
+    """Optional default for whitespace-tolerant structured-output grammars.
+
+    When set, the pipeline config will use this value for
+    ``sampling.structured_output_any_whitespace`` if the user did not
+    explicitly configure one. ``False`` constrains ``response_format``
+    generation to compact JSON (the runaway-generation mitigation);
+    ``True`` lets the grammar accept whitespace between JSON tokens, which
+    some models need at structural boundaries.
+
+    If None, the global default (compact JSON) is used.
+    """
+
+    denoising_cache_defaults: TaylorSeerDefaults | None = None
+    """TaylorSeer tuning for this architecture. User-set fields always win."""
+
+    checkpoint_draft_width: (
+        Callable[[SpeculativeConfig, Any, Any], int] | None
+    ) = None
+    """Returns the draft width this checkpoint was trained for.
+
+    Set it when the checkpoint fixes the width rather than the user.
     """
 
     supports_overlap_scheduler: bool = True
@@ -297,6 +374,15 @@ class SupportedArchitecture:
     via ``--enable-overlap-scheduler --force``.
     """
 
+    supports_nvfp4_kv_cache: bool = False
+    """Whether this architecture implements ``kv_cache_format="float4_e2m1fn"``.
+
+    An NVFP4 cache stores packed values with scales that only an
+    architecture's own writer and attention ops know how to handle, so the
+    format is rejected at config time for every architecture that does not
+    opt in.
+    """
+
     supports_device_graph_capture: bool = True
     """Whether this architecture supports auto-enabling device graph capture.
 
@@ -305,18 +391,52 @@ class SupportedArchitecture:
     via ``--device-graph-capture --force``.
     """
 
+    supports_spec_decode_mixed_batches: bool = False
+    """Whether this architecture's speculative graph is per-row correct on
+    mixed prefill+decode verify batches.
+
+    When ``False``, ``--enable-spec-decode-mixed-batches`` falls back to
+    plain in-flight batching for this architecture.
+    """
+
     memory_planner: type[MemoryPlanner] | None = None
     """Optional :class:`~max.pipelines.kv_cache.MemoryPlanner` subclass for
     this architecture.
 
     When set, ``PipelineConfig`` uses the planner to estimate weight size,
-    activation memory, signal-buffer memory, and vision cache entry bytes.
+    activation memory, and signal-buffer memory.
     Autoregressive text-generation models should set this to
     :class:`~max.pipelines.kv_cache.PagedMemoryPlanner` (or a subclass with
     architecture-specific overrides).
 
-    ``None`` means the architecture manages its own memory estimation (e.g.
-    diffusion pipelines that skip KV cache estimation entirely).
+    ``None`` means the architecture manages its own memory estimation (for
+    example, diffusion pipelines that skip KV cache estimation entirely).
+    Without a planner, memory estimation budgets no activation memory and
+    does not infer ``max_batch_size``, so architectures that use a KV cache
+    should always set this field.
+
+    To reserve a fixed chunk of activation memory (vision headroom, for
+    example) without writing a planner subclass, register the class returned
+    by
+    :meth:`~max.pipelines.kv_cache.PagedMemoryPlanner.with_activation_reservation`.
+
+    .. code-block:: python
+
+        from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
+
+        # Most architectures register the planner class directly:
+        #     SupportedArchitecture(..., memory_planner=PagedMemoryPlanner)
+        # A configured subclass reserves activation memory:
+        planner = PagedMemoryPlanner.with_activation_reservation(
+            15 * 1024**3  # 15 GiB
+        )
+
+    .. invisible-code-block: python
+
+        from max.pipelines.kv_cache.memory_planner import MemoryPlanner
+
+        assert issubclass(PagedMemoryPlanner, MemoryPlanner)
+        assert issubclass(planner, PagedMemoryPlanner)
     """
 
     cascade_pipeline_factory: Callable[[PipelineConfig], object] | None = None
@@ -359,14 +479,143 @@ class SupportedArchitecture:
         return TextTokenizer
 
 
+@dataclass(frozen=True)
+class Speculator:
+    """One speculative variant of a target architecture.
+
+    A speculator is a bounded delta on its :attr:`base`, not a separate
+    architecture: :meth:`derive` copies only the fields below, and everything
+    else -- tokenizer, encodings, tool and reasoning parsers, structured-output
+    defaults are inherited. The config class and memory planner are inherited
+    unless the drafter adds KV cache or weights of its own.
+    Declared in the speculator's own package, which already depends on the base.
+
+    A speculator is not registered as an architecture. It is indexed against
+    its target, and selection applies :meth:`derive` to the architecture the
+    checkpoint's own name already resolved to.
+    """
+
+    name: str
+    """Identifies the fused architecture in logs and generated docs."""
+
+    base: SupportedArchitecture
+    """The target architecture this speculator applies to."""
+
+    draft_arch: str | None
+    """The draft repo's ``huggingface_config.architectures[0]``.
+
+    ``None`` when the draft head ships inside the target checkpoint, as for
+    MTP/NextN: the ``draft`` manifest role stays empty and the draft weights
+    come out of the target's own state dict.
+    """
+
+    method: SpeculativeMethod
+    """The mechanism this speculator implements.
+
+    Matched against the configured ``speculative_method``, so naming a method
+    selects the mechanism that runs rather than whichever speculator the draft
+    checkpoint happens to fit.
+    """
+
+    pipeline_model: PipelineModelType
+    """The fused pipeline model, which runs target and draft in one graph."""
+
+    batching: type[Any] | None = None
+    weight_adapters: Mapping[WeightsFormat, WeightsAdapter] = field(
+        default_factory=dict
+    )
+    example_repo_ids: list[str] | None = None
+    """Replace the target's example repos.
+
+    Set it when the fused graph is exercised by a different checkpoint than
+    the target's own.
+    """
+
+    opt_out_cascade: bool = False
+    """Clear the base's ``cascade_pipeline_factory``.
+
+    The fused spec-decode graph has no cascade path, so inheriting the base's
+    factory would advertise one that does not exist.
+    """
+
+    supports_device_graph_capture: bool | None = None
+    """Override whether the fused graph can be captured; ``None`` inherits.
+
+    Set it ``False`` only for a fused graph that genuinely cannot be
+    captured. A multimodal speculator whose vision encoder runs eagerly
+    during prefill is the case that exists: it produces variable-shape image
+    embeddings from outside the captured region, so the target's own support
+    does not carry over.
+    """
+
+    config: type[ArchConfig] | None = None
+    """Replace the base's config class; ``None`` inherits.
+
+    Set it when the drafter keeps a KV cache of its own: the config's KV
+    params are what memory planning and cache allocation size, so a drafter
+    group missing from them is never budgeted.
+    """
+
+    memory_planner: type[MemoryPlanner] | None = None
+    """Replace the base's memory planner; ``None`` inherits.
+
+    Set it when the fused graph loads drafter weights the base planner does
+    not count.
+    """
+
+    checkpoint_draft_width: (
+        Callable[[SpeculativeConfig, Any, Any], int] | None
+    ) = None
+    """Returns the draft width the drafter was trained for; ``None`` inherits.
+    """
+
+    supports_spec_decode_mixed_batches: bool | None = None
+    """Override whether the fused graph is per-row correct on mixed
+    prefill+decode verify batches; ``None`` inherits."""
+
+    def derive(self) -> SupportedArchitecture:
+        """Returns the fused architecture for this speculator.
+
+        Applies this speculator's own fields on top of :attr:`base`. Every
+        field not named here is inherited, which is what keeps a speculator
+        from drifting away from its target.
+        """
+        inherited_unless_set = {
+            "batching": self.batching,
+            "example_repo_ids": self.example_repo_ids,
+            "supports_device_graph_capture": self.supports_device_graph_capture,
+            "config": self.config,
+            "memory_planner": self.memory_planner,
+            "checkpoint_draft_width": self.checkpoint_draft_width,
+            "supports_spec_decode_mixed_batches": (
+                self.supports_spec_decode_mixed_batches
+            ),
+        }
+        changes: dict[str, Any] = {
+            "name": self.name,
+            "pipeline_model": self.pipeline_model,
+            **{
+                name: value
+                for name, value in inherited_unless_set.items()
+                if value is not None
+            },
+        }
+        if self.weight_adapters:
+            changes["weight_adapters"] = dict(self.weight_adapters)
+        if self.opt_out_cascade:
+            changes["cascade_pipeline_factory"] = None
+        return replace(self.base, **changes)
+
+
 class ArchLookup:
     """Architecture tables plus registration and selection logic.
 
-    Owns the three tables behind architecture lookup: the primary name table,
-    the ``(name, task)`` disambiguation table, and the lazy-registration
-    table. :class:`~max.pipelines.lib.registry.PipelineRegistry` delegates
-    its architecture concerns here; the global registry shares
-    :obj:`ARCH_LOOKUP` so config-layer lookups hit the same table.
+    Owns the tables behind architecture lookup: the primary name table, the
+    ``(name, task)`` disambiguation table, the lazy-registration table, and
+    the speculator index :meth:`speculators_for` reads.
+    :class:`~max.pipelines.lib.registry.PipelineRegistry` delegates its
+    architecture concerns here; the global registry shares :obj:`ARCH_LOOKUP`
+    so config-layer lookups hit the same table.
     """
 
     def __init__(self) -> None:
@@ -384,12 +633,39 @@ class ArchLookup:
         self._lazy_architectures: dict[
             str, list[tuple[str, str, str | None]]
         ] = {}
+        # Deferred speculator registrations, keyed by the *target* they
+        # speculate on rather than by a name of their own: a speculator is not
+        # an architecture and never claims a slot in the table above.
+        self._lazy_speculators: dict[
+            str, list[tuple[str, str, str | None]]
+        ] = {}
+        # Imported speculators, keyed by target, in declaration order.
+        self._speculators: dict[str, list[Speculator]] = {}
         # Already-imported module specs; repeated calls must not re-register.
         self._imported_custom_arch_specs: set[str] = set()
 
+    def _bind_batch_processor(
+        self, architecture: SupportedArchitecture
+    ) -> None:
+        """Binds a declared batch processor onto its pipeline model."""
+        if architecture.batching is None:
+            return
+        from .interfaces.pipeline_model import PipelineModel
+
+        pipeline_model_cls = architecture.pipeline_model
+        if not isinstance(pipeline_model_cls, type) or not issubclass(
+            pipeline_model_cls, PipelineModel
+        ):
+            raise TypeError(
+                f"Architecture '{architecture.name}' sets batching= but "
+                f"pipeline_model {pipeline_model_cls!r} is not a PipelineModel "
+                "subclass."
+            )
+        pipeline_model_cls.batch_processor_cls = architecture.batching
+
     def register(
         self,
-        architecture: SupportedArchitecture,
+        architecture: SupportedArchitecture | Speculator,
         *,
         allow_override: bool = False,
     ) -> None:
@@ -397,20 +673,23 @@ class ArchLookup:
 
         If multiple architectures share the same name but have different tasks,
         they are registered in a secondary lookup table keyed by (name, task).
-        """
-        if architecture.batching is not None:
-            from .interfaces.pipeline_model import PipelineModel
 
-            pipeline_model_cls = architecture.pipeline_model
-            if not isinstance(pipeline_model_cls, type) or not issubclass(
-                pipeline_model_cls, PipelineModel
-            ):
-                raise TypeError(
-                    f"Architecture '{architecture.name}' sets batching= but "
-                    f"pipeline_model {pipeline_model_cls!r} is not a PipelineModel "
-                    "subclass."
-                )
-            pipeline_model_cls.batch_processor_cls = architecture.batching
+        A :class:`Speculator` is indexed against its target instead. It does
+        not enter the name table: the fused architecture it derives is reached
+        by selecting the speculator, never by looking up a name.
+        """
+        if isinstance(architecture, Speculator):
+            speculators = self._speculators.setdefault(
+                architecture.base.name, []
+            )
+            if not any(known is architecture for known in speculators):
+                speculators.append(architecture)
+            # Against the derived architecture, so an inherited batch
+            # processor binds onto the fused pipeline model too.
+            self._bind_batch_processor(architecture.derive())
+            return
+
+        self._bind_batch_processor(architecture)
 
         task_key = (architecture.name, architecture.task)
 
@@ -453,12 +732,32 @@ class ArchLookup:
         symbol: str,
         *,
         package: str | None = None,
+        speculates_on: str | None = None,
     ) -> None:
         """Records *how* to import an architecture without importing it yet.
 
         The real :class:`SupportedArchitecture` is imported and registered the
         first time ``name`` is looked up; see :meth:`materialize`.
+
+        With ``speculates_on`` the symbol is a :class:`Speculator`, which is
+        filed under its target rather than under ``name`` -- so the fused
+        architecture never becomes a name anyone can look up, and the target
+        can still offer its speculators without importing them.
+
+        Args:
+            name: Architecture name to register under. Ignored for a
+                speculator, which is keyed by its target.
+            module: Module the symbol lives in.
+            symbol: Attribute on ``module`` holding the declaration.
+            package: Anchor for a ``.``-relative ``module``.
+            speculates_on: For a :class:`Speculator`, the name of the target
+                it speculates on.
         """
+        if speculates_on is not None:
+            self._lazy_speculators.setdefault(speculates_on, []).append(
+                (module, symbol, package)
+            )
+            return
         self._lazy_architectures.setdefault(name, []).append(
             (module, symbol, package)
         )
@@ -475,7 +774,35 @@ class ArchLookup:
             return
         for module, symbol, package in entries:
             imported = importlib.import_module(module, package)
+            declaration = getattr(imported, symbol)
+            existing = self.architectures.get(declaration.name)
+            if existing is not None and existing.task == declaration.task:
+                # An architecture registered eagerly under this name (e.g. via
+                # --custom-architectures) takes precedence over the deferred
+                # built-in.
+                logger.debug(
+                    "Skipping lazy registration of built-in architecture "
+                    "'%s': an architecture with that name is already "
+                    "registered.",
+                    declaration.name,
+                )
+                continue
+            self.register(declaration)
+
+    def speculators_for(self, target: str) -> list[Speculator]:
+        """Returns the speculators declared against ``target``.
+
+        Imports their packages, so it costs nothing until speculation is
+        actually being configured. An empty result means ``target`` offers no
+        speculator at all and the caller should leave the architecture alone.
+
+        Declaration order is preserved, so it is also the tie-break when two
+        speculators would accept the same draft.
+        """
+        for module, symbol, package in self._lazy_speculators.pop(target, []):
+            imported = importlib.import_module(module, package)
             self.register(getattr(imported, symbol))
+        return list(self._speculators.get(target, []))
 
     def import_custom_architectures(
         self, custom_architectures: list[str]
@@ -515,6 +842,8 @@ class ArchLookup:
                     f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
                 )
 
+            # An entry may be a Speculator, declaring a speculator of a built-in
+            # target the same way an in-tree speculator package does.
             for arch in module.ARCHITECTURES:
                 self.register(arch, allow_override=True)
             self._imported_custom_arch_specs.add(module_spec)
@@ -593,6 +922,8 @@ class ArchLookup:
         self.architectures.clear()
         self._architectures_by_task.clear()
         self._lazy_architectures.clear()
+        self._lazy_speculators.clear()
+        self._speculators.clear()
         self._imported_custom_arch_specs.clear()
 
 
@@ -614,11 +945,11 @@ def find_architecture(
 
     Args:
         name: The architecture class name to look up
-            (e.g. ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
-        prefer_module_v3: Whether to use the eager API architecture variant.
+            (such as ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
+        prefer_module_v3: Whether to use the ModuleV3 architecture variant.
             When ``False`` (default), uses the standard graph API architecture name.
             When ``True``, appends the ``_ModuleV3`` suffix to look up the
-            eager API architecture.
+            ModuleV3 architecture.
         task: Optional task to disambiguate when multiple architectures
             share the same name.
 
@@ -626,6 +957,59 @@ def find_architecture(
         The matching SupportedArchitecture or None if no match found.
     """
     return ARCH_LOOKUP.find(name, prefer_module_v3=prefer_module_v3, task=task)
+
+
+def select_speculator(
+    target: str,
+    method: SpeculativeMethod | None,
+    draft_arch: str | None,
+) -> Speculator | None:
+    """Returns the speculator ``target`` declares for ``method``/``draft_arch``.
+
+    ``None`` when ``target`` declares no speculators at all, which is every
+    target still routed by the legacy override chain -- so a caller that
+    applies the result leaves those untouched.
+
+    Both halves have to agree. Matching the draft alone runs whichever
+    mechanism the draft checkpoint happens to fit rather than the one asked
+    for; matching the method alone cannot separate two speculators that
+    implement it with different drafts.
+
+    Raises:
+        ValueError: If ``target`` declares speculators but none accepts this
+            method and draft together.
+    """
+    declared = ARCH_LOOKUP.speculators_for(target)
+    if not declared:
+        return None
+    speculator = next(
+        (
+            s
+            for s in declared
+            if s.method == method and s.draft_arch == draft_arch
+        ),
+        None,
+    )
+    if speculator is None:
+        raise ValueError(
+            f"No speculator for {target} runs {method!r} with draft"
+            f" architecture {draft_arch!r}. Declared:"
+            f" {_declared_combinations(declared)}."
+        )
+    return speculator
+
+
+def _declared_combinations(speculators: Sequence[Speculator]) -> str:
+    """Renders the method and draft each of ``speculators`` accepts."""
+    return ", ".join(
+        f"{speculator.method!r} with "
+        + (
+            f"draft {speculator.draft_arch!r}"
+            if speculator.draft_arch is not None
+            else "no draft model"
+        )
+        for speculator in speculators
+    )
 
 
 def import_custom_architectures(custom_architectures: list[str]) -> None:

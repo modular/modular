@@ -65,7 +65,7 @@ def _init_nvshmem_dylib() -> OwnedDLHandle:
         abort(t"failed to load NVSHMEM library: {e}")
 
 
-@always_inline
+@inline(.always)
 def _get_nvshmem_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() -> result_type:
@@ -260,36 +260,37 @@ def _dtype_to_nvshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    comptime if dtype == DType.float16:
-        return get_static_string[prefix, "half", suffix, scope]()
-    elif dtype == DType.bfloat16:
-        return get_static_string[prefix, "bfloat16", suffix, scope]()
-    elif dtype == DType.float32:
-        return get_static_string[prefix, "float", suffix, scope]()
-    elif dtype == DType.float64:
-        return get_static_string[prefix, "double", suffix, scope]()
-    elif dtype == DType.int8:
-        return get_static_string[prefix, "int8", suffix, scope]()
-    elif dtype == DType.uint8:
-        return get_static_string[prefix, "uint8", suffix, scope]()
-    elif dtype == DType.int16:
-        return get_static_string[prefix, "int16", suffix, scope]()
-    elif dtype == DType.uint16:
-        return get_static_string[prefix, "uint16", suffix, scope]()
-    elif dtype == DType.int32:
-        return get_static_string[prefix, "int32", suffix, scope]()
-    elif dtype == DType.uint32:
-        return get_static_string[prefix, "uint32", suffix, scope]()
-    elif dtype == DType.int64:
-        return get_static_string[prefix, "int64", suffix, scope]()
-    elif dtype == DType.uint64:
-        return get_static_string[prefix, "uint64", suffix, scope]()
-    elif dtype == DType.int:
-        return get_static_string[prefix, "size", suffix, scope]()
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+    comptime match dtype:
+        case .float16:
+            return get_static_string[prefix, "half", suffix, scope]()
+        case .bfloat16:
+            return get_static_string[prefix, "bfloat16", suffix, scope]()
+        case .float32:
+            return get_static_string[prefix, "float", suffix, scope]()
+        case .float64:
+            return get_static_string[prefix, "double", suffix, scope]()
+        case .int8:
+            return get_static_string[prefix, "int8", suffix, scope]()
+        case .uint8:
+            return get_static_string[prefix, "uint8", suffix, scope]()
+        case .int16:
+            return get_static_string[prefix, "int16", suffix, scope]()
+        case .uint16:
+            return get_static_string[prefix, "uint16", suffix, scope]()
+        case .int32:
+            return get_static_string[prefix, "int32", suffix, scope]()
+        case .uint32:
+            return get_static_string[prefix, "uint32", suffix, scope]()
+        case .int64:
+            return get_static_string[prefix, "int64", suffix, scope]()
+        case .uint64:
+            return get_static_string[prefix, "uint64", suffix, scope]()
+        case .int:
+            return get_static_string[prefix, "size", suffix, scope]()
+        case _:
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
 
 
 # ===-----------------------------------------------------------------------===#

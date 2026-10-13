@@ -19,10 +19,11 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from typing import Generic, TypedDict, TypeVar
 
 import numpy as np
+from max.pipelines.modeling.types import VisionPreprocessCacheStats
 
 from .pipeline_runtime_config import PipelineRuntimeConfig
 
@@ -55,10 +56,11 @@ def _freeze_and_size(payload: object) -> int:
     loud failure. Applied on the miss path too, so a hit and a miss return
     payloads that behave identically.
 
-    Walks tuples, lists and dict values, since a payload is normally a tuple of
-    a few arrays plus scalars or small metadata. Only arrays are counted: the
-    metadata a processor returns alongside them is orders of magnitude smaller
-    than the pixels, and sizing it would mean walking arbitrary objects.
+    Walks tuples, lists, dict values and dataclass fields, since a payload is
+    normally a few arrays plus scalars or small metadata, grouped either
+    positionally or in a small record. Only arrays are counted: the metadata a
+    processor returns alongside them is orders of magnitude smaller than the
+    pixels, and sizing it would mean walking arbitrary objects.
 
     A view's base is frozen as well as the view. Marking only the view
     read-only leaves the buffer writable through whatever still holds the base,
@@ -89,6 +91,14 @@ def _freeze_and_size(payload: object) -> int:
             stack.extend(item)
         elif isinstance(item, dict):
             stack.extend(item.values())
+        elif is_dataclass(item) and not isinstance(item, type):
+            # A payload that groups its arrays in a dataclass rather than a
+            # tuple would otherwise fall through every branch above: charged
+            # zero bytes, so it escapes the cache budget, and never frozen, so
+            # the corruption this function exists to prevent stays possible.
+            # ``frozen=True`` does not help -- it stops the field being
+            # rebound, not the array it points at being written through.
+            stack.extend(getattr(item, f.name) for f in fields(item))
     return total
 
 
@@ -178,6 +188,7 @@ class VisionPreprocessCache(Generic[_T]):
         self._lock = threading.Lock()
         self._hits = 0
         self._misses = 0
+        self._evictions = 0
 
     @classmethod
     def for_images(
@@ -220,6 +231,11 @@ class VisionPreprocessCache(Generic[_T]):
         return self._total_bytes
 
     @property
+    def max_bytes(self) -> int:
+        """The byte budget (``0``: caching disabled)."""
+        return self._max_bytes
+
+    @property
     def hits(self) -> int:
         """Lookups served from the cache."""
         return self._hits
@@ -228,6 +244,35 @@ class VisionPreprocessCache(Generic[_T]):
     def misses(self) -> int:
         """Lookups that had to preprocess."""
         return self._misses
+
+    @property
+    def evictions(self) -> int:
+        """Entries dropped to make room for a new one.
+
+        Budget pressure only: an idle-sweep reclaim and a reinsert
+        displacing its own key are not evictions, because this exists to say
+        whether the budget is the binding constraint on the hit rate.
+        """
+        return self._evictions
+
+    def stats(self) -> VisionPreprocessCacheStats:
+        """A snapshot of the counters, read without the lock.
+
+        The serve layer calls this from the asyncio event loop once per media
+        request. Taking the mutex there would let N worker threads inside an
+        eviction run stall every in-flight request on the server, including
+        text-only ones, for the sake of a metric. A torn read costs at most
+        one skewed sample: the counters are differenced against a prior
+        snapshot, and that differencing already tolerates them moving
+        backwards.
+        """
+        return VisionPreprocessCacheStats(
+            hits=self._hits,
+            misses=self._misses,
+            evictions=self._evictions,
+            size_bytes=self._total_bytes,
+            capacity_bytes=self._max_bytes,
+        )
 
     def __len__(self) -> int:
         return len(self._cache)
@@ -261,6 +306,21 @@ class VisionPreprocessCache(Generic[_T]):
         self._lock = threading.Lock()
         self._hits = 0
         self._misses = 0
+        self._evictions = 0
+
+    def contains(self, key: int) -> bool:
+        """Whether ``key`` is cached right now, without disturbing the cache.
+
+        A peek, not a lookup: LRU order, the idle deadline and the hit/miss
+        counters are all left alone, so the :meth:`get_or_preprocess` that
+        follows still accounts for itself.
+
+        The answer is a snapshot, not a reservation: an entry can be evicted
+        between the peek and the lookup, so a caller must stay correct when
+        what it saw here has gone.
+        """
+        with self._lock:
+            return key in self._cache
 
     def get(self, key: int) -> _T | None:
         """Look up a payload by content key, refreshing LRU order.
@@ -316,6 +376,7 @@ class VisionPreprocessCache(Generic[_T]):
             while self._cache and self._total_bytes + nbytes > self._max_bytes:
                 _, evicted = self._cache.popitem(last=False)
                 self._total_bytes -= evicted.nbytes
+                self._evictions += 1
                 dropped.append(evicted)
             self._cache[key] = _Entry(
                 value=value, nbytes=nbytes, last_used=self._clock()

@@ -17,7 +17,7 @@
 
 from std.random import random_float64
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
@@ -57,7 +57,7 @@ def convolution_tiled_2D_const_mem_kernel(
     var N_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Load input tile into shared memory
@@ -205,9 +205,9 @@ def main() raises:
 
     # Initialize input and filter with random values
     for i in range(in_elements):
-        h_in[i] = random_float64().cast[DType.float32]()
+        h_in[i] = random_float64().cast[.float32]()
     for i in range(filter_elements):
-        h_filter[i] = random_float64().cast[DType.float32]()
+        h_filter[i] = random_float64().cast[.float32]()
 
     # Run GPU convolution
     with DeviceContext() as ctx:

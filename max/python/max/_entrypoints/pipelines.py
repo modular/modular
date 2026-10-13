@@ -161,7 +161,7 @@ def _handle_import_error(
 
     Args:
         e: The raised error
-        subcommand: The subcommand that was run (i.e. "serve" for `max serve`)
+        subcommand: The subcommand that was run (that is, "serve" for `max serve`)
         suggestion: Which package to install, first item is when using conda, second is for wheels.
     """
 
@@ -195,12 +195,18 @@ def _handle_import_error(
 )
 @click.pass_context
 def main(ctx: click.Context, log_level: str = "INFO") -> None:
+    from max._entrypoints.allocator import reexec_with_jemalloc
     from max._entrypoints.cli.entrypoint import configure_cli_logging
 
     # Configure logging first, before any other initialization
     configure_cli_logging(
         level=log_level, log_prefix=os.getenv("MAX_SERVE_LOG_PREFIX")
     )
+
+    # Swapping the allocator restarts the process, so it has to happen before
+    # anything with a side effect. Logging is set up first only so that the
+    # decision is visible at debug level.
+    reexec_with_jemalloc()
 
     # Some subcommands opt out of telemetry.
     if ctx.invoked_subcommand not in _TELEMETRY_OPT_OUT_COMMANDS:
@@ -233,6 +239,12 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         "--port",
         type=int,
         help="Port for the HTTP API. Defaults to ``8000``.",
+    )
+    @click.option(
+        "--host",
+        type=str,
+        default=None,
+        help="Interface to bind the HTTP API to. Defaults to MAX_SERVE_HOST.",
     )
     @click.option(
         "--headless",
@@ -301,6 +313,40 @@ def _apply_interpreter_cache_policy(allow_cold: bool) -> None:
         os.environ.setdefault(_eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR, "0")
 
 
+def click_option_requires(
+    requires: str,
+) -> Callable[..., Callable[..., Any]]:
+    """Decorator factory for a ``click.option`` that requires another flag.
+
+    Returns a function that builds a click option whose eager-gating callback
+    rejects the flag when ``--{requires}`` was not supplied. This centralizes
+    the dependency so the flag name is declared exactly once and stays in sync
+    between the CLI option and the error message. Gated flags default to
+    ``None`` or empty tuple, so values outside ``(None, ())`` mean the user
+    supplied them.
+    """
+
+    def option_for_flag(
+        flag: str,
+        **option_kwargs: Any,
+    ) -> Callable[..., Any]:
+        def _callback(
+            ctx: click.Context, param: click.Parameter, value: Any
+        ) -> Any:
+            if value not in (None, ()) and not ctx.params.get(requires):
+                raise click.UsageError(f"--{flag} requires --{requires}.")
+            return value
+
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            return click.option(
+                f"--{flag}", callback=_callback, **option_kwargs
+            )(func)
+
+        return decorator
+
+    return option_for_flag
+
+
 @main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
 @click.option(
@@ -324,8 +370,70 @@ def _apply_interpreter_cache_policy(allow_cold: bool) -> None:
     "refusing on a machine that `max warm-interpreter-cache` has not warmed. "
     "Equivalent to setting MAX_EAGER_ALLOW_LAZY_COMPILE=1.",
 )
+@click.option(
+    "--cascade/--no-cascade",
+    default=False,
+    # Eager so the click_option_requires("cascade") callbacks on the context
+    # knobs below see ctx.params['cascade'] populated before they run.
+    is_eager=True,
+    help=(
+        "Serve via the experimental Cascade server "
+        "(`max.experimental.cascade.serve.main.serve`) instead of the "
+        "standard API server + model worker. The resolved PipelineArgs is "
+        "forwarded to the Cascade entrypoint."
+    ),
+)
+# Cascade-only deployment knobs: these size the Cascade worker process
+# pools and select the worker transport.
+@click_option_requires("cascade")(
+    "cascade-transport",
+    type=click.Choice(["http", "grpc"], case_sensitive=False),
+    default=None,
+    help="[--cascade] Worker transport: ``http`` (default) or ``grpc``. "
+    "Sets the address format expected by ``--cascade-remote-cpu-workers`` / "
+    "``--cascade-remote-gpu-workers``.",
+)
+@click_option_requires("cascade")(
+    "cascade-local-cpu-workers",
+    type=int,
+    default=None,
+    help="[--cascade] Number of local CPU worker subprocesses. "
+    "Defaults to ``2``.",
+)
+@click_option_requires("cascade")(
+    "cascade-local-gpu-workers",
+    type=int,
+    default=None,
+    help=(
+        "[--cascade] Number of local GPU worker subprocesses. When unset, "
+        "auto-sized from ``--devices`` (one per distinct GPU set)."
+    ),
+)
+@click_option_requires("cascade")(
+    "cascade-remote-cpu-workers",
+    multiple=True,
+    type=str,
+    help=(
+        "[--cascade] Addresses of already-running remote CPU workers "
+        "to include in the pool (repeatable). Format depends on "
+        "``--cascade-transport``: an ``http://`` or ``unix://`` URL for "
+        "``http``, ``host:port`` (or ``grpc://host:port``) for ``grpc``."
+    ),
+)
+@click_option_requires("cascade")(
+    "cascade-remote-gpu-workers",
+    multiple=True,
+    type=str,
+    help=(
+        "[--cascade] Addresses of already-running remote GPU workers "
+        "to include in the pool (repeatable). Format depends on "
+        "``--cascade-transport``: an ``http://`` or ``unix://`` URL for "
+        "``http``, ``host:port`` (or ``grpc://host:port``) for ``grpc``."
+    ),
+)
 def cli_serve(
     port: int,
+    host: str | None,
     headless: bool,
     log_prefix: str | None,
     eplb_stats: str | None,
@@ -334,6 +442,11 @@ def cli_serve(
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
     allow_cold_interpreter_cache: bool,
+    cascade_transport: str | None,
+    cascade_local_cpu_workers: int | None,
+    cascade_local_gpu_workers: int | None,
+    cascade_remote_cpu_workers: tuple[str, ...],
+    cascade_remote_gpu_workers: tuple[str, ...],
     **config_kwargs: Any,
 ) -> None:
     """Start a model serving endpoint for inference.
@@ -356,6 +469,9 @@ def cli_serve(
     if port is not None:
         setting_kwargs["MAX_SERVE_PORT"] = port
 
+    if host is not None:
+        setting_kwargs["MAX_SERVE_HOST"] = host
+
     if log_prefix is not None:
         setting_kwargs["MAX_SERVE_LOG_PREFIX"] = log_prefix
 
@@ -374,9 +490,54 @@ def cli_serve(
 
     settings = Settings(**setting_kwargs)
 
+    if (
+        click.get_current_context().get_parameter_source("cascade")
+        is click.core.ParameterSource.DEFAULT
+    ):
+        config_kwargs.pop("cascade", None)
+
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    if not pipeline_args.model_path:
+        raise click.UsageError(
+            "No model specified. Pass --model with a Hugging Face repo ID "
+            "or local path, e.g.:\n"
+            "  max serve --model modularai/Llama-3.1-8B-Instruct-GGUF"
+        )
+
+    if pipeline_args.cascade:
+        import asyncio
+
+        from max.experimental.cascade.deployment.context_config import (
+            ContextConfig,
+        )
+        from max.experimental.cascade.serve.main import serve as cascade_serve
+
+        # Build the Cascade deployment context from the cascade-only CLI
+        # knobs. Unset values fall through to ContextConfig's defaults so
+        # ``--local-gpu-workers`` unset still auto-sizes from ``--devices``
+        # inside the Cascade entrypoint.
+        context_kwargs: dict[str, Any] = {}
+        for attr, cli_value in (
+            ("transport", cascade_transport),
+            ("local_cpu_workers", cascade_local_cpu_workers),
+            ("local_gpu_workers", cascade_local_gpu_workers),
+            ("remote_cpu_workers", cascade_remote_cpu_workers),
+            ("remote_gpu_workers", cascade_remote_gpu_workers),
+        ):
+            if cli_value is not None and cli_value != ():
+                context_kwargs[attr] = cli_value
+
+        asyncio.run(
+            cascade_serve(
+                pipeline_args=pipeline_args,
+                context_config=ContextConfig(**context_kwargs),
+                host=host if host is not None else settings.host,
+                port=port if port is not None else settings.port,
+            )
+        )
+        return
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
@@ -578,6 +739,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 )
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
+    from max.engine import CompilationStopped
     from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 
     # Log what we're doing if target mode is enabled
@@ -590,7 +752,21 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
         )
 
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
-    PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(pipeline_args))
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
+    # Resolve the task rather than taking `retrieve`'s text-generation default,
+    # which sends a diffusion pipeline down a branch that reads the main
+    # model's HuggingFace config. Diffusion pipelines have no "main" model, so
+    # warming their cache failed before compiling anything. Architectures
+    # serving several tasks still resolve to text generation.
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+        pipeline_config.models.main_architecture_name
+    )
+    try:
+        PIPELINE_REGISTRY.retrieve(pipeline_config, task=task)
+    except CompilationStopped as stopped:
+        # `pre-jit` asked for the emitted Mojo and nothing more; the
+        # pipeline has nothing left to warm.
+        logging.info(str(stopped))
 
 
 def _render_warm_progress(

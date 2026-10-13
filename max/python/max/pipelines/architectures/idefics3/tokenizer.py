@@ -20,21 +20,21 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import numpy.typing as npt
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
     TokenBuffer,
 )
 from max.pipelines.context.exceptions import PromptTooLongError
-from max.pipelines.lib import TextAndVisionTokenizer
-from max.pipelines.lib.tokenizer import open_image
+from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
+from max.pipelines.lib.tokenizer import encode_dkv_cache_hint, open_image
 from max.pipelines.modeling.types import (
     ImageContentPart,
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    TokenIds,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL.Image import Image as ImageType
@@ -91,25 +91,20 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             model_path, revision=revision
         )
 
-        # Initialize default EOS token IDs (required by parent class new_context method)
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decode token array back into readable text, filtering out special tokens."""
-        # Log-probability responses decode one token id (a plain int) at a
-        # time; match the text tokenizer's handling.
-        if isinstance(encoded, int):
-            encoded = np.array(encoded)
+        # Log-probability responses decode one token id (a plain int) and the
+        # CLI passes a token list; normalize both to a rank-1 array.
+        token_ids = np.atleast_1d(np.asarray(encoded))
         # Force skip_special_tokens=True to filter out tokens like <end_of_utterance>
         kwargs_with_special_filter = kwargs.copy()
         kwargs_with_special_filter["skip_special_tokens"] = True
         return self.delegate.decode(
-            encoded.tolist(), **kwargs_with_special_filter
+            token_ids.tolist(), **kwargs_with_special_filter
         )
 
     def apply_chat_template(
@@ -307,6 +302,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
             target_endpoint=request.target_endpoint,
+            dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
             images=[
                 ImageMetadata(
                     start_idx=start_idx,

@@ -677,10 +677,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         updated_latents = ops.cast(updated_latents, lat_dtype)
 
         token_types = img_ids[:, :, 0]
-        is_condition_token = ops.not_equal(
-            token_types,
-            ops.constant(0, DType.int64, device=token_types.device),
-        )
+        is_condition_token = ops.not_equal(token_types, 0)
         condition_token_mask = ops.broadcast_to(
             ops.unsqueeze(is_condition_token, -1),
             latents.shape,
@@ -807,7 +804,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
 
         For multi-image editing each condition image needs a distinct T
         coordinate so the transformer can distinguish them via RoPE:
-        noise → T=0, first image → T=1, second image → T=2, etc.
+        noise → T=0, first image → T=1, second image → T=2, and so on.
         """
         t_coords = np.full((height, width), image_index + 1, dtype=np.int64)
         h_c = np.arange(height, dtype=np.int64) - (height - height // 2)

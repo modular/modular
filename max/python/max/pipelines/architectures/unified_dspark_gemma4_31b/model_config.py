@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Config for the unified DSpark Gemma4 31B pipeline.
 
-The draft checkpoint (e.g. ``RedHatAI/gemma-4-31B-it-speculator.dspark``) is
+The draft checkpoint (such as ``RedHatAI/gemma-4-31B-it-speculator.dspark``) is
 in the vLLM *speculators* format; its parsing lives in the shared
 ``speculators_common`` package. This module only binds the parsed draft
 config to the Gemma4 target.
@@ -35,8 +35,11 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
@@ -67,6 +70,8 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
     target_layer_ids: list[int] = field(default_factory=list)
     mask_token_id: int = 0
     block_size: int = 0
+    resolved_num_speculative_tokens: int | None = None
+    """Per-step draft count: explicit value if set, else the trained width."""
 
     def __post_init__(self) -> None:
         self.target.text_config.return_logits = ReturnLogits.VARIABLE
@@ -80,6 +85,10 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
                 "DSpark currently supports a single device only. Got"
                 f" {len(self.target.devices)} devices."
             )
+
+        self.resolved_num_speculative_tokens = (
+            self.draft.checkpoint_draft_width(self.speculative_config)
+        )
 
     def validate_dspark_fields(self) -> None:
         """Strict validation of the draft config against the target.
@@ -122,13 +131,6 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
                 f" Got mask_token_id={self.mask_token_id}"
                 f" vocab_size={self.target.text_config.vocab_size}."
             )
-        # An explicit num_speculative_tokens is always honored: at or below
-        # the trained draft width the causal block makes truncation
-        # prefix-stable; beyond it the block runs as extrapolation (with a
-        # warning). Unset resolves to the trained width.
-        self.speculative_config.num_speculative_tokens = (
-            self.draft.resolve_num_speculative_tokens(self.speculative_config)
-        )
 
     @property
     def effective_block_size(self) -> int:
@@ -139,9 +141,9 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
         identical to the trained-width block's), and more than trained
         runs the extra slots as extrapolation.
         """
-        num_spec = self.speculative_config.num_speculative_tokens
+        num_spec = self.resolved_num_speculative_tokens
         assert num_spec is not None, (
-            "num_speculative_tokens is resolved by validate_dspark_fields"
+            "num_speculative_tokens is resolved at construction"
         )
         return num_spec + 1
 
@@ -163,6 +165,8 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         assert model_config.huggingface_config is not None
@@ -173,7 +177,9 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
 
         target_config = (
             Gemma4ForConditionalGenerationConfig.initialize_from_config(
-                pipeline_config, model_config.huggingface_config
+                pipeline_config,
+                model_config.huggingface_config,
+                max_seq_len=max_seq_len,
             )
         )
         draft_config = DSparkSpeculatorsDraftConfig.from_huggingface_config(
@@ -207,3 +213,13 @@ class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
 
     def get_max_seq_len(self) -> int:
         return self.target.get_max_seq_len()
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
+            huggingface_config, model_config
+        )

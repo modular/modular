@@ -14,9 +14,8 @@
 from std.os import abort
 
 from std.builtin._format_float import _write_float
-from std.builtin.simd import Float8_e4m3fn, Float8_e5m2
+from std.simd import Float8_e4m3fn, Float8_e5m2
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_memcmp, unsafe_memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):
@@ -28,7 +27,7 @@ struct Buffer[capacity: Int](Defaultable, Writer):
         self.pos = 0
 
     def write_string(mut self, string: StringSlice):
-        var data_ptr: UnsafePointer[
+        var data_ptr: Pointer[
             UInt8, origin_of(self.data)
         ] = self.data.unsafe_ptr()
         for i, byte in enumerate(string.bytes()):

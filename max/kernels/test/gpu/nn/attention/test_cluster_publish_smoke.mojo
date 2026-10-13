@@ -50,7 +50,7 @@ the mbarrier did not establish the cross-CTA happens-before that the combine
 relies on. Passing for `P in {2, 4, 8}` clears the M4 #1 risk.
 """
 
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.host import DeviceContext, Dim
 from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from std.memory import unsafe_stack_allocation
@@ -58,7 +58,7 @@ from std.testing import assert_equal
 from std.utils.static_tuple import StaticTuple
 
 from layout.tma_async import SharedMemBarrier
-from nn.attention.gpu.nvidia.sm100.attention_utils import load_cluster_smem
+from max.gpu.primitives.cluster import load_cluster_smem
 
 
 comptime BASE = 1000
@@ -73,19 +73,19 @@ comptime BM = 128  # WG0 rows that each arrive (the production combine warpgroup
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
 def publish_smoke_kernel[
     P: Int, cluster_shape: StaticTuple[Int32, 3]
-](output: UnsafePointer[UInt32, MutAnyOrigin]):
+](output: MutPointer[UInt32, MutAnyOrigin]):
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
     var smem = unsafe_stack_allocation[
-        W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
+        W, DType.uint32, address_space=.SHARED, alignment=16
     ]()
     # The publish mbarrier (one SharedMemBarrier = one 8-byte slot).
     var mbar = unsafe_stack_allocation[
-        1, DType.int64, address_space=AddressSpace.SHARED, alignment=8
+        1, DType.int64, address_space=.SHARED, alignment=8
     ]().bitcast[SharedMemBarrier]()
 
     var me = block_rank_in_cluster()
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     # Init the publish barrier to expect `BM * P` arrivals: every WG0 row of
     # every CTA arrives on its own behalf (BM rows × P partitions), mirroring the
@@ -123,7 +123,7 @@ def publish_smoke_kernel[
         if tid == 0:
             var me_i = Int(me)
             comptime for r in range(P):
-                var v = load_cluster_smem[DType.uint32, W](smem, UInt32(r))
+                var v = load_cluster_smem[.uint32, W](smem, UInt32(r))
                 comptime for w in range(W):
                     output[(me_i * P + r) * W + w] = v[w]
 
@@ -135,7 +135,7 @@ def publish_smoke_kernel[
 
 def run_publish_test[P: Int](ctx: DeviceContext) raises:
     var n = P * P * W
-    var out_dev = ctx.enqueue_create_buffer[DType.uint32](n)
+    var out_dev = ctx.enqueue_create_buffer[.uint32](n)
 
     with out_dev.map_to_host() as h:
         for i in range(n):

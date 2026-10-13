@@ -45,6 +45,6 @@ speculative:
 # gemma4_31b_dflash.yaml; NVFP4 target weights leave it more headroom here
 # than the bfloat16 recipe does.
 runtime:
-  max_vision_cache_entries: 0
+  vision_cache_utilization: 0
   device_graph_capture: true
   max_batch_size: 64

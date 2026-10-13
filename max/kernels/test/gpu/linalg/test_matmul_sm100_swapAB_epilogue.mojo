@@ -10,14 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections import Optional
 from std.random import shuffle, seed
-from std.sys import align_of, size_of, argv
+from std.sys import size_of, argv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -27,8 +25,6 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from linalg.utils import elementwise_compute_lambda_type
-
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -78,14 +74,12 @@ def test_matmul_sm100_epilogue[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} register_based_epilogue={register_based_epilogue} swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
@@ -113,28 +107,20 @@ def test_matmul_sm100_epilogue[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
-    @__parameter
-    @always_inline
-    @__copy_capture(c_tensor_lt)
+    @inline(.always)
     def test_lambda_add_coords_prod[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]) -> SIMD[
         _dtype, width
     ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # this function helps us determine if the provided indexes are correct
         # while also testing arithmetic operations
-        var x = c_tensor_lt.load[width=width](idx).cast[_dtype]()
-        var y = val * x
-        return y
+        return val * c_val
 
     seed(1234)
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     var scales: List[Int32] = [-2, -1, 0, 1, 2]
 
@@ -161,19 +147,20 @@ def test_matmul_sm100_epilogue[
         register_based_epilogue=register_based_epilogue,
     )
 
-    comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
-        test_lambda_add_coords_prod
-    ) if test_lambda_fn else None
-
-    @__parameter
-    @always_inline
-    @__copy_capture(c_tensor, a_tensor, b_tensor)
-    def kernel_launch(ctx: DeviceContext) raises:
-        blackwell_matmul_tma_umma_warp_specialized[
-            transpose_b=transpose_b,
-            config=matmul_config,
-            elementwise_compute_lambda_fn=optional_lambda_fn,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var c_tensor, var a_tensor, var b_tensor, imm}:
+        comptime if test_lambda_fn:
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=matmul_config,
+            ](c_tensor, a_tensor, b_tensor, test_lambda_add_coords_prod, ctx)
+        else:
+            blackwell_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=matmul_config,
+            ](c_tensor, a_tensor, b_tensor, ctx)
 
     if is_benchmark:
         comptime nrun = 50
@@ -181,7 +168,7 @@ def test_matmul_sm100_epilogue[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -190,20 +177,16 @@ def test_matmul_sm100_epilogue[
         kernel_launch(ctx)
 
     if not is_benchmark:
-        comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        comptime assert a_type != .float8_e4m3fn or transpose_b, (
             "Testing is only supported for transposed_b==True when"
             " a_type==float8_e4m3fn. Add the non-transposed case if needed."
         )
 
-        var a_lt = a_tensor.to_layout_tensor()
-        var b_lt = b_tensor.to_layout_tensor()
-        var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
         vendor_blas.matmul(
             ctx,
-            c_ref_tensor_lt,
-            a_lt,
-            b_lt,
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
             c_row_major=True,
             transpose_b=transpose_b,
         )
@@ -214,29 +197,24 @@ def test_matmul_sm100_epilogue[
         ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
         ctx.synchronize()
 
-        var c_host_copy_lt = c_host_copy.to_layout_tensor()
-
-        @__parameter
-        @always_inline
-        @__copy_capture(c_host_copy_lt)
+        @inline(.always)
         def test_lambda_add_coords_prod_local[
-            _dtype: DType,
-            width: SIMDLength,
-            *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            _dtype: DType, width: SIMDLength
+        ](idx: Coord, val: SIMD[_dtype, width]) {var c_host_copy} -> SIMD[
             _dtype, width
         ]:
-            return val * c_host_copy_lt.load[width=width](idx).cast[_dtype]()
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            return val * c_host_copy.load[width=width](idx).cast[_dtype]()
 
-        comptime if optional_lambda_fn:
+        comptime if test_lambda_fn:
             # Apply the compute lambda directly on the reference tensor
-            # alias compute_lambda = elementwise_compute_lambda_fn.value()
             for i in range(M):
                 for j in range(N):
                     comptime assert c_host_ref.flat_rank == 2
                     c_host_ref[i, j] = test_lambda_add_coords_prod_local(
-                        IndexList[2](i, j), c_host_ref[i, j]
+                        Coord(i, j), c_host_ref[i, j]
                     )
 
         comptime rtol = 1e-2
@@ -249,11 +227,6 @@ def test_matmul_sm100_epilogue[
         )
 
         print("\n=== TEST PASSED ===\n")
-
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 def main() raises:
@@ -277,7 +250,7 @@ def main() raises:
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -297,7 +270,7 @@ def main() raises:
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -323,7 +296,7 @@ def main() raises:
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -343,7 +316,7 @@ def main() raises:
                     test_matmul_sm100_epilogue[
                         dtype,
                         dtype,
-                        DType.bfloat16,
+                        .bfloat16,
                         block_tile_shape,
                         umma_shape,
                         cluster_shape=StaticTuple[Int32, 3](4, 2, 1),

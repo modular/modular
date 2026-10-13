@@ -16,7 +16,10 @@ from typing import Any
 
 import pytest
 from max import driver
-from max.driver import DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Usage,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -61,20 +64,20 @@ class TestEventRecording:
     ) -> None:
         """Test recording events and synchronization."""
         width = 1024 * 1024
-        a_buf = DevicePinnedBuffer(DType.int32, [width], device=device)
+        a_buf = Buffer(DType.int32, [width], device=device, usage=Usage.STAGING)
         a_buf.to_numpy().fill(1)
-        b_buf = DevicePinnedBuffer(DType.int32, [width], device=device)
+        b_buf = Buffer(DType.int32, [width], device=device, usage=Usage.STAGING)
         b_buf.to_numpy().fill(2)
 
         a_dev = a_buf.to(device)
         b_dev = b_buf.to(device)
 
         # Test both record_event() overloads
-        event1 = device.default_stream.record_event()  # Creates new event
+        event1 = device.default_queue.record_event()  # Creates new event
         model.execute(a_dev, b_dev)
 
         event2 = driver.DeviceEvent(device)
-        device.default_stream.record_event(event2)  # Records existing event
+        device.default_queue.record_event(event2)  # Records existing event
 
         # Synchronize and verify
         event2.synchronize()
@@ -86,9 +89,9 @@ class TestEventRecording:
     ) -> None:
         """Test elapsed_time around actual GPU compute returns positive time."""
         width = 1024 * 1024
-        a_buf = DevicePinnedBuffer(DType.int32, [width], device=device)
+        a_buf = Buffer(DType.int32, [width], device=device, usage=Usage.STAGING)
         a_buf.to_numpy().fill(1)
-        b_buf = DevicePinnedBuffer(DType.int32, [width], device=device)
+        b_buf = Buffer(DType.int32, [width], device=device, usage=Usage.STAGING)
         b_buf.to_numpy().fill(2)
 
         a_dev = a_buf.to(device)
@@ -97,7 +100,7 @@ class TestEventRecording:
         start = driver.DeviceEvent(device, enable_timing=True)
         end = driver.DeviceEvent(device, enable_timing=True)
 
-        stream = device.default_stream
+        stream = device.default_queue
         stream.record_event(start)
         model.execute(a_dev, b_dev)
         stream.record_event(end)

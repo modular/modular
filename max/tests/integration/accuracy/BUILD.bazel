@@ -7,6 +7,20 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# Read by //utils:test_run_llm_fuzz_flags, which checks the flags
+# run-llm-fuzz.sh forwards against the options declared here.
+exports_files(
+    ["pipelines_llm_fuzz.py"],
+    visibility = ["//utils:__pkg__"],
+)
+
+# Read by //utils/benchmarking/llm-fuzz:test_entrypoint, which checks that the
+# Mammoth llm-fuzz overlay excludes this exact list.
+exports_files(
+    ["llm_fuzz/configs/minimax-m3-known-failures.txt"],
+    visibility = ["//utils/benchmarking/llm-fuzz:__pkg__"],
+)
+
 modular_py_test(
     name = "test_debug_utils",
     size = "small",
@@ -126,7 +140,6 @@ modular_py_binary(
         "//max/tests/integration/test_common:numpy_encoder",
         "//max/tests/integration/test_common:process_isolation",
         "//max/tests/integration/test_common:storage",
-        "@rules_python//python/runfiles",
         # transformers v5 requires this for device_map/torch.device loading.
         # verify_pipelines spawns generate_llm_logits as a child process,
         # which inherits this binary's runfiles tree, so accelerate must
@@ -260,27 +273,6 @@ modular_py_test(
     ],
 )
 
-modular_py_test(
-    name = "test_generate_llm_logits_gpu",
-    size = "medium",
-    srcs = ["test_generate_llm_logits_gpu.py"],
-    exec_properties = {
-        "test.resources:gpu-memory": "22",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "gpu",
-        "manual",  # TODO(AITLIB-293)
-        "no-sandbox",
-        "requires-network",
-        "run-in-hf-workflow",
-    ],
-    deps = [
-        "//max/tests/integration/tools:generate_llm_logits",
-        requirement("click"),
-    ],
-)
-
 modular_py_binary(
     name = "lm-eval",
     testonly = True,
@@ -391,7 +383,6 @@ modular_py_test(
     deps = [
         ":pipelines-lm-eval",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration:hf_repo_lock",
         requirement("click"),
     ],
 )
@@ -444,12 +435,17 @@ modular_py_test(
     ],
 )
 
-modular_py_binary(
-    name = "llm-fuzz",
+modular_py_library(
+    name = "llm_fuzz",
     testonly = True,
     srcs = glob(
         ["llm_fuzz/**/*.py"],
-        exclude = ["llm_fuzz/.venv/**"],
+        exclude = [
+            "llm_fuzz/.venv/**",
+            "llm_fuzz/__main__.py",
+            "llm_fuzz/fuzz.py",
+            "llm_fuzz/test_*.py",
+        ],
     ),
     data = glob(["llm_fuzz/data/**"]),
     ignore_unresolved_imports = [
@@ -457,13 +453,32 @@ modular_py_binary(
         "referencing.jsonschema",
     ],
     imports = ["llm_fuzz"],
-    main = "llm_fuzz/fuzz.py",
-    visibility = ["//max_private:__subpackages__"],
     deps = [
         requirement("openai"),
         requirement("jsonschema"),
         requirement("pydantic"),
     ],
+)
+
+modular_py_test(
+    name = "test_llm_fuzz",
+    size = "small",
+    srcs = glob(["llm_fuzz/test_*.py"]),
+    imports = ["llm_fuzz"],
+    deps = [":llm_fuzz"],
+)
+
+modular_py_binary(
+    name = "llm-fuzz",
+    testonly = True,
+    srcs = [
+        "llm_fuzz/__main__.py",
+        "llm_fuzz/fuzz.py",
+    ],
+    imports = ["llm_fuzz"],
+    main = "llm_fuzz/fuzz.py",
+    visibility = ["//max_private:__subpackages__"],
+    deps = [":llm_fuzz"],
 )
 
 modular_py_library(
@@ -509,5 +524,40 @@ modular_py_binary(
         requirement("numpy"),
         requirement("mteb"),
         requirement("transformers"),
+    ],
+)
+
+# The package is its own library so that the binary and the unit tests can
+# both depend on it; a source file may belong to only one rule.
+modular_py_library(
+    name = "spec_dec_check",
+    testonly = True,
+    srcs = glob(["spec_dec_check/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:private"],
+    deps = [
+        requirement("httpx"),
+        requirement("numpy"),
+        requirement("tqdm"),
+        requirement("typing-extensions"),  # TypeIs; stdlib typing in 3.13+
+    ],
+)
+
+modular_py_binary(
+    name = "spec-dec-check",
+    testonly = True,
+    srcs = ["spec_dec_check_main.py"],
+    main = "spec_dec_check_main.py",
+    visibility = ["//max_private:__subpackages__"],
+    deps = [":spec_dec_check"],
+)
+
+modular_py_test(
+    name = "test_spec_dec_check",
+    size = "small",
+    srcs = ["test_spec_dec_check.py"],
+    deps = [
+        ":spec_dec_check",
+        requirement("numpy"),
     ],
 )

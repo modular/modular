@@ -28,13 +28,20 @@ from collections.abc import AsyncIterable, AsyncIterator
 import numpy as np
 import numpy.typing as npt
 from max.experimental.cascade.core import Worker, worker_method
-from max.experimental.cascade.interfaces.pipeline import CascadePipeline
-from max.experimental.cascade.interfaces.textgen import (
-    ChatMessages,
-    GenerateRequest,
-    TextGenInterface,
+from max.experimental.cascade.interfaces.gen_ai import (
+    GenAIChunk,
+    GenAIRequest,
+    Modality,
+    TextGenOptions,
 )
-from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
+from max.experimental.cascade.interfaces.pipeline import GenAIPipeline
+from max.experimental.cascade.pipelines.chat_parser import (
+    ChatParserConfig,
+    ChatParserWorker,
+)
+from max.experimental.cascade.workers.max_tokenizer import (
+    make_tokenizer_worker,
+)
 
 Int32Array = npt.NDArray[np.int32]
 
@@ -53,7 +60,7 @@ class EchoTransformer(Worker):
 
     @worker_method()
     async def decode(
-        self, req: GenerateRequest, tokens: Int32Array
+        self, req: TextGenOptions, tokens: Int32Array
     ) -> AsyncIterator[Int32Array]:
         """Stream ``num_tokens`` tokens back, one per chunk, cycling the prompt.
 
@@ -69,32 +76,50 @@ class EchoTransformer(Worker):
             yield np.array([prompt[i % prompt.size]], dtype=np.int32)
 
 
-class EchoTextGenPipeline(CascadePipeline, TextGenInterface):
+class EchoTextGenPipeline(GenAIPipeline):
     """Cascade pipeline pairing ``MAXTokenizer`` with ``EchoTransformer``."""
 
-    def __init__(self, model_path: str) -> None:
+    def __init__(
+        self, model_path: str, tokenizer_impl: str | None = None
+    ) -> None:
         """Build the pipeline for the tokenizer at *model_path*.
 
         Args:
             model_path: Hugging Face repo id (or local path) whose tokenizer the
                 worker loads. No model worker is created, so the pipeline config
                 is never resolved and no weights are downloaded.
+            tokenizer_impl: Import path (``"module.path:ClassName"``) of the
+                ``TokenizerWorker`` subclass to construct, or ``None`` to use
+                the HuggingFace tokenizer.
         """
-        self.tokenizer = MAXTokenizer(model_path)
+        self.tokenizer = make_tokenizer_worker(model_path, tokenizer_impl)
         self.transformer = EchoTransformer()
+        # Echoed prompt tokens carry no reasoning or tool markers, so the
+        # default (plain text) parser keeps the stage in the chain -- and its
+        # overhead in the measurement -- without changing the output.
+        self.parser = ChatParserWorker(ChatParserConfig())
 
-    async def open_text_stream(
-        self,
-        req: GenerateRequest,
-        prompt: str | ChatMessages,
-    ) -> AsyncIterable[str]:
-        """Tokenize, echo, and detokenize a text or chat prompt end to end.
+    def supported_input_modalities(self) -> set[Modality]:
+        """Accept text prompts."""
+        return {Modality.TEXT}
+
+    def supported_output_modalities(self) -> set[Modality]:
+        """Emit assistant text, reasoning, and tool calls."""
+        return {Modality.TEXT}
+
+    async def _generate_iterator(
+        self, req: GenAIRequest
+    ) -> AsyncIterable[GenAIChunk]:
+        """Tokenize, echo, detokenize, and parse a request end to end.
 
         Identical wiring to
         :class:`~max.experimental.cascade.pipelines.common_textgen.CommonTextGenPipeline`,
-        with the model worker replaced by the echo worker: the token stream
-        flows worker-to-worker straight into ``decode_stream``.
+        with the model worker replaced by the echo worker: every stage's stream
+        flows worker-to-worker.
         """
-        tokens = await self.tokenizer.encode(prompt)
-        gen_tokens = await self.transformer.decode(req, tokens)
-        return await self.tokenizer.decode_stream(gen_tokens)
+        tokens = await self.tokenizer.encode(req.messages)
+        gen_tokens = await self.transformer.decode(req.text, tokens)
+        text = await self.tokenizer.decode_stream(gen_tokens, True)
+        return await self.parser.parse_stream(
+            text, req.tools_enabled, req.tool_schemas()
+        )

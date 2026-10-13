@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -48,6 +49,7 @@ from test_common.pipeline_model_dummy import (
     DummyPipelineModel,
     DummyPixelArchConfig,
     DummyPixelTokenizer,
+    DummyTextTokenizer,
 )
 from test_common.registry import prepare_registry
 
@@ -154,6 +156,21 @@ def test_registry__retrieve_pipeline_task_defaults_to_text_generation_on_ambiguo
 
 
 @prepare_registry
+def test_registry__retrieve_pipeline_task_falls_back_to_module_v3() -> None:
+    """An arch registered only as ``X_ModuleV3`` resolves its task for ``X``,
+    the name a checkpoint's ``config.json`` carries."""
+    PIPELINE_REGISTRY.register(
+        dataclasses.replace(
+            DUMMY_LLAMA_ARCH, name="OnlyModuleV3ForCausalLM_ModuleV3"
+        )
+    )
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task("OnlyModuleV3ForCausalLM")
+    assert task == PipelineTask.TEXT_GENERATION
+    with pytest.raises(ValueError, match="not found in registry"):
+        PIPELINE_REGISTRY.retrieve_pipeline_task("UnknownForCausalLM")
+
+
+@prepare_registry
 @mock_pipeline_config_resolve
 def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
     pixel_arch = SupportedArchitecture(
@@ -183,6 +200,42 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
     )
 
     assert DummyPixelTokenizer.init_kwargs["max_length"] == 123
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+def test_registry__retrieve_factory_tokenizer_uses_planned_max_length() -> None:
+    """The text tokenizer bound is the memory plan's planned_max_length,
+    even when the arch config's get_max_seq_len ignores the user's
+    --max-length (the permissive configs return the raw checkpoint bound,
+    here 123)."""
+    text_arch = SupportedArchitecture(
+        name="DummyPermissiveTextModel",
+        task=PipelineTask.TEXT_GENERATION,
+        example_repo_ids=["dummy/text-model"],
+        default_encoding="bfloat16",
+        supported_encodings={"bfloat16"},
+        pipeline_model=DummyPipelineModel,
+        tokenizer=DummyTextTokenizer,
+        context_type=TextContext,
+        default_weights_format=WeightsFormat.safetensors,
+        config=DummyPixelArchConfig,
+    )
+    PIPELINE_REGISTRY.register(text_arch)
+
+    pipeline_args = PipelineArgs(
+        model_path="dummy/text-model",
+        quantization_encoding="bfloat16",
+        max_length=777,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    )
+    PIPELINE_REGISTRY.retrieve_factory(
+        PipelineConfig.from_args(pipeline_args),
+        task=PipelineTask.TEXT_GENERATION,
+        override_architecture="DummyPermissiveTextModel",
+    )
+
+    assert DummyTextTokenizer.init_kwargs["max_length"] == 777
 
 
 def test_supported_architecture__eq__method() -> None:
@@ -242,7 +295,7 @@ def test_supported_architecture__eq__method() -> None:
     assert arch2 == arch1
 
     # Test equality with self
-    assert arch1 == arch1
+    assert arch1 == arch1  # noqa: PLR0124
 
     # Test inequality with different class
     assert arch1 != "not an architecture"

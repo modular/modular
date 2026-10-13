@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
 from max.dtype import DType
 from max.graph import (
@@ -26,10 +26,11 @@ from max.graph import (
     ops,
 )
 from max.nn.comm.allreduce import Allreduce
+from max.tree import Tree
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
-from ..layer import LayerList, Module, Shardable, SubgraphInput
+from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
 from .transformer import (
@@ -76,7 +77,7 @@ def distributed_logits_postprocess(
         lm_head: Language model head (takes per-device inputs + signal buffers).
         signal_buffers: Signal buffers for collective operations.
         return_logits: Which logits to return.
-        device: Primary device for scalar ops (e.g. ops.range).
+        device: Primary device for scalar ops (such as ops.range).
         norm_shards: Per-device normalization functions. When None, hidden
             states are passed directly to lm_head without normalization.
         return_hidden_states: Which hidden states to return.
@@ -349,9 +350,7 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
             return [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,

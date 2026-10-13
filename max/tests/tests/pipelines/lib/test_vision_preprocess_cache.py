@@ -19,11 +19,13 @@ import gc
 import pickle
 import threading
 import weakref
+from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
 import pytest
 from max.pipelines.lib.vision_preprocess_cache import VisionPreprocessCache
+from max.pipelines.modeling.types import VisionPreprocessCacheStats
 
 
 class _FakeClock:
@@ -178,6 +180,174 @@ class TestVisionPreprocessCache:
         assert revived.idle_seconds == 60.0
         revived.put(1, "one", 10)
         assert revived.total_bytes == 10
+
+
+class TestStats:
+    """The snapshot the API server publishes as ``maxserve.media.*``."""
+
+    def test_budget_pressure_counts_evictions(self) -> None:
+        # Room for two entries, so the third forces one out.
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(20)
+        cache.put(1, "one", 10)
+        cache.put(2, "two", 10)
+        assert cache.evictions == 0
+
+        cache.put(3, "three", 10)
+
+        assert cache.evictions == 1
+        assert cache.total_bytes == 20
+        assert not cache.contains(1)
+
+    def test_idle_reclaim_is_not_an_eviction(self) -> None:
+        """Only the budget counts: the two have opposite remedies.
+
+        An idle reclaim says the cache stopped being used; an eviction says
+        the budget is too small for the working set.
+        """
+        clock = _FakeClock()
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(
+            1024, idle_seconds=60.0, clock=clock
+        )
+        cache.put(1, "one", 10)
+        clock.advance(61.0)
+
+        assert cache.collect() == 10
+        assert len(cache) == 0
+        assert cache.evictions == 0
+
+    def test_reinsert_of_the_same_key_is_not_an_eviction(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(100)
+        cache.put(1, "a", 40)
+        cache.put(1, "a2", 40)
+
+        assert cache.evictions == 0
+
+    def test_snapshot_reports_every_counter(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(20)
+        cache.put(1, "one", 10)
+        cache.put(2, "two", 10)
+        cache.put(3, "three", 10)
+        cache.get(3)
+        cache.get(1)
+
+        assert cache.stats() == VisionPreprocessCacheStats(
+            hits=1,
+            misses=1,
+            evictions=1,
+            size_bytes=20,
+            capacity_bytes=20,
+        )
+
+    def test_a_snapshot_does_not_wait_on_the_cache_mutex(self) -> None:
+        """Serve reads this from the event loop, once per media request.
+
+        Taken under the lock, N worker threads inside an eviction run would
+        stall every in-flight request on the server -- text-only ones
+        included -- for the sake of a metric. The counters are differenced
+        against a prior snapshot that already tolerates them moving
+        backwards, so a torn read costs one skewed sample and no more.
+        """
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(100)
+        cache.put(1, "one", 10)
+        held = threading.Event()
+        release = threading.Event()
+
+        def hold_the_lock() -> None:
+            with cache._lock:
+                held.set()
+                release.wait(10.0)
+
+        holder = threading.Thread(target=hold_the_lock)
+        holder.start()
+        try:
+            assert held.wait(10.0)
+            read: list[VisionPreprocessCacheStats] = []
+            reader = threading.Thread(target=lambda: read.append(cache.stats()))
+            reader.start()
+            reader.join(5.0)
+            assert not reader.is_alive()
+            assert read[0].size_bytes == 10
+            assert read[0].capacity_bytes == 100
+        finally:
+            release.set()
+            holder.join()
+
+    def test_capacity_is_readable_on_a_disabled_cache(self) -> None:
+        """``enabled`` is a bool, so the budget needs its own accessor."""
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(0)
+
+        assert cache.max_bytes == 0
+        assert cache.stats().capacity_bytes == 0
+
+    def test_unpickling_zeroes_the_counters(self) -> None:
+        """Which is why the reader must treat a decrease as a restart.
+
+        The cache is process-local and comes back empty, so a reader
+        differencing against a snapshot from before the boundary would see a
+        negative delta.
+        """
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(20)
+        cache.put(1, "one", 10)
+        cache.put(2, "two", 10)
+        cache.put(3, "three", 10)
+        cache.get(3)
+        assert cache.stats().evictions == 1
+
+        revived: VisionPreprocessCache[str] = pickle.loads(pickle.dumps(cache))
+
+        assert revived.stats() == VisionPreprocessCacheStats(
+            hits=0,
+            misses=0,
+            evictions=0,
+            size_bytes=0,
+            capacity_bytes=20,
+        )
+
+
+class TestContains:
+    """``contains`` answers without disturbing anything.
+
+    The API server calls it per image before deciding whether to decode, so
+    it must not turn into a lookup: the real ``get_or_preprocess`` that
+    follows is what the hit/miss counters and LRU order are for.
+    """
+
+    def test_reports_presence(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(1024)
+        cache.put(7, "seven", 10)
+
+        assert cache.contains(7)
+        assert not cache.contains(8)
+
+    def test_does_not_count_as_a_lookup(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(1024)
+        cache.put(7, "seven", 10)
+
+        cache.contains(7)
+        cache.contains(8)
+
+        assert cache.hits == 0
+        assert cache.misses == 0
+
+    def test_does_not_refresh_lru_order(self) -> None:
+        # Budget for two entries; peeking at the older one must not save it
+        # from being the next eviction.
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(20)
+        cache.put(1, "one", 10)
+        cache.put(2, "two", 10)
+
+        cache.contains(1)
+        cache.put(3, "three", 10)
+
+        assert not cache.contains(1)
+        assert cache.contains(2)
+        assert cache.contains(3)
+
+    def test_a_disabled_cache_never_contains(self) -> None:
+        cache: VisionPreprocessCache[str] = VisionPreprocessCache(0)
+        cache.put(7, "seven", 10)
+
+        assert not cache.contains(7)
 
 
 class TestGetOrPreprocess:
@@ -535,5 +705,56 @@ class TestReclaimOnIdle:
         cache.put(2, "two", 20)
 
         assert cache.clear() == 30
+        assert len(cache) == 0
+        assert cache.total_bytes == 0
+
+
+class TestDataclassPayloads:
+    """A payload that groups its arrays in a dataclass rather than a tuple.
+
+    The qwen3vl video path caches one of these, so a walk that stops at
+    tuples, lists and dicts would charge every clip zero bytes and leave its
+    pixels writable -- the byte budget and the immutability guarantee both
+    lost, and silently.
+    """
+
+    @dataclass(frozen=True)
+    class _Payload:
+        pixels: npt.NDArray[np.float32]
+        grid: tuple[int, int, int]
+
+    def _payload(self, fill: float) -> TestDataclassPayloads._Payload:
+        return TestDataclassPayloads._Payload(
+            pixels=np.full((4, 8), fill, dtype=np.float32), grid=(1, 2, 2)
+        )
+
+    def test_arrays_in_a_dataclass_are_charged_to_the_budget(self) -> None:
+        cache: VisionPreprocessCache[TestDataclassPayloads._Payload] = (
+            VisionPreprocessCache(1 << 20)
+        )
+        cache.get_or_preprocess(1, lambda: self._payload(1.0))
+
+        assert cache.total_bytes == 4 * 8 * 4, (
+            "a dataclass payload must be charged its arrays' bytes, not zero"
+        )
+
+    def test_arrays_in_a_dataclass_are_frozen(self) -> None:
+        cache: VisionPreprocessCache[TestDataclassPayloads._Payload] = (
+            VisionPreprocessCache(1 << 20)
+        )
+        got = cache.get_or_preprocess(1, lambda: self._payload(1.0))
+
+        # frozen=True stops the FIELD being rebound; it says nothing about the
+        # array it points at, which every reusing request shares.
+        with pytest.raises(ValueError):
+            got.pixels[0][0] = 2.0
+
+    def test_a_dataclass_over_budget_is_dropped_not_cached(self) -> None:
+        """The budget can only reject what it can see."""
+        cache: VisionPreprocessCache[TestDataclassPayloads._Payload] = (
+            VisionPreprocessCache(16)
+        )
+        cache.get_or_preprocess(1, lambda: self._payload(1.0))
+
         assert len(cache) == 0
         assert cache.total_bytes == 0

@@ -21,7 +21,7 @@ from std.utils.index import IndexList
 
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
-@always_inline
+@inline(.always)
 def reshape[
     dtype: DType,
     //,
@@ -32,12 +32,12 @@ def reshape[
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types=DynamicCoord[DType.int64, output_rank].element_types,
-        stride_types=DynamicCoord[DType.int64, output_rank].element_types,
+        shape_types=DynamicCoord[.int64, output_rank].element_types,
+        stride_types=DynamicCoord[.int64, output_rank].element_types,
     ],
     input.origin,
     address_space=input.address_space,
-    Storage=input.Storage,
+    Engine=input.Engine,
 ]:
     """Returns a view of the contiguous `input` tensor reinterpreted under `new_shape` with matching element count.
 
@@ -68,8 +68,8 @@ def reshape[
         stride_tuple[i] = stride
         stride *= new_shape[i]
 
-    # Return a view with the new shape, preserving the input's storage policy
-    # (for example a device tile stays `DevicePointerStorage`) by rebinding the
+    # Return a view with the new shape, preserving the input's engine
+    # (for example a device tile stays `DevicePointerEngine`) by rebinding the
     # storage handle rather than erasing it through a raw pointer.
     return {
         input._storage,
@@ -77,7 +77,7 @@ def reshape[
     }
 
 
-@always_inline
+@inline(.always)
 def reshape_shape[
     output_rank: Int,
     input_type: DType,

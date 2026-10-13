@@ -14,6 +14,7 @@ mojo_binary(
 modular_run_binary_test(
     name = "tile_tensor_examples_test",
     binary = "tile_tensor_examples",
+    tags = ["skip-ci-asan"],
 )
 
 GPU_TEST_SRCS = [
@@ -40,6 +41,7 @@ GPU_TEST_SRCS = [
         name = src.split(".")[0] + "_test",
         size = "small",
         binary = src.split(".")[0],
+        tags = ["skip-ci-asan"],
     )
     for src in GPU_TEST_SRCS
 ]

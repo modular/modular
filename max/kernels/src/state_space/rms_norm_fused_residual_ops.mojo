@@ -18,6 +18,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
 from extensibility import InputTensor, OutputTensor
 
+from layout import Coord
 from std.utils.index import IndexList
 
 from state_space.rms_norm_fused_residual import (
@@ -83,58 +84,51 @@ struct RMSNormFusedResidual:
             raise Error("Input and residual input buffers are not same shape")
 
         comptime if is_gpu[target]():
-            # GPU path: the device kernel bakes the callbacks in as `capturing`
-            # comptime closures, so build them as comptime parameters.
-            @__parameter
-            @always_inline
+
+            @inline(.always)
             def input_fn[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-                return input.load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
+                width: Int
+            ](coords: Coord) {var input} -> SIMD[dtype, width]:
+                return input.load[width=width](coords)
 
-            @__parameter
-            @always_inline
+            @inline(.always)
             def residual_input_fn[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-                return residual_input.load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
+                width: Int
+            ](coords: Coord) {var residual_input} -> SIMD[dtype, width]:
+                return residual_input.load[width=width](coords)
 
-            @__parameter
-            @always_inline
+            @inline(.always)
             def output_fn[
-                width: SIMDLength, _rank: Int, alignment: Int
-            ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+                width: SIMDLength, alignment: Int
+            ](coords: Coord, val: SIMD[dtype, width]) {var output} -> None:
                 output._fused_store[width=width, element_alignment=alignment](
-                    rebind[IndexList[output.rank]](coords),
+                    coords,
                     rebind[SIMD[output.dtype, width]](val),
                 )
 
-            @__parameter
-            @always_inline
+            @inline(.always)
             def residual_output_fn[
-                width: SIMDLength, _rank: Int, alignment: Int
-            ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+                width: SIMDLength, alignment: Int
+            ](coords: Coord, val: SIMD[dtype, width]) {
+                var residual_output
+            } -> None:
                 residual_output._fused_store[
                     width=width, element_alignment=alignment
                 ](
-                    rebind[IndexList[residual_output.rank]](coords),
+                    coords,
                     rebind[SIMD[residual_output.dtype, width]](val),
                 )
 
             rms_norm_fused_residual[
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
                 input_fn,
                 residual_input_fn,
                 output_fn,
                 residual_output_fn,
-                target=target,
-                multiply_before_cast=multiply_before_cast,
-            ](
-                input.shape(),
-                gamma.to_tile_tensor[DType.int64](),
+                input.shape_coord(),
+                gamma.to_tile_tensor[.int64](),
                 epsilon,
                 weight_offset,
                 ctx,
@@ -145,45 +139,37 @@ struct RMSNormFusedResidual:
             # CPU path: pass the callbacks as unified closures (runtime args).
             # They capture the tensors directly, which is what lets the migrated
             # CPU kernel take runtime closures end to end.
-            @always_inline
+            @inline(.always)
             def input_fn_cpu[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
-                return input.load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
+                width: Int
+            ](coords: Coord) {var input} -> SIMD[dtype, width]:
+                return input.load[width=width](coords)
 
-            @always_inline
+            @inline(.always)
             def residual_input_fn_cpu[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var residual_input} -> SIMD[
-                dtype, width
-            ]:
-                return residual_input.load[width=width](
-                    rebind[IndexList[residual_input.rank]](coords)
-                )
+                width: Int
+            ](coords: Coord) {var residual_input} -> SIMD[dtype, width]:
+                return residual_input.load[width=width](coords)
 
-            @always_inline
+            @inline(.always)
             def output_fn_cpu[
                 width: SIMDLength, alignment: Int
-            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-                var output
-            } -> None:
+            ](coords: Coord, val: SIMD[dtype, width]) {var output} -> None:
                 output._fused_store[width=width, element_alignment=alignment](
-                    rebind[IndexList[output.rank]](coords),
+                    coords,
                     rebind[SIMD[output.dtype, width]](val),
                 )
 
-            @always_inline
+            @inline(.always)
             def residual_output_fn_cpu[
                 width: SIMDLength, alignment: Int
-            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
+            ](coords: Coord, val: SIMD[dtype, width]) {
                 var residual_output
             } -> None:
                 residual_output._fused_store[
                     width=width, element_alignment=alignment
                 ](
-                    rebind[IndexList[residual_output.rank]](coords),
+                    coords,
                     rebind[SIMD[residual_output.dtype, width]](val),
                 )
 
@@ -194,8 +180,8 @@ struct RMSNormFusedResidual:
                 residual_input_fn_cpu,
                 output_fn_cpu,
                 residual_output_fn_cpu,
-                input.shape(),
-                gamma.to_tile_tensor[DType.int64](),
+                input.shape_coord(),
+                gamma.to_tile_tensor[.int64](),
                 epsilon,
                 weight_offset,
                 dropout_p,

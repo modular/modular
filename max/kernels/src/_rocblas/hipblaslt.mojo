@@ -47,7 +47,7 @@ struct Status(Equatable, TrivialRegisterPassable, Writable):
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
             return writer.write_string("SUCCESS")
@@ -256,7 +256,7 @@ def _init_dylib() -> OwnedDLHandle:
     return _find_dylib["HIP BLAS LT"](materialize[HIPBLASLT_LIBRARY_PATHS]())
 
 
-@always_inline
+@inline(.always)
 def _get_dylib_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -491,33 +491,35 @@ def hipblasLtMatmul(
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _check_hipblas_error(status: Status) raises:
     if status != Status.SUCCESS:
         raise Error(t"HIPBLASLT ERROR:{status}")
 
 
-@always_inline
+@inline(.always)
 def _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
-    comptime if dtype == DType.float32:
-        return hipDataType_t.R_32F
-    elif dtype == DType.float16:
-        return hipDataType_t.R_16F
-    elif dtype == DType.float8_e4m3fn:
-        return hipDataType_t.R_8F_E4M3
-    elif dtype == DType.float8_e5m2:
-        return hipDataType_t.R_8F_E5M2
-    elif dtype == DType.float8_e4m3fnuz:
-        return hipDataType_t.R_8F_E4M3_FNUZ
-    elif dtype == DType.float8_e5m2fnuz:
-        return hipDataType_t.R_8F_E5M2_FNUZ
-    # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
-    # Replace this with float4-e2m1fn when GENAI-337 is fixed.
-    elif dtype == DType.uint8:
-        return hipDataType_t.R_4F_E2M1
-    else:
-        comptime assert dtype == DType.bfloat16, (
-            "Only support FP32, FP16, BF16, E4M3(FNUZ), E5M2(FNUZ), and E2M1x2"
-            " (UInt8). Please extend it if more dtypes are needed."
-        )
-        return hipDataType_t.R_16BF
+    comptime match dtype:
+        case .float32:
+            return hipDataType_t.R_32F
+        case .float16:
+            return hipDataType_t.R_16F
+        case .float8_e4m3fn:
+            return hipDataType_t.R_8F_E4M3
+        case .float8_e5m2:
+            return hipDataType_t.R_8F_E5M2
+        case .float8_e4m3fnuz:
+            return hipDataType_t.R_8F_E4M3_FNUZ
+        case .float8_e5m2fnuz:
+            return hipDataType_t.R_8F_E5M2_FNUZ
+        # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+        # Replace this with float4-e2m1fn when GENAI-337 is fixed.
+        case .uint8:
+            return hipDataType_t.R_4F_E2M1
+        case .bfloat16:
+            return hipDataType_t.R_16BF
+        case _:
+            comptime assert False, (
+                "Only support FP32, FP16, BF16, E4M3(FNUZ), E5M2(FNUZ), and"
+                " E2M1x2 (UInt8). Please extend it if more dtypes are needed."
+            )

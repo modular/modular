@@ -34,11 +34,10 @@ slot reads back as 0 and the bug hides.
 
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
-from std.gpu import block_idx, thread_idx
-from std.memory import AddressSpace
+from max.gpu import block_idx, thread_idx
 from std.memory import unsafe_stack_allocation
 from layout import Coord, TileTensor, row_major
-from nn.topk_fi import topk_sampling_from_prob, topk_topp_sampling_from_prob
+from nn.sampling import topk_sampling_from_prob, topk_topp_sampling_from_prob
 from std.testing import assert_true
 from std.utils import IndexList
 from std.utils.numerics import inf, nan, neg_inf
@@ -55,9 +54,7 @@ comptime ROW_ALL_ZERO = 4
 
 
 def poison_lds_kernel[nbytes: Int]():
-    var p = unsafe_stack_allocation[
-        nbytes // 8, Int64, address_space=AddressSpace.SHARED
-    ]()
+    var p = unsafe_stack_allocation[nbytes // 8, Int64, address_space=.SHARED]()
     for i in range(thread_idx.x, nbytes // 8, BLOCK):
         p[i] = Int64(0x0BADF00DDEADBEEF)
     barrier()
@@ -79,8 +76,8 @@ def check_degenerate_row(
 
     var d_in = ctx.enqueue_create_buffer[DTYPE](in_shape.flattened_length())
     var d_out = ctx.enqueue_create_buffer[IDX](batch_size)
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
-    var temp_buf = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var seed_buf = ctx.enqueue_create_buffer[.uint64](batch_size)
+    var temp_buf = ctx.enqueue_create_buffer[.float32](batch_size)
 
     with d_in.map_to_host() as h_in:
         var t = TileTensor(h_in, in_layout)
@@ -111,12 +108,12 @@ def check_degenerate_row(
     var seed_t = (
         TileTensor(seed_buf, row_major(batch_size))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
     var temp_t = (
         TileTensor(temp_buf, row_major(batch_size))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
 
     ctx.enqueue_function[poison_lds_kernel[2048]](
@@ -189,7 +186,7 @@ def check_degenerate_row_probs(
         for b in range(batch_size):
             h_out[b] = Scalar[IDX](-7)
 
-    var in_t = TileTensor(d_in, in_layout).as_immut()
+    var in_t = TileTensor(d_in, in_layout).as_imm()
     var out_t = TileTensor(d_out, row_major(batch_size))
 
     ctx.enqueue_function[poison_lds_kernel[2048]](

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
-from std.gpu import block_dim, grid_dim, block_idx, thread_idx
+from max.gpu import block_dim, grid_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from std.math import iota
 from std.os import abort
@@ -132,10 +132,10 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
     # Allocate buffers
     var max_ints = max_size // size_of[DType.int32]()
 
-    var dst = ctx.enqueue_create_buffer[DType.int32](max_ints)
-    var src = ctx.enqueue_create_buffer[DType.int32](max_ints)
+    var dst = ctx.enqueue_create_buffer[.int32](max_ints)
+    var src = ctx.enqueue_create_buffer[.int32](max_ints)
     var data_h = alloc[Int32](max_ints)
-    var signal = shmem_calloc[DType.uint64](num_blocks)
+    var signal = shmem_calloc[.uint64](num_blocks)
 
     # Initialize test data - each element has value equal to its index
     iota(data_h, max_ints)
@@ -157,7 +157,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
                 dst,
                 src,
                 Int32(num_ints),
-                DeviceBuffer[DType.uint64](
+                DeviceBuffer[.uint64](
                     ctx._ctx, signal, num_blocks, owning=False
                 ),
                 Int32(chunk_size),
@@ -167,13 +167,12 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.barrier_all()
         ctx.synchronize()
 
-        @__parameter
-        def benchmark() raises:
+        def benchmark() raises {imm}:
             ctx.enqueue_function_collective_checked[ring_reduce](
                 dst,
                 src,
                 Int32(num_ints),
-                DeviceBuffer[DType.uint64](
+                DeviceBuffer[.uint64](
                     ctx._ctx, signal, num_blocks, owning=False
                 ),
                 Int32(chunk_size),
@@ -182,7 +181,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             )
             ctx.barrier_all()
 
-        var elapsed_ns = dev_ctx.execution_time[benchmark](iters) / iters
+        var elapsed_ns = dev_ctx.execution_time(benchmark, iters) / iters
         var elapsed_ms = Float64(elapsed_ns) / 1e6
 
         ctx.synchronize()

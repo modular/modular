@@ -24,14 +24,14 @@ Supports two write modes:
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import WARP_SIZE, thread_idx, lane_id, warp_id as get_warp_id
+from max.gpu import WARP_SIZE, thread_idx, lane_id, warp_id as get_warp_id
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.sync import named_barrier
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
+    DefaultEngine,
     Idx,
     TensorLayout,
     TileTensor,
@@ -152,11 +152,10 @@ struct BlockwiseFP8TileWriter[
     # ========== Public Write Method ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def write[
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -170,15 +169,12 @@ struct BlockwiseFP8TileWriter[
             _,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_rank, c_tile_shape, c_desc_shape
-        ],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         c_coord: Tuple[Int, Int],
     ):
         """Write accumulated register tiles to GMEM via double-buffered SMEM.
 
         Parameters:
-            c_rank: Rank of the C output tensor.
             c_tile_shape: Tile shape of the C output tensor.
             c_desc_shape: Descriptor shape of the C output tensor.
             cluster_size: Size of the threadblock cluster for the matmul.
@@ -189,18 +185,17 @@ struct BlockwiseFP8TileWriter[
             c_tma_op: TMA tensor tile descriptor for the C store.
             c_coord: (M, N) tile coordinate of this C tile in the output tensor.
         """
-        Self._write_impl[c_rank, c_tile_shape, c_desc_shape, cluster_size](
+        Self._write_impl[c_tile_shape, c_desc_shape, cluster_size](
             accum, c_tiles, c_tma_op, c_coord
         )
 
     # ========== Internal Implementation ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _write_impl[
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -214,9 +209,7 @@ struct BlockwiseFP8TileWriter[
             _,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_rank, c_tile_shape, c_desc_shape
-        ],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         c_coord: Tuple[Int, Int],
     ):
         """Internal implementation for writing accumulated register tiles."""
@@ -285,7 +278,7 @@ struct BlockwiseFP8TileWriter[
                 Self.stageN,  # stage_contiguous_size
                 Self.c_swizzle,
             ]
-            StoreExec.execute[c_rank, c_tile_shape, c_desc_shape](
+            StoreExec.execute[c_tile_shape, c_desc_shape](
                 c_smem_tile,
                 store_coords,
                 c_tma_op,
@@ -294,7 +287,6 @@ struct BlockwiseFP8TileWriter[
             )
             tma_wait_pipelined[
                 Self.c_type,
-                c_rank,
                 c_tile_shape,
                 c_desc_shape,
                 stage == Self.num_stages - 1,
@@ -306,7 +298,7 @@ struct BlockwiseFP8TileWriter[
     # ========== Bounds-Checked Write for 1D2D Grouped Matmul ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def write_absolute_with_bounds_check[
         c_tensor_layout: TensorLayout,
         cluster_size: Int,
@@ -326,7 +318,9 @@ struct BlockwiseFP8TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
     ):
         """Write accumulated register tiles to GMEM with bounds checking.
 
@@ -350,7 +344,7 @@ struct BlockwiseFP8TileWriter[
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _write_absolute_impl[
         c_tensor_layout: TensorLayout,
         cluster_size: Int,
@@ -370,7 +364,9 @@ struct BlockwiseFP8TileWriter[
         n_abs: UInt32,
         m_end: UInt32,
         expert_scale: Float32,
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
     ):
         """Internal implementation for bounds-checked register-to-GMEM write.
 
@@ -466,7 +462,7 @@ struct BlockwiseFP8TileWriter[
                 named_barrier[Int32(Self.num_output_warps * WARP_SIZE)]()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _store_with_bounds_check[
         c_tensor_layout: TensorLayout,
         c_smem_layout: TensorLayout,
@@ -475,9 +471,13 @@ struct BlockwiseFP8TileWriter[
             Self.c_type,
             c_smem_layout,
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
+            Engine=DefaultEngine[element_width=1],
+            address_space=.SHARED,
         ],
-        c_tensor: TileTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
+        c_tensor: TileTensor[
+            mut=True, Self.c_type, LayoutType=c_tensor_layout, ...
+        ],
         m_abs: UInt32,
         n_abs: UInt32,
         m_end: UInt32,
@@ -549,11 +549,7 @@ struct BlockwiseFP8TileWriter[
 
                 # Bounds check: only store if within expert boundary
                 if global_i < m_end:
-                    # Compute destination pointer via TileTensor layout
-                    var dst_offset = c_tensor.layout(
-                        Coord(Int(global_i), Int(global_j))
-                    )
-                    var dst_ptr = c_tensor._storage + Int(dst_offset)
+                    var dst_crd = Coord(Int(global_i), Int(global_j))
 
                     comptime if size_of[Self.c_type]() == 2:
                         var src_ptr = c_smem_split._storage + swizzle(
@@ -562,10 +558,14 @@ struct BlockwiseFP8TileWriter[
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        dst_ptr.store[width=simd_size, alignment=alignment](src)
+                        c_tensor.store[width=simd_size, alignment=alignment](
+                            dst_crd, src
+                        )
                     else:
                         var src_ptr = c_smem_split._storage + linear_idx
                         var src = src_ptr.load[
                             width=simd_size, alignment=alignment
                         ]()
-                        dst_ptr.store[width=simd_size, alignment=alignment](src)
+                        c_tensor.store[width=simd_size, alignment=alignment](
+                            dst_crd, src
+                        )

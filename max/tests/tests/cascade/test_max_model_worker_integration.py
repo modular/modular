@@ -21,30 +21,32 @@ resolution, subprocess spawn, ZMQ proxy, and per-request streaming.
 
 from __future__ import annotations
 
-import hf_repo_lock
 import numpy as np
 import pytest
 from max.driver import DeviceSpec
-from max.experimental.cascade import GenerateRequest, LocalRuntime
+from max.experimental.cascade import (
+    ChatMessage,
+    GenAIRequest,
+    GenAITextChunk,
+    LocalRuntime,
+    TextGenOptions,
+)
 from max.experimental.cascade.core.pipeline_method import _pipeline_method_scope
 from max.experimental.cascade.pipelines.all_pipelines import build_pipeline
 from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,
 )
-from max.pipelines.lib import PipelineConfig, generate_local_model_path
-from max.pipelines.lib.config.model_config import MAXModelConfig
-from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.architectures import register_all_models
+from max.pipelines.lib import PipelineArgs, generate_local_model_path
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 
 REPO_ID = "modularai/SmolLM-135M-Instruct-FP32"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 
 
 def _model_path() -> str:
     """Resolve a cached local path for the test model, else the repo id."""
-    assert REVISION is not None
     try:
-        return generate_local_model_path(REPO_ID, REVISION)
+        return generate_local_model_path(REPO_ID)
     except FileNotFoundError:
         return REPO_ID
 
@@ -52,31 +54,28 @@ def _model_path() -> str:
 async def _text_pipeline(model_path: str) -> CommonTextGenPipeline:
     """Build the cascade text pipeline for the test model (CPU, float32).
 
-    Goes through ``build_pipeline``, which resolves the config and builds/binds
-    the model factory exactly as the serve entrypoint does. Tests reuse this
-    single path -- including the ones that exercise ``MAXModelWorker.decode``
-    directly, via the pipeline's already-bound ``model`` worker -- rather than
-    re-implementing resolution/binding. A fresh config per call gives each test
-    its own instance.
+    Goes through ``build_pipeline``, which constructs the config from the raw
+    args and builds/binds the model factory exactly as the serve entrypoint
+    does. Tests reuse this single path -- including the ones that exercise
+    ``MAXModelWorker.decode`` directly, via the pipeline's already-bound
+    ``model`` worker -- rather than re-implementing construction/binding. A
+    fresh config per call gives each test its own instance.
     """
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=model_path,
-                    device_specs=[DeviceSpec.cpu()],
-                    max_length=512,
-                    quantization_encoding="float32",
-                )
-            }
-        ),
+    # `build_pipeline` resolves the arch by name, so the registry has to be
+    # populated first. Importing `max.pipelines.lib` alone does not do it.
+    register_all_models()
+    args = PipelineArgs(
+        model_path=model_path,
+        device_specs=[DeviceSpec.cpu()],
+        max_length=512,
+        quantization_encoding="float32",
         runtime=PipelineRuntimeConfig(
             max_batch_size=8,
             enable_chunked_prefill=True,
             enable_in_flight_batching=False,
         ),
     )
-    pipeline = await build_pipeline(config)
+    pipeline = await build_pipeline(args)
     assert isinstance(pipeline, CommonTextGenPipeline)
     return pipeline
 
@@ -98,7 +97,7 @@ async def test_decode_streams_requested_token_count(model_path: str) -> None:
 
         # One deploy (one model-worker subprocess), several decode requests.
         for num_tokens in (4, 8):
-            req = GenerateRequest(num_tokens=num_tokens, ignore_eos=True)
+            req = TextGenOptions(num_tokens=num_tokens, ignore_eos=True)
             chunks = [chunk async for chunk in await proxy.decode(req, prompt)]
             generated = (
                 np.concatenate(chunks)
@@ -116,7 +115,7 @@ async def test_decode_stops_on_eos(model_path: str) -> None:
 
     async with LocalRuntime() as rt, _pipeline_method_scope():
         proxy = await rt.deploy(pipeline.model)
-        req = GenerateRequest(num_tokens=16, ignore_eos=False)
+        req = TextGenOptions(num_tokens=16, ignore_eos=False)
         chunks = [chunk async for chunk in await proxy.decode(req, prompt)]
         generated = (
             np.concatenate(chunks) if chunks else np.array([], dtype=np.int32)
@@ -132,7 +131,7 @@ async def test_greedy_decode_answers_capital_of_france(model_path: str) -> None:
     # ``MAXTokenizer`` worker applies the chat template, the ``MAXModelWorker``
     # greedily decodes (temperature 0), and the tokenizer worker decodes the
     # generated ids back to text. Confirm the model answers "Paris".
-    messages = [{"role": "user", "content": "What is the capital of France?"}]
+    messages = [ChatMessage.text("user", "What is the capital of France?")]
     pipeline = await _text_pipeline(model_path)
 
     async with LocalRuntime() as rt, _pipeline_method_scope():
@@ -140,12 +139,12 @@ async def test_greedy_decode_answers_capital_of_france(model_path: str) -> None:
         model = await rt.deploy(pipeline.model)
 
         prompt = await (await tokenizer.encode(messages))
-        req = GenerateRequest(num_tokens=20, temperature=0.0)
+        req = TextGenOptions(num_tokens=20, temperature=0.0)
         chunks = [chunk async for chunk in await model.decode(req, prompt)]
         generated = (
             np.concatenate(chunks) if chunks else np.array([], dtype=np.int32)
         )
-        answer = await (await tokenizer.decode(generated))
+        answer = await (await tokenizer.decode(generated, True))
 
     assert "paris" in answer.lower(), f"unexpected answer: {answer!r}"
 
@@ -157,14 +156,21 @@ async def test_pipeline_answers_capital_of_france(model_path: str) -> None:
     # path, so tokenization and detokenization run as pipeline workers rather
     # than being driven by the test.
     pipeline = await _text_pipeline(model_path)
-    messages = [{"role": "user", "content": "What is the capital of France?"}]
+    messages = [ChatMessage.text("user", "What is the capital of France?")]
 
     async with LocalRuntime() as rt:
         await pipeline.deploy(rt)
 
-        req = GenerateRequest(num_tokens=20, temperature=0.0)
+        req = GenAIRequest(
+            messages=messages,
+            text=TextGenOptions(num_tokens=20, temperature=0.0),
+        )
         answer = "".join(
-            [chunk async for chunk in pipeline.generate_text(req, messages)]
+            [
+                chunk.text
+                async for chunk in pipeline.generate(req)
+                if isinstance(chunk, GenAITextChunk)
+            ]
         )
 
     assert "paris" in answer.lower(), f"unexpected answer: {answer!r}"

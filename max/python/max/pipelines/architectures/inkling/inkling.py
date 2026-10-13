@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -34,17 +35,19 @@ from max.graph import (
 from max.nn.comm import Signals
 from max.nn.embedding import Embedding, VocabParallelEmbedding
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    CacheLeafKind,
+    KVCacheInputsPerDevice,
     MHAKVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
+    RecurrentStateInputsPerDevice,
 )
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import make_interleaved_gated_activation_fn
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import (
+    ReturnHiddenStates,
     ReturnLogits,
     forward_sequential_layers,
     logits_postprocess,
@@ -53,6 +56,8 @@ from max.nn.transformer.distributed_transformer import (
     distributed_logits_postprocess,
     forward_sharded_layers,
 )
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tree import Tree
 
 from .layers.attention import InklingAttention, log_scaling_tau
 from .layers.moe import InklingGate, InklingMoE
@@ -60,10 +65,11 @@ from .layers.short_convolution import ShortConvolution
 from .model_config import (
     GLOBAL_ATTENTION,
     LOCAL_ATTENTION,
+    STATE_CACHE_KEY,
     InklingConfig,
     InklingTextConfig,
 )
-from .state_cache import CONV_STATE_DTYPE, ConvSite, InklingConvStateLayout
+from .state_cache import ConvSite, InklingConvStateLayout
 
 
 class InklingDecoderLayer(Module):
@@ -79,6 +85,9 @@ class InklingDecoderLayer(Module):
         dtype: DType,
         devices: list[DeviceRef],
         quant_config: QuantConfig | None = None,
+        is_local: bool | None = None,
+        force_dense_mlp: bool = False,
+        commit_conv_state: bool = True,
     ) -> None:
         super().__init__()
         self.num_devices = len(devices)
@@ -98,6 +107,8 @@ class InklingDecoderLayer(Module):
             kv_params=kv_params,
             dtype=dtype,
             devices=devices,
+            is_local=is_local,
+            commit_conv_state=commit_conv_state,
         )
         self.attn.sharding_strategy = tensor_parallel
         self.attn_shards = list(self.attn.shard(devices))
@@ -107,8 +118,9 @@ class InklingDecoderLayer(Module):
             kernel_size=text_config.sconv_kernel_size,
             dtype=dtype,
             device=device,
+            commit_conv_state=commit_conv_state,
         )
-        self.attn_sconv.sharding_strategy = tensor_parallel
+        self.attn_sconv.sharding_strategy = replicate
         self.attn_sconv_shards = list(self.attn_sconv.shard(devices))
 
         self.mlp_norm = RMSNorm(
@@ -120,7 +132,7 @@ class InklingDecoderLayer(Module):
         self.mlp: InklingMoE | MLP
         # Dense layers only: the learned scalar the output is scaled by.
         self.mlp_global_scale_shards: list[Weight] | None = None
-        if text_config.is_moe_layer(layer_idx):
+        if text_config.is_moe_layer(layer_idx) and not force_dense_mlp:
             # Only routed experts quantize; sinks and gate stay at dtype.
             routed_quant = (
                 quant_config
@@ -147,9 +159,7 @@ class InklingDecoderLayer(Module):
                 # is what keeps the sinks unquantized in max.nn.moe.
                 dtype=DType.uint8 if routed_quant is not None else dtype,
                 shared_experts_dtype=dtype,
-                gated_activation_fn=make_interleaved_gated_activation_fn(
-                    ops.silu
-                ),
+                interleaved_gate_up=True,
                 quant_config=routed_quant,
             )
         else:
@@ -176,62 +186,180 @@ class InklingDecoderLayer(Module):
             kernel_size=text_config.sconv_kernel_size,
             dtype=dtype,
             device=device,
+            commit_conv_state=commit_conv_state,
         )
-        self.mlp_sconv.sharding_strategy = tensor_parallel
+        self.mlp_sconv.sharding_strategy = replicate
         self.mlp_sconv_shards = list(self.mlp_sconv.shard(devices))
 
     def __call__(
         self,
         hs: Sequence[TensorValue],
+        delta_in: Sequence[TensorValue],
         kv_collections: Sequence[PagedCacheValues],
         input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
-        slot_idx: Sequence[TensorValue],
+        conv_rows: Sequence[Sequence[TensorValue]],
+        layer_rows: Sequence[TensorValue],
         cache_layer_idx: TensorValue,
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
-        """Runs the layer over one ragged batch; compiled as a subgraph."""
-        norm_xs = forward_sharded_layers(self.attn_norm_shards, hs)
+        """Runs the layer over one ragged batch; compiled as a subgraph.
+
+        Takes the residual stream and the previous layer's unreduced
+        mlp-branch delta, and returns the same pair. Reducing the
+        predecessor's delta here, rather than at the end of the layer that
+        produced it, keeps the collective, the residual add and the norm in
+        one subgraph, which is where the graph compiler can fuse them. Layer
+        0 gets a zero delta so every layer shares one signature; the stack
+        reduces the last layer's delta.
+        """
+        hs, norm_xs = _reduce_add_norm(
+            delta_in, hs, self.attn_norm_shards, signal_buffers
+        )
+        return self._body(
+            hs,
+            norm_xs,
+            kv_collections,
+            input_row_offsets,
+            positions,
+            log_scaling,
+            conv_pools,
+            conv_rows,
+            layer_rows,
+            cache_layer_idx,
+            signal_buffers,
+        )
+
+    def _body(
+        self,
+        hs: Sequence[TensorValue],
+        norm_xs: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
+        log_scaling: Sequence[TensorValue],
+        conv_pools: Sequence[Sequence[BufferValue]],
+        conv_rows: Sequence[Sequence[TensorValue]],
+        layer_rows: Sequence[TensorValue],
+        cache_layer_idx: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Runs the layer from its attention norm's output to ``[hs, delta]``.
+
+        Split out for callers with no delta to reduce, see
+        :meth:`forward_standalone`.
+        """
         attention = [
             shard(
                 norm_xs[rank],
                 kv_collection=kv_collections[rank],
                 input_row_offsets=input_row_offsets[rank],
+                positions=positions[rank],
                 log_scaling=log_scaling[rank],
-                k_conv_pool=conv_pools[rank][ConvSite.K],
-                v_conv_pool=conv_pools[rank][ConvSite.V],
-                slot_idx=slot_idx[rank],
+                k_conv_ring=conv_pools[rank][ConvSite.K],
+                k_conv_rows=conv_rows[rank][ConvSite.K],
+                k_layer_row=layer_rows[ConvSite.K],
+                v_conv_ring=conv_pools[rank][ConvSite.V],
+                v_conv_rows=conv_rows[rank][ConvSite.V],
+                v_layer_row=layer_rows[ConvSite.V],
                 cache_layer_idx=cache_layer_idx,
             )
             for rank, shard in enumerate(self.attn_shards)
         ]
         # wo_ud is row-parallel: each rank holds a partial sum of the delta.
-        convolved = self._branch_convolution(
+        attn_delta = self._convolve(
             self.attn_sconv_shards,
             attention,
             [pools[ConvSite.ATTN_OUT] for pools in conv_pools],
-            slot_idx,
+            [rows[ConvSite.ATTN_OUT] for rows in conv_rows],
+            layer_rows[ConvSite.ATTN_OUT],
             input_row_offsets,
-            signal_buffers,
+            positions,
         )
-        hs = [h + delta for h, delta in zip(hs, convolved, strict=True)]
-
-        norm_outs = forward_sharded_layers(self.mlp_norm_shards, hs)
-        convolved = self._branch_convolution(
+        hs, norm_outs = _reduce_add_norm(
+            attn_delta, hs, self.mlp_norm_shards, signal_buffers
+        )
+        mlp_delta = self._convolve(
             self.mlp_sconv_shards,
             self._feed_forward(norm_outs),
             [pools[ConvSite.MLP_OUT] for pools in conv_pools],
-            slot_idx,
+            [rows[ConvSite.MLP_OUT] for rows in conv_rows],
+            layer_rows[ConvSite.MLP_OUT],
             input_row_offsets,
+            positions,
+        )
+        return hs + mlp_delta
+
+    def forward_standalone(
+        self,
+        hs: Sequence[TensorValue],
+        kv_collections: Sequence[PagedCacheValues],
+        input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
+        log_scaling: Sequence[TensorValue],
+        conv_pools: Sequence[Sequence[BufferValue]],
+        conv_rows: Sequence[Sequence[TensorValue]],
+        layer_rows: Sequence[TensorValue],
+        cache_layer_idx: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Runs the layer from a reduced residual stream to a reduced one.
+
+        For callers with no neighbouring layer to hand the delta to, such as
+        the MTP draft's single layer per depth: the attention norm runs on its
+        own and the layer's delta is reduced at the end, one collective per
+        branch.
+        """
+        norm_xs = forward_sharded_layers(self.attn_norm_shards, hs)
+        out = self._body(
+            hs,
+            norm_xs,
+            kv_collections,
+            input_row_offsets,
+            positions,
+            log_scaling,
+            conv_pools,
+            conv_rows,
+            layer_rows,
+            cache_layer_idx,
             signal_buffers,
         )
-        return [h + delta for h, delta in zip(hs, convolved, strict=True)]
+        n = len(hs)
+        return _reduce_delta(out[:n], out[n:], signal_buffers)
+
+    @staticmethod
+    def _convolve(
+        convs: Sequence[ShortConvolution],
+        partials: Sequence[TensorValue],
+        pools: Sequence[BufferValue],
+        rows: Sequence[TensorValue],
+        layer_row: TensorValue,
+        input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        """Convolves each rank's full-width partial sum of a branch's output.
+
+        The ranks are reduced afterwards; the convolution's linearity makes
+        that equivalent to reducing first.
+        """
+        return [
+            conv(
+                partials[rank],
+                pools[rank],
+                rows[rank],
+                layer_row,
+                input_row_offsets[rank],
+                positions[rank],
+            )
+            for rank, conv in enumerate(convs)
+        ]
 
     def _feed_forward(
         self, norm_xs: Sequence[TensorValue]
     ) -> list[TensorValue]:
-        """The dense scale applies before the reduce-scatter splits channels."""
+        """The dense scale applies before the ranks are reduced."""
         outs = [
             shard(norm_xs[rank]) for rank, shard in enumerate(self.mlp_shards)
         ]
@@ -247,32 +375,44 @@ class InklingDecoderLayer(Module):
             )
         ]
 
-    def _branch_convolution(
-        self,
-        convs: Sequence[ShortConvolution],
-        partials: Sequence[TensorValue],
-        pools: Sequence[BufferValue],
-        slot_idx: Sequence[TensorValue],
-        input_row_offsets: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
-    ) -> list[TensorValue]:
-        """Reduce-scatters onto each rank's channels, convolves, all-gathers."""
-        if self.num_devices > 1:
-            deltas = ops.reducescatter.sum(partials, signal_buffers, axis=-1)
-        else:
-            deltas = list(partials)
-        outputs = [
-            conv(
-                deltas[rank],
-                pools[rank],
-                slot_idx[rank],
-                input_row_offsets[rank],
-            )
-            for rank, conv in enumerate(convs)
-        ]
-        if self.num_devices > 1:
-            outputs = ops.allgather(outputs, signal_buffers, axis=-1)
-        return outputs
+
+def _zero_deltas(hs: Sequence[TensorValue]) -> list[TensorValue]:
+    """A zero per-rank delta for a layer with no predecessor to inherit from.
+
+    Lets layer 0 share a compiled subgraph with its group. Reducing zeros
+    measures cheaper than the standalone norm kernel it replaces.
+    """
+    return [
+        ops.broadcast_to(ops.constant(0.0, h.dtype, device=h.device), h.shape)
+        for h in hs
+    ]
+
+
+def _reduce_delta(
+    hs: Sequence[TensorValue],
+    delta: Sequence[TensorValue],
+    signal_buffers: Sequence[BufferValue],
+) -> list[TensorValue]:
+    """Sums ``delta`` across ranks and adds it to the residual stream."""
+    if len(hs) > 1:
+        delta = ops.allreduce.sum(delta, signal_buffers)
+    return [h + d for h, d in zip(hs, delta, strict=True)]
+
+
+def _reduce_add_norm(
+    partials: Sequence[TensorValue],
+    hs: Sequence[TensorValue],
+    norm_shards: Sequence[RMSNorm],
+    signal_buffers: Sequence[BufferValue],
+) -> tuple[list[TensorValue], list[TensorValue]]:
+    """Reduces ``partials`` across ranks, adds them to ``hs``, and norms.
+
+    Returns ``(hs + reduced, norm(hs + reduced))``. The graph compiler fuses
+    the three into one collective launch, so the reduced sum never round-trips
+    through global memory.
+    """
+    outs = _reduce_delta(hs, partials, signal_buffers)
+    return outs, forward_sharded_layers(norm_shards, outs)
 
 
 def _subgraph_layer_groups(
@@ -303,6 +443,21 @@ def _subgraph_layer_groups(
     return names, shared
 
 
+def kv_collections_by_key(
+    kv_tree: Mapping[str, object],
+) -> dict[str, list[PagedCacheValues]]:
+    """Groups an unflattened KV tree by attention flavor, then by rank.
+
+    The conv-state child sits in the same tree and is not one of them. Only
+    the params carry :attr:`leaf_kind`, so the key is what names it here.
+    """
+    return {
+        key: tree.leaves(child, leaf=KVCacheInputsPerDevice)
+        for key, child in kv_tree.items()
+        if key != STATE_CACHE_KEY
+    }
+
+
 class Inkling(Module):
     """The Inkling text model: embedding, decoder layers, LM head."""
 
@@ -311,6 +466,7 @@ class Inkling(Module):
         config: InklingConfig,
         *,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         super().__init__()
         text_config = config.text_config
@@ -319,10 +475,12 @@ class Inkling(Module):
         self.num_devices = len(config.devices)
         self.dtype = config.dtype
         self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
         device = config.devices[0]
         replicate = ShardingStrategy.replicate(self.num_devices)
 
-        # Sized for the decoder layers alone; MTP adds a row per draft depth.
+        # Only used to address leaves and rows; the kernels take the ring
+        # length from the pool's shape.
         self.conv_layout = InklingConvStateLayout.from_config(
             text_config, tp_size=self.num_devices
         )
@@ -330,6 +488,8 @@ class Inkling(Module):
         assert isinstance(config.kv_params, MultiKVCacheParams)
         kv_params: dict[str, MHAKVCacheParams] = {}
         for key, params in config.kv_params.children.items():
+            if params.leaf_kind is not CacheLeafKind.ATTENTION:
+                continue
             assert isinstance(params, MHAKVCacheParams)
             kv_params[key] = params
         self.kv_params = config.kv_params
@@ -428,10 +588,11 @@ class Inkling(Module):
         input_row_offsets: TensorValue,
         positions: TensorValue,
         return_n_logits: TensorValue,
+        image_embeddings: TensorValue,
+        image_indices: TensorValue,
         signal_buffers: list[BufferValue],
         kv_collections: dict[str, list[PagedCacheValues]],
-        slot_idx: list[TensorValue],
-        conv_pools: list[list[BufferValue]],
+        state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
     ) -> tuple[TensorValue, ...]:
         """Runs the whole text model over one ragged batch."""
         if self.num_devices > 1:
@@ -440,35 +601,65 @@ class Inkling(Module):
             row_offsets = ops.distributed_broadcast(
                 input_row_offsets, signal_buffers
             )
-            log_scaling = ops.distributed_broadcast(
-                self._log_scaling(positions), signal_buffers
+            positions_per_rank = ops.distributed_broadcast(
+                positions, signal_buffers
             )
         else:
             assert isinstance(self.embed, Embedding)
             hs = [self.embed(tokens)]
             row_offsets = [input_row_offsets]
-            log_scaling = [self._log_scaling(positions)]
+            positions_per_rank = [positions]
+        # Every rank needs the positions for its conv rings.
+        log_scaling = [self._log_scaling(p) for p in positions_per_rank]
         if self.embed_norm_shards:
             hs = forward_sharded_layers(self.embed_norm_shards, hs)
+        # Merged after the embedding norm, so the tower's rows skip it.
+        hs = self._merge_images(
+            hs, image_embeddings, image_indices, signal_buffers
+        )
 
         num_devices = self.num_devices
 
+        def sites_for_layer(
+            layer_idx: int,
+        ) -> tuple[
+            list[list[BufferValue]], list[list[TensorValue]], list[TensorValue]
+        ]:
+            """Returns a layer's pools, its slot tables, and its row in each.
+
+            The kernels index the whole ``[num_layers, batch]`` table, so no
+            per-layer slice is materialized.
+            """
+            pools: list[list[BufferValue]] = []
+            tables: list[list[TensorValue]] = []
+            sites = [
+                self.conv_layout.row_for(layer_idx, site) for site in ConvSite
+            ]
+            for rank in range(num_devices):
+                leaves = state[rank].leaves
+                pools.append([leaves[leaf].pool for leaf, _ in sites])
+                tables.append([leaves[leaf].live_row_ids for leaf, _ in sites])
+            layer_rows = [
+                ops.constant(row, DType.uint32, device=DeviceRef.CPU())
+                for _, row in sites
+            ]
+            return pools, tables, layer_rows
+
         def inputs_for_layer(
             layer_idx: int, previous: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        ) -> list[Tree[Any]]:
+            pools, rows, layer_rows = sites_for_layer(layer_idx)
+            # Each layer consumes and returns [hs..., delta...].
             return [
-                previous,
+                previous[:num_devices],
+                previous[num_devices:],
                 kv_collections[self.layer_kv_keys[layer_idx]],
                 row_offsets,
+                positions_per_rank,
                 log_scaling,
-                [
-                    conv_pools[rank][
-                        layer_idx * len(ConvSite) : (layer_idx + 1)
-                        * len(ConvSite)
-                    ]
-                    for rank in range(num_devices)
-                ],
-                slot_idx,
+                pools,
+                rows,
+                layer_rows,
                 ops.constant(
                     self.layer_cache_indices[layer_idx],
                     DType.uint32,
@@ -477,16 +668,18 @@ class Inkling(Module):
                 signal_buffers,
             ]
 
-        hs = forward_sequential_layers(
+        h = forward_sequential_layers(
             list(self.layers),
             inputs_for_layer=inputs_for_layer,
-            initial_hidden_states=hs,
+            initial_hidden_states=hs + _zero_deltas(hs),
             subgraph_layer_groups=(
                 self.subgraph_groups if self.use_subgraphs else None
             ),
             name_for_subgraph=lambda group: self.subgraph_names[group],
             weight_prefix_for_layer=lambda layer_idx: f"layers.{layer_idx}.",
         )
+        # Only the last layer's delta is still unreduced.
+        hs = _reduce_delta(h[:num_devices], h[num_devices:], signal_buffers)
 
         if self.num_devices > 1:
             return distributed_logits_postprocess(
@@ -498,6 +691,7 @@ class Inkling(Module):
                 return_logits=self.return_logits,
                 device=self.devices[0],
                 norm_shards=self.norm_shards,
+                return_hidden_states=self.return_hidden_states,
                 logits_scaling=self.text_config.logits_mup_width_multiplier,
             )
         return logits_postprocess(
@@ -507,6 +701,7 @@ class Inkling(Module):
             self.norm,
             self._lm_head,
             self.return_logits,
+            return_hidden_states=self.return_hidden_states,
             logits_scaling=self.text_config.logits_mup_width_multiplier,
         )
 
@@ -516,6 +711,31 @@ class Inkling(Module):
             alpha=self.text_config.log_scaling_alpha,
             n_floor=self.text_config.log_scaling_n_floor,
         )
+
+    def _merge_images(
+        self,
+        hs: list[TensorValue],
+        embeddings: TensorValue,
+        indices: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Overwrites each placeholder row with its vision-tower row."""
+        if self.num_devices > 1:
+            embeddings_per_rank = ops.distributed_broadcast(
+                embeddings, signal_buffers
+            )
+            indices_per_rank = ops.distributed_broadcast(
+                indices, signal_buffers
+            )
+        else:
+            embeddings_per_rank = [embeddings]
+            indices_per_rank = [indices]
+        return [
+            merge_multimodal_embeddings(h, rank_embeddings, rank_indices)
+            for h, rank_embeddings, rank_indices in zip(
+                hs, embeddings_per_rank, indices_per_rank, strict=True
+            )
+        ]
 
     def _lm_head(self, h: TensorValue) -> TensorValue:
         return self._mask_padded_tail(self.unembed(h))
@@ -547,20 +767,6 @@ class Inkling(Module):
         signals = (
             Signals(self.devices).input_types() if self.num_devices > 1 else []
         )
-        pools: list[TensorType | BufferType] = [
-            BufferType(
-                CONV_STATE_DTYPE,
-                shape=[
-                    "max_conv_slots",
-                    channels,
-                    self.conv_layout.state_len,
-                ],
-                device=pool_device,
-            )
-            for pool_device in self.devices
-            for widths in self.conv_layout.layers
-            for channels in widths
-        ]
         return (
             TensorType(DType.int64, shape=["total_seq_len"], device=device),
             TensorType(
@@ -570,27 +776,27 @@ class Inkling(Module):
             TensorType(
                 DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
             ),
-            *signals,
-            *self.kv_params.flattened_kv_inputs(),
-            *(
-                TensorType(
-                    DType.uint32, shape=["batch_size"], device=slot_device
-                )
-                for slot_device in self.devices
+            TensorType(
+                self.dtype,
+                shape=["total_image_tokens", self.text_config.hidden_size],
+                device=device,
             ),
-            *pools,
+            TensorType(
+                DType.int32, shape=["total_image_tokens"], device=device
+            ),
+            *signals,
+            # The conv state is a child of the cache tree, so one flatten
+            # covers the attention pages and the state leaves both.
+            *self.kv_params.flattened_kv_inputs(),
         )
 
     def unflatten_kv_inputs(
         self, kv_inputs: Sequence[object]
     ) -> dict[str, list[PagedCacheValues]]:
         """Groups the flattened KV inputs by attention flavor, then by rank."""
-        tree = self.kv_params.unflatten_kv_inputs(iter(kv_inputs))
-        collections: dict[str, list[PagedCacheValues]] = {}
-        for key, child in tree.children.items():
-            assert isinstance(child, KVCacheInputs)
-            collections[key] = list(child.inputs)
-        return collections
+        return kv_collections_by_key(
+            self.kv_params.unflatten_kv_inputs(iter(kv_inputs))
+        )
 
     def unpack_inputs(
         self, inputs: Sequence[Value[Any]]
@@ -599,38 +805,41 @@ class Inkling(Module):
         TensorValue,
         TensorValue,
         TensorValue,
+        TensorValue,
+        TensorValue,
         list[BufferValue],
         dict[str, list[PagedCacheValues]],
-        list[TensorValue],
-        list[list[BufferValue]],
+        list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
     ]:
         """Splits a graph's positional inputs into the arguments of ``__call__``."""
         num_devices = self.num_devices
-        pools_per_device = len(self.conv_layout.layers) * len(ConvSite)
-        num_pools = pools_per_device * num_devices
         num_signals = num_devices if num_devices > 1 else 0
         (
             tokens,
             input_row_offsets,
             positions,
             return_n_logits,
+            image_embeddings,
+            image_indices,
             *rest,
         ) = inputs
         signals = rest[:num_signals]
-        rest = rest[num_signals:]
-        kv_inputs = rest[: -(num_devices + num_pools)]
-        slot_idx = rest[-(num_devices + num_pools) : -num_pools]
-        pools = [value.buffer for value in rest[-num_pools:]]
+        kv_inputs = rest[num_signals:]
+        kv_tree = self.kv_params.unflatten_kv_inputs(iter(kv_inputs))
+        assert STATE_CACHE_KEY in kv_tree, (
+            "Inkling always convolves; the cache declared no conv-state child"
+        )
+        state = tree.leaves(
+            kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+        )
         return (
             tokens.tensor,
             input_row_offsets.tensor,
             positions.tensor,
             return_n_logits.tensor,
+            image_embeddings.tensor,
+            image_indices.tensor,
             [value.buffer for value in signals],
-            self.unflatten_kv_inputs(kv_inputs),
-            [value.tensor for value in slot_idx],
-            [
-                pools[rank * pools_per_device : (rank + 1) * pools_per_device]
-                for rank in range(num_devices)
-            ],
+            kv_collections_by_key(kv_tree),
+            state,
         )

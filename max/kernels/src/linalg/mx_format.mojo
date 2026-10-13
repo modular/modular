@@ -18,7 +18,7 @@ from linalg.fp6_utils import FP6Format
 
 
 @fieldwise_init
-struct MXFormat(Equatable, TrivialRegisterPassable):
+struct MXFormat(EnumLike, Equatable, TrivialRegisterPassable):
     """Names the element encoding of an OCP microscaling (MX) operand.
 
     An MX operand is a block of elements sharing one `float8_e8m0fnu` scale;
@@ -43,6 +43,34 @@ struct MXFormat(Equatable, TrivialRegisterPassable):
     comptime FP6_E2M3 = Self(2)
     comptime FP6_E3M2 = Self(3)
     comptime FP4_E2M1 = Self(4)
+    # The public `__init__(value: Int)` accepts raw backing values the named
+    # cases do not cover; downstream matches (e.g. the CDNA4 selector mapping)
+    # keep their `abort` catch-alls for them, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "FP8_E4M3".value,
+        "FP8_E5M2".value,
+        "FP6_E2M3".value,
+        "FP6_E3M2".value,
+        "FP4_E2M1".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "MXFormat has no payload"
 
     def __init__(out self, value: Int):
         self._value = Int32(value)
@@ -60,15 +88,15 @@ struct MXFormat(Equatable, TrivialRegisterPassable):
         Returns:
             The corresponding MX element format.
         """
-        if dtype == DType.float6_e2m3fn:
+        if dtype == .float6_e2m3fn:
             return Self.FP6_E2M3
-        if dtype == DType.float6_e3m2fn:
+        if dtype == .float6_e3m2fn:
             return Self.FP6_E3M2
-        if dtype == DType.float8_e4m3fn:
+        if dtype == .float8_e4m3fn:
             return Self.FP8_E4M3
-        if dtype == DType.float8_e5m2:
+        if dtype == .float8_e5m2:
             return Self.FP8_E5M2
-        if dtype == DType.uint8:
+        if dtype == .uint8:
             return Self.FP4_E2M1
         abort("dtype does not denote an MX element format")
 
@@ -112,6 +140,18 @@ struct MXFormat(Equatable, TrivialRegisterPassable):
         if self == Self.FP4_E2M1:
             return 4
         abort("invalid MX format")
+
+    def lane_bytes(self) -> Int:
+        """Returns the payload bytes one lane covers per MFMA fragment.
+
+        A lane covers 32 K-elements in every format, so this is 16, 24 or 32
+        bytes for FP4, FP6 and FP8 -- and it is what tells FP4 and FP6 apart,
+        since both arrive as `uint8`.
+
+        Returns:
+            The payload width in bytes.
+        """
+        return self.bits_per_element() * 32 // 8
 
     def is_fp6(self) -> Bool:
         """Returns whether this is one of the two six-bit encodings.

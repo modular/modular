@@ -25,6 +25,7 @@ from max.pipelines.context.eos_tracking import EOSTracker
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.request.open_responses import (
     OpenResponsesRequest,
+    OutputAudioContent,
     OutputImageContent,
     OutputTextContent,
     OutputVideoContent,
@@ -55,6 +56,7 @@ def _build_type_registry() -> dict[str, type]:
     for cls in [
         EOSTracker,
         OpenResponsesRequest,
+        OutputAudioContent,
         OutputImageContent,
         OutputTextContent,
         OutputVideoContent,

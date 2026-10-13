@@ -31,7 +31,12 @@ from max.pipelines.architectures.unified_dflash_gemma4_31b.model import (
 from max.pipelines.architectures.unified_dflash_gemma4_31b.model_config import (
     UnifiedDflashGemma4_31BConfig,
 )
-from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib import SamplingConfig
+from max.pipelines.lib.config import SpeculativeConfig, SpeculativeMethod
+from max.pipelines.lib.config.config import (
+    _apply_speculative_target_architecture,
+    _resolve_default_structured_output_backend,
+)
 
 
 def test_unified_dflash_gemma4_31b_arch_registered() -> None:
@@ -60,13 +65,16 @@ def test_unified_dflash_gemma4_31b_arch_registered() -> None:
     )
     # Matches the DSpark arm's serving shape so the two are comparable:
     # thinking-phase tracking needs the reasoning parser plus a tokenizer
-    # exposing the delimiter ids, and tool-call grammars need the tool parser
-    # with a backend pinned on THIS arch (resolution runs after the registry
-    # rewrites the arch name, so the base gemma4 declaration never applies).
+    # exposing the delimiter ids, and tool-call grammars need the tool parser.
     assert arch.tokenizer is Gemma4Tokenizer
     assert arch.tool_parser == "gemma4"
     assert arch.reasoning_parser == "gemma4"
-    assert arch.default_structured_output_backend == "xgrammar"
+    # No per-arch backend pin: structured output resolves to the global
+    # xgrammar default even after the registry rewrites the arch name.
+    assert (
+        _resolve_default_structured_output_backend(SamplingConfig(), arch)
+        == "xgrammar"
+    )
 
 
 def test_dflash_draft_arch_registered() -> None:
@@ -79,16 +87,16 @@ def test_dflash_draft_arch_registered() -> None:
 class TestSpeculativeArchitectureRewrite:
     """The config rewrite for the (Gemma4 target, DFlash draft) pair.
 
-    Mirrors ``TestSpeculativeArchitectureOverride`` in ``test_config_pure``:
-    the method is invoked unbound on a lightweight stand-in exposing only the
-    attributes it reads.
+    Mirrors ``TestSpeculativeArchitectureOverride`` in ``test_config_pure``,
+    with stand-in model manifests but a real ``SpeculativeConfig``, so every
+    predicate the rewrite reads exists here as it does in serving.
     """
 
     @staticmethod
     def _make_config(
         target_arch: str,
         *,
-        speculative: bool = True,
+        method: SpeculativeMethod | None = "dflash",
         draft_arch: str | None = None,
     ) -> SimpleNamespace:
         model = SimpleNamespace(
@@ -99,15 +107,23 @@ class TestSpeculativeArchitectureRewrite:
             draft_model = SimpleNamespace(
                 huggingface_config=SimpleNamespace(architectures=[draft_arch])
             )
-        spec = SimpleNamespace(is_dflash=lambda: True) if speculative else None
-        return SimpleNamespace(
-            speculative=spec, model=model, draft_model=draft_model
+        spec = (
+            SpeculativeConfig(speculative_method=method)
+            if method is not None
+            else None
         )
+        manifest = {"main": model}
+        if draft_model is not None:
+            manifest["draft"] = draft_model
+        return SimpleNamespace(speculative=spec, manifest=manifest)
 
     @staticmethod
     def _resolved_arch(cfg: SimpleNamespace) -> str:
-        PipelineConfig._apply_speculative_target_architecture(cfg)  # type: ignore[arg-type]
-        return cfg.model.huggingface_config.architectures[0]
+        _apply_speculative_target_architecture(
+            cfg.speculative,
+            cfg.manifest,
+        )
+        return cfg.manifest["main"].huggingface_config.architectures[0]
 
     def test_gemma4_dflash_pair(self) -> None:
         cfg = self._make_config(
@@ -127,9 +143,10 @@ class TestSpeculativeArchitectureRewrite:
 
     def test_gemma4_non_dflash_draft_is_noop(self) -> None:
         cfg = self._make_config(
-            "Gemma4ForConditionalGeneration", draft_arch="LlamaForCausalLM"
+            "Gemma4ForConditionalGeneration",
+            method="eagle",
+            draft_arch="LlamaForCausalLM",
         )
-        cfg.speculative = SimpleNamespace(is_dflash=lambda: False)
         assert self._resolved_arch(cfg) == "Gemma4ForConditionalGeneration"
 
     def test_llama3_dflash_pair_regression(self) -> None:
@@ -141,13 +158,16 @@ class TestSpeculativeArchitectureRewrite:
 
     def test_gemma4_dspark_pair_regression(self) -> None:
         cfg = self._make_config(
-            "Gemma4ForConditionalGeneration", draft_arch="DSparkDraftModel"
+            "Gemma4ForConditionalGeneration",
+            method="dspark",
+            draft_arch="DSparkDraftModel",
         )
         assert self._resolved_arch(cfg) == "UnifiedDSparkGemma4_31BForCausalLM"
 
     def test_gemma4_mtp_pair_regression(self) -> None:
         cfg = self._make_config(
             "Gemma4ForConditionalGeneration",
+            method="mtp",
             draft_arch="Gemma4AssistantForCausalLM",
         )
         assert self._resolved_arch(cfg) == "UnifiedMTPGemma4ForCausalLM"

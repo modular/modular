@@ -12,9 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """Implements spatial merge, which compresses vision token grids by merging spatial blocks before attention."""
 
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    TensorLayout,
+    TensorEngine,
+    TileTensor,
+    row_major,
+)
 from layout.tile_layout import Layout
 from std.utils.index import IndexList
 
@@ -24,14 +30,21 @@ def spatial_merge_kernel[
     dtype: DType,
     InputLayoutType: TensorLayout,
     input_origin: ImmOrigin,
+    InputEngine: TensorEngine,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    OutputEngine: TensorEngine,
     GridThwLayoutType: TensorLayout,
     grid_thw_origin: ImmOrigin,
+    GridThwEngine: TensorEngine,
 ](
-    output: TileTensor[dtype, OutputLayoutType, output_origin],
-    input: TileTensor[dtype, InputLayoutType, input_origin],
-    grid_thw: TileTensor[DType.int64, GridThwLayoutType, grid_thw_origin],
+    output: TileTensor[
+        dtype, OutputLayoutType, output_origin, Engine=OutputEngine
+    ],
+    input: TileTensor[dtype, InputLayoutType, input_origin, Engine=InputEngine],
+    grid_thw: TileTensor[
+        .int64, GridThwLayoutType, grid_thw_origin, Engine=GridThwEngine
+    ],
     batch_size: Int32,
     hidden_size: Int32,
     merge_size: Int32,
@@ -46,11 +59,14 @@ def spatial_merge_kernel[
         dtype: Element type of the input and output tensors.
         InputLayoutType: Compile-time `TensorLayout` of the input tensor.
         input_origin: Immutable origin of the input tensor.
+        InputEngine: Engine of the input tensor.
         OutputLayoutType: Compile-time `TensorLayout` of the output tensor.
         output_origin: Mutable origin of the output tensor.
+        OutputEngine: Engine of the output tensor.
         GridThwLayoutType: Compile-time `TensorLayout` of the `grid_thw`
             tensor.
         grid_thw_origin: Immutable origin of the `grid_thw` tensor.
+        GridThwEngine: Engine of the `grid_thw` tensor.
 
     Args:
         output: Output tensor.
@@ -64,6 +80,11 @@ def spatial_merge_kernel[
     var _hidden_size = Int(hidden_size)
     var _merge_size = Int(merge_size)
     comptime assert grid_thw.flat_rank == 2
+    # The `.ptr` arithmetic below addresses scalars, so the kernel only
+    # supports scalar-element tiles.
+    comptime assert input.element_size == 1
+    comptime assert output.element_size == 1
+    comptime assert grid_thw.element_size == 1
 
     # Global patch index.
     var patch_idx = block_idx.x
@@ -181,11 +202,9 @@ def spatial_merge_kernel[
 def spatial_merge[
     dtype: DType,
 ](
-    output: TileTensor[
-        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
-    ],
-    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
-    grid_thw: TileTensor[DType.int64, address_space=AddressSpace.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[dtype, address_space=.GENERIC, ...],
+    grid_thw: TileTensor[.int64, address_space=.GENERIC, ...],
     hidden_size: Int,
     merge_size: Int,
     ctx: DeviceContext,
@@ -217,16 +236,19 @@ def spatial_merge[
         dtype,
         input.LayoutType,
         ImmOrigin(input.origin),
+        input.Engine,
         output.LayoutType,
         output.origin,
+        output.Engine,
         grid_thw.LayoutType,
         ImmOrigin(grid_thw.origin),
+        grid_thw.Engine,
     ]
 
     ctx.enqueue_function[kernel](
         output,
-        input.as_immut(),
-        grid_thw.as_immut(),
+        input.as_imm(),
+        grid_thw.as_imm(),
         Int32(batch_size),
         Int32(hidden_size),
         Int32(merge_size),

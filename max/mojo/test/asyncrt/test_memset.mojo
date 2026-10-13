@@ -75,19 +75,19 @@ def test_memset() raises:
 
     comptime one_mb = 1024 * 1024
 
-    _run_memset[DType.uint8](ctx, 64, 12)
-    _run_memset[DType.uint8](ctx, one_mb, 13)
-    _run_memset_cascade[DType.uint8](ctx, one_mb, 14)
+    _run_memset[.uint8](ctx, 64, 12)
+    _run_memset[.uint8](ctx, one_mb, 13)
+    _run_memset_cascade[.uint8](ctx, one_mb, 14)
 
-    _run_memset[DType.float16](ctx, 64, 1.75)
-    _run_memset_cascade[DType.float16](ctx, 64, 2.5)
+    _run_memset[.float16](ctx, 64, 1.75)
+    _run_memset_cascade[.float16](ctx, 64, 2.5)
 
-    _run_memset[DType.float32](ctx, 64, 2.3)
-    _run_memset_cascade[DType.float32](ctx, 512, 25.125)
+    _run_memset[.float32](ctx, 64, 2.3)
+    _run_memset_cascade[.float32](ctx, 512, 25.125)
 
-    _run_memset[DType.float64](ctx, 64, 0)
-    _run_memset[DType.float64](ctx, 64, 1.618033988749)
-    _run_memset_cascade[DType.int64](ctx, one_mb, 1234567890)
+    _run_memset[.float64](ctx, 64, 0)
+    _run_memset[.float64](ctx, 64, 1.618033988749)
+    _run_memset_cascade[.int64](ctx, one_mb, 1234567890)
 
     print("Done.")
 

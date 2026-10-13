@@ -18,13 +18,13 @@ comptime tM = 8
 comptime tN = 4
 
 
-@always_inline
+@inline(.always)
 def writeTile(
     c: UnsafePointer[Float32, MutAnyOrigin],
     ldc: Int,
     maxRow: Int,
     maxCol: Int,
-    C_r: SIMD[DType.float32, tM * tN],
+    C_r: SIMD[.float32, tM * tN],
 ):
     """Write tile from registers to global memory.
 

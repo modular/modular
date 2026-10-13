@@ -26,14 +26,13 @@ developed.
 """
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu import global_idx
-from max.gpu.host import DeviceContext
+from max.gpu import global_idx
 from std.testing import TestSuite, assert_equal
 
 
 def vec_add(
-    in0: Pointer[Float32, MutAnyOrigin],
-    in1: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
@@ -53,9 +52,9 @@ def test_kernel_with_device_pointers() raises:
     """Bind every pointer arg from a `DevicePointer`."""
     var ctx = create_test_device_context()
 
-    var in0 = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
-    var in1 = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
-    var out = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var in0 = ctx.enqueue_create_buffer[.float32](_LENGTH)
+    var in1 = ctx.enqueue_create_buffer[.float32](_LENGTH)
+    var out = ctx.enqueue_create_buffer[.float32](_LENGTH)
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(_LENGTH):
@@ -92,9 +91,9 @@ def test_kernel_mixed_buffer_and_device_pointer() raises:
     """Mix `DeviceBuffer` and `DevicePointer` args in a single launch."""
     var ctx = create_test_device_context()
 
-    var in0 = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
-    var in1 = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
-    var out = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var in0 = ctx.enqueue_create_buffer[.float32](_LENGTH)
+    var in1 = ctx.enqueue_create_buffer[.float32](_LENGTH)
+    var out = ctx.enqueue_create_buffer[.float32](_LENGTH)
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(_LENGTH):

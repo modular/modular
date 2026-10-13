@@ -16,7 +16,7 @@
 # Uses parameterized tile width with shared memory
 
 from std.math import ceildiv, sqrt
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import external_memory
@@ -46,15 +46,11 @@ def matrixMulKernel(
     # Allocate shared memory using external_memory (following working pattern)
     # Use max tile size of 32x32 for allocation
     var Mds = rebind[
-        UnsafePointer[
-            Scalar[DType.float32],
-            MutUntrackedOrigin,
-            address_space=AddressSpace.SHARED,
-        ]
+        UnsafePointer[Float32, MutUntrackedOrigin, address_space=.SHARED]
     ](
         external_memory[
-            Scalar[DType.float32],
-            address_space=AddressSpace.SHARED,
+            Float32,
+            address_space=.SHARED,
             alignment=16,
             name="shared_dynamic_memory",
         ]()
@@ -71,18 +67,18 @@ def matrixMulKernel(
     for ph in range(ceildiv(Width, tile_width)):
         # Collaborative loading of M and N tiles into shared memory
         if (Row < Width) and (ph * tile_width + tx) < Width:
-            Mds[ty * tile_width + tx] = Scalar[DType.float32](
+            Mds[ty * tile_width + tx] = Float32(
                 M[Row * Width + ph * tile_width + tx]
             )
         else:
-            Mds[ty * tile_width + tx] = Scalar[DType.float32](0.0)
+            Mds[ty * tile_width + tx] = Float32(0.0)
 
         if (ph * tile_width + ty) < Width and Col < Width:
-            Nds[ty * tile_width + tx] = Scalar[DType.float32](
+            Nds[ty * tile_width + tx] = Float32(
                 N[(ph * tile_width + ty) * Width + Col]
             )
         else:
-            Nds[ty * tile_width + tx] = Scalar[DType.float32](0.0)
+            Nds[ty * tile_width + tx] = Float32(0.0)
 
         barrier()
 

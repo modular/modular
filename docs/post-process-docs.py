@@ -205,7 +205,7 @@ def remove_docs_domain(file_path) -> None:  # noqa: ANN001
                 with open(file_path, "r+") as file:
                     content = file.read()
                     updated_content = re.sub(
-                        r"https://docs.modular.com/", "/", content
+                        r"https://max.modular.com/", "/", content
                     )
                     file.seek(0)
                     file.write(updated_content)
@@ -326,10 +326,10 @@ if __name__ == "__main__":
 
     replace_relative_paths(sys.argv[1], "/api")
     inject_mojo_api_package_list(sys.argv[1])
-    replace_relative_paths(sys.argv[1], "/max/cli")
+    replace_relative_paths(sys.argv[1], "/cli")
     remove_md_title(sys.argv[1] + "/api/c")
     remove_md_title(sys.argv[1] + "/api/python")
-    remove_md_title(sys.argv[1] + "/max/cli")
+    remove_md_title(sys.argv[1] + "/cli")
     remove_core_namespace(sys.argv[1] + "/api/python")
     graph_ops = sys.argv[1] + "/api/python/graph.ops.md"
     if os.path.exists(graph_ops):

@@ -13,23 +13,14 @@
 
 from std.collections import Optional
 from std.random import randn
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import argv
 
-from std.gpu import *
+from max.gpu import *
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
@@ -37,7 +28,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index
 
 
 # ===-----------------------------------------------------------------------===#
@@ -61,13 +51,13 @@ struct MLAMaskType(TrivialRegisterPassable):
         return self.value != rhs.value
 
 
-@always_inline
+@inline(.always)
 def host_cast_k_fp8_to_bf16[
     kv_fp8_t: DType,
     k_bf16_t: DType,
 ](
-    k_fp8: UnsafePointer[Scalar[kv_fp8_t], _],
-    k_bf16: UnsafePointer[mut=True, Scalar[k_bf16_t], _],
+    k_fp8: Pointer[Scalar[kv_fp8_t], _],
+    k_bf16: MutPointer[Scalar[k_bf16_t], _],
     depth: Int,
     num_keys: Int,
     kv_num_heads: Int,
@@ -81,7 +71,9 @@ def host_cast_k_fp8_to_bf16[
             for h in range(kv_num_heads):
                 var base = b_off + (i * kv_num_heads + h) * depth
                 for j in range(depth):
-                    k_bf16[base + j] = k_fp8[base + j].cast[k_bf16_t]()
+                    k_bf16[unsafe_offset=base + j] = k_fp8[
+                        unsafe_offset=base + j
+                    ].cast[k_bf16_t]()
 
 
 def is_benchmark() -> Bool:
@@ -113,7 +105,7 @@ def test[
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "seq_len:",
         seq_len,
         "num_keys:",
@@ -184,11 +176,6 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    # Keep LayoutTensors for mha_gpu_naive reference path.
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-
     comptime q_tile_num_rows = 32
     comptime k_tile_num_rows = 128
 
@@ -199,15 +186,10 @@ def test[
     ](batch_size, num_keys, seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(
-        q_tt,
-        k_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_tt, var k_tt, var out_tt, var scalar_args_buf_tt, imm}:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[
                 config=MHAConfig[q_type](num_heads, depth),
@@ -243,7 +225,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -258,39 +240,28 @@ def test[
 
     comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[q_type](o_size)
-        comptime output_ref_layout = Layout.row_major(
-            Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-        )
-        var output_ref_device = LayoutTensor[q_type, output_ref_layout](
-            output_ref_device_ptr.unsafe_ptr(),
-            RuntimeLayout[output_ref_layout].row_major(
-                Index(batch_size, seq_len, num_heads, depth)
-            ),
+        var output_ref_device = TileTensor(
+            output_ref_device_ptr,
+            row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
         var k_ref_device_ptr = ctx.enqueue_create_buffer[q_type](k_size)
 
-        var k_ref_device = LayoutTensor[q_type, k_layout](
-            k_ref_device_ptr.unsafe_ptr(),
-            RuntimeLayout[k_layout].row_major(
-                Index(batch_size, num_keys, kv_num_heads, depth)
-            ),
+        var k_ref_device = TileTensor(
+            k_ref_device_ptr,
+            row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
         )
         ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
-            var null_valid_length = LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-            ](
-                None,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    Index(0)
-                ),
+            var k_operand = TileTensorMHAOperand(k_ref_device)
+            var null_valid_length = TileTensor(
+                MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+                row_major(Idx[0]),
             )
             mha_gpu_naive[_is_cache_length_accurate=True,](
-                q_tt.to_layout_tensor(),
+                q_tt,
                 k_operand,
                 k_operand,
                 CausalMask(),
@@ -307,9 +278,9 @@ def test[
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
             mha_gpu_naive(
-                q_tt.to_layout_tensor(),
-                k_tt.to_layout_tensor(),
-                k_tt.to_layout_tensor(),
+                q_tt,
+                k_tt,
+                k_tt,
                 NullMask(),
                 output_ref_device,
                 scale,
@@ -344,12 +315,12 @@ def test[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     var actual = flash_output_ptr[
                         d
                         + (depth - 64) * (h + s * num_heads)
                         + b * (depth - 64) * num_heads * seq_len
-                    ].cast[DType.float64]()
+                    ].cast[.float64]()
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
@@ -412,9 +383,76 @@ def test_decoding[
     ](seq_len, num_keys, ctx, use_index_input=use_index_input)
 
 
+def test_decoding_partial_head_group[
+    batch_size: Int,
+    mla_mask_type: MLAMaskType,
+    split_k: Bool = False,
+    num_partitions: Optional[Int] = 1,
+    against_gpu_naive: Bool = True,
+](
+    ctx: DeviceContext, use_index_input: Bool, seq_len: Int, num_keys: Int
+) raises:
+    """Covers head counts whose last head group is partial, with a
+    full-multiple control at the same shape so a failure is attributable to
+    the head count alone. The smallest count leaves a tail narrower than the
+    output swizzle atom, which checks that the store bounds rows at element
+    granularity rather than atom granularity.
+    """
+    comptime for num_heads in [128, 96, 72, 68]:
+        test[
+            mla_mask_type,
+            DType.bfloat16,  # q_type
+            DType.float8_e4m3fn,  # kv_type  (fp8 KV)
+            576,
+            num_heads,
+            group=num_heads,
+            against_gpu_naive=against_gpu_naive,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](seq_len, num_keys, ctx, use_index_input=use_index_input)
+
+
+def test_decoding_k3_head_counts[
+    batch_size: Int,
+    mla_mask_type: MLAMaskType,
+    split_k: Bool = False,
+    num_partitions: Optional[Int] = 1,
+](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+    """Kimi K3's TP8 Q-head count, 12, with 128 as the same-shape control.
+
+    Every other single-head-group count in this file is a power of two. 12 is
+    not, and it works — so the kernel is not restricted to powers of two, and
+    the `compute_mla_dispatch_scalars_runtime` enumeration is the only thing
+    that was in the way at that count.
+
+    K3's TP1 count, 96, is covered by `test_decoding_partial_head_group` above,
+    which owns every count that leaves a partial tail head group. 12 leaves no
+    partial *head* group but does tail the combine grid's 8-head block, which
+    only a split-K run reaches.
+
+    The control comes FIRST at this exact shape and batch: an assert aborts the
+    run, so ordering a supported count ahead of an unusual one is what makes a
+    failure attributable to the head count rather than to the shape.
+    """
+    comptime for num_heads in [128, 12]:
+        test[
+            mla_mask_type,
+            DType.bfloat16,  # q_type
+            DType.float8_e4m3fn,  # kv_type  (fp8 KV)
+            576,
+            num_heads,
+            group=num_heads,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+        ](seq_len, num_keys, ctx)
+
+
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # Test with benchmark parameters: batch_size=1, cache_len=32768, num_heads=128
@@ -429,5 +467,21 @@ def main() raises:
             test_decoding[27, MLAMaskType.CAUSAL](ctx, False, 5, 50)
             test_decoding[64, MLAMaskType.CAUSAL](ctx, False, 6, 517)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, False, 1, 32768 * 2)
+            test_decoding_partial_head_group[1, MLAMaskType.NO_MASK](
+                ctx, False, 1, 1024
+            )
+            test_decoding_partial_head_group[2, MLAMaskType.CAUSAL](
+                ctx, False, 2, 4096
+            )
+            # Under split-K a tail overrun would corrupt the next split's
+            # partials, which the combine kernel then folds into the output.
+            test_decoding_partial_head_group[1, MLAMaskType.NO_MASK, True, 2](
+                ctx, False, 1, 1024
+            )
+            test_decoding_k3_head_counts[2, MLAMaskType.CAUSAL](ctx, 1, 512)
+            test_decoding_k3_head_counts[1, MLAMaskType.NO_MASK](ctx, 1, 4096)
+            test_decoding_k3_head_counts[1, MLAMaskType.NO_MASK, True, 2](
+                ctx, 1, 4096
+            )
         else:
             pass

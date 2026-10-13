@@ -17,14 +17,13 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
     thread_idx,
 )
 from max.gpu.sync import barrier
 from max.gpu.host.info import is_cpu
-from max.gpu.host import DeviceBuffer
 from std.memory import unsafe_stack_allocation
 
 from extensibility import InputTensor, ManagedTensorSlice, OutputTensor
@@ -68,7 +67,7 @@ def _histogram_gpu(
 
         # Allocate shared memory for the histogram
         var shared_mem = unsafe_stack_allocation[
-            bin_width, Int64, address_space=AddressSpace.SHARED
+            bin_width, Int64, address_space=.SHARED
         ]()
 
         # Initialize the shared memory to 0
@@ -118,8 +117,8 @@ struct Histogram:
     def execute[
         target: StaticString
     ](
-        output: OutputTensor[dtype=DType.int64, rank=1, ...],
-        input: InputTensor[dtype=DType.uint8, rank=1, ...],
+        output: OutputTensor[dtype=.int64, rank=1, ...],
+        input: InputTensor[dtype=.uint8, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
         comptime if is_cpu[target]():

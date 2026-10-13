@@ -4,17 +4,18 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 package(default_visibility = ["//max:consumers"])
 
 _GPU_MEMORY = {
-    "test_batch_kv_cache_flash_attention.mojo": "6",
-    "test_batch_kv_cache_flash_attention_causal_mask.mojo": "6",
-    "test_kv_cache_2m_iadd.mojo": "6",
-    "test_kv_cache_matmul.mojo": "6",
-    "test_kv_cache_radd.mojo": "5.5",
-    "test_kv_cache_ragged_matmul_scale.mojo": "6",
-    "test_kv_cache_store_ragged.mojo": "6",
-    "test_mha_decoding_vs_naive.mojo": "6",
-    "test_mha_mixed_ce_tg.mojo": "6",
-    "test_paged_sparse_kv_index_remap.mojo": "5.5",
-    "test_sliced_add.mojo": "5.5",
+    "test_batch_kv_cache_flash_attention.mojo": "2",
+    "test_batch_kv_cache_flash_attention_causal_mask.mojo": "2",
+    "test_fused_qkv_index_matmul_scale_mxfp6.mojo": "5",
+    "test_kv_cache_2m_iadd.mojo": "3",
+    "test_kv_cache_matmul.mojo": "4",
+    "test_kv_cache_radd.mojo": "3",
+    "test_kv_cache_ragged_matmul_scale.mojo": "3",
+    "test_kv_cache_store_ragged.mojo": "3",
+    "test_mha_decoding_vs_naive.mojo": "2",
+    "test_mha_mixed_ce_tg.mojo": "2",
+    "test_paged_sparse_kv_index_remap.mojo": "2",
+    "test_sliced_add.mojo": "2",
 }
 
 _APPLE_GPU_INCOMPATIBLE = select({
@@ -27,6 +28,10 @@ _EXTRA_CONSTRAINTS = {
     "test_kv_cache_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_kv_cache_ragged_matmul_scale.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2318
+    "test_fused_qkv_index_matmul_scale_mxfp6.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_fused_qkv_index_matmul_scale_mxfp8.mojo": select({
         # MXFP8 block-scaled matmul (block_scaled_matmul_with_epilogue) asserts
         # on SM100; dual-cache fused QKV+index is M3-on-B200 only.
@@ -37,7 +42,13 @@ _EXTRA_CONSTRAINTS = {
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
-    "test_mha_gemma4_sink_repro.mojo": ["//:amd_gpu"],  # gfx950 AGPR-Copy-MFMA regression check
+    # AMD: gfx950 AGPR-Copy-MFMA regression. B200: the ragged entry point
+    # compiles sink=True kernels for this sink-less d512 caller.
+    "test_mha_gemma4_sink_repro.mojo": select({
+        "//:b200_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mha_prefill_v2_ragged_gate.mojo": ["//:mi355_gpu"],  # the kernel is tuned for gfx950 (MI355X)
     "test_pv_mnmajor_mma_spike.mojo": select({
         # SM100 P@V mn-major chunk-inner MMA recovery spike; B200-only
@@ -66,6 +77,12 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_paged_mha_spec_verify_garbage_row_canary.mojo": select({
+        # fp8-only cross-row leak regression guard for the SM100 FA4
+        # dense-GQA kernel (mha_sm100_dispatch is NVIDIA-only vendor code).
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # test_mha_gemma4_shapes.mojo is split into per-(page_size, mask_kind) targets below; the AMD-only crash repro is one of them.
 }
 
@@ -86,16 +103,7 @@ _EXTRA_DEPS = {
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
-            "//:b200_gpu": src not in [
-                # MSTDL-2240: ASSERT=all inflates the dual-cache bf16 matmul
-                # tactics past the compile-action timeout on SM100 — the same
-                # root cause that disables assertions for this test on AMD (see
-                # the default branch below).
-                "test_fused_qkv_index_matmul.mojo",
-            ],
             "//conditions:default": src not in [
-                "test_kv_cache_matmul.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
-                "test_fused_qkv_index_matmul.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions (AMD bf16 matmul tactics)
                 "test_mha_mixed_ce_tg.mojo",  # KERN-2339: accessing idx=4 in dimension of size 4
                 "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
@@ -105,10 +113,11 @@ _EXTRA_DEPS = {
             ],
         }),
         exec_properties = {
-            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "5"),
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "3"),
         },
         main = src,
-        tags = ["gpu"],
+        # Flaky due to a K/V DMA race in `MhaPrefillV2` (KERN-3053).
+        tags = ["gpu"] + (["manual"] if src == "test_mha_prefill_v2_ragged_gate.mojo" else []),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
             "//max:internal_utils",
@@ -125,7 +134,7 @@ _EXTRA_DEPS = {
             "kv_cache_test_utils.mojo",  # Imported source, not a test
             "test_kv_cache_ragged_matmul.mojo",  # Split by dtype x kernel below (KERN-3152 compile time)
             "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",  # Split by dtype below; the fp8 fold arm is AMD-only
-            "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test, split by page_size below
+            "test_mha_inflight_batching_gemma3_hang.mojo",  # Split by page_size below (B200-only PAQ-2333 repro)
             "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # Split by page_size below
             "test_mha_gemma4_shapes.mojo",  # Split by (page_size, mask_kind) below
             "test_paged_lut_load_boundary.mojo",  # Split by page_size below (B200 LUT-load OOB regression)
@@ -141,7 +150,7 @@ _EXTRA_DEPS = {
 #
 # (suffix, copts, constraints, gpu_memory)
 _RAGGED_CAUSAL_MASK_DTYPES = [
-    ("", [], [], "9"),
+    ("", [], [], "5"),
     (
         "_fp8",
         [
@@ -206,7 +215,7 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
             "//conditions:default": False,  # MSTDL-1147: fails with asserts on H100/AMD
         }),
         exec_properties = {
-            "test.resources:gpu-memory": "7",
+            "test.resources:gpu-memory": "5",
         },
         main = "test_kv_cache_ragged_matmul.mojo",
         tags = ["gpu"],
@@ -246,8 +255,11 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
 #   256:     depth512 kernel, H100 and B200 only.
 #   512:     depth512 kernel, B200 only.
 _PAGED_FA_GPU_MEMORY = {
-    ("128", "512"): "7",
-    ("256", "512"): "7",
+    ("16", "256"): "6",
+    ("16", "512"): "6",
+    ("256", "80"): "6",
+    ("64", "256"): "6",
+    ("64", "512"): "6",
 }
 
 _PAGED_FA_CONFIGS = [
@@ -413,7 +425,7 @@ _PAGED_FA_CONFIGS = [
         exec_properties = {
             "test.resources:gpu-memory": _PAGED_FA_GPU_MEMORY.get(
                 (page_size, head_size),
-                "6",
+                "3",
             ),
         },
         main = "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",
@@ -431,7 +443,19 @@ _PAGED_FA_CONFIGS = [
     for page_size, head_size, constraints in _PAGED_FA_CONFIGS
 ]
 
-# TODO(KERN-2734): Remove "manual" tag once the FA4 TMA barrier deadlock is fixed.
+# PAQ-2333 / KERN-2734: mixed TG+CE ragged paged batch on Gemma3 27B shapes
+# (230 TG + 40 CE, 270 requests) that production hit as an FA4 TMA transaction
+# barrier deadlock. This ran as "manual" for a long time on the belief that it
+# reproduced that deadlock; it did not -- it oversubscribed its own KV block
+# pool and died in host setup before any launch (see the `num_blocks` note in
+# the test). With the pool sized to the batch it passes, so it runs in CI as a
+# hang/NaN regression gate for this shape mix. Passing here is NOT evidence
+# that the TMA deadlock class is fixed -- the repro never reached the kernel,
+# so no commit exists at which it both passed and exercised FA4.
+#
+# B200-only: the deadlock under test is SM100 FA4, and page_size=64 cannot
+# build on gfx950 at all -- the AMD decode path instantiates tile_size=128 and
+# `PagedKVCache` rejects a tile wider than the page (kv_cache/types.mojo).
 [
     mojo_test(
         name = "test_mha_inflight_batching_gemma3_hang_ps{}.mojo.test".format(page_size),
@@ -446,14 +470,14 @@ _PAGED_FA_CONFIGS = [
         ],
         enable_assertions = True,
         exec_properties = {
-            "test.resources:gpu-memory": "8",
+            "test.resources:gpu-memory": "6",
         },
         main = "test_mha_inflight_batching_gemma3_hang.mojo",
-        tags = [
-            "gpu",
-            "manual",
-        ],
-        target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
         deps = [
             "//max:internal_utils",
             "//max:kv_cache",
@@ -482,7 +506,7 @@ _PAGED_FA_CONFIGS = [
 # `sliding_window` per testdata config.
 _GEMMA4_SHAPES_GPU_MEMORY = {
     "amd_repro": "5",
-    "ps256_causal": "7",
+    "ps256_causal": "2",
 }
 
 _GEMMA4_SHAPES_B200_ONLY = select({
@@ -523,7 +547,7 @@ _GEMMA4_SHAPES_CONFIGS = [
         ],
         enable_assertions = enable_assertions,
         exec_properties = {
-            "test.resources:gpu-memory": _GEMMA4_SHAPES_GPU_MEMORY.get(suffix, "6"),
+            "test.resources:gpu-memory": _GEMMA4_SHAPES_GPU_MEMORY.get(suffix, "2"),
         },
         main = "test_mha_gemma4_shapes.mojo",
         tags = ["gpu"],
@@ -546,6 +570,7 @@ _GEMMA4_SHAPES_CONFIGS = [
 # inlined comptime sweeps inside the test. B200-only (sm100 SIMD path).
 _PAGED_LUT_GPU_MEMORY = {
     128: "3",
+    256: "2.5",
 }
 
 [
@@ -562,7 +587,7 @@ _PAGED_LUT_GPU_MEMORY = {
         ],
         enable_assertions = True,
         exec_properties = {
-            "test.resources:gpu-memory": _PAGED_LUT_GPU_MEMORY.get(page_size, "2.5"),
+            "test.resources:gpu-memory": _PAGED_LUT_GPU_MEMORY.get(page_size, "2"),
         },
         main = "test_paged_lut_load_boundary.mojo",
         tags = ["gpu"],
@@ -619,8 +644,8 @@ mojo_test(
 # Stress test: gemma4 production shapes with KV padding pre-filled with
 # +inf. Sweeps page_size and mask_kind. B200-only.
 _OOB_CANARY_GPU_MEMORY = {
-    "128": "7",
-    "256": "7",
+    "128": "2",
+    "256": "2",
 }
 
 _OOB_CANARY_CONFIGS = [
@@ -652,7 +677,7 @@ _OOB_CANARY_CONFIGS = [
         ],
         enable_assertions = True,
         exec_properties = {
-            "test.resources:gpu-memory": _OOB_CANARY_GPU_MEMORY.get(page_size, "6"),
+            "test.resources:gpu-memory": _OOB_CANARY_GPU_MEMORY.get(page_size, "2"),
         },
         main = "test_mha_paged_kv_oob_canary.mojo",
         tags = ["gpu"],

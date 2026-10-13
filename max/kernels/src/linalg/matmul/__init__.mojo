@@ -21,8 +21,8 @@ from std.sys.info import align_of, simd_width_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
+    Coord,
     Layout,
-    LayoutTensor,
     RowMajorLayout,
     TileTensor,
     UNKNOWN_VALUE,
@@ -42,7 +42,7 @@ from ..utils import (
 from .gpu import _matmul_gpu
 
 
-@always_inline
+@inline(.always)
 def matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -58,9 +58,9 @@ def matmul[
     # op) are unaffected; set it by keyword.
     use_tf32: Bool = True,
 ](
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, address_space=.GENERIC, ...],
+    a: TileTensor[address_space=.GENERIC, ...],
+    b: TileTensor[address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     """Primary TileTensor matmul implementation. Routes GPU directly, delegates
@@ -113,17 +113,16 @@ def matmul[
         if Int(c.dim[0]()) == 0 or Int(c.dim[1]()) == 0:
             return
 
-        @always_inline
-        @__parameter
-        def description_fn() -> String:
+        @inline(.always)
+        def description_fn() {imm} -> String:
             var shape = GemmShape.get[transpose_b](c, a, b)
             # fmt: off
             return String(
                 "(",
                 target,
-                ";", trace_arg("A", IndexList[2](shape.M, shape.K), a.dtype),
-                ";", trace_arg("B", IndexList[2](shape.K, shape.N), b.dtype),
-                ";", trace_arg("C", IndexList[2](shape.M, shape.N), c.dtype),
+                ";", trace_arg("A", (shape.M, shape.K), a.dtype),
+                ";", trace_arg("B", (shape.K, shape.N), b.dtype),
+                ";", trace_arg("C", (shape.M, shape.N), c.dtype),
                 ";transpose_a=", transpose_a,
                 ";transpose_b=", transpose_b,
                 ")"
@@ -135,7 +134,7 @@ def matmul[
                 "matmul",
                 _trace_description if _trace_description else "",
             ](),
-            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(description_fn),
             task_id=OptionalReg(Int(ctx.value().id())),
         ):
             _matmul_gpu[
@@ -154,17 +153,16 @@ def matmul[
         if Int(c.dim[0]()) == 0 or Int(c.dim[1]()) == 0:
             return
 
-        @always_inline
-        @__parameter
-        def cpu_description_fn() -> String:
+        @inline(.always)
+        def cpu_description_fn() {imm} -> String:
             var shape = GemmShape.get[transpose_b](c, a, b)
             # fmt: off
             return String(
                 "(",
                 target,
-                ";", trace_arg("A", IndexList[2](shape.M, shape.K), a.dtype),
-                ";", trace_arg("B", IndexList[2](shape.K, shape.N), b.dtype),
-                ";", trace_arg("C", IndexList[2](shape.M, shape.N), c.dtype),
+                ";", trace_arg("A", (shape.M, shape.K), a.dtype),
+                ";", trace_arg("B", (shape.K, shape.N), b.dtype),
+                ";", trace_arg("C", (shape.M, shape.N), c.dtype),
                 ";transpose_a=", transpose_a,
                 ";transpose_b=", transpose_b,
                 ";b_packed=", b_packed,
@@ -177,7 +175,7 @@ def matmul[
                 "matmul",
                 _trace_description if _trace_description else "",
             ](),
-            Trace[TraceLevel.OP]._get_detail_str[cpu_description_fn](),
+            Trace[TraceLevel.OP]._get_detail_str(cpu_description_fn),
             task_id=OptionalReg(Int(ctx.value().id())) if ctx else None,
         ):
             var kernel_type_m = (
@@ -187,15 +185,19 @@ def matmul[
             # The CPU version of matmul doesn't support compute lambda.
             # Wrap it around an epilogue lambda instead.
             @__parameter
-            @always_inline
+            @inline(.always)
             def compute_lambda_wrapper[
                 _type: DType, _width: SIMDLength, *, alignment: Int = 1
-            ](coords: IndexList[2], val: SIMD[_type, _width]):
-                comptime if elementwise_compute_lambda_fn:
+            ](coords: Coord, val: SIMD[_type, _width]):
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                comptime if case .Some(compute) = elementwise_compute_lambda_fn:
                     comptime compute_lambda = elementwise_compute_lambda_fn.value()
                     var output = compute_lambda(coords, val)
-                    c.store_linear[alignment=alignment](
-                        coords, rebind[SIMD[c.dtype, _width]](output)
+                    c.store[alignment=alignment](
+                        coords,
+                        rebind[SIMD[c.dtype, _width]](output),
                     )
 
             comptime elementwise_lambda_wrapper = Optional[
@@ -204,9 +206,11 @@ def matmul[
                 compute_lambda_wrapper
             ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
 
+            var cpu_ctx = DeviceContext._map_assert_cpu_target(ctx)
+
             cpu.matmul[
                 transpose_b=transpose_b,
                 b_packed=b_packed,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
                 saturated_vnni=saturated_vnni,
-            ](c, a, b, kernel_type_m, ctx=ctx)
+            ](c, a, b, kernel_type_m, ctx=cpu_ctx)

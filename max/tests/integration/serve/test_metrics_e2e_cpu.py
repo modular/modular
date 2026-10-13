@@ -18,7 +18,6 @@ import threading
 import time
 from collections.abc import Iterator
 
-import hf_repo_lock
 import pytest
 import requests
 from async_asgi_testclient import TestClient
@@ -33,8 +32,6 @@ from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
 )
 
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
-MODEL_REVISION = hf_repo_lock.revision_for_hf_repo(MODEL_NAME)
-assert MODEL_REVISION is not None
 
 # Arbitrary, fixed like the 8001 /metrics port used throughout this file;
 # just needs to not collide with 8001 or the standard OTLP ports 4317/4318,
@@ -151,8 +148,6 @@ def _metric_total(metrics_text: str, name: str) -> float:
     [
         PipelineArgs(
             model_path=MODEL_NAME,
-            huggingface_model_revision=MODEL_REVISION,
-            huggingface_weight_revision=MODEL_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
@@ -237,7 +232,10 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 "maxserve_cache_request_prefix_coverage",
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
-            absent_metrics=None,
+            # This model is text-only, so the media family must be entirely
+            # absent. ``absent_metrics`` matches a substring, so the family
+            # prefix covers every name in it, present and future.
+            absent_metrics=["maxserve_media_"],
         )
 
         # Once all requests land in the histogram, assert the counter matches
@@ -284,8 +282,6 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
     [
         PipelineArgs(
             model_path=MODEL_NAME,
-            huggingface_model_revision=MODEL_REVISION,
-            huggingface_weight_revision=MODEL_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
@@ -339,7 +335,10 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
                 "maxserve_cache_request_prefix_coverage",
                 f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
-            absent_metrics=None,
+            # This model is text-only, so the media family must be entirely
+            # absent. ``absent_metrics`` matches a substring, so the family
+            # prefix covers every name in it, present and future.
+            absent_metrics=["maxserve_media_"],
         )
 
 
@@ -349,8 +348,6 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
     [
         PipelineArgs(
             model_path=MODEL_NAME,
-            huggingface_model_revision=MODEL_REVISION,
-            huggingface_weight_revision=MODEL_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
@@ -383,8 +380,6 @@ async def test_metrics_e2e_validate_disable_works_v1(app: FastAPI) -> None:
     [
         PipelineArgs(
             model_path=MODEL_NAME,
-            huggingface_model_revision=MODEL_REVISION,
-            huggingface_weight_revision=MODEL_REVISION,
             device_specs=[DeviceSpec.cpu()],
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),

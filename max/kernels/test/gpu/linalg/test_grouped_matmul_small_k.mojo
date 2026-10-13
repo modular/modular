@@ -22,12 +22,7 @@ core path) and K=8 (TMA with OOB zero-fill).
 
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from std.testing import assert_almost_equal
@@ -80,26 +75,26 @@ def test[
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
-    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_experts + 1
     )
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[N])),
+        row_major(total_num_tokens, Idx[N]),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[N])),
+        row_major(total_num_tokens, Idx[N]),
     )
 
     var b_size = num_experts * N * K
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
-    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[.int32](
         num_experts
     )
 
@@ -122,36 +117,34 @@ def test[
     var c_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var b_dev_buffer = ctx.enqueue_create_buffer[b_type](b_size)
-    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
+    var a_offsets_dev_buffer = ctx.enqueue_create_buffer[.uint32](
         num_experts + 1
     )
-    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[DType.int32](
-        num_experts
-    )
+    var expert_ids_dev_buffer = ctx.enqueue_create_buffer[.int32](num_experts)
 
     var a_dev = TileTensor[a_type](
         a_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var c_dev = TileTensor[c_type](
         c_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[N])),
+        row_major(total_num_tokens, Idx[N]),
     )
     var c_ref_dev = TileTensor[c_type](
         c_ref_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[N])),
+        row_major(total_num_tokens, Idx[N]),
     )
     var b_dev = TileTensor[b_type](
         b_dev_buffer,
         row_major[num_experts, N, K](),
     )
-    var a_offsets_dev = TileTensor[DType.uint32](
+    var a_offsets_dev = TileTensor[.uint32](
         a_offsets_dev_buffer,
-        row_major(Coord(num_experts + 1)),
+        row_major(num_experts + 1),
     )
-    var expert_ids_dev = TileTensor[DType.int32](
+    var expert_ids_dev = TileTensor[.int32](
         expert_ids_dev_buffer,
-        row_major(Coord(Idx[num_experts])),
+        row_major(Idx[num_experts]),
     )
 
     ctx.enqueue_copy(a_dev_buffer, a_host_ptr)
@@ -209,22 +202,22 @@ def main() raises:
     with DeviceContext() as ctx:
         # K=8: TMA path (stride=16 bytes, meets TMA alignment).
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 8),
         ](1, [46], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=1,
             expert_shape=Index(256, 8),
         ](1, [128], [0], ctx)
 
         test[
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
             num_experts=4,
             expert_shape=Index(256, 8),
         ](3, [16, 32, 24], [0, 2, 1], ctx)
@@ -232,8 +225,8 @@ def main() raises:
         # K=1..7: CUDA core path (stride < 16 bytes).
         comptime for K in range(1, 8):
             test[
-                DType.bfloat16,
-                DType.bfloat16,
+                .bfloat16,
+                .bfloat16,
                 num_experts=1,
                 expert_shape=Index(128, K),
             ](1, [64], [0], ctx)

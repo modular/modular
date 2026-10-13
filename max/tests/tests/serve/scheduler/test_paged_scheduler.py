@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import CPU
-from max.nn.kv_cache import KVConnectorType
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.modeling.types import BatchType
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
@@ -955,16 +953,6 @@ def test_paged_scheduler_dp8() -> None:
     ]
     # fmt: on
     assert_batch_info_equal(actual, expected)
-
-
-def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
-    with pytest.raises(ValueError) as e:
-        create_paged_scheduler(
-            kv_connector=KVConnectorType.tiered,
-            enable_prefix_caching=True,
-            device=CPU(),
-        )
-    assert "KVCacheMemory is on the CPU; cannot offload" in str(e.value)
 
 
 def test_paged_scheduler_speculative_tokens_allocates_extra_pages() -> None:

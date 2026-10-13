@@ -97,7 +97,7 @@ class Dim:
             f"int({self!r}): Int conversions only supported for static dims"
         )
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Checks whether two dimensions are equal.
 
         Dimensions are equal if they are the same dimension type
@@ -113,7 +113,7 @@ class Dim:
         """
         raise NotImplementedError
 
-    def __ne__(self, other: Any) -> bool:
+    def __ne__(self, other: object) -> bool:
         """Checks whether two dimensions are not equal.
 
         The inverse of __eq__.
@@ -265,7 +265,7 @@ class SymbolicDim(Dim):
     def __repr__(self) -> str:
         return f"Dim({self.name!r})"
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Whether the dimension is the same as another symbolic dimension.
 
         Symbolic dimensions with the same name are interpreted as the same
@@ -403,7 +403,8 @@ class AlgebraicDim(Dim):
             Dim(operand).substitute(mapping) for operand in self.attr.operands
         ]
         # __floordiv__'s zero guard does not run here, and the compiler
-        # neither folds nor rejects a literal zero divisor.
+        # neither folds nor rejects a literal zero divisor. A div attribute
+        # always carries two operands - its verifier rejects any other count.
         if self.attr.opcode == kgen.POC.div and operands[1] == 0:
             raise ZeroDivisionError(
                 f"substituting into {self} produced a zero divisor"
@@ -442,7 +443,7 @@ class AlgebraicDim(Dim):
     def __repr__(self) -> str:
         return f"{self:repr}"
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return isinstance(other, AlgebraicDim) and self.attr == other.attr
 
     def to_mlir(self) -> kgen.ParamOperatorAttr:
@@ -539,7 +540,7 @@ class StaticDim(Dim):
     def __int__(self) -> int:
         return self.dim
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """Whether the dimension has the same size as another dimension.
 
         Args:
@@ -592,3 +593,6 @@ class StaticDim(Dim):
 
 
 DimLike = int | str | Dim | np.integer | builtin.TypedAttr
+"""Anything a dimension accepts: a Python int, a symbolic name, a
+:class:`Dim`, a NumPy integer, or a typed MLIR attribute.
+"""

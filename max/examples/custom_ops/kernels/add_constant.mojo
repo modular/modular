@@ -33,12 +33,11 @@ struct AddConstant[value: Int]:
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
-        @__parameter
-        @always_inline
-        def add_constant[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
+        @inline(.always)
+        def add_constant[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + Scalar[output.dtype](Self.value)
 
-        foreach[add_constant, target=target](output, ctx)
+        foreach[target=target](add_constant, output, ctx)
 
 
 # You only need to implement this if you do not manually annotate

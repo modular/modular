@@ -401,8 +401,8 @@ class SOAdvanced(BaseScenario):
             )
 
         # -- 3. ref_circular ---------------------------------------------------
-        # Tree structure with recursive $ref. Grammar backends (xgrammar,
-        # llguidance) support recursive schemas with depth limits, so the
+        # Tree structure with recursive $ref. The grammar backend supports
+        # recursive schemas with depth limits, so the
         # server should compile and produce valid output.
         try:
             schema = {

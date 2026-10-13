@@ -20,7 +20,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
@@ -67,7 +67,7 @@ class PixtralConfig(
     num_key_value_heads: int
     feed_forward_length: int
     vocab_size: int
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     attention_multiplier: float
 
     # Vision encoder fields
@@ -90,27 +90,14 @@ class PixtralConfig(
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.text_config.num_hidden_layers
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-        model_config: MAXModelConfig | None = None,
-    ) -> int:
-        # Permissive on text_config (config path). PixtralModel upper-bounds
-        # max_length in model.py; divergence flagged for follow-up in PR.
-        model_config = model_config or pipeline_config.model
-        max_seq_len = model_config.max_length
-        if max_seq_len:
-            return max_seq_len
-        return huggingface_config.text_config.max_position_embeddings
-
     @override
     @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a PixtralConfig instance from pipeline configuration.
 
@@ -164,16 +151,14 @@ class PixtralConfig(
             num_attention_heads=text_config.num_attention_heads,
             rms_norm_eps=text_config.rms_norm_eps,
             rope_theta=get_rope_theta(text_config),
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             num_hidden_layers=text_config.num_hidden_layers,
             head_dim=text_config.head_dim,
             num_key_value_heads=text_config.num_key_value_heads,
             feed_forward_length=text_config.intermediate_size,
             vocab_size=text_config.vocab_size,
             kv_params=kv_params,
-            attention_multiplier=math.sqrt(1 / kv_params.head_dim),
+            attention_multiplier=math.sqrt(1 / text_config.head_dim),
             patch_size=vision_config.patch_size,
             image_size=vision_config.image_size,
             num_channels=vision_config.num_channels,

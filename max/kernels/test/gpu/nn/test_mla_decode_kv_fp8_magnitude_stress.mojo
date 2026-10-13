@@ -38,40 +38,29 @@ kernel they must still agree AND both be finite. A finite reference + NaN kernel
 
 from std.collections import Optional
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator
 
-from std.gpu import *
+from max.gpu import *
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index
 from std.utils.numerics import isnan
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.testing import assert_almost_equal, assert_equal
+from std.testing import assert_equal
 
 
-@always_inline
+@inline(.always)
 def not_finite[dtype: DType](x: Scalar[dtype]) -> Bool:
     # NaN via isnan; Inf via magnitude (any real Inf exceeds 1e30, while bf16/f32
     # finite values of interest here are far smaller). Avoids depending on an
     # `isinf` export that the stdlib numerics module may not provide.
-    return isnan(x) or (abs(x.cast[DType.float64]()) > Float64(1e30))
+    return isnan(x) or (abs(x.cast[.float64]()) > Float64(1e30))
 
 
 @fieldwise_init
@@ -87,13 +76,13 @@ struct MLAMaskType(TrivialRegisterPassable):
         return self.value != rhs.value
 
 
-@always_inline
+@inline(.always)
 def host_cast_k_fp8_to_bf16[
     kv_fp8_t: DType,
     k_bf16_t: DType,
 ](
-    k_fp8: UnsafePointer[Scalar[kv_fp8_t], _],
-    k_bf16: UnsafePointer[mut=True, Scalar[k_bf16_t], _],
+    k_fp8: Pointer[Scalar[kv_fp8_t], _],
+    k_bf16: MutPointer[Scalar[k_bf16_t], _],
     depth: Int,
     num_keys: Int,
     kv_num_heads: Int,
@@ -112,12 +101,12 @@ def host_cast_k_fp8_to_bf16[
 # near or above the e4m3 max (±448). `stress` ~= target peak magnitude; with
 # randn (|x| up to ~4-5 sigma) a stress of ~120 pushes the tail past 448 and
 # the bulk into the high-magnitude e4m3 range where precision collapses.
-@always_inline
+@inline(.always)
 def magnitude_stress_inplace[
     dtype: DType
-](buf: UnsafePointer[mut=True, Scalar[dtype], _], n: Int, stress: Float32):
+](buf: MutPointer[Scalar[dtype], _], n: Int, stress: Float32):
     for i in range(n):
-        buf[i] = (buf[i].cast[DType.float32]() * stress).cast[dtype]()
+        buf[i] = (buf[i].cast[.float32]() * stress).cast[dtype]()
 
 
 def test[
@@ -189,10 +178,6 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         _is_cache_length_accurate=True,
@@ -200,10 +185,10 @@ def test[
     ](batch_size, num_keys, seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(q_tt, k_tt, out_tt, scalar_args_buf_tt)
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_tt, var k_tt, var out_tt, var scalar_args_buf_tt, imm}:
         # CAUSAL only (production MLA mask). See main() — every cell is CAUSAL.
         flare_mla_decoding[
             config=MHAConfig[q_type](num_heads, depth),
@@ -225,34 +210,25 @@ def test[
 
     # Reference over the SAME saturated KV bytes.
     var output_ref_device_ptr = ctx.enqueue_create_buffer[q_type](o_size)
-    comptime output_ref_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var output_ref_device = LayoutTensor[q_type, output_ref_layout](
-        output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_ref_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref_device = TileTensor(
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_ref_device_ptr = ctx.enqueue_create_buffer[q_type](k_size)
-    var k_ref_device = LayoutTensor[q_type, k_layout](
-        k_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
+    var k_ref_device = TileTensor(
+        k_ref_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
-        var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
-        var null_valid_length = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ](
-            None,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+        var k_operand = TileTensorMHAOperand(k_ref_device)
+        var null_valid_length = TileTensor(
+            MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            row_major(Idx[0]),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
-            q_tt.to_layout_tensor(),
+            q_tt,
             k_operand,
             k_operand,
             CausalMask(),
@@ -300,8 +276,7 @@ def test[
                         ref_nonfinite += 1
                     if not not_finite(actual) and not not_finite(expect):
                         var e = abs(
-                            actual.cast[DType.float64]()
-                            - expect.cast[DType.float64]()
+                            actual.cast[.float64]() - expect.cast[.float64]()
                         )
                         if e > max_abs_err:
                             max_abs_err = e
@@ -314,7 +289,7 @@ def test[
         "num_keys=",
         num_keys,
         "np=",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "kv_stress=",
         kv_stress,
         "mask=",
@@ -400,7 +375,7 @@ def sweep_q[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # Two per-rank head counts: 16 (e.g. 128 heads at TP=8), 32 (TP=4).

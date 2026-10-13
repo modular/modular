@@ -36,12 +36,12 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
-    ReduceOp,
     Replicated,
     Sharded,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
@@ -69,11 +69,9 @@ class _Conv2dDataParallel:
         x_np = np.ones((4, 3, 3, 2), dtype=np.float32)
         # [kH=1, kW=1, C_in=2, C_out=4] — 1x1 conv = linear per-pixel
         f_np = np.ones((1, 1, 2, 4), dtype=np.float32) * 0.5
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(f_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = F.conv2d(x, f)
         assert result.placements == (Sharded(0),)
@@ -84,11 +82,9 @@ class _Conv2dDataParallel:
         x_np = np.arange(24, dtype=np.float32).reshape(4, 3, 1, 2)
         f_np = np.array([[[[1.0, 0.0], [0.0, 1.0]]]], dtype=np.float32)
         # 1x1 identity conv: output should equal input
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(f_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = F.conv2d(x, f)
         assert result.placements == (Sharded(0),)
@@ -106,11 +102,9 @@ class _Conv2dOutputChannelParallel:
         # [kH=1, kW=1, C_in=2, C_out=4]
         f_np = np.ones((1, 1, 2, 4), dtype=np.float32)
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
-        f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Sharded(3),))
-        )
+        f = transfer_to(Tensor(f_np), DeviceMapping(self.MESH_2, (Sharded(3),)))
         result = F.conv2d(x, f)
         # C_out is axis 3 in the output [N, H', W', C_out]
         assert result.placements == (Sharded(3),)
@@ -125,11 +119,9 @@ class _Conv2dOutputChannelParallel:
             dtype=np.float32,
         )  # [1,1,2,4]
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
-        f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Sharded(3),))
-        )
+        f = transfer_to(Tensor(f_np), DeviceMapping(self.MESH_2, (Sharded(3),)))
         result = F.conv2d(x, f)
         assert result.placements == (Sharded(3),)
         # [1,1] @ [[1,2,3,4],[1,1,1,1]] = [2, 3, 4, 5]
@@ -146,26 +138,18 @@ class _Conv2dInputChannelParallel:
         """S(3) x S(2) -> Partial — row-TP analogue for conv."""
         x_np = np.ones((1, 1, 1, 4), dtype=np.float32)
         f_np = np.ones((1, 1, 4, 2), dtype=np.float32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(3),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(3),)))
         # C_in is axis 2 in RSCF filter
-        f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Sharded(2),))
-        )
+        f = transfer_to(Tensor(f_np), DeviceMapping(self.MESH_2, (Sharded(2),)))
         result = F.conv2d(x, f)
-        assert result.placements == (Partial(ReduceOp.SUM),)
+        assert result.placements == (Partial(),)
 
     def test_conv2d_cin_sharded_numerics(self) -> None:
         """S(C_in) x S(C_in_f) -> Partial, gathered result correct."""
         x_np = np.ones((1, 1, 1, 4), dtype=np.float32)
         f_np = np.ones((1, 1, 4, 2), dtype=np.float32) * 0.5
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(3),))
-        )
-        f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Sharded(2),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(3),)))
+        f = transfer_to(Tensor(f_np), DeviceMapping(self.MESH_2, (Sharded(2),)))
         result = F.conv2d(x, f)
         assert any(isinstance(p, Partial) for p in result.placements)
         # 1x1 conv: [1,1,1,4] @ [4,2] * 0.5 = [1,1,1,2] with value 2.0
@@ -191,7 +175,7 @@ class _Conv2dPartialRules:
         f_np = np.ones((1, 1, 2, 2), dtype=np.float32)
         x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
         f = transfer_to(
-            Tensor(f_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(f_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = F.conv2d(x, f)
         assert result.placements == (Partial(),)
@@ -208,11 +192,11 @@ class _Conv2d2DMesh:
         f_np = np.ones((1, 1, 2, 2), dtype=np.float32) * 0.5
         x = transfer_to(
             Tensor(x_np),
-            PlacementMapping(self.MESH_2D, (Replicated(), Sharded(0))),
+            DeviceMapping(self.MESH_2D, (Replicated(), Sharded(0))),
         )
         f = transfer_to(
             Tensor(f_np),
-            PlacementMapping(self.MESH_2D, (Replicated(), Replicated())),
+            DeviceMapping(self.MESH_2D, (Replicated(), Replicated())),
         )
         result = F.conv2d(x, f)
         assert result.placements == (Replicated(), Sharded(0))
@@ -233,18 +217,14 @@ class _PoolingBatchSharded:
     def test_avg_pool2d_batch_sharded_placement(self) -> None:
         """avg_pool2d with S(0) preserves batch sharding."""
         x_np = np.ones((4, 4, 4, 2), dtype=np.float32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = F.avg_pool2d(x, kernel_size=(2, 2), stride=2)
         assert result.placements == (Sharded(0),)
 
     def test_max_pool2d_batch_sharded_placement(self) -> None:
         """max_pool2d with S(0) preserves batch sharding."""
         x_np = np.ones((4, 4, 4, 2), dtype=np.float32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
         assert result.placements == (Sharded(0),)
 
@@ -273,7 +253,8 @@ class _PoolingPartial:
         """max_pool2d is non-linear — Partial auto-reduced."""
         x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
         x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
-        result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
+        with auto_reshard(mode="silent"):
+            result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
         assert not any(isinstance(p, Partial) for p in result.placements)
 
 
@@ -287,18 +268,14 @@ class _BandPart:
     def test_band_part_batch_sharded_placement(self) -> None:
         """S(0) on batch dim → S(0) preserved."""
         arr = np.ones((4, 3, 3), dtype=np.float32)
-        t = transfer_to(
-            Tensor(arr), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(arr), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = F.band_part(t, num_lower=0, num_upper=0)
         assert result.placements == (Sharded(0),)
 
     def test_band_part_batch_sharded_numerics(self) -> None:
         """S(0) diagonal extraction — numerics verified."""
         arr = np.ones((4, 3, 3), dtype=np.float32)
-        t = transfer_to(
-            Tensor(arr), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(arr), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = F.band_part(t, num_lower=0, num_upper=0)
         got = result.to_numpy()
         for i in range(4):
@@ -321,6 +298,9 @@ class _Cond:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_non_distributed_true(self) -> None:
         """Happy path: cond true branch using DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -335,6 +315,9 @@ class _Cond:
         )
         np.testing.assert_allclose(result[0].to_numpy(), [4.0, 6.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_non_distributed_false(self) -> None:
         """Happy path: cond false branch using DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -375,6 +358,9 @@ class _WhileLoop:
         )
         np.testing.assert_allclose(result[1].to_numpy(), [4.0, 5.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_while_loop_chained_result(self) -> None:
         """While_loop result feeds into further DF ops."""
         counter = Tensor.full([], 0, dtype=DType.float32, device=CPU())
@@ -393,6 +379,9 @@ class _WhileLoop:
         )
         np.testing.assert_allclose(doubled.to_numpy(), [6.0, 6.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_result_chained(self) -> None:
         """Cond result feeds into further DF ops."""
         device = DeviceRef.from_device(CPU())
@@ -409,6 +398,9 @@ class _WhileLoop:
         squared = F.mul(result[0], result[0])
         np.testing.assert_allclose(squared.to_numpy(), [9.0, 16.0], rtol=1e-5)
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_new_tensor_in_branch(self) -> None:
         """Branch creates a NEW tensor (not just captured outer ones)."""
         device = DeviceRef.from_device(CPU())
@@ -423,6 +415,9 @@ class _WhileLoop:
             result[0].to_numpy(), [1.0, 1.0, 1.0], rtol=1e-5
         )
 
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
+    )
     def test_cond_multiple_outputs(self) -> None:
         """Cond with two output tensors."""
         device = DeviceRef.from_device(CPU())
@@ -462,5 +457,3 @@ class MiscTests(
     _WhileLoop,
 ):
     """Aggregates all misc op test classes for thin subclassing."""
-
-    pass

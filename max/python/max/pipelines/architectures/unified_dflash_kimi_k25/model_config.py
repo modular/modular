@@ -29,16 +29,21 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.speculative._dflash import (
+    DflashDraftHFConfig,
+    parse_dflash_draft_hf_config,
+)
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from ..deepseekV3.model_config import DeepseekV3Config
 from ..dflash_kimi_k25 import DFlashKimiK25DraftConfig
 from ..kimik2_5.model_config import KimiK2_5TextConfig
-from ..unified_dflash_llama3.model_config import (  # re-exported helpers
-    DflashDraftHFConfig,
-    parse_dflash_draft_hf_config,
+from ..unified_dflash_llama3.model_config import (
     resolve_dflash_num_speculative_tokens,
 )
 
@@ -160,6 +165,8 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Build an early placeholder config for KV memory estimation.
 
@@ -175,7 +182,7 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
         assert pipeline_config.speculative is not None
 
         target_config = KimiK2_5TextConfig.initialize(
-            pipeline_config, model_config
+            pipeline_config, model_config, max_seq_len=max_seq_len
         )
         target_kv = target_config.kv_params
         assert isinstance(target_kv, KVCacheParams)
@@ -218,3 +225,14 @@ class UnifiedDflashKimiK25Config(ArchConfigWithKVCache):
 
     def get_max_seq_len(self) -> int:
         return self.target.get_max_seq_len()
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        return KimiK2_5TextConfig.calculate_max_seq_len(
+            getattr(huggingface_config, "text_config", huggingface_config),
+            model_config,
+        )

@@ -123,7 +123,6 @@ pkg_tar(
         ":max-docs",
         ":max-kernels-public-docs",
         ":max-mojo-public-docs",
-        ":pixi.mdx",
         ":requirements.js",
         ":sidebars.json",
         ":static",
@@ -224,6 +223,16 @@ modular_py_binary(
         "//:__pkg__",
         "//bazel/lint:__pkg__",
     ],
+)
+
+modular_py_binary(
+    name = "generate-metrics-table",
+    srcs = ["generate-metrics-table.py"],
+    visibility = [
+        "//:__pkg__",
+        "//bazel/lint:__pkg__",
+    ],
+    deps = ["//max/python/max/serve/telemetry"],
 )
 
 modular_py_binary(

@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
 from std.testing import assert_equal
 
 
 # Simple kernel for testing event synchronization
 def simple_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
     multiplier: Float32,
 ):
@@ -34,8 +34,8 @@ def simple_kernel(
 
 # Kernel that does more work to test timing
 def heavy_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len: Int,
     iterations: Int,
 ):
@@ -57,15 +57,15 @@ def test_event_record_and_synchronize(ctx: DeviceContext) raises:
     comptime multiplier = Float32(3.0)
 
     # Create buffers
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var output_host = ctx.enqueue_create_host_buffer[.float32](length)
 
     # Initialize input data
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var output_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
+    var output_device = ctx.enqueue_create_buffer[.float32](length)
 
     # Copy input to device
     ctx.enqueue_copy(input_device, input_host)
@@ -110,19 +110,17 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext) raises:
     comptime multiplier2 = Float32(3.0)
 
     # Create buffers
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var intermediate_host = ctx.enqueue_create_host_buffer[DType.float32](
-        length
-    )
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var intermediate_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var output_host = ctx.enqueue_create_host_buffer[.float32](length)
 
     # Initialize input
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var intermediate_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var output_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
+    var intermediate_device = ctx.enqueue_create_buffer[.float32](length)
+    var output_device = ctx.enqueue_create_buffer[.float32](length)
 
     ctx.enqueue_copy(input_device, input_host)
     ctx.synchronize()
@@ -180,24 +178,24 @@ def test_multiple_events_synchronization(ctx: DeviceContext) raises:
     comptime num_streams = 4
 
     # Create input data
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
     ctx.enqueue_copy(input_device, input_host)
     ctx.synchronize()
 
     # Create multiple streams, events, and output buffers
     var streams = List[DeviceStream]()
     var events = List[DeviceEvent]()
-    var output_devices = List[DeviceBuffer[DType.float32]]()
+    var output_devices = List[DeviceBuffer[.float32]]()
     var multipliers = List[Float32]()
 
     for i in range(num_streams):
         streams.append(ctx.create_stream())
         events.append(ctx.create_event())
-        output_devices.append(ctx.enqueue_create_buffer[DType.float32](length))
+        output_devices.append(ctx.enqueue_create_buffer[.float32](length))
         multipliers.append(Float32(i + 1))
 
     var func = ctx.compile_function[simple_kernel]()
@@ -222,7 +220,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext) raises:
 
     # Verify results from all streams
     for stream_idx in range(num_streams):
-        var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+        var output_host = ctx.enqueue_create_host_buffer[.float32](length)
         ctx.enqueue_copy(output_host, output_devices[stream_idx])
         ctx.synchronize()
 
@@ -238,18 +236,18 @@ def test_event_dependency_chain(ctx: DeviceContext) raises:
     comptime length = 128
 
     # Create input data
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
     ctx.enqueue_copy(input_device, input_host)
     ctx.synchronize()
 
     # Create chain: input -> buffer1 -> buffer2 -> buffer3
-    var buffer1 = ctx.enqueue_create_buffer[DType.float32](length)
-    var buffer2 = ctx.enqueue_create_buffer[DType.float32](length)
-    var buffer3 = ctx.enqueue_create_buffer[DType.float32](length)
+    var buffer1 = ctx.enqueue_create_buffer[.float32](length)
+    var buffer2 = ctx.enqueue_create_buffer[.float32](length)
+    var buffer3 = ctx.enqueue_create_buffer[.float32](length)
 
     var stream1 = ctx.create_stream()
     var stream2 = ctx.create_stream()
@@ -304,7 +302,7 @@ def test_event_dependency_chain(ctx: DeviceContext) raises:
     stream3.synchronize()
 
     # Copy result back and verify
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var output_host = ctx.enqueue_create_host_buffer[.float32](length)
     ctx.enqueue_copy(output_host, buffer3)
     ctx.synchronize()
 
@@ -323,14 +321,14 @@ def test_event_across_context_streams(ctx: DeviceContext) raises:
     comptime multiplier = Float32(4.0)
 
     # Create buffers
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var output_host = ctx.enqueue_create_host_buffer[.float32](length)
 
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var output_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
+    var output_device = ctx.enqueue_create_buffer[.float32](length)
 
     # Use default stream for input copy
     ctx.enqueue_copy(input_device, input_host)

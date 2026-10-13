@@ -17,13 +17,15 @@ from __future__ import annotations
 import logging
 
 from max.config import ConfigFileModel
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 _logger = logging.getLogger("max.pipelines")
 
 
 class LoRAConfig(ConfigFileModel):
     """Configuration for LoRA (Low-Rank Adaptation) inference."""
+
+    model_config = ConfigDict(frozen=True)
 
     enable_lora: bool = Field(
         default=False, description="Enables LoRA on the server."

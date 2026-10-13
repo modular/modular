@@ -17,12 +17,13 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import (
@@ -33,11 +34,11 @@ from max.graph import (
     ShardingStrategy,
     StaticDim,
     Type,
-    Value,
     Weight,
 )
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
+from max.tree import Tree
 from typing_extensions import Self
 
 from .._identity import IdentitySet
@@ -78,75 +79,18 @@ class Shardable(Protocol):
         ...
 
 
-@runtime_checkable
-class FlattenableGraphInput(Protocol):
-    """A structured graph input that can cross a subgraph boundary.
-
-    Objects implementing this protocol (for example
-    :class:`~max.nn.kv_cache.PagedCacheValues`) know how to serialize
-    themselves into a flat list of graph :class:`~max.graph.Value` objects and
-    reconstruct themselves from a flat iterator, letting them be passed as a
-    single logical argument through :meth:`Module.build_subgraph` /
-    :func:`~max.graph.ops.call` without manual field-by-field decomposition.
-    """
-
-    def flatten(self) -> list[Value[Any]]:
-        """Serializes this object into a flat list of graph values."""
-        ...
-
-    def unflatten(self, it: Iterator[Any]) -> Any:
-        """Reconstructs this object by consuming values from ``it``."""
-        ...
-
-
-# A single argument in a subgraph's input pytree: a leaf ``Value``, a
-# (possibly nested) list/tuple of such arguments, or a flattenable structured
-# node. ``Any`` is used for the recursive/leaf cases to keep the annotation
-# usable at call sites.
-SubgraphInput = Value[Any] | Sequence[Any] | FlattenableGraphInput
-
-
-def _flatten_graph_inputs(node: Any) -> list[Value[Any]]:
-    """Flattens a pytree of subgraph inputs into a flat list of values.
-
-    A leaf is anything that is neither a ``list``/``tuple`` nor a
-    :class:`FlattenableGraphInput`. Flattenable nodes are expanded via their
-    own ``flatten`` method, keeping their field order.
-    """
-    if isinstance(node, list | tuple):
-        result: list[Value[Any]] = []
-        for item in node:
-            result.extend(_flatten_graph_inputs(item))
-        return result
-    if isinstance(node, FlattenableGraphInput):
-        return list(node.flatten())
-    return [node]
-
-
-def _rebuild_graph_inputs(node: Any, it: Iterator[Value[Any]]) -> Any:
-    """Rebuilds ``node``'s structure, drawing fresh leaves from ``it``.
-
-    Mirrors :func:`_flatten_graph_inputs`: it must consume values from ``it`` in
-    the exact order that function produced them.
-    """
-    if isinstance(node, list | tuple):
-        return [_rebuild_graph_inputs(item, it) for item in node]
-    if isinstance(node, FlattenableGraphInput):
-        return node.unflatten(it)
-    return next(it)
-
-
 class Layer:
-    """.. deprecated:: 25.2
+    """Base class for neural network components.
 
-    Base class for neural network components.
-    Use :class:`Module` instead.
+    .. deprecated:: 25.2
+        Use :class:`Module` instead.
 
     Provides functionality for adding hooks to the call function of
     each layer to support testing, debugging or profiling.
     """
 
-    def __init_subclass__(cls):
+    def __init_subclass__(cls, **kwargs: Any):
+        super().__init_subclass__(**kwargs)
         if cls.__name__ == "Module":
             # Module subclasses Layer, but we don't want to apply
             # _call_with_hooks to it.
@@ -291,7 +235,7 @@ class Module(Layer, ABC):
     def build_subgraph(
         self,
         name: str,
-        inputs: Sequence[SubgraphInput],
+        inputs: Sequence[Tree[Any]],
         weight_prefix: str = "",
     ) -> Graph:
         """Builds a subgraph encapsulating this layer's computation.
@@ -302,54 +246,54 @@ class Module(Layer, ABC):
         once rather than once per repetition, which significantly reduces compile
         time for models with many identical layers.
 
-        Examples:
+        For example, define a small layer, build a subgraph from a
+        representative input, then call it once per repetition with a
+        layer-specific weight ``prefix``:
 
-            Define a small layer, build a subgraph from a representative input,
-            then call it once per repetition with a layer-specific weight
-            ``prefix``:
+        .. code-block:: python
 
-            .. code-block:: python
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+            from max.nn.layer import Module
 
-                from max.dtype import DType
-                from max.graph import DeviceRef, Graph, TensorType, Weight, ops
-                from max.nn.layer import Module
-
-                class Linear(Module):
-                    def __init__(self, in_dims, out_dims):
-                        super().__init__()
-                        self.weight = Weight(
-                            "weight",
-                            DType.float32,
-                            (in_dims, out_dims),
-                            DeviceRef.CPU(),
-                        )
-
-                    def __call__(self, x):
-                        return x @ self.weight.T
-
-                num_layers = 3
-                layer = Linear(4, 4)
-                with Graph(
-                    "build_subgraph_example",
-                    input_types=(
-                        TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
-                    ),
-                ) as graph:
-                    h = graph.inputs[0].tensor
-
-                    # Build the subgraph once from a representative input.
-                    subgraph = layer.build_subgraph(
-                        "linear_block",
-                        inputs=[h],
-                        weight_prefix="layers.0.",
+            class Linear(Module):
+                def __init__(self, in_dims, out_dims, weight_name):
+                    super().__init__()
+                    self.weight = Weight(
+                        weight_name,
+                        DType.float32,
+                        (in_dims, out_dims),
+                        DeviceRef.CPU(),
                     )
 
-                    # Call it once per layer with the correct weight prefix.
-                    for idx in range(num_layers):
-                        outputs = ops.call(subgraph, h, prefix=f"layers.{idx}.")
-                        h = outputs[0].tensor
+                def __call__(self, x):
+                    return x @ self.weight.T
 
-                    graph.output(h)
+            num_layers = 3
+            # Name the representative layer's weight with the first layer's
+            # prefix so build_subgraph() turns it into a placeholder.
+            layer = Linear(4, 4, weight_name="layers.0.weight")
+            with Graph(
+                "build_subgraph_example",
+                input_types=(
+                    TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
+                ),
+            ) as graph:
+                h = graph.inputs[0].tensor
+
+                # Build the subgraph once from a representative input.
+                subgraph = layer.build_subgraph(
+                    "linear_block",
+                    inputs=[h],
+                    weight_prefix="layers.0.",
+                )
+
+                # Call it once per layer with the correct weight prefix.
+                for idx in range(num_layers):
+                    outputs = ops.call(subgraph, h, prefix=f"layers.{idx}.")
+                    h = outputs[0].tensor
+
+                graph.output(h)
 
         Args:
             name: The name of the subgraph. Must be unique within the containing
@@ -357,12 +301,11 @@ class Module(Layer, ABC):
             inputs: Representative input values for the subgraph, one per
                 positional argument of the layer's ``__call__``. Each argument
                 may be a single :class:`~max.graph.Value`, a (possibly nested)
-                list/tuple of values, or a structured
-                :class:`FlattenableGraphInput` such as
-                :class:`~max.nn.kv_cache.PagedCacheValues`. The subgraph's
-                signature is derived from the flattened leaves' types, and the
-                same structure is rebuilt from the subgraph's inputs before the
-                layer is invoked.
+                list/tuple of values, or a structured type following the pytree
+                protocol, such as :class:`~max.nn.kv_cache.PagedCacheValues`.
+                The subgraph's signature is derived from the flattened leaves'
+                types, and the same structure is rebuilt from the subgraph's
+                inputs before the layer is invoked.
             weight_prefix: A prefix string to strip from weight names before
                 registering them as placeholder weights. At call time, the caller
                 supplies the same prefix via the ``prefix`` argument of
@@ -381,9 +324,7 @@ class Module(Layer, ABC):
         """
         layer_weights = list(self.raw_state_dict().values())
 
-        flat_leaves: list[Value[Any]] = []
-        for arg in inputs:
-            flat_leaves.extend(_flatten_graph_inputs(arg))
+        flat_leaves, input_structure = tree.flatten(inputs)
         subgraph_input_types: list[Type[Any]] = [
             leaf.type for leaf in flat_leaves
         ]
@@ -394,9 +335,8 @@ class Module(Layer, ABC):
             devices=list(Graph.current.device_chains.keys()),
         ) as subgraph:
             fresh_inputs = iter(subgraph.inputs)
-            subgraph_inputs = [
-                _rebuild_graph_inputs(arg, fresh_inputs) for arg in inputs
-            ]
+            subgraph_args = tree.unflatten(input_structure, fresh_inputs)
+            assert isinstance(subgraph_args, list)
 
             if weight_prefix:
                 for weight in filter(
@@ -405,7 +345,7 @@ class Module(Layer, ABC):
                     weight._placeholder = True
                     weight.name = weight.name.removeprefix(weight_prefix)
 
-            result = self(*subgraph_inputs)
+            result = self(*subgraph_args)
             if isinstance(result, list | tuple):
                 subgraph.output(*result)
             else:
@@ -447,7 +387,7 @@ class Module(Layer, ABC):
 
         The keys in ``state_dict`` must match the fully-qualified weight
         names used internally by the `Module`. Those names normally
-        follow the attribute hierarchy (e.g.
+        follow the attribute hierarchy (such as
         ``model.layers.0.self_attn.qkv_proj.weight``), but a sublayer
         whose :attr:`_omit_module_attr_name` is ``True`` is *omitted*
         from its descendants' FQNs. The canonical example is
@@ -513,7 +453,7 @@ class Module(Layer, ABC):
         if strict and (missing_keys or unused_keys):
             parts = []
             if missing_keys:
-                sorted_missing = sorted(list(missing_keys))
+                sorted_missing = sorted(missing_keys)
                 parts.append(
                     f"Missing required weights: {', '.join(sorted_missing)}"
                 )
@@ -529,7 +469,7 @@ class Module(Layer, ABC):
 
             if unused_keys:
                 parts.append(
-                    f"Unexpected keys in state_dict: {', '.join(sorted(list(unused_keys)))}"
+                    f"Unexpected keys in state_dict: {', '.join(sorted(unused_keys))}"
                 )
 
             raise ValueError(
@@ -548,7 +488,7 @@ class Module(Layer, ABC):
 
         Keys follow the same FQN convention as :meth:`load_state_dict`:
         attribute paths through the module tree, with any sublayer that
-        sets :attr:`_omit_module_attr_name` (e.g.
+        sets :attr:`_omit_module_attr_name` (such as
         :class:`~max.nn.StackedLinear` in unfused mode) skipped in the
         prefix.
 
@@ -612,7 +552,7 @@ class Module(Layer, ABC):
         Raises:
             ValueError: If two distinct attribute paths produce the same
                 fully-qualified weight name. This can happen when a
-                module with ``_omit_module_attr_name`` (e.g.
+                module with ``_omit_module_attr_name`` (such as
                 :class:`~max.nn.StackedLinear`) flattens a child name into
                 the parent's namespace and a sibling already claims that
                 name.
@@ -856,75 +796,6 @@ def _validate_weight_value(
         raise ValueError(
             f"Value provided to weight '{name}' had different {diff_str}."
         )
-
-
-def recursive_named_layers(
-    parent: Module, prefix: str = ""
-) -> Iterable[tuple[str, Module]]:
-    """Recursively walks through the layers and generates names.
-
-    A sublayer marked with ``_omit_module_attr_name = True`` does not
-    contribute its attribute name to the prefix passed to its descendants;
-    the children appear in the namespace as if they were directly attached
-    to the name-omitting module's parent. The name-omitting layer itself
-    is still yielded (callers walking the module tree may need to reach
-    it via its full attribute path), but its descendants' names skip the
-    omitted segment.
-
-    .. note::
-       The names yielded here are *layer* names, not weight names. For a
-       name-omitting layer they include the omitted segment (so callers
-       can still reach the layer in the source tree), which means they
-       do **not** match the FQNs that appear in :meth:`Module.state_dict`
-       for that layer's descendants. If you need state-dict-aligned
-       names, walk the weights via :meth:`Module.raw_state_dict` /
-       ``_iter_named_weights`` instead.
-
-    The ``parent`` passed to this function must not itself set
-    ``_omit_module_attr_name``: such a root has no enclosing namespace to
-    flatten into, so the request is ambiguous. Pass the enclosing owner
-    instead.
-    """
-    # See the docstring above: a name-omitting root is not meaningful
-    # here. Catching it as an assertion (rather than silently producing
-    # names under ``prefix``) makes the misuse loud at the call site.
-    assert not parent._omit_module_attr_name, (
-        "recursive_named_layers() called with a "
-        "`_omit_module_attr_name` root module; pass the enclosing parent "
-        "instead."
-    )
-
-    seen = IdentitySet[Module]()
-    # Queue entries are ``(name, prefix_for_children, layer)``:
-    # - ``name`` is the FQN this layer is yielded under (the full attribute
-    #   path, including any omitted segments).
-    # - ``prefix_for_children`` is the FQN prefix used to *build* the
-    #   children's ``name``. For a name-omitting layer this skips its own
-    #   attribute name; for a regular layer it is ``f"{name}."``.
-    queue: deque[tuple[str, str, Module]] = deque()
-    root_child_prefix = f"{prefix}." if prefix else ""
-    queue.append((prefix, root_child_prefix, parent))
-
-    while queue:
-        name, child_prefix, layer = queue.popleft()
-        if layer in seen:
-            continue
-        seen.add(layer)
-
-        yield (name, layer)
-
-        for local_name, child in layer.sublayers.items():
-            child_name = f"{child_prefix}{local_name}"
-            if child._omit_module_attr_name:
-                # The child's own attribute name is dropped from its
-                # descendants' prefixes.
-                grandchild_prefix = child_prefix
-            else:
-                grandchild_prefix = f"{child_prefix}{local_name}."
-            # ``child_name`` keeps the full attribute path even for
-            # name-omitting children so callers can reach them; only the
-            # *grandchildren* see the omission.
-            queue.append((child_name, grandchild_prefix, child))
 
 
 _LOCAL = threading.local()

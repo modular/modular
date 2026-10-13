@@ -39,7 +39,7 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from std.builtin.simd import _pow
+from std.simd import _pow
 
 from nn.activations import (
     gelu,
@@ -55,7 +55,7 @@ from extensibility import (
     ElementwiseUnaryMixedOp,
     ElementwiseUnaryOp,
 )
-from layout import Idx, TileTensor
+from layout import Idx, DefaultEngine, TensorEngine, TileTensor
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
 
@@ -67,15 +67,16 @@ from std.utils.numerics import isinf, isnan
 from .kernels import *
 
 
-@always_inline
+@inline(.always)
 def _elementwise_tile[
     Op: ElementwiseBinaryOp,
     dtype: DType,
     LayoutType: TensorLayout,
+    Engine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    lhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
-) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+    lhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
+    rhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
+) -> TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine]:
     """Naive in-place element-wise binary op over two statically-shaped tiles.
 
     Applies `Op.elementwise` (the scalar overload) to each element of `lhs` and
@@ -119,21 +120,23 @@ struct Add(ElementwiseBinaryOp):
     def elementwise[
         dtype: DType,
         LayoutType: TensorLayout,
+        Engine: TensorEngine = DefaultEngine[element_width=1],
     ](
-        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
-        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
+        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine]:
         """Element-wise add two tiles in place into `lhs`; see `_elementwise_tile`.
 
         Parameters:
             dtype: The element type of the operands and the returned tile.
             LayoutType: The static memory layout shared by both tiles.
+            Engine: The storage policy of the operand tiles.
 
         Args:
             lhs: Left operand tile; also the in-place result and return value.
             rhs: Right operand tile of the element-wise sum.
         """
-        return _elementwise_tile[Self, dtype, LayoutType](lhs, rhs)
+        return _elementwise_tile[Self, dtype, LayoutType, Engine](lhs, rhs)
 
 
 @extensibility.register("mo.sub")
@@ -163,21 +166,23 @@ struct Mul(ElementwiseBinaryOp):
     def elementwise[
         dtype: DType,
         LayoutType: TensorLayout,
+        Engine: TensorEngine = DefaultEngine[element_width=1],
     ](
-        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
-        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin]:
+        lhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
+        rhs: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine]:
         """Element-wise multiply two tiles in place into `lhs`; see `_elementwise_tile`.
 
         Parameters:
             dtype: The element type of the operands and the returned tile.
             LayoutType: The static memory layout shared by both tiles.
+            Engine: The storage policy of the operand tiles.
 
         Args:
             lhs: Left operand tile; also the in-place result and return value.
             rhs: Right operand tile of the element-wise product.
         """
-        return _elementwise_tile[Self, dtype, LayoutType](lhs, rhs)
+        return _elementwise_tile[Self, dtype, LayoutType, Engine](lhs, rhs)
 
 
 @extensibility.register("mo.div")
@@ -269,7 +274,7 @@ struct And(ElementwiseBinaryOp):
         dtype: DType,
         width: SIMDLength,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.and"
+        comptime assert dtype == .bool, "expected bool operands for mo.and"
         return lhs & rhs
 
 
@@ -282,7 +287,7 @@ struct Or(ElementwiseBinaryOp):
         dtype: DType,
         width: SIMDLength,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.oor"
+        comptime assert dtype == .bool, "expected bool operands for mo.oor"
         return lhs | rhs
 
 
@@ -295,7 +300,7 @@ struct Xor(ElementwiseBinaryOp):
         dtype: DType,
         width: SIMDLength,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.xor"
+        comptime assert dtype == .bool, "expected bool operands for mo.xor"
         return lhs ^ rhs
 
 
@@ -378,11 +383,10 @@ struct ReLU(ElementwiseUnaryOp):
     def elementwise[
         dtype: DType,
         LayoutType: TensorLayout,
+        Engine: TensorEngine = DefaultEngine[element_width=1],
     ](
-        x: TileTensor[dtype, LayoutType, MutAnyOrigin],
-    ) -> TileTensor[
-        dtype, LayoutType, MutAnyOrigin
-    ]:
+        x: TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine],
+    ) -> TileTensor[dtype, LayoutType, MutAnyOrigin, Engine=Engine]:
         # TODO(GEX-3799): implement TileTensor element-wise relu.
         return x
 
@@ -684,7 +688,7 @@ struct IsNan(ElementwiseUnaryMixedOp):
         width: SIMDLength,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         comptime assert (
-            out_dtype == DType.bool
+            out_dtype == .bool
         ), "expected bool output type for mo.is_nan"
         return rebind[SIMD[out_dtype, width]](isnan(x))
 
@@ -700,7 +704,7 @@ struct IsInf(ElementwiseUnaryMixedOp):
         width: SIMDLength,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         comptime assert (
-            out_dtype == DType.bool
+            out_dtype == .bool
         ), "expected bool output type for mo.is_inf"
         return rebind[SIMD[out_dtype, width]](isinf(x))
 
@@ -714,7 +718,7 @@ struct Not(ElementwiseUnaryOp):
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        comptime assert dtype == DType.bool, "expected bool operands for mo.not"
+        comptime assert dtype == .bool, "expected bool operands for mo.not"
         return ~x
 
 

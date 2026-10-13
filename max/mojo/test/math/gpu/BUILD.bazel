@@ -7,11 +7,17 @@ _LIT_TESTS = [
     "test_sqrt_f64.mojo",
 ]
 
+# Both test entry points compile the same expm1 checker and input generator.
+filegroup(
+    name = "expm1_gpu_test_src",
+    srcs = ["test_expm1_gpu.mojo"],
+)
+
 [
     mojo_test(
         name = src + ".test",
         size = "large",
-        srcs = [src],
+        srcs = [":expm1_gpu_test_src" if src == "test_expm1_gpu.mojo" else src],
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + select({
             "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME MOCO-2509
@@ -25,9 +31,24 @@ _LIT_TESTS = [
     )
     for src in glob(
         ["*.mojo"],
-        exclude = _LIT_TESTS,
+        exclude = _LIT_TESTS + ["test_expm1_oracle.mojo"],
     )
 ]
+
+# Exercise the expm1 test oracle on hosts without running a GPU kernel.
+mojo_test(
+    name = "test_expm1_oracle.mojo.test",
+    srcs = [
+        "test_expm1_oracle.mojo",
+        ":expm1_gpu_test_src",
+    ],
+    main = "test_expm1_oracle.mojo",
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
 
 lit_tests(
     name = "lit_tests",

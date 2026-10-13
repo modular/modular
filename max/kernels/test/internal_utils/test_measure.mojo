@@ -26,8 +26,8 @@ def test_assert_with_custom_measure() raises:
     def always_zero[
         dtype: DType
     ](
-        lhs: UnsafePointer[mut=False, Scalar[dtype], _],
-        rhs: UnsafePointer[mut=False, Scalar[dtype], _],
+        lhs: ImmPointer[Scalar[dtype], _],
+        rhs: ImmPointer[Scalar[dtype], _],
         n: Int,
     ) -> Float64:
         return 0
@@ -43,8 +43,8 @@ def test_correlation(ctx: DeviceContext) raises:
     var v = List(length=len, fill=Float32(0))
     var x = List(length=len, fill=Float32(0))
     for i in range(len):
-        u[i] = (0.01 * Float64(i)).cast[DType.float32]()
-        v[i] = (-0.01 * Float64(i)).cast[DType.float32]()
+        u[i] = (0.01 * Float64(i)).cast[.float32]()
+        v[i] = (-0.01 * Float64(i)).cast[.float32]()
     for i, j in product(range(a), range(b)):
         x[b * i + j] = (0.1 * Float64(i) + 0.1 * Float64(j)).cast[
             DType.float32
@@ -82,11 +82,12 @@ def test_kl_div() raises:
     comptime out_dtype = DType.float64
     comptime len = 10
 
-    var a = Array[Scalar[dtype], len](uninitialized=True)
-    var b = Array[Scalar[dtype], len](uninitialized=True)
-    for i in range(len):
-        a[i] = Scalar[dtype](1 / Float64(len))
-        b[i] = Scalar[dtype](2 * Float64(i + 1) / (len * (len + 1)))
+    var a = Array[Scalar[dtype], len](fill=Scalar[dtype](1 / Float64(len)))
+    var b = Array[Scalar[dtype], len](
+        fill_with=lambda (i: Int) -> Scalar[dtype]: Scalar[dtype](
+            2 * Float64(i + 1) / (len * (len + 1))
+        )
+    )
 
     var aa = kl_div[out_type=out_dtype](a.unsafe_ptr(), a.unsafe_ptr(), len)
     var ab = kl_div[out_type=out_dtype](a.unsafe_ptr(), b.unsafe_ptr(), len)

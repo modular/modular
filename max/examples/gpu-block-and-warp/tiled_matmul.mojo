@@ -36,7 +36,7 @@ from std.sys import exit, has_accelerator
 # GPU programming imports from open source stdlib and max accelerator library
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu import thread_idx, block_idx
+from max.gpu import thread_idx, block_idx
 
 # TileTensor support from open source layout package
 from layout import TileTensor, stack_allocation
@@ -76,8 +76,8 @@ comptime tile_b_layout = row_major[TILE_K, TILE_N]()
 
 
 def tiled_matmul_kernel(
-    matrix_a: TileTensor[float_dtype, type_of(matrix_a_layout), MutAnyOrigin],
-    matrix_b: TileTensor[float_dtype, type_of(matrix_b_layout), MutAnyOrigin],
+    matrix_a: TileTensor[float_dtype, type_of(matrix_a_layout), ImmutAnyOrigin],
+    matrix_b: TileTensor[float_dtype, type_of(matrix_b_layout), ImmutAnyOrigin],
     matrix_c: TileTensor[float_dtype, type_of(matrix_c_layout), MutAnyOrigin],
 ):
     # Thread and block indices
@@ -95,13 +95,13 @@ def tiled_matmul_kernel(
     var tile_col_start = block_x * TILE_N
 
     # Allocate shared memory tiles for fast on-chip access
-    var tile_a_shared = stack_allocation[
-        float_dtype, address_space=AddressSpace.SHARED
-    ](tile_a_layout)
+    var tile_a_shared = stack_allocation[float_dtype, address_space=.SHARED](
+        tile_a_layout
+    )
 
-    var tile_b_shared = stack_allocation[
-        float_dtype, address_space=AddressSpace.SHARED
-    ](tile_b_layout)
+    var tile_b_shared = stack_allocation[float_dtype, address_space=.SHARED](
+        tile_b_layout
+    )
 
     # Initialize accumulator and start tiling loop
     var accumulator: matrix_c.ElementType = 0.0
@@ -302,7 +302,7 @@ def main() raises:
             var i = test_coords_i[idx]
             var j = test_coords_j[idx]
             var expected = Float32((i + 1) * MATRIX_K * (j + 1))
-            var actual = result_matrix[i, j].cast[DType.float32]()
+            var actual = result_matrix[i, j].cast[.float32]()
             var diff = abs(actual - expected)
 
             if diff > TOLERANCE:

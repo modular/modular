@@ -47,13 +47,16 @@ if TYPE_CHECKING:
 from max.support.algorithm import flatten2d
 
 from .interfaces import PipelineModel
-from .memory_estimation import _MemoryPlan
+from .memory_estimation import MemoryPlan
 
 logger = logging.getLogger("max.pipelines")
 
 EmbeddingsPipelineType = Pipeline[
     EmbeddingsGenerationInputs, EmbeddingsGenerationOutput
 ]
+"""Base type of :class:`EmbeddingsPipeline`, a :class:`Pipeline` mapping
+embeddings inputs to embeddings outputs.
+"""
 
 
 @final
@@ -68,11 +71,11 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         tokenizer: PipelineTokenizer[
             BaseContextType, npt.NDArray[np.integer[Any]], TextGenerationRequest
         ],
-        memory_plan: _MemoryPlan,
+        memory_plan: MemoryPlan,
     ) -> None:
         del tokenizer  # Unused.
         self._pipeline_config = pipeline_config
-        self._max_batch_size = memory_plan.max_batch_size
+        self._max_batch_size = memory_plan.planned_max_batch_size
         self._weight_adapters = weight_adapters
         devices = load_devices(list(memory_plan.require_device_specs()))
         session = InferenceSession(devices=[*devices])
@@ -100,6 +103,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
                 weights_format(weight_paths), None
             ),
             return_logits=ReturnLogits.ALL,
+            memory_plan=memory_plan,
         )
 
     @property
@@ -118,9 +122,9 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         outputs per request.
         """
         tracer: Tracer = Tracer()
-        replica_batches = list(
+        replica_batches = [
             list(replica_batch.values()) for replica_batch in inputs.batches
-        )
+        ]
         # Flatten our batch for consistent indexing.
         context_batch = flatten2d(replica_batches)
 
@@ -154,4 +158,3 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
     def release(self, request_id: RequestID) -> None:
         """Releases resources for the request (no-op for embeddings)."""
         # Nothing to release.
-        pass

@@ -18,6 +18,7 @@ from max.pipelines.modeling.types import PipelineTask
 
 from ..gemma4.memory_planner import Gemma4MemoryPlanner
 from ..gemma4.tokenizer import Gemma4Tokenizer
+from ..speculators_common.draft_config import speculators_dspark_width
 from .batch_processor import UnifiedDSparkGemma4_31BBatchProcessor
 from .model import UnifiedDSparkGemma4_31BModel
 from .model_config import UnifiedDSparkGemma4_31BConfig
@@ -42,6 +43,7 @@ unified_dspark_gemma4_31b_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     config=UnifiedDSparkGemma4_31BConfig,
     memory_planner=Gemma4MemoryPlanner,
+    supports_spec_decode_mixed_batches=True,
     # Capture-safe including structured output: the graph binds the shared
     # (pinned_bitmask, wait_payload, device_bitmask_scratch) triple whose
     # in-graph wait + H2D replay against process-lifetime pinned buffers
@@ -51,9 +53,7 @@ unified_dspark_gemma4_31b_arch = SupportedArchitecture(
     batching=UnifiedDSparkGemma4_31BBatchProcessor,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    # Backend resolution runs after the speculative arch rewrite, so the
-    # base gemma4 arch's declaration never applies here.
-    default_structured_output_backend="xgrammar",
+    checkpoint_draft_width=speculators_dspark_width,
 )
 
 # The generic draft-side registration ("DSparkDraftModel") lives in the

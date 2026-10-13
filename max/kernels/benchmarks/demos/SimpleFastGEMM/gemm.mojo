@@ -14,7 +14,7 @@
 # Meant to be run on an AVX512 system
 
 from std.math import align_up
-from std.memory import dealloc
+from std.memory import Layout as AllocLayout, dealloc
 from std.sys import align_of, prefetch, simd_width_of
 from std.sys.intrinsics import PrefetchOptions
 
@@ -25,8 +25,8 @@ from linalg.utils import (
 )
 
 
-from layout import TileTensor, Coord, Idx, row_major
-from layout.tensor_storage import PointerStorage
+from layout import TileTensor, Coord, row_major
+from layout.tensor_engine import DefaultEngine
 
 comptime dtype = DType.float32
 comptime simd_size = simd_width_of[dtype]()
@@ -43,7 +43,7 @@ comptime NR = kernel_shape.simd_cols * simd_size
 comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
-def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
+def print_mat(a_ptr: ImmPointer[Scalar[dtype], _], m: Int, n: Int):
     var a = TileTensor(a_ptr, row_major(m, n))
     for i in range(m):
         for j in range(n):
@@ -52,11 +52,9 @@ def print_mat(a_ptr: UnsafePointer[Scalar[dtype], _], m: Int, n: Int):
 
 
 def gemm_naive(
-    a: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
-    b: TileTensor[dtype, Storage=PointerStorage[element_width=1], ...],
-    c: TileTensor[
-        mut=True, dtype, Storage=PointerStorage[element_width=1], ...
-    ],
+    a: TileTensor[dtype, Engine=DefaultEngine[element_width=1], ...],
+    b: TileTensor[dtype, Engine=DefaultEngine[element_width=1], ...],
+    c: TileTensor[mut=True, dtype, Engine=DefaultEngine[element_width=1], ...],
     m: Int,
     n: Int,
     k: Int,
@@ -72,9 +70,9 @@ def gemm_naive(
 
 
 def kernel(
-    a_ptr: UnsafePointer[Scalar[dtype], _],
-    b_ptr: UnsafePointer[Scalar[dtype], _],
-    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    a_ptr: ImmPointer[Scalar[dtype], _],
+    b_ptr: ImmPointer[Scalar[dtype], _],
+    c_ptr: MutPointer[Scalar[dtype], _],
     n: Int,
     k: Int,
     kc: Int,
@@ -122,8 +120,8 @@ def kernel(
 
 
 def pack_B(
-    b_ptr: UnsafePointer[Scalar[dtype], _],
-    b2_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    b_ptr: ImmPointer[Scalar[dtype], _],
+    b2_ptr: MutPointer[Scalar[dtype], _],
     k: Int,
     n: Int,
     kc: Int,
@@ -138,8 +136,8 @@ def pack_B(
 
 
 def prepack_B(
-    b_ptr: UnsafePointer[Scalar[dtype], _],
-    b2_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    b_ptr: ImmPointer[Scalar[dtype], _],
+    b2_ptr: MutPointer[Scalar[dtype], _],
     k: Int,
     n: Int,
     kc: Int,
@@ -151,9 +149,9 @@ def prepack_B(
 
 
 def gemm(
-    a_ptr: UnsafePointer[Scalar[dtype], _],
-    b_ptr: UnsafePointer[Scalar[dtype], _],
-    c_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    a_ptr: ImmPointer[Scalar[dtype], _],
+    b_ptr: ImmPointer[Scalar[dtype], _],
+    c_ptr: MutPointer[Scalar[dtype], _],
     m: Int,
     n: Int,
     k: Int,
@@ -196,21 +194,31 @@ def main() raises:
     print("x", end="")
     print(k)
 
-    var a_alloc = (
-        alloc[Scalar[dtype]].aligned[alignment](count=m * k).into_managed()
-    )
-    var b_alloc = (
-        alloc[Scalar[dtype]].aligned[alignment](count=k * n).into_managed()
-    )
-    var b2_alloc = (
-        alloc[Scalar[dtype]].aligned[alignment](count=k * n).into_managed()
-    )
-    var c_alloc = (
-        alloc[Scalar[dtype]].aligned[alignment](count=m * n).into_managed()
-    )
-    var c2_alloc = (
-        alloc[Scalar[dtype]].aligned[alignment](count=m * n).into_managed()
-    )
+    var a_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
+            count=m * k
+        )
+    ).into_managed()
+    var b_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
+            count=k * n
+        )
+    ).into_managed()
+    var b2_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
+            count=k * n
+        )
+    ).into_managed()
+    var c_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
+            count=m * n
+        )
+    ).into_managed()
+    var c2_alloc = alloc(
+        AllocLayout[Scalar[dtype], alignment=.of_bytes[alignment]()](
+            count=m * n
+        )
+    ).into_managed()
 
     var a = TileTensor(a_alloc.unsafe_ptr(), row_major(m * k))
     var b = TileTensor(b_alloc.unsafe_ptr(), row_major(k * n))

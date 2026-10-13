@@ -44,9 +44,11 @@ def col_parallel(
         tp_axis = TP
     # Note that the first dimension of the weight is sharded because MAX's
     # linear layer applies ``x @ W.T`` (the transpose of W)
-    layer.weight._mapping = NamedMapping(layer.weight.mesh, (tp_axis, None))
+    layer.weight = layer.weight.to(
+        NamedMapping(layer.weight.mesh, (tp_axis, None))
+    )
     if isinstance(layer.bias, Tensor):
-        layer.bias._mapping = NamedMapping(layer.bias.mesh, (tp_axis,))
+        layer.bias = layer.bias.to(NamedMapping(layer.bias.mesh, (tp_axis,)))
     return layer
 
 
@@ -56,9 +58,13 @@ def row_parallel(
     """Parallelize the linear layer across the row dimension."""
     if tp_axis is None:
         tp_axis = TP
-    layer.weight._mapping = NamedMapping(layer.weight.mesh, (None, tp_axis))
+    layer.weight = layer.weight.to(
+        NamedMapping(layer.weight.mesh, (None, tp_axis))
+    )
     if isinstance(layer.bias, Tensor):
-        layer.bias._mapping = NamedMapping(layer.bias.mesh, (None, tp_axis))
+        layer.bias = layer.bias.to(
+            NamedMapping(layer.bias.mesh, (None, tp_axis))
+        )
     return layer
 
 
@@ -137,7 +143,6 @@ class QKVLinear(TransparentModule[[Tensor], Tensor]):
         yield "stacked", self._stacked, False
         yield "bias", self._has_bias, False
 
-    @F.functional
     def forward(self, x: Tensor) -> Tensor:
         """Applies the fused q/k/v projection: ``x @ fused_weight.T + bias``."""
         return x @ self.fused_weight.T + self.fused_bias

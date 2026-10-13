@@ -20,11 +20,11 @@ different `Layout[...]` specializations) avoids the Mojo conditional-type
 unification failure: see `feedback_mojo_conditional_field_type`.
 """
 
-from std.gpu import warp_id as get_warp_id
+from max.gpu import warp_id as get_warp_id
 from std.math.uutils import udivmod
 
 
-@always_inline
+@inline(.always)
 def get_warp_coords[BN: Int, WN: Int]() -> Tuple[Int, Int]:
     """Return `(warp_row, warp_col)` for the current warp given a BN×WN grid.
 

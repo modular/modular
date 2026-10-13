@@ -17,16 +17,17 @@
 from std.sys import align_of
 
 from max.gpu.host import DeviceContext
-from std.gpu import block_dim, global_idx, thread_idx
+from max.gpu import block_dim, global_idx, thread_idx
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
 from std.testing import assert_almost_equal, assert_equal
+from std.math import ceildiv
 
 
 # Kernel that uses shared memory for testing occupancy with dynamic shared memory
 def shared_memory_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     """A kernel that uses shared memory to test occupancy calculations."""
@@ -39,7 +40,7 @@ def shared_memory_kernel(
     # Get a pointer to shared memory for the indices and values
     var shared_data = external_memory[
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=align_of[Float32](),
     ]()
 
@@ -66,8 +67,8 @@ def shared_memory_kernel(
 
 # Simple kernel for testing occupancy calculations
 def occupancy_test_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     """A simple kernel for testing occupancy - just copies input to output."""
@@ -170,15 +171,15 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     print("\nVerifying kernel execution with optimized block size:")
 
     comptime length = 1024
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var output_host = ctx.enqueue_create_host_buffer[.float32](length)
 
     # Initialize input data
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var output_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
+    var output_device = ctx.enqueue_create_buffer[.float32](length)
 
     # Copy input to device
     ctx.enqueue_copy(input_device, input_host)
@@ -199,7 +200,7 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     )
 
     # Launch the kernel
-    var grid_dim = (length + optimal_block_size - 1) // optimal_block_size
+    var grid_dim = ceildiv(length, optimal_block_size)
     comptime kernel = occupancy_test_kernel
     ctx.enqueue_function[kernel](
         input_device,

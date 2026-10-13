@@ -29,7 +29,7 @@ def test_conv_transposed_cudnn[
     stride_val: Int = 1,
     dilation_val: Int = 1,
     pad_val: Int = 0,
-    dtype: DType = DType.float32,
+    dtype: DType = .float32,
 ](ctx: DeviceContext,) raises:
     """
     Fixed 1-D transposed-convolution test with correct QRSFC kernel layout.
@@ -113,9 +113,7 @@ def test_conv_transposed_cudnn[
         ),
         TileTensor(
             filter_host_ptr,
-            row_major(
-                Coord(IndexList[5](1, 1, kernel_len, out_channels, in_channels))
-            ),
+            row_major(1, 1, kernel_len, out_channels, in_channels),
         ),
         stride,
         dilation,
@@ -176,9 +174,7 @@ def test_conv_transposed_cudnn[
         ),  # dy (input grad)
         TileTensor(
             d_filter,
-            row_major(
-                Coord(IndexList[4](in_channels, out_channels, 1, kernel_len))
-            ),
+            row_major(in_channels, out_channels, 1, kernel_len),
         ),  # w (filter)
         TileTensor(
             d_output,

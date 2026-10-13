@@ -24,7 +24,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, row_major
 from std.testing import assert_true
 
-from comm import Signal, MAX_GPUS
+from comm import Signal
 from comm.broadcast import broadcast
 from comm.sync import enable_p2p, init_signal_buffer
 
@@ -35,8 +35,7 @@ comptime test_dtypes = (DType.uint8, DType.bfloat16)
 comptime test_gpu_counts = (2, 4)
 
 
-@always_inline
-@__parameter
+@inline(.always)
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     return Scalar[dtype](root + 1) + Scalar[dtype](j % 251)
 
@@ -66,12 +65,9 @@ def broadcast_subgroup_test[
     ]
     var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
 
-    var in_tile = TileTensor(input_dev, row_major(length)).as_immut()
+    var in_tile = TileTensor(input_dev, row_major(length)).as_imm()
 
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     for i in range(ngpus):
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
@@ -83,24 +79,17 @@ def broadcast_subgroup_test[
     var num_bytes = length * size_of[dtype]()
     var signal_buf_size = size_of[Signal]() + ceildiv(num_bytes, ngpus)
 
-    # Production leaves the slots past the group size uninitialized; poison
-    # them so an out-of-group read faults deterministically.
-    for i in range(MAX_GPUS):
-        rank_sigs[i] = UnsafePointer[Signal, MutAnyOrigin](
-            unsafe_from_address=0xDEAD_BEEF_0000
-        )
-
     for i in range(ngpus):
         signal_buffers.append(
-            list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
+            list_of_ctxs[i].create_buffer_sync[.uint8](signal_buf_size)
         )
         init_signal_buffer(signal_buffers[i], list_of_ctxs[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         list_of_ctxs[i].enqueue_memset(out_dev_list[i], 0)
@@ -156,9 +145,9 @@ def main() raises:
         range(len(test_dtypes)),
         range(len(test_lengths)),
     ):
-        comptime ngpus = rebind[Int](test_gpu_counts[gpu_idx])
-        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
-        comptime length = rebind[Int](test_lengths[length_idx])
+        comptime ngpus = test_gpu_counts[gpu_idx]
+        comptime dtype = test_dtypes[dtype_idx]
+        comptime length = test_lengths[length_idx]
 
         # Trailing slice of the visible devices, so device id != group rank.
         var dev_offset = num_devices - ngpus

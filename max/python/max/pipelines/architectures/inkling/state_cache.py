@@ -11,28 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Per-request slot pool for Inkling's short-convolution state: one pool per
-convolution site per layer per device, updated in place by the conv kernel.
-Rank ``r`` owns the channel range ``[r * C / tp_size, (r + 1) * C / tp_size)``
-of every site, matching the reference's TP narrowing."""
+conv site per layer per device. The K and V sites are channel-sharded with
+the qkvr projection; the two residual sites are full width on every rank.
+
+A slot is a ring of conv inputs indexed by position; see
+:mod:`max.nn.state_space.short_conv_ring`. It holds
+``kernel_size - 1 + num_draft_tokens`` entries, enough history for a chunk
+that starts after rolling back every draft token.
+
+Slots are never cleared. Taps before position zero read as zero, so a fresh
+request never sees the previous tenant's inputs."""
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Final
+from typing import TYPE_CHECKING, Any, Final
 
-import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import Buffer, Device
 from max.dtype import DType
-from max.pipelines.modeling.types import RequestID
-from max.support.human_readable_formatter import to_human_readable_bytes
+from max.graph import BufferType, BufferValue, DeviceRef, Value
+from max.nn.kv_cache import RecurrentStateRegion
 from typing_extensions import Self
 
-from .model_config import InklingTextConfig
-
-logger = logging.getLogger("max.pipelines")
+if TYPE_CHECKING:
+    # `model_config` imports this module for the regions a cache declares,
+    # and every use here is an annotation.
+    from .model_config import InklingTextConfig
 
 # The conv kernel accumulates in float32 regardless of the model dtype.
 CONV_STATE_DTYPE: Final = DType.float32
@@ -47,22 +53,121 @@ class ConvSite(IntEnum):
     MLP_OUT = 3
 
 
+def _leaf_id(site: ConvSite, is_local: bool, prefix: str = "") -> str:
+    """Names a pool leaf by the site it serves and the layers it spans."""
+    kind = "local" if is_local else "global"
+    return f"{prefix}conv/{kind}/{site.name.lower()}"
+
+
+def conv_state_regions(
+    text_config: InklingTextConfig,
+    *,
+    tp_size: int = 1,
+    num_draft_tokens: int = 0,
+) -> tuple[RecurrentStateRegion, ...]:
+    """Returns the conv leaves a request occupies, per device.
+
+    Backbone only; the MTP draft uses scratch pools, see
+    :class:`InklingConvScratchPools`.
+    """
+    return InklingConvStateLayout.from_config(
+        text_config, tp_size=tp_size, num_draft_tokens=num_draft_tokens
+    ).regions()
+
+
 @dataclass(frozen=True)
 class InklingConvStateLayout:
     """Per-device channel widths of each layer's four sites, in
     :class:`ConvSite` order."""
 
-    state_len: int
+    ring_len: int
+    """Entries per slot: ``kernel_size - 1`` plus the speculative width."""
+
     layers: tuple[tuple[int, int, int, int], ...]
+    is_local: tuple[bool, ...] = ()
+    """Which layers are sliding-window, in :attr:`layers` order.
+
+    A layer's K and V widths follow this, so it is also what splits the pool
+    into uniformly-shaped leaves.
+    """
+
+    leaf_prefix: str = ""
+    """Namespaces this layout's leaves apart from another's.
+
+    The MTP draft keeps its own conv state beside the backbone's, in the same
+    row, so the two sets of leaves share a cache child and must not share
+    names.
+    """
 
     @property
     def num_layers(self) -> int:
         return len(self.layers)
 
-    def bytes_per_request(self) -> int:
-        """Bytes one request occupies on one device."""
-        channels = sum(map(sum, self.layers))
-        return channels * self.state_len * CONV_STATE_DTYPE.size_in_bytes
+    def kinds(self) -> tuple[bool, ...]:
+        """The layer kinds present, widest group first for stable leaf order."""
+        return tuple(
+            kind for kind in (False, True) if kind in set(self.is_local)
+        )
+
+    def layers_of_kind(self, is_local: bool) -> tuple[int, ...]:
+        """Layer indices of one kind, in order."""
+        return tuple(
+            idx for idx, local in enumerate(self.is_local) if local == is_local
+        )
+
+    def regions(self) -> tuple[RecurrentStateRegion, ...]:
+        """The pool leaves this layout occupies, per device.
+
+        One leaf per (site, layer kind), because a leaf is uniformly shaped
+        and only the K and V widths vary, and only between the two kinds. The
+        two residual sites split by kind as well, so a layer's row index
+        within a leaf is its ordinal among its own kind at every site.
+        """
+        return tuple(
+            RecurrentStateRegion(
+                leaf_id=_leaf_id(site, is_local, self.leaf_prefix),
+                num_layers=len(self.layers_of_kind(is_local)),
+                row_shape=(self.ring_len, self.layers[first][site]),
+                dtype=CONV_STATE_DTYPE,
+            )
+            for is_local in self.kinds()
+            for site in ConvSite
+            for first in (self.layers_of_kind(is_local)[0],)
+        )
+
+    def row_for(self, layer_idx: int, site: ConvSite) -> tuple[int, int]:
+        """Returns the leaf a layer's site lives in, and its row within it.
+
+        The leaf is a position among :meth:`regions`, which is how a device's
+        ``leaves`` tuple is addressed.
+        """
+        is_local = self.is_local[layer_idx]
+        ordinal = self.layers_of_kind(is_local).index(layer_idx)
+        leaf = self.kinds().index(is_local) * len(ConvSite) + int(site)
+        return leaf, ordinal
+
+    def take_pools(
+        self, inputs: Iterator[Value[Any]], num_devices: int
+    ) -> list[list[BufferValue]]:
+        """Pulls this layout's pools off a graph-input iterator, one list per rank."""
+        per_device = self.num_layers * len(ConvSite)
+        return [
+            [next(inputs).buffer for _ in range(per_device)]
+            for _ in range(num_devices)
+        ]
+
+    def buffer_types(self, devices: Sequence[DeviceRef]) -> list[BufferType]:
+        """Graph input types of the pools, in device then :attr:`layers` order."""
+        return [
+            BufferType(
+                CONV_STATE_DTYPE,
+                shape=["max_conv_slots", self.ring_len, channels],
+                device=device,
+            )
+            for device in devices
+            for widths in self.layers
+            for channels in widths
+        ]
 
     @classmethod
     def from_config(
@@ -70,133 +175,66 @@ class InklingConvStateLayout:
         text_config: InklingTextConfig,
         *,
         tp_size: int = 1,
+        num_draft_tokens: int = 0,
+        leaf_prefix: str = "",
     ) -> Self:
         """Derives the layout from the checkpoint config."""
-        residual_width = text_config.hidden_size // tp_size
+        return cls.from_local_flags(
+            text_config,
+            [
+                text_config.is_local_attention(i)
+                for i in range(text_config.num_hidden_layers)
+            ],
+            tp_size=tp_size,
+            num_draft_tokens=num_draft_tokens,
+            leaf_prefix=leaf_prefix,
+        )
+
+    @classmethod
+    def from_local_flags(
+        cls,
+        text_config: InklingTextConfig,
+        is_local: Sequence[bool],
+        *,
+        tp_size: int = 1,
+        num_draft_tokens: int = 0,
+        leaf_prefix: str = "",
+    ) -> Self:
+        """Layout for decoder blocks with an explicit local/global mix."""
+        # Not channel-sharded: each rank convolves a full-width partial sum
+        # and the ranks are summed afterwards.
+        residual_width = text_config.hidden_size
         layers = []
-        for i in range(text_config.num_hidden_layers):
-            kv_width = text_config.kv_conv_dim_for_layer(i) // tp_size
+        for local in is_local:
+            kv_width = text_config.kv_conv_dim(local) // tp_size
             layers.append((kv_width, kv_width, residual_width, residual_width))
         return cls(
-            state_len=text_config.sconv_kernel_size - 1,
+            ring_len=text_config.sconv_kernel_size - 1 + num_draft_tokens,
             layers=tuple(layers),
+            is_local=tuple(is_local),
+            leaf_prefix=leaf_prefix,
         )
 
 
-class InklingConvStateCache:
-    """Slot pool holding every request's convolution state.
-
-    Pool ``pools(device)[layer * 4 + site]`` has shape
-    ``[max_slots, site_channels, state_len]``.
-    """
+class InklingConvScratchPools:
+    """The MTP draft's conv pools: one zero slot that every batch item
+    reads. The draft never commits, so its taps before a chunk read as
+    zero."""
 
     def __init__(
-        self,
-        layout: InklingConvStateLayout,
-        max_slots: int,
-        devices: Sequence[Device],
+        self, layout: InklingConvStateLayout, devices: Sequence[Device]
     ) -> None:
-        self._max_slots = max_slots
-        self._devices = list(devices)
-
         self._pools: list[list[Buffer]] = [
             [
                 Buffer.zeros(
-                    [max_slots, channels, layout.state_len],
-                    CONV_STATE_DTYPE,
-                    device,
+                    [1, layout.ring_len, channels], CONV_STATE_DTYPE, device
                 )
                 for widths in layout.layers
                 for channels in widths
             ]
-            for device in self._devices
+            for device in devices
         ]
-        # One zero row per distinct width, reused to wipe a slot on claim.
-        self._zero_rows: list[dict[int, Buffer]] = [
-            {
-                channels: Buffer.zeros(
-                    [1, channels, layout.state_len], CONV_STATE_DTYPE, device
-                )
-                for widths in layout.layers
-                for channels in widths
-            }
-            for device in self._devices
-        ]
-        self._staging: list[Buffer | DevicePinnedBuffer] = [
-            Buffer.zeros([max_slots], DType.uint32, device)
-            if device.is_host
-            else DevicePinnedBuffer(
-                shape=(max_slots,), dtype=DType.uint32, device=device
-            )
-            for device in self._devices
-        ]
-        self._preallocs: list[Buffer] = [
-            Buffer(shape=[max_slots], dtype=DType.uint32, device=device)
-            for device in self._devices
-        ]
-        # Views alias the preallocs; a stable Buffer object per batch size
-        # lets graph-capture replay skip recopying the input.
-        self._prealloc_views: list[dict[int, Buffer]] = [
-            {} for _ in self._devices
-        ]
-
-        self._free_slots: set[int] = set(range(max_slots))
-        self._request_to_slot: dict[RequestID, int] = {}
-
-        per_request = layout.bytes_per_request()
-        logger.info(
-            f"Inkling conv state pools: {max_slots} slots x "
-            f"{layout.num_layers} layers x {len(ConvSite)} sites = "
-            f"{to_human_readable_bytes(max_slots * per_request)} per device "
-            f"({to_human_readable_bytes(per_request)} per request) on "
-            f"{len(self._devices)} device(s)"
-        )
 
     def pools(self, device_idx: int) -> list[Buffer]:
-        """Per-site pools of one rank, in layer then :class:`ConvSite` order."""
+        """Per-site pools of one rank, in depth then :class:`ConvSite` order."""
         return self._pools[device_idx]
-
-    def claim(self, request_id: RequestID) -> int:
-        """Assigns a slot and zeros it; idempotent for chunked prefill."""
-        if request_id in self._request_to_slot:
-            return self._request_to_slot[request_id]
-        if not self._free_slots:
-            raise RuntimeError(
-                f"No free Inkling conv state slots ({self._max_slots} slots in "
-                "use). Increase max_batch_size or reduce concurrent requests."
-            )
-        slot = self._free_slots.pop()
-        self._request_to_slot[request_id] = slot
-        for pools, zero_rows in zip(self._pools, self._zero_rows, strict=True):
-            for pool in pools:
-                pool[slot, :, :].inplace_copy_from(zero_rows[pool.shape[1]])
-        return slot
-
-    def release(self, request_id: RequestID) -> None:
-        """Frees a request's slot; the preemption path — state is dropped."""
-        slot = self._request_to_slot.pop(request_id, None)
-        if slot is not None:
-            self._free_slots.add(slot)
-
-    def slot_idx_for(self, request_ids: Sequence[RequestID]) -> list[Buffer]:
-        """Returns one device tensor per rank with the batch's slots, staged
-        through preallocated pinned buffers so the per-step path allocates
-        nothing."""
-        batch_size = len(request_ids)
-        slots = np.fromiter(
-            (self._request_to_slot[rid] for rid in request_ids),
-            dtype=np.uint32,
-            count=batch_size,
-        )
-        views = []
-        for prealloc, staging, views_by_size in zip(
-            self._preallocs, self._staging, self._prealloc_views, strict=True
-        ):
-            staging.to_numpy()[:batch_size] = slots
-            view = views_by_size.get(batch_size)
-            if view is None:
-                view = prealloc[:batch_size]
-                views_by_size[batch_size] = view
-            view.inplace_copy_from(staging[:batch_size])
-            views.append(view)
-        return views

@@ -29,6 +29,8 @@ from collections.abc import Callable
 from typing import ClassVar
 
 import numpy as np
+import pytest
+from _test_helpers import assert_no_shadowed_tests
 from max.experimental.functional import (
     cumsum,
     mean,
@@ -37,11 +39,13 @@ from max.experimental.functional import (
     transfer_to,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
+    ShardingError,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 
@@ -60,7 +64,7 @@ class _Sum:
         """MESH_1D: Sharded(0) + sum along axis=1 preserves placement."""
         t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         result = sum(t, axis=1)
         assert isinstance(result, Tensor)
@@ -73,7 +77,7 @@ class _Sum:
         """MESH_1D with 4 shards: sum along non-sharded axis is correct."""
         t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         result = sum(t, axis=1)
         assert isinstance(result, Tensor)
@@ -100,7 +104,7 @@ class _Sum:
         """MESH_2: sum(Replicated, axis=None) works — all shards identical."""
         t_np = np.arange(8, dtype=np.float32).reshape(2, 4)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = sum(t, axis=None)
         # axis=None flattens then reduces → scalar-like (1,) shape
@@ -121,17 +125,24 @@ class _Mean:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
-    def test_non_sharded_axis(self) -> None:
+    def test_mean_non_sharded_axis(self) -> None:
         """MESH_2: Sharded(0) + mean along axis=-1 preserves placement."""
         t_np = np.arange(24, dtype=np.float32).reshape(4, 6)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = mean(t, axis=-1)
         assert isinstance(result, Tensor)
         assert result.placements == (Sharded(0),)
         expected = t_np.mean(axis=-1, keepdims=True)
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-4)
+
+    def test_uneven_sharded_axis(self) -> None:
+        """A mean over unevenly sharded rows divides by the global count."""
+        t_np = np.arange(10, dtype=np.float32).reshape(5, 2)
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        with auto_reshard(mode="silent"):
+            result = mean(t, axis=0)
+        expected = t_np.mean(axis=0, keepdims=True)
+        np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
 
 
 # ── Softmax ──────────────────────────────────────────────────────────
@@ -145,11 +156,11 @@ class _Softmax:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
-    def test_non_sharded_axis(self) -> None:
+    def test_softmax_non_sharded_axis(self) -> None:
         """MESH_1D: softmax along non-sharded axis preserves placement."""
         a_np = np.arange(32, dtype=np.float32).reshape(8, 4)
         t = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(a_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         result = softmax(t, axis=1)
         assert isinstance(result, Tensor)
@@ -171,35 +182,51 @@ class _Cumsum:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
-    def test_non_sharded_axis(self) -> None:
+    def test_cumsum_non_sharded_axis(self) -> None:
         """MESH_2: cumsum along non-sharded axis preserves placement."""
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = cumsum(t, axis=1)
         assert isinstance(result, Tensor)
         assert result.placements == (Sharded(0),)
         expected = np.cumsum(t_np, axis=1)
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
 
-    def test_partial_passthrough(self) -> None:
-        """MESH_1D: Partial passes through cumsum (linear op).
+    def test_cumsum_sharded_axis(self) -> None:
+        """A prefix sum over the sharded axis continues across shards."""
+        t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        with auto_reshard(mode="silent"):
+            result = cumsum(t, axis=0)
+        np.testing.assert_allclose(
+            result.to_numpy(), np.cumsum(t_np, axis=0), rtol=1e-5
+        )
 
-        cumsum is linear: cumsum(a+b) = cumsum(a) + cumsum(b).
-        Partial fragments should pass through without all-reduce.
+    def test_cumsum_partial_input_is_not_passed_through(self) -> None:
+        """MESH_1D: cumsum has no Partial row, so the default policy raises.
+
+        cumsum is linear, but scanning each fragment and then summing differs
+        from summing and then scanning in floating point, so cumsum resolves a
+        Partial before the scan instead of passing it through.
         """
         a_np = np.ones((4, 4), dtype=np.float32)
         t = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
-        result = cumsum(t, axis=1)
-        assert isinstance(result, Tensor)
-        assert result.placements == (Partial(),)
-        # to_numpy() materializes (allreduces) the Partial across N devices,
-        # so each partial cumsum becomes cumsum(a) * N.
+        with pytest.raises(ShardingError):
+            cumsum(t, axis=1)
+
+    def test_cumsum_partial_input_resolves_under_auto_reshard(self) -> None:
+        """MESH_1D: with auto_reshard the Partial is resolved, then scanned."""
+        a_np = np.arange(16, dtype=np.float32).reshape(4, 4)
+        t = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
+        with auto_reshard(mode="silent"):
+            result = cumsum(t, axis=1)
+        assert result.placements == (Replicated(),)
+        # partial_fn gives every device a copy of a_np, so the Partial sums to
+        # num_devices * a_np before the scan.
         n = self.MESH_1D.num_devices
-        result_np = result.to_numpy()
-        expected = np.cumsum(a_np, axis=1) * n
-        np.testing.assert_allclose(result_np, expected, rtol=1e-5)
+        np.testing.assert_allclose(
+            result.to_numpy(), np.cumsum(a_np * n, axis=1), rtol=1e-5
+        )
 
 
 # ── Combined base class ─────────────────────────────────────────────
@@ -208,4 +235,5 @@ class _Cumsum:
 class ReductionTests(_Sum, _Mean, _Softmax, _Cumsum):
     """Aggregates all reduction test classes for thin subclassing."""
 
-    pass
+
+assert_no_shadowed_tests(ReductionTests)

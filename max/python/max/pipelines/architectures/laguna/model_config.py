@@ -136,6 +136,8 @@ class LagunaConfig(Llama3Config):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Constructs KV cache parameters using explicit head_dim from config.
 
@@ -179,6 +181,7 @@ class LagunaConfig(Llama3Config):
                 scale_dtype=DType.int8, quantization_granularity=32
             )
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
@@ -210,6 +213,8 @@ class LagunaConfig(Llama3Config):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a LagunaConfig from pipeline configuration.
 
@@ -227,7 +232,9 @@ class LagunaConfig(Llama3Config):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @override
     @classmethod
@@ -236,6 +243,8 @@ class LagunaConfig(Llama3Config):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a LagunaConfig from pipeline and HuggingFace configs.
 
@@ -269,7 +278,10 @@ class LagunaConfig(Llama3Config):
 
         try:
             base_config = Llama3Config.initialize_from_config(
-                pipeline_config, huggingface_config, model_config
+                pipeline_config,
+                huggingface_config,
+                model_config,
+                max_seq_len=max_seq_len,
             )
         finally:
             # Restore the originals so downstream readers see the

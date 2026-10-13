@@ -39,10 +39,13 @@ from collections.abc import AsyncIterator, Callable
 import pytest
 import pytest_asyncio
 from max.experimental.cascade import (
-    GenerateRequest,
+    ChatMessage,
+    GenAIRequest,
+    GenAITextChunk,
     LocalRuntime,
     Result,
     Runtime,
+    TextGenOptions,
     Worker,
     worker_method,
 )
@@ -201,6 +204,13 @@ class _Echo(Worker):
         return "Hello " + ", ".join(p.name for p in people) + "!"
 
 
+class _SlowOpen(Worker):
+    @contextlib.asynccontextmanager
+    async def open(self) -> AsyncIterator[_SlowOpen]:
+        await asyncio.sleep(5)
+        yield self
+
+
 class _Failing(Worker):
     """Worker whose methods fail in various ways."""
 
@@ -337,13 +347,18 @@ async def test_textgen_pipeline(runtime: Runtime) -> None:
     pipeline = await build_dummy_textgen_pipeline()
     await pipeline.deploy(runtime)
 
-    req = GenerateRequest(num_tokens=5)
-    # ``generate_text`` is decorated with ``@pipeline_method`` so it owns
+    req = GenAIRequest(
+        messages=[ChatMessage.text("user", "hello, ")],
+        text=TextGenOptions(num_tokens=5),
+    )
+    # ``generate`` is decorated with ``@pipeline_method`` so it owns
     # its own scope; the test doesn't need one here.
-    tokens = [token async for token in pipeline.generate_text(req, "hello, ")]
+    tokens = [token async for token in pipeline.generate(req)]
 
     assert len(tokens) == 5
-    assert all(token == "A" for token in tokens)
+    assert all(
+        token == GenAITextChunk(text="A", num_tokens=1) for token in tokens
+    )
 
 
 @pytest.mark.asyncio
@@ -353,10 +368,11 @@ async def test_textgen_different_lengths(runtime: Runtime) -> None:
     await pipeline.deploy(runtime)
 
     for num_tokens in [1, 3, 10]:
-        request = GenerateRequest(num_tokens=num_tokens)
-        tokens = [
-            token async for token in pipeline.generate_text(request, "test")
-        ]
+        request = GenAIRequest(
+            messages=[ChatMessage.text("user", "test")],
+            text=TextGenOptions(num_tokens=num_tokens),
+        )
+        tokens = [token async for token in pipeline.generate(request)]
         assert len(tokens) == num_tokens
 
 
@@ -472,6 +488,12 @@ async def test_http_cross_runtime_result_forwarding() -> None:
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deploy_timeout(runtime: Runtime) -> None:
+    with pytest.raises(asyncio.TimeoutError):
+        await runtime.deploy(_SlowOpen(deploy_timeout=0.5))
 
 
 @pytest.mark.asyncio

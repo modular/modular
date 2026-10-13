@@ -16,26 +16,12 @@ from std.random import rand
 from std.sys import argv
 
 
-from std.gpu import *
+from max.gpu import *
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
-from std.memory import unsafe_memset_zero
-from nn.attention.gpu.mha import (
-    _naive_attention_with_transpose,
-    flash_attention,
-    mha_gpu_naive,
-)
+from layout import Idx, TileTensor, row_major
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -68,7 +54,7 @@ def test[
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "seq_len:",
         seq_len,
         "num_keys:",
@@ -163,58 +149,15 @@ def test[
         mask_ptr[i] = Scalar[mask_type](0)
 
     # Construct buffers.
-    comptime layout_4d = Layout.row_major[4]()
-    var q = LayoutTensor[qkv_type, layout_4d](
-        q_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
-    var k = LayoutTensor[qkv_type, layout_4d](
-        k_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var v = LayoutTensor[qkv_type, layout_4d](
-        v_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var mask = LayoutTensor[mask_type, Layout.row_major[2]()](
-        mask_ptr,
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            Index(seq_len, num_keys)
-        ),
-    )
-    var output = LayoutTensor[qkv_type, layout_4d](
+    var output = TileTensor(
         output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+        row_major((batch_size, seq_len, num_heads, depth)),
     )
 
-    var flash_output = LayoutTensor[qkv_type, layout_4d](
+    var flash_output = TileTensor(
         flash_output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+        row_major((batch_size, seq_len, num_heads, depth)),
     )
-
-    comptime if not against_gpu_naive:
-        comptime assert (
-            qkv_type == mask_type
-        ), "expect qkv and mask have same type for CPU."
-        _naive_attention_with_transpose[qkv_type](
-            output,
-            q,
-            k,
-            v,
-            mask.bitcast[qkv_type](),
-            scale,
-            ctx,
-        )
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
@@ -255,10 +198,10 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @__parameter
-    @always_inline
-    @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         comptime if mask_rank == 3:
             flash_attention(
                 output_device,
@@ -288,7 +231,7 @@ def test[
         # Warmup
         kernel_launch(ctx)
 
-        var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        var nstime = Float64(ctx.execution_time(kernel_launch, nrun)) / Float64(
             nrun
         )
         var sectime = nstime / 1000000
@@ -530,7 +473,7 @@ def test_decoding[
     batch_size: Int,
     depth: Int,
     num_partitions: Optional[Int] = None,
-    qkv_type: DType = DType.bfloat16,
+    qkv_type: DType = .bfloat16,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     # fp32 arbitrary depth and num_heads, baseline impl.
     # BF16 token gen

@@ -62,8 +62,4 @@ def paged_kv_from_flat_graph_inputs(
     flat_kv_inputs: Sequence[object],
 ) -> PagedCacheValues:
     """Flattened graph inputs → :class:`PagedCacheValues` for one device."""
-    return (
-        kv_params.get_symbolic_inputs()
-        .unflatten(iter(flat_kv_inputs))
-        .inputs[0]
-    )
+    return kv_params.unflatten_kv_inputs(iter(flat_kv_inputs))[0]

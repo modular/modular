@@ -15,36 +15,40 @@ from std.math import cosh, exp, exp2, log, sinh
 from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
-from std.gpu import *
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.testing import assert_almost_equal, assert_equal, TestSuite
+from max.gpu import *
+from max.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import assert_almost_equal, TestSuite
 
-from std.utils import Index, IndexList
 from std.utils.coord import Coord
 
 comptime length = 8192
 
 
 def run_elementwise[
-    dtype: DType, math_fn: def(x: SIMD) thin -> type_of(x)
-](ctx: DeviceContext, in_device: DeviceBuffer[dtype],) raises:
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    dtype: DType,
+    math_fn: def[fn_dtype: DType, fn_width: SIMDLength](
+        SIMD[fn_dtype, fn_width]
+    ) thin -> SIMD[fn_dtype, fn_width] where fn_dtype.is_floating_point(),
+](
+    ctx: DeviceContext, in_device: DeviceBuffer[dtype]
+) raises where dtype.is_floating_point():
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
 
     var in_buffer = Span(unsafe_ptr=in_device.unsafe_ptr(), length=length)
     var out_buffer = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
 
-    @always_inline
-    @__copy_capture(out_buffer, in_buffer)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    @inline(.always)
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var out_buffer, var in_buffer}:
         var idx = Int(idx0[0].value())
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         var result = math_fn(val)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](idx, result)
 
-    elementwise[func, pack_size, target="gpu"](Coord(length), ctx)
+    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
 
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:
         for i in range(length):
@@ -105,18 +109,18 @@ def _test_sinh[
 
 def test_math_accuracy() raises:
     with DeviceContext() as ctx:
-        _test_exp[DType.float32](ctx)
-        _test_exp[DType.float16](ctx)
-        _test_exp[DType.bfloat16](ctx)
-        _test_exp2[DType.float32](ctx)
-        _test_exp2[DType.float16](ctx)
-        _test_exp2[DType.bfloat16](ctx)
-        _test_cosh[DType.float32](ctx)
-        _test_cosh[DType.float16](ctx)
-        _test_cosh[DType.bfloat16](ctx)
-        _test_sinh[DType.float32](ctx)
-        _test_sinh[DType.float16](ctx)
-        _test_sinh[DType.bfloat16](ctx)
+        _test_exp[.float32](ctx)
+        _test_exp[.float16](ctx)
+        _test_exp[.bfloat16](ctx)
+        _test_exp2[.float32](ctx)
+        _test_exp2[.float16](ctx)
+        _test_exp2[.bfloat16](ctx)
+        _test_cosh[.float32](ctx)
+        _test_cosh[.float16](ctx)
+        _test_cosh[.bfloat16](ctx)
+        _test_sinh[.float32](ctx)
+        _test_sinh[.float16](ctx)
+        _test_sinh[.bfloat16](ctx)
 
 
 def main() raises:

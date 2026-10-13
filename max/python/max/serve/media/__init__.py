@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Encoding and storage of generated media served by the MAX API."""
+
+from .audio import WAV_MEDIA_TYPE, encode_wav_bytes
 from .generated_media import (
     GeneratedMediaStorageLimitExceeded,
     GeneratedMediaStore,
@@ -19,8 +22,10 @@ from .generated_media import (
 )
 
 __all__ = [
+    "WAV_MEDIA_TYPE",
     "GeneratedMediaStorageLimitExceeded",
     "GeneratedMediaStore",
     "StoredMediaAsset",
     "encode_video_bytes_b64",
+    "encode_wav_bytes",
 ]

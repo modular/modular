@@ -254,7 +254,7 @@ class GGUFWeights(Weights):
         dtype: DType | None = None,
         shape: ShapeLike | None = None,
         quantization_encoding: QuantizationEncoding | None = None,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> Weight:
         """Creates and optionally validates a new Weight."""
         tensor = self._raw_tensor()

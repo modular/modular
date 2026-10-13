@@ -38,7 +38,7 @@ positions were leaking in. This test confirms that the mask
 write itself produces values that flush `exp2` to exactly 0.0.
 """
 
-from std.gpu import lane_id
+from max.gpu import lane_id
 from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_true
@@ -108,8 +108,7 @@ comptime TOTAL_FP32 = NUM_CASES * PER_CASE_FP32
 # --------------------------------------------------------------------------- #
 def _per_lane_row_offset(k_local: Int) -> Int:
     # Pulled from ACC_ROW_OFFSETS_32x32 = [0,1,2,3, 8,9,10,11, 16,17,18,19, 24,25,26,27]
-    var stripe = k_local // 4
-    var idx_in_stripe = k_local % 4
+    var stripe, idx_in_stripe = divmod(k_local, 4)
     return stripe * 8 + idx_in_stripe
 
 
@@ -137,7 +136,7 @@ def _expected_k_pos(k_tile_idx: Int, lane: Int, i: Int, k_local: Int) -> Int:
 # `case_idx * PER_CASE_FP32 + lane * ATT_PER_LANE + p`.
 # --------------------------------------------------------------------------- #
 def kernel_mask_unit(
-    out_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     var l_id = Int(lane_id())
 
@@ -146,7 +145,7 @@ def kernel_mask_unit(
 
     # --- Case 0: NullMask, tile_idx=0, j=0 (no-op) --- #
     # apply_mask_to_att_block with NO_MASK should return without writing.
-    var att0 = reg_alloc[DType.float32](att_layout)
+    var att0 = reg_alloc[.float32](att_layout)
     var v0 = att0.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -161,7 +160,7 @@ def kernel_mask_unit(
     # --- Case 1: CausalMask, q_tile_idx=0, k_tile_idx=0 --- #
     # Diagonal q_pos >= k_pos. With q_tile=0 (q in [0..32)) and k_tile=0
     # (k in [0..64)), positions with k > q are masked.
-    var att1 = reg_alloc[DType.float32](att_layout)
+    var att1 = reg_alloc[.float32](att_layout)
     var v1 = att1.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -176,7 +175,7 @@ def kernel_mask_unit(
     # --- Case 2: CausalMask, q_tile_idx=0, k_tile_idx=2 (partial) --- #
     # k in [128..192). q in [0..32). All k > q, so fully masked.
     # (Use q_tile_idx=2 instead to actually hit "partial".)
-    var att2 = reg_alloc[DType.float32](att_layout)
+    var att2 = reg_alloc[.float32](att_layout)
     var v2 = att2.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -190,7 +189,7 @@ def kernel_mask_unit(
 
     # --- Case 3: CausalMask, q_tile_idx=0, k_tile_idx=8 (fully masked) --- #
     # k in [512..576), q in [0..32). All k > q, fully masked.
-    var att3 = reg_alloc[DType.float32](att_layout)
+    var att3 = reg_alloc[.float32](att_layout)
     var v3 = att3.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -206,7 +205,7 @@ def kernel_mask_unit(
     # ChunkedMask groups (q, k) into chunks of CHUNK_SIZE=32. q in [0..32)
     # is chunk 0. k in [128..192) spans chunks [4, 6), entirely mismatch.
     # Expect FULL_MASK from status() -> _fill_dst_neg_inf.
-    var att4 = reg_alloc[DType.float32](att_layout)
+    var att4 = reg_alloc[.float32](att_layout)
     var v4 = att4.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -222,7 +221,7 @@ def kernel_mask_unit(
     # --- Case 5: SlidingWindowCausalMask, q_tile_idx=0, k_tile_idx=2 --- #
     # window_size=32. q in [0..32), k in [128..192). k > q + window
     # everywhere -> fully masked tile (status FULL_MASK).
-    var att5 = reg_alloc[DType.float32](att_layout)
+    var att5 = reg_alloc[.float32](att_layout)
     var v5 = att5.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -237,7 +236,7 @@ def kernel_mask_unit(
 
     # --- Case 6: _fill_dst_neg_inf direct (sanity check) --- #
     # Confirms the FULL_MASK filler writes -3.4028235e38.
-    var att6 = reg_alloc[DType.float32](att_layout)
+    var att6 = reg_alloc[.float32](att_layout)
     var v6 = att6.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -252,7 +251,7 @@ def kernel_mask_unit(
     # kernel: subtract the per-row max (here: 1.0), then `exp2`.
     # This is the load-bearing answer for BUG#1 — what does the GPU
     # `exp2` intrinsic produce for the kernel-written filler value?
-    var att7 = reg_alloc[DType.float32](att_layout)
+    var att7 = reg_alloc[.float32](att_layout)
     var v7 = att7.vectorize[1, 1, ATT_FRAG]()
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
@@ -265,7 +264,7 @@ def kernel_mask_unit(
     comptime for i in range(ATT_HEIGHT):
         comptime for jj in range(ATT_WIDTH):
             var x = v7[i, jj, 0]
-            v7[i, jj, 0] = math_exp2(x - SIMD[DType.float32, ATT_FRAG](1.0))
+            v7[i, jj, 0] = math_exp2(x - SIMD[.float32, ATT_FRAG](1.0))
     var base7 = 7 * PER_CASE_FP32 + l_id * ATT_PER_LANE
     comptime for p in range(ATT_PER_LANE):
         out_ptr[base7 + p] = att7._storage[p]
@@ -300,7 +299,7 @@ def main() raises:
     print("=" * 60)
 
     with DeviceContext() as ctx:
-        var dev_out = ctx.enqueue_create_buffer[DType.float32](TOTAL_FP32)
+        var dev_out = ctx.enqueue_create_buffer[.float32](TOTAL_FP32)
 
         # Initialize to a sentinel so we can see if any case left entries
         # untouched.
@@ -361,9 +360,7 @@ def main() raises:
                         if k_pos > q_pos1:
                             if v != FP32_NEG_INF_FILLER:
                                 m1 = False
-                            var e = math_exp2(
-                                SIMD[DType.float32, 1](v - Float32(1.0))
-                            )[0]
+                            var e = math_exp2(Float32(v - Float32(1.0)))[0]
                             if e != Float32(0.0):
                                 e1 = False
                         else:
@@ -381,9 +378,7 @@ def main() raises:
                         if k_pos > q_pos2:
                             if v != FP32_NEG_INF_FILLER:
                                 m2 = False
-                            var e = math_exp2(
-                                SIMD[DType.float32, 1](v - Float32(1.0))
-                            )[0]
+                            var e = math_exp2(Float32(v - Float32(1.0)))[0]
                             if e != Float32(0.0):
                                 e2 = False
                         else:
@@ -401,9 +396,7 @@ def main() raises:
                         if k_pos > q_pos3:
                             if v != FP32_NEG_INF_FILLER:
                                 m3 = False
-                            var e = math_exp2(
-                                SIMD[DType.float32, 1](v - Float32(1.0))
-                            )[0]
+                            var e = math_exp2(Float32(v - Float32(1.0)))[0]
                             if e != Float32(0.0):
                                 e3 = False
                         else:
@@ -416,9 +409,7 @@ def main() raises:
                     var v = host_out[_idx(4, lane, p)]
                     if v != FP32_NEG_INF_FILLER:
                         m4 = False
-                    var e = math_exp2(SIMD[DType.float32, 1](v - Float32(0.0)))[
-                        0
-                    ]
+                    var e = math_exp2(Float32(v - Float32(0.0)))[0]
                     if e != Float32(0.0):
                         e4 = False
 
@@ -428,9 +419,7 @@ def main() raises:
                     var v = host_out[_idx(5, lane, p)]
                     if v != FP32_NEG_INF_FILLER:
                         m5 = False
-                    var e = math_exp2(SIMD[DType.float32, 1](v - Float32(0.0)))[
-                        0
-                    ]
+                    var e = math_exp2(Float32(v - Float32(0.0)))[0]
                     if e != Float32(0.0):
                         e5 = False
 
@@ -440,14 +429,12 @@ def main() raises:
                     var v = host_out[_idx(6, lane, p)]
                     if v != FP32_NEG_INF_FILLER:
                         m6 = False
-                    var e = math_exp2(SIMD[DType.float32, 1](v - Float32(0.0)))[
-                        0
-                    ]
+                    var e = math_exp2(Float32(v - Float32(0.0)))[0]
                     if e != Float32(0.0):
                         e6 = False
 
             sample_filler = host_out[_idx(3, 0, ATT_FRAG)]
-            sample_exp2 = math_exp2(SIMD[DType.float32, 1](sample_filler))[0]
+            sample_exp2 = math_exp2(Float32(sample_filler))[0]
 
             # ----- Case 7: GPU-side exp2 result -----
             # The kernel computed `exp2(filler - 1.0)` on device using
@@ -489,19 +476,19 @@ def main() raises:
         print("  exp2(filler) = ", sample_exp2)
         print(
             "  exp2(-10000) = ",
-            math_exp2(SIMD[DType.float32, 1](Float32(-10000.0)))[0],
+            math_exp2(Float32(Float32(-10000.0)))[0],
         )
         print(
             "  exp2(-128.0) = ",
-            math_exp2(SIMD[DType.float32, 1](Float32(-128.0)))[0],
+            math_exp2(Float32(Float32(-128.0)))[0],
         )
         print(
             "  exp2(-127.0) = ",
-            math_exp2(SIMD[DType.float32, 1](Float32(-127.0)))[0],
+            math_exp2(Float32(Float32(-127.0)))[0],
         )
         print(
             "  exp2(-150.0) = ",
-            math_exp2(SIMD[DType.float32, 1](Float32(-150.0)))[0],
+            math_exp2(Float32(Float32(-150.0)))[0],
         )
         print("--- GPU-side post-mask `exp2(score - max=1.0)` ---")
         print(

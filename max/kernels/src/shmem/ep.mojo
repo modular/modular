@@ -20,11 +20,10 @@ from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import is_gpu
 from std.math import ceildiv
-from layout import PointerStorage, TensorLayout, TileTensor, Idx
-from layout.tile_tensor import row_major
+from layout import DefaultEngine, TensorLayout, TileTensor
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from std.sys.info import has_amd_gpu_accelerator, simd_width_of, size_of
-from std.gpu import WARP_SIZE
+from std.sys.info import simd_width_of, size_of
+from max.gpu import WARP_SIZE
 from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe
@@ -37,13 +36,13 @@ from shmem.ep_comm import (
     combine_async_kernel,
     combine_wait_kernel,
     combine_kernel,
-    elementwise_epilogue_type,
+    ep_combine_store_type,
     router_weights_wrapper_type,
     input_scales_wrapper_type,
 )
 
 
-@always_inline
+@inline(.always)
 def global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
     """Inserts a pointer into the process-wide compiler runtime global cache.
 
@@ -63,7 +62,7 @@ def global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
     )
 
 
-@always_inline
+@inline(.always)
 def _ep_dispatch_wait_grid_dim(
     num_tokens: Int,
     n_local_experts: Int,
@@ -80,7 +79,7 @@ def _ep_dispatch_wait_grid_dim(
     return min(n_local_experts + max(num_tokens, 0) + 1, sm_count)
 
 
-@always_inline
+@inline(.always)
 def _ep_combine_wait_grid_dim(
     num_tokens: Int,
     n_chunks_per_tok: Int,
@@ -99,7 +98,7 @@ def _ep_combine_wait_grid_dim(
     return min(reduce_sms + 1, sm_count)
 
 
-@always_inline
+@inline(.always)
 def pack_ptrs_array[
     ptrs_layout: TensorLayout,
     //,
@@ -109,7 +108,7 @@ def pack_ptrs_array[
         0
     ],
 ](
-    _ptrs: TileTensor[DType.uint64, ptrs_layout, ...],
+    _ptrs: TileTensor[.uint64, ptrs_layout, ...],
     my_rank: Int32,
     out result: Array[
         UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
@@ -136,19 +135,21 @@ def pack_ptrs_array[
         my_rank: Rank index of the calling device within the communicator.
     """
     comptime assert _ptrs.flat_rank == 1, "Pointers must be a 1D tensor."
-    var ptr_arr = Array[
-        UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin], n_gpus_per_node
-    ](uninitialized=True)
 
-    comptime for i in range(n_gpus_per_node):
+    @inline(.always)
+    def ptr_arr_init(
+        i: Int,
+    ) {imm} -> UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin]:
         comptime if local_rank_only:
-            ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
+            return UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[my_rank])
             )
         else:
-            ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
+            return UnsafePointer[Scalar[ptr_type], MutUntrackedOrigin](
                 unsafe_from_address=Int(_ptrs[i])
             )
+
+    var ptr_arr = Array[_, n_gpus_per_node](fill_with=ptr_arr_init)
 
     return ptr_arr^
 
@@ -158,7 +159,7 @@ def pack_ptrs_array[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def ep_dispatch_async_kernel_api[
     token_fmt_type: TokenFormat,
     n_experts: Int,
@@ -169,12 +170,12 @@ def ep_dispatch_async_kernel_api[
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    input_tokens: TileTensor[mut=False, Storage=PointerStorage[], ...],
-    topk_ids: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
-    send_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    input_tokens: TileTensor[mut=False, Engine=DefaultEngine[], ...],
+    topk_ids: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
+    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     context: DeviceContext,
 ) raises:
     """Execute the Expert Parallelism async dispatch kernel.
@@ -249,9 +250,8 @@ def ep_dispatch_async_kernel_api[
         use_shmem=use_shmem,
     ]
 
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
+    @inline(.always)
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             "input_dtype=", input_tokens.dtype,
@@ -266,7 +266,7 @@ def ep_dispatch_async_kernel_api[
 
     with Trace[TraceLevel.OP, target=target](
         "ep.dispatch_async",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         var func = gpu_ctx.compile_function[dispatch_async]()
@@ -287,8 +287,8 @@ def ep_dispatch_async_kernel_api[
         var send_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
-        var recv_ptrs_arr = pack_ptrs_array[DType.uint8](recv_ptrs, my_rank)
-        var recv_count_ptrs_arr = pack_ptrs_array[DType.uint64](
+        var recv_ptrs_arr = pack_ptrs_array[.uint8](recv_ptrs, my_rank)
+        var recv_count_ptrs_arr = pack_ptrs_array[.uint64](
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
@@ -316,7 +316,7 @@ def ep_dispatch_async_kernel_api[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def ep_dispatch_wait_kernel_api[
     token_fmt_type: TokenFormat,
     //,
@@ -328,12 +328,12 @@ def ep_dispatch_wait_kernel_api[
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
 ](
     token_handler: token_fmt_type,
-    row_offsets: TileTensor[DType.uint32, Storage=PointerStorage[], ...],
-    expert_ids: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    src_info: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    row_offsets: TileTensor[.uint32, Engine=DefaultEngine[], ...],
+    expert_ids: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    src_info: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
     context: DeviceContext,
     num_input_tokens: Int = -1,
 ) raises:
@@ -400,9 +400,8 @@ def ep_dispatch_wait_kernel_api[
         input_scales_wrapper=input_scales_wrapper,
     ]
 
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
+    @inline(.always)
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             "token_fmt_type=", token_fmt_type.get_type_name(),
@@ -416,7 +415,7 @@ def ep_dispatch_wait_kernel_api[
 
     with Trace[TraceLevel.OP, target=target](
         "ep.dispatch_wait",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         var recv_buf_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
@@ -433,7 +432,7 @@ def ep_dispatch_wait_kernel_api[
 
         var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
         var grid_dim_x: Int
-        comptime if has_amd_gpu_accelerator():
+        comptime if gpu_ctx.target.is_amd_gpu():
             if num_input_tokens >= 0:
                 grid_dim_x = _ep_dispatch_wait_grid_dim(
                     num_input_tokens, n_local_experts, hw_info.sm_count
@@ -465,7 +464,7 @@ def ep_dispatch_wait_kernel_api[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def ep_fused_dispatch_kernel_api[
     token_fmt_type: TokenFormat,
     dispatch_dtype: DType,
@@ -482,20 +481,17 @@ def ep_fused_dispatch_kernel_api[
     allreduce_world_size: Int = 1,
 ](
     token_handler: token_fmt_type,
-    row_offsets: TileTensor[DType.uint32, Storage=PointerStorage[], ...],
-    expert_ids: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    src_info: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    row_offsets: TileTensor[.uint32, Engine=DefaultEngine[], ...],
+    expert_ids: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    src_info: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        dispatch_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, dispatch_dtype, Engine=DefaultEngine[], ...
     ],
-    topk_ids: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
-    send_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    topk_ids: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
+    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     context: DeviceContext,
 ) raises:
     """Execute the fused Expert Parallelism dispatch kernel.
@@ -540,7 +536,7 @@ def ep_fused_dispatch_kernel_api[
 
     # Ensure this kernel only runs on GPU targets
     comptime assert is_gpu[target](), "EP is only supported on GPU."
-    comptime assert dispatch_dtype == DType.bfloat16
+    comptime assert dispatch_dtype == .bfloat16
     comptime assert (
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
@@ -592,9 +588,8 @@ def ep_fused_dispatch_kernel_api[
         allreduce_world_size=allreduce_world_size,
     ]
 
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
+    @inline(.always)
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             "token_fmt_type=", token_fmt_type.get_type_name(),
@@ -608,7 +603,7 @@ def ep_fused_dispatch_kernel_api[
 
     with Trace[TraceLevel.OP, target=target](
         "ep.dispatch",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
@@ -655,7 +650,7 @@ def ep_fused_dispatch_kernel_api[
         comptime n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
         var num_input_tokens = Int(input_tokens.dim(0))
         var grid_dim_x: Int
-        comptime if has_amd_gpu_accelerator():
+        comptime if gpu_ctx.target.is_amd_gpu():
             grid_dim_x = _ep_dispatch_wait_grid_dim(
                 num_input_tokens, n_local_experts, hw_info.sm_count
             )
@@ -686,7 +681,7 @@ def ep_fused_dispatch_kernel_api[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def ep_combine_async_kernel_api[
     combine_dtype: DType,
     hidden_size: Int,
@@ -698,17 +693,14 @@ def ep_combine_async_kernel_api[
     target: StaticString,
     use_shmem: Bool = (n_nodes > 1),
 ](
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        combine_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, combine_dtype, Engine=DefaultEngine[], ...
     ],
-    src_info: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
-    send_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    src_info: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
+    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     context: DeviceContext,
 ) raises:
     """Execute the Expert Parallelism combine kernel.
@@ -778,9 +770,8 @@ def ep_combine_async_kernel_api[
         use_shmem=use_shmem,
     ]
 
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
+    @inline(.always)
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             "combine_dtype=", combine_dtype,
@@ -796,7 +787,7 @@ def ep_combine_async_kernel_api[
 
     with Trace[TraceLevel.OP, target=target](
         "ep.combine",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         var func = gpu_ctx.compile_function[combine_async]()
@@ -818,8 +809,8 @@ def ep_combine_async_kernel_api[
             unsafe_from_address=Int(send_ptrs[gpu_id])
         )
         # Create inline arrays to store all the p2p accessible pointers
-        var recv_ptrs_arr = pack_ptrs_array[DType.uint8](recv_ptrs, my_rank)
-        var recv_count_ptrs_arr = pack_ptrs_array[DType.uint64](
+        var recv_ptrs_arr = pack_ptrs_array[.uint8](recv_ptrs, my_rank)
+        var recv_count_ptrs_arr = pack_ptrs_array[.uint64](
             recv_count_ptrs, my_rank
         )
         var ep_counters = EPLocalSyncCounters[n_experts](
@@ -847,10 +838,9 @@ def ep_combine_async_kernel_api[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def ep_combine_wait_kernel_api[
     combine_dtype: DType,
-    //,
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
@@ -858,15 +848,14 @@ def ep_combine_wait_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
+    store_fn: ep_combine_store_type,
     router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
-    epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    output_tokens: TileTensor[combine_dtype, Storage=PointerStorage[], ...],
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    num_tokens: Int,
+    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
+    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     context: DeviceContext,
-    num_input_tokens: Int = -1,
 ) raises:
     """Execute the Expert Parallelism combine completion kernel.
 
@@ -884,28 +873,22 @@ def ep_combine_wait_kernel_api[
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
+        store_fn: Stores the output tokens. Called with `(token_idx, elem)`
+            when `router_weights_wrapper` is set, and with
+            `(token_idx, topk_idx, elem)` otherwise.
         router_weights_wrapper: Wrapper for the optional router weights.
-        epilogue_fn: Optional elementwise epilogue function applied after
-            computing combined output.
 
     Arguments:
-        output_tokens: Final output tensor with expert results.
+        num_tokens: Number of output tokens.
         atomic_counters: EP kernel synchronization counters.
             Used to coordinate between different thread blocks.
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
-        num_input_tokens: Per-rank input token count for this layer. When
-            >= 0 enables the decode-fast-path grid sizing. Default `-1`
-            keeps the full-`sm_count` grid for backwards compatibility.
     """
 
     # Ensure this kernel only runs on GPU targets
     comptime assert is_gpu[target](), "EP is only supported on GPU."
-    # Ensure the shape for the output tensor is correct
-    comptime assert (
-        output_tokens.static_shape[1] == hidden_size
-    ), "EP combine: output tokens shape doesn't match hidden size."
     comptime assert (
         recv_ptrs.flat_rank == 1
     ), "Receive pointers must be a 1D tensor."
@@ -927,20 +910,18 @@ def ep_combine_wait_kernel_api[
     comptime combine_wait = combine_wait_kernel[
         combine_dtype,
         hw_info.max_thread_block_size,
-        output_tokens.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
         n_ranks,
         combine_msg_size,
         max_token_per_rank,
+        store_fn,
         router_weights_wrapper=router_weights_wrapper,
-        elementwise_lambda_fn=epilogue_fn,
     ]
 
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
+    @inline(.always)
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             "combine_dtype=", combine_dtype,
@@ -956,7 +937,7 @@ def ep_combine_wait_kernel_api[
 
     with Trace[TraceLevel.OP, target=target](
         "ep.combine_wait",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         var recv_buf_ptr = UnsafePointer[UInt8, MutUntrackedOrigin](
@@ -977,20 +958,17 @@ def ep_combine_wait_kernel_api[
             hw_info.max_thread_block_size // WARP_SIZE
         )
         var grid_dim_x: Int
-        comptime if has_amd_gpu_accelerator():
-            if num_input_tokens >= 0:
-                grid_dim_x = _ep_combine_wait_grid_dim(
-                    num_input_tokens,
-                    n_chunks_per_tok,
-                    n_warps_per_block,
-                    hw_info.sm_count,
-                )
-            else:
-                grid_dim_x = hw_info.sm_count
+        comptime if gpu_ctx.target.is_amd_gpu():
+            grid_dim_x = _ep_combine_wait_grid_dim(
+                num_tokens,
+                n_chunks_per_tok,
+                n_warps_per_block,
+                hw_info.sm_count,
+            )
         else:
             grid_dim_x = hw_info.sm_count
         gpu_ctx.enqueue_function[combine_wait](
-            output_tokens,
+            Int32(num_tokens),
             recv_buf_ptr,
             recv_count_ptr,
             ep_counters,
@@ -1005,7 +983,7 @@ def ep_combine_wait_kernel_api[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def ep_fused_combine_kernel_api[
     combine_dtype: DType,
     //,
@@ -1016,25 +994,22 @@ def ep_fused_combine_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
+    store_fn: ep_combine_store_type,
     router_weights_wrapper: Optional[router_weights_wrapper_type] = None,
-    epilogue_fn: Optional[elementwise_epilogue_type] = None,
     fused_shared_expert: Bool = False,
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
 ](
-    output_tokens: TileTensor[combine_dtype, Storage=PointerStorage[], ...],
-    atomic_counters: TileTensor[DType.int32, Storage=PointerStorage[], ...],
+    num_tokens: Int,
+    atomic_counters: TileTensor[.int32, Engine=DefaultEngine[], ...],
     input_tokens: TileTensor[
-        mut=False,
-        combine_dtype,
-        Storage=PointerStorage[],
-        ...,
+        mut=False, combine_dtype, Engine=DefaultEngine[], ...
     ],
-    src_info: TileTensor[mut=False, DType.int32, Storage=PointerStorage[], ...],
-    send_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
-    recv_count_ptrs: TileTensor[DType.uint64, Storage=PointerStorage[], ...],
+    src_info: TileTensor[mut=False, .int32, Engine=DefaultEngine[], ...],
+    send_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
+    recv_count_ptrs: TileTensor[.uint64, Engine=DefaultEngine[], ...],
     context: DeviceContext,
     topk_ids_p: Optional[UnsafePointer[Int32, ImmUntrackedOrigin]] = None,
 ) raises:
@@ -1055,9 +1030,10 @@ def ep_fused_combine_kernel_api[
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
+        store_fn: Stores the combined output tokens. Called with
+            `(token_idx, elem)` when `router_weights_wrapper` is set, and
+            with `(token_idx, topk_idx, elem)` otherwise.
         router_weights_wrapper: Wrapper for the optional router weights.
-        epilogue_fn: Optional elementwise epilogue function applied after
-            computing combined output.
         fused_shared_expert: Whether to add shared expert outputs to the
             combined routed expert outputs.
         skip_a2a: Whether to skip the A2A communication. If true, we will only
@@ -1068,7 +1044,7 @@ def ep_fused_combine_kernel_api[
             the shared expert (if has one).
 
     Arguments:
-        output_tokens: Final output tensor with expert results.
+        num_tokens: Number of output tokens.
         atomic_counters: EP kernel synchronization counters.
         input_tokens: Expert output tokens to send back.
         src_info: Source routing information from dispatch phase.
@@ -1085,9 +1061,6 @@ def ep_fused_combine_kernel_api[
     comptime assert (
         input_tokens.static_shape[1] == hidden_size
     ), "EP combine: input tokens shape doesn't match hidden size."
-    comptime assert (
-        output_tokens.static_shape[1] == hidden_size
-    ), "EP combine: output tokens shape doesn't match hidden size."
     comptime assert (
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
@@ -1115,7 +1088,6 @@ def ep_fused_combine_kernel_api[
         hw_info.max_thread_block_size,
         input_tokens.LayoutType,
         src_info.LayoutType,
-        output_tokens.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
@@ -1123,17 +1095,16 @@ def ep_fused_combine_kernel_api[
         combine_msg_size,
         max_token_per_rank,
         n_gpus_per_node,
+        store_fn,
         router_weights_wrapper=router_weights_wrapper,
         fused_shared_expert=fused_shared_expert,
-        epilogue_fn=epilogue_fn,
         skip_a2a=skip_a2a,
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
     ]
 
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
+    @inline(.always)
+    def description_fn() {imm} -> String:
         # fmt: off
         return String(
             "combine_dtype=", combine_dtype,
@@ -1149,7 +1120,7 @@ def ep_fused_combine_kernel_api[
 
     with Trace[TraceLevel.OP, target=target](
         "ep.combine",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         var func = gpu_ctx.compile_function[fused_combine]()
@@ -1198,7 +1169,7 @@ def ep_fused_combine_kernel_api[
         )
         var num_input_tokens = Int(input_tokens.dim(0))
         var grid_dim_x: Int
-        comptime if has_amd_gpu_accelerator():
+        comptime if gpu_ctx.target.is_amd_gpu():
             grid_dim_x = _ep_combine_wait_grid_dim(
                 num_input_tokens,
                 n_chunks_per_tok,
@@ -1211,7 +1182,7 @@ def ep_fused_combine_kernel_api[
             func,
             input_tokens,
             src_info,
-            output_tokens,
+            Int32(num_tokens),
             send_ptr,
             recv_ptrs_arr,
             recv_count_ptrs_arr,

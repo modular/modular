@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -39,7 +40,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
-from transformers.models.auto.configuration_auto import AutoConfig
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import InternVLBatchProcessor
 from .internvl import InternVLLanguageModel, InternVLVisionModel
@@ -115,21 +116,6 @@ class InternVLModel(
         InternVLBatchProcessor
     )
 
-    @classmethod
-    def calculate_max_seq_len(
-        cls,
-        pipeline_config: PipelineConfig,
-        huggingface_config: AutoConfig,
-    ) -> int:
-        """Uses ``max_length`` when set, else ``llm_config.max_position_embeddings`` (config bounds)."""
-        max_seq_len = pipeline_config.model.max_length
-        if max_seq_len:
-            return max_seq_len
-        llm_config = getattr(
-            huggingface_config, "llm_config", huggingface_config
-        )
-        return getattr(llm_config, "max_position_embeddings", 4096)
-
     vision_model: Model | None
     """The compiled vision model for processing images."""
 
@@ -143,6 +129,8 @@ class InternVLModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -153,9 +141,10 @@ class InternVLModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.vision_model, self.language_model = self.load_model(session)
@@ -183,7 +172,9 @@ class InternVLModel(
     ) -> InternVLConfig:
         del state_dict
 
-        internvl_config = InternVLConfig.initialize(self.pipeline_config)
+        internvl_config = InternVLConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         internvl_config.finalize(
             huggingface_config=self.huggingface_config,
             llm_state_dict=self._language_weights_dict,
@@ -311,7 +302,7 @@ class InternVLModel(
         ]
 
         # Flatten kv types for each device
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
@@ -448,7 +439,7 @@ class InternVLModel(
             *image_embeddings,
             *image_token_indices,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         # Return model outputs based on what the language model returns

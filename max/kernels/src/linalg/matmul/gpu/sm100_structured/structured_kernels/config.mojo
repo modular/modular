@@ -48,7 +48,9 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init("implicit")
-struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
+struct GEMMKind(
+    EnumLike, Equatable, Hashable, TrivialRegisterPassable, Writable
+):
     """Struct for GEMM types.
 
     This struct defines the different types of GEMM that is supported by BlackWell Such as BMM, GEMM, GMM, etc.
@@ -68,7 +70,35 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
     comptime BLOCK_SCALED_1D2D_FP8 = Self(3)
     """BLOCK_SCALED_1D2D_FP8 type."""
 
-    @always_inline("nodebug")
+    # The implicit fieldwise initializer permits raw backing values the named
+    # cases do not cover; `write_to` / `__str__` keep their `unknown` catch-alls
+    # for them, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "GEMM".value,
+        "BMM".value,
+        "GMM".value,
+        "BLOCK_SCALED_1D2D_FP8".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "GEMMKind has no payload"
+
+    @inline(.nodebug)
     def __int__(self) -> Int:
         """Convert GEMM kind to an integer value.
 
@@ -77,7 +107,7 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         """
         return Int(self._value)
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         """Check if two GEMM kinds are equal.
 
@@ -89,7 +119,7 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         """
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         """Check if two GEMM kinds are not equal.
 
@@ -101,37 +131,39 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         """
         return self._value != other._value
 
-    @always_inline
+    @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         """Write the GEMM kind to a writer.
 
         Args:
             writer: The writer to write the GEMM kind to.
         """
-        if self == Self.GEMM:
-            writer.write("kind::gemm")
-        elif self == Self.BMM:
-            writer.write("kind::bmm")
-        elif self == Self.GMM:
-            writer.write("kind::gmm")
-        elif self == Self.BLOCK_SCALED_1D2D_FP8:
-            writer.write("kind::block_scaled_1d2d_fp8")
-        else:
-            writer.write("kind::unknown")
+        match self:
+            case .GEMM:
+                writer.write("kind::gemm")
+            case .BMM:
+                writer.write("kind::bmm")
+            case .GMM:
+                writer.write("kind::gmm")
+            case .BLOCK_SCALED_1D2D_FP8:
+                writer.write("kind::block_scaled_1d2d_fp8")
+            case _:
+                writer.write("kind::unknown")
 
-    @always_inline
+    @inline(.always)
     def __str__(self) -> String:
         """Convert GEMM kind to a string."""
-        if self == Self.GEMM:
-            return "gemm"
-        elif self == Self.BMM:
-            return "bmm"
-        elif self == Self.GMM:
-            return "gmm"
-        elif self == Self.BLOCK_SCALED_1D2D_FP8:
-            return "block_scaled_1d2d_fp8"
-        else:
-            return "unknown"
+        match self:
+            case .GEMM:
+                return "gemm"
+            case .BMM:
+                return "bmm"
+            case .GMM:
+                return "gmm"
+            case .BLOCK_SCALED_1D2D_FP8:
+                return "block_scaled_1d2d_fp8"
+            case _:
+                return "unknown"
 
 
 # ============================================================================
@@ -193,7 +225,7 @@ def _compute_output_tile_shape(
     # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
     var output_tile_m = 128 if cta_group == 2 else mma_shape[0]
 
-    if c_type == DType.bfloat16:
+    if c_type == .bfloat16:
         var c_tile_n = mma_shape[1] if (
             mma_shape[0] == 256 or cta_group == 1
         ) else (mma_shape[1] // 2)
@@ -210,7 +242,7 @@ def _compute_output_tile_shape(
         return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
             output_tile_m, output_tile_n
         )
-    elif c_type == DType.float32:
+    elif c_type == .float32:
         var c_tile_n = mma_shape[1] if (
             mma_shape[0] == 256 or cta_group == 1
         ) else (mma_shape[1] // 2)
@@ -240,7 +272,7 @@ def _compute_swizzle_modes(
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
-    if c_type == DType.bfloat16 or c_type == DType.float32:
+    if c_type == .bfloat16 or c_type == .float32:
         if AB_swapped:
             c_swizzle = (
                 TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
@@ -251,12 +283,13 @@ def _compute_swizzle_modes(
             # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
             var elem_size = 2 if c_type == DType.bfloat16 else 4
             var row_bytes = output_tile_shape[1] * elem_size
-            if row_bytes == 128:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-            elif row_bytes == 64:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-            elif row_bytes == 32:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+            match row_bytes:
+                case 128:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_128B
+                case 64:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_64B
+                case 32:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
@@ -294,8 +327,17 @@ def _maximize_pipeline_stages[
     num_tma_epilogue_pipeline_stages: Int = 2,
     AB_swapped: Bool = False,
     epilogue_is_1d: Bool = False,
+    reserved_smem: Int = 0,
 ) -> Int:
-    """Calculate max pipeline stages based on shared memory budget."""
+    """Calculate max pipeline stages based on shared memory budget.
+
+    `reserved_smem` carves a fixed byte block out of the budget before the
+    per-stage division (unlike `extra_smem_per_stage`, which scales with the
+    stage count). A persistent megakernel that hosts an extra warp-class
+    needing its own fixed SMEM region (e.g. an EP-dispatch send buffer) passes
+    that region's size here so the FFN pipeline shrinks to leave room; 0
+    (default) is the standalone-matmul behavior.
+    """
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
     var c_smem_bytes = (
@@ -355,6 +397,7 @@ def _maximize_pipeline_stages[
 
     return (
         b200_smem
+        - reserved_smem
         - output_smem_bytes
         - clc_smem_bytes
         - mma_output_smem_bytes
@@ -430,14 +473,15 @@ def _write_common_config[
 
 
 def _get_dtype_name(dtype: DType) -> String:
-    if dtype == DType.bfloat16:
-        return "bf16"
-    elif dtype == DType.float8_e4m3fn:
-        return "e4m3"
-    elif dtype == DType.uint8:
-        return "e2m1"
-    else:
-        return String(dtype)
+    match dtype:
+        case .bfloat16:
+            return "bf16"
+        case .float8_e4m3fn:
+            return "e4m3"
+        case .uint8:
+            return "e2m1"
+        case _:
+            return String(dtype)
 
 
 def _get_common_config_string[
@@ -623,7 +667,7 @@ struct MatmulConfig[
     ):
         comptime assert Self.a_type == Self.b_type
         comptime assert (
-            Self.a_type != DType.float32 or Self.c_type == DType.float32
+            Self.a_type != .float32 or Self.c_type == .float32
         ), "float32 input only supports float32 output"
 
         self.cta_group = cta_group
@@ -694,10 +738,8 @@ struct MatmulConfig[
             epilogue_is_1d,
         )
 
-        if num_tma_epilogue_pipeline_stages:
-            self.num_tma_epilogue_pipeline_stages = (
-                num_tma_epilogue_pipeline_stages.value()
-            )
+        if case .Some(epilogue_stages) = num_tma_epilogue_pipeline_stages:
+            self.num_tma_epilogue_pipeline_stages = epilogue_stages
         else:
             self.num_tma_epilogue_pipeline_stages = (
                 max_num_tma_epi_pipeline_stages
@@ -719,15 +761,17 @@ struct MatmulConfig[
             epilogue_is_1d=self.epilogue_is_1d,
         )
 
-        if num_pipeline_stages:
+        if case .Some(num_pipeline_stages) = num_pipeline_stages:
             assert (
-                num_pipeline_stages.value() <= max_num_pipeline_stages
+                num_pipeline_stages <= max_num_pipeline_stages
             ), "MatmulConfig requested num_pipeline_stages exceeds smem budget."
-            self.num_pipeline_stages = num_pipeline_stages.value()
+            self.num_pipeline_stages = num_pipeline_stages
         else:
-            self.num_pipeline_stages = (
-                max_num_pipeline_stages if max_num_pipeline_stages <= 16 else 16
-            )
+            # Every tile whose smem budget reaches past 16 stages is
+            # faster with the deeper prefetch, by 2-9% at M<=96 on B200.
+            # min() with the computed budget so the cap can never
+            # overcommit smem.
+            self.num_pipeline_stages = min(max_num_pipeline_stages, 24)
 
         # SM100 kernel only supports k grouping when num_pipeline_stages is a multiple of k_group_size.
         self.num_pipeline_stages = align_down(
@@ -741,10 +785,10 @@ struct MatmulConfig[
         # derivable from mma_shape, so they are explicit opt-in knobs;
         # applied last so the default derivations (block_tile_shape, A/B
         # swizzles) are unaffected.
-        if output_tile_shape:
-            self.output_tile_shape = output_tile_shape.value()
-        if c_swizzle:
-            self.c_swizzle = c_swizzle.value()
+        if case .Some(output_tile_shape) = output_tile_shape:
+            self.output_tile_shape = output_tile_shape
+        if case .Some(c_swizzle) = c_swizzle:
+            self.c_swizzle = c_swizzle
 
     def swap_AB_type(
         self,
@@ -914,14 +958,15 @@ def choose_config[
     # For large M, use 2xSM mma
     else:
 
-        @__parameter
-        @always_inline
-        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        @inline(.always)
+        def select_mma_mn(
+            M: Int, N: Int, _swapAB: Bool = False
+        ) {mut min_num_waves, mut mma_mn, mut swapAB, imm}:
             for bm in [64, 128]:
                 var N_aligned = align_up(N, 16)
                 var MMA_N_GRANULARITY = 16
                 # when output dtype is float8_e4m3fn, due to output TMA requirement, we need to use 32 as the granularity for 2CTA and MMA_M=128.
-                if c_type == DType.float8_e4m3fn and bm == 64:
+                if c_type == .float8_e4m3fn and bm == 64:
                     N_aligned = align_up(N, 32)
                     MMA_N_GRANULARITY = 32
 
@@ -1183,6 +1228,10 @@ struct BlockScaledMatmulConfig[
     var is_small_bn: Bool
     var gemm_kind: GEMMKind
     var prefetch_tiles_n: Int
+    # Epilogue warpgroups, each owning its own output band, staging buffer and
+    # barrier id. 1 (default) is the single-pipeline epilogue every existing
+    # caller has; 2 gives a second, independent store-block pipeline.
+    var num_epilogue_warpgroups: Int
 
     def __init__(
         out self,
@@ -1204,6 +1253,11 @@ struct BlockScaledMatmulConfig[
         register_based_epilogue: Bool = True,
         gemm_kind: GEMMKind = GEMMKind.GEMM,
         prefetch_tiles_n: Int = 0,
+        num_epilogue_warpgroups: Int = 1,
+        # Fixed SMEM (bytes) reserved out of the pipeline budget for a
+        # co-resident non-matmul warp-class (persistent megakernel). 0
+        # (default) = standalone matmul, auto-max stages unchanged.
+        reserved_smem: Int = 0,
     ):
         comptime assert block_scaled_operands_compatible[
             Self.a_type, Self.b_type
@@ -1227,6 +1281,7 @@ struct BlockScaledMatmulConfig[
         )
 
         self.gemm_kind = gemm_kind
+        self.num_epilogue_warpgroups = num_epilogue_warpgroups
         self.prefetch_tiles_n = prefetch_tiles_n
 
         # Scaling factors configuration (SFA, SFB)
@@ -1301,14 +1356,15 @@ struct BlockScaledMatmulConfig[
             self.num_clc_pipeline_stages,
             self.num_accum_pipeline_stages,
             sf_smem_per_stage,
+            reserved_smem=reserved_smem,
         )
 
-        if num_pipeline_stages:
-            assert num_pipeline_stages.value() <= max_num_pipeline_stages, (
+        if case .Some(num_pipeline_stages) = num_pipeline_stages:
+            assert num_pipeline_stages <= max_num_pipeline_stages, (
                 "BlockScaledMatmulConfig requested num_pipeline_stages exceeds"
                 " smem budget. "
             )
-            self.num_pipeline_stages = num_pipeline_stages.value()
+            self.num_pipeline_stages = num_pipeline_stages
         else:
             self.num_pipeline_stages = max_num_pipeline_stages
 
@@ -1501,9 +1557,10 @@ def choose_block_scaled_config[
     # For large M, use 2xSM mma
     else:
 
-        @__parameter
-        @always_inline
-        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        @inline(.always)
+        def select_mma_mn(
+            M: Int, N: Int, _swapAB: Bool = False
+        ) {mut min_num_waves, mut mma_mn, mut swapAB, imm}:
             var N_alignby64 = align_up(N, 64)
             var max_mma_n = min(N_alignby64, 256)
             # In practice 64x16 mma creates too many ctas and increase L2

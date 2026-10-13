@@ -20,12 +20,15 @@ from max.dtype import DType
 from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import LinearScalingParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
+    hybrid_swa_full_kv_params,
+)
 from max.pipelines.kv_cache import cache_dtype_for_encoding
-from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
     _interleaved_rope_weights,
     _select_quantization_encoding,
@@ -135,7 +138,7 @@ class Gemma3Config(
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     """KV cache parameters."""
 
     tie_word_embeddings: bool = False
@@ -160,12 +163,47 @@ class Gemma3Config(
         """
         return huggingface_config.num_hidden_layers
 
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> MultiKVCacheParams:
+        """Constructor for hybrid sliding + full KV tree."""
+        pattern = huggingface_config._sliding_window_pattern
+        layer_types = [
+            (
+                "full_attention"
+                if (i + 1) % pattern == 0
+                else "sliding_attention"
+            )
+            for i in range(huggingface_config.num_hidden_layers)
+        ]
+        return hybrid_swa_full_kv_params(
+            layer_types=layer_types,
+            sliding_window=huggingface_config.sliding_window,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+            n_kv_heads=huggingface_config.num_key_value_heads,
+            head_dim=huggingface_config.head_dim,
+            allow_kv_head_replication=allow_kv_head_replication,
+        )
+
     @override
     @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -179,11 +217,17 @@ class Gemma3Config(
         # for text-only Gemma3Config initialization
         if hasattr(huggingface_config, "text_config"):
             huggingface_config = huggingface_config.text_config
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Gemma3Config instance from pipeline and HuggingFace configuration.
 
@@ -274,9 +318,7 @@ class Gemma3Config(
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
             hidden_activation=hidden_activation,
-            max_position_embeddings=Gemma3Config.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
+            max_position_embeddings=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_theta=rope_theta,
             attention_bias=huggingface_config.attention_bias,

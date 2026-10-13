@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.sys import has_accelerator
 
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 
@@ -64,8 +64,8 @@ def main() raises:
 
 
 def vector_addition(
-    lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
-    rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    lhs_tensor: TileTensor[float_dtype, type_of(layout), ImmutAnyOrigin],
+    rhs_tensor: TileTensor[float_dtype, type_of(layout), ImmutAnyOrigin],
     out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
     size_dev: Int32,
 ):

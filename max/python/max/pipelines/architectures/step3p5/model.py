@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
@@ -75,7 +76,11 @@ class Step3p5Inputs(Llama3Inputs):
         return (
             *base,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
             *self.ep_inputs,
         )
 
@@ -93,7 +98,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     )
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
 
@@ -158,7 +163,9 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Step3p5Config:
         model_config = Step3p5Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -258,7 +265,9 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
             kv_input_count = len(self.kv_params.flattened_kv_inputs())
             kv_cache_inputs = [next(inputs_iter) for _ in range(kv_input_count)]
-            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
+            sliding_kv, global_kv = self.kv_params.unflatten_basic_kv_tree(
+                iter(kv_cache_inputs)
+            )
 
             # Tail of the input list is the EP comm buffers, present for
             # both TP_EP and DP_EP. Empty in TP_TP.
@@ -268,7 +277,8 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
             outputs = nn_model(
                 tokens.tensor,
-                kv_collections,
+                sliding_kv,
+                global_kv,
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
                 signal_buffers,
@@ -290,9 +300,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     @override
     def _wire_batch_processor(
-        self,
-        model: Any = None,
-        model_config: Any = None,
+        self, model: Model, model_config: Step3p5Config
     ) -> None:
         super()._wire_batch_processor(model, model_config)
         batch_processor = self.batch_processor

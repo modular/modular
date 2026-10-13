@@ -14,6 +14,7 @@
 
 import json
 
+import numpy as np
 import pytest
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.context.status import GenerationStatus
@@ -22,6 +23,7 @@ from max.pipelines.request.open_responses import (
     AssistantMessage,
     FunctionCall,
     FunctionToolParam,
+    ImageGenerationDetails,
     InputTextContent,
     OpenResponsesRequestBody,
     OutputTextContent,
@@ -430,10 +432,40 @@ def test_create_response_body_with_partial_provider_options() -> None:
     assert request.provider_options.image.height == 512
 
 
+def test_image_generation_details_from_images() -> None:
+    """Details are measured from the actual output arrays."""
+    pixel_data = np.zeros((2, 512, 768, 3), dtype=np.uint8)
+
+    details = ImageGenerationDetails.from_images(pixel_data, steps=28)
+
+    assert details.width == 768
+    assert details.height == 512
+    assert details.megapixels == pytest.approx(0.393216)
+    assert details.steps == 28
+    assert details.image_count == 2
+
+
+def test_image_generation_details_from_images_empty_raises() -> None:
+    """Empty pixel data cannot produce image generation details."""
+    with pytest.raises(ValueError, match="empty pixel data"):
+        ImageGenerationDetails.from_images(
+            np.zeros((0, 512, 512, 3), dtype=np.uint8), steps=28
+        )
+
+
 def test_from_generation_output_populates_usage() -> None:
     """Pipeline-reported usage flows through to the response."""
     usage = Usage(
-        input_tokens=0, output_tokens=1_048_576, total_tokens=1_048_576
+        input_tokens=0,
+        output_tokens=0,
+        total_tokens=0,
+        image_generation_details=ImageGenerationDetails(
+            width=1024,
+            height=1024,
+            megapixels=1.048576,
+            steps=28,
+            image_count=1,
+        ),
     )
     generation_output = GenerationOutput(
         request_id=RequestID(value="req-1"),
@@ -447,6 +479,11 @@ def test_from_generation_output_populates_usage() -> None:
     )
 
     assert response.usage == usage
+    assert response.usage is not None
+    assert response.usage.image_generation_details is not None
+    assert response.usage.image_generation_details.megapixels == pytest.approx(
+        1.048576
+    )
 
 
 def test_from_generation_output_without_usage() -> None:

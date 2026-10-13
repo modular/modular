@@ -74,16 +74,15 @@ SRD-OOB or filter-zero multiplies in the MMA.
 
 from std.math import ceildiv, min
 from std.sys import size_of, simd_width_of
-from std.gpu import WARP_SIZE
-from std.gpu.intrinsics import AMDBufferResource
-from std.memory import AddressSpace
+from max.gpu import WARP_SIZE
+from max.gpu.intrinsics import AMDBufferResource
 from std.sys.intrinsics import readfirstlane
 from std.collections import Optional
 
-from layout import TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 
-from structured_kernels.amd_tile_io import GMemTile, SMemTile, TileLoader
+from structured_kernels.amd_tile_io import SMemTile, TileLoader
 
 
 # ===----------------------------------------------------------------------=== #
@@ -394,12 +393,15 @@ struct TileLoaderLDSIm2col[
             " — tile_rows must be >= 1."
         )
 
-    @always_inline
+    @inline(.always)
     def __init__[
         InLayout: TensorLayout,
+        InEngine: TensorEngine,
     ](
         out self,
-        src_nhwc: TileTensor[mut=False, Self.dtype, InLayout, _],
+        src_nhwc: TileTensor[
+            mut=False, Self.dtype, InLayout, _, Engine=InEngine
+        ],
         warp_id: Int,
         lane_id: Int,
         *,
@@ -422,6 +424,7 @@ struct TileLoaderLDSIm2col[
                 Must be rank-4 NHWC (or rank-5 NDHWC when `Q > 1`) with
                 static spatial dims matching the struct's `H`, `W`, and
                 `C` params.
+            InEngine: `TensorEngine` of the input `src_nhwc` `TileTensor`.
 
         Args:
             src_nhwc: 4D NHWC input tensor of shape `(N, H, W, C)`.
@@ -587,12 +590,15 @@ struct TileLoaderLDSIm2col[
         self.rt_d_out = 0
         self.rt_spatial_dhw = 0
 
-    @always_inline
+    @inline(.always)
     def __init__[
         InLayout: TensorLayout,
+        InEngine: TensorEngine,
     ](
         out self,
-        src_nhwc: TileTensor[mut=False, Self.dtype, InLayout, _],
+        src_nhwc: TileTensor[
+            mut=False, Self.dtype, InLayout, _, Engine=InEngine
+        ],
         warp_id: Int,
         lane_id: Int,
         *,
@@ -609,6 +615,10 @@ struct TileLoaderLDSIm2col[
         / output spatial dims are runtime values (typically read from
         `input.dim()` / `output.dim()` by the launcher). Use when the
         graph compiler can't pin the resolution.
+
+        Parameters:
+            InLayout: `TensorLayout` of the input `src_nhwc` `TileTensor`.
+            InEngine: `TensorEngine` of the input `src_nhwc` `TileTensor`.
 
         Args:
             src_nhwc: 4D NHWC input tensor of shape `(N, H, W, C)`.
@@ -700,12 +710,15 @@ struct TileLoaderLDSIm2col[
         self.rt_d_out = 0
         self.rt_spatial_dhw = 0
 
-    @always_inline
+    @inline(.always)
     def __init__[
         InLayout: TensorLayout,
+        InEngine: TensorEngine,
     ](
         out self,
-        src_ndhwc: TileTensor[mut=False, Self.dtype, InLayout, _],
+        src_ndhwc: TileTensor[
+            mut=False, Self.dtype, InLayout, _, Engine=InEngine
+        ],
         warp_id: Int,
         lane_id: Int,
         *,
@@ -725,6 +738,10 @@ struct TileLoaderLDSIm2col[
         in addition to the spatial H/W ones. The K-decomposition and
         conv params (Q, R, S, stride_d, stride_h, stride_w, dilation_*,
         pad_*, C) stay comptime.
+
+        Parameters:
+            InLayout: `TensorLayout` of the input `src_ndhwc` `TileTensor`.
+            InEngine: `TensorEngine` of the input `src_ndhwc` `TileTensor`.
 
         Args:
             src_ndhwc: 5D NDHWC input tensor of shape `(N, D, H, W, C)`.
@@ -816,10 +833,10 @@ struct TileLoaderLDSIm2col[
         self.rt_d_out = runtime_d_out
         self.rt_spatial_dhw = runtime_d_out * runtime_h_out * runtime_w_out
 
-    @always_inline
+    @inline(.always)
     def load_tile(
         self,
-        dst: SMemTile[Self.dtype, _, _],
+        dst: SMemTile[Self.dtype, _, _, ...],
         m_offset: Int,
         k_offset: Int,
     ):
@@ -856,9 +873,7 @@ struct TileLoaderLDSIm2col[
                 multiple of `tile_cols`.
         """
         comptime SmemPtr = Pointer[
-            Scalar[Self.dtype],
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
         ]
 
         # Absolute GEMM coords for this call. Anchors default to 0, so

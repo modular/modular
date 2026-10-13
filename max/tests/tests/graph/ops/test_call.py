@@ -254,7 +254,7 @@ def test_call_with_prefix() -> None:
         assert call_results[0].type == input_type
         main_graph.output(call_results[0])
     assert re.search(
-        r"mo.call @subgraph.*\{prefix = \"prefix\"\}.*!mo.tensor<\[10\], f32",
+        r"mo.call @subgraph.*\[prefix = \"prefix\"\].*!mo.tensor<\[10\], f32",
         str(main_graph),
     )
 

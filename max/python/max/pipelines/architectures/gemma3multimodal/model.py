@@ -20,6 +20,7 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -36,6 +37,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 
 from .batch_processor import Gemma3MultiModalBatchProcessor
@@ -145,19 +147,22 @@ class Gemma3_MultiModalModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
@@ -176,7 +181,7 @@ class Gemma3_MultiModalModel(
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
         self._language_weights_dict = convert_safetensor_language_state_dict(
@@ -191,7 +196,7 @@ class Gemma3_MultiModalModel(
         self, state_dict: dict[str, Any]
     ) -> Gemma3ForConditionalGenerationConfig:
         model_config = Gemma3ForConditionalGenerationConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -303,15 +308,18 @@ class Gemma3_MultiModalModel(
             ]
             variadic_args = variadic_args[len(self.devices) :]
 
-            # Extract KV cache inputs
-            kv_cache = self._unflatten_kv_inputs(variadic_args)
+            # Extract KV cache inputs from the unified {sliding, global} tree.
+            kv_cache_local, kv_cache_global = (
+                self.kv_params.unflatten_basic_kv_tree(iter(variadic_args))
+            )
 
             outputs = language_model(
                 tokens=tokens.tensor,
                 signal_buffers=signal_buffers,
                 return_n_logits=return_n_logits.tensor,
                 input_row_offsets=input_row_offsets,
-                kv_collections=kv_cache,
+                sliding_kv_collections=kv_cache_local,
+                global_kv_collections=kv_cache_global,
                 image_embeddings=image_embeddings,
                 image_token_indices=image_token_indices,
             )
@@ -428,7 +436,7 @@ class Gemma3_MultiModalModel(
             *image_embeddings,
             *image_token_indices,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         if len(model_outputs) == 3:

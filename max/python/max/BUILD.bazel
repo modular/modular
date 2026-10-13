@@ -1,5 +1,5 @@
 load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
-load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "modular_pyo3_extension", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 package(default_visibility = ["//max:consumers"])
@@ -20,24 +20,22 @@ filegroup(
 
 modular_nanobind_extension(
     name = "_core.bindings",
-    srcs = ["//max/python/max/_core/internal:_core.cpp"],
+    srcs = ["//max/python/max/_core/mcl:_core.cpp"],
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [
         "//Support:BazelRunfiles",
         "//Support:NanobindUtils",
         "//Support:NixlPluginDir",
-        "//max/python/max/_core/internal:AsyncRTPython",
-        "//max/python/max/_core/internal/modules",
+        "//max/python/max/_core/mcl:AsyncRTPython",
+        "//max/python/max/_core/mcl/modules",
         "@llvm-project//llvm:Support",
     ],
 )
 
 modular_generate_stubfiles(
     name = "_core",
-    additional_update_targets = [
-        "//max/python/max/_mlir/_mlir_libs:_mlir.sync-stubfiles",
-    ] + select({
+    additional_update_targets = select({
         # nixl.pyi is diff-tested separately (linux-x86_64 only, see below); keep
         # it in the one-shot `./utils/sync-stubfiles.sh` update flow.
         "//:linux_x86_64": [":_core.sync-stubfiles.nixl"],
@@ -56,6 +54,18 @@ When you modify a .cpp file in the _core/src directory, you can run
 """,
     extension = ":_core.bindings",
     full_name = "max._core",
+    generated_pyi_srcs = [
+        "_core/dialects/builtin/__init__.pyi",
+        "_core/dialects/builtin/passes.pyi",
+        "_core/dialects/mo/__init__.pyi",
+        "_core/dialects/mo/passes.pyi",
+        "_core/dialects/rmo/__init__.pyi",
+        "_core/dialects/rmo/passes.pyi",
+        "_core/dialects/__init__.pyi",
+        "_core/dialects/mosh.pyi",
+        "_core/dialects/m.pyi",
+        "_core/dialects/kgen.pyi",
+    ],
     header = """
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
@@ -73,8 +83,11 @@ When you modify a .cpp file in the _core/src directory, you can run
 # ===----------------------------------------------------------------------=== #
 """,
     include_private = True,
-    pattern_file = "//max/python/max/_core/internal:patterns.nb",
-    pyi_srcs = glob(["**/*.pyi"]),
+    pattern_file = ":_core/patterns.nb",
+    pyi_srcs = glob(
+        ["**/*.pyi"],
+        exclude = ["_kv_core.pyi"],
+    ),
     deps = [
         "//max/python/max/_core_types",
         "//max/python/max/_mlir",
@@ -107,6 +120,23 @@ write_source_files(
     }),
 )
 
+# kv-core, the KV cache bookkeeping shared with Mach, built from closed Rust
+# sources like _core is from closed C++. Its stub is written by hand.
+modular_pyo3_extension(
+    name = "_kv_core.bindings",
+    srcs = ["//rust_kv/kv-core-pyo3:srcs"],
+    crate_name = "kv_core_pyo3",
+    module_name = "_kv_core",
+    deps = ["//rust_kv/kv-core"],
+)
+
+modular_py_library(
+    name = "_kv_core",
+    data = [":_kv_core.bindings"],
+    pyi_srcs = ["_kv_core.pyi"],
+    deps = [requirement("numpy")],
+)
+
 modular_py_library(
     name = "interpreter",
     srcs = [
@@ -114,6 +144,7 @@ modular_py_library(
     ],
     # _interpreter_ops is optional - Mojo kernels may not be available
     ignore_unresolved_imports = [
+        "._interpreter_ops.handlers._resolve_spec",
         "._interpreter_ops.lookup_handler",
     ],
     deps = [
@@ -134,6 +165,25 @@ modular_py_library(
 modular_py_library(
     name = "_eager_policy",
     srcs = ["_eager_policy.py"],
+)
+
+modular_py_library(
+    name = "tree",
+    srcs = ["tree.py"],
+    deps = [
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_library(
+    name = "_validation_hooks",
+    srcs = ["_validation_hooks.py"],
+    ignore_unresolved_imports = [
+        "max.driver.Device",
+        "max.engine.Model",
+        "max.experimental.tensor.Tensor",
+        "max.experimental.validation.EagerUsageValidator",
+    ],
 )
 
 alias(

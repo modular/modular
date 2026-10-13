@@ -25,9 +25,9 @@ def execute_gather_nd_test[
     indices_rank: Int,
     batch_dims: Int,
 ](
-    data_host_ptr: UnsafePointer[Scalar[data_type], _],
+    data_host_ptr: Pointer[Scalar[data_type], _],
     data_shape: IndexList[data_rank],
-    indices_host_ptr: UnsafePointer[Scalar[indices_type], _],
+    indices_host_ptr: Pointer[Scalar[indices_type], _],
     indices_shape: IndexList[indices_rank],
     ctx: DeviceContext,
 ) raises:
@@ -118,9 +118,7 @@ def test_gather_nd_oob(ctx: DeviceContext) raises:
     comptime indices_rank = 2
     var indices_shape = IndexList[indices_rank](2, 2)
     var indices_size = 4
-    var indices_host_ptr = ctx.enqueue_create_host_buffer[DType.int64](
-        indices_size
-    )
+    var indices_host_ptr = ctx.enqueue_create_host_buffer[.int64](indices_size)
     var indices_tensor = TileTensor(
         indices_host_ptr, row_major(Coord(indices_shape))
     )

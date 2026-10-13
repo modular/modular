@@ -21,14 +21,6 @@ Device mesh
 
    DeviceMesh
 
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   get_active_mesh
-   mesh_context
-
 Placements
 ----------
 
@@ -39,36 +31,11 @@ Placements
 
    Partial
    Placement
-   ReduceOp
    Replicated
    Sharded
-   Collective
+   Unknown
 
-Distributed types
------------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   DistributedTensorType
-   TensorLayout
-
-Per-op decisions
-----------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   Action
-   ActionSet
-   AxisAssignment
-   PerShard
-
-Pickers
+Layouts
 -------
 
 .. autosummary::
@@ -76,11 +43,60 @@ Pickers
    :toctree: generated
    :template: autosummary/class.rst
 
-   GreedyReshard
-   NoReshard
-   PartialsOnly
-   ReshardBehavior
-   Solver
+   BufferLayout
+   TensorLayout
+
+Tensor-to-mesh mappings
+-----------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   DeviceMapping
+   NamedMapping
+
+Sharding rules
+--------------
+
+A sharding rule returns the :class:`AxisAssignment` rows its op accepts;
+:class:`AxisAssignment` describes what a rule receives and returns. These
+functions build common rules and rows.
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   AxisAssignment
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   match_operand_placement
+   replicated_rows
+
+Resharding
+----------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   auto_reshard
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   ALL_TRANSITIONS
+   DEFAULT_TRANSITIONS
+   Transition
 
 Exceptions
 ----------
@@ -90,16 +106,5 @@ Exceptions
    :toctree: generated
    :template: autosummary/class.rst
 
+   ConversionError
    ShardingError
-
-Functions
----------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   build_action_set
-   force_replicated_action_set
-   mode

@@ -37,17 +37,16 @@ from std.math.uutils import ufloordiv
 from std.memory import unsafe_stack_allocation
 from std.utils.static_tuple import StaticTuple
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
-from std.gpu.primitives import warp
-
 from max.gpu import barrier
+from max.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
+from max.gpu.primitives import warp
 
 # ===-----------------------------------------------------------------------===#
 # Block Reduction Core
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _block_reduce_with_padding[
     dtype: DType,
     num_reductions: Int,
@@ -55,20 +54,25 @@ def _block_reduce_with_padding[
     *,
     n_warps: Int,
     padding: Int,
-    warp_reduce_fn: def[dtype: DType, width: SIMDLength, reduction_idx: Int](
-        SIMD[dtype, width]
-    ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
 ](
     vals: StaticTuple[Scalar[dtype], num_reductions],
     *,
     initial_vals: StaticTuple[Scalar[dtype], num_reductions],
     wid: Int,
+    warp_reduce_fn: Some[
+        TrivialRegisterPassable
+        & (
+            def[
+                dtype: DType, width: SIMDLength, reduction_idx: Int
+            ](SIMD[dtype, width]) -> Scalar[dtype]
+        )
+    ],
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
     comptime smem_stride = n_warps + padding
     # Add padding to avoid bank conflicts
     var shared_mem = unsafe_stack_allocation[
-        num_reductions * smem_stride, dtype, address_space=AddressSpace.SHARED
+        num_reductions * smem_stride, dtype, address_space=.SHARED
     ]()
 
     var lid = lane_id()
@@ -78,7 +82,7 @@ def _block_reduce_with_padding[
     comptime for i in range(num_reductions):
         warp_results[i] = warp_reduce_fn[reduction_idx=i](vals[i])
 
-    @always_inline
+    @inline(.always)
     def compute_offset(offset: Int) -> Int:
         """Computes the offset with the padding if needed."""
 
@@ -127,10 +131,14 @@ def _block_reduce_with_padding[
         comptime for i in range(num_reductions):
             warp_results[i] = shared_mem[unsafe_offset=i]
 
+    # Without this, a warp that starts the caller's next combine can overwrite
+    # the strip while a lagging warp still reads this one's results.
+    barrier()
+
     return warp_results
 
 
-@always_inline
+@inline(.always)
 def _block_reduce[
     dtype: DType,
     num_reductions: Int,
@@ -139,14 +147,19 @@ def _block_reduce[
     block_dim_y: Int = 1,
     block_dim_z: Int = 1,
     *,
-    warp_reduce_fn: def[dtype: DType, width: SIMDLength, reduction_idx: Int](
-        SIMD[dtype, width]
-    ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
 ](
     vals: StaticTuple[Scalar[dtype], num_reductions],
     *,
     initial_vals: StaticTuple[Scalar[dtype], num_reductions],
+    warp_reduce_fn: Some[
+        TrivialRegisterPassable
+        & (
+            def[
+                dtype: DType, width: SIMDLength, reduction_idx: Int
+            ](SIMD[dtype, width]) -> Scalar[dtype]
+        )
+    ],
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
     """Performs a generic block-level reduction operation.
 
@@ -166,9 +179,6 @@ def _block_reduce[
         block_dim_x: The number of threads along the X dimension.
         block_dim_y: The number of threads along the Y dimension (default: 1).
         block_dim_z: The number of threads along the Z dimension (default: 1).
-        warp_reduce_fn: A function that performs warp-level reduction. Receives
-            a compile-time `reduction_idx` parameter to select the reduction
-            operation.
         broadcast: If True, the final reduced values are broadcast to all
             threads in the block. If False, only the first thread will have the
             complete results.
@@ -176,6 +186,9 @@ def _block_reduce[
     Args:
         vals: The input values from each thread, one per reduction.
         initial_vals: The initial values for each reduction.
+        warp_reduce_fn: A function that performs warp-level reduction. Receives
+            a compile-time `reduction_idx` parameter to select the reduction
+            operation.
 
     Returns:
         A `StaticTuple` of reduced values. If broadcast is True, each thread
@@ -220,9 +233,13 @@ def _block_reduce[
         return _block_reduce_with_padding[
             n_warps=n_warps,
             padding=0,
-            warp_reduce_fn=warp_reduce_fn,
             broadcast=broadcast,
-        ](vals, initial_vals=initial_vals, wid=wid)
+        ](
+            vals,
+            initial_vals=initial_vals,
+            wid=wid,
+            warp_reduce_fn=warp_reduce_fn,
+        )
 
     # General case with bank conflict optimization
     # Add padding to avoid bank conflicts
@@ -230,12 +247,16 @@ def _block_reduce[
     return _block_reduce_with_padding[
         n_warps=n_warps,
         padding=padding,
-        warp_reduce_fn=warp_reduce_fn,
         broadcast=broadcast,
-    ](vals, initial_vals=initial_vals, wid=wid)
+    ](
+        vals,
+        initial_vals=initial_vals,
+        wid=wid,
+        warp_reduce_fn=warp_reduce_fn,
+    )
 
 
-@always_inline
+@inline(.always)
 def _block_reduce[
     dtype: DType,
     //,
@@ -274,8 +295,7 @@ def _block_reduce[
         the complete result.
     """
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def _indexed_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -285,11 +305,11 @@ def _block_reduce[
         block_dim_x,
         block_dim_y,
         block_dim_z,
-        warp_reduce_fn=_indexed_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Scalar[dtype], 1](val),
         initial_vals=StaticTuple[Scalar[dtype], 1](initial_val),
+        warp_reduce_fn=_indexed_fn,
     )[
         0
     ]
@@ -300,7 +320,7 @@ def _block_reduce[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def sum[
     dtype: DType,
     width: SIMDLength,
@@ -335,7 +355,7 @@ def sum[
     ](val.reduce_add(), initial_val=0)
 
 
-@always_inline
+@inline(.always)
 def sum[
     dtype: DType,
     width: SIMDLength,
@@ -383,7 +403,7 @@ def sum[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def max[
     dtype: DType,
     width: SIMDLength,
@@ -420,7 +440,7 @@ def max[
     ](val.reduce_max(), initial_val=Scalar[dtype].MIN_FINITE)
 
 
-@always_inline
+@inline(.always)
 def max[
     dtype: DType,
     width: SIMDLength,
@@ -470,7 +490,7 @@ def max[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def min[
     dtype: DType,
     width: SIMDLength,
@@ -506,7 +526,7 @@ def min[
     ](val.reduce_min(), initial_val=Scalar[dtype].MAX_FINITE)
 
 
-@always_inline
+@inline(.always)
 def min[
     dtype: DType,
     width: SIMDLength,
@@ -555,7 +575,7 @@ def min[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def broadcast[
     dtype: DType, width: SIMDLength, //, *, block_size: Int
 ](val: SIMD[dtype, width], src_thread: Int = 0) -> SIMD[dtype, width]:
@@ -591,7 +611,7 @@ def broadcast[
 
     # Multi-warp block - use shared memory
     var shared_mem = unsafe_stack_allocation[
-        width, dtype, address_space=AddressSpace.SHARED
+        width, dtype, address_space=.SHARED
     ]()
 
     # Source thread writes its value to shared memory
@@ -604,7 +624,7 @@ def broadcast[
     return shared_mem.unsafe_load[width=width]()
 
 
-@always_inline
+@inline(.always)
 def broadcast[
     dtype: DType,
     width: SIMDLength,
@@ -647,7 +667,7 @@ def broadcast[
         return warp.broadcast(val)
 
     var shared_mem = unsafe_stack_allocation[
-        width, dtype, address_space=AddressSpace.SHARED
+        width, dtype, address_space=.SHARED
     ]()
 
     var linear_tid = (
@@ -659,8 +679,10 @@ def broadcast[
         shared_mem.unsafe_store(val)
 
     barrier()
+    var ret = shared_mem.unsafe_load[width=width]()
+    barrier()
 
-    return shared_mem.unsafe_load[width=width]()
+    return ret
 
 
 # ===-----------------------------------------------------------------------===#
@@ -668,7 +690,7 @@ def broadcast[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _prefix_sum[
     dtype: DType,
     //,
@@ -685,7 +707,7 @@ def _prefix_sum[
     # We need one slot per warp to store warp-level scan results
     comptime n_warps = block_size // WARP_SIZE
     var warp_mem = unsafe_stack_allocation[
-        align_up(n_warps, WARP_SIZE), dtype, address_space=AddressSpace.SHARED
+        align_up(n_warps, WARP_SIZE), dtype, address_space=.SHARED
     ]()
 
     var thread_result = warp.prefix_sum[exclusive=exclusive](val)
@@ -718,10 +740,14 @@ def _prefix_sum[
     if wid > 0:
         thread_result += warp_mem[unsafe_offset=wid - 1]
 
+    # Without this, a warp that starts the caller's next scan can overwrite
+    # `warp_mem` while a lagging warp still reads this one's prefixes.
+    barrier()
+
     return thread_result
 
 
-@always_inline
+@inline(.always)
 def prefix_sum[
     dtype: DType,
     //,
@@ -752,7 +778,7 @@ def prefix_sum[
     )
 
 
-@always_inline
+@inline(.always)
 def prefix_sum[
     dtype: DType,
     //,

@@ -21,6 +21,7 @@ from max.experimental.nn import Linear
 from max.experimental.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_finalize,
 )
 from max.experimental.nn.common_layers.moe import MoEGate
 from max.experimental.nn.module import Module
@@ -91,7 +92,6 @@ class GptOssMoE(Module[[Tensor], Tensor]):
         self.hidden_dim = config.hidden_size
         self.num_experts = config.num_local_experts
         self.num_experts_per_token = config.num_experts_per_tok
-        self.apply_router_weight_first = False
         self.gate = GptOssMoEGate(
             hidden_dim=config.hidden_size,
             num_experts=config.num_local_experts,
@@ -160,7 +160,6 @@ class GptOssMoE(Module[[Tensor], Tensor]):
         Returns:
             (seq_len, hidden_dim)
         """
-        seq_len = x.shape[0]
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
@@ -185,11 +184,6 @@ class GptOssMoE(Module[[Tensor], Tensor]):
             ),
             axis=0,
         )
-
-        if self.apply_router_weight_first:
-            permutated_states = permutated_states * F.gather(
-                router_weight.reshape([-1, 1]), token_expert_order, axis=0
-            ).cast(x.dtype)
 
         # Apply gate_up projection with bias
         gate_up_output = grouped_matmul_ragged(
@@ -238,21 +232,6 @@ class GptOssMoE(Module[[Tensor], Tensor]):
 
         down_output = down_output + down_bias_per_token
 
-        # Reshape and apply routing weights
-        down_output = F.gather(
-            down_output, restore_token_order, axis=0
-        ).reshape([seq_len, self.num_experts_per_token, -1])
-
-        if not self.apply_router_weight_first:
-            # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-            routed_expert_out = F.unsqueeze(router_weight, axis=1) @ down_output
-            routed_expert_out = F.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
-            )
-        else:
-            routed_expert_out = down_output.transpose(1, 2)
-            routed_expert_out = F.squeeze(
-                F.sum(routed_expert_out, axis=2), axis=2
-            ).cast(x.dtype)
-
-        return routed_expert_out
+        return moe_finalize(
+            down_output, restore_token_order, router_weight, x.dtype
+        )

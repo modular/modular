@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from max.pipelines.lib import MemoryPlan
 from max.pipelines.lib.config.model_config import _format_config_entries
 from max.pipelines.lib.registry import PIPELINE_REGISTRY, get_pipeline_for_task
 from max.pipelines.modeling.types.task import PipelineTask
@@ -36,20 +37,20 @@ __all__ = ["log_basic_config", "log_pipeline_info"]
 _logger = logging.getLogger("max.pipelines")
 
 
-def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
+def log_pipeline_info(
+    pipeline_config: PipelineConfig, *, memory_plan: MemoryPlan
+) -> None:
     """Logs comprehensive pipeline and KVCache configuration information.
 
     Args:
         pipeline_config: The resolved pipeline configuration to log.
+        memory_plan: The memory plan the pipeline was sized against.
 
     Raises:
         ValueError: If no architecture is found for the model. This should not
             happen after config resolution.
     """
-    arch = PIPELINE_REGISTRY.retrieve_architecture(
-        architecture_name=pipeline_config.models.main_architecture_name,
-        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-    )
+    arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
 
     if arch is None:
         raise ValueError(
@@ -74,9 +75,7 @@ def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
     pipeline_config.models.log_model_info()
     pipeline_entries: list[tuple[str, Any]] = []
     if "main" in pipeline_config.models:
-        pipeline_entries.append(
-            ("max_seq_len", pipeline_config.model.max_length)
-        )
+        pipeline_entries.append(("max_seq_len", memory_plan.planned_max_length))
     pipeline_entries.extend(
         [
             ("chunked_prefill", pipeline_config.runtime.enable_chunked_prefill),
@@ -87,6 +86,10 @@ def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
             (
                 "in_flight_batching",
                 pipeline_config.runtime.enable_in_flight_batching,
+            ),
+            (
+                "spec_decode_mixed_batches",
+                pipeline_config.runtime.enable_spec_decode_mixed_batches,
             ),
         ]
     )
@@ -104,24 +107,9 @@ def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
         cache_entries: list[tuple[str, Any]] = [
             ("first_block_caching", cache.first_block_caching),
             ("taylorseer", cache.taylorseer),
-            (
-                "taylorseer_cache_interval",
-                cache.taylorseer_cache_interval
-                if cache.taylorseer_cache_interval is not None
-                else "model-default",
-            ),
-            (
-                "taylorseer_warmup_steps",
-                cache.taylorseer_warmup_steps
-                if cache.taylorseer_warmup_steps is not None
-                else "model-default",
-            ),
-            (
-                "taylorseer_max_order",
-                cache.taylorseer_max_order
-                if cache.taylorseer_max_order is not None
-                else "model-default",
-            ),
+            ("taylorseer_cache_interval", cache.taylorseer_cache_interval),
+            ("taylorseer_warmup_steps", cache.taylorseer_warmup_steps),
+            ("taylorseer_max_order", cache.taylorseer_max_order),
         ]
 
         _logger.info("Denoising Cache")
@@ -131,7 +119,9 @@ def log_pipeline_info(pipeline_config: PipelineConfig) -> None:
         _logger.info("")
 
 
-def log_basic_config(pipeline_config: PipelineConfig) -> None:
+def log_basic_config(
+    pipeline_config: PipelineConfig, *, memory_plan: MemoryPlan
+) -> None:
     """Logs minimal pipeline configuration information.
 
     Logs basic pipeline options including model name, pipeline task,
@@ -139,15 +129,13 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
 
     Args:
         pipeline_config: The resolved pipeline configuration to log.
+        memory_plan: The memory plan the pipeline was sized against.
 
     Raises:
         ValueError: If no architecture is found for the model. This should not
             happen after config resolution.
     """
-    arch = PIPELINE_REGISTRY.retrieve_architecture(
-        architecture_name=pipeline_config.models.main_architecture_name,
-        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
-    )
+    arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
 
     if arch is None:
         model_path = (
@@ -175,7 +163,7 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
         config_entries.extend(
             [
                 ("model", pipeline_config.model.model_path),
-                ("max_seq_len", pipeline_config.model.max_length),
+                ("max_seq_len", memory_plan.planned_max_length),
             ]
         )
 
@@ -183,26 +171,27 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
         ("device_graph_capture", pipeline_config.runtime.device_graph_capture)
     )
 
+    if pipeline_config.runtime.experimental_device_graph_synthesis:
+        config_entries.append(("experimental_device_graph_synthesis", True))
+
     if pipeline_config.speculative is not None:
+        spec = pipeline_config.speculative
+        config_entries.append(("speculative_method", spec.speculative_method))
         config_entries.append(
-            (
-                "speculative_method",
-                pipeline_config.speculative.speculative_method,
-            )
+            ("num_speculative_tokens", spec.num_speculative_tokens)
+        )
+        config_entries.append(("draft_proposal", spec.draft_proposal))
+        # The two fields AcceptanceSampler dispatches on, so the acceptance
+        # rule a run used is attributable after the fact.
+        config_entries.append(
+            ("synthetic_acceptance_rate", spec.synthetic_acceptance_rate)
         )
         config_entries.append(
-            (
-                "num_speculative_tokens",
-                pipeline_config.speculative.num_speculative_tokens,
-            )
+            ("use_greedy_acceptance", spec.use_greedy_acceptance)
         )
-        if pipeline_config.speculative.use_relaxed_acceptance_for_thinking:
-            config_entries.append(
-                ("relaxed_topk", pipeline_config.speculative.relaxed_topk)
-            )
-            config_entries.append(
-                ("relaxed_delta", pipeline_config.speculative.relaxed_delta)
-            )
+        if spec.use_relaxed_acceptance_for_thinking:
+            config_entries.append(("relaxed_topk", spec.relaxed_topk))
+            config_entries.append(("relaxed_delta", spec.relaxed_delta))
 
     _logger.info("")
     _logger.info("=" * 60)

@@ -18,10 +18,11 @@ If the vertex was visited in the previous level, it pushes updates to all
 its unvisited neighbors.
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.collections import List
+from std.math import ceildiv
 
 from graph_utils import (
     UNVISITED,
@@ -95,10 +96,10 @@ def main() raises:
     h_level[start_vertex] = 0
 
     # Allocate device memory
-    var d_src_ptrs = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES + 1)
-    var d_dst = ctx.enqueue_create_buffer[DType.uint32](num_edges)
-    var d_level = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES)
-    var d_new_vertex_visited = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_src_ptrs = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES + 1)
+    var d_dst = ctx.enqueue_create_buffer[.uint32](num_edges)
+    var d_level = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES)
+    var d_new_vertex_visited = ctx.enqueue_create_buffer[.uint32](1)
 
     # Copy graph to device
     var h_src_ptrs = alloc[UInt32](NUM_VERTICES + 1)
@@ -114,7 +115,7 @@ def main() raises:
 
     # BFS iteration
     var curr_level: UInt32 = 1
-    var grid_size = (NUM_VERTICES + BLOCK_SIZE - 1) // BLOCK_SIZE
+    var grid_size = ceildiv(NUM_VERTICES, BLOCK_SIZE)
 
     print("Running BFS...")
     while True:

@@ -17,22 +17,20 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from typing import Any, Generic, Literal, Protocol, TypeVar, overload
+from dataclasses import dataclass
+from typing import Any, Generic, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
 from max._core_mojo import block_hasher, block_hasher_sha256
+from max._kv_core import InsufficientBlocksError as InsufficientBlocksError
+from max._kv_core import LittleKVCacheBlock as LittleKVCacheBlock
 from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.pipelines.context import TokenHashOverride
 from max.profiler import traced
 from typing_extensions import Self
 
-__all__ = ["KVHashAlgo"]
-
-
-class InsufficientBlocksError(Exception):
-    """Exception raised when there are insufficient free blocks to satisfy an allocation."""
+__all__ = ["InsufficientBlocksError", "KVHashAlgo", "LittleKVCacheBlock"]
 
 
 DEFAULT_PARENT_HASH: bytes = b"\x00" * 8
@@ -52,7 +50,7 @@ def _make_root_parent_hash(seed: bytes | None, salt: str | None) -> bytes:
     for benchmark workloads). An empty-string salt is treated the same as
     no salt at all, not as its own distinct salt value.
 
-    Shared by both hash families: for `sha256`/`sha256_64` this is the
+    Shared by both hash families: for `sha256` this is the
     32-byte root parent hash for the SHA-256 chain; for `ahash64` these
     same 32 bytes are reinterpreted as the `AHasher` seed.
     """
@@ -68,78 +66,6 @@ def _make_root_parent_hash(seed: bytes | None, salt: str | None) -> bytes:
     return bytes(b ^ s for b, s in zip(base, salt_digest, strict=False))
 
 
-def _truncate_to_signed64(digest: bytes) -> int:
-    """Reduce a 32-byte SHA-256 digest to a signed 64-bit Python int.
-
-    Takes the first 8 bytes interpreted big-endian. Converts to a signed
-    int (high bit becomes negative), matching the existing
-    `mojo_block_hasher` behaviour.
-    """
-    n = int.from_bytes(digest[:8], "big", signed=False)
-    if n >= 1 << 63:
-        n -= 1 << 64
-    return n
-
-
-# ahash64 overload returning bytes
-@overload
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: bytes | None = ...,
-    prefix_length: int = ...,
-    token_hash_overrides: list[TokenHashOverride] | None = ...,
-    *,
-    algo: Literal["ahash64"] = ...,
-    seed: bytes | None = ...,
-    salt: str | None = ...,
-) -> list[bytes]: ...
-
-
-# sha256_64 overload returning bytes
-@overload
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: bytes | None = ...,
-    prefix_length: int = ...,
-    token_hash_overrides: list[TokenHashOverride] | None = ...,
-    *,
-    algo: Literal["sha256_64"],
-    seed: bytes | None = ...,
-    salt: str | None = ...,
-) -> list[bytes]: ...
-
-
-# sha256 overload returning bytes
-@overload
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: bytes | None = ...,
-    prefix_length: int = ...,
-    token_hash_overrides: list[TokenHashOverride] | None = ...,
-    *,
-    algo: Literal["sha256"],
-    seed: bytes | None = ...,
-    salt: str | None = ...,
-) -> list[bytes]: ...
-
-
-@overload
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: bytes | None = ...,
-    prefix_length: int = ...,
-    token_hash_overrides: list[TokenHashOverride] | None = ...,
-    *,
-    algo: KVHashAlgo,
-    seed: bytes | None = ...,
-    salt: str | None = ...,
-) -> list[bytes]: ...
-
-
 @traced
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
@@ -151,7 +77,7 @@ def hash_request_tokens(
     algo: KVHashAlgo = "ahash64",
     seed: bytes | None = None,
     salt: str | None = None,
-) -> list[bytes] | None:
+) -> list[bytes]:
     """Hash the tokens of a request using the Mojo implementation.
 
     Token hash overrides let callers replace one placeholder token per media
@@ -159,7 +85,7 @@ def hash_request_tokens(
 
     This method should leave the contents of the array unchanged on return.
 
-    `seed`/`salt` apply to all three algos: for `sha256`/`sha256_64` they
+    `seed`/`salt` apply to both algos: for `sha256` they
     combine into the 256-bit chain root (a cryptographic guarantee); for
     `ahash64` they seed AHash's runtime keyed state (fast, non-cryptographic
     -- best-effort collision resistance, not a cryptographic guarantee).
@@ -201,29 +127,23 @@ def hash_request_tokens(
             else:
                 hash_vals = block_hasher(token_ids, block_size, ph_bytes_ahash)
 
-        elif algo in ("sha256", "sha256_64"):
+        elif algo == "sha256":
             if parent_hash is None:
                 ph_bytes = _make_root_parent_hash(seed, salt)
             elif isinstance(parent_hash, bytes):
                 if len(parent_hash) != 32:
                     raise ValueError(
-                        f"algo={algo} requires 32-byte parent_hash, got"
+                        f"algo={algo} requires 32-byte parent_hash, got "
                         f"{len(parent_hash)}"
                     )
                 ph_bytes = parent_hash
             else:
                 raise TypeError(
-                    "algo=sha256/sha256_64 requires bytes parent_hash, got"
+                    "algo=sha256 requires bytes parent_hash, got "
                     f"{type(parent_hash).__name__}"
                 )
 
-            full_digests: list[bytes] = block_hasher_sha256(
-                token_ids, block_size, ph_bytes
-            )
-            if algo == "sha256":
-                hash_vals = full_digests
-            else:
-                hash_vals = [d[:8] for d in full_digests]
+            hash_vals = block_hasher_sha256(token_ids, block_size, ph_bytes)
         else:
             raise ValueError(f"unknown algo={algo}")
 
@@ -270,54 +190,6 @@ class KVCacheBlock:
         return f"KVCacheBlock(bid={self.bid}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash!r})"
 
 
-@dataclass
-class HugeKVCacheBlock:
-    bid: int
-    little_blocks: dict[str, Sequence[LittleKVCacheBlock]] = field(
-        default_factory=dict
-    )
-    little_block_type: str | None = None
-
-    # Used to construct a doubly linked list for free blocks.
-    # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
-    prev_free_block: HugeKVCacheBlock | None = None
-    next_free_block: HugeKVCacheBlock | None = None
-
-    @property
-    def ref_cnt(self) -> int:
-        if self.little_block_type is None:
-            return 0
-        else:
-            return sum(
-                block.ref_cnt
-                for block in self.little_blocks[self.little_block_type]
-            )
-
-
-@dataclass
-class LittleKVCacheBlock:
-    # Block ID, ranging from 0 to total_num_blocks - 1. It is also this block's
-    # page index into its cache's view of the pool buffer: the little blocks of
-    # huge block ``h`` are ``[h * ratio, (h + 1) * ratio)``.
-    bid: int
-    cache_id: str
-    # The huge block whose bytes this block occupies. It backs this block only
-    # while its ``little_block_type`` is this block's ``cache_id``.
-    huge_block: HugeKVCacheBlock
-    # Reference count.
-    ref_cnt: int = 0
-    # The hash of the block composed of (block hash, tuple of token IDs).
-    # It is only available when the block is full.
-    block_hash: bytes | None = None
-    # Whether the block is the null block.
-    is_null: bool = False
-
-    # Used to construct a doubly linked list for free blocks.
-    # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
-    prev_free_block: LittleKVCacheBlock | None = None
-    next_free_block: LittleKVCacheBlock | None = None
-
-
 BlockT = TypeVar("BlockT", bound=FreeListNode)
 
 
@@ -347,7 +219,7 @@ class _FreeKVCacheBlockQueue(Generic[BlockT]):
 
     def __init__(self, blocks: Sequence[BlockT] = ()) -> None:
         self.num_free_blocks = len(blocks)
-        self.free_blocks = set(block.bid for block in blocks)
+        self.free_blocks = {block.bid for block in blocks}
 
         # Initialize the doubly linked list of free blocks.
         self.free_list_head: BlockT | None = blocks[0] if blocks else None
@@ -422,7 +294,27 @@ class _FreeKVCacheBlockQueue(Generic[BlockT]):
         self.num_free_blocks += 1
         self.free_blocks.add(block.bid)
 
+    def appendleft(self, block: BlockT) -> None:
+        """Puts a block back at the head, so it is popped before older entries.
+
+        Args:
+            block: The block to append.
+        """
+        if self.free_list_head is not None:
+            self.free_list_head.prev_free_block = block
+            block.next_free_block = self.free_list_head
+            self.free_list_head = block
+        else:
+            assert self.free_list_tail is None
+            self.free_list_head = self.free_list_tail = block
+
+        block.prev_free_block = None
+        self.num_free_blocks += 1
+        self.free_blocks.add(block.bid)
+
+    def peek_front(self) -> BlockT | None:
+        """Returns the least-recently-used free block without removing it."""
+        return self.free_list_head
+
 
 FreeKVCacheBlockQueue = _FreeKVCacheBlockQueue[KVCacheBlock]
-FreeHugeKVCacheBlockQueue = _FreeKVCacheBlockQueue[HugeKVCacheBlock]
-FreeLittleKVCacheBlockQueue = _FreeKVCacheBlockQueue[LittleKVCacheBlock]

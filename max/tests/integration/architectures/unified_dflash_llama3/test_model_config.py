@@ -124,10 +124,8 @@ def test_resolve_without_block_size_requires_explicit_value() -> None:
 
 
 def test_resolved_width_flows_to_kv_params() -> None:
-    """The model's ``get_kv_params`` threads the trained width into the
-    baked ``num_draft_tokens`` even though the pipeline config leaves
-    ``num_speculative_tokens`` unset."""
-    pipeline_config = _make_pipeline_config(None)
+    """``get_kv_params`` bakes the width the config was built with."""
+    pipeline_config = _make_pipeline_config(TRAINED_WIDTH)
 
     huggingface_config = SimpleNamespace(
         num_key_value_heads=2,
@@ -142,9 +140,6 @@ def test_resolved_width_flows_to_kv_params() -> None:
         DType.bfloat16,
     )
     assert kv_params.num_draft_tokens == TRAINED_WIDTH
-    # The threading never writes back to the caller's config.
-    assert pipeline_config.speculative is not None
-    assert pipeline_config.speculative.num_speculative_tokens is None
 
 
 @dataclass

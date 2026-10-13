@@ -26,15 +26,15 @@ def test_cumsum_1d():
     comptime reverse = False
     comptime axis = 0
 
-    var matrix_stack = Array[Float64, 5](uninitialized=True)
+    var matrix_stack = Array[Float64, 5](fill={})
     var matrix = TileTensor(matrix_stack, row_major[5]())
 
     iota(matrix._storage, 5, 1)
 
-    var cumsum_stack = Array[Float64, 5](uninitialized=True)
+    var cumsum_stack = Array[Float64, 5](fill={})
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(5):
         print(cumsum_matrix[i], ",", end="")
@@ -50,27 +50,23 @@ def test_cumsum_1d_precision():
     comptime axis = 0
     comptime size = 1024
 
-    var f32_stack = Array[Float32, size](uninitialized=True)
+    var f32_stack = Array[Float32, size](fill=1.1)
     var f32_matrix = TileTensor(f32_stack, row_major[size]())
-    for i in range(size):
-        f32_stack[i] = 1.1
 
-    var f64_stack = Array[Float64, size](uninitialized=True)
+    var f64_stack = Array[Float64, size](fill=1.1)
     var f64_matrix = TileTensor(f64_stack, row_major[size]())
-    for i in range(size):
-        f64_stack[i] = 1.1
 
-    var cumsum_f32_stack = Array[Float32, size](uninitialized=True)
+    var cumsum_f32_stack = Array[Float32, size](fill={})
     var cumsum_f32 = TileTensor(cumsum_f32_stack, row_major[size]())
-    var cumsum_f64_stack = Array[Float64, size](uninitialized=True)
+    var cumsum_f64_stack = Array[Float64, size](fill={})
     var cumsum_f64 = TileTensor(cumsum_f64_stack, row_major[size]())
 
-    cumsum[DType.float32, exclusive, reverse, axis=axis](cumsum_f32, f32_matrix)
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_f64, f64_matrix)
+    cumsum[.float32, exclusive, reverse, axis=axis](cumsum_f32, f32_matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_f64, f64_matrix)
 
     var passed = True
     for i in range(size):
-        var f64_cast = cumsum_f64[i].cast[DType.float32]()
+        var f64_cast = cumsum_f64[i].cast[.float32]()
         if not isclose(cumsum_f32[i], f64_cast, atol=1e-6, rtol=1e-6):
             passed = False
             break
@@ -86,15 +82,15 @@ def test_cumsum_1d_exclusive():
     comptime reverse = False
     comptime axis = 0
 
-    var matrix_stack = Array[Float64, 5](uninitialized=True)
+    var matrix_stack = Array[Float64, 5](fill={})
     var matrix = TileTensor(matrix_stack, row_major[5]())
 
     iota(matrix._storage, 5, 1)
 
-    var cumsum_stack = Array[Float64, 5](uninitialized=True)
+    var cumsum_stack = Array[Float64, 5](fill={})
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(5):
         print(cumsum_matrix[i], ",", end="")
@@ -109,15 +105,15 @@ def test_cumsum_1d_reverse():
     comptime reverse = True
     comptime axis = 0
 
-    var matrix_stack = Array[Float64, 5](uninitialized=True)
+    var matrix_stack = Array[Float64, 5](fill={})
     var matrix = TileTensor(matrix_stack, row_major[5]())
 
     iota(matrix._storage, 5, 1)
 
-    var cumsum_stack = Array[Float64, 5](uninitialized=True)
+    var cumsum_stack = Array[Float64, 5](fill={})
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(5):
         print(cumsum_matrix[i], ",", end="")
@@ -132,15 +128,15 @@ def test_cumsum_1d_reverse_exclusive():
     comptime reverse = True
     comptime axis = 0
 
-    var matrix_stack = Array[Float64, 5](uninitialized=True)
+    var matrix_stack = Array[Float64, 5](fill={})
     var matrix = TileTensor(matrix_stack, row_major[5]())
 
     iota(matrix._storage, 5, 1)
 
-    var cumsum_stack = Array[Float64, 5](uninitialized=True)
+    var cumsum_stack = Array[Float64, 5](fill={})
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[5]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(5):
         print(cumsum_matrix[i], ",", end="")
@@ -155,15 +151,15 @@ def test_cumsum_2d_axis_0():
     comptime reverse = False
     comptime axis = 0
 
-    var matrix_stack = Array[Float64, 6](uninitialized=True)
+    var matrix_stack = Array[Float64, 6](fill={})
     var matrix = TileTensor(matrix_stack, row_major[2, 3]())
 
     iota(matrix._storage, 6, 1)
 
-    var cumsum_stack = Array[Float64, 6](uninitialized=True)
+    var cumsum_stack = Array[Float64, 6](fill={})
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(2):
         for j in range(3):
@@ -179,15 +175,15 @@ def test_cumsum_2d_axis_1():
     comptime reverse = False
     comptime axis = 1
 
-    var matrix_stack = Array[Float64, 6](uninitialized=True)
+    var matrix_stack = Array[Float64, 6](fill={})
     var matrix = TileTensor(matrix_stack, row_major[2, 3]())
 
     iota(matrix._storage, 6, 1)
 
-    var cumsum_stack = Array[Float64, 6](uninitialized=True)
+    var cumsum_stack = Array[Float64, 6](fill={})
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(2):
         for j in range(3):
@@ -203,15 +199,15 @@ def test_cumsum_2d_negative_axis():
     comptime reverse = False
     comptime axis = -1
 
-    var matrix_stack = Array[Float64, 6](uninitialized=True)
+    var matrix_stack = Array[Float64, 6](fill={})
     var matrix = TileTensor(matrix_stack, row_major[2, 3]())
 
     iota(matrix._storage, 6, 1)
 
-    var cumsum_stack = Array[Float64, 6](uninitialized=True)
+    var cumsum_stack = Array[Float64, 6](fill={})
     var cumsum_matrix = TileTensor(cumsum_stack, row_major[2, 3]())
 
-    cumsum[DType.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
+    cumsum[.float64, exclusive, reverse, axis=axis](cumsum_matrix, matrix)
 
     for i in range(2):
         for j in range(3):

@@ -1031,12 +1031,15 @@ def test_xgrammar_string_maxlength_rejects_overlong() -> None:
     assert not _accepts(matcher, '<|tool_call>call:f{s:<|"|>abcd')
 
 
-def _compile_grammar(tools: list[dict[str, Any]]) -> str:
+def _compile_grammar(
+    tools: list[dict[str, Any]], reject_unsupported: bool = False
+) -> str:
     """Build and return the Gemma4 tool-call grammar string for the given tools."""
     return Gemma4ToolParser.generate_tool_call_grammar(
         tools=tools,
         backend="xgrammar",
         tool_choice="required",
+        reject_unsupported=reject_unsupported,
     )
 
 
@@ -1084,7 +1087,8 @@ def test_non_object_root_oneof_raises() -> None:
                     ]
                 }
             }
-        )
+        ),
+        reject_unsupported=True,
     )
     with pytest.raises(Exception):
         _compile_structural_tag(grammar)
@@ -1130,7 +1134,8 @@ def test_unsupported_keyword_multipleof_raises() -> None:
                     "properties": {"n": {"type": "integer", "multipleOf": 2}},
                 }
             }
-        )
+        ),
+        reject_unsupported=True,
     )
     with pytest.raises(Exception):
         _compile_structural_tag(grammar)

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -38,15 +38,15 @@ def scan_kernel(
     # Allocate shared memory
     var buffer_s = unsafe_stack_allocation[
         SEG_SIZE,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     var tx = thread_idx.x
     var idx = block_idx.x * SEG_SIZE + tx
 
     # Read everything into shared buffer
-    buffer_s[tx] = Scalar[DType.float32](input[idx])
+    buffer_s[tx] = Float32(input[idx])
     barrier()
 
     # Kogge-Stone scan
@@ -58,7 +58,7 @@ def scan_kernel(
 
         if tx + stride < SEG_SIZE:
             # Add it to buffer position
-            buffer_s[tx + stride] = Scalar[DType.float32](
+            buffer_s[tx + stride] = Float32(
                 Float32(buffer_s[tx + stride]) + curr
             )
         barrier()

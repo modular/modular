@@ -13,10 +13,10 @@
 
 from std.math import ceildiv, iota
 
-from std.gpu import global_idx
-from std.gpu.primitives import warp
+from max.gpu import global_idx
+from max.gpu.primitives import warp
 from max.gpu.primitives import block
-from std.gpu.globals import WARP_SIZE
+from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
@@ -26,8 +26,8 @@ comptime dtype = DType.uint64
 def warp_sum_kernel[
     dtype: DType,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -81,8 +81,8 @@ def block_sum_kernel[
     dtype: DType,
     block_size: Int,
 ](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)

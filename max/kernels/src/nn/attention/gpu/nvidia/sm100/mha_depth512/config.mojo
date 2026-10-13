@@ -28,7 +28,7 @@ K and V are extensively sub-staged to fit in SMEM:
 from std.math import align_down
 from std.sys import size_of
 from std.bit import prev_power_of_two
-from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from max.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 
@@ -175,7 +175,7 @@ struct Depth512SM100Config[
         self.tmem_used = self.TMEM_S_odd + s_cols
 
         # SMEM budget
-        var smem_use = size_of[UInt32]()  # tmem_addr
+        var smem_use = 0
 
         # Q: BM rows × full depth
         var q_bytes = self.BM * qk_depth * Self.qkv_dtype_size
@@ -207,7 +207,7 @@ struct Depth512SM100Config[
 
         self.smem_used = smem_use
 
-    @always_inline
+    @inline(.always)
     def BM_eff(self) -> Int:
         """Number of distinct sequence positions per CTA tile.
 
@@ -218,23 +218,23 @@ struct Depth512SM100Config[
             return self.BM // self.group
         return self.BM
 
-    @always_inline
+    @inline(.always)
     def rope_depth(self) -> Int:
         return self.qk_depth - self.ov_depth
 
-    @always_inline
+    @inline(.always)
     def num_q(self) -> Int:
         return 1
 
-    @always_inline
+    @inline(.always)
     def correction_smem_elements(self) -> Int:
         return self.BM
 
-    @always_inline
+    @inline(.always)
     def num_active_warps_per_group(self) -> Int:
         return 4
 
-    @always_inline
+    @inline(.always)
     def num_active_threads_per_group(self) -> Int:
         return WARP_SIZE * self.num_active_warps_per_group()
 

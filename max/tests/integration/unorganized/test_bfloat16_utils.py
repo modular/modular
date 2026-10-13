@@ -59,6 +59,25 @@ def test_nan() -> None:
     assert np.isnan(reconstructed[0])
 
 
+@pytest.mark.parametrize(
+    "float32_bits", [0x7F800001, 0xFF800001, 0x7FFFFFFF, 0xFFFFFFFF]
+)
+def test_nan_payloads_survive_narrowing(float32_bits: int) -> None:
+    """Every NaN encoding should stay NaN, not just the canonical ``np.nan``.
+
+    A NaN's exponent is already saturated, so rounding used to carry into it
+    and yield a finite value: these four narrowed to +inf, -inf, -0.0 and
+    +0.0 respectively.
+    """
+    values = np.array([float32_bits], dtype=np.uint32).view(np.float32)
+    assert np.isnan(values[0]), "test input must be a NaN encoding"
+
+    reconstructed = uint16_to_float32(float32_to_bfloat16_as_uint16(values))
+
+    assert np.isnan(reconstructed[0])
+    assert np.signbit(reconstructed[0]) == np.signbit(values[0])
+
+
 def test_precision_within_tolerance() -> None:
     """Inexact values should be within bfloat16's max rounding error.
 

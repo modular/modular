@@ -13,7 +13,8 @@
 """MPNet sentence transformer architecture for embeddings generation."""
 
 from .arch import mpnet_modulev3_arch
-from .model import MPNetInputs, MPNetPipelineModel
+from .inputs import MPNetInputs
+from .model import MPNetPipelineModel
 from .model_config import MPNetConfig
 
 __all__ = [

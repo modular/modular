@@ -42,19 +42,15 @@
 #       Generate + run a batch in-process (standalone convenience).
 
 from std.math import align_up, ceildiv, max, min
-from std.random import rand, randn, random_ui64, seed
+from std.random import randn, random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from std.utils.index import IndexList
@@ -342,7 +338,7 @@ def run_one_case(
             cur_page += 1
 
     # --- cache_lengths + lookup table ---------------------------------------
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](
         max(1, batch_size)
     )
     for i in range(batch_size):
@@ -358,9 +354,7 @@ def run_one_case(
         ceildiv(max_num_keys_any_batch, PAGE_SIZE), 8
     )
     var lut_size = max(1, batch_size * max_pages_per_batch)
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -377,7 +371,7 @@ def run_one_case(
     var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
     fill_stable(q_host.as_span(), spec.dist)
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     row_offsets_host[0] = UInt32(0)
@@ -389,61 +383,58 @@ def run_one_case(
     # --- copy to device ------------------------------------------------------
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](
         max(1, batch_size)
     )
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
     ctx.enqueue_copy(q_device, q_host)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
     ctx.synchronize()
 
     # --- PagedKVCacheCollection ---------------------------------------------
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(block_shape[0])
+    blocks_shape[2] = Int64(block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        block_shape[1]
+        * block_shape[2]
+        * block_shape[3]
+        * block_shape[4]
+        * block_shape[5]
     )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    blocks_strides[1] = Int64(
+        block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
     )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
+    var blocks = TileTensor(
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
     )
-
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = Collection(
+        blocks.as_unsafe_any_origin(),
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -461,7 +452,7 @@ def run_one_case(
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads](
         batch_size, max_cache_len, q_max_seq_len, ctx
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
 
     # === Kernel under test ==================================================
     generic_flare_mla_decode_kv_cache_ragged[
@@ -474,7 +465,7 @@ def run_one_case(
         UInt32(0),  # layer_idx
         SCALE,
         out_tt,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_tt,
         ctx,
     )
     ctx.synchronize()
@@ -586,11 +577,11 @@ def _verify_ref(
         # causal == null; for seq_len>1, causal is the production decode rule.
         comptime if MASK == "null":
             mha_gpu_naive(
-                q_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
+                q_b_tt,
+                k_b_tt,
+                k_b_tt,
                 NullMask(),
-                ref_b_tt.to_layout_tensor(),
+                ref_b_tt,
                 SCALE,
                 1,
                 b_seq_len,
@@ -602,11 +593,11 @@ def _verify_ref(
             )
         else:
             mha_gpu_naive(
-                q_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
+                q_b_tt,
+                k_b_tt,
+                k_b_tt,
                 CausalMask(),
-                ref_b_tt.to_layout_tensor(),
+                ref_b_tt,
                 SCALE,
                 1,
                 b_seq_len,
@@ -689,16 +680,12 @@ def run_schedule_case(
     var blocks_host = ctx.enqueue_create_host_buffer[kv_type](block_elems)
     randn(blocks_host.as_span(), mean=0.0, standard_deviation=0.5)
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
     var max_pages_per_batch = align_up(ceildiv(max_cache_len + 1, PAGE_SIZE), 8)
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -713,7 +700,7 @@ def run_schedule_case(
     var q_size = total_q_tokens * num_heads * DEPTH
     var q_host = ctx.enqueue_create_host_buffer[q_type](q_size)
     randn(q_host.as_span(), mean=0.0, standard_deviation=0.5)
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     row_offsets_host[0] = UInt32(0)
@@ -723,17 +710,13 @@ def run_schedule_case(
 
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
     var q_device = ctx.enqueue_create_buffer[q_type](q_size)
     ctx.enqueue_copy(q_device, q_host)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
     ctx.synchronize()
@@ -741,44 +724,44 @@ def run_schedule_case(
     var block_shape = IndexList[6](
         total_pages, 1, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, DEPTH
     )
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(block_shape[0])
+    blocks_shape[2] = Int64(block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        block_shape[1]
+        * block_shape[2]
+        * block_shape[3]
+        * block_shape[4]
+        * block_shape[5]
     )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    blocks_strides[1] = Int64(
+        block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
     )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
+    var blocks = TileTensor(
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
     )
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = Collection(
+        blocks.as_unsafe_any_origin(),
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(1),
         UInt32(max_cache_len),
     )
@@ -794,7 +777,7 @@ def run_schedule_case(
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads](
         batch_size, max_cache_len, 1, ctx
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
     # Pin split-K for the `schedule` oracle; leave it to the decode heuristic
     # for the `determinism` oracle.
     var np = Optional[Int](2) if pin_partitions else Optional[Int]()
@@ -806,7 +789,7 @@ def run_schedule_case(
         UInt32(0),
         SCALE,
         out_tt,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_tt,
         ctx,
         num_partitions_in=np,
     )
@@ -823,7 +806,7 @@ def run_schedule_case(
             UInt32(0),
             SCALE,
             out_tt,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_tt,
             ctx,
             num_partitions_in=np,
         )

@@ -53,7 +53,9 @@ def resize_linear(
     1-D linear filters. It resizes every dimension whose size changes,
     including batch and channel dimensions. The operation maps output
     coordinates back to input coordinates according to
-    ``coordinate_transform_mode``.
+    ``coordinate_transform_mode``. The op runs on the input's device, CPU or
+    GPU; interpolation always accumulates in float32 (float64 for float64
+    inputs).
 
     .. code-block:: python
 

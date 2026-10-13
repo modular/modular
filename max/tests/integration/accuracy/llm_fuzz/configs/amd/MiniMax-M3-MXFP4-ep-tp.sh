@@ -30,3 +30,7 @@ model_profile=minimax-m3
 scenarios=
 k2vv_mode=
 circuit_breaker=0
+
+# Skip the known MiniMax-M3 failures (the official MiniMax API fails them too).
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../minimax-m3-known-failures.sh"

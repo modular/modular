@@ -31,7 +31,7 @@ from comm.lamport import (
 from std.testing import assert_equal, assert_false, assert_true
 
 
-@always_inline
+@inline(.always)
 def _bits[
     dtype: DType, width: Int
 ](v: SIMD[dtype, width]) -> SIMD[_unsigned_integral_type_of[dtype](), width]:
@@ -39,7 +39,7 @@ def _bits[
     return bitcast[_unsigned_integral_type_of[dtype](), width](v)
 
 
-@always_inline
+@inline(.always)
 def _neg_zero[dtype: DType]() -> Scalar[dtype]:
     """A single `-0.0` scalar of `dtype`, built from raw bits."""
     comptime uint = _unsigned_integral_type_of[dtype]()
@@ -180,14 +180,14 @@ def run_all_for[dtype: DType, width: Int]() raises:
 
 def main() raises:
     # 16-bit dtypes: 128-bit pack == 8 lanes; also exercise width 4.
-    run_all_for[DType.bfloat16, 4]()
-    run_all_for[DType.bfloat16, 8]()
-    run_all_for[DType.float16, 4]()
-    run_all_for[DType.float16, 8]()
+    run_all_for[.bfloat16, 4]()
+    run_all_for[.bfloat16, 8]()
+    run_all_for[.float16, 4]()
+    run_all_for[.float16, 8]()
 
     # 32-bit dtype: 128-bit pack == 4 lanes; also exercise width 8.
-    run_all_for[DType.float32, 4]()
-    run_all_for[DType.float32, 8]()
+    run_all_for[.float32, 4]()
+    run_all_for[.float32, 8]()
 
     test_lamport_generation()
 

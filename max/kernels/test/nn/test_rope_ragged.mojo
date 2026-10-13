@@ -22,16 +22,12 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from std.utils import IndexList
-
 
 def test_rope_ragged[
     rope_dim: Int, dtype: DType
 ](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    comptime assert (
-        dtype == DType.float32
-    ), "goldens only for float32, currently"
+    comptime assert dtype == .float32, "goldens only for float32, currently"
 
     # Set up test hyperparameters.
     comptime batch_size = 2
@@ -51,7 +47,7 @@ def test_rope_ragged[
         return max_item
 
     assert max_seq_len > (
-        seq_len + Int(_max[DType.uint32](start_positions))
+        seq_len + Int(_max[.uint32](start_positions))
     ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
     comptime dim = 16
@@ -77,9 +73,9 @@ def test_rope_ragged[
     var q_tensor = TileTensor(q_host_buffer, q_layout)
 
     # Create input_row_offsets using HostBuffer + TileTensor
-    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[
-        DType.uint32
-    ](input_row_offsets_layout.static_product)
+    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
+        input_row_offsets_layout.static_product
+    )
     ctx.synchronize()
     for i in range(batch_size):
         input_row_offsets_host_buffer[i] = UInt32(i * seq_len)
@@ -134,7 +130,7 @@ def test_rope_ragged[
     var q_out_tensor = TileTensor(q_out_host_buffer, q_layout)
 
     # Create start_pos tensor using HostBuffer + TileTensor
-    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[DType.uint32](
+    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
         start_pos_layout.static_product
     )
     ctx.synchronize()
@@ -142,11 +138,11 @@ def test_rope_ragged[
         start_pos_host_buffer[i] = start_positions[i]
     var start_pos_tensor = TileTensor(start_pos_host_buffer, start_pos_layout)
 
-    @always_inline
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {var q_out_tensor} -> None:
-        q_out_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var q_out_tensor} -> None:
+        q_out_tensor.store[width=width](idx, val)
 
     rope_ragged[
         dtype,
@@ -195,6 +191,137 @@ def test_rope_ragged[
                 )
 
 
+def test_rope_ragged_non_interleaved[
+    dtype: DType
+](ctx: DeviceContext) raises -> None:
+    """Checks non-interleaved RoPE against a scalar rotate-half reference.
+
+    `interleaved=False` is the only path that calls `output_fn` twice per
+    pair, at the two coordinates `get_safetensors_idx` derives, so it is the
+    only one where a mis-addressed store writes half the head elsewhere and
+    still produces plausible values. The reference below indexes nothing the
+    kernel indexes, which pins the destination as well as the rotation.
+    """
+    comptime batch_size = 2
+    comptime seq_len = 3
+    comptime num_tokens = batch_size * seq_len
+    comptime num_heads = 2
+    comptime head_dim = 8
+    comptime half_dim = head_dim // 2
+    comptime max_seq_len = 16
+    # The rotate-half split spans the whole head, so it only lines up with
+    # the roped region when there is no passthrough region at all.
+    comptime rope_dim = head_dim
+
+    var start_positions: List[UInt32] = [0, 5]
+    assert max_seq_len > seq_len + 5, "freqs table shorter than the positions"
+
+    comptime q_layout = row_major[num_tokens, num_heads, head_dim]()
+    comptime input_row_offsets_layout = row_major[batch_size + 1]()
+    comptime start_pos_layout = row_major[batch_size]()
+    comptime freqs_cis_layout = row_major[max_seq_len, rope_dim]()
+
+    var q_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        q_layout.static_product
+    )
+    ctx.synchronize()
+    # Pairwise distinct, so a store landing on the wrong coordinate cannot
+    # alias a correct value.
+    for i in range(q_layout.static_product):
+        q_host_buffer[i] = Scalar[dtype](i + 1) * 0.25
+    var q_tensor = TileTensor(q_host_buffer, q_layout)
+
+    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
+        input_row_offsets_layout.static_product
+    )
+    ctx.synchronize()
+    for i in range(batch_size):
+        input_row_offsets_host_buffer[i] = UInt32(i * seq_len)
+    input_row_offsets_host_buffer[batch_size] = num_tokens
+    var input_row_offsets_tensor = TileTensor(
+        input_row_offsets_host_buffer, input_row_offsets_layout
+    )
+
+    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
+        start_pos_layout.static_product
+    )
+    ctx.synchronize()
+    for i in range(batch_size):
+        start_pos_host_buffer[i] = start_positions[i]
+    var start_pos_tensor = TileTensor(start_pos_host_buffer, start_pos_layout)
+
+    # Each row is `half_dim` (cos, sin) pairs interleaved. These are not a
+    # real frequency table: the reference applies the same coefficients, so
+    # what is under test is which column pairs with which and where the two
+    # halves land, not the trigonometry.
+    var freqs_cis_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        freqs_cis_layout.static_product
+    )
+    ctx.synchronize()
+    for pos in range(max_seq_len):
+        for k in range(half_dim):
+            freqs_cis_host_buffer[pos * rope_dim + 2 * k] = Scalar[dtype](
+                pos + 1
+            ) * 0.5 + Scalar[dtype](k)
+            freqs_cis_host_buffer[pos * rope_dim + 2 * k + 1] = Scalar[dtype](
+                pos
+            ) * 0.25 - Scalar[dtype](k + 1)
+    var freqs_cis_tensor = TileTensor(freqs_cis_host_buffer, freqs_cis_layout)
+
+    var q_out_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        q_layout.static_product
+    )
+    ctx.synchronize()
+    for i in range(q_layout.static_product):
+        q_out_host_buffer[i] = 0
+    var q_out_tensor = TileTensor(q_out_host_buffer, q_layout)
+
+    @inline(.always)
+    def output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var q_out_tensor} -> None:
+        comptime assert coords.rank == 3, "the rope output contract is rank 3"
+        q_out_tensor.store[width=width](coords, val)
+
+    rope_ragged[
+        dtype,
+        dtype,
+        interleaved=False,
+        target=StaticString("cpu"),
+    ](
+        x=q_tensor,
+        input_row_offsets=input_row_offsets_tensor,
+        start_pos=start_pos_tensor,
+        freqs_cis=freqs_cis_tensor,
+        context=ctx,
+        output_fn=output_fn,
+    )
+
+    var expected_host_buffer = ctx.enqueue_create_host_buffer[dtype](
+        q_layout.static_product
+    )
+    ctx.synchronize()
+    for batch_idx in range(batch_size):
+        for seq_idx in range(seq_len):
+            var token_idx = batch_idx * seq_len + seq_idx
+            var pos = Int(start_positions[batch_idx]) + seq_idx
+            for head_idx in range(num_heads):
+                var base = (token_idx * num_heads + head_idx) * head_dim
+                for j in range(half_dim):
+                    var re = q_host_buffer[base + j]
+                    var im = q_host_buffer[base + j + half_dim]
+                    var c = freqs_cis_host_buffer[pos * rope_dim + 2 * j]
+                    var s = freqs_cis_host_buffer[pos * rope_dim + 2 * j + 1]
+                    expected_host_buffer[base + j] = re * c - im * s
+                    expected_host_buffer[base + j + half_dim] = re * s + im * c
+
+    assert_almost_equal(
+        q_out_host_buffer.as_span(),
+        expected_host_buffer.as_span(),
+        "non-interleaved rope output",
+    )
+
+
 def test_rope_ragged_rope_first[
     rope_dim: Int, dtype: DType
 ](ctx: DeviceContext) raises -> None:
@@ -238,10 +365,10 @@ def test_rope_ragged_rope_first[
     var freqs_cis_host_buffer = ctx.enqueue_create_host_buffer[dtype](
         freqs_cis_layout.static_product
     )
-    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[
-        DType.uint32
-    ](input_row_offsets_layout.static_product)
-    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[DType.uint32](
+    var input_row_offsets_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
+        input_row_offsets_layout.static_product
+    )
+    var start_pos_host_buffer = ctx.enqueue_create_host_buffer[.uint32](
         start_pos_layout.static_product
     )
     ctx.synchronize()
@@ -291,19 +418,17 @@ def test_rope_ragged_rope_first[
     )
     var start_pos_tensor = TileTensor(start_pos_host_buffer, start_pos_layout)
 
-    @always_inline
+    @inline(.always)
     def full_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {var full_out_tensor} -> None:
-        full_out_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var full_out_tensor} -> None:
+        full_out_tensor.store[width=width](idx, val)
 
-    @always_inline
+    @inline(.always)
     def prefix_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {
-        var prefix_out_tensor
-    } -> None:
-        prefix_out_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var prefix_out_tensor} -> None:
+        prefix_out_tensor.store[width=width](idx, val)
 
     rope_ragged[
         dtype,
@@ -361,14 +486,18 @@ def main() raises -> None:
     with DeviceContext(api="cpu") as ctx:
         # Full head RoPE - this works correctly and is production ready
         print("Full head RoPE")
-        test_rope_ragged[8, DType.float32](ctx)
+        test_rope_ragged[8, .float32](ctx)
 
         # TODO: This was failing for some reason, we don't actually need it for now.
         # Circle back and fix this.
         # Partial RoPE (last 4 elements of each head)
         print("Partial RoPE")
-        test_rope_ragged[4, DType.float32](ctx)
+        test_rope_ragged[4, .float32](ctx)
 
         # Partial RoPE over the *leading* 4 elements of each head.
         print("Leading-half RoPE (rope_first)")
-        test_rope_ragged_rope_first[4, DType.float32](ctx)
+        test_rope_ragged_rope_first[4, .float32](ctx)
+
+        # Rotate-half (non-interleaved) RoPE over the whole head.
+        print("Non-interleaved RoPE")
+        test_rope_ragged_non_interleaved[.float32](ctx)

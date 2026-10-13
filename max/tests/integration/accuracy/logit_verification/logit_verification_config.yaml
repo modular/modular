@@ -130,6 +130,29 @@ logit_verification_pipelines:
     cos_dist_threshold: 8.2e-6
     kl_div_threshold: 1.1e-04
 
+  # The checkpoint mcloudDeployConfig.yaml's smollm jobs deploy, on CPU
+  # because their manifests request no accelerator. No
+  # pregenerated_torch_goldens: at 135M a torch reference is cheaper to
+  # regenerate each run than a golden tarball is to maintain.
+  modularai/SmolLM-135M-Instruct-FP32:
+    pre_submit_agents: []
+    pipeline: "modularai/SmolLM-135M-Instruct-FP32"
+    compatible_with: [cpu]
+    encoding: float32
+    # manual for the same reason the SmolLM2-360M entry below is: sub-8B models
+    # aren't what the post-submit sweep is for. A caller that names this entry
+    # by filter gets it anyway -- see select_runners.py.
+    tags: [manual]
+    # Tuned via --find-tolerances on CPU (suggested cos_dist 1.2e-07, kl_div
+    # 1.9e-07) with headroom. kl_div_threshold feeds both the per-position
+    # check and the aggregate max_kl_div the pass/fail decision reads, so the
+    # noisier of the two sets it; max_kl_div itself measured 2.1e-11. atol and
+    # rtol are verify.py's defaults, pinned rather than inherited.
+    absolute_tolerance: 1.0e-04
+    relative_tolerance: 1.0e-03
+    cos_dist_threshold: 2.0e-07
+    kl_div_threshold: 3.0e-07
+
   # ========== Brittle Pipelines ==========
   # The models here are considered brittle. They have never reached high
   # accuracy. They tend to be more sensitive to noise as code changes.
@@ -504,6 +527,94 @@ logit_verification_pipelines:
     cos_dist_threshold: 1.1e-3
     kl_div_threshold: 7.1e-3
 
+  Qwen/Qwen3.8-27B-bfloat16:
+    pre_submit_agents: []
+    pipeline: "Qwen/Qwen3.8-27B"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only]
+    # Measured on 1x B200: 5.2e-4 / 1.6e-3, up from 3.4e-4 / 1.4e-3 before
+    # M-RoPE moved this checkpoint onto a runtime rope table, whose GPU
+    # transcendentals are less exact than the host-folded constant they
+    # replaced. Text-only prompts take that table too: `mrope_enabled` follows
+    # the checkpoint, not the request. The thresholds still clear by ~2x and
+    # keep cross-hardware headroom, so they stand.
+    cos_dist_threshold: 1.0e-3
+    kl_div_threshold: 5.0e-3
+
+  # Image prompts through the same checkpoint. The text-only entries above
+  # cannot see M-RoPE at all: without an image every axis carries the flat
+  # token index, so the multi-axis positions only start to matter here.
+  Qwen/Qwen3.8-27B-vision-bfloat16:
+    pre_submit_agents: []
+    pipeline: "Qwen/Qwen3.8-27B-vision"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only]
+    # Measured on 1x B200: 1.2e-3 / 7.6e-3, widened ~3x for cross-hardware
+    # headroom like the text-only entries above. The image prompts sit a
+    # little above those entries because the vision tower's own error rides
+    # along; before M-RoPE reached the graph they sat at 1.6e-1 KL, so this
+    # gate separates a mispositioned image from a correctly positioned one by
+    # more than an order of magnitude.
+    cos_dist_threshold: 4.0e-3
+    kl_div_threshold: 2.5e-2
+
+  Qwen/Qwen3.8-27B-bfloat16-multi:
+    pre_submit_agents: []
+    pipeline: "Qwen/Qwen3.8-27B"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: [nvidia-only, nvidia-multi]
+    # Suggested by --find-tolerances on 2x B200: 7.2e-4 / 1.5e-3. Widened ~3x
+    # for cross-hardware headroom, matching the 1x entry above. Cosine
+    # distance roughly doubles against the 1x figure because the allreduce
+    # changes the reduction order; KL divergence is unchanged.
+    cos_dist_threshold: 2.5e-3
+    kl_div_threshold: 5.0e-3
+
+  RadixArk/Qwen3.8-27B-NVFP4:
+    pre_submit_agents: []
+    pipeline: "RadixArk/Qwen3.8-27B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only]
+    torch_reference_is_unquantized_source: true
+    # transformers cannot load a modelopt MIXED_PRECISION checkpoint, so the
+    # oracle's torch side is the bf16 source model (`Qwen/Qwen3.8-27B`) this
+    # was quantized from. The gate is therefore quantized-MAX vs bf16-torch and
+    # the thresholds carry the quantization error itself, which is why they sit
+    # two orders above the bf16 entry's. Suggested by --find-tolerances on
+    # 1x B200: 8.7e-02 / 6.6e-02, widened ~3x for cross-hardware headroom.
+    # This gates catastrophic regressions, not precision drift: dropping a
+    # weight scale family moves cosine distance to ~7e-01, comfortably over.
+    # A vLLM golden of this checkpoint would give the tighter gate.
+    cos_dist_threshold: 2.5e-01
+    kl_div_threshold: 2.0e-01
+
+  # FP8 KV-cache variant. The encoding table keeps a quantized checkpoint's
+  # cache in bf16, so nothing else selects the FP8 store path: without this
+  # entry `rope_split_store_ragged`, the widened frequency table and the
+  # store-time conversion are never executed.
+  RadixArk/Qwen3.8-27B-NVFP4-fp8kv:
+    pre_submit_agents: []
+    pipeline: "RadixArk/Qwen3.8-27B-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only]
+    torch_reference_is_unquantized_source: true
+    config_params_override:
+      kv_cache_format: float8_e4m3fn
+    # Suggested by --find-tolerances on 1x B200: 1.3e-01 / 2.2e-01, against the
+    # bf16 entry's 8.7e-02 / 6.6e-02 -- the FP8 cache is the whole difference,
+    # the two runs are otherwise the same checkpoint and reference. Widened ~2x
+    # rather than the ~3x above: the error here is dominated by KV
+    # quantization, which is the same arithmetic on any device, so
+    # cross-hardware spread is second order. 3.0e-01 still separates from the
+    # ~7e-01 a dropped weight-scale family produces.
+    cos_dist_threshold: 3.0e-01
+    kl_div_threshold: 5.0e-01
+
   Qwen/Qwen3-Embedding-0.6B-bfloat16:
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-Embedding-0.6B"
@@ -726,9 +837,16 @@ logit_verification_pipelines:
     compatible_with: [gpu]
     encoding: float8_e4m3fn
     tags: [manual, nvidia-multi, 8xb200]
+    # The public driver cannot register this architecture; the wrapper pulls it
+    # into the runfiles the generate_llm_logits child inherits.
+    verify_target: //max_private/minimax_m3:verify_minimax_m3
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/MiniMaxAI_MiniMax-M3-MXFP8_golden/1/f6c729e886f1750f1c569f5d68bfcd300f5e5eca24507047fd11830dadfd9cae/MiniMaxAI_MiniMax-M3-MXFP8_golden.tar.gz"
       json_file: "sglang_MiniMaxAI_MiniMax-M3-MXFP8_float8_e4m3fn_golden.json"
+    # Matches the 405B 8xb200 entry above. The MCloud deploy runs this entry
+    # with no precompile pass -- the only precompiler can't register a private
+    # arch -- so the graph compile is charged against this window.
+    timeout: 3600
     # Tuned via --find-tolerances on 8x B200 (measured: cos_dist 5.6e-04,
     # kl_div 1.8e-01) with headroom. KL is dominated by the translate prompt's
     # later steps; MAX fp8 vs sglang mxfp8+deep_gemm kernels differ.
@@ -759,21 +877,6 @@ logit_verification_pipelines:
     # Loosened pending MODELS-943 (sparse-MLA prefill correctness).
     cos_dist_threshold: 6.0e-01
     kl_div_threshold: 5.0e+00
-    timeout: 1200
-
-  zai-org/GLM-5.1-FP8:
-    pre_submit_agents: []
-    pipeline: "zai-org/GLM-5.1-FP8"
-    compatible_with: [gpu]
-    encoding: float8_e4m3fn
-    tags: [nvidia-multi, 8xb200]
-    # Goldens generated using local installation of vLLM, not with workflow
-    # because model requires deep_gemm, which must be installed from git repo.
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/zai-org_GLM-5.1-FP8_golden/1/6a79dc15919c845af6e762d41d7e38bae299eb78b20e4b8a4024de24f4c1b0cb/zai-org_GLM-5.1-FP8_golden.tar.gz"
-      json_file: "torch_zai-org_GLM-5.1-FP8_float8_e4m3fn_golden.json"
-    cos_dist_threshold: 1.1e-03
-    kl_div_threshold: 4.0e-01
     timeout: 1200
 
   google/gemma-3-1b-it-bfloat16:

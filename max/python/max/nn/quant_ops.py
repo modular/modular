@@ -18,9 +18,11 @@ from .kernels import (
     _apple_int8_w8a8_matmul,
     _apple_weight_only_block_scaled_matmul,
     _apple_weight_only_scaled_float8_matmul,
+    _fused_qkv_index_ragged_matmul_scaled_mxfp6,
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_float4,
     _fused_qkv_ragged_matmul_scaled_float8,
+    _fused_qkv_ragged_matmul_scaled_mxfp6,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
     _grouped_matmul_rowwise_dynamic_scaled_fp8,
     _is_amd_gpu,
@@ -238,6 +240,49 @@ def _matmul_float6_mxfp6(
     )
 
 
+def _matmul_float6_mxfp6_prequantized(
+    x_fp6: TensorValue,
+    x_scales: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+    fp6_format: str,
+) -> TensorValue:
+    """Computes the MXFP6 matmul from an already-quantized activation.
+
+    :func:`_matmul_float6_mxfp6` minus the dynamic quantize, and the MXFP6
+    counterpart of :func:`_matmul_float8_mxfp8_prequantized`. Single owner for
+    the operand order, scale layout and output dtype, so callers that produce
+    the ``(data, scales)`` pair themselves -- the MSA attention op that fuses
+    the quantize into its split-K combine -- cannot drift from the
+    self-quantizing path.
+
+    Args:
+        x_fp6: The activation as packed FP6 ``uint8``, shape
+            ``[M, K * 3 // 4]``: four six-bit codes per three bytes.
+        x_scales: The activation's E8M0 block scales, rank-2 ``[M, K // 32]``.
+        weight: The weight as packed FP6 ``uint8``, shape ``[N, K * 3 // 4]``.
+        weight_scale: The E8M0 weight scales, rank-2 ``[N, K // 32]`` as loaded
+            from the checkpoint.
+        fp6_format: The FP6 encoding both operands hold.
+
+    Returns:
+        The output tensor in bf16, shape ``[M, N]``.
+    """
+    if not _is_amd_gpu():
+        raise ValueError(
+            "MXFP6 requires the AMD CDNA4 block-scaled MFMA (gfx950); no other "
+            "target implements a 6-bit block-scaled matmul"
+        )
+    return dynamic_block_scaled_matmul_mxfp6(
+        x_fp6,
+        weight,
+        x_scales,
+        weight_scale.to(x_fp6.device),
+        fp6_format=fp6_format,
+        out_type=DType.bfloat16,
+    )
+
+
 def _matmul_float8_mxfp8(
     x: TensorValue,
     weight: TensorValue,
@@ -339,6 +384,7 @@ def _matmul_float8(
     weight_scale: TensorValue,
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
+    x_scales: TensorValue | None = None,
 ) -> TensorValue:
     """Computes x @ weight.T with float8 quantization.
 
@@ -349,10 +395,26 @@ def _matmul_float8(
         input_scale: The input scale tensor (only required for static
             fp8 quantization).
         quant_config: The quantization configuration.
+        x_scales: Dynamic activation scales when ``x`` arrives already
+            quantized (e.g. by a fused rms_norm + quantize); skips the
+            in-place quantize. Only the dynamic per-row/block path takes it.
 
     Returns:
         The output tensor.
     """
+    if x_scales is not None and (
+        _is_apple_gpu()
+        or input_scale is not None
+        or (
+            quant_config.input_scale.is_tensor
+            and quant_config.weight_scale.is_tensor
+        )
+    ):
+        raise ValueError(
+            "pre-quantized activations (x_scales) are only supported on the"
+            " dynamic per-row/blockwise FP8 matmul path"
+        )
+
     if _is_apple_gpu():
         # Apple M5 weight-only (W8A16) path: keep the activation in bf16 (do NOT
         # quantize it to FP8) and feed the FP8-E4M3 weight straight to the kernel,
@@ -459,7 +521,7 @@ def _matmul_float8(
             rowwise_weight_spec,
             out_type=DType.bfloat16,
         )
-    else:
+    elif x_scales is None:
         # Dynamic non-per-tensor (per-row/block).
         x, x_scale = quantize_dynamic_scaled_float8(
             x,
@@ -468,6 +530,15 @@ def _matmul_float8(
             scales_type=weight_scale.dtype,
             out_type=weight.dtype,
         )
+        weight_scale = weight_scale.to(x.device)
+    else:
+        if x.dtype != weight.dtype or x_scales.dtype != weight_scale.dtype:
+            raise ValueError(
+                f"pre-quantized activation ({x.dtype}, scales {x_scales.dtype})"
+                f" must match the weight ({weight.dtype}, scales"
+                f" {weight_scale.dtype})"
+            )
+        x_scale = x_scales
         weight_scale = weight_scale.to(x.device)
 
     return dynamic_scaled_matmul(
@@ -521,6 +592,7 @@ def quantized_matmul(
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
     bias: TensorValue | None = None,
+    x_scales: TensorValue | None = None,
 ) -> TensorValue:
     """Single entry point for all quantized dense matmuls.
 
@@ -537,10 +609,21 @@ def quantized_matmul(
         weight_scale_2: Additional weight scale factor (NVFP4 only).
         bias: Optional bias tensor. Only the int8 W8A8 (Apple M5) path fuses it
             into the matmul epilogue; other formats leave the caller to add it.
+        x_scales: Dynamic activation scales for an ``x`` that is already FP8
+            (produced by a fused norm + quantize). Dynamic FP8 formats only.
 
     Returns:
         The output tensor.
     """
+    if x_scales is not None and quant_config.format not in (
+        QuantFormat.COMPRESSED_TENSORS_FP8,
+        QuantFormat.FBGEMM_FP8,
+        QuantFormat.BLOCKSCALED_FP8,
+    ):
+        raise ValueError(
+            "pre-quantized activations (x_scales) require a dynamic FP8"
+            f" format, got {quant_config.format}"
+        )
     match quant_config.format:
         case QuantFormat.NVFP4:
             assert input_scale is not None
@@ -583,6 +666,7 @@ def quantized_matmul(
                 weight_scale,
                 input_scale,
                 quant_config,
+                x_scales=x_scales,
             )
         case QuantFormat.INT8_W8A8:
             return _matmul_int8(x, weight, weight_scale, bias=bias)
@@ -663,6 +747,35 @@ def quantized_fused_qkv_matmul(
                 weight_scale=weight_scale,
                 _output_dim=_output_dim,
             )
+        case QuantFormat.MXFP6:
+            if bias is not None:
+                raise NotImplementedError(
+                    "bias is not supported by the fused MXFP6 QKV kernel"
+                )
+            if not _is_amd_gpu():
+                raise NotImplementedError(
+                    "the fused MXFP6 QKV matmul is CDNA4-only"
+                )
+            x_fp6, x_scales = quantize_dynamic_block_scaled_mxfp6(
+                x,
+                fp6_format=quant_config.mxfp6_format,
+                scales_type=DType.float8_e8m0fnu,
+                out_type=DType.uint8,
+            )
+            return _fused_qkv_ragged_matmul_scaled_mxfp6(
+                kv_params,
+                input=x_fp6,
+                input_row_offsets=input_row_offsets,
+                wqkv=wqkv,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=n_heads,
+                input_scale=x_scales.to(x.device),
+                weight_scale=weight_scale.to(x.device),
+                fp6_format=quant_config.mxfp6_format,
+                _output_dim=_output_dim,
+            )
+
         case QuantFormat.NVFP4:
             assert input_scale is not None
             assert weight_scale_2 is not None
@@ -818,10 +931,40 @@ def quantized_fused_qkv_index_matmul(
         ``[total_seq_len, q_dim]`` and ``index_q`` is
         ``[total_seq_len, iq_dim]``.
     """
-    if quant_config.format != QuantFormat.MXFP8:
+    if quant_config.format not in (QuantFormat.MXFP8, QuantFormat.MXFP6):
         raise ValueError(
-            "quantized_fused_qkv_index_matmul only supports MXFP8, got"
+            "quantized_fused_qkv_index_matmul supports MXFP8 and MXFP6, got"
             f" {quant_config.format}"
+        )
+    if quant_config.format == QuantFormat.MXFP6:
+        if not _is_amd_gpu():
+            raise NotImplementedError(
+                "the fused MXFP6 QKV+IndexQK matmul is CDNA4-only"
+            )
+        if prequantized is not None:
+            x_fp6, x_scales = prequantized
+        else:
+            x_fp6, x_scales = quantize_dynamic_block_scaled_mxfp6(
+                x,
+                fp6_format=quant_config.mxfp6_format,
+                scales_type=DType.float8_e8m0fnu,
+                out_type=DType.uint8,
+            )
+        return _fused_qkv_index_ragged_matmul_scaled_mxfp6(
+            kv_params=kv_params,
+            index_kv_params=index_kv_params,
+            input=x_fp6,
+            input_row_offsets=input_row_offsets,
+            wqkv=wqkv,
+            kv_collection=kv_collection,
+            index_kv_collection=index_kv_collection,
+            layer_idx=layer_idx,
+            n_heads=n_heads,
+            num_index_heads=num_index_heads,
+            idx_head_dim=idx_head_dim,
+            input_scale=x_scales.to(x.device),
+            weight_scale=weight_scale.to(x.device),
+            fp6_format=quant_config.mxfp6_format,
         )
     if prequantized is not None:
         x_fp8, x_scales = prequantized

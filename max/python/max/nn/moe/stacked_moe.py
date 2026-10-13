@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import partial
 
+from max.driver import accelerator_architecture_name
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.graph.weight import _compute_shard_range
@@ -33,12 +34,20 @@ from typing_extensions import Self
 from ..kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_finalize,
 )
 from ..layer import Module, Shardable
 from ..linear import MLP
 from ..quant_config import QuantConfig, QuantFormat
 from ..quant_ops import quantized_grouped_matmul
 from .moe import MoEGate
+from .quant_strategy import NvMxf4f8Strategy, interleaved_block_scales_shape
+
+# MX formats share one E8M0 scale per 32 elements.
+_MX_BLOCK = 32
+# Tensor parallelism splits each expert into whole interleaved scale granules:
+# 128 gate or up rows, and 4 down scale columns of 32 elements.
+_W4A8_TP_GRANULE = 128
 
 
 @dataclass
@@ -62,6 +71,10 @@ class RoutingInfo:
 
     router_idx_flat: TensorValue
     """The flattened router indices for each token."""
+
+    scales_offsets: TensorValue | None = None
+    """Each expert's offset into the padded activation scales, for the
+    block-scaled grouped matmul."""
 
 
 class GateUpFormat(Enum):
@@ -214,6 +227,8 @@ class StackedMoE(Module, Shardable):
     - Activation functions: configurable (default: SiLU).
     - Optional bias support for projections.
     - Optional FP8 quantization with block scaling.
+    - Optional MXFP4 weights, run W4A16, or W4A8 with MXFP8 activations.
+    - Optional float32 router input.
     - Optional shared experts.
 
     .. code-block:: python
@@ -265,6 +280,18 @@ class StackedMoE(Module, Shardable):
             ``None``.
         apply_router_weight_first: Whether to apply router weights before
             expert computation. Defaults to ``False``.
+        router_dtype: The dtype the gate is built in and its input is cast
+            to. ``None`` (default) builds a BF16 gate and passes the input
+            through unchanged. Use ``DType.float32`` for a router whose
+            selection is sensitive to BF16 rounding.
+        mxfp8_activations: Whether MXFP4 experts run W4A8: activations are
+            quantized to MXFP8 per expert, with the routed-row gather fused
+            into the quantize, for the SM100 block-scaled grouped matmul.
+            The weight scales are then declared in that kernel's interleaved
+            layout, ``[num_experts, N / 128, K / 128, 32, 4, 4]`` (see
+            :func:`~max.nn.moe.interleaved_block_scales_shape`), and tensor
+            parallelism splits every expert into whole scale granules.
+            Requires an MXFP4 ``quant_config``. Defaults to ``False``.
         is_sharding: Whether this instance is being created for sharding.
             Set by :meth:`shard()` to skip weight initialization for sharded
             instances. Defaults to ``False``.
@@ -289,6 +316,8 @@ class StackedMoE(Module, Shardable):
         shared_experts_dim: int = 0,
         quant_config: QuantConfig | None = None,
         apply_router_weight_first: bool = False,
+        router_dtype: DType | None = None,
+        mxfp8_activations: bool = False,
         is_sharding: bool = False,
     ) -> None:
         super().__init__()
@@ -308,14 +337,29 @@ class StackedMoE(Module, Shardable):
         self.shared_experts_dim = shared_experts_dim
         self.quant_config = quant_config
         self.apply_router_weight_first = apply_router_weight_first
+        self.router_dtype = router_dtype
+        self.mxfp8_activations = mxfp8_activations
         self.tp_size = 1
+
+        if mxfp8_activations:
+            if quant_config is None or quant_config.format != QuantFormat.MXFP4:
+                raise ValueError(
+                    "StackedMoE: mxfp8_activations requires an MXFP4 "
+                    "quant_config."
+                )
+            if apply_router_weight_first:
+                raise ValueError(
+                    "StackedMoE: mxfp8_activations does not support "
+                    "apply_router_weight_first, since the quantize gathers "
+                    "the unweighted rows itself."
+                )
 
         self.gate = gate_cls(
             devices=devices,
             hidden_dim=hidden_dim,
             num_experts=num_experts,
             num_experts_per_token=num_experts_per_token,
-            dtype=DType.bfloat16,
+            dtype=router_dtype or DType.bfloat16,
         )
 
         if has_shared_experts:
@@ -408,9 +452,20 @@ class StackedMoE(Module, Shardable):
         """Initializes MXFP4 packed weight tensors for all experts.
 
         MXFP4 weights are stored as [E, out_features, in_features//2] uint8
-        with scales [E, out_features, in_features//32] float8_e8m0fnu.
+        with scales [E, out_features, in_features//32] float8_e8m0fnu, or
+        with ``mxfp8_activations`` in the interleaved layout
+        [E, out_features/128, in_features/128, 32, 4, 4].
         """
         assert self.quant_config is not None
+
+        def scale_shape(rows: int, cols: int) -> list[int]:
+            if self.mxfp8_activations:
+                return [
+                    self.num_experts,
+                    *interleaved_block_scales_shape(rows, cols // _MX_BLOCK),
+                ]
+            return [self.num_experts, rows, ceildiv(cols, _MX_BLOCK)]
+
         # gate_up: maps hidden_dim -> 2*moe_dim
         self._gate_up_weight = Weight(
             name="experts.gate_up_proj",
@@ -438,21 +493,13 @@ class StackedMoE(Module, Shardable):
         scale_dtype = self.quant_config.weight_scale.dtype
         self._gate_up_scale = Weight(
             name="experts.gate_up_proj_scale",
-            shape=[
-                self.num_experts,
-                2 * self.moe_dim,
-                ceildiv(self.hidden_dim, 32),
-            ],
+            shape=scale_shape(2 * self.moe_dim, self.hidden_dim),
             dtype=scale_dtype,
             device=self.devices[0],
         )
         self._down_scale = Weight(
             name="experts.down_proj_scale",
-            shape=[
-                self.num_experts,
-                self.hidden_dim,
-                ceildiv(self.moe_dim, 32),
-            ],
+            shape=scale_shape(self.hidden_dim, self.moe_dim),
             dtype=scale_dtype,
             device=self.devices[0],
         )
@@ -539,11 +586,15 @@ class StackedMoE(Module, Shardable):
         gate, up = self._split_gate_up(gate_up_output)
         return self.gated_activation_fn(gate, up)
 
-    def _prepare_routing(self, router_idx: TensorValue) -> RoutingInfo:
+    def _prepare_routing(
+        self, router_idx: TensorValue, needs_scales_offset: bool = False
+    ) -> RoutingInfo:
         """Computes token-to-expert routing indices.
 
         Args:
             router_idx: The router index tensor from the gate.
+            needs_scales_offset: Whether to also compute each expert's
+                offset into the padded activation scales.
 
         Returns:
             A ``RoutingInfo`` containing all routing tensors.
@@ -551,21 +602,20 @@ class StackedMoE(Module, Shardable):
         router_idx_flat = ops.reshape(router_idx, [-1])
         router_idx_int32 = ops.cast(router_idx_flat, DType.int32)
 
-        (
-            token_expert_order,
-            expert_start_indices,
-            restore_token_order,
-            expert_ids,
-            expert_usage_stats,
-        ) = moe_create_indices(router_idx_int32, self.num_experts)
+        indices = moe_create_indices(
+            router_idx_int32,
+            self.num_experts,
+            needs_scales_offset=needs_scales_offset,
+        )
 
         return RoutingInfo(
-            token_expert_order=token_expert_order,
-            expert_start_indices=expert_start_indices,
-            restore_token_order=restore_token_order,
-            expert_ids=expert_ids,
-            expert_usage_stats=expert_usage_stats,
+            token_expert_order=indices[0],
+            expert_start_indices=indices[1],
+            restore_token_order=indices[2],
+            expert_ids=indices[3],
+            expert_usage_stats=indices[4],
             router_idx_flat=router_idx_flat,
+            scales_offsets=indices[5] if needs_scales_offset else None,
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -577,10 +627,18 @@ class StackedMoE(Module, Shardable):
         Returns:
             The output tensor of shape ``(seq_len, hidden_dim)``.
         """
-        seq_len = x.shape[0]
-
         # Route tokens to experts
-        router_idx, router_weight = self.gate(x)
+        router_input = (
+            x if self.router_dtype is None else x.cast(self.router_dtype)
+        )
+        router_idx, router_weight = self.gate(router_input)
+
+        if self.mxfp8_activations:
+            down_projs, restore_token_order = self._forward_w4a8(x, router_idx)
+            return self._combine(
+                x, down_projs, restore_token_order, router_weight
+            )
+
         routing = self._prepare_routing(router_idx)
 
         # Gather tokens in expert-processing order
@@ -604,23 +662,42 @@ class StackedMoE(Module, Shardable):
         else:
             down_projs = self._forward_bf16(permuted_states, routing)
 
-        # Restore original token order and combine expert outputs
-        down_projs = ops.gather(
-            down_projs, routing.restore_token_order, axis=0
-        ).reshape([seq_len, self.num_experts_per_token, self.hidden_dim])
+        return self._combine(
+            x, down_projs, routing.restore_token_order, router_weight
+        )
 
-        if not self.apply_router_weight_first:
-            routed_expert_out = (
-                ops.unsqueeze(router_weight, axis=1) @ down_projs
+    def _combine(
+        self,
+        x: TensorValue,
+        down_projs: TensorValue,
+        restore_token_order: TensorValue,
+        router_weight: TensorValue,
+    ) -> TensorValue:
+        """Weights and sums each token's expert outputs, adding shared experts.
+
+        Args:
+            x: The ``[seq_len, hidden_dim]`` layer input.
+            down_projs: The ``[seq_len * num_experts_per_token, hidden_dim]``
+                expert outputs, in expert-permuted order.
+            restore_token_order: Maps each token-major routing slot to its
+                row of ``down_projs``.
+            router_weight: The ``[seq_len, num_experts_per_token]`` routing
+                weights.
+
+        Returns:
+            The ``[seq_len, hidden_dim]`` layer output, in ``x.dtype``.
+        """
+        if self.apply_router_weight_first:
+            # The experts already applied the router weights.
+            router_weight = ops.broadcast_to(
+                ops.constant(
+                    1, router_weight.dtype, device=router_weight.device
+                ),
+                router_weight.shape,
             )
-            routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
-            )
-        else:
-            routed_expert_out = down_projs.transpose(1, 2)
-            routed_expert_out = ops.squeeze(
-                ops.sum(routed_expert_out, axis=2), axis=2
-            ).cast(x.dtype)
+        routed_expert_out = moe_finalize(
+            down_projs, restore_token_order, router_weight, x.dtype
+        )
 
         if self.has_shared_experts:
             routed_expert_out += self.shared_experts(x)
@@ -659,18 +736,124 @@ class StackedMoE(Module, Shardable):
             routing.expert_usage_stats,
         )
 
-        if self.has_bias:
-            expert_assignments = ops.gather(
-                routing.router_idx_flat, routing.token_expert_order, axis=0
+        return self._apply_down_bias(down_output, routing)
+
+    def _apply_down_bias(
+        self, down_output: TensorValue, routing: RoutingInfo
+    ) -> TensorValue:
+        """Adds each row's expert down bias, if the experts have biases.
+
+        Under tensor parallelism every device adds its share of the bias, so
+        that the allreduce of the partial outputs adds it once.
+        """
+        if not self.has_bias:
+            return down_output
+        expert_assignments = ops.gather(
+            routing.router_idx_flat, routing.token_expert_order, axis=0
+        )
+        down_bias: TensorValue = self._down_bias
+        if self.tp_size > 1:
+            down_bias = down_bias / self.tp_size
+        return self._apply_bias(down_output, down_bias, expert_assignments)
+
+    def _forward_w4a8(
+        self,
+        x: TensorValue,
+        router_idx: TensorValue,
+        estimated_total_m: TensorValue | None = None,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Runs the MXFP4 experts W4A8 and returns each routed row's output.
+
+        Each projection quantizes its input to MXFP8 per expert, padded to
+        the block-scaled grouped matmul's scale layout; the first quantize
+        gathers the routed rows itself, so the permuted BF16 activations
+        never materialize.
+
+        Args:
+            x: The ``[seq_len, hidden_dim]`` BF16 activations.
+            router_idx: The ``[seq_len, num_experts_per_token]`` routed
+                experts.
+            estimated_total_m: The row count the grouped matmul picks its tile
+                configuration from. Defaults to
+                ``seq_len * num_experts_per_token``, the step's real row count.
+
+        Returns:
+            ``(down, restore_token_order)``: the
+            ``[seq_len * num_experts_per_token, hidden_dim]`` expert outputs
+            in expert-permuted order, and the map from each token-major
+            routing slot to its row of ``down``.
+
+        Raises:
+            ValueError: If the accelerator is not an NVIDIA SM100 GPU.
+        """
+        assert self.quant_config is not None
+        # Off SM100 the grouped quantize falls back to a kernel that takes
+        # neither the per-expert offsets nor the gather, and fails later with
+        # an error that does not name the cause.
+        arch = accelerator_architecture_name()
+        if not arch.startswith("sm_10"):
+            raise ValueError(
+                "StackedMoE: MXFP8 activations run only on NVIDIA SM100 "
+                f"(B200-class) GPUs; the accelerator is {arch!r}."
             )
-            down_bias: TensorValue = self._down_bias
-            if self.tp_size > 1:
-                down_bias = down_bias / self.tp_size
-            down_output = self._apply_bias(
-                down_output, down_bias, expert_assignments
+        routing = self._prepare_routing(router_idx, needs_scales_offset=True)
+        scales_offsets = routing.scales_offsets
+        assert scales_offsets is not None
+        # The grouped matmul's loop bound, which the strategy takes from this
+        # shape: one slot per expert, used or not.
+        if int(routing.expert_ids.shape[0]) != self.num_experts:
+            raise ValueError(
+                f"StackedMoE: {routing.expert_ids.shape[0]} expert slots for "
+                f"{self.num_experts} experts."
+            )
+        if estimated_total_m is None:
+            estimated_total_m = ops.shape_to_tensor(
+                routing.token_expert_order.shape
+            )[0].cast(DType.uint32)
+        strategy = NvMxf4f8Strategy(self.quant_config, DType.float8_e4m3fn)
+
+        def quantize(
+            activations: TensorValue, indices: TensorValue | None = None
+        ) -> tuple[TensorValue, TensorValue]:
+            return strategy.grouped_quantize(
+                activations,
+                _MX_BLOCK,
+                None,
+                routing.expert_start_indices,
+                scales_offsets,
+                routing.expert_ids,
+                indices=indices,
             )
 
-        return down_output
+        def experts(
+            quantized: tuple[TensorValue, TensorValue],
+            weight: TensorValue,
+            scale: TensorValue,
+        ) -> TensorValue:
+            return strategy.grouped_matmul(
+                weight,
+                scale,
+                expert_inputs=(
+                    *quantized,
+                    routing.expert_start_indices,
+                    scales_offsets,
+                    routing.expert_ids,
+                    routing.expert_usage_stats,
+                ),
+                estimated_total_m=estimated_total_m,
+            )
+
+        gather = ops.cast(
+            routing.token_expert_order // self.num_experts_per_token,
+            DType.int32,
+        )
+        gate_up = experts(
+            quantize(x, gather), self._gate_up_weight, self._gate_up_scale
+        )
+        hidden = self._apply_gated_activation(gate_up, routing)
+        down = experts(quantize(hidden), self._down_weight, self._down_scale)
+        down = self._apply_down_bias(down, routing)
+        return down, routing.restore_token_order
 
     def _forward_quantized(
         self,
@@ -713,18 +896,7 @@ class StackedMoE(Module, Shardable):
             quant_config=self.quant_config,
         )
 
-        if self.has_bias:
-            expert_assignments = ops.gather(
-                routing.router_idx_flat, routing.token_expert_order, axis=0
-            )
-            down_bias: TensorValue = self._down_bias
-            if self.tp_size > 1:
-                down_bias = down_bias / self.tp_size
-            down_output = self._apply_bias(
-                down_output, down_bias, expert_assignments
-            )
-
-        return down_output
+        return self._apply_down_bias(down_output, routing)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -754,7 +926,7 @@ class StackedMoE(Module, Shardable):
             self.shared_experts.sharding_strategy = strategy
         if self.has_bias:
             self._set_bias_sharding(strategy)
-        if self.quant_config:
+        if self.quant_config and not self.mxfp8_activations:
             self._set_scale_sharding(strategy)
 
     def _set_gate_sharding(self, strategy: ShardingStrategy) -> None:
@@ -769,6 +941,10 @@ class StackedMoE(Module, Shardable):
             raise ValueError(
                 "Only tensor parallel sharding strategy is supported for StackedMoE"
             )
+
+        if self.mxfp8_activations:
+            self._set_w4a8_sharding(strategy.num_devices)
+            return
 
         if self.quant_config and self.quant_config.format == QuantFormat.MXFP4:
             # MXFP4 weights are [E, out_features, in_features//2] (transposed
@@ -799,6 +975,36 @@ class StackedMoE(Module, Shardable):
         self._down_weight.sharding_strategy = ShardingStrategy.axiswise(
             axis=1, num_devices=strategy.num_devices
         )
+
+    def _set_w4a8_sharding(self, num_devices: int) -> None:
+        """Splits each expert's width into whole interleaved scale granules.
+
+        The packed weights and their interleaved scales take the same
+        strategies: the gate/up stack splits on its output rows (axis 1 of
+        both) and the down stack on its input columns (axis 2 of both), and a
+        whole-granule slice of an interleaved scale tensor is the interleave
+        of the matching row-major slice. Concatenated gate/up halves split
+        separately, so every device keeps matching gate and up rows.
+
+        Raises:
+            ValueError: If the expert width does not split into whole
+                128-wide granules.
+        """
+        if self.moe_dim % (_W4A8_TP_GRANULE * num_devices):
+            raise ValueError(
+                f"StackedMoE: expert width {self.moe_dim} does not split into "
+                f"whole {_W4A8_TP_GRANULE}-wide scale granules over "
+                f"{num_devices} devices."
+            )
+        if self.gate_up_format == GateUpFormat.CONCATENATED:
+            gate_up = ShardingStrategy.gate_up(num_devices, axis=1)
+        else:
+            gate_up = ShardingStrategy.axiswise(axis=1, num_devices=num_devices)
+        down = ShardingStrategy.axiswise(axis=2, num_devices=num_devices)
+        self._gate_up_weight.sharding_strategy = gate_up
+        self._gate_up_scale.sharding_strategy = gate_up
+        self._down_weight.sharding_strategy = down
+        self._down_scale.sharding_strategy = down
 
     def _set_bias_sharding(self, strategy: ShardingStrategy) -> None:
         """Configures sharding for bias tensors."""
@@ -900,6 +1106,8 @@ class StackedMoE(Module, Shardable):
             shared_experts_dim=sharded_shared_dim,
             quant_config=self.quant_config,
             apply_router_weight_first=self.apply_router_weight_first,
+            router_dtype=self.router_dtype,
+            mxfp8_activations=self.mxfp8_activations,
             is_sharding=True,
         )
 
@@ -920,7 +1128,19 @@ class StackedMoE(Module, Shardable):
                 "StackedMoE cannot be sharded without a sharding strategy."
             )
 
-        gate_score_shards = self.gate.gate_score.shard(devices)
+        devices = list(devices)
+        # MoEGate.shard rebuilds a plain MoEGate, so a gate class that does
+        # not override it keeps the instance gate_cls built with its
+        # projection swapped for the shard. One that does override it shards
+        # its own extra weights, such as a correction bias.
+        gate_shards = (
+            self.gate.shard(devices)
+            if type(self.gate).shard is not MoEGate.shard
+            else None
+        )
+        gate_score_shards = (
+            self.gate.gate_score.shard(devices) if gate_shards is None else []
+        )
         gate_up_shards = self._gate_up_weight.shard(devices)
         down_shards = self._down_weight.shard(devices)
 
@@ -946,7 +1166,10 @@ class StackedMoE(Module, Shardable):
             )
 
             sharded.tp_size = num_devices
-            sharded.gate.gate_score = gate_score_shards[shard_idx]
+            if gate_shards is not None:
+                sharded.gate = gate_shards[shard_idx]
+            else:
+                sharded.gate.gate_score = gate_score_shards[shard_idx]
             sharded._gate_up_weight = gate_up_shards[shard_idx]
             sharded._down_weight = down_shards[shard_idx]
 

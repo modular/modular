@@ -32,7 +32,7 @@ from std.memory import bitcast
 from std.sys import size_of
 
 
-@always_inline
+@inline(.always)
 def build_edge_mask(
     index: Int32, lower_bound: Int32, upper_bound: Int32
 ) -> Int16:
@@ -55,7 +55,7 @@ def build_edge_mask(
     )
 
 
-@always_inline
+@inline(.always)
 def _emask_load[
     dtype: DType,
     src_space: AddressSpace,
@@ -104,16 +104,16 @@ def _emask_load[
     comptime full_mask = Int16((1 << width) - 1)
     comptime elt_size = Int16(size_of[dtype]())
 
-    var byte_ptr = ptr.unsafe_bitcast[
-        Scalar[DType.uint8]
-    ]().unsafe_address_space_cast[target_space]()
+    var byte_ptr = ptr.unsafe_bitcast[UInt8]().unsafe_address_space_cast[
+        target_space
+    ]()
     var raw = external_call[name, SIMD[lane_dtype, width]](
         byte_ptr, mask, full_mask, elt_size
     )
     return bitcast[dtype, width](raw)
 
 
-@always_inline
+@inline(.always)
 def edge_masked_load[
     dtype: DType,
     src_space: AddressSpace,
@@ -161,7 +161,7 @@ def edge_masked_load[
     return _emask_load[width, name_space, src_space](ptr, mask)
 
 
-@always_inline
+@inline(.always)
 def gmem_edge_masked_load[
     dtype: DType,
     src_space: AddressSpace,
@@ -196,7 +196,7 @@ def gmem_edge_masked_load[
     return _emask_load[width, "global", AddressSpace.GLOBAL](ptr, mask)
 
 
-@always_inline
+@inline(.always)
 def smem_edge_masked_load[
     dtype: DType,
     src_space: AddressSpace,

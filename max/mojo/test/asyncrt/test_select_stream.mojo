@@ -27,13 +27,13 @@ cheaper to diagnose than a full multi-stream graph:
 """
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
 def add_one(
-    inp: Pointer[Float32, MutAnyOrigin],
+    inp: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):

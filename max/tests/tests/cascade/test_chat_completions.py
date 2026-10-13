@@ -15,20 +15,28 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterable, AsyncIterator
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from max.experimental.cascade import (
-    ChatMessages,
-    GenerateRequest,
+    GenAIChunk,
+    GenAIInterface,
+    GenAIRequest,
+    GenAITextChunk,
     LocalRuntime,
-    TextGenInterface,
+    Modality,
+    TextGenOptions,
 )
 from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
 from max.experimental.cascade.serve.chat_completions import build_router
+from max.experimental.cascade.serve.openai_chat_formatter import (
+    DONE_SSE,
+    OpenAIChatFormatter,
+)
 
 
 @pytest.fixture()
@@ -98,15 +106,23 @@ async def test_streaming_response(client: AsyncClient) -> None:
     # Last event should be the [DONE] sentinel.
     assert events[-1] == "[DONE]"
 
-    # All other events are JSON chunks with content "A".
     import json
 
     chunks = [json.loads(e) for e in events[:-1]]
-    assert len(chunks) == 3
     for chunk in chunks:
         assert chunk["object"] == "chat.completion.chunk"
         assert chunk["model"] == "dummy"
+
+    # Three content frames, each carrying one "A".
+    content_chunks = [
+        c for c in chunks if c["choices"][0]["delta"].get("content")
+    ]
+    assert len(content_chunks) == 3
+    for chunk in content_chunks:
         assert chunk["choices"][0]["delta"]["content"] == "A"
+
+    # A terminal frame carries the finish reason.
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
 
 
 @pytest.mark.asyncio
@@ -132,8 +148,14 @@ async def test_multipart_content(client: AsyncClient) -> None:
     assert body["choices"][0]["message"]["content"] == "AA"
 
 
+@pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.asyncio
-async def test_unsupported_content_type(client: AsyncClient) -> None:
+async def test_unsupported_content_type(
+    client: AsyncClient, stream: bool
+) -> None:
+    # Streaming must reject just as loudly as non-streaming: the pipeline
+    # translates before handing back a stream, so the rejection still lands on
+    # the status line rather than truncating a 200 response body.
     resp = await client.post(
         "/v1/chat/completions",
         json={
@@ -147,26 +169,35 @@ async def test_unsupported_content_type(client: AsyncClient) -> None:
                 }
             ],
             "max_tokens": 1,
+            "stream": stream,
         },
     )
     assert resp.status_code == 400
     assert "image_url" in resp.json()["detail"]
 
 
-class _SpyPipeline(TextGenInterface):
-    """Records the ``GenerateRequest`` forwarded by the route."""
+class _SpyPipeline(GenAIInterface):
+    """Records the :class:`GenAIRequest` forwarded by the route."""
 
     def __init__(self) -> None:
-        self.last_request: GenerateRequest | None = None
+        self.last_request: GenAIRequest | None = None
 
-    async def open_text_stream(
-        self, req: GenerateRequest, prompt: str | ChatMessages
-    ) -> AsyncIterable[str]:
+    def supported_input_modalities(self) -> set[Modality]:
+        """Accept text prompts."""
+        return {Modality.TEXT}
+
+    def supported_output_modalities(self) -> set[Modality]:
+        """Emit assistant text, reasoning, and tool calls."""
+        return {Modality.TEXT}
+
+    async def _generate_iterator(
+        self, req: GenAIRequest
+    ) -> AsyncIterable[GenAIChunk]:
         self.last_request = req
 
-        async def _stream() -> AsyncIterator[str]:
-            for _ in range(req.num_tokens):
-                yield "A"
+        async def _stream() -> AsyncIterator[GenAIChunk]:
+            for _ in range(req.text.num_tokens):
+                yield GenAITextChunk(text="A")
 
         return _stream()
 
@@ -215,8 +246,8 @@ async def test_forwards_all_sampling_fields(
         },
     )
     assert resp.status_code == 200
-    req = spy.last_request
-    assert req is not None
+    assert spy.last_request is not None
+    req = spy.last_request.text
     assert req.num_tokens == 4
     assert req.min_new_tokens == 2
     assert req.ignore_eos is True
@@ -248,7 +279,7 @@ async def test_max_completion_tokens_supersedes_max_tokens(
     )
     assert resp.status_code == 200
     assert spy.last_request is not None
-    assert spy.last_request.num_tokens == 6
+    assert spy.last_request.text.num_tokens == 6
 
 
 @pytest.mark.asyncio
@@ -266,7 +297,7 @@ async def test_stop_string_is_normalized_to_list(
     )
     assert resp.status_code == 200
     assert spy.last_request is not None
-    assert spy.last_request.stop == ["END"]
+    assert spy.last_request.text.stop == ["END"]
 
 
 @pytest.mark.asyncio
@@ -281,10 +312,10 @@ async def test_defaults_when_fields_absent(
         },
     )
     assert resp.status_code == 200
-    req = spy.last_request
-    assert req is not None
+    assert spy.last_request is not None
+    req = spy.last_request.text
     # Unset sampling fields fall back to "use the model / server default".
-    assert req.num_tokens == GenerateRequest.model_fields["num_tokens"].default
+    assert req.num_tokens == TextGenOptions.model_fields["num_tokens"].default
     assert req.temperature == 1.0
     assert req.top_k is None
     assert req.top_p is None
@@ -295,3 +326,47 @@ async def test_defaults_when_fields_absent(
     assert req.repetition_penalty is None
     assert req.stop is None
     assert req.stop_token_ids is None
+
+
+async def _sse_frames(
+    chunks: list[GenAIChunk],
+) -> list[bytes]:
+    """Run ``format_stream`` over ``chunks`` and collect its SSE frames."""
+
+    async def _iter() -> AsyncIterator[GenAIChunk]:
+        for chunk in chunks:
+            yield chunk
+
+    formatter = OpenAIChatFormatter()
+    # A streaming worker_method returns the async iterator when called directly
+    # on the instance (the proxy path returns a ResultIter handle instead).
+    stream = cast(
+        "AsyncIterator[bytes]",
+        formatter.format_stream(_iter(), "m", "req-1", 0),
+    )
+    return [frame async for frame in stream]
+
+
+@pytest.mark.asyncio
+async def test_text_free_chunks_are_not_framed() -> None:
+    """A chunk carrying only a token count produces no SSE delta."""
+    frames = await _sse_frames(
+        [
+            GenAITextChunk(text="hi", num_tokens=1),
+            GenAITextChunk(text="", num_tokens=1),
+        ]
+    )
+
+    # One content frame, then the finish_reason frame and the DONE sentinel.
+    assert sum(b'"content":"hi"' in frame for frame in frames) == 1
+    assert not any(b'"content":""' in frame for frame in frames)
+    assert frames[-1] == DONE_SSE
+
+
+@pytest.mark.asyncio
+async def test_text_free_chunk_alone_still_terminates_the_stream() -> None:
+    """A response whose only chunk is text-free still closes cleanly."""
+    frames = await _sse_frames([GenAITextChunk(text="", num_tokens=1)])
+
+    assert not any(b'"content":""' in frame for frame in frames)
+    assert frames[-1] == DONE_SSE

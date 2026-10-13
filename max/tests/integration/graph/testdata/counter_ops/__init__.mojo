@@ -47,7 +47,7 @@ struct MakeCounterFromTensor:
     @staticmethod
     def execute[
         stride: Int,
-    ](init: InputTensor[dtype=DType.int32, rank=1, ...]) -> Counter[stride]:
+    ](init: InputTensor[dtype=.int32, rank=1, ...]) -> Counter[stride]:
         print("making. init:", init[0], init[1])
         return Counter[stride](Int(init[0]), Int(init[1]))
 
@@ -75,9 +75,6 @@ struct ReadCounter:
     @staticmethod
     def execute[
         stride: Int
-    ](
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
-        c: Counter[stride],
-    ):
+    ](output: OutputTensor[dtype=.int32, rank=1, ...], c: Counter[stride],):
         output[0] = Int32(c.a)
         output[1] = Int32(c.b)

@@ -27,7 +27,7 @@ class EOSTracker(BaseModel):
     """Centralized EOS tracking: single-ID, sequence-ID, and stop-sequence checks.
 
     Used by Context and sampling to decide when generation stops and which
-    token IDs to mask during min_tokens. Built once (e.g. by tokenizer from
+    token IDs to mask during min_tokens. Built once (such as by tokenizer from
     request params) and passed into context, so eos fields are immutable; Server and Context both use
     this type.
 
@@ -46,7 +46,7 @@ class EOSTracker(BaseModel):
     _max_eos_seq_len: int = PrivateAttr(default=1)
     _continuation_tail: str = PrivateAttr(default="")
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: Any) -> None:  # noqa: PYI063
         """Post-initialization hook to set the maximum stop length and continuation tail."""
         self._max_stop_length = max(
             (len(s) for s in self.eos_stop_strings), default=0
@@ -54,6 +54,17 @@ class EOSTracker(BaseModel):
         self._max_eos_seq_len = max(
             (len(s) for s in self.eos_sequences), default=1
         )
+
+    @property
+    def eos_sequence_lookback(self) -> int:
+        """How many pre-span tokens first_eos_offset can read.
+
+        A stop sequence straddling the span boundary contributes at most
+        len(seq) - 1 tokens from before it, so callers capturing history
+        for that method need only this many. Zero when no multi-token stop
+        sequence is configured, where prior_generated is ignored outright.
+        """
+        return self._max_eos_seq_len - 1
 
     # --- EOS Single ID + Sequence ID Check---
     def is_eos_from_tokens(
@@ -115,7 +126,7 @@ class EOSTracker(BaseModel):
             The offset into ``new_tokens`` of the first terminating token, or
             ``None`` if the span does not end generation.
         """
-        keep = self._max_eos_seq_len - 1
+        keep = self.eos_sequence_lookback
         tail = (
             prior_generated[max(0, len(prior_generated) - keep) :]
             if keep

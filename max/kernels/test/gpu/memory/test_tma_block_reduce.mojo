@@ -16,10 +16,10 @@ from std.random import rand
 from std.sys import argv
 from std.sys.info import simd_width_of, size_of
 
-import std.gpu.primitives.warp as warp
-from max.gpu.host import DeviceContext, get_gpu_target
+import max.gpu.primitives.warp as warp
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from std.gpu import (
+from max.gpu import (
     block_dim,
     block_idx,
     thread_idx,
@@ -43,18 +43,18 @@ from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, row_major
 
 
-@always_inline
+@inline(.always)
 def block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
     var m2_shared = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=AddressSpace.SHARED
+        max_warps_per_block, dtype, address_space=.SHARED
     ]()
     var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=AddressSpace.SHARED
+        1, dtype, address_space=.SHARED
     ]()
 
     var tid = thread_idx.x
@@ -93,7 +93,7 @@ def global_reduction_kernel[
     input_fn: def[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
-](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
+](d_out: MutPointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
     # `Int` is not device-passable; widen the fixed-width arg.
     var num_cols = Int(num_cols_dev)
     var tid = thread_idx.x
@@ -102,9 +102,7 @@ def global_reduction_kernel[
     var vec_data = SIMD[accum_type, simd_width](0)
 
     if idx < num_cols:
-        vec_data = input_fn[simd_width, 2](IndexList[2](row, idx)).cast[
-            accum_type
-        ]()
+        vec_data = input_fn[simd_width, 2]((row, idx)).cast[accum_type]()
 
     var thread_sum = vec_data.reduce_add()
 
@@ -125,24 +123,22 @@ def tma_reduction_kernel[
     descriptor: TMADescriptor,
     rows_dev: Int32,
     cols_dev: Int32,
-    d_data: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
+    d_data: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    d_out: MutPointer[Scalar[accum_type], MutAnyOrigin],
 ):
     # `Int` is not device-passable; widen the fixed-width args.
     var rows = Int(rows_dev)
     var cols = Int(cols_dev)
     var shmem = external_memory[
-        Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
+        Scalar[dtype], address_space=.SHARED, alignment=128
     ]()
     # Calculate elements offset for this block (row).
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = unsafe_stack_allocation[
-        1, Int64, address_space=AddressSpace.SHARED
-    ]()
+    var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
 
-    var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
+    var descriptor_ptr = Pointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 
     if thread_idx.x == 0:
@@ -178,7 +174,7 @@ def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
 ](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,) raises:
     var n = rows * cols
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime accum_type = get_accum_type[dtype]()
 
@@ -202,9 +198,8 @@ def test_tma_block_reduce[
     ctx.enqueue_memset(d_out, 0)
 
     # Define the kernel launch function for benchmarking
-    @__parameter
-    @always_inline
-    def kernel_launch(ctx: DeviceContext) raises -> None:
+    @inline(.always)
+    def kernel_launch(ctx: DeviceContext) raises {imm} -> None:
         comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype, 2](
                 d_data,
@@ -232,7 +227,7 @@ def test_tma_block_reduce[
 
             # Change the input function to match RMS norm pattern
             @__copy_capture(data_buf)
-            @always_inline
+            @inline(.always)
             @__parameter
             def input_fn_2d[
                 width: Int, _rank: Int
@@ -266,7 +261,7 @@ def test_tma_block_reduce[
             kernel_launch(ctx)
 
         # Timed runs
-        var total_time = ctx.execution_time[kernel_launch](num_iters)
+        var total_time = ctx.execution_time(kernel_launch, num_iters)
         var avg_time_ms = Float64(total_time) / Float64(num_iters) * 1e6
 
         print(

@@ -61,7 +61,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
 
-from comm import Signal, MAX_GPUS, group_start, group_end
+from comm import Signal, group_start, group_end
 from comm.reducescatter import ReduceScatterConfig
 from comm.reducescatter_rmsnorm import reducescatter_rmsnorm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
@@ -104,7 +104,7 @@ def bench_rs_norm_gemm_pdl[
         list_of_ctx: One context per participating GPU.
     """
     comptime assert (
-        in_dtype == DType.bfloat16
+        in_dtype == .bfloat16
     ), "the fused RS+RMSNorm producer is bf16-only"
 
     comptime simd_size = simd_width_of[in_dtype, target=get_gpu_target()]()
@@ -149,10 +149,7 @@ def bench_rs_norm_gemm_pdl[
     var gamma_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var c_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var c_ref_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     var weight_elems = gemm_n * num_cols
     var gamma_host = List(length=num_cols, fill=Scalar[in_dtype](0))
@@ -229,14 +226,14 @@ def bench_rs_norm_gemm_pdl[
         )
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -260,28 +257,34 @@ def bench_rs_norm_gemm_pdl[
     # each iteration streams cold weights -- the cost the prefetch must hide.
     comptime WeightType = TileTensor[
         in_dtype,
-        type_of(row_major(Coord(Idx[gemm_n], Idx[num_cols]))),
+        type_of(row_major(Idx[gemm_n], Idx[num_cols])),
         ImmutAnyOrigin,
     ]
     var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
-    var normed_shards = Array[OutShardType, ngpus](uninitialized=True)
-    var sum_shards = Array[OutShardType, ngpus](uninitialized=True)
-    var gamma_shards = Array[GammaShardType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        normed_shards[i] = OutShardType(
+    var normed_shards = Array[OutShardType, ngpus](
+        fill_with=lambda (i: Int) {
+            ref normed, imm config
+        } -> OutShardType: OutShardType(
             normed[i].unsafe_ptr().as_unsafe_any_origin(),
             row_major(Coord(Index(config.rank_units(i), num_cols))),
         )
-        sum_shards[i] = OutShardType(
+    )
+    var sum_shards = Array[OutShardType, ngpus](
+        fill_with=lambda (i: Int) {
+            ref fused_sum, imm config
+        } -> OutShardType: OutShardType(
             fused_sum[i].unsafe_ptr().as_unsafe_any_origin(),
             row_major(Coord(Index(config.rank_units(i), num_cols))),
         )
-        gamma_shards[i] = GammaShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+    )
+    var gamma_shards = Array[GammaShardType, ngpus](
+        fill_with=lambda (i: Int) -> GammaShardType: GammaShardType(
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_cols))),
         )
+    )
 
     var bench_name_prefix = String(
         "M=",
@@ -322,7 +325,7 @@ def bench_rs_norm_gemm_pdl[
         for i in range(ngpus):
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
-                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                         cb_inputs[_j].offset_ptr(0)
                     ),
                     row_major(Coord(Index(num_rows, num_cols))),
@@ -349,17 +352,17 @@ def bench_rs_norm_gemm_pdl[
                 ](
                     TileTensor(
                         c_dev[i] if verify_variant == 1 else c_ref_dev[i],
-                        row_major(Coord(local_rows, Idx[gemm_n])),
+                        row_major(local_rows, Idx[gemm_n]),
                     ),
                     TileTensor(
                         normed[i],
-                        row_major(Coord(local_rows, Idx[num_cols])),
+                        row_major(local_rows, Idx[num_cols]),
                     ),
                     WeightType(
-                        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                             cb_weights[i].offset_ptr(0)
                         ),
-                        row_major(Coord(Idx[gemm_n], Idx[num_cols])),
+                        row_major(Idx[gemm_n], Idx[num_cols]),
                     ),
                     list_of_ctx[i],
                 )
@@ -413,14 +416,13 @@ def bench_rs_norm_gemm_pdl[
             == 4 else "consumer_only"
         )
 
-        @__parameter
-        @always_inline
+        @inline(.always)
         def bench_pair_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-        ) raises:
+        ) raises {mut in_bufs, imm}:
             var local_rows = config.rank_units(ctx_idx)
 
-            @always_inline
+            @inline(.always)
             def call_fn(
                 ctx_inner: DeviceContext, cache_iter: Int
             ) raises {mut in_bufs, imm}:
@@ -428,7 +430,7 @@ def bench_rs_norm_gemm_pdl[
                     comptime for _j in range(ngpus):
                         in_bufs[_j] = InTensorType(
                             rebind[
-                                UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]
+                                ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
                             ](cb_inputs[_j].offset_ptr(cache_iter)),
                             row_major(Coord(Index(num_rows, num_cols))),
                         )
@@ -457,27 +459,26 @@ def bench_rs_norm_gemm_pdl[
                         ](
                             TileTensor(
                                 c_dev[ctx_idx],
-                                row_major(Coord(local_rows, Idx[gemm_n])),
+                                row_major(local_rows, Idx[gemm_n]),
                             ),
                             TileTensor(
                                 normed[ctx_idx],
-                                row_major(Coord(local_rows, Idx[num_cols])),
+                                row_major(local_rows, Idx[num_cols]),
                             ),
                             WeightType(
                                 rebind[
-                                    UnsafePointer[
-                                        Scalar[in_dtype], ImmutAnyOrigin
-                                    ]
+                                    ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
                                 ](cb_weights[ctx_idx].offset_ptr(cache_iter)),
-                                row_major(Coord(Idx[gemm_n], Idx[num_cols])),
+                                row_major(Idx[gemm_n], Idx[num_cols]),
                             ),
                             ctx_inner,
                         )
 
             bencher_iter_custom(bench, call_fn, ctx)
 
-        bench_multicontext[bench_pair_iter](
+        bench_multicontext(
             b,
+            bench_pair_iter,
             list_of_ctx,
             BenchId(variant_name, input_id=bench_name_prefix),
             [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -495,7 +496,7 @@ def bench_rs_norm_gemm_pdl[
 
 
 def main() raises:
-    comptime in_dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime in_dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_cols = get_defined_int["num_cols", 6144]()
     comptime gemm_n = get_defined_int["gemm_n", 4096]()
     comptime bm = get_defined_int["bm", 64]()

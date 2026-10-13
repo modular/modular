@@ -19,12 +19,11 @@ reference, exercising all three backends: NVIDIA's `vote.ballot.sync`, AMD's
 `ballot`, and the Apple Silicon `simd_ballot`.
 """
 
-from std.gpu import lane_id
-from std.gpu.globals import WARP_SIZE
+from max.gpu import lane_id
+from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import GPUInfo
-from std.gpu.primitives.warp import vote
-from std.sys.info import _accelerator_arch
+from max.gpu.primitives.warp import vote
 from std.testing import assert_equal, TestSuite
 
 # WARP_SIZE-appropriate mask type: NVIDIA/Apple SIMD-groups are 32 lanes
@@ -39,33 +38,33 @@ comptime _MASK = DType.uint32 if WARP_SIZE <= 32 else DType.uint64
 # kernel would still be instantiated -- tripping `vote`'s NVIDIA uint32-only
 # constraint. `_accelerator_arch()` reflects the build's accelerator flag (the
 # same mechanism `WARP_SIZE` resolves through), so it is correct in host code.
-comptime _TARGET_API = GPUInfo.from_name[_accelerator_arch()]().api
+comptime _TARGET_API = GPUInfo.default_accelerator().api
 
 
 def _vote_probe[
     ret_type: DType
 ](
-    preds: Pointer[Scalar[DType.uint8], MutAnyOrigin],
+    preds: Pointer[UInt8, MutAnyOrigin],
     out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
     out_masks[unsafe_offset=lane] = vote[ret_type](
         preds[unsafe_offset=lane] != 0
-    ).cast[DType.uint64]()
+    ).cast[.uint64]()
 
 
 def _check[
     ret_type: DType = _MASK
 ](ctx: DeviceContext, name: String, preds: List[Int]) raises:
     var n = len(preds)  # == WARP_SIZE
-    var p_host = ctx.enqueue_create_host_buffer[DType.uint8](n)
-    var out_host = ctx.enqueue_create_host_buffer[DType.uint64](n)
+    var p_host = ctx.enqueue_create_host_buffer[.uint8](n)
+    var out_host = ctx.enqueue_create_host_buffer[.uint64](n)
     ctx.synchronize()
     for i in range(n):
         p_host[i] = UInt8(1) if preds[i] != 0 else UInt8(0)
 
-    var p_dev = ctx.enqueue_create_buffer[DType.uint8](n)
-    var out_dev = ctx.enqueue_create_buffer[DType.uint64](n)
+    var p_dev = ctx.enqueue_create_buffer[.uint8](n)
+    var out_dev = ctx.enqueue_create_buffer[.uint64](n)
     ctx.enqueue_copy(p_dev, p_host)
     ctx.enqueue_function[_vote_probe[ret_type]](
         p_dev, out_dev, grid_dim=1, block_dim=n
@@ -133,13 +132,13 @@ def test_vote_uint64_high_bits_masked() raises:
     # reference). Gated off NVIDIA, which supports only a 32-bit return.
     comptime if _TARGET_API != "cuda" and WARP_SIZE < 64:
         with DeviceContext() as ctx:
-            _check[DType.uint64](
+            _check[.uint64](
                 ctx, "u64_all_true", List[Int](length=WARP_SIZE, fill=1)
             )
             var preds = List[Int](length=WARP_SIZE, fill=0)
             for i in range(WARP_SIZE):
                 preds[i] = 1 if (i % 3 == 0) else 0
-            _check[DType.uint64](ctx, "u64_mod3", preds)
+            _check[.uint64](ctx, "u64_mod3", preds)
 
 
 def main() raises:

@@ -36,9 +36,12 @@ from .._mlir._mlir_libs._mlir.ir import (
 
 
 def site_initialize() -> None:
-    from max._core import graph  # type: ignore
+    from max._core import graph  # type: ignore[import-not-found]
 
-    from .._mlir._mlir_libs import get_dialect_registry  # type: ignore
+    # This ignore is needed externally but not internally
+    from .._mlir._mlir_libs import (  # type: ignore[attr-defined, unused-ignore]
+        get_dialect_registry,
+    )
 
     graph.load_modular_dialects(get_dialect_registry())
 

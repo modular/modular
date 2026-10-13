@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from max.nn import ReturnHiddenStates
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
@@ -27,75 +27,13 @@ from max.pipelines.lib.config import (
     SpeculativeConfig,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.speculative._dflash import parse_dflash_draft_hf_config
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass(frozen=True)
-class DflashDraftHFConfig:
-    mask_token_id: int
-    target_layer_ids: list[int]
-    block_size: int | None = None
-    num_target_layers: int | None = None
-
-
-def parse_dflash_draft_hf_config(
-    huggingface_config: Any,
-) -> DflashDraftHFConfig:
-    def _get(obj: Any, name: str, default: Any = None) -> Any:
-        if obj is None:
-            return default
-        if isinstance(obj, dict):
-            return obj.get(name, default)
-        return getattr(obj, name, default)
-
-    dflash_cfg = _get(huggingface_config, "dflash_config", None)
-    mask_token_id = _get(dflash_cfg, "mask_token_id", None)
-    if mask_token_id is None:
-        raise ValueError(
-            "DFlash draft HF config is missing ``dflash_config.mask_token_id``."
-        )
-    target_layer_ids_raw = _get(dflash_cfg, "target_layer_ids", None)
-    if target_layer_ids_raw is None:
-        raise ValueError(
-            "DFlash draft HF config is missing"
-            " ``dflash_config.target_layer_ids``."
-        )
-    if not isinstance(target_layer_ids_raw, (list, tuple)):
-        raise ValueError(
-            "DFlash dflash_config.target_layer_ids must be a list of ints,"
-            f" got {type(target_layer_ids_raw).__name__}."
-        )
-    target_layer_ids = [int(x) for x in target_layer_ids_raw]
-    if not target_layer_ids:
-        raise ValueError(
-            "DFlash dflash_config.target_layer_ids must be non-empty."
-        )
-
-    raw_block_size = _get(
-        dflash_cfg, "block_size", _get(huggingface_config, "block_size", None)
-    )
-    block_size = int(raw_block_size) if raw_block_size is not None else None
-    raw_num_target_layers = _get(
-        dflash_cfg,
-        "num_target_layers",
-        _get(huggingface_config, "num_target_layers", None),
-    )
-    num_target_layers = (
-        int(raw_num_target_layers)
-        if raw_num_target_layers is not None
-        else None
-    )
-
-    return DflashDraftHFConfig(
-        mask_token_id=int(mask_token_id),
-        target_layer_ids=target_layer_ids,
-        block_size=block_size,
-        num_target_layers=num_target_layers,
-    )
 
 
 def resolve_dflash_num_speculative_tokens(
@@ -112,32 +50,11 @@ def resolve_dflash_num_speculative_tokens(
     ``--num-speculative-tokens`` is required and returned as-is. Pure: the
     caller's config is never mutated or copied.
     """
-    speculative = pipeline_config.speculative
-    assert speculative is not None
+    assert pipeline_config.speculative is not None
     assert pipeline_config.draft_model is not None
-    dflash_hf = parse_dflash_draft_hf_config(
+    return parse_dflash_draft_hf_config(
         pipeline_config.draft_model.huggingface_config
-    )
-    if dflash_hf.block_size is None:
-        if speculative.num_speculative_tokens is None:
-            raise ValueError(
-                "The DFlash draft checkpoint declares no block_size; set"
-                " --num-speculative-tokens explicitly."
-            )
-        return speculative.num_speculative_tokens
-    expected_spec = dflash_hf.block_size - 1
-    actual_spec = speculative.num_speculative_tokens
-    if warn and actual_spec is not None and actual_spec != expected_spec:
-        logger.warning(
-            "DFlash draft was trained at block_size=%d, so"
-            " num_speculative_tokens is being overridden from %d to"
-            " %d. The DFlash draft's behavior is only defined at"
-            " its trained block_size.",
-            dflash_hf.block_size,
-            actual_spec,
-            expected_spec,
-        )
-    return expected_spec
+    ).draft_width(pipeline_config.speculative, warn=warn)
 
 
 @dataclass(kw_only=True)
@@ -155,6 +72,8 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
     mask_token_id: int = 0
     block_size: int = 0
     quantization_encoding: SupportedEncoding | None = None
+    resolved_num_speculative_tokens: int | None = None
+    """Per-step draft count: explicit value if set, else the trained width."""
 
     def __post_init__(self) -> None:
         self.target.return_logits = ReturnLogits.VARIABLE
@@ -221,7 +140,11 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
             return self.block_size
         if default is not None:
             return default
-        num_spec = self.speculative_config.num_speculative_tokens
+        num_spec = (
+            self.resolved_num_speculative_tokens
+            if self.resolved_num_speculative_tokens is not None
+            else self.speculative_config.num_speculative_tokens
+        )
         if num_spec is None:
             raise ValueError(
                 "The DFlash draft checkpoint declares no block_size; set"
@@ -241,37 +164,40 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         assert model_config.huggingface_config is not None
         assert pipeline_config.speculative is not None
 
         speculative_config = pipeline_config.speculative
-        resolved: int | None = None
-        if speculative_config.num_speculative_tokens is None:
-            # Unset resolves to the drafter's trained width: unlike the
-            # DSpark pipelines, this model never re-derives the baked
-            # ``num_draft_tokens`` after load, so the value used here is
-            # the one serving runs with. The resolved value lives on this
-            # arch config's own speculative section; the caller's
-            # pipeline_config is never mutated or copied.
+        explicit = speculative_config.num_speculative_tokens
+        if explicit is None:
+            # Unset resolves to the drafter's trained width.
             resolved = resolve_dflash_num_speculative_tokens(pipeline_config)
-            speculative_config = speculative_config.model_copy(
-                update={"num_speculative_tokens": resolved}
-            )
+        else:
+            resolved = explicit
 
         assert pipeline_config.draft_model is not None
         assert pipeline_config.draft_model.huggingface_config is not None
 
         target_config = Llama3Config.initialize_from_config(
-            pipeline_config, model_config.huggingface_config, model_config
+            pipeline_config,
+            model_config.huggingface_config,
+            model_config,
+            max_seq_len=max_seq_len,
         )
+        # Resolved at construction by PipelineConfig._resolve_max_length.
+        draft_max_length = pipeline_config.draft_model.max_length
+        assert draft_max_length is not None
         draft_config = Llama3Config.initialize_from_config(
             pipeline_config,
             pipeline_config.draft_model.huggingface_config,
             pipeline_config.draft_model,
+            max_seq_len=draft_max_length,
         )
-        if resolved is not None:
+        if explicit is None:
             # ``initialize_from_config`` derives KV from the raw pipeline
             # config, where the unset width would bake num_draft_tokens=0.
             target_config.kv_params = replace(
@@ -288,9 +214,20 @@ class UnifiedDflashLlama3Config(ArchConfigWithKVCache):
             target=target_config,
             draft=draft_config,
             speculative_config=speculative_config,
+            resolved_num_speculative_tokens=resolved,
             target_layer_ids=[],
             mask_token_id=0,
         )
 
     def get_max_seq_len(self) -> int:
         return self.target.get_max_seq_len()
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        return Llama3Config.calculate_max_seq_len(
+            huggingface_config, model_config
+        )

@@ -75,7 +75,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     dtype: DType
     kv_params: KVCacheParams
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     rms_norm_eps: float | None = None
     tie_word_embeddings: bool = False
@@ -100,9 +100,12 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
         """Grouped-attention KV with EAGLE draft-token count when speculative is on."""
         return kv_cache_config.to_params(
+            allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=cls.get_head_dim(huggingface_config),
@@ -145,6 +148,8 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -218,9 +223,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 dim=huggingface_config.hidden_size,
                 n_heads=huggingface_config.num_attention_heads,
                 theta=get_rope_theta(huggingface_config),
-                max_seq_len=Llama3Config.calculate_max_seq_len(
-                    pipeline_config, huggingface_config=huggingface_config
-                ),
+                max_seq_len=max_seq_len,
                 device=device_refs[0].to_device(),
                 interleaved=interleaved_rope_weights,
                 scaling_params=longrope_scaling_params,
@@ -239,9 +242,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
-            max_seq_len=Llama3Config.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             kv_params=Llama3Config.construct_kv_params(
                 huggingface_config=huggingface_config,
                 pipeline_config=pipeline_config,
@@ -264,7 +265,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> None:
         """Define parameters that can't be determined just from the pipeline config."""

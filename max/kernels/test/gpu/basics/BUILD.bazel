@@ -52,8 +52,6 @@ _EXTRA_CONSTRAINTS = {
     "test_semaphore.mojo": ["//:nvidia_gpu"],
     "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_grid_dependence_control.mojo": ["//:h100_gpu"],
-    "test_has_amd_gpu.mojo": ["//:amd_gpu"],
-    "test_has_nvidia_gpu.mojo": ["//:nvidia_gpu"],
     "test_kernel_with_list.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377 remove this
     "test_producer_consumer.mojo": ["//:h100_gpu"],
     "test_tbc_launch_config.mojo": ["//:h100_gpu"],
@@ -67,7 +65,6 @@ _EXTRA_CONSTRAINTS = {
     "test_print.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_capture_trait_type.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_printf.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
-    "test_launch_binary.mojo": _APPLE_GPU_INCOMPATIBLE,  # Requires metallib tool which may not be available on Mac
     "test_init_vector_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2360 - MetalAIRPass address space propagation bug
     "test_prefix_sum.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
     "test_shuffle.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
@@ -82,7 +79,6 @@ _GPU_MEMORY = {
     "test_dim.mojo": "1",
     "test_fast_div.mojo": "1",
     "test_fast_div_ptx.mojo": "1",
-    "test_has_nvidia_gpu.mojo": "1",
     "test_info.mojo": "1",
     "test_invariant_load.mojo": "1",
     "test_is_sm90.mojo": "1",

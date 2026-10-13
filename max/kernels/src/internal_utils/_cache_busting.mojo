@@ -38,6 +38,12 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
     var buffer_size: Int
 
     def __init__(
+        out self, tensor_size: Int, ctx: DeviceContext, enabled: Bool = True
+    ) raises:
+        # A TMA descriptor's globalAddress must be 16-byte aligned.
+        self = Self(tensor_size, 16 // size_of[Self.dtype](), ctx, enabled)
+
+    def __init__(
         out self,
         tensor_size: Int,
         alignment: Int,
@@ -58,12 +64,12 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
         var alloc = full_buf_size if enabled else tensor_size
         self._buf = ctx.enqueue_create_buffer[Self.dtype](alloc)
 
-    @always_inline
+    @inline(.always)
     def offset(self, iteration: Int) -> Int:
         """Element offset for a benchmark iteration. Returns 0 when disabled."""
         return (iteration * self.stride) % self.buffer_size
 
-    @always_inline
+    @inline(.always)
     def unsafe_ptr(self) -> DeviceBuffer[Self.dtype]._DevicePtr:
         """Raw device pointer to base of buffer."""
         # TODO: This should properly keep/use origins.
@@ -75,7 +81,7 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
             .unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-    @always_inline
+    @inline(.always)
     def offset_ptr(self, iteration: Int) -> DeviceBuffer[Self.dtype]._DevicePtr:
         """Device pointer offset to the window for this iteration."""
         # TODO: This should properly keep/use origins.
@@ -87,13 +93,13 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
             .unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-    @always_inline
+    @inline(.always)
     def device_buffer(self) -> DeviceBuffer[Self.dtype]:
         """Access underlying DeviceBuffer (copy, since DeviceBuffer is
         ImplicitlyCopyable)."""
         return self._buf
 
-    @always_inline
+    @inline(.always)
     def alloc_size(self) -> Int:
         """Number of elements allocated."""
         return len(self._buf)

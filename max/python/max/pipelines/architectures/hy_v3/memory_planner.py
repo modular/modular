@@ -32,14 +32,11 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
-_GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
-
 
 class HyV3MemoryPlanner(PagedMemoryPlanner):
     """Memory planner for HY-V3 (Hunyuan) MoE models.
 
-    Accounts for expert-parallel routing buffers and optional
-    device-graph-capture headroom.
+    Accounts for expert-parallel routing buffers.
     """
 
     _always_signal_buffers = True
@@ -102,12 +99,5 @@ class HyV3MemoryPlanner(PagedMemoryPlanner):
             ep_buffer_memory = per_device_ep_memory * n_gpus_per_node * 2
 
         activation_memory = moe_activation_memory + ep_buffer_memory
-
-        graph_capture_headroom = 0
-        if pipeline_config.runtime.device_graph_capture:
-            graph_capture_headroom = (
-                _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE * n_gpus_per_node
-            )
-            activation_memory += graph_capture_headroom
 
         return activation_memory

@@ -21,23 +21,24 @@ graph inputs are added here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
+from max.experimental.nn import Module, as_subgraph
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
     DeviceMapping,
-    NoReshard,
-    PlacementMapping,
     Replicated,
     Sharded,
-    mode,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 
 from ...deepseekV3_modulev3.deepseekV3 import (
@@ -45,6 +46,7 @@ from ...deepseekV3_modulev3.deepseekV3 import (
     gather_last_tokens,
     split_replicated_batch,
 )
+from ...deepseekV3_modulev3.layers.quant_moe import QuantizedMoE
 from ...deepseekV3_modulev3.model_config import DeepseekV3Config
 
 
@@ -92,7 +94,7 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
         if dp_degree > 1:
             batch_context_length = Tensor.from_shard_values(
                 [TensorValue(shard) for shard in batch_context_lengths],
-                PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+                DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
             )
             data_parallel_splits, input_row_offsets_i64, *rest = variadic_args
             variadic_args = tuple(rest)
@@ -100,8 +102,10 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             batch_context_length = batch_context_lengths[0]
 
         kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(kv_collections, KVCacheInputs)
+        kv_collections = tree.leaves(
+            self.kv_params.unflatten_kv_inputs(kv_inputs),
+            leaf=KVCacheInputsPerDevice,
+        )
 
         comm_buffers: EPCommBuffers | None = None
         if self.ep_batch_manager is not None:
@@ -112,8 +116,8 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
 
         kv_collection = PagedCacheValues.from_upstream(
-            kv_collections.inputs,
-            PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+            kv_collections,
+            DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
         )
         return self._run_text_model(
             tokens,
@@ -127,7 +131,7 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             comm_buffers,
         )
 
-    @mode(NoReshard())
+    @auto_reshard(mode="raise")
     def _run_text_model(
         self,
         tokens: Tensor,
@@ -190,9 +194,13 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             # CPU batch_context_length so the graph stays capturable.
             mla_prefill_metadata.buffer_lengths = batch_context_length
 
+        # The MoE blocks share one subgraph, as in ``DeepseekV3TextModel``.
         for idx, layer in enumerate(lm.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
-            h = layer(
+            call: Callable[..., Tensor] = layer
+            if isinstance(layer.mlp, QuantizedMoE):
+                call = as_subgraph(layer, name="moe_block")
+            h = call(
                 layer_idx_tensor,
                 h,
                 kv_collection,

@@ -20,27 +20,29 @@ from typing import Any
 from max.experimental.sharding.placements import Sharded
 from max.experimental.sharding.types import TensorLayout
 
-from ..action import ActionSet, AxisAssignment
-from ..cost import P, R, build_action_set
+from ..action import AxisAssignment
+from ..cost import P, R
 
 
 # NHWC: N=0, H=1, W=2, C=3. ``*extra`` absorbs kernel/stride/etc.
-def pool_rule(input: TensorLayout, *extra: Any) -> ActionSet:
+def pool_rule(
+    input: TensorLayout, *extra: Any, **kwargs: Any
+) -> list[AxisAssignment]:
     """Strategies for pooling (max/avg): shard on N or C axis (NHWC)."""
-    rows = [
-        AxisAssignment((R,), R),
-        AxisAssignment((Sharded(0),), Sharded(0)),
-        AxisAssignment((Sharded(3),), Sharded(3)),
+    return [
+        AxisAssignment((R,), (R,)),
+        AxisAssignment((Sharded(0),), (Sharded(0),)),
+        AxisAssignment((Sharded(3),), (Sharded(3),)),
     ]
-    return build_action_set(rows, layouts=(input,), extras=extra)
 
 
-def linear_pool_rule(input: TensorLayout, *extra: Any) -> ActionSet:
+def linear_pool_rule(
+    input: TensorLayout, *extra: Any, **kwargs: Any
+) -> list[AxisAssignment]:
     """Strategies for linear pooling (avg_pool2d): adds Partial passthrough."""
-    rows = [
-        AxisAssignment((R,), R),
-        AxisAssignment((Sharded(0),), Sharded(0)),
-        AxisAssignment((Sharded(3),), Sharded(3)),
-        AxisAssignment((P,), P),
+    return [
+        AxisAssignment((R,), (R,)),
+        AxisAssignment((Sharded(0),), (Sharded(0),)),
+        AxisAssignment((Sharded(3),), (Sharded(3),)),
+        AxisAssignment((P,), (P,)),
     ]
-    return build_action_set(rows, layouts=(input,), extras=extra)

@@ -21,6 +21,8 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import KVTransferEngineMetadata
 from max.serve.scheduler.base import (
     CancelRequest,
+    PrefillFailure,
+    PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
 )
@@ -73,7 +75,12 @@ class DispatcherClient(Generic[Request, Reply]):
 RequestType = (
     PrefillRequest[TextContext] | KVTransferEngineMetadata | CancelRequest
 )
-ReplyType = PrefillResponse | KVTransferEngineMetadata
+ReplyType = (
+    PrefillResponse
+    | PrefillFailure
+    | KVTransferEngineMetadata
+    | PrefillProgressPing
+)
 
 
 class PrefillDispatcherServer(DispatcherServer[RequestType, ReplyType]):

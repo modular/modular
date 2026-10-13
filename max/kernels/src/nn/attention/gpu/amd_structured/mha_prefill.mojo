@@ -33,7 +33,7 @@ pre-filled from sink_weights); the kernel body needs no sink-specific code.
 from std.math import align_up, ceildiv
 from std.sys import llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane
-from std.gpu import warp_id as get_warp_id
+from max.gpu import warp_id as get_warp_id
 from max.gpu.sync import s_waitcnt
 from layout.swizzle import Swizzle
 from nn.attention.mha_mask import CausalMask, TileMaskStatus
@@ -48,14 +48,14 @@ from .mma import TiledMmaOp
 # --- Synchronization primitives (re-exported for mla_prefill.mojo) ---
 
 
-@always_inline
+@inline(.always)
 def barrier():
     """Emits the AMD GPU `s.barrier` instruction to synchronize all waves in the workgroup.
     """
     llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
 
 
-@always_inline
+@inline(.always)
 def block_sync_lds_direct_load[*, vmcnt: UInt32 = 0]():
     """Waits for outstanding vector-memory instructions to complete before a direct LDS load.
 
@@ -114,7 +114,7 @@ __extension Attention:
         # --- Buffer init ---
 
         var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
+            readfirstlane(bitcast[.int32](UInt32(get_warp_id())))
         )
         comptime _smem_depth = align_up(Self.depth, Self.BK)
         comptime KBufT = KVBuffer[
@@ -188,9 +188,8 @@ __extension Attention:
         # MMA helpers
         # =============================================================
 
-        @always_inline
-        @__parameter
-        def mma_qk():
+        @inline(.always)
+        def mma_qk() {imm}:
             """All QK MMAs for the tile, reading K regs from SMEM."""
             self.zero_p_buffer[0]()
             comptime for strip in range(num_qk_strips):
@@ -212,9 +211,8 @@ __extension Attention:
                             self.p_reg_buffer.stage_tile[0](),
                         )
 
-        @always_inline
-        @__parameter
-        def mma_pv():
+        @inline(.always)
+        def mma_pv() {imm}:
             """All PV MMAs for the tile, reading V regs from SMEM."""
             comptime for strip in range(Self.BN // Self.BK):
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
@@ -268,9 +266,10 @@ __extension Attention:
         # softmax (split), wait V, mma_pv.
         # =============================================================
 
-        @always_inline
-        @__parameter
-        def process_tile[slot: Int, has_next: Bool]():
+        @inline(.always)
+        def process_tile[
+            slot: Int, has_next: Bool
+        ]() {mut k_buffer, mut self, mut v_buffer, imm}:
             comptime next_slot = 1 - slot
 
             # Wait for K+V of this slot.  When has_next, only the previous
@@ -313,6 +312,14 @@ __extension Attention:
             elif Self.depth > 128 or Self.mask_t.apply_log2e_after_mask:
                 self.online_softmax_step_0[0]()
                 self.online_softmax_step_1[0]()
+            elif Self.q_type.is_float8():
+                # FP8 folds (score - max) * scale into one packed FMA per score
+                # pair. The FMA loses `exp_scaled`'s exact-zero-at-max property,
+                # which is load-bearing for BF16 (adversarial inputs reach NaN);
+                # the FP8 tolerance envelope and row-sum normalization absorb it,
+                # which is why `mla_prefill` already runs this form.
+                self.online_softmax_step_0_pkfma[0]()
+                self.online_softmax_step_1_pkfma[0]()
             else:
                 self.online_softmax_step_0_fma[0]()
                 self.online_softmax_step_1_fma[0]()
@@ -347,7 +354,7 @@ __extension Attention:
             process_tile[0, False]()
 
         # Final softmax denominator and output store.
-        self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
-        )
+        self.out_reg_buffer.apply_softmax_denominator[
+            p_scale_log2=type_of(self.p_reg_buffer).p_scale_log2
+        ](self.softmax.rowsum_tensor)
         self.store_output()

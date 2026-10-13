@@ -22,16 +22,16 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.builtin._closure import __ownership_keepalive
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from internal_utils import update_bench_config_args
 from std.testing import assert_equal
 
 
 def vec_func(
-    in0: UnsafePointer[Float32, ImmutAnyOrigin],
-    in1: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    in0: ImmPointer[Float32, ImmutAnyOrigin],
+    in1: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len: Int32,
 ):
     var tid = global_idx.x
@@ -40,7 +40,7 @@ def vec_func(
     output[tid] = in0[tid] + in1[tid]
 
 
-@no_inline
+@inline(.never)
 def bench_vec_add(
     mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
@@ -59,7 +59,7 @@ def bench_vec_add(
     context.enqueue_copy(in0_device, in0_host)
     context.enqueue_copy(in1_device, in1_host)
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(ctx: DeviceContext) raises {mut out_device, imm}:
         context.enqueue_function[vec_func](
             in0_device,
@@ -70,12 +70,12 @@ def bench_vec_add(
             block_dim=(block_dim),
         )
 
-    @__parameter
-    @always_inline
-    def bench_func(mut b: Bencher) raises:
+    @inline(.always)
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, context)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId("vec_add", input_id=String("block_dim=", block_dim)),
         [ThroughputMeasure(BenchMetric.flops, length)],
     )

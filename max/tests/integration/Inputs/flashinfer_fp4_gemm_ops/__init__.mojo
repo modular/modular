@@ -107,13 +107,13 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
     def execute[
         target: StaticString
     ](
-        out_tensor: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
-        mat1: InputTensor[dtype=DType.uint8, rank=2, ...],
-        mat2: InputTensor[dtype=DType.uint8, rank=2, ...],
-        mat1_scale: InputTensor[dtype=DType.uint8, rank=1, ...],
-        mat2_scale: InputTensor[dtype=DType.uint8, rank=1, ...],
-        global_scale: InputTensor[dtype=DType.float32, rank=1, ...],
-        workspace: InputTensor[dtype=DType.int8, rank=1, ...],
+        out_tensor: OutputTensor[dtype=.bfloat16, rank=2, ...],
+        mat1: InputTensor[dtype=.uint8, rank=2, ...],
+        mat2: InputTensor[dtype=.uint8, rank=2, ...],
+        mat1_scale: InputTensor[dtype=.uint8, rank=1, ...],
+        mat2_scale: InputTensor[dtype=.uint8, rank=1, ...],
+        global_scale: InputTensor[dtype=.float32, rank=1, ...],
+        workspace: InputTensor[dtype=.int8, rank=1, ...],
         ctx: DeviceContext,
     ) raises:
         """Execute the FP4 GEMM operation by calling FlashInfer."""

@@ -17,8 +17,10 @@ import logging
 import re
 from contextlib import contextmanager
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
 from max.pipelines.lib.vision_encoder_cache import (
     VideoEncoderMetrics,
     VisionEncoderMetrics,
@@ -59,18 +61,19 @@ def _make_metrics(**overrides: Any) -> BatchMetrics:
         total_preemption_count=14,
         used_kv_pct=0.15,
         total_kv_blocks=16,
+        kv_pressure_pct=0.15,
         cache_hit_rate=0.17,
         cache_hit_tokens=18,
         cache_miss_tokens=19,
         device_blocks_served=0,
         used_host_kv_pct=0.20,
-        total_host_kv_blocks=21,
-        h2d_blocks_copied=22,
-        d2h_blocks_copied=23,
-        disk_blocks_read=0,
-        disk_blocks_written=0,
+        total_host_kv_bytes=21 * 1024,
+        h2d_bytes_copied=22 * 1024,
+        d2h_bytes_copied=23 * 1024,
+        disk_bytes_read=0,
+        disk_bytes_written=0,
         used_disk_kv_pct=0.0,
-        total_disk_kv_blocks=0,
+        total_disk_kv_bytes=0,
         inflight_disk_ops=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
@@ -106,18 +109,19 @@ def test_metric_to_string() -> None:
         total_preemption_count=14,
         used_kv_pct=0.15,
         total_kv_blocks=16,
+        kv_pressure_pct=0.24,
         cache_hit_rate=0.17,
         cache_hit_tokens=18,
         cache_miss_tokens=19,
         device_blocks_served=0,
         used_host_kv_pct=0.20,
-        total_host_kv_blocks=21,
-        h2d_blocks_copied=22,
-        d2h_blocks_copied=23,
-        disk_blocks_read=0,
-        disk_blocks_written=0,
+        total_host_kv_bytes=21 * 1024,
+        h2d_bytes_copied=22 * 1024,
+        d2h_bytes_copied=23 * 1024,
+        disk_bytes_read=0,
+        disk_bytes_written=0,
         used_disk_kv_pct=0.0,
-        total_disk_kv_blocks=0,
+        total_disk_kv_bytes=0,
         inflight_disk_ops=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
@@ -133,11 +137,11 @@ def test_metric_to_string() -> None:
 
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | KVCache usage: 15.0% of 16 blocks, Cache hit rate: 17.0% (18 hit, 19 miss) | Host KVCache Usage: 20.0% of 21 blocks, Blocks copied: 22 H2D, 23 D2H | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | KVCache usage: 15.0% of 16 blocks (admission pressure: 24.0%), Cache hit rate: 17.0% (18 hit, 19 miss) | Host KVCache Usage: 20.0% of 21.00 KiB, Copied: 22.00 KiB H2D, 23.00 KiB D2H | All Preemptions: 14 reqs"
     )
 
     metrics.total_kv_blocks = 0
-    metrics.total_host_kv_blocks = 0
+    metrics.total_host_kv_bytes = 0
     assert (
         metrics.pretty_format()
         == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | All Preemptions: 14 reqs"
@@ -164,19 +168,19 @@ def test_metric_to_string_with_disk_kv() -> None:
     # When the tiered connector is active, the log line shows Disk: read/written
     # counts inside the host clause and a separate Disk KVCache Usage clause.
     metrics = _make_metrics(
-        disk_blocks_read=24,
-        disk_blocks_written=25,
+        disk_bytes_read=24 * 1024,
+        disk_bytes_written=25 * 1024,
         used_disk_kv_pct=0.30,
-        total_disk_kv_blocks=100,
+        total_disk_kv_bytes=100 * 1024,
         inflight_disk_ops=99,
     )
 
     formatted = metrics.pretty_format()
     assert (
-        "Host KVCache Usage: 20.0% of 21 blocks, "
-        "Blocks copied: 22 H2D, 23 D2H, "
-        "Disk: 24 read, 25 written | "
-        "Disk KVCache Usage: 30.0% of 100 blocks, "
+        "Host KVCache Usage: 20.0% of 21.00 KiB, "
+        "Copied: 22.00 KiB H2D, 23.00 KiB D2H, "
+        "Disk: 24.00 KiB read, 25.00 KiB written | "
+        "Disk KVCache Usage: 30.0% of 100.00 KiB, "
         "Inflight Disk Ops: 99 |"
     ) in formatted
 
@@ -193,10 +197,10 @@ def _overlap_metrics_overrides(**overrides: Any) -> dict[str, Any]:
         cache_hit_tokens=0,
         cache_miss_tokens=0,
         device_blocks_served=0,
-        total_host_kv_blocks=0,
+        total_host_kv_bytes=0,
         used_host_kv_pct=0.0,
-        h2d_blocks_copied=0,
-        d2h_blocks_copied=0,
+        h2d_bytes_copied=0,
+        d2h_bytes_copied=0,
     )
     base.update(overrides)
     return base
@@ -346,19 +350,20 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
         total_preemption_count=0,
         used_kv_pct=0.101,
         total_kv_blocks=13359,
+        kv_pressure_pct=0.101,
         cache_hit_rate=0.0,
         cache_hit_tokens=0,
         cache_miss_tokens=0,
         device_blocks_served=0,
         used_host_kv_pct=0.0,
-        total_host_kv_blocks=0,
-        h2d_blocks_copied=0,
-        d2h_blocks_copied=0,
-        disk_blocks_read=0,
-        disk_blocks_written=0,
+        total_host_kv_bytes=0,
+        h2d_bytes_copied=0,
+        d2h_bytes_copied=0,
+        disk_bytes_read=0,
+        disk_bytes_written=0,
         inflight_disk_ops=0,
         used_disk_kv_pct=0.0,
-        total_disk_kv_blocks=0,
+        total_disk_kv_bytes=0,
         draft_tokens_generated=0,
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
@@ -372,16 +377,269 @@ def test_metric_to_string_continuation_only_ce_batch() -> None:
     )
 
     formatted = metrics.pretty_format()
-    assert "KVCache usage: 10.1% of 13359 blocks |" in formatted
+    assert (
+        "KVCache usage: 10.1% of 13359 blocks (admission pressure: 10.1%) |"
+        in formatted
+    )
     assert "Cache hit rate" not in formatted
     assert "hit," not in formatted
     assert "miss)" not in formatted
 
 
+def test_dkv_clause_reports_the_size_and_the_peak_of_the_read() -> None:
+    """The dKV clause has to carry how much was read, not only how fast.
+
+    The console line that opened CLIN-1844 printed a read latency and a
+    GiB/s and no block count at all, so a 1-block read and a 100-block one
+    looked identical. The byte count was not recoverable from it either:
+    the GiB/s divides by the transfer-time total, the line reports the
+    average, and nothing publishes the count that bridges them. The peak
+    matters for the same reason: the average hides a single slow read
+    inside a batch of fast ones.
+    """
+    metrics = _make_metrics(
+        dkv_read_blocks=100,
+        dkv_read_bytes=512 * 1024 * 1024,
+        nixl_read_latency_avg_ms=0.2,
+        nixl_read_latency_max_ms=16.4,
+        nixl_read_gib_per_s=97.0,
+    )
+
+    assert (
+        "dKV: read 100 blocks (512.00 MiB) in 0.2ms avg / 16.4ms max "
+        "(97.00 GiB/s)"
+    ) in metrics.pretty_format()
+
+    extra = metrics.to_log_extra()
+    assert extra["dkv_read_blocks"] == 100
+    assert extra["dkv_read_bytes"] == 512 * 1024 * 1024
+    assert extra["nixl_read_latency_max_ms"] == 16.4
+
+
+def test_dkv_clause_shows_a_read_whose_latency_sample_was_dropped() -> None:
+    """A batch that landed blocks shows the dKV clause regardless.
+
+    The clause used to be gated on the latency averages alone, so a read
+    whose timing sample never landed printed no dKV clause at all and its
+    block count vanished from the line entirely. What replaces it is the
+    counts without the timings, not the counts beside a row of zeros:
+    ``0.0ms avg / 0.0ms max (0.00 GiB/s)`` reads as an instant read where
+    the truth is an unmeasured one.
+    """
+    metrics = _make_metrics(dkv_read_blocks=7, dkv_read_bytes=14336)
+
+    formatted = metrics.pretty_format()
+    assert "dKV: read 7 blocks (14.00 KiB), write 0.0ms" in formatted
+    assert "ms avg" not in formatted
+    assert "ms max" not in formatted
+
+    # The structured log keeps its zeros: a consumer reads the value beside
+    # the block count, and a dropped key breaks a dashboard series where a
+    # zero does not.
+    extra = metrics.to_log_extra()
+    assert extra["dkv_read_blocks"] == 7
+    assert extra["nixl_read_latency_max_ms"] == 0.0
+
+
+def test_dkv_read_counts_follow_the_console_clause_on_a_write_only_batch() -> (
+    None
+):
+    """A batch that only offloaded reports its zero reads in both places.
+
+    The console clause and the structured log share one predicate, so the
+    line cannot print a read count the log then omits. Zero is the honest
+    answer for a write-only batch, and a zero is a state an operator can
+    read where a missing key is not.
+    """
+    metrics = _make_metrics(
+        dkv_read_blocks=0,
+        dkv_read_bytes=0,
+        nixl_read_latency_avg_ms=0.0,
+        nixl_write_latency_avg_ms=3.0,
+    )
+
+    assert "dKV: read 0 blocks (0.00 KiB)" in metrics.pretty_format()
+    extra = metrics.to_log_extra()
+    assert extra["dkv_read_blocks"] == 0
+    assert extra["dkv_read_bytes"] == 0
+
+
+def test_dkv_peer_counters_report_zero_while_a_tier_is_attached() -> None:
+    """An attached tier that pulled from no peer still reports all five zeros.
+
+    This is the whole point of the counters: a flat zero says no cache hint
+    reached the connector, which is a different fault from hints arriving and
+    being rejected, and a missing series distinguishes neither.
+    """
+    metrics = _make_metrics(dkv_connected_clients=1, dkv_total_clients=1)
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_peer_attaches.assert_called_once_with(0)
+    mock_metrics.dkv_peer_attach_failures.assert_called_once_with(0)
+    mock_metrics.dkv_peers_dropped.assert_called_once_with(0)
+    mock_metrics.dkv_peer_loads.assert_called_once_with(0)
+    mock_metrics.dkv_peer_load_failures.assert_called_once_with(0)
+    mock_metrics.dkv_hints_rejected.assert_called_once_with(0)
+
+    extra = metrics.to_log_extra()
+    assert extra["dkv_peer_loads"] == 0
+    assert extra["dkv_hints_rejected"] == 0
+
+    # the console line stays quiet, since there is nothing to say about peers
+    assert "dKV peers" not in metrics.pretty_format()
+
+
+def test_dkv_peer_counters_are_silent_without_a_tier() -> None:
+    """No dKV tier attached publishes nothing and logs nothing."""
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_peer_attaches.assert_not_called()
+    mock_metrics.dkv_peer_loads.assert_not_called()
+    mock_metrics.dkv_hints_rejected.assert_not_called()
+
+    extra = metrics.to_log_extra()
+    assert "dkv_peer_loads" not in extra
+    assert "dkv_hints_rejected" not in extra
+
+
+def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
+    """A batch that pulled cross-node reports it on the line, log, and counters.
+
+    The per-call maps reach the log and the counters too, the labels that
+    moved and no others.
+    """
+    metrics = _make_metrics(
+        dkv_connected_clients=2,
+        dkv_total_clients=2,
+        dkv_peer_attaches=1,
+        dkv_peer_attach_failures=2,
+        dkv_peers_dropped=6,
+        dkv_peer_loads=3,
+        dkv_peer_load_failures=4,
+        dkv_hints_rejected=5,
+        dkv_hints_rejected_by_reason={"chain_mismatch": 5, "unparseable": 0},
+        dkv_rpc_calls={"read_blocks": 3, "heartbeat": 0},
+        dkv_rpc_time_ms={"read_blocks": 2.5, "heartbeat": 0.0},
+        dkv_rpc_socket_wait_ms={"read_blocks": 0.5},
+        dkv_lock_waits={"prepare_load": 2, "offload": 0},
+        dkv_lock_wait_ms={"prepare_load": 1.25},
+    )
+
+    assert (
+        "dKV peers: 3 loads (4 failed), 1 attaches (2 failed, 6 dropped), "
+        "5 hints rejected" in metrics.pretty_format()
+    )
+
+    extra = metrics.to_log_extra()
+    assert extra["dkv_peer_attaches"] == 1
+    assert extra["dkv_peer_attach_failures"] == 2
+    assert extra["dkv_peers_dropped"] == 6
+    assert extra["dkv_peer_loads"] == 3
+    assert extra["dkv_peer_load_failures"] == 4
+    assert extra["dkv_hints_rejected"] == 5
+    assert {
+        k: v for k, v in extra.items() if "_rpc_" in k or "_lock_" in k
+    } == {
+        "dkv_rpc_calls_read_blocks": 3,
+        "dkv_rpc_time_ms_read_blocks": 2.5,
+        "dkv_rpc_socket_wait_ms_read_blocks": 0.5,
+        "dkv_lock_waits_prepare_load": 2,
+        "dkv_lock_wait_ms_prepare_load": 1.25,
+    }
+    assert extra["dkv_hints_rejected_chain_mismatch"] == 5
+    assert "dkv_hints_rejected_unparseable" not in extra
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_peer_attaches.assert_called_once_with(1)
+    mock_metrics.dkv_peer_attach_failures.assert_called_once_with(2)
+    mock_metrics.dkv_peers_dropped.assert_called_once_with(6)
+    mock_metrics.dkv_peer_loads.assert_called_once_with(3)
+    mock_metrics.dkv_peer_load_failures.assert_called_once_with(4)
+    mock_metrics.dkv_hints_rejected.assert_called_once_with(5)
+    mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
+        5, reason="chain_mismatch"
+    )
+    mock_metrics.dkv_rpc_calls.assert_called_once_with(3, op="read_blocks")
+    mock_metrics.dkv_rpc_time_ms.assert_called_once_with(2.5, op="read_blocks")
+    mock_metrics.dkv_rpc_socket_wait_ms.assert_called_once_with(
+        0.5, op="read_blocks"
+    )
+    mock_metrics.dkv_lock_waits.assert_called_once_with(2, entry="prepare_load")
+    mock_metrics.dkv_lock_wait_ms.assert_called_once_with(
+        1.25, entry="prepare_load"
+    )
+
+
+def test_dkv_per_call_counters_publish_one_series_per_label() -> None:
+    """Each per-call map publishes one increment per key that moved.
+
+    A zero increment changes no counter, so the zeros never leave the
+    scheduler thread.
+    """
+    metrics = _make_metrics(
+        dkv_connected_clients=1,
+        dkv_total_clients=1,
+        dkv_rpc_calls={"read_blocks": 3, "touch_blocks": 2, "heartbeat": 0},
+        dkv_rpc_time_ms={
+            "read_blocks": 2.5,
+            "touch_blocks": 4.0,
+            "heartbeat": 0.0,
+        },
+        dkv_rpc_socket_wait_ms={"read_blocks": 0.5, "touch_blocks": 0.0},
+        dkv_lock_waits={"poll_transfers": 6, "offload": 0},
+        dkv_lock_wait_ms={"poll_transfers": 1.25, "offload": 0.0},
+        dkv_hints_rejected_by_reason={"chain_mismatch": 7, "unparseable": 0},
+    )
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_rpc_calls.assert_has_calls(
+        [call(3, op="read_blocks"), call(2, op="touch_blocks")], any_order=True
+    )
+    assert mock_metrics.dkv_rpc_calls.call_count == 2
+    mock_metrics.dkv_rpc_time_ms.assert_has_calls(
+        [call(2.5, op="read_blocks"), call(4.0, op="touch_blocks")],
+        any_order=True,
+    )
+    assert mock_metrics.dkv_rpc_time_ms.call_count == 2
+    mock_metrics.dkv_rpc_socket_wait_ms.assert_called_once_with(
+        0.5, op="read_blocks"
+    )
+    mock_metrics.dkv_lock_waits.assert_called_once_with(
+        6, entry="poll_transfers"
+    )
+    mock_metrics.dkv_lock_wait_ms.assert_called_once_with(
+        1.25, entry="poll_transfers"
+    )
+    mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
+        7, reason="chain_mismatch"
+    )
+
+
+def test_dkv_peer_clause_appears_on_rejected_hints_alone() -> None:
+    """Rejected hints with no successful pull still print the clause.
+
+    The gate is any peer activity, not a successful one: a batch whose every
+    hint was rejected is exactly the batch an operator needs the line for.
+    """
+    metrics = _make_metrics(
+        dkv_connected_clients=1, dkv_total_clients=1, dkv_hints_rejected=7
+    )
+
+    assert "7 hints rejected" in metrics.pretty_format()
+
+
 def test_to_log_extra_required_fields() -> None:
     extra = _make_metrics().to_log_extra()
 
-    #
     assert extra["event"] == "batch_metrics"
     assert extra["batch_type"] == "CE"
 
@@ -400,7 +658,7 @@ def test_to_log_extra_required_fields() -> None:
     assert extra["cache_miss_tokens"] == 19
 
     assert extra["used_host_kv_pct"] == 0.20
-    assert extra["total_host_kv_blocks"] == 21
+    assert extra["total_host_kv_bytes"] == 21 * 1024
 
     # ensure data is flat
     for k, v in extra.items():
@@ -418,10 +676,10 @@ def test_to_log_extra_covers_every_pretty_format_number() -> None:
     """
     metrics = _make_metrics(
         batch_type=BatchType.TG,
-        disk_blocks_read=24,
-        disk_blocks_written=25,
+        disk_bytes_read=24 * 1024,
+        disk_bytes_written=25 * 1024,
         used_disk_kv_pct=0.30,
-        total_disk_kv_blocks=100,
+        total_disk_kv_bytes=100 * 1024,
         inflight_disk_ops=99,
         draft_tokens_generated=95,
         draft_tokens_accepted=42,
@@ -436,8 +694,8 @@ def test_to_log_extra_covers_every_pretty_format_number() -> None:
     extra = metrics.to_log_extra()
 
     assert extra["inflight_disk_ops"] == 99
-    assert extra["disk_blocks_read"] == 24
-    assert extra["disk_blocks_written"] == 25
+    assert extra["disk_bytes_read"] == 24 * 1024
+    assert extra["disk_bytes_written"] == 25 * 1024
 
     assert extra["max_acceptance_length"] == 5
     assert extra["draft_token_acceptance_rate"] == 42 / 95
@@ -466,10 +724,10 @@ def test_to_log_extra_gating_continuation_only_ce() -> None:
         cache_hit_tokens=0,
         cache_miss_tokens=0,
         device_blocks_served=0,
-        total_host_kv_blocks=0,
+        total_host_kv_bytes=0,
         used_host_kv_pct=0.0,
-        h2d_blocks_copied=0,
-        d2h_blocks_copied=0,
+        h2d_bytes_copied=0,
+        d2h_bytes_copied=0,
     ).to_log_extra()
 
     assert "used_kv_pct" in extra
@@ -481,9 +739,9 @@ def test_to_log_extra_gating_continuation_only_ce() -> None:
     assert "device_blocks_served" not in extra
 
     assert "used_host_kv_pct" not in extra
-    assert "total_host_kv_blocks" not in extra
-    assert "h2d_blocks_copied" not in extra
-    assert "d2h_blocks_copied" not in extra
+    assert "total_host_kv_bytes" not in extra
+    assert "h2d_bytes_copied" not in extra
+    assert "d2h_bytes_copied" not in extra
 
     assert "inflight_disk_ops" not in extra
 
@@ -608,23 +866,25 @@ def test_publish_metrics_default_path() -> None:
     # Device KV cluster.
     mock_metrics.cache_num_total_blocks.assert_called_once_with(16)
     mock_metrics.cache_used_kv_pct.assert_called_once_with(15.0)
-    # Cache-hit clause (CE + num_new_admissions=1).
-    mock_metrics.cache_hits.assert_called_once_with(18)
+    # Cache-hit clause (CE + num_new_admissions=1). No connector in this
+    # fixture, so every hit token is tagged to the device tier.
+    mock_metrics.cache_hits.assert_called_once_with(18, tier="g0")
     mock_metrics.cache_misses.assert_called_once_with(19)
-    # Host KV clause (total_host_kv_blocks=21).
+    # Host KV clause (total_host_kv_bytes nonzero).
     mock_metrics.cache_used_host_kv_pct.assert_called_once_with(20.0)
-    mock_metrics.cache_h2d_blocks_copied.assert_called_once_with(22)
-    mock_metrics.cache_d2h_blocks_copied.assert_called_once_with(23)
+    mock_metrics.cache_h2d_bytes_copied.assert_called_once_with(22 * 1024)
+    mock_metrics.cache_d2h_bytes_copied.assert_called_once_with(23 * 1024)
     # Inactive subsystems must not emit anything.
     mock_metrics.spec_decode_avg_acceptance_length.assert_not_called()
     mock_metrics.spec_decode_acceptance_rate_per_position.assert_not_called()
     mock_metrics.dkv_nixl_read_latency.assert_not_called()
+    mock_metrics.dkv_nixl_read_latency_max.assert_not_called()
     mock_metrics.dkv_nixl_read_gib_per_s.assert_not_called()
     mock_metrics.dkv_nixl_write_latency.assert_not_called()
     mock_metrics.dkv_nixl_write_gib_per_s.assert_not_called()
     mock_metrics.dkv_rpc_acquire_latency.assert_not_called()
     mock_metrics.dkv_rpc_read_latency.assert_not_called()
-    # Disk KV gated off (total_disk_kv_blocks=0).
+    # Disk KV gated off (total_disk_kv_bytes=0).
     mock_metrics.cache_used_disk_kv_pct.assert_not_called()
 
 
@@ -642,16 +902,17 @@ def test_publish_metrics_subsystem_gating() -> None:
         cache_hit_tokens=0,
         cache_miss_tokens=0,
         device_blocks_served=0,
-        total_host_kv_blocks=0,
+        total_host_kv_bytes=0,
         used_host_kv_pct=0.0,
-        h2d_blocks_copied=0,
-        d2h_blocks_copied=0,
+        h2d_bytes_copied=0,
+        d2h_bytes_copied=0,
         draft_tokens_generated=10,
         draft_tokens_accepted=5,
         avg_acceptance_length=2.5,
         max_acceptance_length=3,
         acceptance_rate_per_position=[0.9, 0.5],
         nixl_read_latency_avg_ms=4.0,
+        nixl_read_latency_max_ms=16.4,
         nixl_write_latency_avg_ms=5.0,
         nixl_read_gib_per_s=1.5,
         nixl_write_gib_per_s=2.5,
@@ -672,27 +933,30 @@ def test_publish_metrics_subsystem_gating() -> None:
     mock_metrics.cache_misses.assert_not_called()
     # Host KV gated off.
     mock_metrics.cache_used_host_kv_pct.assert_not_called()
-    mock_metrics.cache_h2d_blocks_copied.assert_not_called()
-    mock_metrics.cache_d2h_blocks_copied.assert_not_called()
+    mock_metrics.cache_h2d_bytes_copied.assert_not_called()
+    mock_metrics.cache_d2h_bytes_copied.assert_not_called()
     # Spec-decode active.
     mock_metrics.spec_decode_avg_acceptance_length.assert_called_once_with(2.5)
     assert mock_metrics.spec_decode_acceptance_rate_per_position.call_count == 2
     # dKV NIXL active (latency + GiB/s emitted as paired values under one guard).
     mock_metrics.dkv_nixl_read_latency.assert_called_once_with(4.0)
+    # The peak publishes beside the average, not instead of it: a dashboard
+    # that only had the average could not see the 16.4ms read at all.
+    mock_metrics.dkv_nixl_read_latency_max.assert_called_once_with(16.4)
     mock_metrics.dkv_nixl_read_gib_per_s.assert_called_once_with(1.5)
     mock_metrics.dkv_nixl_write_latency.assert_called_once_with(5.0)
     mock_metrics.dkv_nixl_write_gib_per_s.assert_called_once_with(2.5)
     # RPC inactive (rpc_*_avg_ms=0.0).
     mock_metrics.dkv_rpc_acquire_latency.assert_not_called()
     mock_metrics.dkv_rpc_read_latency.assert_not_called()
-    # Disk KV gated off (total_disk_kv_blocks=0).
+    # Disk KV gated off (total_disk_kv_bytes=0).
     mock_metrics.cache_used_disk_kv_pct.assert_not_called()
 
 
 def test_publish_metrics_disk_kv_active() -> None:
     """Batch with disk KV cache active emits the disk usage metric."""
     metrics = _make_metrics(
-        total_disk_kv_blocks=100,
+        total_disk_kv_bytes=100 * 1024,
         used_disk_kv_pct=0.30,
     )
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
@@ -970,10 +1234,15 @@ def test_batch_metrics_create_tg_with_spec_decode() -> None:
     )
 
 
-def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
-    None
-):
-    """CE batch uses standard throughput formula even when stale spec_metrics leak from a previous TG batch."""
+def test_batch_metrics_create_ce_reports_verified_spec_metrics() -> None:
+    """A CE-labeled iteration reports spec metrics that carry verifications.
+
+    Under the overlap pipeline the spec metrics describe the previously
+    synced batch, not this iteration's batch. Gating on the current batch's
+    type dropped every verify observation followed by a CE iteration, and
+    mixed prefill+decode batches (labeled CE) that verified drafts were
+    never counted at all.
+    """
     inputs = _mock_inputs(batch_size=2, batch_type=BatchType.CE)
     spec_metrics = _make_spec_metrics(
         num_speculative_tokens=3,
@@ -991,12 +1260,35 @@ def test_batch_metrics_create_ce_with_spec_decode_uses_standard_formula() -> (
         total_preemption_count=0,
         batch_spec_decode_metrics=spec_metrics,
     )
-    assert metrics.generation_throughput == 2 * 1 / 0.1
+    # output_tokens = 8 accepted + 4 bonus = 12
+    assert metrics.generation_throughput == 12 / 0.1
+    assert metrics.draft_tokens_generated == spec_metrics.draft_tokens_generated
+    assert metrics.draft_tokens_accepted == spec_metrics.draft_tokens_accepted
+    assert metrics.avg_acceptance_length == spec_metrics.avg_acceptance_length
+    assert metrics.max_acceptance_length == 3
 
-    # Acceptance metrics describe the decode/verify step, so a CE batch must
-    # not report them even when stale spec_metrics leak from a previous TG
-    # batch. The zeroed draft fields make every downstream consumer drop the
-    # spec-decode info.
+
+def test_batch_metrics_create_unverified_spec_metrics_stay_zeroed() -> None:
+    """Metrics without verifications (pure-prefill producing batch) stay
+    zeroed even on a TG iteration, and throughput falls back to batch_size."""
+    inputs = _mock_inputs(batch_size=2, batch_type=BatchType.TG)
+    spec_metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[0, 0, 0],
+        num_verifications=0,
+    )
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        batch_spec_decode_metrics=spec_metrics,
+    )
+    assert metrics.generation_throughput == 2 * 1 / 0.1
     assert metrics.draft_tokens_generated == 0
     assert metrics.draft_tokens_accepted == 0
     assert metrics.avg_acceptance_length == 0.0
@@ -1171,6 +1463,7 @@ def test_publish_completed_batch_metrics_ce() -> None:
     mock_metrics.batch_terminated_reqs.assert_called_once_with(
         3, batch_type="CE"
     )
+    mock_metrics.di_early_sync_time.assert_not_called()
 
 
 def test_publish_completed_batch_metrics_tg_spec_decode() -> None:
@@ -1208,6 +1501,15 @@ def test_publish_completed_batch_metrics_zero_duration_skipped() -> None:
     mock_metrics.batch_prompt_throughput.assert_not_called()
     mock_metrics.batch_generation_throughput.assert_not_called()
     mock_metrics.batch_terminated_reqs.assert_not_called()
+
+
+def test_publish_completed_batch_metrics_emits_early_sync_time() -> None:
+    """When the early-sync guard fired for the completed batch, its
+    duration is published as a di_* metric."""
+    stats = _make_completed_stats(early_sync_duration_s=0.012)
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        publish_completed_batch_metrics(stats, 3)
+    mock_metrics.di_early_sync_time.assert_called_once_with(12.0)
 
 
 def test_log_metrics_overlap_coalesces_completed_batch_into_transaction() -> (
@@ -1578,3 +1880,236 @@ def test_dp_context_occupancy_in_log_line_and_extra() -> None:
     plain = _make_metrics(batch_type=BatchType.TG)
     assert "DP Occupancy" not in plain.pretty_format()
     assert "dp_context_token_occupancy_pct" not in plain.to_log_extra()
+
+
+def test_cache_hit_tiers_sum_to_the_untagged_total() -> None:
+    """CLIN-1785: ``maxserve.cache.hits`` carries a ``tier`` attribute.
+
+    The whole design rests on one invariant: the per-tier points SUM to the
+    counter's untagged total. That is what lets the dashboard replace a
+    cross-service subtraction (which went negative) with a direct grouped query
+    while every ungrouped query keeps reading the same number.
+
+    MAX resolves two tiers: ``g0`` for the device prefix cache and ``external``
+    for the KV connector, whose host/disk split does not cross the connector
+    boundary. Reporting those as ``g1`` would charge tokens to a tier that may
+    not have served them.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=100,
+        cache_hit_external_tokens=30,
+        cache_miss_tokens=20,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    tiered = {
+        call.kwargs["tier"]: call.args[0]
+        for call in mock_metrics.cache_hits.call_args_list
+    }
+    assert tiered == {"g0": 70, "external": 30}
+    # THE invariant: the tiers partition the hit total exactly.
+    assert sum(tiered.values()) == metrics.cache_hit_tokens
+    # Every point carries a tier; an untagged one would double any ungrouped
+    # query's total.
+    assert all(
+        "tier" in call.kwargs for call in mock_metrics.cache_hits.call_args_list
+    )
+    # Misses stay untagged: a missed token was served by no tier.
+    mock_metrics.cache_misses.assert_called_once_with(20)
+
+
+def test_cache_hits_without_a_connector_emit_device_tier_only() -> None:
+    """No connector means no external tokens, and no idle ``external`` series.
+
+    A zero-token tier is skipped rather than stamped, so a deployment with no
+    dKV tier never mints a flat-zero series the dashboard would have to filter.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=64,
+        cache_hit_external_tokens=0,
+        cache_miss_tokens=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_hits.assert_called_once_with(64, tier="g0")
+    mock_metrics.dkv_read_blocks.assert_not_called()
+
+
+def test_cold_cache_still_stamps_the_device_tier() -> None:
+    """A CE batch that admitted requests but hit nothing still emits g0=0.
+
+    Before the tier label this recorded ``cache_hits(0)``, which creates and
+    keeps the series alive. Skipping every empty tier would leave
+    ``maxserve_cache_hits_tokens_total`` absent on a cold server, and
+    ``rate()``/``sum()`` over an absent series returns no data rather than
+    zero, which reads as a broken panel instead of a cold cache.
+    """
+    metrics = _make_metrics(
+        cache_hit_tokens=0,
+        cache_hit_external_tokens=0,
+        cache_miss_tokens=512,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_hits.assert_called_once_with(0, tier="g0")
+    mock_metrics.cache_misses.assert_called_once_with(512)
+
+
+def test_dkv_read_blocks_publishes_outside_the_cache_hit_clause() -> None:
+    """``dkv_read_blocks`` must not be gated on new admissions.
+
+    It is a per-window delta that ``take_metrics`` clears after every batch,
+    so a window published under any other batch type would lose its count for
+    good. That matters because a load posted on a CE iteration can have its
+    blocks accounted on a later drain, which also runs on TG iterations: under
+    the old placement those blocks were dropped, letting the counter read
+    *below* ``cache.hits{tier=external}`` despite being documented as an upper
+    bound on it.
+    """
+    metrics = _make_metrics(
+        batch_type=BatchType.TG,
+        num_new_admissions=0,
+        dkv_read_blocks=7,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_read_blocks.assert_called_once_with(7)
+    # The cache-hit clause is genuinely skipped on a TG batch, so this proves
+    # the counter is published from outside it rather than alongside it.
+    mock_metrics.cache_hits.assert_not_called()
+
+
+def test_create_sums_the_external_share_across_admissions() -> None:
+    """CLIN-1785: ``BatchMetrics.create`` carries the per-tier split through.
+
+    The other ``create`` tests build contexts with bare ``MagicMock``s, whose
+    auto-created ``_cache_metrics_emitted`` attribute is truthy, so the
+    admission loop skips every one and its body never runs. That leaves the
+    accumulation of ``cached_prefix_external_length`` unexercised: drop it and
+    ``g0`` silently absorbs the connector's tokens, which is the pre-change
+    reading this metric exists to replace.
+
+    Two admitted requests, each with half its cached prefix served externally,
+    so the batch total must be the sum and the device remainder the complement.
+    """
+    contexts = []
+    for _ in range(2):
+        ctx = MagicMock()
+        ctx._is_padding_ctx = False
+        # Explicit False: the auto-created attribute is truthy and would make
+        # the admission loop skip this context entirely.
+        ctx._cache_metrics_emitted = False
+        ctx.tokens.active_length = 8
+        ctx.tokens.processed_length = 0
+        ctx.tokens.generated_length = 0
+        ctx.tokens.prompt_length = 100
+        ctx.cached_prefix_length = 40
+        ctx.cached_prefix_external_length = 15
+        contexts.append(ctx)
+
+    inputs: TextGenerationInputs[Any] = TextGenerationInputs(batches=[contexts])
+    object.__setattr__(inputs, "batch_type", BatchType.CE)
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    assert metrics.num_new_admissions == 2
+    assert metrics.cache_hit_tokens == 80
+    assert metrics.cache_hit_external_tokens == 30
+    # The device share is the complement, and the two partition the hit total.
+    assert metrics.cache_hit_tokens - metrics.cache_hit_external_tokens == 50
+
+
+def test_batch_metrics_create_reports_shared_tiers_once_under_dp() -> None:
+    """Host and disk tiers are one pool shared by every DP replica, so their
+    capacity is reported once, not ``data_parallel_degree`` times over.
+
+    Regression: summing the per-replica accessor over the shared pool reported
+    a 250 GiB host tier as 500 GiB at ``data_parallel_degree=2``.
+    """
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=750, total=1000)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=4000, total=5000)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics()
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(dp=2),
+        inputs=_mock_inputs(batch_size=2, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    # Device blocks really are partitioned, so they still sum per replica.
+    assert metrics.total_kv_blocks == 200
+    assert metrics.total_host_kv_bytes == 1000
+    assert metrics.used_host_kv_pct == 0.25
+    assert metrics.total_disk_kv_bytes == 5000
+    assert metrics.used_disk_kv_pct == 0.2
+
+
+def test_create_carries_connector_load_failures_through() -> None:
+    """The managers' failed-load count reaches the batch, with no host tier.
+
+    dKV reports no host tier, so a count read only alongside the host tier's
+    would never leave a dKV deployment.
+    """
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        connector_load_failures=2
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    assert metrics.connector_load_failures == 2
+
+
+def test_connector_load_failures_reach_the_log_and_the_counter() -> None:
+    """Published on its own guard, not the host tier's, which dKV never sets."""
+    metrics = _make_metrics(connector_load_failures=3, total_host_kv_bytes=0)
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_connector_load_failures.assert_called_once_with(3)
+    assert metrics.to_log_extra()["connector_load_failures"] == 3
+
+
+def test_connector_load_failures_are_silent_while_none_fail() -> None:
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_connector_load_failures.assert_not_called()
+    assert "connector_load_failures" not in metrics.to_log_extra()

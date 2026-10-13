@@ -48,7 +48,7 @@ from max.nn.kernels import flash_attention_ragged, rope_split_store_ragged
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import MoE, MoEQuantized, make_concatenated_gated_activation_fn
+from max.nn.moe import GatedActivation, MoE, MoEQuantized
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
@@ -390,9 +390,7 @@ class _DiffusionGemmaTextModelBase(DistributedLogitsPostprocessMixin, Module):
             unquantized_dtype,
             eps=text_config.rms_norm_eps,
         )
-        moe_act = make_concatenated_gated_activation_fn(
-            functools.partial(ops.gelu, approximate="tanh")
-        )
+        moe_act = GatedActivation("gelu_tanh")
         moe_block: MoE
         if is_nvfp4:
             moe_block = MoEQuantized(
@@ -402,7 +400,7 @@ class _DiffusionGemmaTextModelBase(DistributedLogitsPostprocessMixin, Module):
                 num_experts_per_token=text_config.top_k_experts,
                 moe_dim=text_config.moe_intermediate_size,
                 gate_cls=moe_gate_cls,
-                gated_activation_fn=moe_act,
+                activation=moe_act,
                 pre_expert_norm_cls=moe_norm_cls,
                 dtype=config.dtype,
                 quant_config=quant_config,
@@ -415,7 +413,7 @@ class _DiffusionGemmaTextModelBase(DistributedLogitsPostprocessMixin, Module):
                 num_experts_per_token=text_config.top_k_experts,
                 moe_dim=text_config.moe_intermediate_size,
                 gate_cls=moe_gate_cls,
-                gated_activation_fn=moe_act,
+                activation=moe_act,
                 pre_expert_norm_cls=moe_norm_cls,
                 dtype=config.dtype,
             )
@@ -605,11 +603,7 @@ class DiffusionGemmaDecoderTextModel(_DiffusionGemmaTextModelBase):
         )
         soft_embeds = (
             soft_embeds
-            * ops.constant(
-                self.embed_tokens.embed_scale,
-                embed_weight.dtype,
-                device=self.devices[0],
-            )
+            * self.embed_tokens.embed_scale
             * ops.cast(sc_enabled, embed_weight.dtype)
         )
         h0 = self.self_conditioning(h[0], soft_embeds)

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import bisect
 import ctypes
 import logging
 import os
@@ -22,18 +23,20 @@ import random
 import socket
 import time
 from collections import defaultdict
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from itertools import pairwise
 from typing import TYPE_CHECKING, NamedTuple
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from max.nn.kv_cache.cache_params import KVCacheMemoryGroup
+    from max.nn.kv_cache.cache_params import KVCacheMemory
 
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
+from max.nn.kv_cache.cache_params import recurrent_leaf
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
     NixlBackendType,
@@ -41,8 +44,9 @@ from max.pipelines.kv_cache._nixl_backend import (
 )
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 
+from ._cuda_alloc import allocation_splits
 from ._ucx_env import configure_ucx_env
-from .cache_manager import PagedKVCacheManagerInterface
+from .cache_manager_interface import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
 
@@ -76,7 +80,8 @@ def _get_nixl_backend_type() -> NixlBackendType:
 
     Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``). The default
     is this engine's, not the validator's: the dKV connector reads the same
-    variable through the same validator but auto-selects when it is unset.
+    variable through the same validator but requires it, having no
+    auto-selection to fall back on.
     """
     return validate_nixl_backend(os.environ.get(NIXL_BACKEND_ENV_VAR, "ucx"))
 
@@ -216,6 +221,15 @@ def _validate_tensor_shape(tensors: Sequence[Buffer]) -> int:
     """
     first_tensor = tensors[0]
     first_shape = tuple(first_tensor.shape)
+    # TODO(MXSERV-502): `_build_group_descriptors` uses one number as both the
+    # page stride and the copy length, which a padded leaf needs separated.
+    for i, tensor in enumerate(tensors):
+        if not tensor.is_contiguous:
+            raise ValueError(
+                f"NIXL group tensor {i} is not contiguous (shape "
+                f"{tuple(tensor.shape)}, strides {tuple(tensor.strides)}): "
+                "padded KV pages cannot be transferred yet (MXSERV-502)."
+            )
     for i, tensor in enumerate(tensors[1:], 1):
         if tuple(tensor.shape) != first_shape:
             raise ValueError(
@@ -230,26 +244,162 @@ def _validate_tensor_shape(tensors: Sequence[Buffer]) -> int:
 def _build_group_descriptors(
     base_addrs: Sequence[int],
     bytes_per_group: Sequence[int],
-    page_idxs: Sequence[int],
+    page_idxs_per_group: Sequence[Sequence[int]],
     device_id: int,
 ) -> list[tuple[int, int, int]]:
     """Build NIXL ``(addr, size, device)`` descriptors for all groups.
 
-    For each group ``g`` and page index ``i``, emits
-    ``(base_addrs[g] + i * bytes_per_group[g], bytes_per_group[g], device_id)``,
-    iterating group-major then page-index (the order the paired src/dst
-    descriptor lists rely on).
+    For each group ``g`` and page index ``i`` in ``page_idxs_per_group[g]``,
+    emits ``(base_addrs[g] + i * bytes_per_group[g], bytes_per_group[g],
+    device_id)``, iterating group-major then page-index (the order the paired
+    src/dst descriptor lists rely on).
 
     Each group uses its OWN base address and per-page stride, so groups with
     different ``bytes_per_page`` never share addressing -- the invariant that
     guards against the draft-KV stride-mismatch class (SERVOPT-1456).
     """
     descs: list[tuple[int, int, int]] = []
-    for group_idx, bpp in enumerate(bytes_per_group):
-        base = base_addrs[group_idx]
+    for base, bpp, page_idxs in zip(
+        base_addrs, bytes_per_group, page_idxs_per_group, strict=True
+    ):
         for idx in page_idxs:
             descs.append((base + idx * bpp, bpp, device_id))
     return descs
+
+
+def _splits_within(splits: Sequence[int], start: int, length: int) -> list[int]:
+    """Returns splits inside ``(start, start + length)``, relative to start."""
+    lo = bisect.bisect_right(splits, start)
+    hi = bisect.bisect_left(splits, start + length)
+    return [split - start for split in splits[lo:hi]]
+
+
+def _build_paired_group_descriptors(
+    bytes_per_group: Sequence[int],
+    src_base_addrs: Sequence[int],
+    src_region_splits: Sequence[Sequence[int]],
+    src_idxs_per_group: Sequence[Sequence[int]],
+    src_device_id: int,
+    dst_base_addrs: Sequence[int],
+    dst_region_splits: Sequence[Sequence[int]],
+    dst_idxs_per_group: Sequence[Sequence[int]],
+    dst_device_id: int,
+) -> tuple[list[tuple[int, int, int]], list[tuple[int, int, int]]]:
+    """Builds paired source and destination descriptors for all groups.
+
+    Matches :func:`_build_group_descriptors` on each side, except that a page
+    crossing a registered-region boundary on either side is cut there, so every
+    descriptor lies inside one NIXL registration on both sides. Each side's
+    ``region_splits[g]`` lists the byte offsets from that group's base where a
+    new registered region begins; an empty (or missing) list means the group is
+    one region.
+    """
+    if not any(src_region_splits) and not any(dst_region_splits):
+        return (
+            _build_group_descriptors(
+                src_base_addrs,
+                bytes_per_group,
+                src_idxs_per_group,
+                src_device_id,
+            ),
+            _build_group_descriptors(
+                dst_base_addrs,
+                bytes_per_group,
+                dst_idxs_per_group,
+                dst_device_id,
+            ),
+        )
+
+    src_descs: list[tuple[int, int, int]] = []
+    dst_descs: list[tuple[int, int, int]] = []
+    for group_idx, bpp in enumerate(bytes_per_group):
+        src_base = src_base_addrs[group_idx]
+        dst_base = dst_base_addrs[group_idx]
+        src_splits = (
+            src_region_splits[group_idx]
+            if group_idx < len(src_region_splits)
+            else ()
+        )
+        dst_splits = (
+            dst_region_splits[group_idx]
+            if group_idx < len(dst_region_splits)
+            else ()
+        )
+        for src_idx, dst_idx in zip(
+            src_idxs_per_group[group_idx],
+            dst_idxs_per_group[group_idx],
+            strict=True,
+        ):
+            src_off = src_idx * bpp
+            dst_off = dst_idx * bpp
+            cuts = sorted(
+                set(_splits_within(src_splits, src_off, bpp))
+                | set(_splits_within(dst_splits, dst_off, bpp))
+            )
+            for lo, hi in pairwise([0, *cuts, bpp]):
+                src_descs.append(
+                    (src_base + src_off + lo, hi - lo, src_device_id)
+                )
+                dst_descs.append(
+                    (dst_base + dst_off + lo, hi - lo, dst_device_id)
+                )
+    return src_descs, dst_descs
+
+
+def _page_idxs_per_group(
+    role: str,
+    idxs: Mapping[str, Sequence[int]],
+    leaf_ids: Sequence[str],
+    num_pages_per_group: Sequence[int],
+) -> list[list[int]]:
+    """Orders one side's page indices by group and checks them.
+
+    Raises:
+        ValueError: If ``idxs`` does not name exactly the engine's groups, or
+            an index is outside its group's pages.
+    """
+    if set(idxs) != set(leaf_ids):
+        raise ValueError(
+            f"{role} indices must name every leaf {list(leaf_ids)}, "
+            f"got {list(idxs)}"
+        )
+    ordered = [list(idxs[leaf_id]) for leaf_id in leaf_ids]
+    for leaf_id, num_pages, page_idxs in zip(
+        leaf_ids, num_pages_per_group, ordered, strict=True
+    ):
+        for idx in page_idxs:
+            if not (0 <= idx < num_pages):
+                raise ValueError(
+                    f"{role} index {idx} of leaf {leaf_id!r} must be "
+                    f"between 0 and {num_pages - 1}"
+                )
+    return ordered
+
+
+def _check_paired_idxs(
+    src: Sequence[Sequence[int]],
+    dst: Sequence[Sequence[int]],
+    leaf_ids: Sequence[str],
+) -> None:
+    """Checks each group pairs its source and destination pages one to one.
+
+    Raises:
+        ValueError: If a group's lists differ in length or its destination
+            repeats a page.
+    """
+    for leaf_id, src_idxs, dst_idxs in zip(leaf_ids, src, dst, strict=True):
+        if len(src_idxs) != len(dst_idxs):
+            raise ValueError(
+                f"Source and destination indices of leaf {leaf_id!r} must "
+                f"have the same length. Got {len(src_idxs)} and "
+                f"{len(dst_idxs)}"
+            )
+        # Each dst idx must be unique so that we don't write to the same page
+        if len(set(dst_idxs)) != len(dst_idxs):
+            raise ValueError(
+                f"Destination indices of leaf {leaf_id!r} must be unique. "
+                f"Found duplicate index: {dst_idxs}"
+            )
 
 
 def _resolve_remote_bytes_per_group(
@@ -260,7 +410,7 @@ def _resolve_remote_bytes_per_group(
 
     Raises unless the remote advertises exactly as many groups as the local
     engine has: connect() already enforces this (a full ``bytes_per_group``
-    equality check), so this is defense-in-depth, not the primary guard --
+    equality check), so this is defense-in-num_blocks, not the primary guard --
     fewer groups means there is no way to infer the remote's stride for a
     group it never advertised, and more groups would silently assume a
     positional-prefix correspondence that was never validated.
@@ -291,12 +441,60 @@ class TensorAgentMetadata(
 
     base_addrs: list[int]
     """Base memory address per NIXL group for this shard, indexed by group.
-    ``base_addrs[g]`` is the base of group ``g`` (e.g. values, scales, or a
+    ``base_addrs[g]`` is the base of group ``g`` (such as values, scales, or a
     per-child cache). Parallel to the engine's ``bytes_per_group``; there is
     no special "main" group."""
 
     device_id: int
     """Device ID for this tensor."""
+
+    region_splits: list[list[int]] = msgspec.field(default_factory=list)
+    """Per NIXL group, the byte offsets from ``base_addrs[g]`` where a new
+    registered region begins. Empty when every group is registered whole."""
+
+
+_AMD_RDMA_START_ALIGNMENT = 2 * 1024 * 1024
+_AMD_RDMA_ALIGNED_SIZE_FACTOR = 32
+
+
+def _check_rdma_start_alignment(
+    base_addr: int,
+    num_bytes: int,
+    device: Device,
+    agent_name: str,
+    group_index: int,
+) -> None:
+    """Rejects a VRAM region amdgpu cannot pin for RDMA.
+
+    ``amdgpu`` pins device memory for RDMA a 2 MiB page at a time, so
+    ``ibv_reg_mr`` refuses any region whose *start* is not 2 MiB aligned --
+    regardless of its length. NIXL surfaces that refusal as a bare
+    ``NIXL_ERR_BACKEND``, arbitrarily far into a serving run and with nothing
+    pointing at the allocator, so check the address up front instead.
+
+    Only regions the allocator was asked to align are checked.
+    ``MemoryManager`` grants the coarse start address to blocks of
+    ``_AMD_RDMA_ALIGNED_SIZE_FACTOR`` times the alignment and up
+    (``kLargeAllocSizeFactor`` in ``MemoryManager.h``). A KV cache group sits
+    far above that bar; the small buffers other callers register sit below it
+    and keep the device's plain 256-byte alignment by design, so there is no
+    missed promise to report for them.
+    """
+    aligned_size = _AMD_RDMA_START_ALIGNMENT * _AMD_RDMA_ALIGNED_SIZE_FACTOR
+    if (
+        device.api != "hip"
+        or num_bytes < aligned_size
+        or base_addr % _AMD_RDMA_START_ALIGNMENT == 0
+    ):
+        return
+    raise ValueError(
+        f"NIXL group {group_index} for agent {agent_name} starts at "
+        f"{base_addr:#x}, which is not aligned to "
+        f"{_AMD_RDMA_START_ALIGNMENT // (1024 * 1024)} MiB. AMD GPUs cannot "
+        "register a device memory region for RDMA unless its start address "
+        "is 2 MiB aligned, so this buffer must be allocated with that "
+        "alignment."
+    )
 
 
 @dataclass
@@ -315,8 +513,8 @@ class TensorAgent:
 
     base_addrs: list[int]
     """Base memory address per NIXL group for this shard, indexed by group.
-    Parallel to ``reg_dlists`` and to the engine's ``bytes_per_group``; there
-    is no special "main" group."""
+    Parallel to the engine's ``bytes_per_group``; there is no special "main"
+    group."""
 
     backend: int
     """NIXL backend handle (UCX or libfabric)."""
@@ -328,7 +526,18 @@ class TensorAgent:
     """Metadata for this agent."""
 
     reg_dlists: list[nixl.RegistrationDescriptorList]
-    """Registration descriptor list per NIXL group, parallel to ``base_addrs``."""
+    """One registration per distinct memory region. Groups that view the same
+    region share its registration, so this can be shorter than
+    ``base_addrs``."""
+
+    region_splits: list[list[int]]
+    """Per NIXL group, the byte offsets from ``base_addrs[g]`` where a new
+    registered region begins; see :attr:`TensorAgentMetadata.region_splits`."""
+
+    buffers: list[Buffer]
+    """Registered buffers, parallel to ``base_addrs``. NIXL holds only raw
+    addresses, so these keep the memory alive until the engine's
+    ``cleanup()`` deregisters it."""
 
     @classmethod
     def create_agent(
@@ -345,7 +554,7 @@ class TensorAgent:
             agent_name: Unique name for this agent.
             listen_port: TCP port for the NIXL listener.
             tensors: This shard's buffers, one per NIXL group, group-major
-                (e.g. ``[main_values, main_scales, draft_values,
+                (such as ``[main_values, main_scales, draft_values,
                 draft_scales]``). All must share the same device. Must be
                 non-empty.
             memory_type: NIXL memory segment type (DRAM or VRAM).
@@ -414,22 +623,45 @@ class TensorAgent:
             init_params=backend_params,
         )
 
-        # Register one memory region per group, uniformly.
+        # Register each distinct region once, one CUDA allocation at a time
+        # on UCX + CUDA (see _cuda_alloc). Jenga hands every leaf a view of the
+        # same slab, and NIXL rejects remote metadata that lists one
+        # (addr, len, dev) twice with different backend keys
+        # (NIXL_ERR_NOT_ALLOWED in load_remote_metadata).
         base_addrs: list[int] = []
         reg_dlists: list[nixl.RegistrationDescriptorList] = []
-        for tensor in tensors:
+        region_splits: list[list[int]] = []
+        registered: set[tuple[int, int]] = set()
+        for group_index, tensor in enumerate(tensors):
             base_addr = tensor._data_ptr()
             num_bytes = tensor.num_elements * tensor.dtype.size_in_bytes
+            _check_rdma_start_alignment(
+                base_addr, num_bytes, device, agent_name, group_index
+            )
+            splits = (
+                allocation_splits(
+                    base_addr, num_bytes, device._allocation_range
+                )
+                if backend_type == "ucx" and device.api == "cuda"
+                else []
+            )
+            base_addrs.append(base_addr)
+            region_splits.append(splits)
+            if (base_addr, num_bytes) in registered:
+                continue
+            registered.add((base_addr, num_bytes))
             reg_dlist = nixl.RegistrationDescriptorList(
                 type=memory_type,
-                descs=[(base_addr, num_bytes, device.id, "")],
+                descs=[
+                    (base_addr + lo, hi - lo, device.id, "")
+                    for lo, hi in pairwise([0, *splits, num_bytes])
+                ],
             )
             status = agent.register_memory(reg_dlist, [backend])
             if status != nixl.Status.SUCCESS:
                 raise ValueError(
                     f"Failed to register memory for {agent_name}: {status}"
                 )
-            base_addrs.append(base_addr)
             reg_dlists.append(reg_dlist)
 
         # Get metadata after registration
@@ -444,6 +676,8 @@ class TensorAgent:
             device_id=device.id,
             agent_metadata=agent_metadata,
             reg_dlists=reg_dlists,
+            region_splits=region_splits,
+            buffers=list(tensors),
         )
 
     def to_metadata(self) -> TensorAgentMetadata:
@@ -453,6 +687,7 @@ class TensorAgent:
             metadata=self.agent_metadata,
             base_addrs=self.base_addrs,
             device_id=self.device_id,
+            region_splits=self.region_splits,
         )
 
 
@@ -666,8 +901,14 @@ class KVTransferEngineMetadata(TransferEngineMetadata):
     This is safe to send between threads/processes.
     """
 
-    total_num_pages: int
-    """Total number of pages in each tensor."""
+    leaf_ids: list[str]
+    """Id of each NIXL group, parallel to ``bytes_per_group``. Transfers
+    address pages by these ids. :meth:`KVTransferEngine.from_paged_kv_cache`
+    uses the cache's leaf ids."""
+
+    num_pages_per_group: list[int]
+    """Total number of pages in each group, including the null block.
+    Parallel to ``bytes_per_group``."""
 
     bytes_per_page: int
     """Bytes per page for each tensor."""
@@ -675,7 +916,7 @@ class KVTransferEngineMetadata(TransferEngineMetadata):
     bytes_per_group: list[int]
     """Bytes per page for each tensor group, one entry per NIXL group. The
     first entry is the main group; subsequent entries correspond to extra
-    groups (e.g., draft KV in speculative decoding). ``bytes_per_page``
+    groups, such as draft KV in speculative decoding. ``bytes_per_page``
     equals ``sum(bytes_per_group)``."""
 
     replicated_per_group: list[bool] = []
@@ -705,11 +946,11 @@ class TransferReqData(
     transfer_ids: list[int]
     """Transfer IDs (one per TP shard in the replica)."""
 
-    src_idxs: list[int]
-    """Length of source indices can differ from len(transfer_ids)."""
+    src_idxs: dict[str, list[int]]
+    """Source page indices, keyed by leaf id."""
 
-    dst_idxs: list[int]
-    """Length of destination indices can differ from len(transfer_ids)."""
+    dst_idxs: dict[str, list[int]]
+    """Destination page indices, keyed by leaf id."""
 
     src_replica_idx: int
     """Index of the source replica this transfer is from."""
@@ -756,8 +997,11 @@ class TransferEngine:
     tensor_agents: list[list[TensorAgent]]
     """2D list of TensorAgent objects: [replica][tp_shard]."""
 
-    total_num_pages: int
-    """Total number of pages in each tensor."""
+    leaf_ids: list[str]
+    """Id of each group, parallel to ``bytes_per_group``."""
+
+    num_pages_per_group: list[int]
+    """Total number of pages in each group, including the null block."""
 
     bytes_per_page: int
     """Total bytes per page across all groups. For single-group engines this
@@ -766,7 +1010,7 @@ class TransferEngine:
 
     bytes_per_group: list[int]
     """Bytes per page for each group. ``bytes_per_group[0]`` is the main
-    group; subsequent entries are extra groups (e.g., draft KV in
+    group; subsequent entries are extra groups (such as draft KV in
     speculative decoding)."""
 
     replicated_per_group: list[bool]
@@ -799,7 +1043,8 @@ class TransferEngine:
         name: str,
         tensor_agents: list[list[TensorAgent]],
         *,
-        total_num_pages: int,
+        leaf_ids: list[str],
+        num_pages_per_group: list[int],
         bytes_per_page: int,
         bytes_per_group: list[int],
         memory_type: nixl.MemoryType,
@@ -810,7 +1055,16 @@ class TransferEngine:
     ) -> None:
         self.name = name
         self.tensor_agents = tensor_agents
-        self.total_num_pages = total_num_pages
+        if not (
+            len(leaf_ids) == len(num_pages_per_group) == len(bytes_per_group)
+        ):
+            raise ValueError(
+                f"leaf_ids, num_pages_per_group and bytes_per_group must be "
+                f"parallel, got lengths {len(leaf_ids)}, "
+                f"{len(num_pages_per_group)} and {len(bytes_per_group)}"
+            )
+        self.leaf_ids = leaf_ids
+        self.num_pages_per_group = num_pages_per_group
         self.bytes_per_page = bytes_per_page
         self.bytes_per_group = bytes_per_group
         self.memory_type = memory_type
@@ -863,7 +1117,8 @@ class TransferEngine:
 
         return KVTransferEngineMetadata(
             name=self.name,
-            total_num_pages=self.total_num_pages,
+            leaf_ids=self.leaf_ids,
+            num_pages_per_group=self.num_pages_per_group,
             bytes_per_page=self.bytes_per_page,
             memory_type=self.memory_type,
             agents_meta=agents_meta,
@@ -969,6 +1224,11 @@ class TransferEngine:
             raise ValueError(
                 f"Per-group bytes-per-page mismatch: "
                 f"local={self.bytes_per_group} remote={remote.bytes_per_group}"
+            )
+
+        if self.leaf_ids != remote.leaf_ids:
+            raise ValueError(
+                f"Leaf mismatch: local={self.leaf_ids} remote={remote.leaf_ids}"
             )
 
         # Check if the relevant transport env vars are set. You can get away
@@ -1139,8 +1399,8 @@ class TransferEngine:
     def initiate_send_transfer(
         self,
         remote_metadata: KVTransferEngineMetadata,
-        src_idxs: list[int],
-        dst_idxs: list[int],
+        src_idxs: Mapping[str, Sequence[int]],
+        dst_idxs: Mapping[str, Sequence[int]],
         src_replica_idx: int,
         dst_replica_idx: int,
     ) -> TransferReqData:
@@ -1150,8 +1410,10 @@ class TransferEngine:
 
         Args:
             remote_metadata: Metadata for the remote engine.
-            src_idxs: List of indices of the source pages in the current engine.
-            dst_idxs: List of indices of the destination pages in the remote engine.
+            src_idxs: Source page indices in the current engine, keyed by
+                leaf id. Must name every leaf.
+            dst_idxs: Destination page indices in the remote engine, keyed by
+                leaf id. Must name every leaf.
             src_replica_idx: Index of the source replica to transfer from.
             dst_replica_idx: Index of the destination replica to transfer to.
         """
@@ -1173,28 +1435,16 @@ class TransferEngine:
         remote = self.remote_connections[remote_metadata.name]
         strategy = self._transfer_strategies[remote_metadata.name]
 
-        if len(src_idxs) != len(dst_idxs):
-            raise ValueError(
-                f"Source and destination indices must have the same length. Got {len(src_idxs)} and {len(dst_idxs)}"
-            )
-
-        # Each dst idx must be unique so that we don't write to the same page
-        if len(set(dst_idxs)) != len(dst_idxs):
-            raise ValueError(
-                f"Destination indices must be unique. Found duplicate index: {dst_idxs}"
-            )
-
-        for src_idx in src_idxs:
-            if not (0 <= src_idx < self.total_num_pages):
-                raise ValueError(
-                    f"Source index {src_idx} must be between 0 and {self.total_num_pages - 1}"
-                )
-
-        for dst_idx in dst_idxs:
-            if not (0 <= dst_idx < remote.total_num_pages):
-                raise ValueError(
-                    f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
-                )
+        src_per_group = _page_idxs_per_group(
+            "Source", src_idxs, self.leaf_ids, self.num_pages_per_group
+        )
+        dst_per_group = _page_idxs_per_group(
+            "Destination",
+            dst_idxs,
+            remote.leaf_ids,
+            remote.num_pages_per_group,
+        )
+        _check_paired_idxs(src_per_group, dst_per_group, self.leaf_ids)
 
         transfer_name = str(uuid4())
         transfer_ids = []
@@ -1217,19 +1467,15 @@ class TransferEngine:
             ta = local_replica_agents[src_shard]
             remote_agent_meta = remote_replica_agents_meta[dst_shard]
 
-            # Build descriptors for each group.
-            # Each group uses its own base address and bytes_per_page; all
-            # groups share the same logical page indices.
-            src_base_addrs = ta.base_addrs
-            dst_base_addrs = remote_agent_meta.base_addrs
-
-            descs_src = _build_group_descriptors(
-                src_base_addrs, self.bytes_per_group, src_idxs, ta.device_id
-            )
-            descs_dst = _build_group_descriptors(
-                dst_base_addrs,
+            descs_src, descs_dst = _build_paired_group_descriptors(
                 self.bytes_per_group,
-                dst_idxs,
+                ta.base_addrs,
+                ta.region_splits,
+                src_per_group,
+                ta.device_id,
+                remote_agent_meta.base_addrs,
+                remote_agent_meta.region_splits,
+                dst_per_group,
                 remote_agent_meta.device_id,
             )
 
@@ -1264,8 +1510,8 @@ class TransferEngine:
             src_name=self.name,
             transfer_name=transfer_name,
             transfer_ids=transfer_ids,
-            src_idxs=src_idxs,
-            dst_idxs=dst_idxs,
+            src_idxs=dict(zip(self.leaf_ids, src_per_group, strict=True)),
+            dst_idxs=dict(zip(self.leaf_ids, dst_per_group, strict=True)),
             src_replica_idx=src_replica_idx,
             dst_replica_idx=dst_replica_idx,
             tp_shard_count=len(transfer_ids),
@@ -1277,20 +1523,21 @@ class TransferEngine:
     def initiate_read_transfer(
         self,
         remote_metadata: KVTransferEngineMetadata,
-        src_idxs: list[int],
-        dst_idxs: list[int],
+        src_idxs: Mapping[str, Sequence[int]],
+        dst_idxs: Mapping[str, Sequence[int]],
         src_replica_idx: int,
         dst_replica_idx: int,
     ) -> TransferReqData:
         """Initiate a READ transfer from remote engine to current engine.
 
-        The current engine pulls data from the remote. Used by DKVConnector
-        to read KV blocks from BlockStore DRAM into GPU VRAM.
+        The current engine pulls data from the remote.
 
         Args:
             remote_metadata: Metadata for the remote engine (source).
-            src_idxs: Page indices in the remote engine (source).
-            dst_idxs: Page indices in the current engine (destination).
+            src_idxs: Page indices in the remote engine (source), keyed by
+                leaf id. Must name every leaf.
+            dst_idxs: Page indices in the current engine (destination), keyed
+                by leaf id. Must name every leaf.
             src_replica_idx: Replica index in the remote engine.
             dst_replica_idx: Replica index in the current engine.
         """
@@ -1312,22 +1559,13 @@ class TransferEngine:
         remote = self.remote_connections[remote_metadata.name]
         strategy = self._transfer_strategies[remote_metadata.name]
 
-        if len(src_idxs) != len(dst_idxs):
-            raise ValueError(
-                f"Source and destination indices must have the same length. Got {len(src_idxs)} and {len(dst_idxs)}"
-            )
-
-        for dst_idx in dst_idxs:
-            if not (0 <= dst_idx < self.total_num_pages):
-                raise ValueError(
-                    f"Destination index {dst_idx} must be between 0 and {self.total_num_pages - 1}"
-                )
-
-        for src_idx in src_idxs:
-            if not (0 <= src_idx < remote.total_num_pages):
-                raise ValueError(
-                    f"Source index {src_idx} must be between 0 and {remote.total_num_pages - 1}"
-                )
+        src_per_group = _page_idxs_per_group(
+            "Source", src_idxs, remote.leaf_ids, remote.num_pages_per_group
+        )
+        dst_per_group = _page_idxs_per_group(
+            "Destination", dst_idxs, self.leaf_ids, self.num_pages_per_group
+        )
+        _check_paired_idxs(src_per_group, dst_per_group, self.leaf_ids)
 
         transfer_name = str(uuid4())
         transfer_ids = []
@@ -1356,16 +1594,18 @@ class TransferEngine:
             ta = local_replica_agents[dst_shard]
             remote_agent_meta = remote_replica_agents_meta[remote_shard]
 
-            # Build descriptors for each group. Local uses this engine's
-            # bytes_per_group; remote uses the peer's advertised strides.
-            descs_local = _build_group_descriptors(
-                ta.base_addrs, self.bytes_per_group, dst_idxs, ta.device_id
-            )
-            descs_remote = _build_group_descriptors(
-                remote_agent_meta.base_addrs,
+            # The remote is the source; its advertised strides equal ours
+            # (checked above).
+            descs_remote, descs_local = _build_paired_group_descriptors(
                 remote_bpg,
-                src_idxs,
+                remote_agent_meta.base_addrs,
+                remote_agent_meta.region_splits,
+                src_per_group,
                 remote_agent_meta.device_id,
+                ta.base_addrs,
+                ta.region_splits,
+                dst_per_group,
+                ta.device_id,
             )
 
             local_dlist = nixl.TransferDescriptorList(
@@ -1396,8 +1636,8 @@ class TransferEngine:
             src_name=remote_metadata.name,
             transfer_name=transfer_name,
             transfer_ids=transfer_ids,
-            src_idxs=src_idxs,
-            dst_idxs=dst_idxs,
+            src_idxs=dict(zip(self.leaf_ids, src_per_group, strict=True)),
+            dst_idxs=dict(zip(self.leaf_ids, dst_per_group, strict=True)),
             src_replica_idx=src_replica_idx,
             dst_replica_idx=dst_replica_idx,
             is_read=True,
@@ -1543,6 +1783,8 @@ class TransferEngine:
             import numpy as np
             from max._core import nixl
             from max.driver.buffer import Buffer
+            from max.dtype import DType
+            from max.nn.kv_cache.cache_params import KVCacheMemory
             from max.pipelines.kv_cache import KVTransferEngine
 
             def nixl_ucx_available() -> bool:
@@ -1560,12 +1802,18 @@ class TransferEngine:
                 blocks_1 = Buffer.from_numpy(np.arange(num_elts, dtype=np.int16))
                 blocks_2 = Buffer.from_numpy(np.zeros(num_elts, dtype=np.int16))
 
-                sender = KVTransferEngine(
-                    "sender", [[blocks_1]], total_num_pages=total_num_pages
-                )
-                receiver = KVTransferEngine(
-                    "receiver", [[blocks_2]], total_num_pages=total_num_pages
-                )
+                def as_group(buf: Buffer) -> KVCacheMemory:
+                    page_bytes = (
+                        buf.num_elements * buf.dtype.size_in_bytes
+                        // total_num_pages
+                    )
+                    return KVCacheMemory(
+                        replicated=False,
+                        buffers=[buf.view(DType.uint8, [total_num_pages, page_bytes])],
+                    )
+
+                sender = KVTransferEngine("sender", [[as_group(blocks_1)]])
+                receiver = KVTransferEngine("receiver", [[as_group(blocks_2)]])
                 sender.connect(receiver.metadata)
                 receiver.connect(sender.metadata)
 
@@ -1579,7 +1827,7 @@ class TransferEngine:
 
                 def _send() -> None:
                     req = sender.initiate_send_transfer(
-                        receiver.metadata, [0], [0],
+                        receiver.metadata, {"0": [0]}, {"0": [0]},
                         src_replica_idx=0, dst_replica_idx=0,
                     )
                     queue.put(req)
@@ -1747,15 +1995,16 @@ class TransferEngine:
                         raise ValueError(
                             f"Failed to deregister memory: {status}"
                         )
+                ta.buffers.clear()
 
 
 class KVTransferEngine(TransferEngine):
     """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
 
     The engine accepts per-replica producer-authored NIXL groups
-    (:class:`~max.nn.kv_cache.cache_params.KVCacheMemoryGroup`).  The outer list
-    is indexed by DP replica; the inner list is that replica's group list — one
-    group per logical ``(child, kind)`` tensor, from ``to_memory_groups()``.
+    (:class:`~max.nn.kv_cache.cache_params.KVCacheMemory`).  The outer list is
+    indexed by DP replica; the inner list is that replica's group list — one
+    group per pool leaf, in the order the cache declares its leaves.
 
     ``KVTransferEngine`` is a thin layer on top of :class:`TransferEngine` that adds:
 
@@ -1775,7 +2024,8 @@ class KVTransferEngine(TransferEngine):
     def __init__(
         self,
         name: str,
-        memory: Sequence[Sequence[KVCacheMemoryGroup]],
+        memory: Sequence[Sequence[KVCacheMemory]],
+        leaf_ids: Sequence[str] | None = None,
     ) -> None:
         """Initialize the transfer engine from producer-authored NIXL groups.
 
@@ -1783,24 +2033,34 @@ class KVTransferEngine(TransferEngine):
             name: Unique name for this engine.
             memory: Per-replica group lists as ``[replica][group]``.  Each entry
                 is a
-                :class:`~max.nn.kv_cache.cache_params.KVCacheMemoryGroup` — one
-                logical ``(child, kind)`` tensor carrying every TP-shard view,
-                as returned by ``KVCacheBuffer.to_memory_groups()``.  All
-                replicas must have the same group count and consistent
-                replication kind.  The page count (including the null block) is
-                read from the groups themselves, so every group must agree on
-                ``total_num_pages``.
+                :class:`~max.nn.kv_cache.cache_params.KVCacheMemory` — one pool
+                leaf's unit, carrying every TP-shard view, ordered by the
+                caller.  All replicas must have the same group count and
+                consistent replication kind.  Each group's page count
+                (including the null block) is read from the group itself, and
+                every replica of a group must agree on it.
+            leaf_ids: Id of each group, parallel to a replica's group list.
+                Transfers address pages by these ids. Defaults to each
+                group's position, ``"0"``, ``"1"``, and so on.
         """
         if not memory:
             raise ValueError("tensors must contain at least one replica")
         if not memory[0]:
             raise ValueError("Each replica must contain at least one tensor")
 
-        # total_num_pages is a property of the buffers (``buffer.shape[0]``,
-        # including the null block), so read it off the authored groups rather
-        # than accepting a redundant argument. Every group must agree on it.
-        total_num_pages = memory[0][0].total_num_pages
+        # A group's page count is a property of its buffers (``shape[0]``,
+        # including the null block). Groups that tile one slab at different
+        # page sizes hold different counts.
+        num_pages_per_group = [group.total_num_pages for group in memory[0]]
         num_groups_r0 = len(memory[0])
+        if leaf_ids is None:
+            leaf_ids = [str(g) for g in range(num_groups_r0)]
+        if len(leaf_ids) != num_groups_r0:
+            raise ValueError(
+                f"Got {len(leaf_ids)} leaf ids for {num_groups_r0} groups"
+            )
+        if len(set(leaf_ids)) != len(leaf_ids):
+            raise ValueError(f"leaf_ids must be unique, got {list(leaf_ids)}")
 
         for r, replica_groups in enumerate(memory):
             if not replica_groups:
@@ -1813,12 +2073,12 @@ class KVTransferEngine(TransferEngine):
                     f"groups but replica 0 had {num_groups_r0}. "
                     "Replicas must have a consistent buffer structure."
                 )
-            for group in replica_groups:
-                if group.total_num_pages != total_num_pages:
+            for g, group in enumerate(replica_groups):
+                if group.total_num_pages != num_pages_per_group[g]:
                     raise ValueError(
-                        f"Replica {r} has a group with total_num_pages="
-                        f"{group.total_num_pages}, but all groups must match "
-                        f"replica 0 group 0's {total_num_pages}"
+                        f"Group {g} of replica {r} has total_num_pages="
+                        f"{group.total_num_pages}, but replica 0 has "
+                        f"{num_pages_per_group[g]}"
                     )
 
         dp = len(memory)
@@ -1935,7 +2195,8 @@ class KVTransferEngine(TransferEngine):
         super().__init__(
             name=name,
             tensor_agents=tensor_agents,
-            total_num_pages=total_num_pages,
+            leaf_ids=list(leaf_ids),
+            num_pages_per_group=num_pages_per_group,
             bytes_per_page=bytes_per_page,
             bytes_per_group=bytes_per_group,
             memory_type=memory_type,
@@ -1953,7 +2214,12 @@ class KVTransferEngine(TransferEngine):
             self.dp * self.tp,
             self.dp,
             self.tp,
-            self.bytes_per_page * total_num_pages,
+            sum(
+                bpp * num_pages
+                for bpp, num_pages in zip(
+                    self.bytes_per_group, num_pages_per_group, strict=True
+                )
+            ),
             len(self.bytes_per_group),
         )
 
@@ -1963,25 +2229,44 @@ class KVTransferEngine(TransferEngine):
     ) -> KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 
-        Calls ``KVCacheBuffer.to_memory_groups()`` on each replica's device
-        buffer to obtain the producer-authored NIXL groups, then passes them to
-        the constructor, which carries each group's ``replicated`` field as
-        ``replicated_per_group``.
+        Calls ``to_memory()`` on each replica's device buffer to obtain the
+        producer-authored NIXL groups, orders them by the leaves the cache
+        declares, and passes them to the constructor, which carries each
+        group's ``replicated`` field as ``replicated_per_group``.
 
-        For models with multiple KV caches (e.g., speculative decoding with a
+        For models with multiple KV caches (such as speculative decoding with a
         separate target and draft KV), each child cache contributes its own
-        group(s) so that heterogeneous buffer shapes (e.g., 61-layer MLA target
+        group(s) so that heterogeneous buffer shapes (such as 61-layer MLA target
         vs. 1-layer Eagle draft) are registered as independent NIXL groups.
 
-        Quantized caches (values + scales): ``to_memory_groups()`` authors a
+        Quantized caches (values + scales): ``to_memory()`` authors a
         separate group for values and for scales (one group per child x kind).
         For non-quantized caches this collapses to one group per child, which is
         byte-identical to the previous ``all_buffers`` path.
+
+        Raises:
+            NotImplementedError: If the cache keeps recurrent state.
         """
-        dp = kv_cache.params.data_parallel_degree
+        params = kv_cache.params
+        if recurrent_leaf(params) is not None:
+            raise NotImplementedError(
+                "Disaggregated inference cannot transfer a recurrent state"
+                " pool: a state block is a whole request's state, not a span"
+                " of tokens, so it has no page count in common with the"
+                " attention groups this engine registers."
+            )
+        dp = params.data_parallel_degree
         device_buffers = [kv_cache.get_device_buffer(r) for r in range(dp)]
 
+        # The peer engine pairs registered regions by position, so fix the
+        # order from the declared leaves rather than from however a mapping
+        # happens to iterate.
+        leaf_ids = list(params.leaves())
         return cls(
             name=name,
-            memory=[buf.to_memory_groups() for buf in device_buffers],
+            memory=[
+                [units[leaf_id] for leaf_id in leaf_ids]
+                for units in (buf.to_memory() for buf in device_buffers)
+            ],
+            leaf_ids=leaf_ids,
         )

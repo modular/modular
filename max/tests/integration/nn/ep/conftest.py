@@ -31,7 +31,12 @@ from max.graph import (
 )
 from max.nn import Signals
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import MoE, MoEGate, make_concatenated_gated_activation_fn
+from max.nn.moe import (
+    GatedActivation,
+    MoE,
+    MoEGate,
+    make_concatenated_gated_activation_fn,
+)
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 
 """
@@ -239,6 +244,7 @@ def moe_weights_nvfp4() -> dict[str, torch.Tensor]:
         out_dim: int,
         in_dim: int,
         weight_scale_2: torch.Tensor | None = None,
+        input_scale: float = 1.0,
     ) -> torch.Tensor:
         weight = torch.randint(
             0,
@@ -266,8 +272,8 @@ def moe_weights_nvfp4() -> dict[str, torch.Tensor]:
         moe_weights[f"{prefix}.weight"] = weight
         moe_weights[f"{prefix}.weight_scale"] = weight_scale
         moe_weights[f"{prefix}.weight_scale_2"] = weight_scale_2
-        moe_weights[f"{prefix}.input_scale"] = torch.ones(
-            (), dtype=torch.float32, device=device
+        moe_weights[f"{prefix}.input_scale"] = torch.full(
+            (), input_scale, dtype=torch.float32, device=device
         )
         return weight_scale_2
 
@@ -301,6 +307,11 @@ def moe_weights_nvfp4() -> dict[str, torch.Tensor]:
             f"experts.{expert_idx}.down_proj",
             HIDDEN_DIM,
             MOE_DIM,
+            # The kernel consumes the RECIPROCAL of this one. Left at 1.0 it
+            # is its own reciprocal, so a caller that skips the inversion --
+            # or reads another expert's scale -- produces identical numbers.
+            # Vary it per expert so both mistakes have somewhere to show up.
+            input_scale=0.75 + 0.5 * (expert_idx % 4) / 3,
         )
 
     # Shared experts weights -- gate_proj and up_proj share weight_scale_2.
@@ -508,6 +519,16 @@ def moe_weights_mxfp8() -> dict[str, torch.Tensor]:
 @pytest.fixture(scope="module")
 def moe_weights() -> dict[str, torch.Tensor]:
     """Generate random BF16 weights on GPU for fast random number generation."""
+    return generate_moe_weights()
+
+
+def generate_moe_weights() -> dict[str, torch.Tensor]:
+    """Returns the BF16 weight set the EP fixtures load.
+
+    Exposed as a plain function so out-of-pytest drivers (the side-stream
+    trace worker) build the same model the fixtures do, rather than keeping
+    a second copy of the shapes that can drift.
+    """
     torch.manual_seed(42)
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -559,15 +580,15 @@ def moe_weights() -> dict[str, torch.Tensor]:
 def _build_compiled_ep_models(
     moe_weights: dict[str, torch.Tensor],
     swiglu_limit: float = 0.0,
+    n_devices: int = N_DEVICES,
 ) -> CompiledEPModels | None:
     """Compile MoE and MoEGate graphs once.
 
     Returns None when hardware requirements are not met.
     """
-    if accelerator_count() < N_DEVICES:
+    if accelerator_count() < n_devices:
         return None
 
-    n_devices = N_DEVICES
     max_tokens_per_rank = 128
     dtype = DType.bfloat16
 
@@ -599,12 +620,13 @@ def _build_compiled_ep_models(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
-        gated_activation_fn=make_concatenated_gated_activation_fn(
-            ops.silu, swiglu_limit
-        )
-        if swiglu_limit > 0
-        else None,
+        activation=GatedActivation(
+            gated_activation_fn=make_concatenated_gated_activation_fn(
+                ops.silu, swiglu_limit
+            )
+            if swiglu_limit > 0
+            else None
+        ),
         ep_batch_manager=ep_batch_manager,
     )
     moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
@@ -748,7 +770,6 @@ def _build_compiled_allreduce_ep_models(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
     )
     moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)

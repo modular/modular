@@ -13,17 +13,10 @@
 
 from std.math import iota
 from std.random import rand
-from std.sys import (
-    argv,
-    has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv, default_accelerator
 
 from std.benchmark import (
     Bench,
-    BenchConfig,
-    Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
@@ -127,23 +120,21 @@ def top_k() raises:
     var elements = ThroughputMeasure(BenchMetric.elements, els)
     var metrics: List = [flops, elements]
 
-    @__parameter
-    def top_k_cpu() raises:
+    def top_k_cpu() raises {imm}:
         TopK.execute[K=K, target="cpu"](
             out_vals.slice, out_idxs.slice, in_vals.slice, cpu_ctx
         )
 
-    b.bench_function[top_k_cpu](BenchId("top_k_custom", "cpu"), metrics)
+    b.bench_function(top_k_cpu, BenchId("top_k_custom", "cpu"), metrics)
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         var gpu_ctx = DeviceContext()
 
         var out_vals_dev = Tensor[IOSpec.Output, val_spec](gpu_ctx).rand()
         var out_idxs_dev = Tensor[IOSpec.Output, idx_spec](gpu_ctx).rand()
         var in_vals_dev = Tensor[IOSpec.Input, val_spec](gpu_ctx).rand()
 
-        @__parameter
-        def top_k_gpu() raises:
+        def top_k_gpu() raises {imm}:
             TopK.execute[K=K, target="gpu"](
                 out_vals_dev.slice,
                 out_idxs_dev.slice,
@@ -151,7 +142,7 @@ def top_k() raises:
                 gpu_ctx,
             )
 
-        b.bench_function[top_k_gpu](BenchId("top_k_custom", "gpu"), metrics)
+        b.bench_function(top_k_gpu, BenchId("top_k_custom", "gpu"), metrics)
     b.config.verbose_metric_names = False
     print(b)
 
@@ -182,34 +173,32 @@ def matmul() raises:
     var elements = ThroughputMeasure(BenchMetric.elements, M * N)
     var metrics: List = [flops, elements]
 
-    @__parameter
-    def matmul_cpu() raises:
+    def matmul_cpu() raises {imm}:
         MatrixMultiplication["naive"].execute[target="cpu"](
             c.slice, a.slice, b.slice, cpu_ctx
         )
 
-    bench.bench_function[matmul_cpu](BenchId("cpu", "naive"), metrics)
+    bench.bench_function(matmul_cpu, BenchId("cpu", "naive"), metrics)
+
+    comptime target = default_accelerator()
 
     comptime if (
-        has_amd_gpu_accelerator()
-        or has_apple_gpu_accelerator()
-        or has_nvidia_gpu_accelerator()
+        target.is_amd_gpu() or target.is_apple_gpu() or target.is_nvidia_gpu()
     ):
+        # TODO(MSTDL-3208): Should be DeviceContext[target]
         var gpu_ctx = DeviceContext()
         var a_dev = Tensor[IOSpec.Input, a_spec](gpu_ctx).rand()
         var b_dev = Tensor[IOSpec.Input, b_spec](gpu_ctx).rand()
         var c_dev = Tensor[IOSpec.Output, c_spec](gpu_ctx).rand()
 
-        @__parameter
-        def bench_matmul_kernel[impl: StaticString]() raises:
-            @__parameter
-            def bench_gpu() raises:
+        def bench_matmul_kernel[impl: StaticString]() raises {mut bench, imm}:
+            def bench_gpu() raises {imm}:
                 MatrixMultiplication[impl].execute[target="gpu"](
                     c_dev.slice, a_dev.slice, b_dev.slice, gpu_ctx
                 )
 
-            bench.bench_function[bench_gpu](
-                BenchId("gpu", String(impl)), metrics
+            bench.bench_function(
+                bench_gpu, BenchId("gpu", String(impl)), metrics
             )
 
         bench_matmul_kernel["naive"]()
@@ -219,7 +208,7 @@ def matmul() raises:
         bench_matmul_kernel["block_tiled"]()
         bench_matmul_kernel["block_tiled_vectorized"]()
 
-        comptime if not has_apple_gpu_accelerator():
+        comptime if not target.is_apple_gpu():
             bench_matmul_kernel["tensor_core"]()
 
     bench.config.verbose_metric_names = False
@@ -262,16 +251,14 @@ def tensor_core_mma() raises:
         bench.config.num_repetitions = 1
 
     # TODO: Add NVIDIA GPU support
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         var gpu_ctx = DeviceContext()
         var a_dev = Tensor[IOSpec.Input, a_spec](gpu_ctx).rand()
         var b_dev = Tensor[IOSpec.Input, b_spec](gpu_ctx).rand()
         var c_dev = Tensor[IOSpec.Output, c_spec](gpu_ctx).rand()
 
-        @__parameter
-        def bench_matmul_kernel[impl: StaticString]() raises:
-            @__parameter
-            def bench_gpu() raises:
+        def bench_matmul_kernel[impl: StaticString]() raises {mut bench, imm}:
+            def bench_gpu() raises {imm}:
                 TensorCoreMMA[impl].execute[target="gpu", M=M, N=N, K=K](
                     c_dev.slice,
                     a_dev.slice,
@@ -280,8 +267,8 @@ def tensor_core_mma() raises:
                     gpu_ctx,
                 )
 
-            bench.bench_function[bench_gpu](
-                BenchId("gpu", String(impl)), metrics
+            bench.bench_function(
+                bench_gpu, BenchId("gpu", String(impl)), metrics
             )
 
         bench_matmul_kernel["naive_tensor"]()

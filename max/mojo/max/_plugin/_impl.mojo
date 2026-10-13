@@ -14,13 +14,15 @@
 from ._overlay import MAX_PLUGINS
 from ._trait import MaxPluginHooks
 
-from std.sys.info import _TargetType
+from std.sys.info import CompilationTarget
 
 
-comptime CurrentMaxPlugin: MaxPluginHooks = MAX_PLUGINS.current
+comptime CurrentMaxPlugin: MaxPluginHooks = MAX_PLUGINS.current.HookFor[
+    CompilationTarget.current()
+]
 """The active MAX plugin."""
 
-comptime MaxPluginForTarget[Target: _TargetType] = MAX_PLUGINS.for_target[
-    Target
-]
+comptime MaxPluginForTarget[target: CompilationTarget] = MAX_PLUGINS.for_target[
+    target._mlir_value
+].HookFor[target]
 """The MAX plugin selected for the specified target."""

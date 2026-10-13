@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, cast
 
 import numpy as np
@@ -21,11 +22,17 @@ import numpy.typing as npt
 import pytest
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn.kernels import (
+    topk_fused_sampling_with_dist,
+    topk_topp_masked_probs,
+)
 from max.nn.sampling import (
+    AcceptanceSampler,
     MinPSampler,
     compute_synthetic_acceptance_base_rate,
+    greedy_acceptance_sampler,
     stochastic_acceptance_sampler,
 )
 from max.pipelines.sampling import (
@@ -295,6 +302,80 @@ def test_stochastic_acceptance_sampler_draft_dist_required_iff_sampled() -> (
         )
 
 
+def test_bfloat16_sampling_matches_exact_float32_upcast() -> None:
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    rows = 8
+    vocab_size = 257
+
+    input_types = [
+        TensorType(DType.float32, [rows, vocab_size], device=device_ref),
+        TensorType(DType.int64, [rows], device=device_ref),
+        TensorType(DType.float32, [rows], device=device_ref),
+        TensorType(DType.float32, [rows], device=device_ref),
+        TensorType(DType.uint64, [rows], device=device_ref),
+    ]
+    with Graph("bfloat16_sampling_handoff", input_types=input_types) as graph:
+        source, top_k, temperature, top_p, seed = (
+            value.tensor for value in graph.inputs
+        )
+        native_logits = source.cast(DType.bfloat16)
+        legacy_logits = native_logits.cast(DType.float32)
+        native_masked = topk_topp_masked_probs(
+            native_logits,
+            top_k=top_k,
+            temperature=temperature,
+            top_p=top_p,
+        )
+        legacy_masked = topk_topp_masked_probs(
+            legacy_logits,
+            top_k=top_k,
+            temperature=temperature,
+            top_p=top_p,
+        )
+        native_tokens, native_dist = topk_fused_sampling_with_dist(
+            native_logits,
+            top_k=top_k,
+            temperature=temperature,
+            top_p=top_p,
+            seed=seed,
+        )
+        legacy_tokens, legacy_dist = topk_fused_sampling_with_dist(
+            legacy_logits,
+            top_k=top_k,
+            temperature=temperature,
+            top_p=top_p,
+            seed=seed,
+        )
+        graph.output(
+            native_masked,
+            legacy_masked,
+            native_tokens,
+            legacy_tokens,
+            native_dist,
+            legacy_dist,
+        )
+
+    model = session.load(graph)
+    rng = np.random.default_rng(20260901)
+    input_buffers = [
+        Buffer.from_numpy(
+            rng.normal(0.0, 2.0, size=(rows, vocab_size)).astype(np.float32)
+        ).to(device),
+        Buffer.from_numpy(np.full(rows, -1, dtype=np.int64)).to(device),
+        Buffer.from_numpy(np.ones(rows, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.full(rows, 0.95, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.arange(rows, dtype=np.uint64) + 99).to(device),
+    ]
+
+    outputs = model.capture(92, *input_buffers)
+    model.replay(92, *input_buffers)
+    arrays = [cast(Buffer, output).to_numpy() for output in outputs]
+    for native, legacy in zip(arrays[::2], arrays[1::2], strict=True):
+        np.testing.assert_array_equal(native, legacy)
+
+
 @pytest.mark.parametrize(
     ("base_rate", "expected_first_rejected"),
     [(1.0, "num_steps"), (0.0, 0)],
@@ -558,10 +639,6 @@ def test_stochastic_acceptance_bonus_token_honors_top_p(
 
 
 @pytest.mark.parametrize("device", [Accelerator(), CPU()])
-@pytest.mark.xfail(
-    strict=True,
-    reason="SERVOPT-1563",
-)
 def test_stochastic_acceptance_honors_top_p_for_draft_tokens(
     device: Device,
 ) -> None:
@@ -588,10 +665,6 @@ def test_stochastic_acceptance_honors_top_p_for_draft_tokens(
 
 
 @pytest.mark.parametrize("device", [Accelerator(), CPU()])
-@pytest.mark.xfail(
-    strict=True,
-    reason="SERVOPT-1563",
-)
 def test_stochastic_acceptance_honors_top_p_for_recovered_tokens(
     device: Device,
 ) -> None:
@@ -912,6 +985,13 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
         device=DeviceRef.from_device(device), draft_proposal="argmax"
     )
     argmax_model = session.load(argmax_graph)
+    sampled_graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        draft_proposal="sampled",
+        vocab_size=vocab_size,
+    )
+    sampled_model = session.load(sampled_graph)
+
     argmax_out = argmax_model.execute(
         *_stochastic_sampler_inputs(
             device,
@@ -922,13 +1002,6 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
             temperature_np,
         )
     )
-
-    sampled_graph = build_stochastic_acceptance_sampler_graph(
-        device=DeviceRef.from_device(device),
-        draft_proposal="sampled",
-        vocab_size=vocab_size,
-    )
-    sampled_model = session.load(sampled_graph)
     sampled_out = sampled_model.execute(
         *_sampled_stochastic_sampler_inputs(
             device,
@@ -949,13 +1022,20 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
 
 
 def test_sampled_zeroed_distribution_matches_argmax() -> None:
-    """A row with no draft distribution must behave exactly like argmax mode.
+    """A row with no draft distribution must degrade to argmax-mode behavior.
 
     The overlap scheduler clears a slot it cannot refresh, so a request new to
     the batch arrives with a zeroed row. Reading ``q`` out of that row gives 0,
     which the sampler must treat as "no draft information" rather than as a
     probability -- a literal 0 would make ``coin * q >= p_target`` false and
     accept everything.
+
+    The two modes draw acceptance through different RNG paths (argmax mode
+    matches a truncated target sample; sampled mode flips a ratio-test
+    coin), so the equivalence is statistical rather than seed-for-seed:
+    both accept a draft with its target probability, so their acceptance
+    rates must agree. The accept-everything failure this test exists to
+    catch would surface as a sampled-mode acceptance rate of ~1.0.
     """
     device = Accelerator()
     session = InferenceSession(devices=[device])
@@ -985,53 +1065,66 @@ def test_sampled_zeroed_distribution_matches_argmax() -> None:
         )
     )
 
-    seed = 5
-    first_sampled, recovered_sampled, bonus_sampled = sampled.execute(
-        *_sampled_stochastic_sampler_inputs(
-            device,
-            batch_size,
-            vocab_size,
-            draft_tokens_np,
-            logits,
-            temperature_np,
-            np.zeros((batch_size, num_steps), dtype=np.float32),
-            seed=seed,
-            draft_probs_full_np=np.zeros(
-                (batch_size, num_steps, vocab_size), dtype=np.float32
-            ),
+    accepted_at_first_position = {"sampled": 0, "argmax": 0}
+    trials = 0
+    for seed in range(1, 17):
+        first_sampled, recovered_sampled, _ = sampled.execute(
+            *_sampled_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                np.zeros((batch_size, num_steps), dtype=np.float32),
+                seed=seed,
+                draft_probs_full_np=np.zeros(
+                    (batch_size, num_steps, vocab_size), dtype=np.float32
+                ),
+            )
         )
-    )
-    first_argmax, recovered_argmax, bonus_argmax = argmax.execute(
-        *_stochastic_sampler_inputs(
-            device,
-            batch_size,
-            vocab_size,
-            draft_tokens_np,
-            logits,
-            temperature_np,
-            seed=seed,
+        first_argmax, _, _ = argmax.execute(
+            *_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                seed=seed,
+            )
         )
-    )
+        first_sampled_np = cast(Buffer, first_sampled).to_numpy()
+        first_argmax_np = cast(Buffer, first_argmax).to_numpy()
+        # P(first_rejected > 0) is the position-0 acceptance rate: one
+        # clean Bernoulli per row, unpolluted by later positions.
+        accepted_at_first_position["sampled"] += int(
+            (first_sampled_np > 0).sum()
+        )
+        accepted_at_first_position["argmax"] += int((first_argmax_np > 0).sum())
+        trials += batch_size
 
-    # Both arms draw from the same seeded stream, so the acceptance decisions
-    # must match exactly, not just in distribution.
-    np.testing.assert_array_equal(
-        cast(Buffer, first_sampled).to_numpy(),
-        cast(Buffer, first_argmax).to_numpy(),
+        # Recovery must never re-emit the token the target just rejected --
+        # the failure the zero fallback exists to prevent.
+        recovered_np = cast(Buffer, recovered_sampled).to_numpy()
+        for b in range(batch_size):
+            k = int(first_sampled_np[b])
+            if k < num_steps:
+                assert recovered_np[b, k] != draft_tokens_np[b, k]
+
+    rate_sampled = accepted_at_first_position["sampled"] / trials
+    rate_argmax = accepted_at_first_position["argmax"] / trials
+    # ~8k trials per arm puts the standard error of the rate difference
+    # around 0.005; accept-everything would land rate_sampled at ~1.0.
+    assert rate_sampled < 0.9, (
+        f"zeroed draft distribution accepted {rate_sampled:.2%} of drafts: "
+        "q=0 is being treated as a probability instead of 'no information'"
     )
-    np.testing.assert_array_equal(
-        cast(Buffer, bonus_sampled).to_numpy(),
-        cast(Buffer, bonus_argmax).to_numpy(),
+    assert abs(rate_sampled - rate_argmax) < 0.03, (
+        f"zeroed-row sampled mode accepts {rate_sampled:.4f} vs argmax "
+        f"{rate_argmax:.4f}: the q=0 fallback no longer degrades to "
+        "argmax-mode behavior"
     )
-    # Recovery differs in its RNG stream, but must never re-emit the token the
-    # target just rejected -- the failure the zero fallback exists to prevent.
-    rejected = cast(Buffer, first_sampled).to_numpy()
-    recovered_np = cast(Buffer, recovered_sampled).to_numpy()
-    _ = recovered_argmax
-    for b in range(batch_size):
-        k = int(rejected[b])
-        if k < num_steps:
-            assert recovered_np[b, k] != draft_tokens_np[b, k]
 
 
 def test_stochastic_acceptance_sampler_sampled_zero_draft_tokens() -> None:
@@ -1919,3 +2012,748 @@ def test_stochastic_acceptance_sampler_all_true_bitmask_unchanged_behavior() -> 
         cast(Buffer, result_no_mask[2]).to_numpy(),
         cast(Buffer, result_with_mask[2]).to_numpy(),
     )
+
+
+def _load_greedy_bitmask_model(
+    session: InferenceSession, device_ref: DeviceRef
+) -> Model:
+    """Compiles greedy_acceptance_sampler with a bitmask input."""
+    input_types = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref),
+        TensorType(
+            DType.float32, ["total_output_len", "vocab_size"], device=device_ref
+        ),
+        TensorType(
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
+            device=device_ref,
+        ),
+    ]
+    with Graph("greedy_with_bitmask", input_types=input_types) as graph:
+        draft_tokens, target_logits, token_bitmasks = graph.inputs
+        first_rejected, recovered, bonus = greedy_acceptance_sampler(
+            draft_tokens=draft_tokens.tensor,
+            target_logits=target_logits.tensor,
+            token_bitmasks=token_bitmasks.tensor,
+        )
+        graph.output(first_rejected, recovered, bonus)
+    return session.load(graph)
+
+
+def test_greedy_acceptance_sampler_bitmask_rejects_and_recovers() -> None:
+    """Masked greedy: a draft equal to the UNMASKED argmax but masked out is
+    rejected, and recovered/bonus tokens are the masked argmax."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    model = _load_greedy_bitmask_model(session, DeviceRef.from_device(device))
+
+    batch_size = 2
+    num_steps = 3
+    vocab_size = 6
+
+    # Unmasked argmax is token 2 at every position; token 4 is runner-up.
+    target_logits = np.zeros(
+        (batch_size * (num_steps + 1), vocab_size), dtype=np.float32
+    )
+    target_logits[:, 2] = 10.0
+    target_logits[:, 4] = 5.0
+
+    draft_tokens = np.full((batch_size, num_steps), 2, dtype=np.int64)
+
+    # Batch 0: all-allowed -> accepts everything, bonus = 2.
+    # Batch 1: token 2 masked out at position 1 -> reject there; the masked
+    # argmax (recovered token) at position 1 is the runner-up, token 4.
+    bitmask = np.ones((batch_size, num_steps + 1, vocab_size), dtype=bool)
+    bitmask[1, 1, 2] = False
+
+    result = model.execute(
+        Buffer.from_numpy(draft_tokens).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask)).to(device),
+    )
+    first_rejected = cast(Buffer, result[0]).to_numpy()
+    recovered = cast(Buffer, result[1]).to_numpy()
+    bonus = cast(Buffer, result[2]).to_numpy()
+
+    np.testing.assert_array_equal(first_rejected, [num_steps, 1])
+    np.testing.assert_array_equal(recovered[0], [2, 2, 2])
+    np.testing.assert_array_equal(recovered[1], [2, 4, 2])
+    np.testing.assert_array_equal(bonus, [[2], [2]])
+
+
+def test_greedy_acceptance_sampler_bitmask_bonus_token_masked() -> None:
+    """The bonus position's mask constrains the bonus token."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    model = _load_greedy_bitmask_model(session, DeviceRef.from_device(device))
+
+    batch_size = 1
+    num_steps = 2
+    vocab_size = 6
+
+    target_logits = np.zeros(
+        (batch_size * (num_steps + 1), vocab_size), dtype=np.float32
+    )
+    target_logits[:, 2] = 10.0
+    target_logits[:, 3] = 5.0
+
+    draft_tokens = np.full((batch_size, num_steps), 2, dtype=np.int64)
+
+    bitmask = np.ones((batch_size, num_steps + 1, vocab_size), dtype=bool)
+    bitmask[0, num_steps, 2] = False  # bonus position forbids the argmax
+
+    result = model.execute(
+        Buffer.from_numpy(draft_tokens).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask)).to(device),
+    )
+    np.testing.assert_array_equal(
+        cast(Buffer, result[0]).to_numpy(), [num_steps]
+    )
+    np.testing.assert_array_equal(cast(Buffer, result[2]).to_numpy(), [[3]])
+
+
+def test_greedy_acceptance_sampler_bitmask_fill_is_hard_exclusion() -> None:
+    """A masked token cannot win even when every valid logit is far below
+    -10000 (the stochastic path's finite fill) -- the greedy mask fill must
+    behave as -inf."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    model = _load_greedy_bitmask_model(session, DeviceRef.from_device(device))
+
+    batch_size = 1
+    num_steps = 1
+    vocab_size = 6
+
+    # Every valid logit sits below -10000; the masked token holds the max.
+    target_logits = np.full(
+        (batch_size * (num_steps + 1), vocab_size), -30000.0, dtype=np.float32
+    )
+    target_logits[:, 2] = 0.0  # unmasked argmax, but grammar-invalid
+    target_logits[:, 4] = -20000.0  # best valid token
+
+    draft_tokens = np.full((batch_size, num_steps), 2, dtype=np.int64)
+
+    bitmask = np.ones((batch_size, num_steps + 1, vocab_size), dtype=bool)
+    bitmask[:, :, 2] = False
+
+    result = model.execute(
+        Buffer.from_numpy(draft_tokens).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask)).to(device),
+    )
+    np.testing.assert_array_equal(cast(Buffer, result[0]).to_numpy(), [0])
+    np.testing.assert_array_equal(cast(Buffer, result[1]).to_numpy(), [[4]])
+    np.testing.assert_array_equal(cast(Buffer, result[2]).to_numpy(), [[4]])
+
+
+def test_greedy_acceptance_sampler_all_allowed_matches_unmasked() -> None:
+    """An all-allowed bitmask reproduces the unmasked greedy results."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    masked_model = _load_greedy_bitmask_model(session, device_ref)
+    plain_graph = build_greedy_acceptance_sampler_graph(device=device_ref)
+    plain_model = session.load(plain_graph)
+
+    batch_size = 3
+    num_steps = 4
+    vocab_size = 17  # not a multiple of 32: exercises packing padding
+
+    rng = np.random.default_rng(7)
+    target_logits = rng.standard_normal(
+        (batch_size * (num_steps + 1), vocab_size)
+    ).astype(np.float32)
+    draft_tokens = rng.integers(
+        0, vocab_size, size=(batch_size, num_steps)
+    ).astype(np.int64)
+    bitmask = np.ones((batch_size, num_steps + 1, vocab_size), dtype=bool)
+
+    plain = plain_model.execute(
+        Buffer.from_numpy(draft_tokens).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+    )
+    masked = masked_model.execute(
+        Buffer.from_numpy(draft_tokens).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask)).to(device),
+    )
+    for p, m in zip(plain, masked, strict=True):
+        np.testing.assert_array_equal(
+            cast(Buffer, p).to_numpy(), cast(Buffer, m).to_numpy()
+        )
+
+
+def test_greedy_acceptance_sampler_bitmask_is_graph_capturable() -> None:
+    """The masked-greedy op sequence (apply_packed_bitmask + argmax) must
+    record into a device graph and replay with masked results -- capturability
+    is why greedy acceptance exists, and the stochastic path cannot capture."""
+    device = Accelerator()
+    if device.api != "cuda":
+        pytest.skip("device graph capture smoke is validated on CUDA")
+    session = InferenceSession(devices=[device])
+    model = _load_greedy_bitmask_model(session, DeviceRef.from_device(device))
+
+    batch_size = 2
+    num_steps = 3
+    vocab_size = 6
+
+    target_logits = np.zeros(
+        (batch_size * (num_steps + 1), vocab_size), dtype=np.float32
+    )
+    target_logits[:, 2] = 10.0
+    target_logits[:, 4] = 5.0
+    draft_tokens = np.full((batch_size, num_steps), 2, dtype=np.int64)
+    bitmask = np.ones((batch_size, num_steps + 1, vocab_size), dtype=bool)
+    bitmask[1, 1, 2] = False
+
+    inputs = [
+        Buffer.from_numpy(draft_tokens).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask)).to(device),
+    ]
+    outputs = model.capture(0, *inputs)
+    model.replay(0, *inputs)
+    device.synchronize()
+
+    np.testing.assert_array_equal(outputs[0].to_numpy(), [num_steps, 1])
+    np.testing.assert_array_equal(outputs[1].to_numpy()[1], [2, 4, 2])
+    np.testing.assert_array_equal(outputs[2].to_numpy(), [[2], [2]])
+
+
+def _load_stochastic_model(
+    session: InferenceSession,
+    device_ref: DeviceRef,
+    per_row_seed: bool,
+    synthetic_rate: float | None = None,
+) -> Model:
+    """Compiles stochastic_acceptance_sampler with a rank-0 or rank-1 seed.
+
+    With ``synthetic_rate``, compiles a synthetic AcceptanceSampler instead.
+    """
+    seed_type = (
+        TensorType(DType.uint64, ["batch_size"], device=device_ref)
+        if per_row_seed
+        else TensorType(DType.uint64, [], device=device_ref)
+    )
+    input_types = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref),
+        TensorType(
+            DType.float32, ["total_output_len", "vocab_size"], device=device_ref
+        ),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, [], device=DeviceRef.CPU()),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.float32, [], device=DeviceRef.CPU()),
+        seed_type,
+    ]
+    sampler: Callable[..., tuple[TensorValue, ...]] = (
+        stochastic_acceptance_sampler
+    )
+    if synthetic_rate is not None:
+        sampler = AcceptanceSampler(
+            synthetic_acceptance_rate=synthetic_rate,
+            num_draft_steps=3,
+            use_stochastic=True,
+        )
+    with Graph(
+        f"stochastic_seed_rank{int(per_row_seed)}_{synthetic_rate}",
+        input_types=input_types,
+    ) as graph:
+        draft, logits, temp, top_k, max_k, top_p, min_top_p, seed = graph.inputs
+        outs = sampler(
+            draft.tensor,
+            logits.tensor,
+            temperature=temp.tensor,
+            top_k=top_k.tensor,
+            max_k=max_k.tensor,
+            top_p=top_p.tensor,
+            min_top_p=min_top_p.tensor,
+            seed=seed.tensor,
+        )
+        graph.output(*outs)
+    return session.load(graph)
+
+
+def _run_stochastic(
+    model: Model,
+    device: Device,
+    draft: npt.NDArray[np.int64],
+    logits: npt.NDArray[np.float32],
+    temps: list[float],
+    seeds: npt.NDArray[np.uint64],
+    vocab_size: int,
+    top_ks: list[int] | None = None,
+) -> list[npt.NDArray[np.int64]]:
+    batch = draft.shape[0]
+    if top_ks is None:
+        top_ks = [vocab_size] * batch
+    result = model.execute(
+        Buffer.from_numpy(draft).to(device),
+        Buffer.from_numpy(logits).to(device),
+        Buffer.from_numpy(np.asarray(temps, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.asarray(top_ks, dtype=np.int64)).to(device),
+        Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
+        Buffer.from_numpy(np.ones(batch, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+        Buffer.from_numpy(seeds).to(device),
+    )
+    return [cast(Buffer, x).to_numpy() for x in result]
+
+
+@pytest.mark.parametrize("rate", [0.0, 1.0])
+def test_synthetic_acceptance_commits_stochastic_draws(rate: float) -> None:
+    """Synthetic acceptance commits the stochastic sampler's draws.
+
+    At rate 0 each row commits the stochastic draw at position 0, not the
+    target argmax; at rate 1 it commits every draft token.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    num_steps, vocab_size, batch = 3, 16, 8
+    synthetic = _load_stochastic_model(
+        session, device_ref, per_row_seed=True, synthetic_rate=rate
+    )
+    stochastic = _load_stochastic_model(session, device_ref, per_row_seed=True)
+
+    rng = np.random.default_rng(5)
+    for _ in range(10):
+        draft = rng.integers(0, vocab_size, size=(batch, num_steps)).astype(
+            np.int64
+        )
+        logits = rng.standard_normal(
+            (batch * (num_steps + 1), vocab_size)
+        ).astype(np.float32)
+        seeds = rng.integers(0, 2**62, size=batch).astype(np.uint64)
+        args = (device, draft, logits, [1.0] * batch, seeds, vocab_size)
+        first_rejected, recovered, bonus = _run_stochastic(synthetic, *args)
+        _, ref_recovered, ref_bonus = _run_stochastic(stochastic, *args)
+
+        np.testing.assert_array_equal(bonus, ref_bonus)
+        if rate == 0.0:
+            np.testing.assert_array_equal(first_rejected, [0] * batch)
+            np.testing.assert_array_equal(recovered[:, 0], ref_recovered[:, 0])
+        else:
+            np.testing.assert_array_equal(first_rejected, [num_steps] * batch)
+            np.testing.assert_array_equal(recovered, draft)
+
+
+def test_stochastic_per_row_seed_single_row_matches_scalar_seed() -> None:
+    """A rank-1 [batch] seed at batch size 1 is bit-identical to the rank-0
+    scalar-seed derivation, so migrating a caller cannot change single-row
+    sampling."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    m0 = _load_stochastic_model(session, device_ref, per_row_seed=False)
+    m1 = _load_stochastic_model(session, device_ref, per_row_seed=True)
+
+    vocab_size = 16
+    num_steps = 3
+    rng = np.random.default_rng(11)
+    for _ in range(20):
+        draft = rng.integers(0, vocab_size, size=(1, num_steps)).astype(
+            np.int64
+        )
+        logits = (
+            rng.standard_normal((num_steps + 1, vocab_size)).astype(np.float32)
+            * 3
+        )
+        seed = np.uint64(rng.integers(0, 2**62))
+        scalar = _run_stochastic(
+            m0,
+            device,
+            draft,
+            logits,
+            [0.9],
+            np.array(seed, dtype=np.uint64),
+            vocab_size,
+        )
+        per_row = _run_stochastic(
+            m1,
+            device,
+            draft,
+            logits,
+            [0.9],
+            np.array([seed], dtype=np.uint64),
+            vocab_size,
+        )
+        for a, b in zip(scalar, per_row, strict=True):
+            np.testing.assert_array_equal(a, b)
+
+
+def test_stochastic_per_row_seed_rows_are_independent_of_coresidents() -> None:
+    """With per-row seeds, a row's outputs at a fixed batch position are a
+    function of its own (seed, logits, params) only: changing every OTHER
+    row's content leaves it untouched, and changing its own seed changes it.
+    Under the scalar row-0 seed neither holds."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    model = _load_stochastic_model(session, device_ref, per_row_seed=True)
+
+    vocab_size = 16
+    num_steps = 3
+    batch = 3
+    rng = np.random.default_rng(21)
+    draft = rng.integers(0, vocab_size, size=(batch, num_steps)).astype(
+        np.int64
+    )
+    logits = (
+        rng.standard_normal((batch * (num_steps + 1), vocab_size)).astype(
+            np.float32
+        )
+        * 3
+    )
+    seeds = rng.integers(0, 2**62, size=batch).astype(np.uint64)
+    temps = [0.7, 1.1, 0.9]
+    base = _run_stochastic(
+        model, device, draft, logits, temps, seeds, vocab_size
+    )
+
+    for _ in range(10):
+        draft2, logits2, seeds2, temps2 = (
+            draft.copy(),
+            logits.copy(),
+            seeds.copy(),
+            list(temps),
+        )
+        for other in (0, 2):
+            draft2[other] = rng.integers(0, vocab_size, size=num_steps)
+            logits2[other * (num_steps + 1) : (other + 1) * (num_steps + 1)] = (
+                rng.standard_normal((num_steps + 1, vocab_size)).astype(
+                    np.float32
+                )
+                * 3
+            )
+            seeds2[other] = rng.integers(0, 2**62)
+            temps2[other] = float(rng.uniform(0.5, 1.3))
+        out = _run_stochastic(
+            model, device, draft2, logits2, temps2, seeds2, vocab_size
+        )
+        assert out[0][1] == base[0][1]
+        np.testing.assert_array_equal(out[1][1], base[1][1])
+        np.testing.assert_array_equal(out[2][1], base[2][1])
+
+    reseeded = seeds.copy()
+    reseeded[1] += np.uint64(1)
+    out = _run_stochastic(
+        model, device, draft, logits, temps, reseeded, vocab_size
+    )
+    assert (
+        out[0][1] != base[0][1]
+        or (out[1][1] != base[1][1]).any()
+        or (out[2][1] != base[2][1]).any()
+    ), "row 1's stream must be keyed by its own seed"
+
+
+def test_stochastic_per_row_seed_honors_topk_at_every_position() -> None:
+    """Per-row top_k applies at every verify position: with top_k=1 the
+    stochastic path degenerates to argmax, so argmax drafts are all accepted
+    and recovered/bonus tokens are the per-position argmax."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    model = _load_stochastic_model(session, device_ref, per_row_seed=True)
+
+    vocab_size = 16
+    num_steps = 3
+    batch = 2
+    rng = np.random.default_rng(31)
+    logits = (
+        rng.standard_normal((batch * (num_steps + 1), vocab_size)).astype(
+            np.float32
+        )
+        * 3
+    )
+    expect = logits.reshape(batch, num_steps + 1, vocab_size).argmax(-1)
+    draft = expect[:, :num_steps].astype(np.int64)
+    seeds = rng.integers(0, 2**62, size=batch).astype(np.uint64)
+
+    out = _run_stochastic(
+        model,
+        device,
+        draft,
+        logits,
+        [0.8] * batch,
+        seeds,
+        vocab_size,
+        top_ks=[1] * batch,
+    )
+    np.testing.assert_array_equal(out[0], [num_steps] * batch)
+    np.testing.assert_array_equal(out[1], expect[:, :num_steps])
+    np.testing.assert_array_equal(out[2][:, 0], expect[:, num_steps])
+
+
+def test_stochastic_per_row_seed_is_graph_capturable() -> None:
+    """The rank-1 seed derivation keeps the acceptance subgraph capturable,
+    and a replay reproduces the same seed-keyed samples."""
+    device = Accelerator()
+    if device.api != "cuda":
+        pytest.skip("device graph capture smoke is validated on CUDA")
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    model = _load_stochastic_model(session, device_ref, per_row_seed=True)
+
+    vocab_size = 16
+    num_steps = 3
+    batch = 2
+    rng = np.random.default_rng(41)
+    draft = rng.integers(0, vocab_size, size=(batch, num_steps)).astype(
+        np.int64
+    )
+    logits = (
+        rng.standard_normal((batch * (num_steps + 1), vocab_size)).astype(
+            np.float32
+        )
+        * 3
+    )
+    seeds = rng.integers(0, 2**62, size=batch).astype(np.uint64)
+    eager = _run_stochastic(
+        model, device, draft, logits, [0.8] * batch, seeds, vocab_size
+    )
+
+    inputs = [
+        Buffer.from_numpy(draft).to(device),
+        Buffer.from_numpy(logits).to(device),
+        Buffer.from_numpy(np.full(batch, 0.8, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.full(batch, vocab_size, dtype=np.int64)).to(
+            device
+        ),
+        Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
+        Buffer.from_numpy(np.ones(batch, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+        Buffer.from_numpy(seeds).to(device),
+    ]
+    outputs = model.capture(0, *inputs)
+    model.replay(0, *inputs)
+    device.synchronize()
+    for expected, replayed in zip(eager, outputs, strict=True):
+        np.testing.assert_array_equal(expected, replayed.to_numpy())
+
+
+def test_stochastic_per_row_seed_composes_with_bitmask() -> None:
+    """Per-row seeds and the grammar bitmask compose: a masked-out draft is
+    rejected and recovered/bonus tokens satisfy the constraint, per row."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+
+    vocab_size = 16
+    num_steps = 2
+    batch = 2
+    input_types = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref),
+        TensorType(
+            DType.float32, ["total_output_len", "vocab_size"], device=device_ref
+        ),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, [], device=DeviceRef.CPU()),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.float32, [], device=DeviceRef.CPU()),
+        TensorType(DType.uint64, ["batch_size"], device=device_ref),
+        TensorType(
+            DType.int32,
+            ["batch_size", "num_bitmask_positions", "packed_vocab_size"],
+            device=device_ref,
+        ),
+    ]
+    with Graph("stochastic_perrow_bitmask", input_types=input_types) as graph:
+        (draft, logits, temp, top_k, max_k, top_p, min_top_p, seed, bitmask) = (
+            graph.inputs
+        )
+        outs = stochastic_acceptance_sampler(
+            draft_tokens=draft.tensor,
+            target_logits=logits.tensor,
+            temperature=temp.tensor,
+            top_k=top_k.tensor,
+            max_k=max_k.tensor,
+            top_p=top_p.tensor,
+            min_top_p=min_top_p.tensor,
+            seed=seed.tensor,
+            token_bitmasks=bitmask.tensor,
+        )
+        graph.output(*outs)
+    model = session.load(graph)
+
+    # Token 2 dominates every position; batch 1 masks it out at position 0,
+    # where only token 4 remains legal.
+    logits_np = np.full(
+        (batch * (num_steps + 1), vocab_size), -10.0, dtype=np.float32
+    )
+    logits_np[:, 2] = 10.0
+    logits_np[:, 4] = 5.0
+    draft_np = np.full((batch, num_steps), 2, dtype=np.int64)
+    bitmask_np = np.ones((batch, num_steps + 1, vocab_size), dtype=bool)
+    bitmask_np[1, 0, :] = False
+    bitmask_np[1, 0, 4] = True
+    seeds_np = np.array([7, 8], dtype=np.uint64)
+
+    result = model.execute(
+        Buffer.from_numpy(draft_np).to(device),
+        Buffer.from_numpy(logits_np).to(device),
+        Buffer.from_numpy(np.full(batch, 0.8, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.full(batch, vocab_size, dtype=np.int64)).to(
+            device
+        ),
+        Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
+        Buffer.from_numpy(np.ones(batch, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+        Buffer.from_numpy(seeds_np).to(device),
+        Buffer.from_numpy(_pack_bitmask(bitmask_np)).to(device),
+    )
+    first_rejected = cast(Buffer, result[0]).to_numpy()
+    recovered = cast(Buffer, result[1]).to_numpy()
+
+    # Batch 0 (all-allowed): token 2 dominates, drafts accepted.
+    assert first_rejected[0] == num_steps
+    # Batch 1: the masked-out draft at position 0 is rejected and the
+    # recovered token is the only legal one.
+    assert first_rejected[1] == 0
+    assert recovered[1][0] == 4
+
+
+def test_stochastic_seedtype_input_keeps_shared_seed_semantics() -> None:
+    """A rank-1 ``[1]`` seed is the graph-level SeedType input — one seed for
+    the whole batch, whatever the batch size — and must keep the scalar-seed
+    behavior bit-for-bit rather than being read as a per-row tensor (the
+    shape algebra cannot even unify ``[1]`` with a symbolic batch)."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    scalar_model = _load_stochastic_model(
+        session, device_ref, per_row_seed=False
+    )
+
+    input_types = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref),
+        TensorType(
+            DType.float32, ["total_output_len", "vocab_size"], device=device_ref
+        ),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, [], device=DeviceRef.CPU()),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.float32, [], device=DeviceRef.CPU()),
+        ops.random.SeedType(device_ref),
+    ]
+    with Graph("stochastic_seedtype", input_types=input_types) as graph:
+        draft, logits, temp, top_k, max_k, top_p, min_top_p, seed = graph.inputs
+        outs = stochastic_acceptance_sampler(
+            draft_tokens=draft.tensor,
+            target_logits=logits.tensor,
+            temperature=temp.tensor,
+            top_k=top_k.tensor,
+            max_k=max_k.tensor,
+            top_p=top_p.tensor,
+            min_top_p=min_top_p.tensor,
+            seed=seed.tensor,
+        )
+        graph.output(*outs)
+    seedtype_model = session.load(graph)
+
+    vocab_size = 16
+    num_steps = 3
+    batch = 4  # larger than the seed's [1]: shared-seed semantics
+    rng = np.random.default_rng(51)
+    draft_np = rng.integers(0, vocab_size, size=(batch, num_steps)).astype(
+        np.int64
+    )
+    logits_np = (
+        rng.standard_normal((batch * (num_steps + 1), vocab_size)).astype(
+            np.float32
+        )
+        * 3
+    )
+    seed_np = np.uint64(rng.integers(0, 2**62))
+
+    shared = seedtype_model.execute(
+        Buffer.from_numpy(draft_np).to(device),
+        Buffer.from_numpy(logits_np).to(device),
+        Buffer.from_numpy(np.full(batch, 0.9, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.full(batch, vocab_size, dtype=np.int64)).to(
+            device
+        ),
+        Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
+        Buffer.from_numpy(np.ones(batch, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+        Buffer.from_numpy(np.array([seed_np], dtype=np.uint64)).to(device),
+    )
+    scalar = _run_stochastic(
+        scalar_model,
+        device,
+        draft_np,
+        logits_np,
+        [0.9] * batch,
+        np.array(seed_np, dtype=np.uint64),
+        vocab_size,
+    )
+    for a, b in zip(shared, scalar, strict=True):
+        np.testing.assert_array_equal(cast(Buffer, a).to_numpy(), b)
+
+
+def test_stochastic_per_row_seed_accepts_foreign_batch_dim() -> None:
+    """A per-row seed input whose batch dim carries a different symbolic name
+    still builds and runs: the sampler rebinds it to the canonical batch dim
+    before the flat derivation."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+
+    input_types = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref),
+        TensorType(
+            DType.float32, ["total_output_len", "vocab_size"], device=device_ref
+        ),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, [], device=DeviceRef.CPU()),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.float32, [], device=DeviceRef.CPU()),
+        TensorType(DType.uint64, ["seed_rows"], device=device_ref),
+    ]
+    with Graph("stochastic_foreign_dim", input_types=input_types) as graph:
+        draft, logits, temp, top_k, max_k, top_p, min_top_p, seed = graph.inputs
+        outs = stochastic_acceptance_sampler(
+            draft_tokens=draft.tensor,
+            target_logits=logits.tensor,
+            temperature=temp.tensor,
+            top_k=top_k.tensor,
+            max_k=max_k.tensor,
+            top_p=top_p.tensor,
+            min_top_p=min_top_p.tensor,
+            seed=seed.tensor,
+        )
+        graph.output(*outs)
+    model = session.load(graph)
+
+    vocab_size = 16
+    num_steps = 3
+    batch = 3
+    rng = np.random.default_rng(61)
+    draft_np = rng.integers(0, vocab_size, size=(batch, num_steps)).astype(
+        np.int64
+    )
+    logits_np = (
+        rng.standard_normal((batch * (num_steps + 1), vocab_size)).astype(
+            np.float32
+        )
+        * 3
+    )
+    seeds_np = rng.integers(0, 2**62, size=batch).astype(np.uint64)
+    result = model.execute(
+        Buffer.from_numpy(draft_np).to(device),
+        Buffer.from_numpy(logits_np).to(device),
+        Buffer.from_numpy(np.full(batch, 0.9, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.full(batch, vocab_size, dtype=np.int64)).to(
+            device
+        ),
+        Buffer.from_numpy(np.array(vocab_size, dtype=np.int64)),
+        Buffer.from_numpy(np.ones(batch, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+        Buffer.from_numpy(seeds_np).to(device),
+    )
+    assert cast(Buffer, result[0]).to_numpy().shape == (batch,)

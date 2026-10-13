@@ -34,14 +34,14 @@ owns the numerics, this one owns the wiring.
 """
 
 from std.memory import bitcast
-from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
+from std.sys import default_accelerator, simd_width_of, size_of
 from std.testing import assert_equal, assert_true
 from std.utils.index import Index
 
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import Coord, TileTensor, row_major
 
-from comm import MAX_GPUS, Signal, group_end, group_start
+from comm import Signal, group_end, group_start
 from comm.allgather_rmsnorm import (
     _dispatch_ag_norm_quant,
     allgather_rmsnorm,
@@ -97,20 +97,18 @@ def _run_case[
     var normed_fused = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_fused = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var quant_ref = List[DeviceBuffer[DType.float8_e4m3fn]](capacity=ngpus)
-    var quant_fused = List[DeviceBuffer[DType.float8_e4m3fn]](capacity=ngpus)
-    var scales_ref = List[DeviceBuffer[DType.float8_e8m0fnu]](capacity=ngpus)
-    var scales_fused = List[DeviceBuffer[DType.float8_e8m0fnu]](capacity=ngpus)
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var quant_ref = List[DeviceBuffer[.float8_e4m3fn]](capacity=ngpus)
+    var quant_fused = List[DeviceBuffer[.float8_e4m3fn]](capacity=ngpus)
+    var scales_ref = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
+    var scales_fused = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
-    var gamma_host = List(length=num_cols, fill=Scalar[in_dtype](0))
-    for c in range(num_cols):
-        gamma_host[c] = (Float64(c + num_cols) / Float64(num_cols)).cast[
-            in_dtype
-        ]()
+    var gamma_host = List(
+        length=num_cols,
+        fill_with=lambda (c: Int) -> Scalar[in_dtype]: (
+            Float64(c + num_cols) / Float64(num_cols)
+        ).cast[in_dtype](),
+    )
 
     for i in range(ngpus):
         var shard_rows = config.rank_units(i)
@@ -144,31 +142,31 @@ def _run_case[
         sum_ref.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](full_n))
         sum_fused.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](full_n))
         quant_ref.append(
-            list_of_ctx[i].enqueue_create_buffer[DType.float8_e4m3fn](full_n)
+            list_of_ctx[i].enqueue_create_buffer[.float8_e4m3fn](full_n)
         )
         quant_fused.append(
-            list_of_ctx[i].enqueue_create_buffer[DType.float8_e4m3fn](full_n)
+            list_of_ctx[i].enqueue_create_buffer[.float8_e4m3fn](full_n)
         )
         scales_ref.append(
-            list_of_ctx[i].enqueue_create_buffer[DType.float8_e8m0fnu](
+            list_of_ctx[i].enqueue_create_buffer[.float8_e8m0fnu](
                 num_rows * scale_cols
             )
         )
         scales_fused.append(
-            list_of_ctx[i].enqueue_create_buffer[DType.float8_e8m0fnu](
+            list_of_ctx[i].enqueue_create_buffer[.float8_e8m0fnu](
                 num_rows * scale_cols
             )
         )
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -176,9 +174,7 @@ def _run_case[
         list_of_ctx[i].synchronize()
 
     comptime ShardType = TileTensor[
-        in_dtype,
-        type_of(row_major(Coord(Index(0, num_cols)))),
-        ImmutAnyOrigin,
+        in_dtype, type_of(row_major(Coord(Index(0, num_cols)))), ImmutAnyOrigin
     ]
     comptime FullType = TileTensor[
         mut=True,
@@ -188,13 +184,13 @@ def _run_case[
     ]
     comptime QuantType = TileTensor[
         mut=True,
-        DType.float8_e4m3fn,
+        .float8_e4m3fn,
         type_of(row_major(Coord(Index(0, num_cols)))),
         MutAnyOrigin,
     ]
     comptime ScaleType = TileTensor[
         mut=True,
-        DType.float8_e8m0fnu,
+        .float8_e8m0fnu,
         type_of(row_major(Coord(Index(0, scale_cols)))),
         MutAnyOrigin,
     ]
@@ -202,14 +198,14 @@ def _run_case[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
 
-    var in_shards = Array[ShardType, ngpus](uninitialized=True)
-    comptime for i in range(ngpus):
-        in_shards[i] = ShardType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+    var in_shards = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> ShardType: ShardType(
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 shard_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(config.rank_units(i), num_cols))),
         )
+    )
 
     # --- Arm A: the shipping two-kernel chain. ---
     group_start()
@@ -225,7 +221,7 @@ def _run_case[
                 row_major(Coord(Index(num_rows, num_cols))),
             ),
             GammaType(
-                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                     gamma_dev[i].unsafe_ptr()
                 ),
                 row_major(Coord(Index(num_cols))),
@@ -287,7 +283,7 @@ def _run_case[
             row_major(Coord(Index(num_rows, num_cols))),
         )
         var gamma_view = GammaType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                 gamma_dev[i].unsafe_ptr()
             ),
             row_major(Coord(Index(num_cols))),
@@ -298,7 +294,7 @@ def _run_case[
         # device as host-stack pointers and the stores land out of bounds.
         @__copy_capture(quant_view, scale_view)
         @__parameter
-        @always_inline
+        @inline(.always)
         def mx_epilogue[
             width: Int
         ](row: Int, col: Int, val: SIMD[in_dtype, width]):
@@ -310,13 +306,11 @@ def _run_case[
                 if col < num_cols:
                     quant_view.store[width=width](
                         Coord(row, col),
-                        bitcast[DType.float8_e4m3fn](
-                            SIMD[DType.uint8, width](0x7F)
-                        ),
+                        bitcast[.float8_e4m3fn](SIMD[.uint8, width](0x7F)),
                     )
             else:
-                var quantized: SIMD[DType.float8_e4m3fn, width]
-                var e8m0: Scalar[DType.float8_e8m0fnu]
+                var quantized: SIMD[.float8_e4m3fn, width]
+                var e8m0: Float8_e8m0fnu
                 # The block max is a cross-lane reduction: lanes past
                 # `num_cols` must participate (carrying 0) but must not store.
                 quantized, e8m0 = quantize_mxfp8_lane_group[
@@ -333,9 +327,8 @@ def _run_case[
 
         # This branch owes the SAME outputs as the fused one; dropping the
         # `quantize_mx_amd` leaves them stale and arm A catches it (verified).
-        @__parameter
-        @always_inline
-        def two_launch_with_quant() raises:
+        @inline(.always)
+        def two_launch_with_quant() raises {imm}:
             comptime if not route_two_launch:
                 # Poison: `threshold = full_bytes` forces the fused branch, so
                 # being called at all means the routing inverted -- which the
@@ -357,10 +350,7 @@ def _run_case[
                 )
                 quantize_mx_amd(ctx_i, quant_view, scale_view, normed_view)
 
-        _dispatch_ag_norm_quant[
-            two_launch_with_quant=two_launch_with_quant,
-            quant_epilogue=mx_epilogue,
-        ](
+        _dispatch_ag_norm_quant[quant_epilogue=mx_epilogue,](
             in_shards,
             normed_view,
             sum_view,
@@ -369,6 +359,7 @@ def _run_case[
             weight_offset,
             rank_sigs,
             ctx_i,
+            two_launch_with_quant,
             threshold=threshold,
         )
     group_end()
@@ -383,10 +374,10 @@ def _run_case[
     var distinct_scales = List[UInt8]()
 
     for i in range(ngpus):
-        var qa = list_of_ctx[i].enqueue_create_host_buffer[DType.float8_e4m3fn](
+        var qa = list_of_ctx[i].enqueue_create_host_buffer[.float8_e4m3fn](
             full_n
         )
-        var qb = list_of_ctx[i].enqueue_create_host_buffer[DType.float8_e4m3fn](
+        var qb = list_of_ctx[i].enqueue_create_host_buffer[.float8_e4m3fn](
             full_n
         )
         var sa = list_of_ctx[i].enqueue_create_host_buffer[
@@ -406,8 +397,8 @@ def _run_case[
         list_of_ctx[i].synchronize()
 
         for e in range(full_n):
-            var a = bitcast[DType.uint8](qa[e])
-            var b = bitcast[DType.uint8](qb[e])
+            var a = bitcast[.uint8](qa[e])
+            var b = bitcast[.uint8](qb[e])
             if a != b:
                 total_quant_mismatch += 1
             if b != UInt8(0):
@@ -415,8 +406,8 @@ def _run_case[
             if na[e] != nb[e]:
                 total_normed_mismatch += 1
         for e in range(num_rows * scale_cols):
-            var a = bitcast[DType.uint8](sa[e])
-            var b = bitcast[DType.uint8](sb[e])
+            var a = bitcast[.uint8](sa[e])
+            var b = bitcast[.uint8](sb[e])
             if a != b:
                 total_scale_mismatch += 1
             if i == 0 and b not in distinct_scales:
@@ -470,7 +461,7 @@ def main() raises:
     if num_devices < 2:
         print("SKIPPED: needs at least 2 GPUs, found", num_devices)
         return
-    if not has_amd_gpu_accelerator():
+    if not default_accelerator().is_amd_gpu():
         print("SKIPPED: the MXFP8 quantize path is CDNA4-only")
         return
 

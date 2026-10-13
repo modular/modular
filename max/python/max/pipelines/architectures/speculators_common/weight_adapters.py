@@ -62,6 +62,11 @@ def validate_draft_checkpoint_weights(
     lm_head / markov_w2 row counts, the fc tap-concat width, and the ``d2t``
     offset table mapping into the target vocabulary. Raises with the
     offending tensor named, before any graph is built.
+
+    ``d2t`` is checked only for a pruned drafter (see
+    :attr:`~..speculators_common.draft_config.DSparkSpeculatorsDraftConfig.has_d2t`);
+    an unpruned one ships none and requiring it would reject a valid
+    checkpoint.
     """
     draft_vocab = draft_config.draft_vocab_size
     vocab = draft_config.vocab_size
@@ -93,6 +98,15 @@ def validate_draft_checkpoint_weights(
             f"DSpark draft fc.weight has shape {fc_shape}; expected"
             f" in-features = num taps x hidden = {expected_fc_in}."
         )
+    if not draft_config.has_d2t:
+        if "d2t" in draft_state_dict:
+            raise ValueError(
+                "DSpark draft carries a d2t table but its vocabulary is"
+                f" unpruned (draft_vocab_size={draft_vocab} =="
+                f" vocab_size={vocab}), so nothing consumes it."
+            )
+        return
+
     d2t_shape = _shape("d2t")
     if d2t_shape != (draft_vocab,):
         raise ValueError(

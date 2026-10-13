@@ -41,7 +41,7 @@ TOOL_CALL_PATTERN = re.compile(
 def _json_loads_gemma4_string(body: str) -> str:
     """Decode a ``<|"|>``-delimited Gemma4 string body as a JSON string body.
 
-    The grammar emits the body JSON-escaped (e.g. ``\\t`` for a tab) except a
+    The grammar emits the body JSON-escaped (such as ``\\t`` for a tab) except a
     literal ``"``, which is emitted raw. Backslashes are always doubled, so no
     ``"`` is ever already-escaped: escape every ``"`` to ``\\"`` and decode
     with :func:`json.loads`. Falls open (returns ``body`` unchanged) on
@@ -97,7 +97,7 @@ def _parse_gemma4_args(
         args_str: The raw Gemma4 argument string.
         partial: When True (streaming), bare values at end of string are
             omitted because they may be incomplete and type-unstable
-            (e.g. partial boolean parsed as bare string).
+            (such as partial boolean parsed as bare string).
 
     Returns a dict ready for ``json.dumps()``.
     """
@@ -375,6 +375,7 @@ class Gemma4ToolParser(StructuralTagToolParser):
         tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
         backend: str = "xgrammar",
         tool_choice: str | dict[str, Any] | None = None,
+        reject_unsupported: bool = False,
         **kwargs: Any,
     ) -> str:
         """Generate a constrained-decoding grammar for Gemma 4 tool calls.
@@ -399,6 +400,9 @@ class Gemma4ToolParser(StructuralTagToolParser):
             tokenizer: Unused (the xgrammar tag references literal markers).
             backend: Structured-output backend; must be ``"xgrammar"``.
             tool_choice: ``"auto"``, ``"required"``, or a named choice.
+            reject_unsupported: Whether to raise an error during grammar
+                compilation when a tool's schema cannot be enforced. Otherwise,
+                the schema is enforced best-effort.
             **kwargs: Ignored; accepts future kwargs.
 
         Returns:
@@ -415,4 +419,5 @@ class Gemma4ToolParser(StructuralTagToolParser):
             tools or [],
             normalized_choice,
             response_format_schema=response_format_schema,
+            reject_unsupported=reject_unsupported,
         )

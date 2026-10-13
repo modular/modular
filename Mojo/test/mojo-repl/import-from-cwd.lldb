@@ -1,0 +1,28 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %repl <%s 2>&1 | FileCheck %s
+
+# Note: in REPL mode, expressions are delimited by empty lines.
+
+# The REPL has no main file, so module lookup falls back to the process's
+# working directory; the directory itself, not its parent. `cwd_package` exists
+# only inside Inputs, so this import succeeding proves the CWD is on the search
+# path.
+
+%cd ./Inputs
+
+from cwd_package import package_function
+
+# CHECK: package_function was called
+package_function()

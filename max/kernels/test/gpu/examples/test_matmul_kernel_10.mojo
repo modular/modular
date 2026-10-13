@@ -14,7 +14,6 @@
 from std.collections import Optional
 from std.math import ceildiv
 from std.math.uutils import udivmod, umod
-from std.sys import has_amd_gpu_accelerator
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
@@ -28,12 +27,11 @@ from layout import (
     Coord,
     TileTensor,
     TensorLayout,
-    PointerStorage,
-    Idx,
+    DefaultEngine,
     row_major,
     stack_allocation,
 )
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -43,11 +41,9 @@ from std.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
 
 from std.utils import StaticTuple
-from std.utils.index import Index
 from std.utils.numerics import isnan
 
 comptime BLOCK_DIM = 8
@@ -88,19 +84,19 @@ def sgemm_warp_tiling_kernel[
         c_type,
         CLayoutType,
         MutAnyOrigin,
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
     ],
     mat_a: TileTensor[
         a_type,
         ALayoutType,
         MutAnyOrigin,
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
     ],
     mat_b: TileTensor[
         b_type,
         BLayoutType,
         MutAnyOrigin,
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
     ],
     alpha: Scalar[c_type],
     beta: Scalar[c_type],
@@ -130,10 +126,10 @@ def sgemm_warp_tiling_kernel[
     # Use 4 to comply with f4 alignment used in accumulation.
     comptime sram_bank_padding_size = 4
     comptime BM_padded = BM + sram_bank_padding_size
-    var a_sram = stack_allocation[a_type, address_space=AddressSpace.SHARED](
+    var a_sram = stack_allocation[a_type, address_space=.SHARED](
         row_major[BK * BM_padded]()
     )
-    var b_sram = stack_allocation[b_type, address_space=AddressSpace.SHARED](
+    var b_sram = stack_allocation[b_type, address_space=.SHARED](
         row_major[BK * BN]()
     )
 
@@ -170,8 +166,8 @@ def sgemm_warp_tiling_kernel[
     for _ in range(0, K, BK):
         for offset in range(0, BM - row_stride_a + 1, row_stride_a):
             # Load 4 elements at a time and store to shared memory.
-            var tmp = ldg[width=4](
-                aa_ptr + ((inner_row_a + offset) * K) + inner_col_a * 4
+            var tmp = aa_ptr.unsafe_load[width=4, invariant=True](
+                ((inner_row_a + offset) * K) + inner_col_a * 4
             )
 
             comptime for i in range(4):
@@ -181,8 +177,8 @@ def sgemm_warp_tiling_kernel[
 
         for offset in range(0, BK - row_stride_b + 1, row_stride_b):
             # Load 4 elements at a time and store to shared memory.
-            var tmp = ldg[width=4](
-                bb_ptr + (inner_row_b + offset) * N + inner_co_ib * 4
+            var tmp = bb_ptr.unsafe_load[width=4, invariant=True](
+                (inner_row_b + offset) * N + inner_co_ib * 4
             )
             b_sram.store[alignment=16](
                 ((inner_row_b + offset) * BN + inner_co_ib * 4,),
@@ -263,10 +259,10 @@ def sgemm_warp_tiling_kernel[
                         width=4, alignment=16
                     ](c_idx)
 
-                    comptime if elementwise_lambda_fn:
+                    comptime if case .Some(epilogue) = elementwise_lambda_fn:
                         comptime elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[c_type, 4](
-                            Index(
+                            (
                                 M_offset_warp + M_offset_subtile + M_offset_val,
                                 N_offset_warp + N_offset_subtile + N_offset_val,
                             ),
@@ -277,9 +273,9 @@ def sgemm_warp_tiling_kernel[
 
 
 def matmul_naive(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -310,7 +306,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # TODO: Find best for target GPU.
     #       For A100 see below (based on siboehm repo).
     #       For MI300X we need to further autotune (below is a working version).
-    # alias K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
+    # alias K10_NUM_THREADS = 256 if ctx.target.is_amd_gpu() else 128
     # alias K10_BN = 128
     # alias K10_BM = 64
     # alias K10_BK = 16
@@ -320,12 +316,12 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # alias K10_TN = 4
     # alias K10_TM = 4
     # Settings for A6000
-    comptime K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_NUM_THREADS = 256 if ctx.target.is_amd_gpu() else 128
     comptime K10_BN = 128
-    comptime K10_BM = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_BM = 256 if ctx.target.is_amd_gpu() else 128
     comptime K10_BK = 16
     comptime K10_WN = 64
-    comptime K10_WM = 128 if has_amd_gpu_accelerator() else 64
+    comptime K10_WM = 128 if ctx.target.is_amd_gpu() else 64
     comptime K10_WNITER = 4
     comptime K10_TN = 4
     comptime K10_TM = 8
@@ -393,9 +389,9 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     for i in range(M * N):
         c_host_naive[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_device = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -428,10 +424,9 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         NUM_THREADS=K10_NUM_THREADS,
     ]
 
-    @__parameter
-    @always_inline
-    def bench_matmul_10(mut b: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_matmul_10(mut b: Bencher) {imm}:
+        @inline(.always)
         def run_func(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[sgemm_type](
                 c_buffer,
@@ -445,7 +440,8 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
         bencher_iter_custom(b, run_func, ctx)
 
-    m.bench_function[bench_matmul_10](
+    m.bench_function(
+        bench_matmul_10,
         BenchId("matmul_sgemm_10"),
         [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],
     )
@@ -458,10 +454,9 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host_naive)
 
-    @__parameter
-    @always_inline
-    def bench_naive(mut b: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_naive(mut b: Bencher) {imm}:
+        @inline(.always)
         def run_func_naive(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[matmul_naive](
                 a_device,
@@ -476,7 +471,8 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
         bencher_iter_custom(b, run_func_naive, ctx)
 
-    m.bench_function[bench_naive](
+    m.bench_function(
+        bench_naive,
         BenchId("matmul_naive"),
         # TODO: Pick relevant benchmetric
         [ThroughputMeasure(BenchMetric.elements, 2 * M * N * K)],

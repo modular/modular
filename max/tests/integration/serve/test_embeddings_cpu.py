@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import hf_repo_lock
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
@@ -20,8 +19,6 @@ from max.pipelines import PipelineArgs
 from max.serve.schemas.openai import CreateEmbeddingResponse
 
 MPNET_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
-MPNET_REVISION = hf_repo_lock.revision_for_hf_repo(MPNET_REPO_ID)
-assert MPNET_REVISION is not None
 
 
 @pytest.mark.asyncio
@@ -30,8 +27,6 @@ assert MPNET_REVISION is not None
     [
         PipelineArgs(
             model_path=MPNET_REPO_ID,
-            huggingface_model_revision=MPNET_REVISION,
-            huggingface_weight_revision=MPNET_REVISION,
             device_specs=[DeviceSpec.cpu()],
             max_length=256,
         )

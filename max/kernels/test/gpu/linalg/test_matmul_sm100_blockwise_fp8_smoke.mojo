@@ -24,7 +24,6 @@ from std.sys import size_of
 from linalg.matmul.gpu.sm100.config import MatmulConfig, GEMMKind
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
@@ -33,7 +32,6 @@ from std.random import rand
 from internal_utils._measure import relative_difference
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -60,7 +58,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     cta_group: Int,
-    scales_type: DType = DType.float32,
+    scales_type: DType = .float32,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -107,19 +105,17 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Shapes
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
-    var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
-    )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
+    var b_shape = row_major(Idx[NType.static_value], Idx[KType.static_value])
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
     var b_scales_shape_n = ceildiv(N, BLOCK_SCALE_K)
     var b_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
 
-    var a_scales_shape = row_major(Coord(a_scales_shape_k, m))
-    var b_scales_shape = row_major(Coord(b_scales_shape_n, b_scales_shape_k))
+    var a_scales_shape = row_major(a_scales_shape_k, m)
+    var b_scales_shape = row_major(b_scales_shape_n, b_scales_shape_k)
 
     # Allocate host memory
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
@@ -162,10 +158,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -203,11 +199,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_ref_tensor.to_layout_tensor(),
-        a_tensor.to_layout_tensor(),
-        b_tensor.to_layout_tensor(),
-        a_scales_tensor.to_layout_tensor(),
-        b_scales_tensor.to_layout_tensor(),
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
         ctx,
     )
 

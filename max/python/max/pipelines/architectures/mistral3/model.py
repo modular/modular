@@ -23,6 +23,7 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
 
 from ..mistral.model import MistralModel
@@ -41,6 +42,8 @@ class Mistral3Model(MistralModel):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -51,9 +54,10 @@ class Mistral3Model(MistralModel):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
     @classmethod
@@ -71,15 +75,4 @@ class Mistral3Model(MistralModel):
             devices,
             kv_cache_config,
             cache_dtype,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        huggingface_config = getattr(
-            huggingface_config, "text_config", huggingface_config
-        )
-        return super().calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )

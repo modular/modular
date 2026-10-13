@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import global_idx, thread_idx
+from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -23,8 +23,8 @@ comptime BLOCK_DIM = 4
 
 
 def stencil2d(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
     arr_size_dev: Int32,
     num_rows_dev: Int32,
     num_cols_dev: Int32,
@@ -46,8 +46,8 @@ def stencil2d(
     var tidx = global_idx.x
     var tidy = global_idx.y
 
-    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
-    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
+    var a = TileTensor(a_ptr, row_major(arr_size))
+    var b = TileTensor(b_ptr, row_major(arr_size))
 
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
         var idx = tidy * num_cols + tidx
@@ -64,8 +64,8 @@ def stencil2d(
 
 
 def stencil2d_smem(
-    a_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    b_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Float32, MutAnyOrigin],
+    b_ptr: MutPointer[Float32, MutAnyOrigin],
     arr_size_dev: Int32,
     num_rows_dev: Int32,
     num_cols_dev: Int32,
@@ -89,13 +89,13 @@ def stencil2d_smem(
     var lindex_x = thread_idx.x + 1
     var lindex_y = thread_idx.y + 1
 
-    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
-    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
+    var a = TileTensor(a_ptr, row_major(arr_size))
+    var b = TileTensor(b_ptr, row_major(arr_size))
 
     var a_shared_ptr = unsafe_stack_allocation[
         (BLOCK_DIM + 2) * (BLOCK_DIM + 2),
         DType.float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var a_shared = TileTensor(
         a_shared_ptr, row_major[BLOCK_DIM + 2, BLOCK_DIM + 2]()
@@ -175,8 +175,8 @@ def run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
         a_host[i] = Float32(i)
         b_host[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](m)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](m)
+    var a_device = ctx.enqueue_create_buffer[.float32](m)
+    var b_device = ctx.enqueue_create_buffer[.float32](m)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)

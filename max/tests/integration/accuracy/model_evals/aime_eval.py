@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""AIME25 math-competition eval against an OpenAI-compatible server.
+"""AIME math-competition eval against an OpenAI-compatible server.
 
 De-embedded from ``minimaxM3NonAgenticTextDatasetEval.yaml`` so the eval logic
 lives in a tested, locally-runnable module instead of an inline YAML heredoc.
@@ -18,11 +18,23 @@ The scoring core (:func:`grade`) and the driver (:func:`run_eval`) are pure and
 take an injected client, so they unit-test without a server or network. Shared
 scaffolding lives in :mod:`eval_common`.
 
+The year's problem set is parameterised by ``--dataset`` (default
+``math-ai/aime25``). AIME26 uses the same grader, same prompt and same
+``\\boxed{}`` extraction, so one binary serves both years; the caller just
+picks the dataset ID. The metric prefix and out-dir default from the dataset
+name (``math-ai/aime26`` -> ``AIME26`` and ``/tmp/aime26-results``).
+
 Run locally against a server on ``localhost:8000``::
 
     ./bazelw run //max/tests/integration/accuracy/model_evals:aime_eval -- \\
         --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
         --sample-size 2 --seed 0 --out-dir /tmp/aime25
+
+To run AIME26 instead, swap the dataset::
+
+    ./bazelw run //max/tests/integration/accuracy/model_evals:aime_eval -- \\
+        --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 \\
+        --dataset math-ai/aime26
 
 Results stream to ``<out-dir>/results.jsonl`` as each request completes, so a
 killed/crashed run keeps everything already finished. To debug specific
@@ -109,12 +121,45 @@ def build_messages(
     return messages
 
 
-def load_aime_dataset() -> list[dict[str, Any]]:
-    """Loads the ``math-ai/aime25`` set, falling back to the ``train`` split."""
+DEFAULT_DATASET = "math-ai/aime25"
+
+
+def dataset_defaults(dataset_id: str) -> tuple[str, str]:
+    """Derives the metric prefix and out-dir defaults from a dataset id.
+
+    Keying both off the dataset keeps ``--dataset`` self-sufficient: a run of
+    ``math-ai/aime26`` with no other flags exports ``AIME26_*`` metrics into
+    ``/tmp/aime26-results`` instead of clobbering AIME25's.
+
+    Args:
+        dataset_id: HuggingFace dataset id, e.g. ``"math-ai/aime26"``.
+
+    Returns:
+        A ``(metric_prefix, out_dir)`` tuple, e.g.
+        ``("AIME26", "/tmp/aime26-results")``.
+    """
+    name = dataset_id.rsplit("/", 1)[-1]
+    assert name, f"cannot derive a dataset name from {dataset_id!r}"
+    # The prefix keys GITHUB_ENV variables, so it must be identifier-safe.
+    metric_prefix = re.sub(r"\W", "_", name).upper()
+    return metric_prefix, f"/tmp/{name}-results"
+
+
+def load_aime_dataset(
+    dataset_id: str = DEFAULT_DATASET,
+) -> list[dict[str, Any]]:
+    """Loads an AIME problem set, falling back to the ``train`` split.
+
+    The ``math-ai/aime25`` and ``math-ai/aime26`` sets share the same schema
+    (``problem`` + ``answer``) and the same grader, so one loader covers both
+    years. ``math-ai/aime25`` publishes its 30 problems under ``test``; a
+    sibling that happens to put them under ``train`` is handled by the
+    fallback instead of forcing every caller to know which split it ships.
+    """
     try:
-        return list(load_dataset("math-ai/aime25", split="test"))
+        return list(load_dataset(dataset_id, split="test"))
     except Exception:
-        return list(load_dataset("math-ai/aime25", split="train"))
+        return list(load_dataset(dataset_id, split="train"))
 
 
 def infer(
@@ -159,8 +204,9 @@ def run_eval(
     root_preamble: str,
     system_prompt: str,
     out_dir: str | None = None,
+    label: str = "AIME",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Runs AIME25 over ``indexed_dataset`` with ``repeats``.
+    """Runs AIME over ``indexed_dataset`` with ``repeats``.
 
     Each ``(repeat, problem)`` pair is submitted independently so a row can be
     tied back to its problem and repeat regardless of completion order. A
@@ -179,13 +225,15 @@ def run_eval(
         root_preamble: MiniMax root turn (empty to omit).
         system_prompt: System turn content.
         out_dir: When set, stream results to ``<out_dir>/results.jsonl``.
+        label: Human-readable eval name used in the progress bar and the
+            opening log line, e.g. ``"AIME25"`` or ``"AIME26"``.
 
     Returns:
         A ``(results, score)`` tuple.
     """
     samples = expand_repeats(indexed_dataset, repeats)
     print(
-        f"AIME25: evaluating {len(indexed_dataset)} problems x {repeats} "
+        f"{label}: evaluating {len(indexed_dataset)} problems x {repeats} "
         f"repeats = {len(samples)} total samples"
     )
 
@@ -205,7 +253,7 @@ def run_eval(
         }
 
     results, errors = run_parallel(
-        samples, fn, on_error, workers, "AIME25", out_dir=out_dir
+        samples, fn, on_error, workers, label, out_dir=out_dir
     )
     return results, exact_match_score(results, len(samples), errors)
 
@@ -243,7 +291,10 @@ def run_eval(
     "--workers", type=int, default=16, help="Max concurrent requests."
 )
 @click.option(
-    "--out-dir", default="/tmp/aime25-results", help="Output directory."
+    "--out-dir",
+    default=None,
+    help="Output directory. Defaults to /tmp/<dataset name>-results, e.g. "
+    "/tmp/aime26-results for --dataset math-ai/aime26.",
 )
 @click.option("--max-tokens", type=int, default=98304, show_default=True)
 @click.option("--temperature", type=float, default=1.0, show_default=True)
@@ -258,8 +309,23 @@ def run_eval(
 )
 @click.option(
     "--metric-prefix",
-    default="AIME25",
-    help="Prefix for the GITHUB_ENV metric keys the job summary reads.",
+    default=None,
+    help=(
+        "Prefix for the GITHUB_ENV metric keys the job summary reads. Also "
+        "used as the human-readable eval label in logs. Defaults to the "
+        "upper-cased dataset name, e.g. AIME26 for --dataset math-ai/aime26."
+    ),
+)
+@click.option(
+    "--dataset",
+    "dataset_id",
+    default=DEFAULT_DATASET,
+    show_default=True,
+    help=(
+        "HuggingFace dataset id of the AIME problem set. Both "
+        "``math-ai/aime25`` and ``math-ai/aime26`` share the same schema "
+        "and grader, so one binary serves both years."
+    ),
 )
 def main(
     base_url: str,
@@ -269,17 +335,23 @@ def main(
     repeats: int,
     seed: int | None,
     workers: int,
-    out_dir: str,
+    out_dir: str | None,
     max_tokens: int,
     temperature: float,
     top_p: float,
     root_preamble: str,
     system_prompt: str,
-    metric_prefix: str,
+    metric_prefix: str | None,
+    dataset_id: str,
 ) -> None:
-    """Runs AIME25 against a running OpenAI-compatible server and scores it."""
+    """Runs AIME against a running OpenAI-compatible server and scores it."""
+    default_prefix, default_out_dir = dataset_defaults(dataset_id)
+    metric_prefix = metric_prefix or default_prefix
+    out_dir = out_dir or default_out_dir
     client = make_client(base_url)
-    indexed_dataset = select_rows(load_aime_dataset(), sample_size, row_ids)
+    indexed_dataset = select_rows(
+        load_aime_dataset(dataset_id), sample_size, row_ids
+    )
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
     )
@@ -293,6 +365,7 @@ def main(
         root_preamble,
         system_prompt,
         out_dir=out_dir,
+        label=metric_prefix,
     )
     write_outputs(out_dir, results, summary, metric_prefix)
 

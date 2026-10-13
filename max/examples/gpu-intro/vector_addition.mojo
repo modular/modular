@@ -17,7 +17,7 @@ from std.math import ceildiv
 from std.sys import has_accelerator
 
 from max.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from layout import TileTensor, row_major
 
 # Vector data type and size
@@ -32,8 +32,8 @@ comptime num_blocks = ceildiv(vector_size, block_size)
 
 
 def vector_addition(
-    lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
-    rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    lhs_tensor: TileTensor[float_dtype, type_of(layout), ImmutAnyOrigin],
+    rhs_tensor: TileTensor[float_dtype, type_of(layout), ImmutAnyOrigin],
     out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""

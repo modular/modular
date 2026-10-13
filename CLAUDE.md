@@ -25,7 +25,7 @@ All builds use the `./bazelw` wrapper from the repository root:
 
 # Build specific targets
 ./bazelw build //max/kernels/...
-./bazelw build //mojo/stdlib/...
+./bazelw build //Mojo/stdlib/...
 
 # Run tests
 ./bazelw test //...
@@ -57,9 +57,9 @@ pixi run test              # Run tests
 pixi run hello             # Run hello.mojo
 
 # Common Pixi tasks available in different directories:
-# - /mojo/: build, tests, examples, benchmarks
+# - /Mojo/: tests, format
 # - /max/examples/*/: main, test, hello, dev-server, format
-# - /mojo/examples/*/: main, test, hello, dev-server, format
+# - /Mojo/examples/*/: main, test, hello, dev-server, format
 
 # List available tasks
 pixi task list
@@ -87,9 +87,9 @@ docker run --gpus=1 -p 8000:8000 docker.modular.com/modular/max-nvidia-full:late
 
 ```text
 modular/
-├── mojo/                    # Mojo programming language
+├── Mojo/                    # Mojo programming language
 │   ├── stdlib/              # Standard library implementation
-│   ├── docs/                # User documentation (mojolang.org)
+│   ├── docs/                # Docs: site/ (mojolang.org) and contributor guides
 │   ├── proposals/           # Language proposals (RFCs)
 │   ├── examples/            # Mojo usage examples
 │   └── integration-test/    # Integration tests
@@ -108,7 +108,7 @@ modular/
 │   │   └── ...              # graph, engine, kv_cache, etc.
 │   ├── examples/            # MAX usage examples
 │   └── tests/               # MAX tests
-├── docs/                    # MAX docs site sources (docs.modular.com)
+├── docs/                    # MAX docs site sources (max.modular.com)
 └── bazel/                   # Build system configuration
 ```
 
@@ -213,11 +213,11 @@ Many benchmarks and tests use compile-time defines:
 
 Currently accepting contributions for:
 
-- Mojo standard library (`/mojo/stdlib/`)
+- Mojo standard library (`/Mojo/stdlib/`)
 - MAX accelerator library (`/max/kernels/`)
 - MAX API and models (`/max/`)
-- Code examples (`/max/examples/`, `/mojo/examples/`)
-- Mojo documentation (`/mojo/docs/`)
+- Code examples (`/max/examples/`, `/Mojo/examples/`)
+- Mojo documentation (`/Mojo/docs/site/`)
 
 Each area has its own guidelines in the nearest `CONTRIBUTING.md`; the root
 `CONTRIBUTING.md` is the full contributor guide. Other areas are not open for
@@ -231,16 +231,16 @@ external contributions.
 
 ## LLM-friendly documentation
 
-MAX documentation (docs.modular.com):
+MAX documentation (max.modular.com):
 
-- <https://docs.modular.com/llms.txt>: index of the MAX docs
-- <https://docs.modular.com/llms-max-guides.txt>: MAX guides for deployment,
+- <https://max.modular.com/llms.txt>: index of the MAX docs
+- <https://max.modular.com/llms-max-guides.txt>: MAX guides for deployment,
   serving, and model development
-- <https://docs.modular.com/llms-python.txt>: MAX Python API reference
-- <https://docs.modular.com/llms-accelerator-api.txt>: MAX accelerator library
+- <https://max.modular.com/llms-python.txt>: MAX Python API reference
+- <https://max.modular.com/llms-accelerator-api.txt>: MAX accelerator library
   (Mojo) API reference
-- <https://docs.modular.com/llms-c-api.txt>: MAX C API reference
-- <https://docs.modular.com/releases-llms.txt>: MAX release notes
+- <https://max.modular.com/llms-c-api.txt>: MAX C API reference
+- <https://max.modular.com/releases-llms.txt>: MAX release notes
 
 Mojo language documentation (mojolang.org):
 

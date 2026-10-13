@@ -157,11 +157,18 @@ def bench_cublas_per_group[
         2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
     )
 
-    @__parameter
-    @__copy_capture(a_tensor, b_tensor, c_tensor, sfa_tensor, sfb_tensor)
-    @always_inline
-    def bench_func(mut bencher: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_func(
+        mut bencher: Bencher,
+    ) {
+        var a_tensor,
+        var b_tensor,
+        var c_tensor,
+        var sfa_tensor,
+        var sfb_tensor,
+        imm,
+    }:
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             # Call cuBLAS once per group (sequential)
             for _g in range(num_groups):
@@ -170,8 +177,8 @@ def bench_cublas_per_group[
                     c_tensor,
                     a_tensor,
                     b_tensor,
-                    a_scales=sfa_tensor.as_immut(),
-                    b_scales=sfb_tensor.as_immut(),
+                    a_scales=sfa_tensor.as_imm(),
+                    b_scales=sfb_tensor.as_imm(),
                     transpose_b=transpose_b,
                     c_row_major=True,
                 )
@@ -180,7 +187,8 @@ def bench_cublas_per_group[
 
     var fmt = String("NVFP4") if is_fp4 else String("MXFP8")
 
-    bench.bench_function[bench_func](
+    bench.bench_function(
+        bench_func,
         BenchId(
             String(
                 "cuBLAS(",
@@ -278,40 +286,36 @@ def bench_structured_kernel[
     # Template tensors - 3D with batch=1
     var a_template = TileTensor(
         a_device,
-        row_major(Coord(Idx[1], m, Idx[K_ARRAY])),
+        row_major(Idx[1], m, Idx[K_ARRAY]),
     )
     var b_template = TileTensor(
         b_device,
-        row_major(Coord(Idx[1], n, Idx[K_ARRAY])),
+        row_major(Idx[1], n, Idx[K_ARRAY]),
     )
     var c_template = TileTensor(
         c_device,
-        row_major(Coord(Idx[1], m, n)),
+        row_major(Idx[1], m, n),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var sfa_template = TileTensor(
         sfa_device,
         row_major(
-            Coord(
-                Idx[1],
-                ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1] * SF_ATOM_K],
-            )
+            Idx[1],
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         ),
     )
     var sfb_template = TileTensor(
         sfb_device,
         row_major(
-            Coord(
-                Idx[1],
-                ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1] * SF_ATOM_K],
-            )
+            Idx[1],
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         ),
     )
 
@@ -338,11 +342,11 @@ def bench_structured_kernel[
         length=max_groups, fill=UInt64(Int(sfb_device.unsafe_ptr()))
     )
 
-    var a_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var b_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var c_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfa_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
-    var sfb_ptrs_device = ctx.enqueue_create_buffer[DType.uint64](max_groups)
+    var a_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var b_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var c_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfa_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
+    var sfb_ptrs_device = ctx.enqueue_create_buffer[.uint64](max_groups)
 
     ctx.enqueue_copy(a_ptrs_device, a_ptrs_host)
     ctx.enqueue_copy(b_ptrs_device, b_ptrs_host)
@@ -353,28 +357,28 @@ def bench_structured_kernel[
 
     var problem_sizes_tensor = TileTensor(
         problem_sizes_host,
-        row_major(Coord(Idx[max_groups], Idx[4])),
+        row_major(Idx[max_groups], Idx[4]),
     )
 
     var a_ptrs_tensor = TileTensor(
         a_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
     var b_ptrs_tensor = TileTensor(
         b_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
     var c_ptrs_tensor = TileTensor(
         c_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
     var sfa_ptrs_tensor = TileTensor(
         sfa_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
     var sfb_ptrs_tensor = TileTensor(
         sfb_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
 
     comptime BM = mma_shape[0]
@@ -402,24 +406,25 @@ def bench_structured_kernel[
         2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
     )
 
-    @__parameter
-    @__copy_capture(
-        a_ptrs_tensor,
-        b_ptrs_tensor,
-        c_ptrs_tensor,
-        sfa_ptrs_tensor,
-        sfb_ptrs_tensor,
-        problem_sizes_tensor,
-        a_template,
-        b_template,
-        c_template,
-        sfa_template,
-        sfb_template,
-        total_tiles,
-    )
-    @always_inline
-    def bench_func(mut bencher: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_func(
+        mut bencher: Bencher,
+    ) {
+        var a_ptrs_tensor,
+        var b_ptrs_tensor,
+        var c_ptrs_tensor,
+        var sfa_ptrs_tensor,
+        var sfb_ptrs_tensor,
+        var problem_sizes_tensor,
+        var a_template,
+        var b_template,
+        var c_template,
+        var sfa_template,
+        var sfb_template,
+        var total_tiles,
+        imm,
+    }:
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
@@ -446,7 +451,8 @@ def bench_structured_kernel[
 
     var fmt = String("NVFP4") if is_fp4 else String("MXFP8")
 
-    bench.bench_function[bench_func](
+    bench.bench_function(
+        bench_func,
         BenchId(
             String(
                 "STRUCTURED(",

@@ -329,7 +329,7 @@ def _extract_last_state(
 
     The checkpoint stores cum_a and cum_b interleaved per state element:
       [cum_a[0], cum_b[0], cum_a[1], cum_b[1], ...]
-    i.e. cum_a at even indices (0, 2, 4, ...) and cum_b at odd indices
+    That is, cum_a at even indices (0, 2, 4, ...) and cum_b at odd indices
     (1, 3, 5, ...). The actual SSM state is cum_b.
 
     checkpoint shape: (batch, dim, n_chunks, 2*dstate)

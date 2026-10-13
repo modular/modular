@@ -23,15 +23,14 @@ helper on the struct.
 """
 
 from std.collections import OptionalReg
-from std.math import ceildiv
+from std.math import ceildiv, recip
 from std.math.constants import log2e
 from std.math.uutils import udivmod
 from std.memory import bitcast, unsafe_stack_allocation
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
-from std.sys import align_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of
 from std.sys.intrinsics import readfirstlane
-from std.gpu import block_idx, lane_id, thread_idx
-from max.gpu.sync import barrier
+from max.gpu import block_idx, lane_id, thread_idx
 from layout import TileTensor
 from layout import row_major
 from layout.swizzle import Swizzle
@@ -46,7 +45,7 @@ from layout.tensor_core import num_matrix_reg
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
-from std.utils import Index, IndexList
+from std.utils import Index
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .softmax import Softmax
@@ -374,8 +373,11 @@ struct Attention[
             or Self.amd_structured_config.double_buffer_k_only
         ) else 1
     )
+    # V SMEM must cover the wider of K depth and output depth: MLA prefill has
+    # depth=qk_nope < output_depth=v_head_dim (GLM 192<256), or V truncates.
+    comptime _v_smem_depth = max(Self.depth, Self.output_depth)
     comptime _v_smem_physical_depth = ceildiv(
-        Self.depth, Self._bk_smem
+        Self._v_smem_depth, Self._bk_smem
     ) * Self._bk_smem
     comptime _v_smem_size = (
         Self.BN if Self.amd_structured_config.full_kv else Self.BK
@@ -419,14 +421,10 @@ struct Attention[
     var p_reg_buffer: Self.PRegisterBufferType
 
     var k_smem_ptr: UnsafePointer[
-        Scalar[Self.k_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.k_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     var v_smem_ptr: UnsafePointer[
-        Scalar[Self.v_t.dtype],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.v_t.dtype], MutUntrackedOrigin, address_space=.SHARED
     ]
     # Dedicated warp-reduction scratch SMEM. Decoupling from K SMEM
     # avoids races between softmax's scratch ds_writes and other warps'
@@ -434,18 +432,14 @@ struct Attention[
     # `mla_kv_alias` mode (V reads from K's SMEM, so there's no later
     # V DMA to overwrite the corruption).
     var warp_scratch_ptr: UnsafePointer[
-        Scalar[Self.accum_type],
-        MutUntrackedOrigin,
-        address_space=AddressSpace.SHARED,
+        Scalar[Self.accum_type], MutUntrackedOrigin, address_space=.SHARED
     ]
 
     var q_buffer: Self.QRegisterBufferType
 
     @__allow_legacy_any_origin_fields
     var output_tile: TileTensor[
-        Self.output_type,
-        Self.OutputTileLayout,
-        MutAnyOrigin,
+        Self.output_type, Self.OutputTileLayout, MutAnyOrigin
     ]
 
     var batch_idx: Int
@@ -490,31 +484,31 @@ struct Attention[
         Self.accum_type,
         type_of(Self._warp_scratch_layout),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]
     comptime _warp_scratch_size = (2 * Int(Self.num_warps_n) * Int(Self.BM))
 
     # --- Config delegation (static methods) ---
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def q_head_idx() -> Int:
         return Self.amd_structured_config.q_head_idx()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def q_tile_idx() -> Int:
         return Self.amd_structured_config.q_tile_idx()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def kv_head_idx() -> Int:
         return Self.amd_structured_config.kv_head_idx()
 
     # --- KV tile factory ---
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def make_kv_tile[
         operand_t: MHAOperand,
         //,
@@ -524,7 +518,12 @@ struct Attention[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         kv_tile_num_rows: UInt32,
-    ) -> TileTensor[operand_t.dtype, Self.KvTileLayout, ImmutAnyOrigin]:
+    ) -> TileTensor[
+        operand_t.dtype,
+        Self.KvTileLayout,
+        ImmutAnyOrigin,
+        Engine=operand_t.Engine,
+    ]:
         return operand.block_paged_tile[Int(Self.BN)](
             batch_idx,
             start_tok_idx,
@@ -540,7 +539,7 @@ struct Attention[
 
     # --- Constructor ---
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
@@ -614,7 +613,7 @@ struct Attention[
         self.k_smem_ptr = unsafe_stack_allocation[
             Self._max_kv_smem_size if Self.amd_structured_config.shared_kv else Self._k_smem_size,
             Self.k_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
         self.v_smem_ptr = self.k_smem_ptr.bitcast[
@@ -622,18 +621,18 @@ struct Attention[
         ]() if Self.amd_structured_config.shared_kv else unsafe_stack_allocation[
             Self._v_smem_size,
             Self.v_t.dtype,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=Self._smem_alignment,
         ]()
 
         self.warp_scratch_ptr = unsafe_stack_allocation[
             Self._warp_scratch_size,
             Self.accum_type,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
 
         self.p_reg_buffer = Self.PRegisterBufferType(
-            tt_stack_allocation[Self.q_type, address_space=AddressSpace.SHARED](
+            tt_stack_allocation[Self.q_type, address_space=.SHARED](
                 Self.PRegisterBufferType._smem_layout
             )
         )
@@ -647,11 +646,20 @@ struct Attention[
         # output store (below `query_rows` whenever the batch is non-uniform OR
         # the fold padded the tile). Token-strided rows
         # keep that: the SRD bound `(rows-1)*stride0 + depth` stops short of row
-        # `seq_len`, a full token stride later. Other paths keep the comptime
-        # `query_rows` / prefill `min(BM, ...)` byte-identically.
+        # `seq_len`, a full token stride later. MHA decode keeps the comptime
+        # `query_rows` and prefill its per-tile `min(BM, ...)`.
         var valid_rows: UInt32
         comptime if Self._fold_active and Self.q_seq_len > 1:
             valid_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
+        elif Self.token_gen and Self.mla_mode:
+            # The bound is relative to this head tile, so cap it at the rows
+            # the tile owns; otherwise a partial last tile (24 heads at BM=16)
+            # spills into the next batch's or split's heads.
+            valid_rows = min(
+                UInt32(Self.BM),
+                UInt32(Self.query_rows)
+                - UInt32(Self.q_tile_idx()) * UInt32(Self.BM),
+            )
         elif Self.token_gen:
             valid_rows = UInt32(Self.query_rows)
         else:
@@ -740,16 +748,16 @@ struct Attention[
 
     # --- Buffer operations ---
 
-    @always_inline
+    @inline(.always)
     def zero_p_buffer[stage: Int = 0](self):
         self.p_reg_buffer.zero[stage]()
 
-    @always_inline
+    @inline(.always)
     def scale_q_buffer(self):
         """Pre-scale Q registers by scale factor (scale * log2e)."""
         self.q_buffer.scale[Self.accum_type](self.scale)
 
-    @always_inline
+    @inline(.always)
     def scale_p_reg[stage: Int = 0](self):
         var p_vec = self.p_reg_buffer.stage_tile[stage]().vectorize[
             1, Self.output_frag_size
@@ -762,7 +770,7 @@ struct Attention[
 
     # --- Mask operations ---
 
-    @always_inline
+    @inline(.always)
     def mask_status(
         self,
         kv_tile_start_row: UInt32,
@@ -794,17 +802,17 @@ struct Attention[
                 Index[dtype=DType.uint32](Self.BM, Self.BN),
             )
 
-    @always_inline
+    @inline(.always)
     def mask_advance(mut self):
         # Decode: no-op (kv_tile_start_row added directly in MaskTileOp.apply).
         comptime if not Self.token_gen:
             self.mask_warp_col += UInt32(Self.BN)
 
-    @always_inline
+    @inline(.always)
     def mask_skip_tile(self, status: TileMaskStatus) -> Bool:
         return status == TileMaskStatus.FULL_MASK
 
-    @always_inline
+    @inline(.always)
     def mask_skip_and_advance(
         mut self,
         kv_tile_start_row: UInt32,
@@ -816,7 +824,7 @@ struct Attention[
                 return True
         return False
 
-    @always_inline
+    @inline(.always)
     def mask_apply[
         stage: Int = 0
     ](
@@ -825,9 +833,8 @@ struct Attention[
         kv_tile_num_rows: UInt32,
         not_last_iter: Bool,
     ):
-        @always_inline
-        @__parameter
-        def _mask_apply_impl(masked: Bool):
+        @inline(.always)
+        def _mask_apply_impl(masked: Bool) {imm}:
             MaskTileOp[
                 accum_type=Self.accum_type,
                 token_gen=Self.token_gen,
@@ -873,7 +880,7 @@ struct Attention[
             _mask_apply_impl(masked=True)
         self.mask_advance()
 
-    @always_inline
+    @inline(.always)
     def get_num_rows(self) -> UInt32:
         var end = min(
             self.kv_start_row + UInt32(Self.BN), UInt32(self.num_keys)
@@ -883,7 +890,7 @@ struct Attention[
         )
         return UInt32(num_rows)
 
-    @always_inline
+    @inline(.always)
     def apply_mask[
         stage: Int, scale: Bool = True
     ](mut self, not_last_iter: Bool = False):
@@ -895,7 +902,7 @@ struct Attention[
 
     # --- Softmax ---
 
-    @always_inline
+    @inline(.always)
     def warp_scratch_tile(self) -> Self._WarpScratchTileType:
         """Warp-reduction scratch tile (decode only)."""
         return Self._WarpScratchTileType(
@@ -903,7 +910,7 @@ struct Attention[
             Self._warp_scratch_layout,
         )
 
-    @always_inline
+    @inline(.always)
     def online_softmax[stage: Int = 0](mut self):
         var warp_scratch = self.warp_scratch_tile().tile[
             2 * Int(Self.num_warps_n), Int(Self.WM)
@@ -915,9 +922,17 @@ struct Attention[
             warp_scratch,
         )
 
+    @inline(.always)
+    def _seed_inv_scale(self) -> Scalar[Self.accum_type]:
+        # A zero scale (uniform attention) makes any seed consistent; avoid
+        # `recip(0)` turning the seed into NaN.
+        if self.scale == 0:
+            return 1
+        return recip(self.scale)
+
     # --- Split online softmax (for MLA double-buffered kernel) ---
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_0[stage: Int, mask: Bool = True](mut self):
         """Step 0: mask + max + exp(even tiles).
 
@@ -935,7 +950,7 @@ struct Attention[
         self.softmax.calculate_qk_max(score_tile, warp_scratch)
         self.softmax.exp[start=0, stride=2](score_tile)
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_1[stage: Int](mut self):
         """Step 1: exp(odd tiles) + sum + correction + update max/sum.
 
@@ -952,7 +967,7 @@ struct Attention[
         self.softmax.update_max()
         self.softmax.update_sum()
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_0_fma[stage: Int, mask: Bool = True](mut self):
         """Step 0 with deferred scaling: mask (no scale), max, exp_scaled.
 
@@ -973,10 +988,12 @@ struct Attention[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
-        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.calculate_qk_max[unscale_seed=True](
+            score_tile, warp_scratch, self._seed_inv_scale()
+        )
         self.softmax.exp_scaled[start=0, stride=2](score_tile, self.scale)
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_1_fma[stage: Int](mut self):
         """Step 1 with deferred scaling for odd-indexed tiles.
 
@@ -998,7 +1015,7 @@ struct Attention[
         self.softmax.update_max()
         self.softmax.update_sum()
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_0_pkfma[stage: Int, mask: Bool = True](mut self):
         """Step 0 deferred-scale variant that emits `v_pk_fma_f32`.
 
@@ -1019,10 +1036,12 @@ struct Attention[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
-        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.calculate_qk_max[unscale_seed=True](
+            score_tile, warp_scratch, self._seed_inv_scale()
+        )
         self.softmax.exp_pkfma[start=0, stride=2](score_tile, self.scale)
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_1_pkfma[stage: Int](mut self):
         """Step 1 pkfma counterpart of `_fma` step 1.
 
@@ -1040,7 +1059,7 @@ struct Attention[
         self.softmax.update_max()
         self.softmax.update_sum()
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_0_prescaled[
         stage: Int, mask: Bool = True
     ](mut self):
@@ -1063,7 +1082,7 @@ struct Attention[
         self.softmax.calculate_qk_max(score_tile, warp_scratch)
         self.softmax.exp[start=0, stride=2](score_tile)
 
-    @always_inline
+    @inline(.always)
     def online_softmax_step_1_prescaled[stage: Int](mut self):
         """Softmax step 1 for pre-scaled Q: no scale needed on scores.
 
@@ -1080,14 +1099,14 @@ struct Attention[
         self.softmax.update_max()
         self.softmax.update_sum()
 
-    @always_inline
+    @inline(.always)
     def online_softmax_update_output(mut self):
         """Apply correction to output accumulator."""
         self.softmax.update_output(self.out_reg_buffer.reg_tile)
 
     # --- Output store ---
 
-    @always_inline
+    @inline(.always)
     def store_output(self):
         var output_warp_tile = self.output_tile.tile[
             Self.WM, Self.output_depth // Self.num_warps_n
@@ -1118,7 +1137,7 @@ struct Attention[
                 output_cols_per_warp,
             ](m_mma, 0)
             var sub_reg = tt_stack_allocation[
-                Self.accum_type, address_space=AddressSpace.LOCAL
+                Self.accum_type, address_space=.LOCAL
             ](sub_layout)
             comptime for n_mma in range(Self.num_n_mmas_output):
                 comptime for k in range(Self.output_frag_size):
@@ -1172,14 +1191,14 @@ struct Attention[
 
     # --- Decode-specific methods ---
 
-    @always_inline
+    @inline(.always)
     def copy_fragment_to_smem(self):
         """Copy P scores from registers to shared memory (decode only)."""
         comptime if not Self.token_gen:
             return
         self.p_reg_buffer.copy_to_shared()
 
-    @always_inline
+    @inline(.always)
     def store_partition_info(
         self,
         num_partitions: Int,
@@ -1237,7 +1256,7 @@ struct Attention[
             var lane = Int(lane_id())
             var lane_row = lane % Self.mma_shape[0]
             var live_rows = Int(Self.heads_inner) * Int(self.seq_len)
-            var head_base = Int(block_idx.y) * Self._fold_head_base_stride
+            var head_base = block_idx.y * Self._fold_head_base_stride
             comptime for m_mma in range(Self.num_m_mmas):
                 var r = (
                     self.warp_row * Self.WM

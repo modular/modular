@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
@@ -19,8 +19,8 @@ from std.testing import assert_equal, TestSuite
 def vec_func[
     op: def(Float32, Float32) capturing[_] -> Float32
 ](
-    in0: Pointer[Float32, MutAnyOrigin],
-    in1: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
@@ -35,15 +35,15 @@ def vec_func[
 
 
 # Force the capture to be captured instead of inlined away.
-@no_inline
+@inline(.never)
 def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     print("== run_binary_add")
 
     comptime length = 1024
 
-    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
-    var in1 = ctx.enqueue_create_buffer[DType.float32](length)
-    var out = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0 = ctx.enqueue_create_buffer[.float32](length)
+    var in1 = ctx.enqueue_create_buffer[.float32](length)
+    var out = ctx.enqueue_create_buffer[.float32](length)
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(length):

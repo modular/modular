@@ -113,6 +113,7 @@ def collect(
                 "total": summary.get("total"),
                 "mean_output_tokens": summary.get("mean_output_tokens"),
                 "p50_output_tokens": summary.get("p50_output_tokens"),
+                "stop_ratio": summary.get("stop_ratio"),
                 "path": str(score_path.relative_to(artifacts_dir)),
                 "summary": summary,
             }
@@ -185,19 +186,58 @@ def markdown_table(rows: list[dict[str, Any]], missing: list[str]) -> str:
     lines = [
         (
             "| Benchmark | Group | Score | Errors | Total | Mean tokens | p50"
-            " tokens |"
+            " tokens | Stop ratio |"
         ),
-        "|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         lines.append(
             f"| {r['benchmark']} | {r['group']} | {fmt(r['score'])} |"
             f" {fmt(r['errors'])} | {fmt(r['total'])} |"
             f" {fmt(r['mean_output_tokens'])} | {fmt(r['p50_output_tokens'])} |"
+            f" {fmt(r.get('stop_ratio'))} |"
         )
     for name in missing:
-        lines.append(f"| {name} | | MISSING | | | | |")
+        lines.append(f"| {name} | | MISSING | | | | | |")
     return "\n".join(lines) + "\n"
+
+
+def extra_sections(rows: list[dict[str, Any]]) -> str:
+    """Renders benchmark-specific detail sections beyond the fixed table.
+
+    A row's ``summary`` can carry two optional keys that don't fit the
+    table's fixed columns: ``unexpected_failures`` (a list of test IDs that
+    failed and are not on a known-failures allowlist — the provider verifier
+    is the first producer) and ``pass_at_10`` (a metric-name -> {score,
+    reference, delta, ok} mapping — also the provider verifier's batch
+    verification). Rendered as extra Markdown sections keyed by benchmark
+    name so a run's consolidated summary surfaces them instead of leaving
+    them buried in results.json.
+    """
+    lines = []
+    for r in rows:
+        summary = r.get("summary") or {}
+        unexpected = summary.get("unexpected_failures")
+        if unexpected:
+            lines.append(f"\n### {r['benchmark']}: unexpected test failures\n")
+            lines.append("| Test |\n|---|")
+            lines.extend(f"| `{t}` |" for t in unexpected)
+            lines.append("")
+
+        pass_at_10 = summary.get("pass_at_10")
+        if pass_at_10:
+            lines.append(f"\n### {r['benchmark']}: pass@10 metrics\n")
+            lines.append("| Metric | Score | Reference | Delta | Result |")
+            lines.append("|---|---|---|---|---|")
+            for name, m in pass_at_10.items():
+                icon = "✅" if m.get("ok") else "❌"
+                lines.append(
+                    f"| {name} | {fmt(m.get('score'))} |"
+                    f" {fmt(m.get('reference'))} | {fmt(m.get('delta'))} |"
+                    f" {icon} |"
+                )
+            lines.append("")
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -261,7 +301,7 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + "\n")
 
-    table = markdown_table(rows, missing) + comparison_md
+    table = markdown_table(rows, missing) + comparison_md + extra_sections(rows)
     header = "# Full accuracy eval: consolidated scores\n\n"
     if meta:
         header += (

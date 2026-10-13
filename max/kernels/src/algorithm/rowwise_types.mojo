@@ -28,8 +28,8 @@ discriminators and split-K plumbing — are `_`-prefixed.
 """
 
 from std.memory import UnsafePointer
-from std.gpu.host.info import is_cpu
-from std.utils.coord import Coord
+from max.gpu.host.info import is_cpu
+from std.utils.coord import Coord, DynamicCoord
 
 
 # ===-----------------------------------------------------------------------===#
@@ -37,7 +37,7 @@ from std.utils.coord import Coord
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def tile_alignment[dtype: DType, ws: Int, target: StaticString]() -> Int:
     """Alignment, **in elements**, a row-wise body's store — or its
     `input_fn`'s load — may assume for a width-`ws` tile of `dtype` on
@@ -84,7 +84,8 @@ def tile_alignment[dtype: DType, ws: Int, target: StaticString]() -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-struct ReduceTier(ImplicitlyCopyable, TrivialRegisterPassable):
+@fieldwise_init
+struct ReduceTier(Equatable, ImplicitlyCopyable, TrivialRegisterPassable):
     """GPU tier discriminator for the row-wise scaffolder. Mutually
     exclusive by construction (a single field, not independent bools):
     `Block` is the default (also every CPU tier, where only
@@ -109,18 +110,6 @@ struct ReduceTier(ImplicitlyCopyable, TrivialRegisterPassable):
     comptime Splitk = ReduceTier(3)
     """Multiple blocks cooperate on one row when `num_rows < sm_count`
     would otherwise leave SMs idle (GPU only)."""
-
-    @always_inline
-    def __init__(out self, value: Int):
-        self.value = value
-
-    @always_inline
-    def __eq__(self, other: Self) -> Bool:
-        return self.value == other.value
-
-    @always_inline
-    def __ne__(self, other: Self) -> Bool:
-        return self.value != other.value
 
 
 struct ContextParams(TrivialRegisterPassable):
@@ -173,7 +162,7 @@ struct ContextParams(TrivialRegisterPassable):
     few-rows-by-very-long-inner shapes. Scaffolder-internal; set only by
     the tier picker, never read by a body."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         axis: Int,
@@ -213,6 +202,13 @@ struct ContextParams(TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 # `Context`
 # ===-----------------------------------------------------------------------===#
+
+
+# Bytes per split-K partial-state slot. The scaffolders allocate the partials
+# scratch before the body picks its concrete monoid, so the slot is a fixed
+# worst-case size. Slots hold the lane-collapsed `State.Single`, so 128 bytes
+# covers every monoid; a bigger state falls back to one worker per row.
+comptime _SPLITK_STATE_BYTES = 128
 
 
 struct Context[params: ContextParams](TrivialRegisterPassable):
@@ -262,7 +258,7 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
     same width."""
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def element_alignment[dtype: DType, ws: Int]() -> Int:
         """Store/load alignment for a width-`ws` tile of `dtype` on this
         `Context`'s target — element-natural on CPU, SIMD-natural on GPU.
@@ -319,7 +315,7 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
     `> p`, and writes the output only when `p == N`. Set per launch by
     `_PointwiseSplitkKernel` from the K+1-launch loop."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         partials_base: UnsafePointer[UInt8, MutUntrackedOrigin],
@@ -351,7 +347,7 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
         self._phase = phase
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def empty() -> Self:
         """Returns a `Context` with zeroed runtime fields. Used by CPU
         bodies and non-split-K GPU kernels.
@@ -372,6 +368,75 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
             is_last_block=False,
         )
 
+    @inline(.always)
+    def partial_slot[
+        S: AnyType
+    ](self, slot: Int) -> UnsafePointer[S, MutUntrackedOrigin]:
+        """Returns split-K partials slot `slot`, typed as `S`.
+
+        The scratch is an array of fixed `_SPLITK_STATE_BYTES` slots, so it is
+        addressed by slot index: indexing an `UnsafePointer[S]` would stride by
+        `size_of[S]()` and walk off the slot bounds.
+
+        Parameters:
+            S: The state type the slot holds (a monoid's `Single`).
+
+        Args:
+            slot: The slot index into the partials scratch.
+
+        Returns:
+            A pointer to the slot's state.
+        """
+        return (self._partials_base + slot * _SPLITK_STATE_BYTES).bitcast[S]()
+
+    @inline(.always)
+    def row_partial[
+        S: AnyType
+    ](self, split: Int) -> UnsafePointer[S, MutUntrackedOrigin]:
+        """Returns split `split`'s partial for this row in the reduce-shaped
+        split-K scratch, laid out `[num_rows x blocks_per_row]`.
+
+        Parameters:
+            S: The state type the slot holds.
+
+        Args:
+            split: The split (block or worker) within the row.
+
+        Returns:
+            A pointer to the slot's state.
+        """
+        return self.partial_slot[S](
+            Int(self._row_idx) * Int(self._blocks_per_row) + split
+        )
+
+    @inline(.always)
+    def phase_partial[
+        S: AnyType
+    ](self, reduce_index: Int, split: Int) -> UnsafePointer[
+        S, MutUntrackedOrigin
+    ]:
+        """Returns split `split`'s partial for reduce `reduce_index` of this
+        row in the per-element split-K scratch, laid out
+        `[num_rows x num_reduces x blocks_per_row]` with
+        `num_reduces = num_phases - 1`.
+
+        Parameters:
+            S: The state type the slot holds.
+
+        Args:
+            reduce_index: Order index of the reduce within the body.
+            split: The split (block or worker) within the row.
+
+        Returns:
+            A pointer to the slot's state.
+        """
+        comptime num_reduces = Self.params._num_phases - 1
+        return self.partial_slot[S](
+            (Int(self._row_idx) * num_reduces + reduce_index)
+            * Int(self._blocks_per_row)
+            + split
+        )
+
 
 # ===-----------------------------------------------------------------------===#
 # `RowBody` — value-closure bound for the per-row body.
@@ -388,3 +453,92 @@ copy-captured state (the fused `input_fn` / `output_fn` value closures,
 `axis_size`) is serialized across the launch. `ImplicitlyCopyable &
 RegisterPassable` lets the kernel struct hold it as a register-passable
 field; the callable trait is non-`capturing` (captures ride the value)."""
+
+
+# TODO(MOCO-4713): Remove this and use a DynamicCoord with
+# wrapper functions where needed
+@fieldwise_init
+struct RowCoord[rank: Int](
+    ImplicitlyCopyable, Movable, TrivialRegisterPassable
+):
+    """A row's coordinates, as a non-variadic handle.
+
+    Wraps an all-dynamic `Coord`: the reduce axis is overwritten per tile,
+    which a statically typed element cannot hold.
+
+    The wrapper is not cosmetic. A `Coord` parameterized by a symbolic rank
+    expands to a variadic pack (`TypeList.splat`), and such a pack does not
+    survive substitution into a closure-type trait bound.
+
+    Parameters:
+        rank: The coordinate's rank.
+    """
+
+    var coord: DynamicCoord[DType.int64, Self.rank]
+    """The wrapped coordinates."""
+
+    @inline(.always)
+    @implicit
+    def __init__(out self, row_coords: Coord):
+        """Builds a handle from any `Coord`, dropping static dims.
+
+        Args:
+            row_coords: The row's coords, static dims permitted.
+        """
+        self.coord = rebind[DynamicCoord[DType.int64, Self.rank]](
+            row_coords.make_dynamic[DType.int64]()
+        )
+
+    @inline(.always)
+    def write_axis[axis: Int](mut self, pos: Int):
+        """Sets the reduce axis to `pos`, in place.
+
+        Parameters:
+            axis: The reduce axis to overwrite.
+
+        Args:
+            pos: The column position along the reduce axis.
+        """
+        Pointer(to=self.coord[axis]).write(
+            rebind[type_of(self.coord[axis])](Scalar[DType.int64](pos))
+        )
+
+    @inline(.always)
+    def at_axis[axis: Int](self, pos: Int) -> Self:
+        """A copy with the reduce axis set to `pos`.
+
+        Parameters:
+            axis: The reduce axis to overwrite.
+
+        Args:
+            pos: The column position along the reduce axis.
+
+        Returns:
+            A copy of `self` with element `axis` set to `pos`.
+        """
+        var result = self
+        result.write_axis[axis](pos)
+        return result
+
+
+@inline(.always)
+def _num_outputs_excluding_axis[axis: Int](shape: Coord) -> Int:
+    """Product of `shape`'s dims other than `axis`.
+
+    `total_size // axis_size` cannot supply that count when the reduce
+    axis is empty (`axis_size == 0`). Not because it faults: Mojo's `//`
+    inserts a zero-guard, so `0 // 0` yields `0` — indistinguishable from
+    the `0` a shape with no rows at all produces, which is exactly why an
+    empty axis used to read as "nothing to do". A reduce-shaped body still
+    owns one output per row when the axis is empty (the monoid identity,
+    from an axis walk of zero elements), so `launch` counts outputs
+    without dividing by the (possibly empty) axis. Shared by the CPU and
+    GPU backends (`cpu/rowwise.mojo`, `gpu/rowwise.mojo`); it lives here,
+    rather than in `rowwise.mojo`, so both backends can import it without
+    an import cycle through the unified dispatcher.
+    """
+    var num_outputs = 1
+    comptime for i in range(shape.rank):
+        if i != axis:
+            num_outputs *= Int(shape[i].value())
+    return num_outputs

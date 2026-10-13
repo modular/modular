@@ -14,7 +14,7 @@
 from std.sys import size_of
 from std.math.uutils import ufloordiv
 
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import (
     cluster_sync,
@@ -27,8 +27,8 @@ from max.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from max.gpu.host import DeviceContext
-from std.gpu import block_id_in_cluster, lane_id
-from std.gpu.intrinsics import Scope
+from max.gpu import block_id_in_cluster, lane_id
+from max.gpu.intrinsics import Scope
 from max.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import unsafe_stack_allocation
@@ -41,21 +41,21 @@ from layout import TileTensor, row_major
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
 def cluster_launch_control(
-    data: UnsafePointer[Float32, MutAnyOrigin], n_dev: Int32
+    data: MutPointer[Float32, MutAnyOrigin], n_dev: Int32
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
     var result = unsafe_stack_allocation[
         1,
         UInt128,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -113,21 +113,21 @@ def pipeline_test_kernel[
     var clc_response = unsafe_stack_allocation[
         num_stages,
         UInt128,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var full_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
     var empty_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=16,
     ]()
 
@@ -200,7 +200,7 @@ def pipeline_test_kernel[
 def test_cluster_launch_control(ctx: DeviceContext) raises:
     comptime n = 4000
 
-    var data = ctx.enqueue_create_buffer[DType.float32](n)
+    var data = ctx.enqueue_create_buffer[.float32](n)
 
     comptime kernel = cluster_launch_control
     ctx.enqueue_function[kernel](

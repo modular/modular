@@ -15,12 +15,12 @@ from std.sys import is_gpu
 
 from asyncrt_test_utils import create_test_device_context
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
-from std.sys import has_apple_gpu_accelerator
+from std.sys import default_accelerator
 
-comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+comptime T = DType.float32 if default_accelerator().is_apple_gpu() else DType.float64
 comptime S = Scalar[T]
 
 
@@ -44,7 +44,7 @@ struct ZeroSized(
     def get_type_name() -> String:
         return "ZeroSized"
 
-    @always_inline
+    @inline(.always)
     def value(self) -> S:
         return 2
 
@@ -75,7 +75,7 @@ struct NotZeroSized(
     def __init__(out self):
         self.val = 2
 
-    @always_inline
+    @inline(.always)
     def value(self) -> S:
         return self.val
 
@@ -88,8 +88,8 @@ struct NotZeroSized(
 
 def _vec_func_zero(
     zs: ZeroSized,
-    in0: Pointer[S, MutAnyOrigin],
-    in1: Pointer[S, MutAnyOrigin],
+    in0: Pointer[S, ImmutAnyOrigin],
+    in1: Pointer[S, ImmutAnyOrigin],
     output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):
@@ -105,8 +105,8 @@ def _vec_func_zero(
 
 def _vec_func_not_zero(
     zs: NotZeroSized,
-    in0: Pointer[S, MutAnyOrigin],
-    in1: Pointer[S, MutAnyOrigin],
+    in0: Pointer[S, ImmutAnyOrigin],
+    in1: Pointer[S, ImmutAnyOrigin],
     output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):
@@ -124,8 +124,8 @@ def _vec_func[
     zero_sized_t: MaybeZeroSized
 ](
     zs: zero_sized_t,
-    in0: Pointer[S, MutAnyOrigin],
-    in1: Pointer[S, MutAnyOrigin],
+    in0: Pointer[S, ImmutAnyOrigin],
+    in1: Pointer[S, ImmutAnyOrigin],
     output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):

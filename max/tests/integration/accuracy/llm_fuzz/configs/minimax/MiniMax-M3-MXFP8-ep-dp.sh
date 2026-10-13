@@ -28,8 +28,7 @@ extra_pipelines_args=(
   --trust-remote-code
   --enable-structured-output
   --device-memory-utilization 0.65
-  --kv-connector tiered
-  --kv-connector-config '{"host_kvcache_swap_space_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered_m3","disk_offload_max_gb":1024}'
+  --kv-connector-config '{"type":"tiered","host_offload_max_gb":512,"disk_offload_dir":"/tmp/max_kv_tiered_m3","disk_offload_max_gb":1024}'
 )
 
 # llm-fuzz knobs. Empty scenarios runs the tool's full default suite.
@@ -37,3 +36,7 @@ model_profile=minimax-m3
 scenarios=
 k2vv_mode=
 circuit_breaker=0
+
+# Skip the known MiniMax-M3 failures (the official MiniMax API fails them too).
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../minimax-m3-known-failures.sh"

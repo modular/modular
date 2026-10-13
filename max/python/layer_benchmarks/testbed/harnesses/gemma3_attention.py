@@ -142,7 +142,7 @@ class Gemma3AttentionHarness(
             hidden_size=hidden_size,
             kv_params=kv_params,
             layer_idx=layer_idx,
-            sliding_window_pattern=sliding_window_pattern,
+            is_sliding=bool((layer_idx + 1) % sliding_window_pattern),
             dtype=DType.bfloat16,
             devices=[DeviceRef.GPU()],
             has_bias=False,
@@ -202,9 +202,7 @@ class Gemma3AttentionHarness(
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(kv_cache)
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
             graph.output(
                 layer(
                     inputs.tensor,

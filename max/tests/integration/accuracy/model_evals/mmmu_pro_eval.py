@@ -63,6 +63,7 @@ from eval_common import (
     select_rows,
     strip_think,
     token_stats,
+    truncation_stats,
 )
 from PIL import Image
 
@@ -234,17 +235,25 @@ def infer(
             model, [{"role": "user", "content": content}], params
         )
     )
-    raw = strip_think(resp.choices[0].message.content)
+    choice = resp.choices[0]
+    raw = strip_think(choice.message.content)
     predicted = parse_multi_choice(raw, all_choices, index2ans)
+    completion_tokens = resp.usage.completion_tokens if resp.usage else 0
+    # Derive finish_reason: use the API field when available, fall back to
+    # detecting max-token truncation via completion_tokens hitting the cap.
+    finish_reason = choice.finish_reason
+    if not finish_reason:
+        finish_reason = (
+            "length" if completion_tokens >= params.max_tokens else "stop"
+        )
     return {
         "prompt_index": prompt_index,
         "id": sample["id"],
         "predicted": predicted,
         "ground_truth": sample["answer"],
         "raw": raw[:800],
-        "completion_tokens": (
-            resp.usage.completion_tokens if resp.usage else 0
-        ),
+        "completion_tokens": completion_tokens,
+        "finish_reason": finish_reason,
     }
 
 
@@ -345,6 +354,13 @@ def run_config(
         if "completion_tokens" in r and "error" not in r
     ]
     mean_output_tokens, p50_output_tokens = token_stats(results)
+    truncated, _mean_finished, _p50_finished = truncation_stats(results)
+    non_error_count = sum(1 for r in results if "error" not in r)
+    stop_ratio = (
+        round((non_error_count - truncated) / non_error_count, 4)
+        if non_error_count
+        else 0.0
+    )
     dump_score(
         str(out_dir),
         {
@@ -355,13 +371,21 @@ def run_config(
             "errors": errors,
             "mean_output_tokens": mean_output_tokens,
             "p50_output_tokens": p50_output_tokens,
+            "truncated": truncated,
+            "stop_ratio": round(stop_ratio, 4),
         },
     )
     print(
         f"{hf_config}: {accuracy:.4f} ({correct}/{total}) "
-        f"mean_out_tok={mean_output_tokens:.1f} p50_out_tok={p50_output_tokens:.1f}"
+        f"mean_out_tok={mean_output_tokens:.1f} p50_out_tok={p50_output_tokens:.1f} "
+        f"stop_ratio={stop_ratio:.4f}"
     )
-    return {"accuracy": accuracy, "output_tokens": otoks}
+    return {
+        "accuracy": accuracy,
+        "output_tokens": otoks,
+        "stop_ratio": stop_ratio,
+        "non_error_count": non_error_count,
+    }
 
 
 @click.command()
@@ -485,6 +509,17 @@ def main(
     p50_output_tokens = (
         round(statistics.median(all_otoks), 1) if all_otoks else 0.0
     )
+    # Overall stop ratio: weighted by non-error sample count per config.
+    total_stopped = sum(
+        v["stop_ratio"] * v["non_error_count"]
+        for v in results_by_config.values()
+    )
+    total_non_error = sum(
+        v["non_error_count"] for v in results_by_config.values()
+    )
+    overall_stop_ratio = (
+        round(total_stopped / total_non_error, 4) if total_non_error else 0.0
+    )
     threshold = baseline * 0.98
     passed = bool(scores) and overall >= threshold
     summary = {
@@ -492,6 +527,7 @@ def main(
         "overall": overall,
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
+        "stop_ratio": overall_stop_ratio,
         "baseline": baseline,
         "threshold": threshold,
         "passed": passed,
@@ -500,7 +536,8 @@ def main(
     json.dump(summary, open(out_root / "summary.json", "w"), indent=2)
     print(
         f"MMMU-Pro overall: {overall:.4f} "
-        f"mean_out_tok={mean_output_tokens:.1f} p50_out_tok={p50_output_tokens:.1f}"
+        f"mean_out_tok={mean_output_tokens:.1f} p50_out_tok={p50_output_tokens:.1f} "
+        f"stop_ratio={overall_stop_ratio:.4f}"
     )
 
     env_file = os.environ.get("GITHUB_ENV")
@@ -513,6 +550,7 @@ def main(
             f.write(f"{metric_prefix}_OVERALL={overall:.4f}\n")
             f.write(f"{metric_prefix}_MEAN_TOKENS={mean_output_tokens:.0f}\n")
             f.write(f"{metric_prefix}_P50_TOKENS={p50_output_tokens:.0f}\n")
+            f.write(f"{metric_prefix}_STOP_RATIO={overall_stop_ratio:.4f}\n")
             f.write(f"{metric_prefix}_PASSED={'true' if passed else 'false'}\n")
 
 

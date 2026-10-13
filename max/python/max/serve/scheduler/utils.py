@@ -16,10 +16,11 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import TypeVar
 
-from max.driver import Buffer
 from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
@@ -38,11 +39,59 @@ from max.pipelines.speculative.utils import (
 )
 from max.serve.queue import MAXPullQueue, drain_queue
 from max.serve.telemetry.metrics import METRICS
-from max.support.human_readable_formatter import to_human_readable_latency
+from max.support.human_readable_formatter import (
+    to_human_readable_bytes,
+    to_human_readable_latency,
+)
 
 from .config import TokenGenerationSchedulerConfig
 
 logger = logging.getLogger("max.serve")
+
+# Brackets the model-execute call with dispatch/completion lines. A dispatch
+# with no matching completion means the scheduler is stuck inside that one
+# call, rather than its loop not running at all. Off by default: two extra
+# log lines per batch is unwanted outside an active investigation.
+_TRACE_BATCH = os.getenv("MAX_SERVE_TRACE_BATCH", "0") == "1"
+
+
+@contextmanager
+def _trace_batch(
+    role: str, inputs: TextGenerationInputs[TextContext]
+) -> Iterator[None]:
+    """Brackets one model-execute call so a stall inside it is visible."""
+    if not _TRACE_BATCH:
+        yield
+        return
+    sizes = [len(batch) for batch in inputs.batches]
+    dispatch_t0 = time.monotonic()
+    logger.info(
+        "Dispatching %s batch: %d replica(s), sizes=%s",
+        role,
+        len(inputs.batches),
+        sizes,
+    )
+    try:
+        yield
+    except BaseException:
+        # Close the bracket on the way out, so a raised execute is not
+        # mistaken for one that never returned. Readers of these lines key
+        # on a dispatch that stays unmatched, which only a hang produces.
+        logger.info(
+            "Failed %s batch: %d replica(s), sizes=%s, after %.1fms",
+            role,
+            len(inputs.batches),
+            sizes,
+            (time.monotonic() - dispatch_t0) * 1000,
+        )
+        raise
+    logger.info(
+        "Completed %s batch: %d replica(s), sizes=%s, took %.1fms",
+        role,
+        len(inputs.batches),
+        sizes,
+        (time.monotonic() - dispatch_t0) * 1000,
+    )
 
 
 def _to_human_readable_throughput(tps: float) -> str:
@@ -69,6 +118,14 @@ def _dp_token_occupancy_pct(
     if max_rank_tokens == 0:
         return None
     return 100.0 * sum(per_rank) / (num_replicas * max_rank_tokens)
+
+
+_Count = TypeVar("_Count", int, float)
+
+
+def _moved(counts: Mapping[str, _Count]) -> Iterator[tuple[str, _Count]]:
+    """The labeled counts that moved this window, skipping the zeros."""
+    return ((label, count) for label, count in counts.items() if count)
 
 
 def _format_spec_decode_clause(
@@ -125,21 +182,23 @@ class BatchMetrics:
 
     used_kv_pct: float
     total_kv_blocks: int
+    # The fullest replica's `pressure_pct`, as a fraction.
+    kv_pressure_pct: float
     cache_hit_rate: float
     cache_hit_tokens: int
     cache_miss_tokens: int
     device_blocks_served: int
 
     used_host_kv_pct: float
-    total_host_kv_blocks: int
-    h2d_blocks_copied: int
-    d2h_blocks_copied: int
-    disk_blocks_read: int
-    disk_blocks_written: int
+    total_host_kv_bytes: int
+    h2d_bytes_copied: int
+    d2h_bytes_copied: int
+    disk_bytes_read: int
+    disk_bytes_written: int
     inflight_disk_ops: int
 
     used_disk_kv_pct: float
-    total_disk_kv_blocks: int
+    total_disk_kv_bytes: int
 
     draft_tokens_generated: int
     draft_tokens_accepted: int
@@ -154,6 +213,11 @@ class BatchMetrics:
     nixl_read_gib_per_s: float = 0.0
     nixl_write_gib_per_s: float = 0.0
 
+    # Slowest single dKV read in the window this batch sampled, which the
+    # average beside it cannot show. See
+    # KVCacheMetrics.nixl_read_latency_max_ms.
+    nixl_read_latency_max_ms: float = 0.0
+
     # dKV external-tier health, summed across the per-replica connector
     # clients. The connected and total counts support a degraded alert when
     # connected is below total and a dead-tier alert when connected is zero,
@@ -163,6 +227,57 @@ class BatchMetrics:
     dkv_connected_clients: int = 0
     dkv_total_clients: int = 0
     dkv_reconnect_attempts: int = 0
+
+    # Cache blocks dKV landed in device memory this batch, credited from
+    # transfer accounting: a block behind a hole in the request's hash chain is
+    # served and then dropped untransferred, and never reaches this count. The
+    # landed side of the served-versus-landed gap, whose optimistic side is
+    # cache_hit_external_tokens -- summed at admission, before any bytes move.
+    # Zero when no dKV tier is attached.
+    dkv_read_blocks: int = 0
+
+    # Bytes dKV read into device memory this batch. Not recoverable from what
+    # was reported before: nixl_read_gib_per_s divides by the transfer-time
+    # total, the line and the log carry only the average, and the sample count
+    # that bridges the two is published nowhere.
+    dkv_read_bytes: int = 0
+
+    # Cross-node pull this batch. Per-window deltas, reported even when every
+    # one is zero while a tier is attached, the same way the health gauges
+    # above are, so a rejected hint and a failed pull are readable rather than
+    # absent. All zero does not prove no hint arrived: the connector counts no
+    # hints_seen, and a hint naming only co-located sources, one whose run does
+    # not align with the request, and one whose peers are all
+    # failure-memo-suppressed all exit without touching any of these.
+    dkv_peer_attaches: int = 0
+    dkv_peer_attach_failures: int = 0
+    dkv_peers_dropped: int = 0
+    dkv_peer_loads: int = 0
+    dkv_peer_load_failures: int = 0
+    dkv_hints_rejected: int = 0
+    dkv_hints_rejected_by_reason: dict[str, int] = field(default_factory=dict)
+
+    # Per-call dKV client counters this batch, keyed by RPC or by connector
+    # entry point. Published as labeled counters, so a dashboard derives the
+    # per-call mean as time over calls. Empty when no dKV tier is attached.
+    dkv_rpc_calls: dict[str, int] = field(default_factory=dict)
+    dkv_rpc_time_ms: dict[str, float] = field(default_factory=dict)
+    dkv_rpc_socket_wait_ms: dict[str, float] = field(default_factory=dict)
+    dkv_lock_waits: dict[str, int] = field(default_factory=dict)
+    dkv_lock_wait_ms: dict[str, float] = field(default_factory=dict)
+
+    # Host/disk tier refusals, from the tiered connector. Always 0 without one.
+    connector_loads_refused: int = 0
+    connector_offload_blocks_dropped: int = 0
+
+    # Connector loads whose copy failed, counted by the cache manager for any
+    # connector. Each is served by recomputing the request's prefix.
+    connector_load_failures: int = 0
+
+    # How many of ``cache_hit_tokens`` the KV connector served. The remainder
+    # came from the device prefix cache, which is how ``cache_hits`` splits per
+    # ``tier``. Always 0 without a connector.
+    cache_hit_external_tokens: int = 0
 
     # When True, ``batch_execution_time_s`` and the throughputs describe the
     # previously enqueued batch, so ``completed`` is reported instead.
@@ -245,7 +360,7 @@ class BatchMetrics:
         prompt_throughput = num_input_tokens / batch_execution_time_s
         if (
             batch_spec_decode_metrics is not None
-            and inputs.batch_type == BatchType.TG
+            and batch_spec_decode_metrics.num_verifications > 0
         ):
             generation_throughput = (
                 batch_spec_decode_metrics.output_tokens / batch_execution_time_s
@@ -255,27 +370,46 @@ class BatchMetrics:
 
         total_kv_blocks = 0
         used_kv_pct = 0.0
+        kv_pressure_pct = 0.0
         device_blocks_served = 0
         used_host_kv_pct = 0.0
-        total_host_kv_blocks = 0
-        h2d_blocks_copied = 0
-        d2h_blocks_copied = 0
+        total_host_kv_bytes = 0
+        h2d_bytes_copied = 0
+        d2h_bytes_copied = 0
         cross_replica_blocks_copied = 0
         cross_replica_bytes_copied = 0
-        disk_blocks_read = 0
-        disk_blocks_written = 0
+        disk_bytes_read = 0
+        disk_bytes_written = 0
         inflight_disk_ops = 0
         used_disk_kv_pct = 0.0
-        total_disk_kv_blocks = 0
+        total_disk_kv_bytes = 0
         nixl_read_latency_avg_ms = 0.0
         nixl_write_latency_avg_ms = 0.0
         rpc_acquire_latency_avg_ms = 0.0
         rpc_read_latency_avg_ms = 0.0
         nixl_read_gib_per_s = 0.0
         nixl_write_gib_per_s = 0.0
+        nixl_read_latency_max_ms = 0.0
         dkv_connected_clients = 0
         dkv_total_clients = 0
         dkv_reconnect_attempts = 0
+        dkv_read_blocks = 0
+        dkv_read_bytes = 0
+        dkv_peer_attaches = 0
+        dkv_peer_attach_failures = 0
+        dkv_peers_dropped = 0
+        dkv_peer_loads = 0
+        dkv_peer_load_failures = 0
+        dkv_hints_rejected = 0
+        dkv_hints_rejected_by_reason: dict[str, int] = {}
+        dkv_rpc_calls: dict[str, int] = {}
+        dkv_rpc_time_ms: dict[str, float] = {}
+        dkv_rpc_socket_wait_ms: dict[str, float] = {}
+        dkv_lock_waits: dict[str, int] = {}
+        dkv_lock_wait_ms: dict[str, float] = {}
+        connector_loads_refused = 0
+        connector_offload_blocks_dropped = 0
+        connector_load_failures = 0
         num_replicas = sch_config.data_parallel_degree
 
         # Data-parallel balance, along two axes: active tokens (compute load
@@ -314,37 +448,46 @@ class BatchMetrics:
             assert total_kv_blocks > 0
             used_kv_pct = used_kv_blocks / total_kv_blocks
 
-            host_block_counts = [
-                kv_cache.host_block_count(replica_idx)
-                for replica_idx in range(num_replicas)
-            ]
-            total_host_kv_blocks = sum(bc.total for bc in host_block_counts)
+            kv_pressure_pct = (
+                max(
+                    kv_cache.pressure_pct(replica_idx)
+                    for replica_idx in range(num_replicas)
+                )
+                / 100
+            )
 
-            metrics_agg = kv_cache.get_metrics_aggregated()
+            # The host and disk tiers are one pool shared by every replica,
+            # so they are read once rather than summed per replica.
+            host_byte_count = kv_cache.host_byte_count()
+            total_host_kv_bytes = host_byte_count.total
 
-            if total_host_kv_blocks > 0:
-                used_host_kv_blocks = sum(bc.used for bc in host_block_counts)
-                used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
+            metrics_agg = kv_cache.take_metrics_aggregated()
+
+            if total_host_kv_bytes > 0:
+                used_host_kv_bytes = host_byte_count.used
+                used_host_kv_pct = used_host_kv_bytes / total_host_kv_bytes
 
             device_blocks_served = metrics_agg.device_blocks_served
-            h2d_blocks_copied = metrics_agg.h2d_blocks_copied
-            d2h_blocks_copied = metrics_agg.d2h_blocks_copied
+            h2d_bytes_copied = metrics_agg.h2d_bytes_copied
+            d2h_bytes_copied = metrics_agg.d2h_bytes_copied
             cross_replica_blocks_copied = (
                 metrics_agg.cross_replica_blocks_copied
             )
             cross_replica_bytes_copied = metrics_agg.cross_replica_bytes_copied
-            disk_blocks_written = metrics_agg.disk_blocks_written
-            disk_blocks_read = metrics_agg.disk_blocks_read
+            disk_bytes_written = metrics_agg.disk_bytes_written
+            disk_bytes_read = metrics_agg.disk_bytes_read
             inflight_disk_ops = metrics_agg.inflight_disk_ops
+            connector_loads_refused = metrics_agg.connector_loads_refused
+            connector_offload_blocks_dropped = (
+                metrics_agg.connector_offload_blocks_dropped
+            )
+            connector_load_failures = metrics_agg.connector_load_failures
 
-            disk_block_counts = [
-                kv_cache.disk_block_count(replica_idx)
-                for replica_idx in range(num_replicas)
-            ]
-            total_disk_kv_blocks = sum(bc.total for bc in disk_block_counts)
-            if total_disk_kv_blocks > 0:
-                used_disk_kv_blocks = sum(bc.used for bc in disk_block_counts)
-                used_disk_kv_pct = used_disk_kv_blocks / total_disk_kv_blocks
+            disk_byte_count = kv_cache.disk_byte_count()
+            total_disk_kv_bytes = disk_byte_count.total
+            if total_disk_kv_bytes > 0:
+                used_disk_kv_bytes = disk_byte_count.used
+                used_disk_kv_pct = used_disk_kv_bytes / total_disk_kv_bytes
 
             # dKV latency metrics: sum across replicas then average.
             nixl_read_latency_avg_ms = metrics_agg.nixl_read_latency_avg_ms
@@ -353,15 +496,33 @@ class BatchMetrics:
             rpc_read_latency_avg_ms = metrics_agg.rpc_read_latency_avg_ms
             nixl_read_gib_per_s = metrics_agg.nixl_read_gib_per_s
             nixl_write_gib_per_s = metrics_agg.nixl_write_gib_per_s
+            nixl_read_latency_max_ms = metrics_agg.nixl_read_latency_max_ms
 
-            # dKV external-tier health. Read before reset_metrics like the
-            # metrics above, though the connector reports these live and does
-            # not clear them on reset.
+            # dKV external-tier health. The connector reports these live and
+            # take_metrics_aggregated leaves them in place, unlike the per-window
+            # deltas above; the snapshot carries their current level.
             dkv_connected_clients = metrics_agg.dkv_connected_clients
             dkv_total_clients = metrics_agg.dkv_total_clients
             dkv_reconnect_attempts = metrics_agg.dkv_reconnect_attempts
+            dkv_read_blocks = metrics_agg.nixl_read_blocks
+            dkv_read_bytes = metrics_agg.nixl_read_bytes
 
-            kv_cache.reset_metrics()
+            # Cross-node pull. Per-window deltas that take_metrics_aggregated
+            # cleared as it read them into this snapshot.
+            dkv_peer_attaches = metrics_agg.dkv_peer_attaches
+            dkv_peer_attach_failures = metrics_agg.dkv_peer_attach_failures
+            dkv_peers_dropped = metrics_agg.dkv_peers_dropped
+            dkv_peer_loads = metrics_agg.dkv_peer_loads
+            dkv_peer_load_failures = metrics_agg.dkv_peer_load_failures
+            dkv_hints_rejected = metrics_agg.dkv_hints_rejected
+            dkv_hints_rejected_by_reason = (
+                metrics_agg.dkv_hints_rejected_by_reason
+            )
+            dkv_rpc_calls = metrics_agg.dkv_rpc_calls
+            dkv_rpc_time_ms = metrics_agg.dkv_rpc_time_ms
+            dkv_rpc_socket_wait_ms = metrics_agg.dkv_rpc_socket_wait_ms
+            dkv_lock_waits = metrics_agg.dkv_lock_waits
+            dkv_lock_wait_ms = metrics_agg.dkv_lock_wait_ms
 
         # Capture per-request KV cache hit rates for newly admitted requests.
         # The block manager set ``cached_prefix_length`` on each context's
@@ -374,6 +535,7 @@ class BatchMetrics:
         per_request_prefix_coverage: list[float] = []
         admission_hit_tokens = 0
         admission_prompt_tokens = 0
+        admission_external_tokens = 0
         if inputs.batch_type == BatchType.CE:
             for ctx in inputs.flat_batch:
                 if (
@@ -388,6 +550,11 @@ class BatchMetrics:
                     per_request_prefix_coverage.append(cached / prompt_length)
                     admission_hit_tokens += cached
                     admission_prompt_tokens += prompt_length
+                    # The block manager caps this at ``cached``, so the device
+                    # remainder below can never go negative.
+                    admission_external_tokens += (
+                        ctx.cached_prefix_external_length
+                    )
 
         cache_hit_tokens = admission_hit_tokens
         cache_miss_tokens = admission_prompt_tokens - admission_hit_tokens
@@ -407,7 +574,7 @@ class BatchMetrics:
         # gate on batch type to avoid mis-attributing them to CE batches.
         if (
             batch_spec_decode_metrics is not None
-            and inputs.batch_type == BatchType.TG
+            and batch_spec_decode_metrics.num_verifications > 0
         ):
             draft_tokens_generated = (
                 batch_spec_decode_metrics.draft_tokens_generated
@@ -442,20 +609,22 @@ class BatchMetrics:
             total_preemption_count=total_preemption_count,
             used_kv_pct=used_kv_pct,
             total_kv_blocks=total_kv_blocks,
+            kv_pressure_pct=kv_pressure_pct,
             cache_hit_rate=cache_hit_rate,
             cache_hit_tokens=cache_hit_tokens,
             cache_miss_tokens=cache_miss_tokens,
+            cache_hit_external_tokens=admission_external_tokens,
             device_blocks_served=device_blocks_served,
             used_host_kv_pct=used_host_kv_pct,
-            total_host_kv_blocks=total_host_kv_blocks,
-            h2d_blocks_copied=h2d_blocks_copied,
-            d2h_blocks_copied=d2h_blocks_copied,
+            total_host_kv_bytes=total_host_kv_bytes,
+            h2d_bytes_copied=h2d_bytes_copied,
+            d2h_bytes_copied=d2h_bytes_copied,
             cross_replica_blocks_copied=cross_replica_blocks_copied,
             cross_replica_bytes_copied=cross_replica_bytes_copied,
-            disk_blocks_read=disk_blocks_read,
-            disk_blocks_written=disk_blocks_written,
+            disk_bytes_read=disk_bytes_read,
+            disk_bytes_written=disk_bytes_written,
             used_disk_kv_pct=used_disk_kv_pct,
-            total_disk_kv_blocks=total_disk_kv_blocks,
+            total_disk_kv_bytes=total_disk_kv_bytes,
             inflight_disk_ops=inflight_disk_ops,
             draft_tokens_generated=draft_tokens_generated,
             draft_tokens_accepted=draft_tokens_accepted,
@@ -471,6 +640,24 @@ class BatchMetrics:
             dkv_connected_clients=dkv_connected_clients,
             dkv_total_clients=dkv_total_clients,
             dkv_reconnect_attempts=dkv_reconnect_attempts,
+            dkv_read_blocks=dkv_read_blocks,
+            dkv_read_bytes=dkv_read_bytes,
+            dkv_peer_attaches=dkv_peer_attaches,
+            dkv_peer_attach_failures=dkv_peer_attach_failures,
+            dkv_peers_dropped=dkv_peers_dropped,
+            dkv_peer_loads=dkv_peer_loads,
+            dkv_peer_load_failures=dkv_peer_load_failures,
+            dkv_hints_rejected=dkv_hints_rejected,
+            dkv_hints_rejected_by_reason=dkv_hints_rejected_by_reason,
+            dkv_rpc_calls=dkv_rpc_calls,
+            dkv_rpc_time_ms=dkv_rpc_time_ms,
+            dkv_rpc_socket_wait_ms=dkv_rpc_socket_wait_ms,
+            dkv_lock_waits=dkv_lock_waits,
+            dkv_lock_wait_ms=dkv_lock_wait_ms,
+            connector_loads_refused=connector_loads_refused,
+            connector_offload_blocks_dropped=connector_offload_blocks_dropped,
+            connector_load_failures=connector_load_failures,
+            nixl_read_latency_max_ms=nixl_read_latency_max_ms,
             overlap_active=overlap_active,
             completed=completed_batch_stats,
             dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
@@ -483,6 +670,27 @@ class BatchMetrics:
             video_metrics=batch_video_metrics,
         )
 
+    def _dkv_active(self) -> bool:
+        """Returns whether a dKV tier did anything measurable this batch.
+
+        One definition for the console line and the structured log, so the
+        two cannot disagree about emitting the dKV clause. The block count
+        is part of the test because a tier that answered instantly still
+        moved cache blocks, and only that count would show it.
+
+        The write side has no equivalent count on this record, so a
+        pure-offload batch whose write timing sample was dropped still
+        prints no clause at all. TODO(CLIN-1860): carry a write block count
+        and close that asymmetry.
+        """
+        return (
+            self.dkv_read_blocks > 0
+            or self.nixl_read_latency_avg_ms > 0
+            or self.nixl_write_latency_avg_ms > 0
+            or self.rpc_acquire_latency_avg_ms > 0
+            or self.rpc_read_latency_avg_ms > 0
+        )
+
     def pretty_format(self) -> str:
         context_tokens_str = ""
         if self.max_batch_total_tokens != 0:
@@ -490,7 +698,11 @@ class BatchMetrics:
 
         kv_str = ""
         if self.total_kv_blocks != 0:
-            usage_str = f"KVCache usage: {self.used_kv_pct:.1%} of {self.total_kv_blocks} blocks"
+            usage_str = (
+                f"KVCache usage: {self.used_kv_pct:.1%} of "
+                f"{self.total_kv_blocks} blocks "
+                f"(admission pressure: {self.kv_pressure_pct:.1%})"
+            )
             # Only show the cache-hit clause when this batch newly admitted
             # at least one request. CE batches that are pure chunked-prefill
             # continuations report 0 admissions and would otherwise display
@@ -505,23 +717,26 @@ class BatchMetrics:
                 kv_str = f"{usage_str} | "
 
         host_kv_str = ""
-        if self.total_host_kv_blocks != 0:
+        if self.total_host_kv_bytes != 0:
             disk_str = ""
-            if self.disk_blocks_read > 0 or self.disk_blocks_written > 0:
+            if self.disk_bytes_read > 0 or self.disk_bytes_written > 0:
                 disk_str = (
-                    f", Disk: {self.disk_blocks_read} read, "
-                    f"{self.disk_blocks_written} written"
+                    f", Disk: {to_human_readable_bytes(self.disk_bytes_read)} "
+                    f"read, "
+                    f"{to_human_readable_bytes(self.disk_bytes_written)} written"
                 )
             host_kv_str = (
-                f"Host KVCache Usage: {self.used_host_kv_pct:.1%} of {self.total_host_kv_blocks} blocks, "
-                f"Blocks copied: {self.h2d_blocks_copied} H2D, {self.d2h_blocks_copied} D2H{disk_str} | "
+                f"Host KVCache Usage: {self.used_host_kv_pct:.1%} of "
+                f"{to_human_readable_bytes(self.total_host_kv_bytes)}, "
+                f"Copied: {to_human_readable_bytes(self.h2d_bytes_copied)} H2D, "
+                f"{to_human_readable_bytes(self.d2h_bytes_copied)} D2H{disk_str} | "
             )
 
         disk_kv_str = ""
-        if self.total_disk_kv_blocks != 0:
+        if self.total_disk_kv_bytes != 0:
             disk_kv_str = (
                 f"Disk KVCache Usage: {self.used_disk_kv_pct:.1%} of "
-                f"{self.total_disk_kv_blocks} blocks, "
+                f"{to_human_readable_bytes(self.total_disk_kv_bytes)}, "
                 f"Inflight Disk Ops: {self.inflight_disk_ops} | "
             )
 
@@ -534,16 +749,26 @@ class BatchMetrics:
         )
 
         dkv_str = ""
-        has_dkv = (
-            self.nixl_read_latency_avg_ms > 0
-            or self.nixl_write_latency_avg_ms > 0
-            or self.rpc_acquire_latency_avg_ms > 0
-            or self.rpc_read_latency_avg_ms > 0
-        )
-        if has_dkv:
+        if self._dkv_active():
+            # The counts are credited from transfer accounting and the timings
+            # from samples that can be dropped, so a batch can land blocks
+            # having measured none of them. Printing the timings anyway reads
+            # as an instant read where the truth is an unmeasured one, which is
+            # the reading this clause was widened to avoid.
+            read_timing_str = ""
+            if (
+                self.nixl_read_latency_avg_ms > 0
+                or self.nixl_read_latency_max_ms > 0
+            ):
+                read_timing_str = (
+                    f" in {self.nixl_read_latency_avg_ms:.1f}ms avg / "
+                    f"{self.nixl_read_latency_max_ms:.1f}ms max "
+                    f"({self.nixl_read_gib_per_s:.2f} GiB/s)"
+                )
             dkv_str = (
-                f"dKV: read {self.nixl_read_latency_avg_ms:.1f}ms"
-                f" ({self.nixl_read_gib_per_s:.2f} GiB/s), "
+                f"dKV: read {self.dkv_read_blocks} blocks "
+                f"({to_human_readable_bytes(self.dkv_read_bytes)})"
+                f"{read_timing_str}, "
                 f"write {self.nixl_write_latency_avg_ms:.1f}ms"
                 f" ({self.nixl_write_gib_per_s:.2f} GiB/s), "
                 f"acquire {self.rpc_acquire_latency_avg_ms:.1f}ms, "
@@ -561,6 +786,28 @@ class BatchMetrics:
                 f"dKV degraded: {self.dkv_connected_clients}/"
                 f"{self.dkv_total_clients} connected, "
                 f"{self.dkv_reconnect_attempts} reconnect attempts | "
+            )
+
+        # Gated on activity so a single-node deployment's line stays quiet.
+        # The zeros are still in to_log_extra and in the published counters.
+        dkv_peer_str = ""
+        if any(
+            (
+                self.dkv_peer_loads,
+                self.dkv_peer_load_failures,
+                self.dkv_hints_rejected,
+                self.dkv_peer_attaches,
+                self.dkv_peer_attach_failures,
+                self.dkv_peers_dropped,
+            )
+        ):
+            dkv_peer_str = (
+                f"dKV peers: {self.dkv_peer_loads} loads "
+                f"({self.dkv_peer_load_failures} failed), "
+                f"{self.dkv_peer_attaches} attaches "
+                f"({self.dkv_peer_attach_failures} failed, "
+                f"{self.dkv_peers_dropped} dropped), "
+                f"{self.dkv_hints_rejected} hints rejected | "
             )
 
         vision_str = ""
@@ -602,7 +849,7 @@ class BatchMetrics:
         # these stay valid under either path below.
         state_str = (
             f"{dp_str}{kv_str}{host_kv_str}{disk_kv_str}{dkv_str}"
-            f"{dkv_health_str}"
+            f"{dkv_health_str}{dkv_peer_str}"
         )
         encoder_str = f"{vision_str}{video_str}"
 
@@ -737,25 +984,35 @@ class BatchMetrics:
         if self.total_kv_blocks != 0:
             extra["used_kv_pct"] = self.used_kv_pct
             extra["total_kv_blocks"] = self.total_kv_blocks
+            extra["kv_pressure_pct"] = self.kv_pressure_pct
 
         if self.num_new_admissions > 0:
             extra["num_new_admissions"] = self.num_new_admissions
             extra["cache_hit_rate"] = self.cache_hit_rate
             extra["cache_hit_tokens"] = self.cache_hit_tokens
             extra["cache_miss_tokens"] = self.cache_miss_tokens
+            extra["cache_hit_external_tokens"] = self.cache_hit_external_tokens
             extra["device_blocks_served"] = self.device_blocks_served
 
-        if self.total_host_kv_blocks != 0:
-            extra["total_host_kv_blocks"] = self.total_host_kv_blocks
+        if self.total_host_kv_bytes != 0:
+            extra["total_host_kv_bytes"] = self.total_host_kv_bytes
             extra["used_host_kv_pct"] = self.used_host_kv_pct
-            extra["h2d_blocks_copied"] = self.h2d_blocks_copied
-            extra["d2h_blocks_copied"] = self.d2h_blocks_copied
+            extra["h2d_bytes_copied"] = self.h2d_bytes_copied
+            extra["d2h_bytes_copied"] = self.d2h_bytes_copied
+            extra["connector_loads_refused"] = self.connector_loads_refused
+            extra["connector_offload_blocks_dropped"] = (
+                self.connector_offload_blocks_dropped
+            )
 
-        if self.total_disk_kv_blocks != 0:
-            extra["total_disk_kv_blocks"] = self.total_disk_kv_blocks
+        # Outside the host tier's guard: dKV reports no host tier.
+        if self.connector_load_failures:
+            extra["connector_load_failures"] = self.connector_load_failures
+
+        if self.total_disk_kv_bytes != 0:
+            extra["total_disk_kv_bytes"] = self.total_disk_kv_bytes
             extra["used_disk_kv_pct"] = self.used_disk_kv_pct
-            extra["disk_blocks_read"] = self.disk_blocks_read
-            extra["disk_blocks_written"] = self.disk_blocks_written
+            extra["disk_bytes_read"] = self.disk_bytes_read
+            extra["disk_bytes_written"] = self.disk_bytes_written
             extra["inflight_disk_ops"] = self.inflight_disk_ops
 
         if not self.overlap_active:
@@ -807,13 +1064,14 @@ class BatchMetrics:
             extra["video_encoding_time_ms"] = vid.encoding_time_ms
             extra["video_cache_hit_rate"] = vid.cache_hit_rate
 
-        if (
-            self.nixl_read_latency_avg_ms > 0
-            or self.nixl_write_latency_avg_ms > 0
-            or self.rpc_acquire_latency_avg_ms > 0
-            or self.rpc_read_latency_avg_ms > 0
-        ):
+        if self._dkv_active():
+            # Under the same predicate as the console clause, which prints both
+            # counts. A write-only batch records them as zero, and a zero is a
+            # state an operator can read where a missing key is not.
+            extra["dkv_read_blocks"] = self.dkv_read_blocks
+            extra["dkv_read_bytes"] = self.dkv_read_bytes
             extra["nixl_read_latency_avg_ms"] = self.nixl_read_latency_avg_ms
+            extra["nixl_read_latency_max_ms"] = self.nixl_read_latency_max_ms
             extra["nixl_write_latency_avg_ms"] = self.nixl_write_latency_avg_ms
             extra["nixl_read_gib_per_s"] = self.nixl_read_gib_per_s
             extra["nixl_write_gib_per_s"] = self.nixl_write_gib_per_s
@@ -828,6 +1086,25 @@ class BatchMetrics:
             extra["dkv_connected_clients"] = self.dkv_connected_clients
             extra["dkv_total_clients"] = self.dkv_total_clients
             extra["dkv_reconnect_attempts"] = self.dkv_reconnect_attempts
+            # Same guard as the health gauges above.
+            extra["dkv_peer_attaches"] = self.dkv_peer_attaches
+            extra["dkv_peer_attach_failures"] = self.dkv_peer_attach_failures
+            extra["dkv_peers_dropped"] = self.dkv_peers_dropped
+            extra["dkv_peer_loads"] = self.dkv_peer_loads
+            extra["dkv_peer_load_failures"] = self.dkv_peer_load_failures
+            extra["dkv_hints_rejected"] = self.dkv_hints_rejected
+            # One scalar key per label that moved, as publish_metrics sends.
+            labeled: tuple[tuple[str, Mapping[str, float]], ...] = (
+                ("dkv_hints_rejected", self.dkv_hints_rejected_by_reason),
+                ("dkv_rpc_calls", self.dkv_rpc_calls),
+                ("dkv_rpc_time_ms", self.dkv_rpc_time_ms),
+                ("dkv_rpc_socket_wait_ms", self.dkv_rpc_socket_wait_ms),
+                ("dkv_lock_waits", self.dkv_lock_waits),
+                ("dkv_lock_wait_ms", self.dkv_lock_wait_ms),
+            )
+            for prefix, counts in labeled:
+                for label, count in _moved(counts):
+                    extra[f"{prefix}_{label}"] = count
 
         return extra
 
@@ -910,24 +1187,59 @@ class BatchMetrics:
             METRICS.cache_used_kv_pct(self.used_kv_pct * 100)
 
         if self.batch_type == BatchType.CE and self.num_new_admissions > 0:
-            METRICS.cache_hits(self.cache_hit_tokens)
+            # Tag each hit with the tier that served it. The two add up to
+            # ``cache_hit_tokens``, so a query that does not group by ``tier``
+            # still reads the same total it did before the attribute existed.
+            #
+            # ``g0`` fires even at zero: before the attribute an all-cold CE
+            # batch recorded 0, so an ungrouped query read 0. Skipping it would
+            # leave the series absent on a cold server, and rate() over an
+            # absent series returns no data rather than a flat zero.
+            #
+            # ``external`` follows the same rule, but keyed on whether a tier is
+            # ATTACHED rather than on whether it delivered: a connector that has
+            # served nothing all process (dKV down at startup, or degraded
+            # before its first hit) is exactly the state worth alerting on, and
+            # skipping it there would publish nothing to alert on. Same
+            # reasoning as the dKV health gauges below. Without a connector
+            # there is no series to mint.
+            device_tokens = (
+                self.cache_hit_tokens - self.cache_hit_external_tokens
+            )
+            METRICS.cache_hits(device_tokens, tier="g0")
+            if self.cache_hit_external_tokens > 0 or self.dkv_total_clients > 0:
+                METRICS.cache_hits(
+                    self.cache_hit_external_tokens, tier="external"
+                )
             METRICS.cache_misses(self.cache_miss_tokens)
             METRICS.cache_device_blocks_served(self.device_blocks_served)
             for coverage in self.per_request_prefix_coverage:
                 METRICS.cache_request_prefix_coverage(coverage * 100)
 
-        if self.total_host_kv_blocks != 0:
+        if self.total_host_kv_bytes != 0:
             METRICS.cache_used_host_kv_pct(self.used_host_kv_pct * 100)
-            METRICS.cache_h2d_blocks_copied(self.h2d_blocks_copied)
-            METRICS.cache_d2h_blocks_copied(self.d2h_blocks_copied)
+            METRICS.cache_h2d_bytes_copied(self.h2d_bytes_copied)
+            METRICS.cache_d2h_bytes_copied(self.d2h_bytes_copied)
+            METRICS.cache_connector_loads_refused(self.connector_loads_refused)
+            METRICS.cache_connector_offload_blocks_dropped(
+                self.connector_offload_blocks_dropped
+            )
 
-        if self.total_disk_kv_blocks != 0:
+        # Outside the host tier's guard: dKV reports no host tier.
+        if self.connector_load_failures:
+            METRICS.cache_connector_load_failures(self.connector_load_failures)
+
+        if self.total_disk_kv_bytes != 0:
             METRICS.cache_used_disk_kv_pct(self.used_disk_kv_pct * 100)
-            METRICS.cache_disk_blocks_read(self.disk_blocks_read)
-            METRICS.cache_disk_blocks_written(self.disk_blocks_written)
+            METRICS.cache_disk_bytes_read(self.disk_bytes_read)
+            METRICS.cache_disk_bytes_written(self.disk_bytes_written)
 
         if self.nixl_read_latency_avg_ms > 0:
             METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)
+            # The peak is the point of the pair: a spike on one request is
+            # exactly what a per-batch console line is least likely to show
+            # anyone, and a dashboard is where a tail argument is made.
+            METRICS.dkv_nixl_read_latency_max(self.nixl_read_latency_max_ms)
             METRICS.dkv_nixl_read_gib_per_s(self.nixl_read_gib_per_s)
         if self.nixl_write_latency_avg_ms > 0:
             METRICS.dkv_nixl_write_latency(self.nixl_write_latency_avg_ms)
@@ -936,6 +1248,13 @@ class BatchMetrics:
             METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+        # Its own guard, not the cache-hit clause: this is a per-window delta
+        # that ``take_metrics_aggregated`` clears after every batch, so a window
+        # published under a different batch type would lose its count for good.
+        # Keyed on a tier being attached rather than on it moving blocks, so a
+        # dead tier reads a flat zero instead of nothing.
+        if self.dkv_read_blocks > 0 or self.dkv_total_clients > 0:
+            METRICS.dkv_read_blocks(self.dkv_read_blocks)
 
         # Publish dKV health whenever a dKV tier is attached, independent of
         # transfer activity, because a dead tier does no transfers and yet is
@@ -944,6 +1263,28 @@ class BatchMetrics:
             METRICS.dkv_connected_clients(self.dkv_connected_clients)
             METRICS.dkv_total_clients(self.dkv_total_clients)
             METRICS.dkv_reconnect_attempts(self.dkv_reconnect_attempts)
+            # Same guard as the health gauges: per-window deltas, so a window
+            # skipped here loses its count for good.
+            METRICS.dkv_peer_attaches(self.dkv_peer_attaches)
+            METRICS.dkv_peer_attach_failures(self.dkv_peer_attach_failures)
+            METRICS.dkv_peers_dropped(self.dkv_peers_dropped)
+            METRICS.dkv_peer_loads(self.dkv_peer_loads)
+            METRICS.dkv_peer_load_failures(self.dkv_peer_load_failures)
+            METRICS.dkv_hints_rejected(self.dkv_hints_rejected)
+            # Labeled counters only move by their increment, so a zero would
+            # cost a trip through the telemetry queue and change nothing.
+            for reason, count in _moved(self.dkv_hints_rejected_by_reason):
+                METRICS.dkv_hints_rejected_by_reason(count, reason=reason)
+            for op, calls in _moved(self.dkv_rpc_calls):
+                METRICS.dkv_rpc_calls(calls, op=op)
+            for op, ms in _moved(self.dkv_rpc_time_ms):
+                METRICS.dkv_rpc_time_ms(ms, op=op)
+            for op, ms in _moved(self.dkv_rpc_socket_wait_ms):
+                METRICS.dkv_rpc_socket_wait_ms(ms, op=op)
+            for entry, waits in _moved(self.dkv_lock_waits):
+                METRICS.dkv_lock_waits(waits, entry=entry)
+            for entry, ms in _moved(self.dkv_lock_wait_ms):
+                METRICS.dkv_lock_wait_ms(ms, entry=entry)
 
         if self.draft_tokens_generated > 0:
             METRICS.spec_decode_avg_acceptance_length(
@@ -1004,6 +1345,8 @@ def publish_completed_batch_metrics(
     METRICS.batch_prompt_throughput(prompt_throughput, batch_type=bt)
     METRICS.batch_generation_throughput(generation_throughput, batch_type=bt)
     METRICS.batch_execution_time(stats.execution_time_s * 1000, batch_type=bt)
+    if stats.early_sync_duration_s is not None:
+        METRICS.di_early_sync_time(stats.early_sync_duration_s * 1000)
 
 
 class SchedulerLogger:
@@ -1120,6 +1463,16 @@ class SchedulerLogger:
             logger.info(metrics.pretty_format(), extra=metrics.to_log_extra())
 
 
+def held_blocks_per_leaf(
+    kv_cache: PagedKVCacheManagerInterface, ctx: TextContext
+) -> dict[str, int]:
+    """Returns how many blocks the request holds in each KV leaf."""
+    return {
+        leaf_id: len(blocks)
+        for leaf_id, blocks in kv_cache.get_req_blocks_per_leaf(ctx).items()
+    }
+
+
 def get_cancelled_reqs(
     cancel_q: MAXPullQueue[list[RequestID]],
 ) -> list[RequestID]:
@@ -1136,22 +1489,3 @@ def get_cancelled_reqs(
         for req_id in req_ids:
             cancelled_reqs.append(req_id)
     return cancelled_reqs
-
-
-def reshape_flat_kv_blocks_to_grid(
-    flat_blocks: list[Buffer], dp: int, group_name: str
-) -> list[list[Buffer]]:
-    """Reshape a flat per-device buffer list into ``[dp][tp]`` row-major.
-
-    Matches the primary tensor grid that ``KVTransferEngine`` expects
-    when registering an extra tensor group. ``flat_blocks`` is
-    ``[r0t0, r0t1, ..., r0t(tp-1), r1t0, ...]`` as produced by
-    ``PagedKVCacheManager.runtime_inputs``.
-    """
-    tp = len(flat_blocks) // dp
-    if dp * tp != len(flat_blocks):
-        raise ValueError(
-            f"{group_name} KV tensor group has {len(flat_blocks)} "
-            f"buffers, not divisible by DP={dp}."
-        )
-    return [list(flat_blocks[r * tp : (r + 1) * tp]) for r in range(dp)]

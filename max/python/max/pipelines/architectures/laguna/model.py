@@ -55,14 +55,9 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
     model_config_cls: ClassVar[type[Any]] = LagunaConfig
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
-
-    # Empirically determined headroom reserved per device when CUDA graph
-    # capture is enabled, on top of the activation memory we account for
-    # explicitly. Without this, capture can OOM on large MoE models.
-    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
     @classmethod
     def estimate_activation_memory(
@@ -129,21 +124,13 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         activation_memory = moe_activation_memory + ep_buffer_memory
 
-        graph_capture_headroom = 0
-        if pipeline_config.runtime.device_graph_capture:
-            graph_capture_headroom = (
-                cls._GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE * n_gpus_per_node
-            )
-            activation_memory += graph_capture_headroom
-
         if activation_memory != 0:
             logger.info(
                 "Estimated activation memory: %s "
-                "(ep_buffers=%s, moe_activation=%s, graph_capture=%s)",
+                "(ep_buffers=%s, moe_activation=%s)",
                 to_human_readable_bytes(activation_memory),
                 to_human_readable_bytes(ep_buffer_memory),
                 to_human_readable_bytes(moe_activation_memory),
-                to_human_readable_bytes(graph_capture_headroom),
             )
 
         return activation_memory
@@ -151,7 +138,9 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> LagunaConfig:
         model_config = LagunaConfig.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -224,9 +213,7 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
                 next(inputs_iter).buffer for _ in range(num_devices)
             ]
 
-            num_kv_inputs = len(
-                nn_model.kv_params.get_symbolic_inputs().flatten()
-            )
+            num_kv_inputs = len(nn_model.kv_params.flattened_kv_inputs())
             kv_cache_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
             kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
 

@@ -74,13 +74,11 @@ from std.sys.defines import get_defined_int
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
+    TileTensor,
 )
 from std.utils.index import IndexList
 from nn.fused_qk_rope import fused_qk_rope_ragged
@@ -400,7 +398,7 @@ def run_one_case(
     fill_freqs(freqs_host.as_span(), freq_rows)
 
     # --- cache_lengths + paged lookup table ----------------------------------
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](
         max(1, batch_size)
     )
     for i in range(batch_size):
@@ -408,9 +406,7 @@ def run_one_case(
 
     var max_pages_per_batch = align_up(ceildiv(max_post, PAGE_SIZE), 8)
     var lut_size = max(1, batch_size * max_pages_per_batch)
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     for i in range(lut_size):
         lookup_table_host[i] = UInt32(0)
     var page_offset = 0
@@ -423,7 +419,7 @@ def run_one_case(
         page_offset += num_pages_i
 
     # --- input_row_offsets (ragged Q prefix sum) -----------------------------
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     row_offsets_host[0] = UInt32(0)
@@ -440,58 +436,55 @@ def run_one_case(
         freq_rows * ROPE_DIM
     )
     ctx.enqueue_copy(freqs_device, freqs_host)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](
         max(1, batch_size)
     )
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
     # --- PagedKVCacheCollection ----------------------------------------------
-    var blocks_lt = LayoutTensor[dtype, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(block_shape[0])
+    blocks_shape[2] = Int64(block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        block_shape[1]
+        * block_shape[2]
+        * block_shape[3]
+        * block_shape[4]
+        * block_shape[5]
     )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    blocks_strides[1] = Int64(
+        block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
     )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
+    var blocks = TileTensor(
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
     )
-
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, PAGE_SIZE](
-        LayoutTensor[dtype, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = Collection(
+        blocks.as_unsafe_any_origin(),
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -514,7 +507,7 @@ def run_one_case(
         kv_collection.CacheType, interleaved=INTERLEAVED, target="gpu"
     ](
         q_proj=q_proj,
-        input_row_offsets=row_offsets.as_immut(),
+        input_row_offsets=row_offsets.as_imm(),
         kv_collection=kv_collection,
         freqs_cis=freqs,
         position_ids=None,
@@ -574,10 +567,10 @@ def _rope_ref(
         out_span[out_base + d] = x[base + d]
     # Roped suffix: ROPE_DIM elements as interleaved (re, im) pairs.
     for j in range(ROPE_DIM // 2):
-        var x_re = x[base + UNROPED_DIM + 2 * j].cast[DType.float64]()
-        var x_im = x[base + UNROPED_DIM + 2 * j + 1].cast[DType.float64]()
-        var f_re = freqs[post * ROPE_DIM + 2 * j].cast[DType.float64]()
-        var f_im = freqs[post * ROPE_DIM + 2 * j + 1].cast[DType.float64]()
+        var x_re = x[base + UNROPED_DIM + 2 * j].cast[.float64]()
+        var x_im = x[base + UNROPED_DIM + 2 * j + 1].cast[.float64]()
+        var f_re = freqs[post * ROPE_DIM + 2 * j].cast[.float64]()
+        var f_im = freqs[post * ROPE_DIM + 2 * j + 1].cast[.float64]()
         out_span[out_base + UNROPED_DIM + 2 * j] = (
             x_re * f_re - x_im * f_im
         ).cast[dtype]()

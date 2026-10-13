@@ -30,9 +30,9 @@ from std.sys._assembly import inlined_assembly
 from std.sys.info import CompilationTarget, _is_amd_cdna
 from std.sys.defines import get_defined_bool
 
-from std.gpu.intrinsics import Scope
+from max.gpu.intrinsics import Scope
 
-from std.gpu._utils import to_i32, to_llvm_shared_mem_ptr
+from max.gpu._utils import to_i32, to_llvm_shared_mem_ptr
 
 # ===-----------------------------------------------------------------------===#
 # barrier
@@ -46,7 +46,7 @@ comptime MaxHardwareBarriers = 16
 """Maximum number of hardware barriers available per block."""
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def named_barrier[
     num_threads: Int32,
 ](id: Int32 = 0):
@@ -83,7 +83,7 @@ def named_barrier[
     ](to_i32(id), to_i32(num_threads))
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def named_barrier_arrive[
     num_threads: Int32,
 ](id: Int32 = 0):
@@ -112,7 +112,7 @@ def named_barrier_arrive[
     __mlir_op.`nvvm.barrier.arrive`(to_i32(id), to_i32(num_threads))
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def barrier():
     """Performs a synchronization barrier at the block level.
 
@@ -222,32 +222,33 @@ struct AMDScheduleBarrierMask(
         Args:
             writer: The object to write to.
         """
-        if self == Self.NONE:
-            return writer.write_string("NONE")
-        elif self == Self.ALL_ALU:
-            return writer.write_string("ALL_ALU")
-        elif self == Self.VALU:
-            return writer.write_string("VALU")
-        elif self == Self.SALU:
-            return writer.write_string("SALU")
-        elif self == Self.MFMA:
-            return writer.write_string("MFMA")
-        elif self == Self.ALL_VMEM:
-            return writer.write_string("ALL_VMEM")
-        elif self == Self.VMEM_READ:
-            return writer.write_string("VMEM_READ")
-        elif self == Self.VMEM_WRITE:
-            return writer.write_string("VMEM_WRITE")
-        elif self == Self.ALL_DS:
-            return writer.write_string("ALL_DS")
-        elif self == Self.DS_READ:
-            return writer.write_string("DS_READ")
-        elif self == Self.DS_WRITE:
-            return writer.write_string("DS_WRITE")
-        elif self == Self.TRANS:
-            return writer.write_string("TRANS")
-        else:
-            abort("invalid AMDScheduleBarrierMask value")
+        match self:
+            case .NONE:
+                return writer.write_string("NONE")
+            case .ALL_ALU:
+                return writer.write_string("ALL_ALU")
+            case .VALU:
+                return writer.write_string("VALU")
+            case .SALU:
+                return writer.write_string("SALU")
+            case .MFMA:
+                return writer.write_string("MFMA")
+            case .ALL_VMEM:
+                return writer.write_string("ALL_VMEM")
+            case .VMEM_READ:
+                return writer.write_string("VMEM_READ")
+            case .VMEM_WRITE:
+                return writer.write_string("VMEM_WRITE")
+            case .ALL_DS:
+                return writer.write_string("ALL_DS")
+            case .DS_READ:
+                return writer.write_string("DS_READ")
+            case .DS_WRITE:
+                return writer.write_string("DS_WRITE")
+            case .TRANS:
+                return writer.write_string("TRANS")
+            case _:
+                abort("invalid AMDScheduleBarrierMask value")
 
     def __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.
@@ -258,7 +259,7 @@ struct AMDScheduleBarrierMask(
         return Int(self._value)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def schedule_barrier(
     mask: AMDScheduleBarrierMask = AMDScheduleBarrierMask.NONE,
 ):
@@ -285,7 +286,7 @@ def schedule_barrier(
     llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def schedule_group_barrier(
     mask: AMDScheduleBarrierMask, size: Int32, sync_id: Int32
 ):
@@ -363,7 +364,7 @@ struct _WaitCountArg:
         return Self.MAX & (cnt << 8)
 
 
-@always_inline
+@inline(.always)
 def s_waitcnt[
     *,
     vmcnt: UInt32 = _WaitCountArg.MAX_VM_CNT,
@@ -400,7 +401,7 @@ def s_waitcnt[
     llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](waitcnt_val)
 
 
-@always_inline
+@inline(.always)
 def s_waitcnt_barrier[
     *,
     vmcnt: UInt32 = _WaitCountArg.MAX_VM_CNT,
@@ -435,7 +436,7 @@ def s_waitcnt_barrier[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def syncwarp(mask: Int = -1):
     """Synchronizes threads within a warp using a barrier.
 
@@ -484,7 +485,7 @@ def syncwarp(mask: Int = -1):
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _mbarrier_impl[
     type: AnyType, address_space: AddressSpace
 ](address: Pointer[mut=True, type, _, address_space=address_space]):
@@ -497,24 +498,22 @@ def _mbarrier_impl[
         address: Pointer to the memory barrier object location.
     """
 
-    comptime if address_space == AddressSpace.SHARED:
-        llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType](
-            address
-        )
-    elif (
-        address_space == AddressSpace.GLOBAL
-        or address_space == AddressSpace.GENERIC
-    ):
-        llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
-            address.unsafe_address_space_cast[
-                AddressSpace.GENERIC
-            ]()._get_kgen_pointer()
-        )
-    else:
-        comptime assert False, "invalid address space"
+    comptime match address_space:
+        case .SHARED:
+            llvm_intrinsic[
+                "llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType
+            ](address)
+        case .GLOBAL | .GENERIC:
+            llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
+                address.unsafe_address_space_cast[
+                    .GENERIC
+                ]()._get_kgen_pointer()
+            )
+        case _:
+            comptime assert False, "invalid address space"
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _mbarrier_noinc_impl[
     type: AnyType, address_space: AddressSpace
 ](address: Pointer[mut=True, type, _, address_space=address_space]):
@@ -528,7 +527,7 @@ def _mbarrier_noinc_impl[
         address: Pointer to the memory barrier object location.
     """
 
-    comptime if address_space == AddressSpace.SHARED:
+    comptime if address_space == .SHARED:
         llvm_intrinsic[
             "llvm.nvvm.cp.async.mbarrier.arrive.noinc.shared", NoneType
         ](address)
@@ -536,7 +535,7 @@ def _mbarrier_noinc_impl[
         comptime assert False, "invalid address space"
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def async_copy_arrive[
     type: AnyType, address_space: AddressSpace, *, noinc: Bool = False
 ](address: Pointer[mut=True, type, _, address_space=address_space]):
@@ -572,11 +571,11 @@ def async_copy_arrive[
         ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def mbarrier_init[
     type: AnyType
 ](
-    shared_mem: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
+    shared_mem: Pointer[mut=True, type, _, address_space=.SHARED],
     num_threads: Int32,
 ):
     """Initialize a shared memory barrier for synchronizing multiple threads.
@@ -593,8 +592,9 @@ def mbarrier_init[
     """
 
     comptime if is_nvidia_gpu():
-        llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
-            shared_mem, num_threads
+        # Layout 0 is the default in-memory layout.
+        llvm_intrinsic["llvm.nvvm.mbarrier.init", NoneType](
+            shared_mem, num_threads, Int32(0)
         )
     else:
         CompilationTarget.unsupported_target_error[
@@ -603,12 +603,10 @@ def mbarrier_init[
         ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def mbarrier_arrive[
     type: AnyType
-](
-    shared_mem: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED]
-) -> Int:
+](shared_mem: Pointer[mut=True, type, _, address_space=.SHARED]) -> Int:
     """Signal thread arrival at a shared memory barrier.
 
     Records that the calling thread has reached the barrier synchronization point.
@@ -635,11 +633,11 @@ def mbarrier_arrive[
         ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def mbarrier_test_wait[
     type: AnyType
 ](
-    shared_mem: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
+    shared_mem: Pointer[mut=True, type, _, address_space=.SHARED],
     state: Int,
 ) -> Bool:
     """Test if all threads have arrived at the memory barrier.
@@ -669,13 +667,10 @@ def mbarrier_test_wait[
         ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def mbarrier_arrive_expect_tx_shared[
     type: AnyType  # The type of the memory barrier
-](
-    addr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
-    tx_count: Int32,
-):
+](addr: Pointer[mut=True, type, _, address_space=.SHARED], tx_count: Int32,):
     """Configure a shared memory barrier to expect additional async transactions.
 
     Updates the current phase of the memory barrier to track completion of
@@ -700,13 +695,13 @@ def mbarrier_arrive_expect_tx_shared[
         ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def mbarrier_arrive_expect_tx_relaxed[
     type: AnyType,  # The type of the memory barrier
     scope: Scope = Scope.BLOCK,
     space: Scope = Scope.BLOCK,
 ](
-    addr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
+    addr: Pointer[mut=True, type, _, address_space=.SHARED],
     tx_count: Int32,
 ) -> UInt64:
     """Configure a shared memory barrier to expect additional async transactions.
@@ -764,11 +759,11 @@ def mbarrier_arrive_expect_tx_relaxed[
         ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def mbarrier_try_wait_parity_shared[
     type: AnyType  # The type of the memory barrier
 ](
-    addr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED],
+    addr: Pointer[mut=True, type, _, address_space=.SHARED],
     phase: Int32,
     ticks: Int32,
 ):
@@ -797,10 +792,10 @@ def mbarrier_try_wait_parity_shared[
         ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def umma_arrive_leader_cta[
     type: AnyType
-](mbar_ptr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED]):
+](mbar_ptr: Pointer[mut=True, type, _, address_space=.SHARED]):
     """Signal arrival at the barrier to the leader CTA of the pair.
 
     This function signals arrival at the barrier to the leader CTA of the pair.
@@ -821,10 +816,10 @@ def umma_arrive_leader_cta[
     ](Int32(Int(mbar_ptr)) & 0xFEFFFFFF)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def umma_arrive_peer_cta[
     type: AnyType
-](mbar_ptr: Pointer[mut=True, type, _, address_space=AddressSpace.SHARED]):
+](mbar_ptr: Pointer[mut=True, type, _, address_space=.SHARED]):
     """Signal arrival at the barrier on the peer CTA of the pair.
 
     This is the mirror of `umma_arrive_leader_cta`. Where the leader variant
@@ -848,7 +843,7 @@ def umma_arrive_peer_cta[
     ](Int32(Int(mbar_ptr)) | 0x01000000)
 
 
-@always_inline
+@inline(.always)
 def cp_async_bulk_commit_group():
     """Commits all prior initiated but uncommitted cp.async.bulk instructions into a cp.async.bulk-group.
 
@@ -873,7 +868,7 @@ def cp_async_bulk_commit_group():
         ]()
 
 
-@always_inline
+@inline(.always)
 def cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
     """Waits for completion of asynchronous bulk memory transfer groups.
 
@@ -903,7 +898,6 @@ def cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
         ```
     """
 
-    @__parameter
     def get_asm() -> String:
         comptime base = "llvm.nvvm.cp.async.bulk.wait.group"
         if read:

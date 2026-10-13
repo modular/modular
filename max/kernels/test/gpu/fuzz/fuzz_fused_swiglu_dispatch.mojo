@@ -43,11 +43,12 @@ from std.sys.defines import get_defined_bool, get_defined_int
 from std.memory.unsafe import bitcast
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_mxfp8_dispatch,
     grouped_matmul_swiglu_mxfp8_dispatch,
 )
+from linalg.swiglu_activation import get_swiglu_activation
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
@@ -77,6 +78,9 @@ comptime H = N // 2
 comptime CLAMP = get_defined_bool["clamp_activation", True]()
 comptime ALPHA = Float32(1.702)
 comptime LIMIT = Float32(7.0)
+comptime ACTIVATION = get_swiglu_activation[
+    "swigluoai" if CLAMP else "silu", ALPHA, LIMIT if CLAMP else 0.0
+]
 
 comptime MAX_M_PER_EXPERT = 512
 
@@ -144,14 +148,10 @@ def run_one_case(
     comptime n_groups_b = ceildiv(N, SF_MN_GROUP_SIZE)
 
     # Offsets sized at the comptime num_experts upper bound; tail padded.
-    var a_off_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        num_experts + 1
-    )
-    var a_sc_off_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        num_experts
-    )
-    var eids_host = ctx.enqueue_create_host_buffer[DType.int32](num_experts)
-    var escale_host = ctx.enqueue_create_host_buffer[DType.float32](num_experts)
+    var a_off_host = ctx.enqueue_create_host_buffer[.uint32](num_experts + 1)
+    var a_sc_off_host = ctx.enqueue_create_host_buffer[.uint32](num_experts)
+    var eids_host = ctx.enqueue_create_host_buffer[.int32](num_experts)
+    var escale_host = ctx.enqueue_create_host_buffer[.float32](num_experts)
     for i in range(num_experts):
         escale_host[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
@@ -177,27 +177,23 @@ def run_one_case(
     rand(b_host.unsafe_ptr(), num_experts * N * K)
 
     var a_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var a_scales_total = a_scales_shape.product()
     var a_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
         a_scales_total
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups_b],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups_b],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_total = b_scales_shape.product()
     var b_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
@@ -232,22 +228,20 @@ def run_one_case(
     var b_dev = ctx.enqueue_create_buffer[a_type](num_experts * N * K)
     var a_scales_dev = ctx.enqueue_create_buffer[scales_dtype](a_scales_total)
     var b_scales_dev = ctx.enqueue_create_buffer[scales_dtype](b_scales_total)
-    var a_off_dev = ctx.enqueue_create_buffer[DType.uint32](num_experts + 1)
-    var a_sc_off_dev = ctx.enqueue_create_buffer[DType.uint32](num_experts)
-    var eids_dev = ctx.enqueue_create_buffer[DType.int32](num_experts)
-    var escale_dev = ctx.enqueue_create_buffer[DType.float32](num_experts)
+    var a_off_dev = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
+    var a_sc_off_dev = ctx.enqueue_create_buffer[.uint32](num_experts)
+    var eids_dev = ctx.enqueue_create_buffer[.int32](num_experts)
+    var escale_dev = ctx.enqueue_create_buffer[.float32](num_experts)
     var c_ref_dev = ctx.enqueue_create_buffer[c_type](M * N)
     var o_ref_dev = ctx.enqueue_create_buffer[fp8_dtype](M * H)
     var o_test_dev = ctx.enqueue_create_buffer[fp8_dtype](M * H)
 
     var swiglu_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups_swiglu],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups_swiglu],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var s_size = swiglu_scales_shape.product()
     var s_ref_dev = ctx.enqueue_create_buffer[scales_dtype](s_size)
@@ -278,18 +272,14 @@ def run_one_case(
     ctx.enqueue_copy(eids_dev, eids_host)
     ctx.enqueue_copy(escale_dev, escale_host)
 
-    var a_tt = TileTensor(a_dev, row_major(Coord(M, Idx[K])))
-    var b_tt = TileTensor(
-        b_dev, row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    )
-    var a_off_tt = TileTensor(a_off_dev, row_major(Coord(Idx[num_experts + 1])))
-    var a_sc_off_tt = TileTensor(
-        a_sc_off_dev, row_major(Coord(Idx[num_experts]))
-    )
-    var eids_tt = TileTensor(eids_dev, row_major(Coord(Idx[num_experts])))
-    var c_ref_tt = TileTensor(c_ref_dev, row_major(Coord(M, Idx[N])))
-    var o_ref_tt = TileTensor(o_ref_dev, row_major(Coord(M, Idx[H])))
-    var o_test_tt = TileTensor(o_test_dev, row_major(Coord(M, Idx[H])))
+    var a_tt = TileTensor(a_dev, row_major(M, Idx[K]))
+    var b_tt = TileTensor(b_dev, row_major(Idx[num_experts], Idx[N], Idx[K]))
+    var a_off_tt = TileTensor(a_off_dev, row_major(Idx[num_experts + 1]))
+    var a_sc_off_tt = TileTensor(a_sc_off_dev, row_major(Idx[num_experts]))
+    var eids_tt = TileTensor(eids_dev, row_major(Idx[num_experts]))
+    var c_ref_tt = TileTensor(c_ref_dev, row_major(M, Idx[N]))
+    var o_ref_tt = TileTensor(o_ref_dev, row_major(M, Idx[H]))
+    var o_test_tt = TileTensor(o_test_dev, row_major(M, Idx[H]))
     var s_ref_tt = TileTensor(s_ref_dev, swiglu_scales_shape)
     var s_test_tt = TileTensor(s_test_dev, swiglu_scales_shape)
 
@@ -300,7 +290,7 @@ def run_one_case(
         b_scales_dev, b_scales_shape
     ).as_unsafe_any_origin()
     var escale_tt = TileTensor(
-        escale_dev, row_major(Coord(Int64(num_experts)))
+        escale_dev, row_major(Int64(num_experts))
     ).as_unsafe_any_origin()
 
     # ---- REF: unfused matmul -> bf16 -> standalone SwiGLU epilogue. ----
@@ -319,9 +309,9 @@ def run_one_case(
         ctx,
     )
     comptime hw_info = ctx.default_device_info
-    var c_ref_immut = c_ref_tt.as_immut()
-    var a_off_immut = a_off_tt.as_immut()
-    var a_sc_off_immut = a_sc_off_tt.as_immut()
+    var c_ref_immut = c_ref_tt.as_imm()
+    var a_off_immut = a_off_tt.as_imm()
+    var a_sc_off_immut = a_sc_off_tt.as_imm()
     comptime ref_epilogue = fused_silu_mxfp8_interleaved_kernel[
         fp8_dtype,
         scales_dtype,
@@ -333,7 +323,7 @@ def run_one_case(
         a_sc_off_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
-        clamp_activation=CLAMP,
+        activation=ACTIVATION,
     ]
     ctx.enqueue_function[ref_epilogue](
         o_ref_tt,
@@ -341,8 +331,6 @@ def run_one_case(
         c_ref_immut,
         a_off_immut,
         a_sc_off_immut,
-        ALPHA,
-        LIMIT,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )
@@ -352,7 +340,7 @@ def run_one_case(
         transpose_b=transpose_b,
         match_bf16=True,
         use_inplace=True,
-        clamp_activation=CLAMP,
+        activation=ACTIVATION,
     ](
         o_test_tt,
         s_test_tt,
@@ -367,8 +355,6 @@ def run_one_case(
         nae,
         M,
         ctx,
-        ALPHA,
-        LIMIT,
     )
     ctx.synchronize()
 
@@ -385,18 +371,14 @@ def run_one_case(
 
         var o_mismatch = 0
         for i in range(M * H):
-            var rb = bitcast[DType.uint8, 1](SIMD[fp8_dtype, 1](o_ref_h[i]))[0]
-            var tb = bitcast[DType.uint8, 1](SIMD[fp8_dtype, 1](o_test_h[i]))[0]
+            var rb = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](o_ref_h[i]))[0]
+            var tb = bitcast[.uint8, 1](SIMD[fp8_dtype, 1](o_test_h[i]))[0]
             if rb != tb:
                 o_mismatch += 1
         var s_mismatch = 0
         for i in range(s_size):
-            var rb = bitcast[DType.uint8, 1](SIMD[scales_dtype, 1](s_ref_h[i]))[
-                0
-            ]
-            var tb = bitcast[DType.uint8, 1](
-                SIMD[scales_dtype, 1](s_test_h[i])
-            )[0]
+            var rb = bitcast[.uint8, 1](SIMD[scales_dtype, 1](s_ref_h[i]))[0]
+            var tb = bitcast[.uint8, 1](SIMD[scales_dtype, 1](s_test_h[i]))[0]
             if rb != tb:
                 s_mismatch += 1
         if o_mismatch != 0 or s_mismatch != 0:

@@ -18,11 +18,13 @@ from typing import ClassVar
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import validate_wan_max_pixel_area
+from max.pipelines.diffusion.config import TaylorSeerDefaults
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types import PipelineTask
+from transformers import AutoConfig
 from typing_extensions import Self
 
 from .context import WanContext
@@ -49,10 +51,21 @@ class WanArchConfig(ArchConfig):
         return 512
 
     @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        del huggingface_config, model_config
+        return 512
+
+    @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         if model_config is None:
             model_config = pipeline_config.models.get("transformer")
@@ -67,6 +80,11 @@ class WanArchConfig(ArchConfig):
             raise ValueError("Wan is only supported on a single device")
         return cls(pipeline_config=pipeline_config)
 
+
+# TaylorSeer defaults (from https://github.com/Shenyi-Z/TaylorSeer).
+_WAN_TAYLORSEER_DEFAULTS = TaylorSeerDefaults(
+    cache_interval=5, warmup_steps=4, max_order=1
+)
 
 wan_arch = SupportedArchitecture(
     name="WanPipeline",
@@ -85,6 +103,7 @@ wan_arch = SupportedArchitecture(
     tokenizer=WanTokenizer,
     config=WanArchConfig,
     context_validators=[validate_wan_max_pixel_area],
+    denoising_cache_defaults=_WAN_TAYLORSEER_DEFAULTS,
 )
 
 wan_i2v_arch = SupportedArchitecture(
@@ -102,4 +121,5 @@ wan_i2v_arch = SupportedArchitecture(
     tokenizer=WanTokenizer,
     config=WanArchConfig,
     context_validators=[validate_wan_max_pixel_area],
+    denoising_cache_defaults=_WAN_TAYLORSEER_DEFAULTS,
 )

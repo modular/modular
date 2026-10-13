@@ -27,7 +27,7 @@ simple question is runaway. The scenario checks:
 4. json_schema + implicit tool call mix (Gemma sometimes mishandles this).
 5. json_object response_format with a one-field object request.
 6. json_schema with a missing top-level "type" (the deterministic broken-grammar
-   runaway; fixed by normalize_response_format_schema).
+   runaway; xgrammar anchors object-shaped untyped schemas so it no longer fires).
 7. A multi-turn "final-answer" research/citation turn with a deep nested
    reasoning schema (many field_paths) + tool_choice=auto + tools, UNCAPPED —
    a legitimately long
@@ -300,8 +300,7 @@ def _detect_repetition_loop(
         for i in range(p, m):
             if tail[i] == tail[i - p]:
                 run += 1
-                if run > max_run:
-                    max_run = run
+                max_run = max(max_run, run)
             else:
                 run = 0
         if max_run == 0:

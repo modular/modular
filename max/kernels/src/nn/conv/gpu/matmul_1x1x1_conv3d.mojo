@@ -30,7 +30,7 @@ the QRSCF dispatch chain, before `dispatch_im2col_matmul_conv3d`.
 """
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
@@ -85,7 +85,7 @@ def dispatch_1x1x1_matmul_conv3d[
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
     comptime assert output.flat_rank == 5, "output must be rank 5 (NDHWC)"
 
-    comptime if input_type != DType.bfloat16:
+    comptime if input_type != .bfloat16:
         return False
 
     if num_groups != 1:
@@ -147,23 +147,25 @@ def dispatch_1x1x1_matmul_conv3d[
     # --- Zero-copy TileTensor views of input, filter, output. ---
     # Input NDHWC is already C-innermost contiguous, so [M, C_in] with
     # M = batch * D_out * H_out * W_out is a pure pointer reinterpret.
-    var a_tt = TileTensor(input.ptr, row_major(Coord(full_M, K)))
-    var c_tt = TileTensor(output.ptr, row_major(Coord(full_M, N)))
+    var a_tt = input.reshape(row_major(full_M, K))
+    var c_tt = output.reshape(row_major(full_M, N))
 
-    comptime if maybe_epilogue_func:
-        comptime epilogue_5d = maybe_epilogue_func.value()
+    comptime if case .Some(epilogue_5d) = maybe_epilogue_func:
 
         @__parameter
-        @always_inline
+        @inline(.always)
         @__copy_capture(DHW_out, HW_out, H_out, W_out)
         def _gemm_epilogue[
             _dtype: DType,
             _width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-            var m_idx = coords_2d[0]
-            var n_idx = coords_2d[1]
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+            comptime assert (
+                coords_2d.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var m_idx = Int(coords_2d[0].value())
+            var n_idx = Int(coords_2d[1].value())
             var batch_idx = m_idx // DHW_out
             var sp = m_idx - batch_idx * DHW_out
             var d_idx = sp // HW_out
@@ -171,44 +173,44 @@ def dispatch_1x1x1_matmul_conv3d[
             var h_idx = rem // W_out
             var w_idx = rem - h_idx * W_out
             epilogue_5d(
-                IndexList[5](batch_idx, d_idx, h_idx, w_idx, n_idx),
+                (batch_idx, d_idx, h_idx, w_idx, n_idx),
                 rebind[SIMD[output_type, _width]](val),
             )
 
         comptime if filter_is_fcrs:
             # FCQRS [F, C, 1, 1, 1] -> [F, C] view. _matmul_gpu wants
             # B as [N, K] row-major when transpose_b=True.
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(N, K)))
+            var b_tt = filter.reshape(row_major(N, K))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
                 elementwise_lambda_fn=Optional[elementwise_epilogue_type](
                     _gemm_epilogue
                 ),
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
         else:
             # QRSCF [1, 1, 1, C, F] -> [C, F] view. _matmul_gpu wants
             # B as [K, N] row-major when transpose_b=False.
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(K, N)))
+            var b_tt = filter.reshape(row_major(K, N))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=False,
                 elementwise_lambda_fn=Optional[elementwise_epilogue_type](
                     _gemm_epilogue
                 ),
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
     else:
         comptime if filter_is_fcrs:
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(N, K)))
+            var b_tt = filter.reshape(row_major(N, K))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
         else:
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(K, N)))
+            var b_tt = filter.reshape(row_major(K, N))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=False,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
 
     return True

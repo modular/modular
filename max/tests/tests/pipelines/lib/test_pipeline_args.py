@@ -24,14 +24,17 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 from types import UnionType
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import click
+import click.testing
+import cyclopts
 import pytest
 import yaml
+from cyclopts import Parameter
 from max._entrypoints.cli.config import pipeline_config_options
 from max.config import ConfigFileModel
-from max.pipelines.lib import PipelineArgs, PipelineConfig
+from max.pipelines.lib import PipelineArgs, PipelineConfig, ProfilingConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_args import (
@@ -39,6 +42,7 @@ from max.pipelines.lib.pipeline_args import (
     _SHARED_CONFIG_FIELDS,
 )
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.sampling import ToolCallPolicy
 from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import ValidationError
 
@@ -76,27 +80,75 @@ def test_every_cli_flag_routes_to_a_known_destination() -> None:
     )
 
 
-def test_from_args_threads_fold_sampler_and_pending_futures() -> None:
+def test_kernel_trace_limits_have_no_cli_flag() -> None:
+    """They are set only from a config file's ``profiling`` section."""
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None: ...
+
+    limits = {f for f in ProfilingConfig.model_fields if "kernel_trace" in f}
+    assert len(limits) == 4
+    assert not limits & {param.name for param in cli.params}
+
+
+def test_from_args_threads_runtime_flags() -> None:
     args = PipelineArgs(
-        runtime=PipelineRuntimeConfig(
-            fold_sampler_into_graph=True, max_pending_futures=2
-        )
+        runtime=PipelineRuntimeConfig(execute_empty_batches=True)
     )
     config = PipelineConfig.from_args(args)
-    assert config.runtime.fold_sampler_into_graph is True
-    assert config.runtime.max_pending_futures == 2
+    assert config.runtime.execute_empty_batches is True
 
 
 def test_runtime_flags_survive_flat_kwargs_path() -> None:
     # Non-default values for the fields this test guards, spelled the way
     # the CLI passes them (flat).
     config = PipelineConfig.from_args(
-        PipelineArgs.from_flat_kwargs(
-            fold_sampler_into_graph=True, max_pending_futures=2
-        )
+        PipelineArgs.from_flat_kwargs(execute_empty_batches=True)
     )
-    assert config.runtime.fold_sampler_into_graph is True
-    assert config.runtime.max_pending_futures == 2
+    assert config.runtime.execute_empty_batches is True
+
+
+def test_sampling_flags_survive_flat_kwargs_path() -> None:
+    # gen-mef passes enable_structured_output as a flat kwarg at
+    # construction; dropping it on this path would silently export a
+    # grammar-incapable sampler MEF.
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(enable_structured_output=True)
+    )
+    assert config.sampling.enable_structured_output is True
+
+
+def test_cascade_field_round_trips_through_flat_kwargs() -> None:
+    # ``--cascade`` is a top-level PipelineArgs bool surfaced by the serve
+    # CLI; it must survive the flat-kwargs path so ``cli_serve`` can branch on
+    # ``pipeline_args.cascade``.
+    assert PipelineArgs.from_flat_kwargs(cascade=False).cascade is False
+    assert PipelineArgs.from_flat_kwargs(cascade=True).cascade is True
+
+
+def test_tokenizer_impl_reaches_the_pipeline_config() -> None:
+    # Standard serving reads it off the config the tokenizer is built from;
+    # dropping it would silently serve the HuggingFace tokenizer.
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(tokenizer_impl="pkg.module:Encoder")
+    )
+    assert config.tokenizer_impl == "pkg.module:Encoder"
+    assert PipelineConfig.from_args(PipelineArgs()).tokenizer_impl is None
+
+
+def test_cascade_skips_huggingface_manifest_probe() -> None:
+    # Cascade accepts Cascade-only model paths (e.g. ``echo:``) that the
+    # HuggingFace manifest probe rejects. With ``--cascade`` set, the probe
+    # must be skipped so ``from_flat_kwargs`` does not fail before the serve
+    # entrypoint can forward to Cascade.
+    with pytest.raises(ValueError):
+        PipelineArgs.from_flat_kwargs(model_path="echo:org/some-model")
+    args = PipelineArgs.from_flat_kwargs(
+        cascade=True, model_path="echo:org/some-model"
+    )
+    assert args.cascade is True
+    assert args.model_path == "echo:org/some-model"
 
 
 def test_empty_models_kwarg_is_not_a_manifest_override() -> None:
@@ -118,6 +170,10 @@ _MATRIX_SKIP = {
     "kv_connector_config": "dict-valued: a merge policy, not precedence",
     "denoising_cache": "a subtree, driven via its own dotted path",
     "enable_lora": "enables its subtree; presence is the signal",
+    "first_block_caching": (
+        "mutually exclusive with taylorseer, the sibling the matrix would "
+        "pair it with"
+    ),
     "speculative_method": "enables its subtree; presence is the signal",
 }
 
@@ -241,3 +297,140 @@ def test_config_file_value_survives_and_cli_overrides_it(
         assert routed(sibling[0], **{field: from_cli}) == stored(
             sibling[0], sibling[1]
         ), "a CLI flag reset a sibling field set in the config file"
+
+
+_FROM_ARGS_REBUILT = ("profiling", "runtime", "sampling")
+
+_FROM_ARGS_CASES = [
+    (path, config_class, field, value)
+    for path, config_class, field, value, _ in _CASES
+    if path in _FROM_ARGS_REBUILT
+]
+
+
+@pytest.mark.parametrize(
+    ("path", "config_class", "field", "value"),
+    _FROM_ARGS_CASES,
+    ids=[f"{path}.{field}" for path, _c, field, _v in _FROM_ARGS_CASES],
+)
+def test_from_args_preserves_every_explicitly_set_field(
+    path: str, config_class: type[ConfigFileModel], field: str, value: Any
+) -> None:
+    """Every explicitly-set field must survive ``PipelineConfig.from_args``.
+
+    Regression guard for the kadabra-v5 incident (ENABLE-2881): ``from_args``
+    rebuilt ``SamplingConfig`` from a hand-picked field list that omitted the
+    tool-call policy field, so production served with it reset to its default
+    and ``tool_choice="required"`` was grammar-forced. Sweeping ``model_fields``
+    covers future fields the day they are added.
+    """
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(**{field: value})
+    )
+    expected = getattr(config_class(**{field: value}), field)
+    assert getattr(getattr(config, path), field) == expected, (
+        f"{path}.{field} was set via CLI flat kwargs but reset by "
+        "PipelineConfig.from_args — the worker would serve with the default"
+    )
+
+
+def test_tool_call_policy_reaches_worker_config() -> None:
+    """The exact field production lost; kept explicit so the incident's
+    reproducer survives even if the matrix's value derivation changes."""
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(
+            tool_call_policy=ToolCallPolicy.FORCE_UNCONSTRAINED
+        )
+    )
+    assert (
+        config.sampling.tool_call_policy is ToolCallPolicy.FORCE_UNCONSTRAINED
+    )
+
+
+def test_pipeline_args_surface_is_frozen() -> None:
+    """Top-level fields are fixed at construction; assignment raises."""
+    args = PipelineArgs(max_length=128)
+    field = "max_length"
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(args, field, 256)
+
+
+def test_model_copy_preserves_model_fields_set() -> None:
+    """Pins the ``model_copy`` invariant internal callers depend on: updated
+    keys are marked set and untouched fields stay unset, because
+    ``PipelineConfig.from_args`` rebuilds sub-configs from ``model_fields_set``.
+    """
+    args = PipelineArgs(max_length=128)
+    copied = args.model_copy(update={"max_length": 512})
+    assert copied.max_length == 512
+    assert args.max_length == 128
+    assert "max_length" in copied.model_fields_set
+    assert "model_path" not in copied.model_fields_set
+
+
+def test_private_attrs_stay_assignable() -> None:
+    """Callers set ``_weights_repo_id`` post-construction; frozen only
+    guards declared fields, not private attributes.
+    """
+    args = PipelineArgs()
+    args._weights_repo_id = "org/weights-repo"
+    assert args._weights_repo_id == "org/weights-repo"
+
+
+def test_cyclopts_flat_binding_constructs_a_new_instance() -> None:
+    """The cascade CLI binds PipelineArgs with ``Parameter(name="*")`` and a
+    default instance; cyclopts must build a fresh instance from parsed flags
+    (the constructor path) rather than mutating the default in place.
+    """
+    app = cyclopts.App(name="probe", help_formatter="plain")
+    default_args = PipelineArgs()
+    received: list[PipelineArgs] = []
+
+    @app.default
+    def probe(
+        pipeline_args: Annotated[
+            PipelineArgs, Parameter(name="*")
+        ] = default_args,
+    ) -> None:
+        received.append(pipeline_args)
+
+    try:
+        app(["--model-path", "org/some-model", "--max-length", "1234"])
+    except SystemExit as e:  # cyclopts may exit(0) after a command
+        if e.code:
+            raise
+
+    (args,) = received
+    assert args is not default_args
+    assert args.model_path == "org/some-model"
+    assert args.max_length == 1234
+    assert default_args.model_path == ""
+    assert default_args.max_length is None
+
+
+@pytest.mark.parametrize(
+    ("flag", "field"),
+    [
+        ("--use-dummy-weights", "header_only_weights"),
+        ("--draft-use-dummy-weights", "draft_header_only_weights"),
+    ],
+)
+def test_use_dummy_weights_flag_routes_to_header_only_weights(
+    flag: str, field: str
+) -> None:
+    """The user-facing flag names the effect; the field names the mechanism."""
+    seen: dict[str, Any] = {}
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None:
+        seen.update(kwargs)
+
+    result = click.testing.CliRunner().invoke(cli, [flag])
+    assert result.exit_code == 0, result.output
+    assert seen[field] is True
+    assert "header_only_weights" not in {
+        opt.lstrip("-").replace("-", "_")
+        for param in cli.params
+        for opt in param.opts
+    }

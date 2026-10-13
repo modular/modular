@@ -55,14 +55,17 @@ Usage:
 """
 
 from std.math import exp, recip
-from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import (
+    TileTensor,
+    CoordLike,
+    row_major,
+    Idx,
+)
 
 from linalg.matmul.gpu.sm100_structured.fused_swiglu.config import (
     FusedSwiGLUMatmulConfig,
@@ -72,13 +75,12 @@ from linalg.matmul.gpu.sm100_structured.fused_swiglu.dispatch import (
     matmul_swiglu_dispatch_sm100,
 )
 
-from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
+from std.utils.index import Index
 
 
 def swiglu_reference(
-    full_ptr: UnsafePointer[Scalar[DType.float32], _],
-    ref_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    full_ptr: ImmPointer[Float32, _],
+    ref_ptr: MutPointer[BFloat16, MutAnyOrigin],
     M: Int,
     N: Int,
 ):
@@ -92,9 +94,9 @@ def swiglu_reference(
         for h in range(H):
             var gate = full_ptr[m * N + 2 * h]
             var up = full_ptr[m * N + 2 * h + 1]
-            var sigmoid = recip(Scalar[DType.float32](1.0) + exp(-gate))
+            var sigmoid = recip(Float32(1.0) + exp(-gate))
             var result = gate * sigmoid * up
-            ref_ptr.store(m * H + h, result.cast[DType.bfloat16]())
+            ref_ptr.store(m * H + h, result.cast[.bfloat16]())
 
 
 def test_swiglu[
@@ -102,9 +104,7 @@ def test_swiglu[
     NType: CoordLike,
     KType: CoordLike,
     //,
-    config: FusedSwiGLUMatmulConfig[
-        DType.bfloat16, DType.bfloat16, DType.bfloat16, True
-    ],
+    config: FusedSwiGLUMatmulConfig[.bfloat16, .bfloat16, .bfloat16, True],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime dtype = DType.bfloat16
 
@@ -135,12 +135,10 @@ def test_swiglu[
         sep="",
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
-    var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
-    )
-    var full_shape = row_major(Coord(m, Idx[NType.static_value]))
-    var c_shape = row_major(Coord(m, Idx[NType.static_value // 2]))
+    var a_shape = row_major(m, Idx[KType.static_value])
+    var b_shape = row_major(Idx[NType.static_value], Idx[KType.static_value])
+    var full_shape = row_major(m, Idx[NType.static_value])
+    var c_shape = row_major(m, Idx[NType.static_value // 2])
 
     var a_size = M * K
     var b_size = N * K
@@ -151,7 +149,7 @@ def test_swiglu[
     var a_host = TileTensor(a_host_buf, a_shape)
     var b_host_buf = ctx.enqueue_create_host_buffer[dtype](b_size)
     var b_host = TileTensor(b_host_buf, b_shape)
-    var full_host_buf = ctx.enqueue_create_host_buffer[DType.float32](full_size)
+    var full_host_buf = ctx.enqueue_create_host_buffer[.float32](full_size)
     var full_host = TileTensor(full_host_buf, full_shape)
     var c_host_buf = ctx.enqueue_create_host_buffer[dtype](c_size)
     var c_host = TileTensor(c_host_buf, c_shape)
@@ -162,21 +160,21 @@ def test_swiglu[
     var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[dtype](b_size)
     var b_tensor = TileTensor(b_device, b_shape)
-    var full_device = ctx.enqueue_create_buffer[DType.float32](full_size)
+    var full_device = ctx.enqueue_create_buffer[.float32](full_size)
     var full_tensor = TileTensor(full_device, full_shape)
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     ctx.enqueue_copy(a_device, a_host_buf)
     ctx.enqueue_copy(b_device, b_host_buf)
 
     vendor_blas.matmul(
         ctx,
-        full_tensor.to_layout_tensor(),
-        a_tensor.to_layout_tensor(),
-        b_tensor.to_layout_tensor(),
+        full_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=True,
     )

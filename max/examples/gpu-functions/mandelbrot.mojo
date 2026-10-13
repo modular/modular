@@ -14,8 +14,8 @@
 from std.math import ceildiv
 from std.sys import has_accelerator
 
-from std.complex import ComplexSIMD, ComplexScalar
-from std.gpu import global_idx
+from std.complex import ComplexScalar
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 
@@ -88,7 +88,7 @@ def mandelbrot(
     var z = ComplexScalar[float_dtype](0, 0)
     var iters = Scalar[int_dtype](0)
 
-    var in_set_mask = Scalar[DType.bool](True)
+    var in_set_mask = Scalar[.bool](True)
     for _ in range(MAX_ITERATIONS):
         if not any(in_set_mask):
             break

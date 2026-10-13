@@ -15,6 +15,7 @@
 import functools
 from collections.abc import Callable
 
+from max import tree
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
@@ -196,5 +197,5 @@ class Olmo2(Transformer):
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
         )

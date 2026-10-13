@@ -80,7 +80,7 @@ from linalg.matmul.gpu.amd.amd_4wave_matmul import (
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _xcd_wgm_swizzle(
     wgid_raw: Int, num_pid_m: Int, num_pid_n: Int
 ) -> Tuple[Int, Int]:
@@ -133,7 +133,7 @@ def _xcd_wgm_swizzle(
     return (pid_m, pid_n)
 
 
-@always_inline
+@inline(.always)
 def amd_4wave_conv[
     a_type: DType,
     b_type: DType,
@@ -149,7 +149,7 @@ def amd_4wave_conv[
     # `c_type` MMA output BEFORE the residual FMA. Use for bias /
     # ReLU / SiLU / GELU fusion. Matches the SM100 reference
     # `D = lambda(Conv(A,B)) + beta * C` semantics. Signature
-    # `(IndexList[2], SIMD) capturing -> SIMD`.
+    # `(Coord, SIMD) capturing -> SIMD`.
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -310,9 +310,7 @@ def amd_4wave_conv[
     """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
-        a_type.is_float8()
-        or a_type == DType.bfloat16
-        or a_type == DType.float16
+        a_type.is_float8() or a_type == .bfloat16 or a_type == .float16
     ), "4-wave conv supports float8_e4m3fn, bfloat16, or float16"
 
     # MMA K-dim selection: FP8 uses MFMA 16x16x128; bf16/fp16 use MFMA
@@ -358,9 +356,8 @@ def amd_4wave_conv[
         pad_d=pad_d,
     )
 
-    @always_inline
-    @__parameter
-    def run_kernel[config: MatmulKernelConfig]() raises:
+    @inline(.always)
+    def run_kernel[config: MatmulKernelConfig]() raises {imm}:
         # Dispatch via `AMD4WaveMatmul.run_conv2d` — the unified entry
         # point that hosts the 4-wave conv2d body alongside the matmul.
         # `has_residual` carries through to the kernel's epilogue;
@@ -378,6 +375,9 @@ def amd_4wave_conv[
             a.LayoutType,
             b.LayoutType,
             c.LayoutType,
+            a.Engine,
+            b.Engine,
+            c.Engine,
             has_residual=has_residual,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
         ]

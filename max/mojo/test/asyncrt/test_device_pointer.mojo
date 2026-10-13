@@ -45,56 +45,56 @@ comptime _LENGTH = 64
 
 def test_device_ptr_starts_at_offset_zero() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     assert_equal(p.offset(), 0)
 
 
 def test_device_ptr_accepts_length_minus_1() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = DevicePointer(buf, _LENGTH - 1)
     assert_equal(p.offset(), _LENGTH - 1)
 
 
 def test_device_ptr_preserves_buffer_size() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     assert_equal(len(p.buffer()), _LENGTH)
 
 
 def test_init_zero_size_buffer_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](0)
+    var buf = ctx.enqueue_create_buffer[.float32](0)
     with assert_raises(contains="size of DeviceBuffer must not be 0"):
         _ = DevicePointer(buf)
 
 
 def test_init_zero_size_buffer_with_offset_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](0)
+    var buf = ctx.enqueue_create_buffer[.float32](0)
     with assert_raises(contains="invalid DeviceBuffer of size '0'"):
         _ = DevicePointer(buf, 0)
 
 
 def test_init_negative_offset_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     with assert_raises(contains="invalid offset '-1'"):
         _ = DevicePointer(buf, -1)
 
 
 def test_init_offset_equal_to_size_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     with assert_raises(contains="invalid offset"):
         _ = DevicePointer(buf, _LENGTH)
 
 
 def test_init_offset_past_end_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     with assert_raises(contains="invalid offset"):
         _ = DevicePointer(buf, _LENGTH + 1)
 
@@ -114,7 +114,7 @@ def test_pointer_outlives_buffer_last_use() raises:
     still in use, producing a heap-use-after-free (caught by ASAN).
     """
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = p + 8
     assert_equal(q.offset(), 8)
@@ -129,7 +129,7 @@ def test_pointer_outlives_buffer_last_use() raises:
 
 def test_add_advances_offset() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = p + 8
     assert_equal(q.offset(), 8)
@@ -139,7 +139,7 @@ def test_add_advances_offset() raises:
 
 def test_add_zero_is_noop() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = p + 0
     assert_equal(q.offset(), 0)
@@ -147,7 +147,7 @@ def test_add_zero_is_noop() raises:
 
 def test_add_chained() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = (p + 4) + 4
     assert_equal(q.offset(), 8)
@@ -155,7 +155,7 @@ def test_add_chained() raises:
 
 def test_add_negative_offsets_backward() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     # Move forward, then add a negative.
     var q = p + 10
@@ -165,7 +165,7 @@ def test_add_negative_offsets_backward() raises:
 
 def test_add_below_zero_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         _ = p + -1
@@ -173,7 +173,7 @@ def test_add_below_zero_raises() raises:
 
 def test_add_past_end_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         _ = p + _LENGTH
@@ -186,7 +186,7 @@ def test_add_past_end_raises() raises:
 
 def test_sub_decreases_offset() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = p + 16
     var r = q - 4
@@ -195,7 +195,7 @@ def test_sub_decreases_offset() raises:
 
 def test_sub_zero_is_noop() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = (p + 8) - 0
     assert_equal(q.offset(), 8)
@@ -204,7 +204,7 @@ def test_sub_zero_is_noop() raises:
 def test_sub_round_trip() raises:
     """`(p + n) - n` returns to the original offset."""
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = (p + 16) - 16
     assert_equal(q.offset(), p.offset())
@@ -213,7 +213,7 @@ def test_sub_round_trip() raises:
 def test_sub_negative_advances_forward() raises:
     """`p - (-n)` is equivalent to `p + n`."""
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = p - -8
     assert_equal(q.offset(), 8)
@@ -221,7 +221,7 @@ def test_sub_negative_advances_forward() raises:
 
 def test_sub_below_zero_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         _ = p - 1
@@ -230,7 +230,7 @@ def test_sub_below_zero_raises() raises:
 def test_sub_negative_past_end_raises() raises:
     """`p - (-n)` is equivalent to `p + n`."""
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         var q = p - -_LENGTH
@@ -243,7 +243,7 @@ def test_sub_negative_past_end_raises() raises:
 
 def test_iadd_mutates_offset() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     p += 12
     assert_equal(p.offset(), 12)
@@ -251,7 +251,7 @@ def test_iadd_mutates_offset() raises:
 
 def test_isub_mutates_offset() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     p += 20
     p -= 5
@@ -260,7 +260,7 @@ def test_isub_mutates_offset() raises:
 
 def test_iadd_past_end_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     with assert_raises(contains="invalid offset"):
         p += _LENGTH + 1
@@ -270,7 +270,7 @@ def test_iadd_past_end_raises() raises:
 
 def test_isub_below_zero_raises() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     p += 4
     with assert_raises(contains="invalid offset"):
@@ -286,7 +286,7 @@ def test_isub_below_zero_raises() raises:
 
 def test_equality_same_buffer_same_offset() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = buf.device_ptr()
     assert_true(p == q)
@@ -295,7 +295,7 @@ def test_equality_same_buffer_same_offset() raises:
 
 def test_equality_same_buffer_different_offset() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = buf.device_ptr() + 4
     assert_false(p == q)
@@ -304,9 +304,9 @@ def test_equality_same_buffer_different_offset() raises:
 
 def test_equality_different_buffer() raises:
     var ctx = create_test_device_context()
-    var abuf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var abuf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var a = abuf.device_ptr()
-    var bbuf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var bbuf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var b = bbuf.device_ptr()
     assert_false(a == b)
     assert_true(a != b)
@@ -322,7 +322,7 @@ def test_equality_buffer_copies_same_allocation() raises:
     regressing to host-object-address identity.
     """
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var buf_copy = buf  # Same handle, distinct host object.
     var p = buf.device_ptr()
     var q = buf_copy.device_ptr()
@@ -337,7 +337,7 @@ def test_equality_buffer_copies_same_allocation() raises:
 
 def test_ordering_same_buffer() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = buf.device_ptr() + 4
     assert_true(p < q)
@@ -348,8 +348,8 @@ def test_ordering_same_buffer() raises:
 
 def test_lt_cross_buffer_raises() raises:
     var ctx = create_test_device_context()
-    var buf_a = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
-    var buf_b = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf_a = ctx.enqueue_create_buffer[.float32](_LENGTH)
+    var buf_b = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf_a.device_ptr()
     var q = buf_b.device_ptr()
     with assert_raises(contains="DeviceBuffer does not match"):
@@ -371,7 +371,7 @@ def test_unsafe_ptr_matches_buffer_at_offset_zero() raises:
     """At offset 0, `unsafe_ptr()` should resolve to the same address as
     `DeviceBuffer.unsafe_ptr()`. The CPU backend exposes raw pointers."""
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     assert_equal(p.unsafe_ptr(), buf.unsafe_ptr().as_unsafe_any_origin())
 
@@ -379,7 +379,7 @@ def test_unsafe_ptr_matches_buffer_at_offset_zero() raises:
 def test_unsafe_ptr_advances_by_offset() raises:
     """`(p + n).unsafe_ptr()` must point `n` elements past `p.unsafe_ptr()`."""
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr()
     var q = p + 8
     assert_true(q.unsafe_ptr() == Pointer(p.unsafe_ptr()).unsafe_offset(8))
@@ -404,7 +404,7 @@ def _offset_of_mut(p: DevicePointer[mut=True, DType.float32, _]) -> Int:
 
 def test_as_imm_yields_immutable_borrow() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr() + 4
     var q = p.as_imm()
     assert_equal(_offset_of_imm(q), 4)
@@ -414,14 +414,14 @@ def test_as_imm_yields_immutable_borrow() raises:
 
 def test_unsafe_mut_cast_restores_mutability() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr().as_imm() + 16
     assert_equal(_offset_of_mut(p.unsafe_mut_cast[True]()), 16)
 
 
 def test_unsafe_origin_cast_retargets_origin() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr() + 4
     var q: DevicePointer[
         DType.float32, MutUntrackedOrigin
@@ -432,7 +432,7 @@ def test_unsafe_origin_cast_retargets_origin() raises:
 
 def test_as_unsafe_any_origin_discards_origin() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = buf.device_ptr() + 8
     var q: DevicePointer[
         DType.float32, MutUnsafeAnyOrigin
@@ -448,7 +448,7 @@ def test_as_unsafe_any_origin_discards_origin() raises:
 
 def test_write_to() raises:
     var ctx = create_test_device_context()
-    var buf = ctx.enqueue_create_buffer[DType.float32](_LENGTH)
+    var buf = ctx.enqueue_create_buffer[.float32](_LENGTH)
     var p = DevicePointer(buf, 5)
     var expected = String(
         t"DevicePointer[{DType.float32}](buffer=DeviceBuffer(size={len(buf)}),"

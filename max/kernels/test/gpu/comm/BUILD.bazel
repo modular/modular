@@ -42,7 +42,7 @@ mojo_test(
     ],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     main = "test_multimem_reducescatter.mojo",
     tags = ["gpu"],
@@ -62,10 +62,25 @@ mojo_test(
 )
 
 _GPU_MEMORY = {
-    "test_p2p_ep_combine.mojo": "25",
-    "test_p2p_ep_dispatch.mojo": "25",
+    "test_p2p_ep_combine.mojo": "3",
+    "test_p2p_ep_dispatch.mojo": "3",
     "test_allreduce_residual_rmsnorm_fp8.mojo": "9",
-    "test_p2p_copy.mojo": "5",
+    "test_p2p_copy.mojo": "2",
+    "test_allreduce.mojo": "4",
+    "test_allgather_rmsnorm_mxfp8.mojo": "6",
+    "test_allgather.mojo": "3",
+    "test_allgather_rmsnorm.mojo": "3",
+    "test_broadcast.mojo": "3",
+    "test_kernel_load_gate_nested.mojo": "2",
+    "test_lamport_allreduce.mojo": "3",
+    "test_lamport_pingpong.mojo": "2",
+    "test_p2p_ep_skip_a2a.mojo": "2",
+    "test_reducescatter.mojo": "3",
+    "test_reducescatter_rmsnorm.mojo": "3",
+    "test_scatter.mojo": "3",
+    "test_broadcast_subgroup.mojo": "2",
+    "test_ep_ord_r_completion.mojo": "2",
+    "test_kernel_load_gate.mojo": "2",
 }
 
 # Tests where assertions push register usage past hardware limits,
@@ -82,7 +97,7 @@ mojo_test(
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = False,  # MSTDL-2301: register pressure
     exec_properties = {
-        "test.resources:gpu-memory": "4",
+        "test.resources:gpu-memory": "3",
     },
     tags = ["gpu"],
     target_compatible_with = [
@@ -101,6 +116,31 @@ mojo_test(
     ],
 )
 
+# Standalone multi-GPU test: the bundled allreduce kernel's `build_graph` entry
+# point over stable address slots. Needs the graph-compiler kernel package.
+mojo_test(
+    name = "test_bundled_allreduce_build_graph.mojo.test",
+    size = "large",
+    srcs = ["test_bundled_allreduce_build_graph.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+    ],
+    deps = [
+        "//max:builtin_kernels",
+        "//max:comm",
+        "//max:extensibility",
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
 # Regular tests for all other files
 [
     mojo_test(
@@ -110,7 +150,7 @@ mojo_test(
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         enable_assertions = src not in DISABLE_ASSERTIONS_TESTS,
         exec_properties = {
-            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "6"),
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "3"),
         },
         main = src,
         tags = ["gpu"],
@@ -135,6 +175,24 @@ mojo_test(
             "test_multimem_allreduce.mojo",
             "test_multimem_reducescatter.mojo",
             "test_allreduce_residual_rmsnorm.mojo",  # Has its own standalone rule above
+            "test_enum_like_conformance.mojo",  # Has its own standalone rule below
+            "test_bundled_allreduce_build_graph.mojo",  # Has its own standalone rule above
         ],
     )
 ]
+
+# CPU-runnable: exercises the `EnumLike` conformances added across the
+# kernels' enum-behaving structs (runtime `match`, discriminants,
+# non-exhaustive `-1` fallback) without launching any GPU work.
+mojo_test(
+    name = "test_enum_like_conformance.mojo.test",
+    srcs = ["test_enum_like_conformance.mojo"],
+    deps = [
+        "//max:comm",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:pipeline",
+        "@mojo//:std",
+    ],
+)

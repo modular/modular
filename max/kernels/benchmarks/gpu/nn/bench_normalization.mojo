@@ -24,7 +24,8 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, coord, row_major
-from nn.normalization import layer_norm, rms_norm_gpu
+from nn.normalization import rms_norm_gpu
+from builtin_kernels.rowwise_normalization import layer_norm
 from std.utils.coord import ComptimeInt
 
 from std.utils.index import Index, IndexList
@@ -86,24 +87,24 @@ def bench_layer_norm_gpu[
 
     # `layer_norm` takes gamma/beta as `TileTensor`s directly (no
     # `gamma_fn`); `input_fn`/`output_fn` are unified closures matching its
-    # (width, alignment, coord_rank) / (width, rank, alignment) signatures.
-    @always_inline
+    # (width, alignment) `Coord` signatures.
+    @inline(.always)
     def input_fn[
-        width: Int, alignment: Int, coord_rank: Int
-    ](coords: IndexList[coord_rank]) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(Coord(coords))
+        width: Int, alignment: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(coords)
 
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
-    @always_inline
+    @inline(.always)
     def output_fn[
-        width: SIMDLength, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var out_buf} -> None:
-        var idx = out_buf.layout(Coord(coords))
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf} -> None:
+        var idx = out_buf.layout(coords)
 
         out_buf.raw_store[width=width, alignment=alignment](idx, val)
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
         ctx: DeviceContext,
     ) raises {imm}:
@@ -123,24 +124,24 @@ def bench_layer_norm_gpu[
                 input_fn,
                 output_fn,
                 shape_coord,
-                Scalar[DType.int](cols),
+                Int(cols),
                 gamma,
                 beta,
                 epsilon,
                 ctx,
             )
 
-    @always_inline
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    @inline(.always)
+    def bench_fn(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     comptime shape_tag = "static" if static_shape else "dynamic"
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId(
             "layer_norm",
             input_id=String(fn_name, shape_tag, dtype, shape, sep="/"),
-        )
+        ),
     )
 
     ctx.synchronize()
@@ -185,7 +186,7 @@ def bench_rms_norm_gpu[
 
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203).
     @__copy_capture(data_buf)
-    @always_inline
+    @inline(.always)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
@@ -197,7 +198,7 @@ def bench_rms_norm_gpu[
             width=width, alignment=align_of[SIMD[dtype, width]]()
         ](idx)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(data_buf)
     @__parameter
     def identity_output_fn[
@@ -206,7 +207,7 @@ def bench_rms_norm_gpu[
         var idx = data_buf.layout(coords)
         data_buf.raw_store[width=width, alignment=alignment](idx, val)
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(ctx: DeviceContext) raises {mut data_d, imm}:
         rms_norm_gpu[
             rank, input_fn, identity_output_fn, multiply_before_cast=True
@@ -218,12 +219,12 @@ def bench_rms_norm_gpu[
             ctx,
         )
 
-    @always_inline
-    @__parameter
-    def bench_fn(mut b: Bencher) raises:
+    @inline(.always)
+    def bench_fn(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    b.bench_function[bench_fn](
+    b.bench_function(
+        bench_fn,
         BenchId("rms_norm", input_id=String(fn_name, "/", dtype, "/", shape)),
     )
 
@@ -236,7 +237,7 @@ def bench_rms_norm_gpu[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime shape = int_list_to_tuple[
         get_defined_shape["shape", "256x256"]()
     ]()

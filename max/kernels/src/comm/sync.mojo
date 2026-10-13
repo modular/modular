@@ -25,7 +25,7 @@ from std.sys import size_of, is_amd_gpu
 
 from std.atomic import Atomic, Ordering
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu import (
+from max.gpu import (
     block_idx,
     grid_dim,
     thread_idx,
@@ -105,7 +105,7 @@ saturate NVLink bandwidth.
 """
 
 
-@always_inline
+@inline(.always)
 def circular_add[n: Int](x: Int, y: Int) -> Int:
     """Addition modulo n, assuming 0 <= x < n and 0 <= y < n.
 
@@ -216,12 +216,13 @@ struct Signal:
 
     var lamport_state: StaticTuple[Scalar[Self.flag_t], 4]
     """Device-resident state for the in-kernel Lamport generation advance:
-    `[flag, prev_num_elements, arrival, reserved]`.
+    `[flag, prev_num_packs, arrival, reserved]`.
 
     - `flag`: monotonically-increasing generation counter (read at kernel entry,
       advanced once per call in the grid-barrier epilogue).
-    - `prev_num_elements`: previous call's element count = this call's
-      `clear_size`.
+    - `prev_num_packs`: previous call's written extent in 16-byte packs = this
+      call's clear extent (dtype-independent, so mixed-dtype call sequences on
+      one signal buffer clear exactly what was written).
     - `arrival`: per-call block-arrival counter for the exactly-once advance.
     - reserved: pads to 16 bytes so `lamport_region` stays 16-byte aligned (the
       128-bit atomic stores require it).
@@ -248,10 +249,42 @@ struct Signal:
     barrier-based collectives on the same signal buffer.
     """
 
-    @always_inline
+    @staticmethod
+    @inline(.always)
+    def unsafe_ptr_from(
+        mut signal_buffer: DeviceBuffer[.uint8],
+    ) -> MutPointer[Signal, MutAnyOrigin]:
+        """Reinterprets a rank's signal buffer as a `Signal` pointer.
+
+        The collectives take their `rank_sigs` as `Signal` pointers while the
+        host allocates each rank's buffer as raw bytes, so every call site
+        assembling a `rank_sigs` array otherwise repeats this same cast.
+
+        The borrow is mutable because `DeviceBuffer.unsafe_ptr` ties the
+        returned pointer's mutability to it, and a collective writes through
+        `rank_sigs`.
+
+        Args:
+            signal_buffer: This rank's signal buffer, at least
+                `size_of[Signal]()` bytes and already passed through
+                `init_signal_buffer`.
+
+        Returns:
+            A pointer to the buffer's storage, typed as `Signal`.
+
+        Safety:
+            The returned pointer's origin is erased, so it does not keep
+            `signal_buffer` alive. The buffer must outlive every collective
+            launched against the pointer.
+        """
+        return (
+            signal_buffer.unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
+        )
+
+    @inline(.always)
     def lamport_state_ptr(
         mut self,
-    ) -> UnsafePointer[Scalar[Self.flag_t], MutAnyOrigin]:
+    ) -> MutPointer[Scalar[Self.flag_t], MutAnyOrigin]:
         """Typed pointer to this `Signal`'s `lamport_state` block.
 
         Index it with the `Lamport.STATE_*` constants. The field is located by
@@ -259,15 +292,15 @@ struct Signal:
         byte offset to keep in sync with the field order.
         """
         return (
-            UnsafePointer(to=self.lamport_state)
+            Pointer(to=self.lamport_state)
             .bitcast[Scalar[Self.flag_t]]()
             .as_unsafe_any_origin()
         )
 
-    @always_inline
+    @inline(.always)
     def lamport_region_ptr[
         dtype: DType
-    ](mut self) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
+    ](mut self) -> MutPointer[Scalar[dtype], MutAnyOrigin]:
         """Typed pointer to the start of this `Signal`'s embedded Lamport region.
 
         Parameters:
@@ -277,14 +310,14 @@ struct Signal:
                 dtype without an extra cast.
         """
         return (
-            UnsafePointer(to=self.lamport_region)
+            Pointer(to=self.lamport_region)
             .bitcast[Scalar[dtype]]()
             .as_unsafe_any_origin()
         )
 
 
 def _lamport_init(
-    signal_buffer: DeviceBuffer[DType.uint8], ctx: DeviceContext
+    signal_buffer: DeviceBuffer[.uint8], ctx: DeviceContext
 ) raises:
     """Sets a signal buffer's embedded Lamport region to the sentinel.
 
@@ -305,14 +338,14 @@ def _lamport_init(
         ctx: The device context for this rank's GPU.
     """
     comptime offset = (size_of[Signal]() - Signal._REGION_BYTES) // 4
-    var region = signal_buffer.create_sub_buffer[DType.uint32](
+    var region = signal_buffer.create_sub_buffer[.uint32](
         offset, Signal._REGION_BYTES // 4
     )
     ctx.enqueue_memset(region, LAMPORT_SENTINEL_U32)
 
 
 def init_signal_buffer(
-    signal_buffer: DeviceBuffer[DType.uint8], ctx: DeviceContext
+    signal_buffer: DeviceBuffer[.uint8], ctx: DeviceContext
 ) raises:
     """Initializes a freshly allocated signal buffer for any comm collective.
 
@@ -328,11 +361,11 @@ def init_signal_buffer(
             bytes).
         ctx: The device context for this rank's GPU.
     """
-    ctx.enqueue_memset[DType.uint8](signal_buffer, 0)
+    ctx.enqueue_memset[.uint8](signal_buffer, 0)
     _lamport_init(signal_buffer, ctx)
 
 
-@always_inline
+@inline(.always)
 def _multi_gpu_barrier[
     ngpus: Int,
     is_start: Bool,
@@ -342,8 +375,8 @@ def _multi_gpu_barrier[
     named_barrier_id: Int = 1,
     domain_id: Int = 0,
 ](
-    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    self_sg: UnsafePointer[Signal, MutAnyOrigin],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    self_sg: MutPointer[Signal, MutAnyOrigin],
     my_rank: Int,
 ):
     """Implements a barrier synchronization across multiple GPUs to ensure all
@@ -367,7 +400,8 @@ def _multi_gpu_barrier[
             full-world bank on a shared `Signal` buffer.
 
     Args:
-        rank_sigs: Signal pointers for all GPUs.
+        rank_sigs: Signal pointers for the `ngpus` ranks in this barrier's
+            domain, indexed by domain-local rank.
         self_sg: Signal pointer for current GPU.
         my_rank: Current GPU rank.
 

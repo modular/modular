@@ -76,8 +76,8 @@ with randomly initialized weights before loading weights
 
     from max.experimental import functional as F
     from max.experimental.nn import Linear
+    from max.experimental.sharding import TensorLayout
     from max.experimental.tensor import Tensor, defaults
-    from max.graph import TensorType
 
     with F.lazy():
         model = Linear(2, 3)
@@ -94,9 +94,9 @@ with randomly initialized weights before loading weights
     # Or compile directly without ever initializing weights.
     # Derive the input type from the same defaults the module used, so the
     # module, its weights, and the input type agree on dtype and device.
-    dtype, device = defaults()
-    input_type = TensorType(dtype, ["batch", 2], device)
-    model = model.compile(input_type, weights=weights)
+    dtype, mesh = defaults()
+    input_spec = TensorLayout(dtype, ["batch", 2], mesh)
+    model = model.compile(input_spec, weights=weights)
 """
 
 from __future__ import annotations
@@ -109,20 +109,20 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias, cast
 
-from max import driver, graph
+from max import _validation_hooks, driver, graph
 from max.driver import CPU, Accelerator, Device, DLPackArray, accelerator_count
 from max.dtype import DType
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    DistributedTensorType,
     NamedMapping,
     Placement,
-    PlacementMapping,
     Replicated,
     Sharded,
+    TensorLayout,
+    Unknown,
 )
-from max.experimental.sharding.mappings import is_fully_replicated
+from max.experimental.sharding.mesh import _DEFAULT_DEVICE
 from max.experimental.sharding.per_shard_dim import (
     is_per_shard_dim,
     local_shape_at,
@@ -134,73 +134,94 @@ from max.graph import (
     DimLike,
     ShapeLike,
     StaticDim,
-    TensorType,
     TensorValueLike,
     ops,
 )
+from max.graph import TensorType as TensorType  # re-exported
 from max.graph.ops.constant import NestedArray, Number
 from max.graph.value import HasTensorValue
 from rich.pretty import pretty_repr
 
 GraphValue: TypeAlias = graph.BufferValue | graph.TensorValue
 
+_SHARD_INFIX = "._shard."
+
+
+def external_shard_names(name: str, num_shards: int) -> list[str]:
+    """Names the external constants a declaration of ``name`` emits, one per shard.
+
+    A distributed weight arrives as one array per device, so it needs one name
+    per device. This is the whole convention, and the inverse is
+    :attr:`Tensor.external_name`, so a caller matching checkpoint data to a
+    graph's externals never has to spell the suffix itself.
+
+    Args:
+        name: The name the weight was declared under.
+        num_shards: How many devices it is spread over.
+
+    Returns:
+        ``[name]`` for a single device, otherwise one ``name._shard.N`` per
+        shard in mesh order.
+    """
+    if num_shards == 1:
+        return [name]
+    return [f"{name}{_SHARD_INFIX}{i}" for i in range(num_shards)]
+
 
 def _fold_sharded_shape(
     shape: graph.Shape, mapping: DeviceMapping
 ) -> graph.Shape:
-    """Folds per-rank wrappers on ``shape`` into the global shape per mapping."""
+    """Returns the global shape for the per-device dims in ``shape``.
+
+    A dim that a mesh axis splits is the sum of its pieces, and copies along
+    a mesh axis must have the same size. Devices that hold different data,
+    along a mesh axis that splits another tensor axis or is ``Unknown``, may
+    have different sizes for this dim: for example, each data-parallel
+    replica's block table has its own page count. Such a dim has no global
+    size and stays per device.
+    """
     mesh = mapping.mesh
-    placements = mapping.to_placements()
+    placements = mapping.placements
     mesh_shape = mesh.mesh_shape
-    n_devices = mesh.num_devices
     folded: list[graph.Dim] = []
-    for ti, d in enumerate(shape):
+    for tensor_axis, d in enumerate(shape):
         if not is_per_shard_dim(d):
             g = graph.Dim(d)
             for mesh_axis, p in enumerate(placements):
-                if p.localized_axis() == ti and isinstance(p, Sharded):
+                if p == Sharded(tensor_axis):
                     g = g * mesh_shape[mesh_axis]
             folded.append(g)
             continue
         cells = list(d.per_shard)
-        if len(cells) != n_devices:
+        if len(cells) != mesh.num_devices:
             raise ValueError(
                 f"sharded dim {d!r} has {len(cells)} entries, expected "
-                f"{n_devices} for mesh {mesh!r}."
+                f"{mesh.num_devices} for mesh {mesh!r}."
             )
         for mesh_axis in range(mesh.ndim - 1, -1, -1):
-            n = mesh_shape[mesh_axis]
-            p = placements[mesh_axis]
-            localizes_ti = p.localized_axis() == ti
-            new_cells: list[graph.Dim] = []
-            for start in range(0, len(cells), n):
-                block = cells[start : start + n]
-                if localizes_ti:
-                    new_cells.append(
-                        p.global_dim(
-                            make_per_shard_dim(tuple(block), force_wrap=True)
-                        )
-                    )
-                else:
-                    first = block[0]
-                    for x in block[1:]:
-                        if x != first:
-                            raise ValueError(
-                                f"global_shape: tensor axis {ti} has "
-                                f"per-rank cells {block!r} that disagree "
-                                f"along mesh axis {mesh_axis} (placement "
-                                f"{p!r}); non-localizing mesh axes must "
-                                "hold shape-identical shards."
-                            )
-                    new_cells.append(first)
-            cells = new_cells
-        assert len(cells) == 1
+            axis_size, p = mesh_shape[mesh_axis], placements[mesh_axis]
+            blocks = [
+                cells[i : i + axis_size]
+                for i in range(0, len(cells), axis_size)
+            ]
+            if p == Sharded(tensor_axis):
+                cells = [sum(block[1:], block[0]) for block in blocks]
+            elif all(len(set(block)) == 1 for block in blocks):
+                cells = [block[0] for block in blocks]
+            elif isinstance(p, (Sharded, Unknown)):
+                cells = [make_per_shard_dim(d.per_shard, force_wrap=True)]
+                break
+            else:
+                raise ValueError(
+                    f"global_shape: tensor axis {tensor_axis} has per-device "
+                    f"sizes {d.per_shard!r} that disagree across copies "
+                    f"along mesh axis {mesh_axis} ({p!r})."
+                )
         folded.append(cells[0])
     return graph.Shape(folded)
 
 
 _CONTEXT: ContextVar[RealizationContext] = ContextVar("_CONTEXT")
-_DEFAULT_DEVICE: ContextVar[Device] = ContextVar("_DEFAULT_DEVICE")
 _DEFAULT_DTYPE: ContextVar[DType] = ContextVar("_DEFAULT_DTYPE")
 
 current_realization_context = _CONTEXT.get
@@ -384,45 +405,55 @@ class RealizationContext(
         """
 
 
-def _default_dtype(device: Device) -> DType:
+def _as_mesh(device: Device | DeviceMesh) -> DeviceMesh:
+    if isinstance(device, Device):
+        return DeviceMesh.single(device)
+    return device
+
+
+def _default_dtype(device: Device | DeviceMesh) -> DType:
     if dtype := _DEFAULT_DTYPE.get(None):
         return dtype
+    device = _as_mesh(device).devices[0]
     return DType.float32 if isinstance(device, CPU) else DType.bfloat16
 
 
-def _default_device() -> Device:
-    if device := _DEFAULT_DEVICE.get(None):
-        return device
-    return Accelerator() if accelerator_count() else CPU()
+def _default_device() -> DeviceMesh:
+    if mesh := _DEFAULT_DEVICE.get(None):
+        return mesh
+    return DeviceMesh.single(Accelerator() if accelerator_count() else CPU())
 
 
 def defaults(
-    dtype: DType | None = None, device: Device | None = None
-) -> tuple[DType, Device]:
+    dtype: DType | None = None, device: Device | DeviceMesh | None = None
+) -> tuple[DType, DeviceMesh]:
     """Gets the default dtype and device for tensor creation.
 
     Returns a tuple containing the dtype and device to use for tensor creation,
     applying defaults when values are not specified. If no dtype is provided,
     defaults to :obj:`DType.float32` for CPU and :obj:`DType.bfloat16` for
-    accelerators. If no device is provided, defaults to an accelerator if
-    available, otherwise CPU.
+    accelerators. If no device is provided, defaults to the one set by
+    :func:`default_device`, or else an accelerator if available, otherwise CPU.
 
     Args:
         dtype: The data type to use. If not specified, a default dtype based
             on the device is returned.
-        device: The device to use. If not specified, defaults to an available
+        device: The device or mesh to use. If not specified, defaults to the
+            one set by :func:`default_device`, or else an available
             accelerator or CPU.
 
     Returns:
-        tuple[DType, Device]: A tuple containing the resolved dtype and device.
+        tuple[DType, DeviceMesh]: A tuple containing the resolved dtype and
+        device mesh. A single device is returned as a one-device mesh; use
+        ``mesh.devices[0]`` where a :class:`~max.driver.Device` is needed.
     """
-    device = device or _default_device()
-    return (dtype or _default_dtype(device)), device
+    mesh = _default_device() if device is None else _as_mesh(device)
+    return (dtype or _default_dtype(mesh)), mesh
 
 
 def default_device(
-    device: Device | graph.DeviceRef,
-) -> contextlib.AbstractContextManager[Device]:
+    device: Device | DeviceMesh | graph.DeviceRef,
+) -> contextlib.AbstractContextManager[DeviceMesh]:
     """Context manager for setting the default device for tensor creation.
 
     Sets the default device used for tensor creation within the context. All
@@ -439,16 +470,21 @@ def default_device(
             x = tensor.Tensor.ones((2, 3))  # Created on CPU
             y = tensor.Tensor.zeros((2, 3))  # Also on CPU
 
+    The default can also be a
+    :class:`~max.experimental.sharding.DeviceMesh`. Tensors created inside
+    the block are then replicated across the mesh.
+
     Args:
-        device: The device to use as the default for tensor creation within
-            the context.
+        device: The device or mesh to use as the default for tensor creation
+            within the context.
 
     Returns:
-        A context manager that sets the default device.
+        A context manager that sets the default device, and yields it as a
+        :class:`~max.experimental.sharding.DeviceMesh`.
     """
     if isinstance(device, graph.DeviceRef):
         device = device.to_device()
-    return contextvar_context(_DEFAULT_DEVICE, device)
+    return contextvar_context(_DEFAULT_DEVICE, _as_mesh(device))
 
 
 def default_dtype(dtype: DType) -> contextlib.AbstractContextManager[DType]:
@@ -479,7 +515,7 @@ def default_dtype(dtype: DType) -> contextlib.AbstractContextManager[DType]:
 
 
 @contextlib.contextmanager
-def defaults_like(like: Tensor | TensorType) -> Generator[None]:
+def defaults_like(like: Tensor) -> Generator[None]:
     """Context manager setting the default dtype and device for tensor creation.
 
     Sets the default data type and device used for tensor creation within the
@@ -499,12 +535,12 @@ def defaults_like(like: Tensor | TensorType) -> Generator[None]:
             z = tensor.Tensor.zeros((2, 3), dtype=DType.float32)  # float32, cpu
 
     Args:
-        like: Tensor or tensor type whose dtype and device to use as defaults.
+        like: The tensor whose dtype and device mesh to use as defaults.
 
     Returns:
         A context manager that sets the default dtype and device.
     """
-    with default_dtype(like.dtype), default_device(like.device):
+    with default_dtype(like.dtype), default_device(like.mesh):
         yield
 
 
@@ -548,8 +584,8 @@ class Tensor(DLPackArray, HasTensorValue):
     Args:
         data: The value for the tensor. Can be a scalar number, a nested
             Python list, or any DLPack-compatible array (NumPy, PyTorch,
-            etc.). If not provided, exactly one of ``storage`` or ``state``
-            must be supplied.
+            and so on). If not provided, exactly one of ``storage`` or
+            ``state`` must be supplied.
         dtype: The data type for the tensor elements. For DLPack arrays this
             defaults to the array's own dtype; passing a conflicting value
             raises :exc:`ValueError`. For Python scalars and lists, defaults
@@ -585,6 +621,34 @@ class Tensor(DLPackArray, HasTensorValue):
         """Returns the device mapping describing where this tensor lives."""
         return self._mapping
 
+    def rebind_mapping(self, mapping: DeviceMapping) -> Tensor:
+        """Returns this tensor's shards under a new placement, moving no data.
+
+        Use it to claim the placement of a per-device result, such as the
+        :class:`~max.experimental.sharding.Unknown` output of an op without a
+        sharding rule. The new placement is a trusted claim; ensure it is
+        correct to prevent incorrect downstream results.
+
+        Args:
+            mapping: The mapping to claim, on this tensor's mesh.
+
+        Returns:
+            A tensor with the same shards and the given mapping.
+
+        Raises:
+            ValueError: If ``mapping`` is on a different mesh.
+        """
+        if mapping.mesh != self.mesh:
+            raise ValueError("rebind_mapping cannot change the device mesh.")
+        if self._state is not None:
+            result = self._state.ctx.create_unrealized(
+                self._state.values, mapping=mapping
+            )
+            # A single-device mesh is not carried by create_unrealized.
+            result._mapping = mapping
+            return result
+        return Tensor._from_shards(self.buffers, mapping)
+
     @property
     def is_distributed(self) -> bool:
         """Returns ``True`` if this tensor spans multiple devices."""
@@ -604,7 +668,7 @@ class Tensor(DLPackArray, HasTensorValue):
         :class:`~max.experimental.sharding.ConversionError`
         if the spec contains compiler-only annotations.
         """
-        return self._mapping.to_placements()
+        return self._mapping.placements
 
     @property
     def num_shards(self) -> int:
@@ -701,7 +765,7 @@ class Tensor(DLPackArray, HasTensorValue):
         data: DLPackArray | NestedArray | Number | None = None,
         *,
         dtype: DType | None = None,
-        device: Device | None = None,
+        device: Device | DeviceMesh | None = None,
         storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ) -> Tensor:
@@ -737,7 +801,7 @@ class Tensor(DLPackArray, HasTensorValue):
         data: DLPackArray | NestedArray | Number | None = None,
         *,
         dtype: DType | None = None,
-        device: Device | None = None,
+        device: Device | DeviceMesh | None = None,
         storage: driver.Buffer | None = None,
         state: RealizationState | None = None,
     ):
@@ -760,7 +824,7 @@ class Tensor(DLPackArray, HasTensorValue):
             assert state is not None
             dev = state.value.device
             device = dev if isinstance(dev, Device) else dev.to_device()
-        self._mapping = PlacementMapping(
+        self._mapping = DeviceMapping(
             DeviceMesh.single(device), (Replicated(),)
         )
 
@@ -804,8 +868,9 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.dtype import DType
             from max.experimental import functional as F
             from max.experimental.nn import Module
+            from max.experimental.sharding import TensorLayout
             from max.experimental.tensor import Tensor
-            from max.graph import DeviceRef, TensorType
+            from max.graph import TensorType
 
             class ScaleByBatch(Module):
                 def forward(self, x: Tensor) -> Tensor:
@@ -816,7 +881,7 @@ class Tensor(DLPackArray, HasTensorValue):
                     return out
 
             model = ScaleByBatch().compile(
-                TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
+                TensorLayout(DType.float32, ["batch", 4], CPU())
             )
             result = model(Tensor.ones([1, 4], dtype=DType.float32, device=CPU()))
 
@@ -836,9 +901,18 @@ class Tensor(DLPackArray, HasTensorValue):
             runtime value.
 
         Raises:
-            ValueError: In eager mode (no active graph) for a symbolic or
-                algebraic dimension, which has no value outside a graph.
+            ValueError: If the dimension has no value. This includes when
+                the dimension is symbolic or algebraic in eager mode (no
+                active graph), since it has no value outside a graph, or
+                when it holds per-device sizes and no global size.
         """
+        if is_per_shard_dim(dim):
+            if dim._global is None:
+                raise ValueError(
+                    f"Tensor.from_dim({dim}): the shards' sizes have no "
+                    "global value."
+                )
+            dim = dim._global
         d = Dim(dim)
         if isinstance(d, StaticDim):
             # The value is known now, so emit a scalar constant. This needs no
@@ -861,45 +935,77 @@ class Tensor(DLPackArray, HasTensorValue):
     @classmethod
     def from_shard_values(
         cls,
-        shard_values: Sequence[GraphValue],
+        shard_values: Sequence[GraphValue | Tensor],
         mapping: DeviceMapping | None = None,
     ) -> Tensor:
-        """Creates a tensor from one or more per-shard graph values.
+        """Creates a tensor from one value per device, moving no data.
 
-        For a single shard value with no mapping, behaves like
-        :meth:`from_graph_value`. For multiple shard values, a
-        :class:`~max.experimental.sharding.DeviceMapping` is required
-        and the result is a distributed tensor.
+        Each value is one device's shard: a graph value, or a single-device
+        tensor in the graph being built. With one value and no mapping, the
+        result is that value as a tensor. With several values, ``mapping`` is
+        required and the result is a distributed tensor on the shards' own
+        devices.
 
         Args:
-            shard_values: Per-device graph values (TensorValue or
-                BufferValue). One per device in the mesh.
-            mapping: Device mapping describing how shards map to mesh
-                devices and their placements. Required when
-                ``len(shard_values) > 1``.
+            shard_values: The shards, one per device of the mesh.
+            mapping: The :class:`~max.experimental.sharding.DeviceMapping` of
+                the result. Required for more than one shard.
 
         Returns:
-            A tensor backed by the provided shard values.
+            A tensor backed by the given shards.
 
         Raises:
-            ValueError: If multiple shard values are given without a mapping.
-            TypeError: If any shard value is not a graph value.
+            ValueError: If several shards are given without a mapping.
+            TypeError: If a shard is neither a graph value nor a tensor.
         """
         if len(shard_values) > 1 and mapping is None:
             raise ValueError(
                 "DeviceMapping is required when providing multiple "
-                "shard values. Pass a PlacementMapping describing how "
+                "shard values. Pass a DeviceMapping describing how "
                 "shards map to mesh devices."
             )
-        for v in shard_values:
-            if not isinstance(v, GraphValue):
-                raise TypeError(f"{v=} must be a tensor or buffer value")
+        values = []
+        for value in shard_values:
+            if isinstance(value, Tensor):
+                # A buffer stays a buffer, so that ops can write to it.
+                value = (
+                    value.__buffervalue__()
+                    if isinstance(value._backing_value, graph.BufferValue)
+                    else value.__tensorvalue__()
+                )
+            if not isinstance(value, GraphValue):
+                raise TypeError(f"{value=} must be a tensor or buffer value")
+            values.append(value)
         if mapping is None:
-            return current_realization_context().create_unrealized(
-                (shard_values[0],)
+            return current_realization_context().create_unrealized((values[0],))
+        # Shards that the placements declare equal, such as replicated
+        # copies, take the first one's shape; the rebind checks it at runtime.
+        mesh = mapping.mesh
+        differing_axes = [
+            axis
+            for axis, p in enumerate(mapping.placements)
+            if isinstance(p, (Sharded, Unknown))
+        ]
+        first_shards: dict[tuple[int, ...], GraphValue] = {}
+        for index, value in enumerate(values):
+            group = tuple(
+                mesh.device_coord(index, axis) for axis in differing_axes
+            )
+            first_shard = first_shards.setdefault(group, value)
+            if isinstance(value, graph.TensorValue) and (
+                value.shape != first_shard.shape
+            ):
+                values[index] = graph.ops.rebind(value, first_shard.shape)
+        devices = tuple(value.device.to_device() for value in values)
+        if devices != mapping.mesh.devices:
+            # Keeps the mapping's grid of mesh axes on the shards' devices.
+            mesh = mapping.mesh
+            mapping = DeviceMapping(
+                DeviceMesh(devices, mesh.mesh_shape, mesh.axis_names),
+                mapping.placements,
             )
         return current_realization_context().create_unrealized(
-            tuple(shard_values), mapping=mapping
+            tuple(values), mapping=mapping
         )
 
     @classmethod
@@ -934,40 +1040,23 @@ class Tensor(DLPackArray, HasTensorValue):
 
     @classmethod
     def _from_shards(
-        cls,
-        storages: tuple[driver.Buffer, ...],
-        mesh: DeviceMesh,
-        placements: tuple[Placement, ...],
-        global_shape: graph.ShapeLike | None = None,
+        cls, storages: tuple[driver.Buffer, ...], mapping: DeviceMapping
     ) -> Tensor:
-        """Creates a realized sharded tensor from per-device buffers.
-
-        ``global_shape`` is accepted for call-site back-compat; the global
-        shape is recovered from per-rank shards at access time.
-        """
-        del global_shape
-        if len(storages) != mesh.num_devices:
+        """Creates a realized distributed tensor from one buffer per device."""
+        if len(storages) != mapping.mesh.num_devices:
             raise ValueError(
-                f"Expected {mesh.num_devices} storages for mesh {mesh}, "
-                f"got {len(storages)}."
-            )
-        if len(placements) != mesh.ndim:
-            raise ValueError(
-                f"Need one placement per mesh axis ({mesh.ndim}), "
-                f"got {len(placements)}."
+                f"Expected {mapping.mesh.num_devices} storages for mesh "
+                f"{mapping.mesh}, got {len(storages)}."
             )
         instance = object.__new__(cls)
         instance._storages = storages
         instance._state = None
-        instance._mapping = PlacementMapping(mesh, placements)
+        instance._mapping = mapping
         return instance
 
     @classmethod
     def _from_unrealized_shards(
-        cls,
-        state: RealizationState,
-        mesh: DeviceMesh,
-        placements: tuple[Placement, ...],
+        cls, state: RealizationState, mapping: DeviceMapping
     ) -> Tensor:
         """Creates an unrealized sharded tensor from a single state.
 
@@ -975,21 +1064,30 @@ class Tensor(DLPackArray, HasTensorValue):
         graph.  Realization is atomic: all shards compile and execute
         together.
         """
-        if len(state.values) != mesh.num_devices:
+        if len(state.values) != mapping.mesh.num_devices:
             raise ValueError(
-                f"Expected {mesh.num_devices} shard values for mesh {mesh}, "
-                f"got {len(state.values)}."
-            )
-        if len(placements) != mesh.ndim:
-            raise ValueError(
-                f"Need one placement per mesh axis ({mesh.ndim}), "
-                f"got {len(placements)}."
+                f"Expected {mapping.mesh.num_devices} shard values for mesh "
+                f"{mapping.mesh}, got {len(state.values)}."
             )
         instance = object.__new__(cls)
         instance._storages = None
         instance._state = state
-        instance._mapping = PlacementMapping(mesh, placements)
+        instance._mapping = mapping
         return instance
+
+    @property
+    def external_name(self) -> str | None:
+        """The name a weight loads under, which for a plain tensor is nothing.
+
+        Only a weight is a weight, and it answers with its own name. Every
+        other tensor -- a constant, a random draw, the result of an op, or
+        anything computed *from* a weight -- is not one, which is what makes
+        this the authoritative answer to "which registry entry loads here".
+
+        Returns:
+            :obj:`None`.
+        """
+        return None
 
     def _as_constant_external(
         self,
@@ -1004,7 +1102,7 @@ class Tensor(DLPackArray, HasTensorValue):
         ``constant_external`` per shard and assembles them into a sharded
         Tensor preserving ``self``'s mesh, placements, and global shape.
 
-        Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+        Shard constants are named ``name._shard.0``, ``name._shard.1``, and so on.
 
         Args:
             name: The name of the constant.
@@ -1019,9 +1117,9 @@ class Tensor(DLPackArray, HasTensorValue):
             external data.
         """
         if not self.is_distributed:
-            stype = TensorType(self.dtype, self.shape, CPU())
+            spec = TensorLayout(self.dtype, self.shape, CPU())
             return F.constant_external(
-                name, stype, align=align, is_placeholder=is_placeholder
+                name, spec, align=align, is_placeholder=is_placeholder
             ).to(self.device)
         assert self._mapping is not None
         _mesh = self._mapping.mesh
@@ -1029,10 +1127,10 @@ class Tensor(DLPackArray, HasTensorValue):
         shape = self.shape
         for i in range(_mesh.num_devices):
             local = local_shape_at(shape, i)
-            stype = TensorType(self.dtype, local, CPU())
+            spec = TensorLayout(self.dtype, local, CPU())
             t = F.constant_external(
                 f"{name}._shard.{i}",
-                stype,
+                spec,
                 align=align,
                 is_placeholder=is_placeholder,
             )
@@ -1041,23 +1139,6 @@ class Tensor(DLPackArray, HasTensorValue):
         return current_realization_context().create_unrealized(
             tuple(values),
             mapping=self._mapping,
-        )
-
-    def _from_buffers_like(self, buffers: Sequence[driver.Buffer]) -> Tensor:
-        """Reconstructs a Tensor from flat result buffers.
-
-        Uses ``self`` as a sharding template.
-        For unsharded tensors, wraps ``buffers[0]`` as a plain Tensor.
-        For sharded tensors, wraps all buffers into a sharded Tensor
-        preserving ``self``'s mesh, placements, and global shape.
-        """
-        if not self.is_distributed:
-            return Tensor(storage=buffers[0])
-        assert self._mapping is not None
-        return Tensor._from_shards(
-            tuple(buffers),
-            self._mapping.mesh,
-            self._mapping.to_placements(),
         )
 
     @classmethod
@@ -1074,7 +1155,7 @@ class Tensor(DLPackArray, HasTensorValue):
             Use ``Tensor(value, dtype=dtype, device=device)`` instead.
             ``Tensor.constant`` will be removed in a future release.
 
-        .. warning::
+        .. caution::
 
             Loading a constant can lose precision. For example, loading
             ``16777217`` as a ``float32`` produces ``16777216.0``.
@@ -1116,7 +1197,7 @@ class Tensor(DLPackArray, HasTensorValue):
         value: Number,
         *,
         dtype: DType | None = None,
-        device: Device | DeviceMapping | None = None,
+        device: Device | DeviceMesh | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with a specified value.
 
@@ -1142,9 +1223,10 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device or device mapping where the tensor will be
-                allocated. If not specified, defaults to an accelerator if
-                available, otherwise CPU. Pass a
+            device: The device, mesh, or device mapping where the tensor
+                will be allocated. A mesh replicates the tensor. If not
+                specified, defaults to the one set by :func:`default_device`,
+                or else an accelerator if available, otherwise CPU. Pass a
                 :class:`~max.experimental.sharding.DeviceMapping` to create
                 a distributed tensor.
 
@@ -1154,7 +1236,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.full(shape, value, dtype=dtype, device=device)
 
     @classmethod
-    def full_like(cls, input: Tensor | TensorType, value: Number) -> Tensor:
+    def full_like(cls, input: Tensor, value: Number) -> Tensor:
         """Creates a tensor filled with a value, matching a given tensor's properties.
 
         Returns a new tensor filled with the specified value that matches the
@@ -1172,20 +1254,17 @@ class Tensor(DLPackArray, HasTensorValue):
             x = tensor.Tensor.full_like(ref, value=5.0)
 
         Args:
-            input: The tensor or tensor type to match. The returned tensor will
-                have the same shape, dtype, and device as this input.
+            input: The tensor to match. The returned tensor will have the same
+                shape, dtype, and placement as it.
             value: The scalar value to fill the tensor with.
 
         Returns:
             Tensor: A new tensor filled with the specified value, matching the
                 properties of the input.
         """
-        tensor_type = input.type if isinstance(input, Tensor) else input
+        spec = input.layout
         return cls.full(
-            tensor_type.shape,
-            value=value,
-            dtype=tensor_type.dtype,
-            device=tensor_type.device.to_device(),
+            spec.shape, value=value, dtype=spec.dtype, device=spec.mapping
         )
 
     @classmethod
@@ -1194,7 +1273,7 @@ class Tensor(DLPackArray, HasTensorValue):
         shape: ShapeLike,
         *,
         dtype: DType | None = None,
-        device: Device | DeviceMapping | None = None,
+        device: Device | DeviceMesh | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with zeros.
 
@@ -1220,9 +1299,10 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device or device mapping where the tensor will be
-                allocated. If not specified, defaults to an accelerator if
-                available, otherwise CPU.
+            device: The device, mesh, or device mapping where the tensor
+                will be allocated. A mesh replicates the tensor. If not
+                specified, defaults to the one set by :func:`default_device`,
+                or else an accelerator if available, otherwise CPU.
 
         Returns:
             Tensor: A new tensor with the specified shape filled with zeros.
@@ -1230,7 +1310,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return cls.full(shape, value=0, dtype=dtype, device=device)
 
     @classmethod
-    def zeros_like(cls, input: Tensor | TensorType) -> Tensor:
+    def zeros_like(cls, input: Tensor) -> Tensor:
         """Creates a tensor of zeros matching a given tensor's properties.
 
         Returns a new tensor filled with zeros that matches the shape, data type,
@@ -1249,19 +1329,15 @@ class Tensor(DLPackArray, HasTensorValue):
             # Result: 3x4 tensor of zeros with dtype float32
 
         Args:
-            input: The tensor or tensor type to match. The returned tensor will
-                have the same shape, dtype, and device as this input.
+            input: The tensor to match. The returned tensor will have the same
+                shape, dtype, and placement as it.
 
         Returns:
             Tensor: A new tensor filled with zeros matching the properties of the
                 input.
         """
-        tensor_type = input.type if isinstance(input, Tensor) else input
-        return cls.zeros(
-            tensor_type.shape,
-            dtype=tensor_type.dtype,
-            device=tensor_type.device.to_device(),
-        )
+        spec = input.layout
+        return cls.zeros(spec.shape, dtype=spec.dtype, device=spec.mapping)
 
     @classmethod
     def ones(
@@ -1269,7 +1345,7 @@ class Tensor(DLPackArray, HasTensorValue):
         shape: ShapeLike,
         *,
         dtype: DType | None = None,
-        device: Device | DeviceMapping | None = None,
+        device: Device | DeviceMesh | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with ones.
 
@@ -1288,9 +1364,10 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device or device mapping where the tensor will be
-                allocated. If not specified, defaults to an accelerator if
-                available, otherwise CPU.
+            device: The device, mesh, or device mapping where the tensor
+                will be allocated. A mesh replicates the tensor. If not
+                specified, defaults to the one set by :func:`default_device`,
+                or else an accelerator if available, otherwise CPU.
 
         Returns:
             Tensor: A new tensor with the specified shape filled with ones.
@@ -1298,7 +1375,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return cls.full(shape, value=1, dtype=dtype, device=device)
 
     @classmethod
-    def ones_like(cls, input: Tensor | TensorType) -> Tensor:
+    def ones_like(cls, input: Tensor) -> Tensor:
         """Creates a tensor of ones matching a given tensor's properties.
 
         Returns a new tensor filled with ones that matches the shape, data type,
@@ -1317,19 +1394,15 @@ class Tensor(DLPackArray, HasTensorValue):
             # Result: 3x4 tensor of ones with dtype float32
 
         Args:
-            input: The tensor or tensor type to match. The returned tensor will
-                have the same shape, dtype, and device as this input.
+            input: The tensor to match. The returned tensor will have the same
+                shape, dtype, and placement as it.
 
         Returns:
             Tensor: A new tensor filled with ones matching the properties of the
                 input.
         """
-        tensor_type = input.type if isinstance(input, Tensor) else input
-        return cls.ones(
-            tensor_type.shape,
-            dtype=tensor_type.dtype,
-            device=tensor_type.device.to_device(),
-        )
+        spec = input.layout
+        return cls.ones(spec.shape, dtype=spec.dtype, device=spec.mapping)
 
     @classmethod
     def arange(
@@ -1340,7 +1413,7 @@ class Tensor(DLPackArray, HasTensorValue):
         out_dim: DimLike | None = None,
         *,
         dtype: DType | None = None,
-        device: Device | DeviceMapping | None = None,
+        device: Device | DeviceMesh | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor with evenly spaced values within a given interval.
 
@@ -1400,8 +1473,8 @@ class Tensor(DLPackArray, HasTensorValue):
             A 1-D ``Tensor`` containing the evenly spaced values.
 
         Raises:
-            ValueError: If inputs aren't scalar, dynamic scalar inputs omit
-                ``out_dim``, or ``device`` requests sharded placement.
+            ValueError: If inputs aren't scalar, or dynamic scalar inputs
+                omit ``out_dim``.
             RuntimeError: If a statically known interval isn't evenly
                 divisible by ``step``, causing the inferred output length to
                 disagree with the number of generated values.
@@ -1418,47 +1491,48 @@ class Tensor(DLPackArray, HasTensorValue):
         )
 
     @classmethod
-    def range_like(cls, type: TensorType) -> Tensor:
-        """Creates a range tensor matching a given type's properties.
+    def range_like(cls, input: Tensor) -> Tensor:
+        """Creates a range tensor matching a given tensor's properties.
 
         Returns a new tensor containing sequential indices along the last
-        dimension, broadcasted to match the shape of the specified tensor type.
+        dimension, broadcasted to match the shape of the given tensor.
         Each row (along the last dimension) contains values from 0 to the
         dimension size minus one. This is useful for creating position indices
         or coordinate tensors.
 
         .. code-block:: python
 
+            from max.driver import CPU
             from max.experimental import tensor
-            from max.graph import DeviceRef, TensorType
             from max.dtype import DType
 
-            # Create a reference tensor type with shape (2, 4)
-            ref_type = TensorType(DType.int32, (2, 4), device=DeviceRef.CPU())
+            # Create a reference tensor with shape (2, 4)
+            ref = tensor.Tensor.zeros((2, 4), dtype=DType.int32, device=CPU())
 
-            # Create range tensor matching the reference type
-            x = tensor.Tensor.range_like(ref_type)
+            # Create range tensor matching the reference tensor
+            x = tensor.Tensor.range_like(ref)
             # Result: [[0, 1, 2, 3],
             #          [0, 1, 2, 3]]
 
         Args:
-            type: The tensor type to match. The returned tensor will have the
-                same shape, dtype, and device as this type, with values
+            input: The tensor to match. The returned tensor will have the
+                same shape, dtype, and placement as it, with values
                 representing indices along the last dimension.
 
         Returns:
             Tensor: A new tensor with sequential indices broadcasted to match
-                the input type's shape.
+                the input's shape.
         """
-        dim = type.shape[-1]
+        layout = input.layout
+        dim = layout.shape[-1]
         range = F.arange(
             start=0,
             stop=dim,
             out_dim=dim,
-            dtype=type.dtype,
-            device=type.device.to_device(),
+            dtype=layout.dtype,
+            device=layout.mapping,
         )
-        return F.broadcast_to(range, type.shape)
+        return F.broadcast_to(range, layout.shape)
 
     @property
     def real(self) -> bool:
@@ -1511,6 +1585,18 @@ class Tensor(DLPackArray, HasTensorValue):
         return self._storages
 
     @property
+    def layout(self) -> TensorLayout:
+        """This tensor's dtype, global shape and distribution.
+
+        Immutable, so it says nothing about whether a callable may write to
+        this tensor: that is declared where the tensor becomes an argument,
+        by giving it a
+        :class:`~max.experimental.sharding.BufferLayout` instead.
+        Defined for a distributed tensor too, unlike :attr:`type`.
+        """
+        return TensorLayout(self.dtype, self.shape, self._mapping)
+
+    @property
     def type(self) -> graph.TensorType:
         """Gets the tensor type information.
 
@@ -1521,15 +1607,9 @@ class Tensor(DLPackArray, HasTensorValue):
             TypeError: If the tensor is distributed.
         """
         if self.is_distributed:
-            # self.shape already reports the global, so no fold is needed.
-            dist_type = DistributedTensorType(
-                self.dtype, self.shape, self.mesh, self.placements
-            )
             raise TypeError(
-                f"Cannot get a single TensorType for a distributed tensor. "
-                f"The distributed type is: {dist_type!r}. "
-                f"This API may change in the future to return "
-                f"DistributedTensorType directly."
+                f"{self.layout!r} spans {self.mesh.num_devices} devices, so "
+                "it has no single type. Read tensor.layout instead."
             )
         type = (
             driver_tensor_type(self.driver_tensor)
@@ -1568,7 +1648,7 @@ class Tensor(DLPackArray, HasTensorValue):
         ndim = len(per_rank_shapes[0])
         sharded_axes = {
             ax
-            for p in self._mapping.to_placements()
+            for p in self._mapping.placements
             if (ax := p.localized_axis()) is not None
         }
         cells = [
@@ -1584,7 +1664,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return graph.Shape(
             [
                 make_per_shard_dim(cells[i], global_dim=globals_[i])
-                if i in sharded_axes
+                if i in sharded_axes and not is_per_shard_dim(globals_[i])
                 else globals_[i]
                 for i in range(ndim)
             ]
@@ -1670,6 +1750,27 @@ class Tensor(DLPackArray, HasTensorValue):
         assert isinstance(value, graph.TensorValue)
         return value
 
+    def _as_mutable(self) -> Tensor:
+        """Backs this tensor with a buffer holding its value, and returns it.
+
+        A store promotes on its own, so this is only written out where the
+        promotion would land in the wrong graph: an operand's type is the
+        subgraph body's argument type, so a value the body writes has to be
+        a buffer before the call.
+
+        Returns:
+            ``self``, now backed by a buffer. Already a buffer, unchanged.
+        """
+        self._check_not_distributed("_as_mutable")
+        if isinstance(self._backing_value, graph.BufferValue):
+            return self
+        # Copy the value in, so a later read sees the writes.
+        tensor = self.__tensorvalue__()
+        assert self._state is not None
+        self._state.value = buffer = ops.buffer_create(tensor.type.as_buffer())
+        buffer[...] = tensor
+        return self
+
     def __buffervalue__(self) -> graph.BufferValue:
         """Gets a BufferValue for the underlying data.
 
@@ -1677,12 +1778,12 @@ class Tensor(DLPackArray, HasTensorValue):
         the resulting BufferValue is passed into a staged mutating op,
         and the backing data is not accurate until the graph has executed.
 
-        If self is backed by a TensorValue
-            - create a new BufferValue via `ops.buffer_create` and
-            `ops.buffer_store` containing the same data
-            - `self` is updated to be backed by the new BufferValue
-            - further ops on the same tensor will then load from the
-            buffer to ensure proper sequencing with mutation
+        A tensor backed by a value is promoted here: a buffer is created and
+        the value copied in, so a later read sees the writes.
+
+        Raises:
+            TypeError: If self is backed by a graph argument, whose type is
+                already fixed. Stage that argument as a buffer instead.
         """
         self._check_not_distributed("__buffervalue__")
         if not self.real:
@@ -1700,12 +1801,22 @@ class Tensor(DLPackArray, HasTensorValue):
         if isinstance(value := self._backing_value, graph.BufferValue):
             return value
 
-        # This tensor is currently backed by an unrealized TensorValue.
-        # Create a BufferValue and assign the current value to it
-        tensor = self.__tensorvalue__()
-        assert self._state is not None
-        self._state.value = buffer = ops.buffer_create(tensor.type.as_buffer())
-        buffer[...] = tensor
+        # An argument's type is fixed where it crossed the boundary, so a
+        # buffer created for one is local to this graph and the store would
+        # never reach the caller.
+        if isinstance(value, graph.TensorValue) and any(
+            isinstance(argument, graph.TensorValue)
+            and argument._mlir_value == value._mlir_value
+            for argument in graph.Graph.current.inputs
+        ):
+            raise TypeError(
+                "cannot mutate a tensor argument that was staged as a tensor. "
+                "Stage it as a buffer instead, by passing a BufferLayout "
+                "as its spec."
+            )
+
+        buffer = self._as_mutable()._backing_value
+        assert isinstance(buffer, graph.BufferValue)
         return buffer
 
     def __bool__(self) -> bool:
@@ -1714,6 +1825,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
     def _values(self) -> Generator[Any]:
         self._check_not_distributed("_values")
+        _validation_hooks.device_transfer("Tensor._values()", self, CPU())
         self._sync_realize()
         dt = self.driver_tensor.to(CPU())
         for idx in dt._iterate_indices():
@@ -1724,6 +1836,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
     def __dlpack__(self, stream: int | None = None):
         self._check_not_distributed("__dlpack__")
+        _validation_hooks.device_transfer("Tensor.__dlpack__()", self, CPU())
         self._sync_realize()
         assert self._storages is not None
         return self._storages[0].__dlpack__(stream=stream)
@@ -1779,14 +1892,15 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Returns:
             The scalar value from the tensor. The return type matches the tensor's
-            dtype (e.g., float for float32, int for int32).
+            dtype (such as float for float32, int for int32).
 
         Raises:
             TypeError: If the tensor contains more than one element.
             ValueError: If the tensor is distributed and not fully replicated.
         """
+        _validation_hooks.device_transfer("Tensor.item()", self, CPU())
         if self.is_distributed:
-            if not is_fully_replicated(self._mapping):
+            if not self._mapping.is_fully_replicated:
                 # Reuse the standard error for non-replicated distributed
                 # tensors (Sharded, Partial, etc.).
                 self._check_not_distributed("item")
@@ -1819,7 +1933,8 @@ class Tensor(DLPackArray, HasTensorValue):
         This method supports three target types:
 
         1. **Device**: Transfers a single-device tensor to the target device.
-           For realized tensors, performs a direct driver-level transfer via
+           A distributed tensor is gathered onto the device. For realized
+           tensors, performs a direct driver-level transfer via
            :meth:`~max.driver.Buffer.to`. For unrealized tensors, inserts a
            :func:`~max.graph.ops.transfer_to` op into the computation graph.
 
@@ -1836,17 +1951,16 @@ class Tensor(DLPackArray, HasTensorValue):
         .. code-block:: python
 
             from max.experimental import tensor
-            from max.driver import CPU, Accelerator
+            from max.experimental.tensor import defaults
+            from max.driver import CPU
 
-            # Create a tensor on CPU
             x = tensor.Tensor.ones((2, 3), device=CPU())
-            print(x.device)  # CPU
+            print(x.device)
 
-            # Transfer to accelerator
-            y = x.to(Accelerator())
-            print(y.device)  # Accelerator(0)
+            _, mesh = defaults()
+            y = x.to(mesh.devices[0])
+            print(y.device)
 
-            # Same-device transfer is a no-op
             z = y.to(y.device)
             assert z is y
 
@@ -1866,14 +1980,14 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         mapping: DeviceMapping
         if isinstance(target, Device):
-            mapping = PlacementMapping(
-                DeviceMesh.single(target), self.placements
-            )
-        elif isinstance(target, DeviceMesh):
+            return F.transfer_to(self, target)
+        if isinstance(target, DeviceMesh):
             if isinstance(self._mapping, NamedMapping):
                 mapping = self._mapping._resolve(target)
+            elif self.mapping.is_fully_replicated:
+                mapping = DeviceMapping.replicated(target)
             else:
-                mapping = PlacementMapping(target, self.placements)
+                mapping = DeviceMapping(target, self.placements)
         elif isinstance(target, DeviceMapping):
             mapping = target
         else:
@@ -1900,6 +2014,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Materializes distributed tensors and transfers to CPU if needed.
         """
+        _validation_hooks.device_transfer("Tensor.to_numpy()", self, CPU())
         t = _transfer_to(self, CPU()) if self.is_distributed else self
         if t.device != CPU():
             t = t.to(CPU())
@@ -2505,10 +2620,10 @@ class Tensor(DLPackArray, HasTensorValue):
     def __neg__(self) -> Tensor:
         return F.negate(self)
 
-    def __eq__(self, rhs: Any) -> Tensor:  # type: ignore[override]
+    def __eq__(self, rhs: object) -> Tensor:  # type: ignore[override]
         return F.equal(self, rhs)
 
-    def __ne__(self, rhs: Any) -> Tensor:  # type: ignore[override]
+    def __ne__(self, rhs: object) -> Tensor:  # type: ignore[override]
         return F.not_equal(self, rhs)
 
     def __ge__(self, rhs: Any) -> Tensor:
@@ -2548,10 +2663,10 @@ class Tensor(DLPackArray, HasTensorValue):
         return F.div(lhs, self)
 
     def __floordiv__(self, rhs: TensorValueLike) -> Tensor:
-        return F.floor(F.div(self, rhs))
+        return F.floor_div(self, rhs)
 
     def __rfloordiv__(self, lhs: TensorValueLike) -> Tensor:
-        return F.floor(F.div(lhs, self))
+        return F.floor_div(lhs, self)
 
     def __mod__(self, rhs: TensorValueLike) -> Tensor:
         return F.mod(self, rhs)

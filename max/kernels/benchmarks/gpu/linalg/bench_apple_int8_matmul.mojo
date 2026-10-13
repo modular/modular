@@ -42,17 +42,17 @@ from linalg.matmul.gpu.apple.int8_matmul import (
 def _bench_gemm(
     m: Int, n: Int, k: Int, label: String, ctx: DeviceContext
 ) raises:
-    var a = ctx.enqueue_create_buffer[DType.int8](m * k)
-    var b = ctx.enqueue_create_buffer[DType.int8](n * k)
-    var asc = ctx.enqueue_create_buffer[DType.float32](m)
-    var bsc = ctx.enqueue_create_buffer[DType.float32](n)
-    var bias = ctx.enqueue_create_buffer[DType.bfloat16](1)
-    var c = ctx.enqueue_create_buffer[DType.bfloat16](m * n)
-    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_immut()
-    var b_tt = TileTensor(b.unsafe_ptr(), row_major(n, k)).as_immut()
-    var as_tt = TileTensor(asc.unsafe_ptr(), row_major(m)).as_immut()
-    var bs_tt = TileTensor(bsc.unsafe_ptr(), row_major(n)).as_immut()
-    var bias_tt = TileTensor(bias.unsafe_ptr(), row_major(1)).as_immut()
+    var a = ctx.enqueue_create_buffer[.int8](m * k)
+    var b = ctx.enqueue_create_buffer[.int8](n * k)
+    var asc = ctx.enqueue_create_buffer[.float32](m)
+    var bsc = ctx.enqueue_create_buffer[.float32](n)
+    var bias = ctx.enqueue_create_buffer[.bfloat16](1)
+    var c = ctx.enqueue_create_buffer[.bfloat16](m * n)
+    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_imm()
+    var b_tt = TileTensor(b.unsafe_ptr(), row_major(n, k)).as_imm()
+    var as_tt = TileTensor(asc.unsafe_ptr(), row_major(m)).as_imm()
+    var bs_tt = TileTensor(bsc.unsafe_ptr(), row_major(n)).as_imm()
+    var bias_tt = TileTensor(bias.unsafe_ptr(), row_major(1)).as_imm()
     var c_tt = TileTensor(c.unsafe_ptr(), row_major(m, n))
 
     for _ in range(30):
@@ -95,23 +95,21 @@ def _bench_gemm(
 
 
 def _bench_quant(m: Int, k: Int, label: String, ctx: DeviceContext) raises:
-    var a = ctx.enqueue_create_buffer[DType.bfloat16](m * k)
-    var q = ctx.enqueue_create_buffer[DType.int8](m * k)
-    var s = ctx.enqueue_create_buffer[DType.float32](m)
-    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_immut()
+    var a = ctx.enqueue_create_buffer[.bfloat16](m * k)
+    var q = ctx.enqueue_create_buffer[.int8](m * k)
+    var s = ctx.enqueue_create_buffer[.float32](m)
+    var a_tt = TileTensor(a.unsafe_ptr(), row_major(m, k)).as_imm()
     var q_tt = TileTensor(q.unsafe_ptr(), row_major(m, k))
     var s_tt = TileTensor(s.unsafe_ptr(), row_major(m))
 
     for _ in range(30):
-        enqueue_apple_int8_quantize_activation[DType.bfloat16](
-            q_tt, a_tt, s_tt, ctx
-        )
+        enqueue_apple_int8_quantize_activation[.bfloat16](q_tt, a_tt, s_tt, ctx)
         ctx.synchronize()
     var best = Float64(1.0e30)
     for _ in range(3):
         var st = perf_counter()
         for _ in range(20):
-            enqueue_apple_int8_quantize_activation[DType.bfloat16](
+            enqueue_apple_int8_quantize_activation[.bfloat16](
                 q_tt, a_tt, s_tt, ctx
             )
             ctx.synchronize()

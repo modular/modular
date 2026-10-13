@@ -6,7 +6,7 @@ load cycle (``modular_py_library`` loads ``modular_py_test``).
 
 _MAX_PYTHON_ROOT = "max/python/max/"
 _IGNORED_PACKAGES = [
-    "max/python/max/_core/internal/mlir_nanobind/tblgen",
+    "max/python/max/_core/mcl/mlir_nanobind/tblgen",
 ]
 
 def compute_py_imports(package_name, imports):

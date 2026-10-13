@@ -17,7 +17,7 @@ from std.sys import align_of, size_of
 # AMD Helper functions and structs for Tensor Core MMA operations
 from std.sys.info import simd_width_of
 
-from std.gpu import (
+from max.gpu import (
     block_dim,
     block_idx,
     global_idx,
@@ -29,9 +29,10 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from layout import (
     Layout,
-    PointerStorage,
+    DefaultEngine,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
     stack_allocation,
 )
@@ -46,13 +47,12 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from std.memory import Pointer
 
 from std.utils.index import IndexList
 
 
 # Function to handle AMD-specific scheduling
-@always_inline
+@inline(.always)
 # @__parameter
 def amd_scheduling_hints[
     input_type: DType,
@@ -137,22 +137,21 @@ def amd_scheduling_hints[
         )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def copy_local_to_dram_32_32_8[
     dst_thread_layout: Layout,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
 ](
-    dst: TileTensor[Storage=PointerStorage[], ...],
-    src: TileTensor[Storage=PointerStorage[], ...],
-    dst_base: TileTensor[Storage=PointerStorage[], ...],
+    dst: TileTensor[Engine=DefaultEngine[], ...],
+    src: TileTensor[Engine=DefaultEngine[], ...],
+    dst_base: TileTensor[Engine=DefaultEngine[], ...],
 ):
     # TODO: use copy_local_to_dram instead once fixed. This is a workaround for now.
 
-    # `distribute` / `distance` / `runtime_layout` / `element_layout` and
-    # `Element` are `LayoutTensor`-only, and the vectorized fragment views have
-    # nested element layouts (not flat). Bridge the flat tiles to `LayoutTensor`
-    # and vectorize there; the buffer resource uses the native `TileTensor`
-    # `make_amd_buffer_resource` overload on the (flat) base tensor.
+    # The distributed-fragment API this workaround needs (`distance` from a raw
+    # pointer, fragment `element_layout`, and `Element` loads feeding the AMD
+    # buffer store) is `LayoutTensor`-only, so bridge and vectorize there; the
+    # resource descriptor below is built from the native pointer-backed base.
     var dst_lt = dst.to_layout_tensor().vectorize[1, 4]()
     var src_lt = src.to_layout_tensor().vectorize[1, 4]()
 
@@ -237,11 +236,13 @@ struct AMD_MMA[
     ]()
 
     # The flat register tiles are stored as `TileTensor` and bridged to
-    # `LayoutTensor` only at the irreducible AMD-DMA / `TiledTensorCore` MMA
-    # boundaries (see `MMATileBuffers`). The shared-memory tile stays
-    # `LayoutTensor` (nested swizzled layout + AMD `row_major` DMA path), so its
-    # type lives on `MMATileBuffers`, not here. `stack_allocation` yields a
-    # `MutUntrackedOrigin`, so the register-tile type matches that origin.
+    # `LayoutTensor` only at the irreducible AMD-DMA / `TiledTensorCore.mma`
+    # boundaries (see `MMATileBuffers`); the shared-memory tile stays
+    # `LayoutTensor` (swizzled in-place loaders + AMD `row_major` DMA path),
+    # so its type lives on `MMATileBuffers`, not here. `stack_allocation`
+    # yields a `MutUntrackedOrigin`, so the register-tile type matches that
+    # origin.
+
     comptime MMARegTileLayout[num_mmas: Int] = row_major[
         num_mmas * Self.num_k_tiles, Self.simd_width
     ]()
@@ -249,11 +250,11 @@ struct AMD_MMA[
         Self.in_type,
         type_of(Self.MMARegTileLayout[num_mmas]),
         MutUntrackedOrigin,
-        address_space=AddressSpace.LOCAL,
+        address_space=.LOCAL,
     ]
 
 
-@always_inline
+@inline(.always)
 def mma[
     k_tile_idx: Int,
     swap_a_b: Bool,
@@ -278,16 +279,13 @@ def mma[
 
     This function is used to perform the MMA operation for the AMD_MMA struct.
     """
-    # `get_reg_tile` returns `LayoutTensor` k-tile views (the register fragments
-    # are written/read by the `LayoutTensor`-only `TiledTensorCore` loaders, so
-    # they stay `LayoutTensor`). `c_reg_tile` is a `TileTensor`; bridge it (the
-    # view aliases the same storage) for the MMA fragment compute.
+    # The legacy MMA boundary consumes views of the native register storage.
     var a_reg_tile = a_tiles.get_reg_tile[k_tile_idx]()
     var b_reg_tile = b_tiles.get_reg_tile[k_tile_idx]()
 
     a_tiles.mma_type.tensor_core_mma.mma[swap_a_b=swap_a_b](
-        a_reg_tile,
-        b_reg_tile,
+        a_reg_tile.to_layout_tensor(),
+        b_reg_tile.to_layout_tensor(),
         c_reg_tile.to_layout_tensor(),
     )
 
@@ -313,11 +311,13 @@ struct MMATileBuffers[
     The public operand (`tensor_type`) and the flat register tiles are
     `TileTensor`. The DRAM→LOCAL→SHARED path is irreducibly `LayoutTensor`:
     `tile_io`'s `TileTensor` copiers explicitly reject the AMD `buffer_load` /
-    `row_major` prefetch path, `TileTensor` has no `tiled_iterator`, and the
-    swizzled (nested `blocked_product`) shared-memory layout is not flat so it
-    cannot be bridged via `to_layout_tensor()`. The incoming `TileTensor` is
-    therefore bridged to a `LayoutTensor` for the gmem iterator and the shared
-    tile, and the flat register tiles are bridged per AMD-DMA / MMA call.
+    `row_major` prefetch path, `TileTensor` has no `tiled_iterator` for the
+    gmem walk, and the swizzled (nested `blocked_product`) shared-memory
+    layout is consumed by `LayoutTensor`-only code paths (the AMD `row_major`
+    copier and the swizzled `TensorCore` in-place loaders), so it stays
+    `LayoutTensor` end to end. The incoming `TileTensor` is therefore bridged
+    to a `LayoutTensor` for the gmem iterator and the shared tile, and the
+    flat register tiles are bridged per AMD-DMA / MMA call.
     """
 
     # Bridged `LayoutTensor` type for the incoming operand. The gmem iterator
@@ -336,14 +336,14 @@ struct MMATileBuffers[
     # Tensor types for different memory regions
 
     # Shared memory allocation for matrix data shared across the block. This
-    # stays `LayoutTensor`: the swizzled nested layout is not flat (so it is
-    # not bridgeable) and the AMD `row_major` `copy_local_to_shared` path is
-    # `LayoutTensor`-only.
+    # stays `LayoutTensor`: its consumers are `LayoutTensor`-only (the AMD
+    # `row_major` `copy_local_to_shared` path and the swizzled in-place
+    # `TensorCore` loaders below).
     comptime SharedMemTileType = LayoutTensor[
         Self.mma_type.in_type,
         Self.smem_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=Self.mma_type.type_alignment,
     ]
 
@@ -352,7 +352,7 @@ struct MMATileBuffers[
 
     # Tile view optimized for matrix multiplication acceleration (MMA)
     # operations. Stays `LayoutTensor` -- it feeds the `LayoutTensor`-only
-    # `TiledTensorCore` `load_a` / `load_b`.
+    # swizzled in-place `TensorCore` `load_a` / `load_b` (via `.mma_op`).
     @__allow_legacy_any_origin_fields
     var shared_mem_warp_tile: Self.SharedMemTileType.TileType[
         Self.warp_rows, Self.mma_type.WK
@@ -364,26 +364,13 @@ struct MMATileBuffers[
     comptime MMARegTileLayout = Self.mma_type.MMARegTileLayout[Self.num_mmas]
     var load_reg_tile: Self.MMARegTileType
 
-    # Register-level storage for matrix data during computation. Flat layout ->
-    # stored as a `TileTensor`. The mutable `LayoutTensor` `.split` k-tile views
-    # (written by `load_a` / `load_b`) are derived on demand by bridging this
-    # tile -- `TileTensor.split` would yield immutable views.
+    # Mutable K-tile views alias the native register allocation; adapters are
+    # only needed when passing those views to legacy loaders or MMA.
     var mma_reg_tile: Self.MMARegTileType
 
-    # `LayoutTensor` bridge of the flat register tile. The MMA fragments are
-    # written/read by the `LayoutTensor`-only `TiledTensorCore` loaders, so the
-    # k-tile views (`get_reg_tile` / `load_tile_from_shared`) stay
-    # `LayoutTensor`. Mirrors exactly what `mma_reg_tile.to_layout_tensor()`
-    # returns (the `coord_to_int_tuple` layout must match bit-for-bit, a literal
-    # `Layout.row_major(...)` is a distinct unfolded parser-time type).
-    comptime BridgedRegTileType = LayoutTensor[
-        Self.mma_type.in_type,
-        Layout(
-            coord_to_int_tuple[*Self.MMARegTileType.LayoutType._shape_types](),
-            coord_to_int_tuple[*Self.MMARegTileType.LayoutType._stride_types](),
-        ),
-        Self.MMARegTileType.origin,
-        address_space=Self.MMARegTileType.address_space,
+    comptime MMARegKTileType = Self.MMARegTileType.TileResultType[
+        type_of(coord[Self.num_mmas, Self.mma_type.simd_width]).element_types,
+        linear_idx_type=Self.MMARegTileType.linear_idx_type,
     ]
 
     # Global memory iterator for input tensor (bridged `LayoutTensor`).
@@ -398,7 +385,7 @@ struct MMATileBuffers[
     # resource.
     var tensor: Self.BridgedTensorType
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         tensor: Self.tensor_type,
@@ -420,12 +407,12 @@ struct MMATileBuffers[
         ](warp_idx, warp_k_idx)
         self.load_reg_tile = stack_allocation[
             dtype=Self.mma_type.in_type,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             alignment=Self.mma_type.type_alignment,
         ](Self.MMARegTileLayout)
         self.mma_reg_tile = stack_allocation[
             dtype=Self.mma_type.in_type,
-            address_space=AddressSpace.LOCAL,
+            address_space=.LOCAL,
             alignment=Self.mma_type.type_alignment,
         ](Self.MMARegTileLayout)
         # Bridge the incoming `TileTensor` once for the AMD DMA path.
@@ -436,7 +423,7 @@ struct MMATileBuffers[
         self.global_offset = Self.stride * Self.block_rows * block_idx
         self.tensor = tensor_lt
 
-    @always_inline
+    @inline(.always)
     def copy_to_shared(self):
         """Copy data from thread-local memory to shared memory.
 
@@ -456,7 +443,7 @@ struct MMATileBuffers[
             ](),
         )
 
-    @always_inline
+    @inline(.always)
     def load_from_dram(mut self) -> None:
         """Load data from global memory (DRAM) to thread-local memory."""
         # AMD `buffer_load` `copy_dram_to_local` is `LayoutTensor`-only; bridge
@@ -476,33 +463,25 @@ struct MMATileBuffers[
         self.global_offset += Self.mma_type.BK
         self.gmem_iter._incr()
 
-    @always_inline
-    def get_reg_tile[
-        k_tile_idx: Int
-    ](self) -> Self.BridgedRegTileType.SplitElementType[
-        Self.mma_type.num_k_tiles
-    ]:
+    @inline(.always)
+    def get_reg_tile[k_tile_idx: Int](self) -> Self.MMARegKTileType:
         """Get a specific K-dimension tile from the register buffer.
 
         Parameters:
             k_tile_idx: The K-dimension tile index.
 
         Returns:
-            A `LayoutTensor` tile view (the MMA fragments stay `LayoutTensor`)
-            for the specified location in the register buffer.
+            A mutable `TileTensor` view of the specified K tile.
         """
-        # `TileTensor.split` yields immutable views; bridge to a `LayoutTensor`
-        # (aliasing the same storage) and split that for the mutable k-tile.
-        return self.mma_reg_tile.to_layout_tensor().split[
-            Self.mma_type.num_k_tiles
-        ]()[k_tile_idx]
+        return self.mma_reg_tile.tile[Self.num_mmas, Self.mma_type.simd_width](
+            k_tile_idx, 0
+        )
 
-    @always_inline
+    @inline(.always)
     def load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
-        # The MMA fragment register tile stays `LayoutTensor`; bridge + split.
-        var reg_k_tile = self.mma_reg_tile.to_layout_tensor().split[
-            Self.mma_type.num_k_tiles
-        ]()[k_tile_idx]
+        # Preserve the loader's additional K-tile offset after selecting the
+        # register view; the shared-memory loader still requires a legacy view.
+        var reg_k_tile = self.get_reg_tile[k_tile_idx]().to_layout_tensor()
         comptime if is_a:
             Self.mma_type.tensor_core_mma.mma_op.load_a[
                 swizzle=Self.mma_type.swizzle
@@ -525,7 +504,7 @@ struct MMATileBuffers[
             )
 
 
-@always_inline
+@inline(.always)
 def compute_relative_error_kernel[
     dtype: DType,
     layout: TensorLayout,
@@ -586,7 +565,7 @@ def compute_relative_error_kernel[
     output[idx, idy] = rel_error
 
 
-@always_inline
+@inline(.always)
 def max_reduce_kernel[
     dtype: DType,
     layout: TensorLayout,
@@ -763,7 +742,7 @@ def compare_equal[
             for j in range(n):
                 var diff_val = abs(reference[i, j] - computed[i, j])
                 diff[i, j] = diff_val
-                var diff_f64 = diff_val.cast[DType.float64]()[0]
+                var diff_f64 = diff_val.cast[.float64]()[0]
                 if diff_f64 > max_diff:
                     max_diff = diff_f64
                 # diff[i, j] = reference[i, j] - computed[i, j]

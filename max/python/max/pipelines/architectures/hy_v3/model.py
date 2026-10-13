@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
@@ -60,7 +61,7 @@ class HYV3Inputs(Llama3Inputs):
             *dp_buffers,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -75,7 +76,7 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     batch_processor_cls: ClassVar[type[HyV3BatchProcessor]] = HyV3BatchProcessor
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
     ep_comm_initializer: EPCommInitializer | None = None
@@ -83,7 +84,9 @@ class HYV3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> HYV3Config:
         model_config = HYV3Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,

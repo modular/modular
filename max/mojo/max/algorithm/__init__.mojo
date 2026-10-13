@@ -41,7 +41,6 @@ from .reduction import (
     min,
     product,
     reduce,
-    reduce_boolean,
     sum,
     variance,
 )

@@ -36,13 +36,7 @@ Run with: `mojo max/kernels/benchmarks/gpu/nn/bench_conv2d_apple.mojo`.
 from std.math import ceildiv
 from std.time import perf_counter
 
-from layout import (
-    Idx,
-    LTToTTLayout,
-    Layout,
-    LayoutTensor,
-    TileTensor,
-)
+from layout import LTToTTLayout, Layout, TileTensor
 from max.gpu.host import DeviceContext
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf
 from nn.conv.gpu.im2col_matmul_2d import (
@@ -153,32 +147,31 @@ def bench_shape[
     var mat_ms = (perf_counter() - t_mat) / Float64(hot) * 1e3
 
     # ---- (c) NAIVE thread-per-pixel kernel ----
-    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
-    var output_lt = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
 
     comptime block_size = 16
     comptime naive = conv2d_gpu_naive_nhwc_rscf[
-        input_layout,
-        filter_layout,
-        output_layout,
+        input_tt.LayoutType,
+        filter_tt.LayoutType,
+        output_tt.LayoutType,
         dtype,
         dtype,
         dtype,
         block_size,
         None,
+        input_tt.Engine,
+        filter_tt.Engine,
+        output_tt.Engine,
     ]
     var gx = ceildiv(W_out, block_size)
     var gy = ceildiv(H_out, block_size)
     var gz = N
 
-    @__parameter
-    @always_inline
-    def run_naive() raises:
+    @inline(.always)
+    def run_naive() raises {imm}:
         ctx.enqueue_function[naive](
-            input_lt,
-            filter_lt,
-            output_lt,
+            input_tt.as_unsafe_any_origin(),
+            filter_tt.as_unsafe_any_origin(),
+            output_tt.as_unsafe_any_origin(),
             stride,
             IndexList[2](1, 1),
             pad,

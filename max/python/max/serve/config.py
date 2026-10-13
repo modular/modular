@@ -37,11 +37,6 @@ class APIType(Enum):
     OPENRESPONSES = "responses"
 
 
-class RunnerType(Enum):
-    PYTORCH = "pytorch"
-    TOKEN_GEN = "token_gen"
-
-
 class MetricRecordingMethod(Enum):
     """How should metrics be recorded?"""
 
@@ -60,10 +55,15 @@ class KernelTraceLevel(Enum):
     """Controls GPU kernel-trace capture depth.
 
     Members are declared in increasing capture depth and compare in that
-    order, so gates can be written as e.g. ``level >= BATCH``. Each level
+    order, so gates can be written as, for example, ``level >= BATCH``. Each level
     includes everything at the levels below it. All levels above ``off`` add
     overhead to the model worker process. Use the minimum level that
     satisfies your observability needs.
+
+    Each level describes the whole session. At every level below ``kernel``,
+    ``kernel_trace_headers`` also lets a request's ``x-max-trace-level``
+    header capture the passes it runs in, with ``max.batch`` spans and GPU
+    kernels.
     """
 
     OFF = "off"
@@ -71,9 +71,9 @@ class KernelTraceLevel(Enum):
     phase spans are governed by the tracing exporter config, not this flag."""
 
     BATCH = "batch"
-    """Emit a ``max.batch`` OTel span per forward pass (requires tracing to
-    be configured, see ``disable_telemetry``). No per-kernel GPU detail.
-    Minimal overhead."""
+    """Emit a ``max.batch`` OTel span per forward pass (requires
+    ``OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`` to be set and telemetry enabled).
+    No per-kernel GPU detail. Minimal overhead."""
 
     OP = "op"
     """Op-level NVTX annotation. Enables Nsight / libkineto user-annotation
@@ -187,6 +187,21 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_MAX_PENDING_REQUESTS",
     )
 
+    max_request_bytes: int = Field(
+        description=(
+            "Maximum size in bytes of an accepted HTTP request body. Requests "
+            "whose body exceeds this are rejected with HTTP 413 before the body "
+            "is buffered, bounding per-request memory so a client cannot "
+            "exhaust host memory with an oversized payload. The default (100 "
+            "MiB) leaves ample headroom for multimodal requests that inline "
+            "base64 media; raise it for larger inline payloads, or set 0 to "
+            "disable the limit."
+        ),
+        default=100 * 1024 * 1024,  # 100 MiB
+        ge=0,
+        alias="MAX_SERVE_MAX_REQUEST_BYTES",
+    )
+
     # File URI configuration
     allowed_image_roots: list[str] = Field(
         description="List of allowed root directories for file:// URI access",
@@ -199,18 +214,27 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
     )
     # Media (image/video) resolution configuration for http(s):// and data:
-    # URIs. ``max_bytes`` is a server-level cap applied on top of any
-    # per-model cap (the smaller of the two wins); 0 disables the
-    # server-level cap. ``media_kind`` is only the default label used in
-    # size-limit error messages when a resolver caller does not pass one.
-    max_bytes: int = Field(
+    # URIs. The size of resolved media is bounded in aggregate by
+    # ``max_media_bytes`` (all fetched and decoded media for a request must fit
+    # within it), not by a per-item cap. ``media_kind`` is only the default
+    # label used in size-limit error messages when a resolver caller does not
+    # pass one.
+    max_media_bytes: int = Field(
         description=(
-            "Server-level maximum size in bytes for media resolved from "
-            "http(s):// or data: URIs. Applied on top of any per-model cap "
-            "(the smaller wins). 0 disables the server-level cap."
+            "Maximum total size in bytes of the media (images and videos) one "
+            "request may pull in, across every http(s)://, data:, and file: "
+            "reference it names. Bounds both what is fetched and what a single "
+            "image may decode to, so a small on-the-wire image that expands to "
+            "hundreds of MB is rejected from its header before the pixel "
+            "buffer is allocated. Distinct from 'max_request_bytes', which "
+            "bounds the request body itself: a tiny body can name URLs the "
+            "server then fetches on the client's behalf, so the two limits "
+            "govern different resources and are set independently. Set 0 to "
+            "disable the limit."
         ),
-        default=0,
-        alias="MAX_SERVE_MAX_BYTES",
+        default=100 * 1024 * 1024,  # 100 MiB
+        ge=0,
+        alias="MAX_SERVE_MAX_MEDIA_BYTES",
     )
     media_kind: str = Field(
         description=(
@@ -219,6 +243,26 @@ class Settings(BaseSettings):
         ),
         default="image",
         alias="MAX_SERVE_MEDIA_KIND",
+    )
+    media_url_ssrf_protection_enabled: bool = Field(
+        description=(
+            "Guard client-supplied http(s):// media URLs against SSRF. On by"
+            " default. Break-glass switch: disable only to restore the legacy"
+            " unvalidated fetch, and prefer MAX_SERVE_MEDIA_URL_ALLOWED_HOSTS to"
+            " permit specific internal hosts instead."
+        ),
+        default=True,
+        alias="MAX_SERVE_MEDIA_URL_SSRF_PROTECTION_ENABLED",
+    )
+    media_url_allowed_hosts: list[str] = Field(
+        description=(
+            "Allowlist permitting otherwise-blocked internal hosts to be fetched"
+            " while SSRF protection stays on. Each entry is an exact hostname"
+            " (case-insensitive) or an IP/CIDR (e.g. '10.0.0.0/8',"
+            " '192.168.1.10')."
+        ),
+        default_factory=list,
+        alias="MAX_SERVE_MEDIA_URL_ALLOWED_HOSTS",
     )
     generated_media_storage_mb: int = Field(
         description="Maximum amount of local disk space in MiB to use for generated image/video artifacts served via /content routes.",
@@ -291,13 +335,30 @@ class Settings(BaseSettings):
     kernel_trace_level: KernelTraceLevel = Field(
         default=KernelTraceLevel.OFF,
         description=(
-            "GPU kernel-trace capture depth. 'off' (default) adds zero "
-            "overhead. 'batch' enables per-forward-pass max.batch OTel "
-            "spans (when tracing is enabled) with no GPU capture. 'op' "
-            "adds NVTX op-level ranges. 'kernel' enables full libkineto "
-            "GPU kernel timeline capture (highest overhead)."
+            "GPU kernel-trace capture depth for the whole session. 'off' "
+            "(default) adds zero overhead. 'batch' enables per-forward-pass "
+            "max.batch OTel spans (when tracing is enabled) with no GPU "
+            "capture. 'op' adds NVTX op-level ranges. 'kernel' enables "
+            "full libkineto GPU kernel timeline capture (highest "
+            "overhead). Below 'kernel', kernel_trace_headers also lets a "
+            "request capture the GPU kernels of the passes it runs in."
         ),
         alias="MAX_SERVE_KERNEL_TRACE_LEVEL",
+    )
+    kernel_trace_headers: bool = Field(
+        default=False,
+        description=(
+            "Honor the per-request x-max-trace-level header: the model "
+            "worker captures GPU kernels for the passes a request with the "
+            "header runs in, saving the capture to kernel-capture.json in "
+            "a private per-worker directory, "
+            "$TMPDIR/max-kernel-capture-<random>. Needs the profiler "
+            "plugin, and is refused when kernel_trace_level is 'kernel'. "
+            "Passes run while another capture, such as a Dynolog trace, "
+            "holds the profiler are not captured. Ignored while tracing is "
+            "off. Off by default: the header is then never read."
+        ),
+        alias="MAX_SERVE_KERNEL_TRACE_HEADERS",
     )
 
     # Model worker configuration
@@ -478,6 +539,18 @@ class Settings(BaseSettings):
             f"    max_pending_requests   : "
             f"{self.max_pending_requests if self.max_pending_requests is not None else 'unbounded'}"
         )
+        max_request_str = (
+            to_human_readable_bytes(self.max_request_bytes)
+            if self.max_request_bytes
+            else "unbounded"
+        )
+        logger.info(f"    max_request_bytes      : {max_request_str}")
+        max_media_str = (
+            to_human_readable_bytes(self.max_media_bytes)
+            if self.max_media_bytes
+            else "unbounded"
+        )
+        logger.info(f"    max_media_bytes        : {max_media_str}")
         logger.info("")
 
         # File System Configuration
@@ -487,13 +560,18 @@ class Settings(BaseSettings):
         logger.info(
             f"    max_local_image_bytes  : {to_human_readable_bytes(self.max_local_image_bytes)}"
         )
-        max_bytes_str = (
-            to_human_readable_bytes(self.max_bytes)
-            if self.max_bytes
+        logger.info(f"    media_kind             : {self.media_kind}")
+        media_url_allowed_hosts_str = (
+            ", ".join(self.media_url_allowed_hosts)
+            if self.media_url_allowed_hosts
             else "None"
         )
-        logger.info(f"    max_bytes              : {max_bytes_str}")
-        logger.info(f"    media_kind             : {self.media_kind}")
+        logger.info(
+            f"    media_url_ssrf_guard   : {'enabled' if self.media_url_ssrf_protection_enabled else 'DISABLED'}"
+        )
+        logger.info(
+            f"    media_url_allowed_hosts: {media_url_allowed_hosts_str}"
+        )
         logger.info("")
 
         # Metrics and Telemetry Configuration
@@ -506,6 +584,7 @@ class Settings(BaseSettings):
         logger.info(
             f"    kernel_trace_level     : {self.kernel_trace_level.value}"
         )
+        logger.info(f"    kernel_trace_headers   : {self.kernel_trace_headers}")
 
         # Transaction recording (part of telemetry)
         if self.transaction_recording_file:

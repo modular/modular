@@ -68,12 +68,12 @@ def _rms_norm_ref(
         var base = r * cols
         var ss = Float64(0)
         for c in range(cols):
-            var v = src[base + c].cast[DType.float64]()
+            var v = src[base + c].cast[.float64]()
             ss += v * v
         var rms = sqrt(ss / Float64(cols) + eps)
         for c in range(cols):
-            var v = src[base + c].cast[DType.float64]()
-            var g = gamma[c].cast[DType.float64]() + weight_offset
+            var v = src[base + c].cast[.float64]()
+            var g = gamma[c].cast[.float64]() + weight_offset
             dst[base + c] = ((v / rms) * g).cast[rn_type]()
 
 
@@ -99,14 +99,14 @@ def run_one_case(
     var epsilon = Float32(0.001)
     var weight_offset = Scalar[rn_type](0.0)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(data_buf)
     @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[rn_type, width]:
         var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(data_buf)
     @__parameter
     def identity_output_fn[
@@ -131,8 +131,8 @@ def run_one_case(
             ref_h.as_span(),
             rows,
             cols,
-            epsilon.cast[DType.float64](),
-            weight_offset.cast[DType.float64](),
+            epsilon.cast[.float64](),
+            weight_offset.cast[.float64](),
         )
         if not numeric_check(out_h.as_span(), ref_h.as_span()):
             raise Error("rms_norm numeric mismatch")

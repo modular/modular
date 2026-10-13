@@ -43,7 +43,7 @@ from max.nn.comm import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kernels import flash_attention_gpu
 from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module, Shardable, SubgraphInput
+from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import LayerNorm, RMSNorm
 from max.nn.rotary_embedding import DynamicRotaryEmbedding
@@ -56,6 +56,7 @@ from max.pipelines.architectures.llama3.model_config import (
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tree import Tree
 
 from .layers.attention import InternVLMultiheadAttention
 from .model_config import InternVLConfig
@@ -371,9 +372,7 @@ class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
         input_row_offsets_list = list(input_row_offsets)
         kv_collections_list = list(kv_collections)
 
-        def inputs_for_layer(
-            idx: int, h: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
             return [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,

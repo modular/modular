@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
@@ -50,7 +51,7 @@ class MiniMaxM2Inputs(Llama3Inputs):
         #   *signals, *kv,
         #   *ep_inputs                                       (EP MoE only)
         assert self.kv_cache_inputs is not None
-        kv_flat = self.kv_cache_inputs.flatten()
+        kv_flat = tree.leaves(self.kv_cache_inputs)
         result: tuple[Buffer, ...] = (
             self.tokens,
             self.input_row_offsets,
@@ -87,14 +88,16 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     )
 
     model: Model
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
     state_dict: dict[str, Any]
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         model_config = MiniMaxM2Config.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,

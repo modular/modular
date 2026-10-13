@@ -188,7 +188,6 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         self, exc_type: object, exc: BaseException | None, tb: object
     ) -> None:
         self._patcher.restore()
-        return None
 
     def report(self, unit: str = "ms") -> None:
         """Print a full profiling report with component and method tables."""

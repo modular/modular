@@ -7,13 +7,57 @@ module(
 
 include("//bazel:common.MODULE.bazel")
 
+# Rust, for the kv-core pyo3 extension (max._kv_core). Declared here rather than
+# in common.MODULE.bazel because the internal MODULE.bazel declares its own.
+bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_rust_pyo3", version = "0.70.0")
+
+# 0.31.0+ fails to find a rust toolchain
+bazel_dep(name = "rules_rs", version = "0.0.30")
+
+archive_override(
+    module_name = "rules_rust",
+    integrity = "sha256-8hMF5bBiyCiTmJxUR83zIB/+Al3DxQTn8A3hc30/cJ8=",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazelbuild/rules_rust/pull/3911
+        "//bazel/internal:rules_rust_extra_exec_triple.patch",
+    ],
+    strip_prefix = "rules_rust-76abd40167aa8a1a9ef399783c4c610b9c6331a6",
+    # Specifically to pull in https://github.com/bazelbuild/rules_rust/commit/8fd5c0fc1daea902b7bc618d373338e9a8e97b85
+    urls = ["https://github.com/bazelbuild/rules_rust/archive/76abd40167aa8a1a9ef399783c4c610b9c6331a6.tar.gz"],
+)
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    # The intent here is to use our CC toolchain's linker, there may be
+    # a better approach here though. The build fails without these flags.
+    extra_exec_rustc_flags_triples = {"x86_64-unknown-linux-gnu": ["-Clink-self-contained=no"]},
+    extra_rustc_flags_triples = {"x86_64-unknown-linux-gnu": ["-Clink-self-contained=no"]},
+    versions = ["1.94.0"],
+)
+
+# The crate universe behind max._kv_core. kv-core and its bindings form their
+# own Cargo workspace (MXSERV-665) so they resolve without mach, which the
+# //rust_kv workspace reaches through kv-tier-connector. pyo3 is injected into
+# pyo3_extension targets by `//bazel/internal:pyo3_toolchain`.
+crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "kv_core_crates",
+    cargo_lock = "//rust_kv/kv-core-pyo3:Cargo.lock",
+    cargo_toml = "//rust_kv/kv-core-pyo3:Cargo.toml",
+    platform_triples = [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+use_repo(crate, "kv_core_crates")
+
 mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
 mojo_aliases(name = "mojo")
-
-mblack_alias = use_repo_rule("//bazel:mblack_alias.bzl", "mblack_alias")
-
-mblack_alias(name = "mblack")
 
 modular_wheel_repository = use_repo_rule("//bazel:modular_wheel_repository.bzl", "modular_wheel_repository")
 
@@ -36,6 +80,8 @@ register_toolchains(
     "@mojo_toolchains//...",
     "//bazel/internal/cc-toolchain:all",
     "//bazel/internal:mojo_copts_toolchain",
+    "//bazel/internal:pyo3_toolchain",
+    "@rules_rust_pyo3//toolchains:toolchain",
 )
 
 llvm_source = use_extension("//bazel/public-patches:llvm_source.bzl", "llvm_source")

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.sys import size_of
 from std.utils import IndexList, StaticTuple
 
@@ -59,14 +60,15 @@ struct DataType(TrivialRegisterPassable):
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        comptime if dtype == DType.float32:
-            return Self.FLOAT32
-        elif dtype == DType.float16:
-            return Self.FLOAT16
-        elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
-            return Self.UINT8
-        else:
-            return Self.BFLOAT16
+        comptime match dtype:
+            case .float32:
+                return Self.FLOAT32
+            case .float16:
+                return Self.FLOAT16
+            case .float8_e4m3fn | .float8_e8m0fnu | .uint8:
+                return Self.UINT8
+            case _:
+                return Self.BFLOAT16
 
 
 @fieldwise_init("implicit")
@@ -106,7 +108,7 @@ struct SwizzleMode(
     comptime _64B = Self(2)
     comptime _128B = Self(3)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __int__(self) -> Int:
         """Convert SwizzleMode to integer representation.
 
@@ -115,7 +117,7 @@ struct SwizzleMode(
         """
         return Int(self._value)
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         """Check equality between two SwizzleMode instances.
 
@@ -127,7 +129,7 @@ struct SwizzleMode(
         """
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         """Check inequality between two SwizzleMode instances.
 
@@ -139,7 +141,7 @@ struct SwizzleMode(
         """
         return self._value != other._value
 
-    @always_inline
+    @inline(.always)
     def bytes(self) -> Int:
         """Get the swizzle size in bytes.
 
@@ -152,23 +154,24 @@ struct SwizzleMode(
         """
         return Int((2**self._value) * 16)
 
-    @always_inline
+    @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         """Write a human-readable representation of the SwizzleMode to a writer.
 
         Args:
             writer: The writer to output the string representation to.
         """
-        if self._value == 1:
-            writer.write("32B swizzle")
-        elif self._value == 2:
-            writer.write("64B swizzle")
-        elif self._value == 3:
-            writer.write("128B swizzle")
-        elif self._value == 0:
-            writer.write("no swizzle")
-        else:
-            writer.write("invalid swizzle")
+        match self._value:
+            case 1:
+                writer.write("32B swizzle")
+            case 2:
+                writer.write("64B swizzle")
+            case 3:
+                writer.write("128B swizzle")
+            case 0:
+                writer.write("no swizzle")
+            case _:
+                writer.write("invalid swizzle")
 
 
 @fieldwise_init("implicit")
@@ -204,7 +207,7 @@ struct OOBFill(TrivialRegisterPassable):
 # The TMA descriptor is a 128-byte opaque object filled by the driver API.
 # It should be 64-byte aligned both on the host and the device (if passed to constant memory).
 @align(64)
-struct TensorMap(ImplicitlyCopyable):
+struct TensorMap(DevicePassable, ImplicitlyCopyable):
     """A tensor memory access descriptor for optimized GPU tensor operations.
 
     TensorMap encapsulates a 128-byte opaque descriptor that is filled by the
@@ -219,7 +222,30 @@ struct TensorMap(ImplicitlyCopyable):
     var data: StaticTuple[UInt8, 128]
     """The underlying 128-byte opaque descriptor data filled by the CUDA driver API."""
 
-    @always_inline
+    comptime device_type: AnyType = Self
+    """The device-side type for this tensor map."""
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        """Copies the opaque descriptor bytes to the device unchanged.
+
+        Args:
+            encoder: The device specific type encoder.
+            target: Opaque pointer to the target device memory location.
+        """
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Gets the type name for this tensor map.
+
+        Returns:
+            The string "TensorMap".
+        """
+        return "TensorMap"
+
+    @inline(.always)
     def __init__(out self):
         """Initialize an empty TensorMap descriptor.
 
@@ -229,17 +255,8 @@ struct TensorMap(ImplicitlyCopyable):
         """
         self.data = StaticTuple[UInt8, 128]()
 
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """Copy constructor for TensorMap.
 
-        Args:
-            copy: The TensorMap instance to copy from.
-        """
-        self.data = copy.data
-
-
-@always_inline
+@inline(.always)
 def create_tensormap[
     dtype: DType,
     rank: Int,
@@ -329,7 +346,7 @@ def create_tensormap[
     return tensormap
 
 
-@always_inline
+@inline(.always)
 def create_tensormap_im2col[
     dtype: DType,
     rank: Int,

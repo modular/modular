@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import *
 
 
 def add_constant_fn(
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
     constant: Float32,
     len_dev: Int32,
 ):
@@ -32,8 +32,8 @@ def add_constant_fn(
 def run_add_constant(ctx: DeviceContext) raises:
     comptime length = 1024
 
-    var in_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var in_device = ctx.enqueue_create_buffer[.float32](length)
+    var out_device = ctx.enqueue_create_buffer[.float32](length)
 
     with in_device.map_to_host() as in_host:
         for i in range(length):

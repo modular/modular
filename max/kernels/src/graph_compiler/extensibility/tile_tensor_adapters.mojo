@@ -22,17 +22,25 @@ from .tensor_arg_traits import (
 )
 
 
+comptime _TILE_TENSOR_PROJECTION_DISABLED_MSG = (
+    "to_tile_tensor requires a TileTensorable dense argument; the graph"
+    " compiler disables the projection on targets whose storage cannot be"
+    " viewed as a TileTensor at the execute boundary"
+)
+
+
 comptime TileProjection[
     mut: Bool, TensorType: DenseTensor
 ]: AnyType = TileTensor[
     mut=mut,
-    dtype=TensorType.dtype,
+    TensorType.dtype,
     LayoutType=TensorType.LayoutType,
     origin=UntrackedOrigin[mut=mut],
+    Engine=TensorType.Engine,
 ]
 
 
-@always_inline
+@inline(.always)
 def to_tile_tensor[
     TensorType: DenseTensor, //, *, mut: Bool = False
 ](tensor: TensorType) -> TileProjection[mut, TensorType]:
@@ -48,13 +56,15 @@ def to_tile_tensor[
     Returns:
         A `TileTensor` view over the argument's storage.
     """
-    comptime assert conforms_to(TensorType, TileTensorable)
+    comptime assert conforms_to(
+        TensorType, TileTensorable
+    ), _TILE_TENSOR_PROJECTION_DISABLED_MSG
     comptime if mut:
         comptime assert TensorType.mut
     return rebind[TileProjection[mut, TensorType]](tensor.to_tile_tensor())
 
 
-@always_inline
+@inline(.always)
 def to_tile_tensor[
     TensorType: Output & DenseTensor, //
 ](tensor: TensorType) -> TileProjection[True, TensorType]:
@@ -72,12 +82,14 @@ def to_tile_tensor[
     Returns:
         A mutable `TileTensor` view over the argument's storage.
     """
-    comptime assert conforms_to(TensorType, TileTensorable)
+    comptime assert conforms_to(
+        TensorType, TileTensorable
+    ), _TILE_TENSOR_PROJECTION_DISABLED_MSG
     comptime assert TensorType.mut
     return rebind[TileProjection[True, TensorType]](tensor.to_tile_tensor())
 
 
-@always_inline
+@inline(.always)
 def to_tile_tensor[
     TensorType: MutableInput & DenseTensor, //
 ](tensor: TensorType) -> TileProjection[True, TensorType]:
@@ -95,6 +107,8 @@ def to_tile_tensor[
     Returns:
         A mutable `TileTensor` view over the argument's storage.
     """
-    comptime assert conforms_to(TensorType, TileTensorable)
+    comptime assert conforms_to(
+        TensorType, TileTensorable
+    ), _TILE_TENSOR_PROJECTION_DISABLED_MSG
     comptime assert TensorType.mut
     return rebind[TileProjection[True, TensorType]](tensor.to_tile_tensor())

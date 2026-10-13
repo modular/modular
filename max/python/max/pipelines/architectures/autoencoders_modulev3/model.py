@@ -50,8 +50,8 @@ class BaseAutoencoderModel(ComponentModel):
             encoding: Supported encoding for the model.
             devices: List of devices to use.
             weights: Model weights.
-            config_class: Configuration class to use (e.g., AutoencoderKLConfig).
-            autoencoder_class: Autoencoder class to use (e.g., AutoencoderKL).
+            config_class: Configuration class to use (such as AutoencoderKLConfig).
+            autoencoder_class: Autoencoder class to use (such as AutoencoderKL).
             **kwargs: Additional keyword arguments forwarded to ComponentModel.
         """
         super().__init__(config, encoding, devices, weights, **kwargs)

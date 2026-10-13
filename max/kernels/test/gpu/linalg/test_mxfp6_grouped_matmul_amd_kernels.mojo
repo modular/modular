@@ -40,7 +40,7 @@ Usage:
 """
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from max.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv
 from std.memory import bitcast
@@ -48,7 +48,7 @@ from std.random import random_ui64, seed
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp6_utils import (
     FP6Format,
@@ -78,23 +78,23 @@ def _mfma_format[fmt: FP6Format]() -> CDNA4F8F6F4MatrixFormat:
 # ===----------------------------------------------------------------------=== #
 
 
-def _fill_random_bytes(buf: HostBuffer[DType.uint8], n: Int):
+def _fill_random_bytes(buf: HostBuffer[.uint8], n: Int):
     """Every 6-bit code is a finite number in both FP6 encodings, so random
     bytes need no NaN/Inf filtering."""
     for i in range(n):
         buf[i] = UInt8(random_ui64(0, 255))
 
 
-def _fill_random_e8m0(buf: HostBuffer[DType.float8_e8m0fnu], n: Int):
+def _fill_random_e8m0(buf: HostBuffer[.float8_e8m0fnu], n: Int):
     """Scales clamped to E8M0 byte range [125..129] = magnitudes [0.25..4],
     keeping f32 accumulators in range while still exercising scale-dequant."""
     for i in range(n):
-        buf[i] = bitcast[DType.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
+        buf[i] = bitcast[.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
 
 
 def _build_routing(
-    a_offsets_host: HostBuffer[DType.uint32],
-    expert_ids_host: HostBuffer[DType.int32],
+    a_offsets_host: HostBuffer[.uint32],
+    expert_ids_host: HostBuffer[.int32],
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
 ):
@@ -125,12 +125,12 @@ def _build_routing(
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
-    a_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    b_sf_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    c_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    mag_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
+    a_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    b_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
+    c_ptr: MutPointer[Float32, MutAnyOrigin],
+    mag_ptr: MutPointer[Float32, MutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -154,20 +154,16 @@ def _mxfp6_matmul_ref[
     var magnitude = Float32(0)
 
     for ko in range(k_groups):
-        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[
-            DType.float32
-        ]()
-        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[
-            DType.float32
-        ]()
+        var a_scale = a_sf_ptr[unsafe_offset=m * k_groups + ko].cast[.float32]()
+        var b_scale = b_sf_ptr[unsafe_offset=n * k_groups + ko].cast[.float32]()
 
         # 32 elements is one MX block = 24 packed bytes, always 8-byte aligned
         # because k_bytes is a multiple of 24 whenever K is a multiple of 32.
         var a_base = m * k_bytes + ko * 24
         var b_base = n * k_bytes + ko * 24
 
-        var fa = SIMD[DType.uint8, 32](0)
-        var fb = SIMD[DType.uint8, 32](0)
+        var fa = SIMD[.uint8, 32](0)
+        var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
                 a_ptr.load[width=8](a_base + chunk * 8)
@@ -191,14 +187,14 @@ def _per_expert_reference[
 ](
     ctx: DeviceContext,
     num_active: Int,
-    a_offsets_host: HostBuffer[DType.uint32],
-    expert_ids_host: HostBuffer[DType.int32],
-    a_dev: DeviceBuffer[DType.uint8],
-    b_dev: DeviceBuffer[DType.uint8],
-    a_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    b_scales_dev: DeviceBuffer[DType.float8_e8m0fnu],
-    mut c_ref_dev: DeviceBuffer[DType.float32],
-    mut mag_dev: DeviceBuffer[DType.float32],
+    a_offsets_host: HostBuffer[.uint32],
+    expert_ids_host: HostBuffer[.int32],
+    a_dev: DeviceBuffer[.uint8],
+    b_dev: DeviceBuffer[.uint8],
+    a_scales_dev: DeviceBuffer[.float8_e8m0fnu],
+    b_scales_dev: DeviceBuffer[.float8_e8m0fnu],
+    mut c_ref_dev: DeviceBuffer[.float32],
+    mut mag_dev: DeviceBuffer[.float32],
 ) raises:
     comptime K_BYTES = (K * 6) // 8
     comptime scale_K = K // MXFP6_SF_VECTOR_SIZE
@@ -301,20 +297,16 @@ def _run_preb[
     )
 
     # Host buffers + random init.
-    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        total_tokens * K_BYTES
-    )
-    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](
-        num_experts * N * K_BYTES
-    )
-    var a_sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[.uint8](num_experts * N * K_BYTES)
+    var a_sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_sc_h = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var b_sc_h = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
-    var a_off_h = ctx.enqueue_create_host_buffer[DType.uint32](num_active + 1)
-    var eid_h = ctx.enqueue_create_host_buffer[DType.int32](num_active)
+    var a_off_h = ctx.enqueue_create_host_buffer[.uint32](num_active + 1)
+    var eid_h = ctx.enqueue_create_host_buffer[.int32](num_active)
     ctx.synchronize()
 
     _fill_random_bytes(a_h, total_tokens * K_BYTES)
@@ -330,28 +322,26 @@ def _run_preb[
     var max_padded_M = align_up(ascale_toks, 32)
 
     # Device buffers + upload.
-    var a_d = ctx.enqueue_create_buffer[DType.uint8](total_tokens * K_BYTES)
-    var b_d = ctx.enqueue_create_buffer[DType.uint8](num_experts * N * K_BYTES)
-    var b_pre_d = ctx.enqueue_create_buffer[DType.uint8](
-        num_experts * N * K_BYTES
-    )
-    var a_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var a_d = ctx.enqueue_create_buffer[.uint8](total_tokens * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * K_BYTES)
+    var b_pre_d = ctx.enqueue_create_buffer[.uint8](num_experts * N * K_BYTES)
+    var a_sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         total_tokens * scale_K
     )
-    var b_sc_d = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var b_sc_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         num_experts * N * scale_K
     )
-    var a_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+    var a_sc_pre_d = ctx.enqueue_create_buffer[.uint8](
         num_experts * max_padded_M * scale_K
     )
-    var b_sc_pre_d = ctx.enqueue_create_buffer[DType.uint8](
+    var b_sc_pre_d = ctx.enqueue_create_buffer[.uint8](
         num_experts * N * scale_K
     )
-    var a_off_d = ctx.enqueue_create_buffer[DType.uint32](num_active + 1)
-    var eid_d = ctx.enqueue_create_buffer[DType.int32](num_active)
-    var c_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
-    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
-    var mag_d = ctx.enqueue_create_buffer[DType.float32](total_tokens * N)
+    var a_off_d = ctx.enqueue_create_buffer[.uint32](num_active + 1)
+    var eid_d = ctx.enqueue_create_buffer[.int32](num_active)
+    var c_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
+    var c_ref_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
+    var mag_d = ctx.enqueue_create_buffer[.float32](total_tokens * N)
 
     # Inactive slots (M=0 or expert_id=-1) leave their output range unwritten
     # by both the kernel and the reference, so both sides need a known value.
@@ -368,12 +358,10 @@ def _run_preb[
 
     # GPU preshuffle b_d -> b_pre_d. The 24-byte fragment goes through the
     # plane-split kernel; the tuned 16-byte atom path cannot express it.
-    var b_raw_tt = TileTensor[mut=False](
+    var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, K_BYTES]()
-    )
-    var b_pre_dst_tt = TileTensor[mut=True](
-        b_pre_d, row_major[num_experts, N, K_BYTES]()
-    )
+    ).as_imm()
+    var b_pre_dst_tt = TileTensor(b_pre_d, row_major[num_experts, N, K_BYTES]())
     Shuffler[num_experts].preshuffle_b_planes[
         N=N, K_BYTES=K_BYTES, lane_bytes=FP6_LANE_BYTES
     ](b_raw_tt, b_pre_dst_tt, ctx)
@@ -381,10 +369,10 @@ def _run_preb[
     # GPU preshuffle of A-scales into per-expert fixed-stride slots. The scale
     # path is format-independent: one E8M0 byte per 32 elements per lane, for
     # every f8f6f4 format.
-    var a_sc_raw_u8_tt = TileTensor[mut=False](
-        a_sc_d.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
-        row_major(Coord(total_tokens, Idx[scale_K])),
-    )
+    var a_sc_raw_u8_tt = TileTensor(
+        a_sc_d.unsafe_ptr().bitcast[Scalar[.uint8]](),
+        row_major(total_tokens, Idx[scale_K]),
+    ).as_imm()
     # A fresh test buffer reads as zeros, which is a *valid* E8M0 exponent --
     # so the pad slots the preshuffle deliberately skips are benign here in a
     # way they are not in production, where the allocator hands back pooled
@@ -394,13 +382,13 @@ def _run_preb[
     if poison_ascale_pad:
         a_sc_pre_d.enqueue_fill(UInt8(0xFF))
 
-    var a_sc_pre_tt = TileTensor[mut=True](
+    var a_sc_pre_tt = TileTensor(
         a_sc_pre_d,
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
     )
-    var a_off_tt_for_pre = TileTensor[mut=False](
-        a_off_d, row_major(Coord(num_active + 1))
-    )
+    var a_off_tt_for_pre = TileTensor(
+        a_off_d, row_major(num_active + 1)
+    ).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         a_sc_raw_u8_tt,
         a_sc_pre_tt,
@@ -413,13 +401,13 @@ def _run_preb[
 
     # CPU preshuffle of B-scales — static weights, done once at session.load in
     # production; the existing helper takes comptime MN, which for B is N.
-    var b_sc_pre_h = ctx.enqueue_create_host_buffer[DType.uint8](
+    var b_sc_pre_h = ctx.enqueue_create_host_buffer[.uint8](
         num_experts * N * scale_K
     )
     ctx.synchronize()
     var b_sc_raw_u8_tt = TileTensor(
-        b_sc_h.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
+        b_sc_h.unsafe_ptr().bitcast[UInt8](),
+        row_major(Idx[num_experts], Idx[N], Idx[scale_K]),
     )
     Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
         b_sc_raw_u8_tt, b_sc_pre_h
@@ -443,23 +431,21 @@ def _run_preb[
     # Run the preb kernel under test. Scales are the preshuffled buffers;
     # bitcast uint8 ptr -> float8_e8m0fnu to match the dispatcher signature
     # (the kernel bitcasts back to uint8 for V# construction).
-    var a_tt = TileTensor[mut=False](
-        a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    )
-    var b_pre_tt = TileTensor[mut=False](
+    var a_tt = TileTensor(a_d, row_major(total_tokens, Idx[K_BYTES])).as_imm()
+    var b_pre_tt = TileTensor(
         b_pre_d, row_major[num_experts, N * K_BYTES]()
-    )
-    var a_sc_tt = TileTensor[mut=False](
-        a_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    )
-    var b_sc_tt = TileTensor[mut=False](
-        b_sc_pre_d.unsafe_ptr().bitcast[Scalar[DType.float8_e8m0fnu]](),
+    ).as_imm()
+    var a_sc_tt = TileTensor(
+        a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
+    ).as_imm()
+    var b_sc_tt = TileTensor(
+        b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
-    )
-    var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
-    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
-    var c_tt = TileTensor[mut=True](c_d, row_major(Coord(total_tokens, Idx[N])))
+    ).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1))
+    var eid_tt = TileTensor(eid_d, row_major(num_active))
+    var c_tt = TileTensor(c_d, row_major(total_tokens, Idx[N]))
 
     # The launcher picks the tile config from (lane_bytes, N, K, etm) and
     # infers the format from the a / a_scales shapes, so it exercises the
@@ -512,11 +498,9 @@ def _run_preb[
         )
     ctx.synchronize()
 
-    var c_h = ctx.enqueue_create_host_buffer[DType.float32](total_tokens * N)
-    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
-        total_tokens * N
-    )
-    var mag_h = ctx.enqueue_create_host_buffer[DType.float32](total_tokens * N)
+    var c_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
+    var c_ref_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
+    var mag_h = ctx.enqueue_create_host_buffer[.float32](total_tokens * N)
     ctx.enqueue_copy(c_h, c_d)
     ctx.enqueue_copy(c_ref_h, c_ref_d)
     ctx.enqueue_copy(mag_h, mag_d)
@@ -782,6 +766,261 @@ def main() raises:
     # Crosses into the prefill band (etm > 2100).
     ok &= test_launcher[FP6Format.E3M2, 2, 512, 2048](
         "prefill", [1200, 1200], [0, 1], ctx
+    )
+
+    # Production kimi up-proj shape (N=4096, K=7168): the launcher's own
+    # etm bands for this (N, K) at lane_bytes=24 -- straddle each edge
+    # (<=20, <=127, <=255, above) so both the boundary and the tile picked
+    # just past it get a real dispatch-table run, not just the raw kernel
+    # coverage below (which bypasses the launcher).
+    ok &= test_launcher[FP6Format.E2M3, 2, 4096, 7168](
+        "up etm==20", [10, 10], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 4096, 7168](
+        "up etm==21", [11, 10], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 4096, 7168](
+        "up etm==127", [64, 63], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 4096, 7168](
+        "up etm==128", [64, 64], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 4096, 7168](
+        "up etm==255", [128, 127], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 4096, 7168](
+        "up etm==256", [128, 128], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 4096, 7168](
+        "up etm large", [2500, 2500], [0, 1], ctx
+    )
+
+    ok &= test_launcher[FP6Format.E3M2, 2, 4096, 7168](
+        "up etm==20", [10, 10], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 4096, 7168](
+        "up etm==21", [11, 10], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 4096, 7168](
+        "up etm==127", [64, 63], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 4096, 7168](
+        "up etm==128", [64, 64], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 4096, 7168](
+        "up etm==255", [128, 127], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 4096, 7168](
+        "up etm==256", [128, 128], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 4096, 7168](
+        "up etm large", [2500, 2500], [0, 1], ctx
+    )
+
+    # Real production grouped-expert shapes (EP=8 on MI355X: hidden=6144,
+    # expert_intermediate=3072, fused gate+up output=2*3072=6144). Deep-tuning
+    # pass band edges: <=3, <=7, <=31, <=255, above (see
+    # mxfp6-grouped-deep-tuning-bands.md) -- straddle each of the three NEW
+    # edges (<=3/4, <=7/8, <=31/32) in addition to the unchanged <=255/256
+    # edge already covered below.
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==3", [2, 1], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==4", [2, 2], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==7", [4, 3], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==8", [4, 4], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==31", [16, 15], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==32", [16, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==33", [17, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==127", [64, 63], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==128", [64, 64], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==255", [128, 127], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm==256", [128, 128], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 6144](
+        "m3 gate_up etm large", [2500, 2500], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==3", [2, 1], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==4", [2, 2], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==7", [4, 3], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==8", [4, 4], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==31", [16, 15], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==32", [16, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==33", [17, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==127", [64, 63], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==128", [64, 64], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==255", [128, 127], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm==256", [128, 128], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 3072](
+        "m3 down etm large", [2500, 2500], [0, 1], ctx
+    )
+
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==3", [2, 1], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==4", [2, 2], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==7", [4, 3], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==8", [4, 4], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==31", [16, 15], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==32", [16, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==33", [17, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==127", [64, 63], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==128", [64, 64], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==255", [128, 127], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm==256", [128, 128], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 6144](
+        "m3 gate_up etm large", [2500, 2500], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==3", [2, 1], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==4", [2, 2], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==7", [4, 3], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==8", [4, 4], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==31", [16, 15], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==32", [16, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==33", [17, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==127", [64, 63], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==128", [64, 64], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==255", [128, 127], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm==256", [128, 128], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 3072](
+        "m3 down etm large", [2500, 2500], [0, 1], ctx
+    )
+
+    # Generic (N, K) fallback band -- covers any MXFP6 shape that doesn't
+    # match one of the shape-specific bands above (narrow N or short K, e.g.
+    # per-rank expert widths outside the two measured production models).
+    # These used to fall through to the untuned BM=64 fallback and hit the
+    # same register-spill cliff the shape-specific bands exist to avoid; see
+    # Reuses the M3 bands' etm edges (<=3, <=7, <=31, <=255, above) at a
+    # narrow-N shape (N=2048) and a short-K shape (K=512) neither of which
+    # matches N==4096/N==6144 above.
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm==3", [2, 1], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm==4", [2, 2], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm==7", [4, 3], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm==8", [4, 4], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm==31", [16, 15], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm==32", [16, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm==255", [128, 127], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm==256", [128, 128], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 2048, 3072](
+        "generic narrow-N etm large", [2500, 2500], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 2048, 3072](
+        "generic narrow-N etm==32", [16, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 2048, 3072](
+        "generic narrow-N etm large", [2500, 2500], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 512](
+        "generic short-K etm==3", [2, 1], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 512](
+        "generic short-K etm==32", [16, 16], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E2M3, 2, 6144, 512](
+        "generic short-K etm large", [2500, 2500], [0, 1], ctx
+    )
+    ok &= test_launcher[FP6Format.E3M2, 2, 6144, 512](
+        "generic short-K etm==32", [16, 16], [0, 1], ctx
     )
 
     # ----------------------------------------------------------------- #

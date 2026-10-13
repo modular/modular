@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, Device
 from max.dtype import DType
@@ -31,7 +32,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
@@ -44,6 +45,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.profiler import traced
 
 from .batch_processor import Qwen2_5VLBatchProcessor
@@ -76,9 +78,7 @@ class Qwen2_5VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] = field(
-        kw_only=True
-    )
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -147,6 +147,8 @@ class Qwen2_5VLModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -157,9 +159,10 @@ class Qwen2_5VLModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.model_config = None
@@ -210,6 +213,7 @@ class Qwen2_5VLModel(
         qwen2_5vl_config = Qwen2_5VLConfig.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         qwen2_5vl_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -353,18 +357,16 @@ class Qwen2_5VLModel(
         # Build the vision graph
         with Graph(
             "qwen2_5vl_vision",
-            input_types=tuple(
-                [
-                    *pixel_values_types,
-                    *rot_pos_ids_types,
-                    *window_index_types,
-                    *cu_seqlens_types,
-                    *cu_window_seqlens_types,
-                    *max_seqlen_types,
-                    *max_window_seqlen_types,
-                    *max_grid_size_types,
-                    *signals.input_types(),
-                ]
+            input_types=(
+                *pixel_values_types,
+                *rot_pos_ids_types,
+                *window_index_types,
+                *cu_seqlens_types,
+                *cu_window_seqlens_types,
+                *max_seqlen_types,
+                *max_window_seqlen_types,
+                *max_grid_size_types,
+                *signals.input_types(),
             ),
             module=module,
         ) as graph:
@@ -483,7 +485,7 @@ class Qwen2_5VLModel(
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         with Graph(
             "qwen2_5vl_language",
@@ -627,7 +629,7 @@ class Qwen2_5VLModel(
             *image_token_indices,
             model_inputs.position_ids,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         # Return model outputs based on what the language model returns

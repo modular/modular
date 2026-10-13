@@ -16,6 +16,7 @@ modular_run_binary_test(
     name = "create_first_tensor_test",
     size = "large",
     binary = "create_first_tensor",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -37,6 +38,7 @@ modular_run_binary_test(
     name = "create_multi_dim_test",
     size = "large",
     binary = "create_multi_dim",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -60,6 +62,7 @@ modular_run_binary_test(
     name = "create_factory_test",
     size = "large",
     binary = "create_factory",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -81,6 +84,7 @@ modular_run_binary_test(
     name = "create_random_test",
     size = "large",
     binary = "create_random",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -102,6 +106,7 @@ modular_run_binary_test(
     name = "properties_shape_test",
     size = "large",
     binary = "properties_shape",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -123,6 +128,7 @@ modular_run_binary_test(
     name = "properties_rank_test",
     size = "large",
     binary = "properties_rank",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -145,6 +151,7 @@ modular_run_binary_test(
     name = "properties_dtype_test",
     size = "large",
     binary = "properties_dtype",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -167,6 +174,7 @@ modular_run_binary_test(
     name = "properties_device_test",
     size = "large",
     binary = "properties_device",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -188,6 +196,7 @@ modular_run_binary_test(
     name = "properties_num_elements_test",
     size = "large",
     binary = "properties_num_elements",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],

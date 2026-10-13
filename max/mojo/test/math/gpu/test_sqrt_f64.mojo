@@ -20,7 +20,7 @@
 
 from std.compile import compile_info
 from std.math.math import sqrt
-from max.gpu.host.info import _get_h100_target
+from max.gpu.host.info import _h100_target
 
 
 def sqrt_func(x: Float64) raises -> Float64:
@@ -31,6 +31,8 @@ def sqrt_func(x: Float64) raises -> Float64:
 def main() raises:
     print(
         compile_info[
-            sqrt_func, emission_kind="asm", target=_get_h100_target()
+            sqrt_func,
+            emission_kind="asm",
+            target=_h100_target,
         ]()
     )

@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, DeviceStream
 from std.testing import assert_equal, assert_true
 
 
 # Simple kernel for testing stream execution
 def simple_kernel(
-    input: UnsafePointer[Float32, ImmutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
     len_dev: Int32,
     multiplier: Float32,
 ):
@@ -61,17 +61,17 @@ def test_create_stream_with_priority(ctx: DeviceContext) raises:
     comptime multiplier = Float32(2.5)
 
     # Create host and device buffers
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var output_host_low = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var output_host_high = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var output_host_low = ctx.enqueue_create_host_buffer[.float32](length)
+    var output_host_high = ctx.enqueue_create_host_buffer[.float32](length)
 
     # Initialize input data
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var output_device_low = ctx.enqueue_create_buffer[DType.float32](length)
-    var output_device_high = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
+    var output_device_low = ctx.enqueue_create_buffer[.float32](length)
+    var output_device_high = ctx.enqueue_create_buffer[.float32](length)
 
     # Copy input data to device
     ctx.enqueue_copy(input_device, input_host)
@@ -121,7 +121,7 @@ def test_create_stream_with_priority(ctx: DeviceContext) raises:
     if priority_range.least < priority_range.greatest:
         var mid_priority = (priority_range.least + priority_range.greatest) // 2
         var mid_priority_stream = ctx.create_stream(priority=mid_priority)
-        var output_device_mid = ctx.enqueue_create_buffer[DType.float32](length)
+        var output_device_mid = ctx.enqueue_create_buffer[.float32](length)
         mid_priority_stream.enqueue_function(
             func,
             input_device,
@@ -145,24 +145,24 @@ def test_multiple_priority_streams(ctx: DeviceContext) raises:
     comptime num_kernels = 4
 
     # Create input data
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
     ctx.enqueue_copy(input_device, input_host)
     ctx.synchronize()
 
     # Create multiple streams with different priorities
     var streams = List[DeviceStream]()
-    var output_devices = List[DeviceBuffer[DType.float32]]()
+    var output_devices = List[DeviceBuffer[.float32]]()
     var multipliers = List[Float32]()
 
     # Create streams with lowest and highest priority
     streams.append(ctx.create_stream(priority=priority_range.least))
     streams.append(ctx.create_stream(priority=priority_range.greatest))
-    output_devices.append(ctx.enqueue_create_buffer[DType.float32](length))
-    output_devices.append(ctx.enqueue_create_buffer[DType.float32](length))
+    output_devices.append(ctx.enqueue_create_buffer[.float32](length))
+    output_devices.append(ctx.enqueue_create_buffer[.float32](length))
     multipliers.append(Float32(1.5))
     multipliers.append(Float32(3.0))
 
@@ -176,9 +176,7 @@ def test_multiple_priority_streams(ctx: DeviceContext) raises:
             and len(streams) < num_kernels
         ):
             streams.append(ctx.create_stream(priority=current_priority))
-            output_devices.append(
-                ctx.enqueue_create_buffer[DType.float32](length)
-            )
+            output_devices.append(ctx.enqueue_create_buffer[.float32](length))
             multipliers.append(multiplier_val)
             current_priority += step
             multiplier_val += Float32(0.5)
@@ -203,7 +201,7 @@ def test_multiple_priority_streams(ctx: DeviceContext) raises:
 
     # Verify results from each stream
     for stream_idx in range(len(streams)):
-        var output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+        var output_host = ctx.enqueue_create_host_buffer[.float32](length)
         ctx.enqueue_copy(output_host, output_devices[stream_idx])
         ctx.synchronize()
 
@@ -228,11 +226,11 @@ def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     comptime iterations = 10
 
     # Create input data
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var input_host = ctx.enqueue_create_host_buffer[.float32](length)
     for i in range(length):
         input_host[i] = Float32(i)
 
-    var input_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var input_device = ctx.enqueue_create_buffer[.float32](length)
     ctx.enqueue_copy(input_device, input_host)
     ctx.synchronize()
 
@@ -242,8 +240,8 @@ def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     )
     var low_priority_stream = ctx.create_stream(priority=priority_range.least)
 
-    var high_output_device = ctx.enqueue_create_buffer[DType.float32](length)
-    var low_output_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var high_output_device = ctx.enqueue_create_buffer[.float32](length)
+    var low_output_device = ctx.enqueue_create_buffer[.float32](length)
 
     var func = ctx.compile_function[simple_kernel]()
     # Launch multiple kernels on both streams to test priority behavior
@@ -275,8 +273,8 @@ def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     low_priority_stream.synchronize()
 
     # Verify final results
-    var high_output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
-    var low_output_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+    var high_output_host = ctx.enqueue_create_host_buffer[.float32](length)
+    var low_output_host = ctx.enqueue_create_host_buffer[.float32](length)
 
     ctx.enqueue_copy(high_output_host, high_output_device)
     ctx.enqueue_copy(low_output_host, low_output_device)

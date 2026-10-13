@@ -14,6 +14,7 @@
 from mojodoc_api_href import (
     MAX_MOJO_ORIGIN,
     MOJOLANG_ORIGIN,
+    create_api_link,
     resolve_api_href,
 )
 
@@ -124,3 +125,71 @@ def test_normalize_missing_leading_slash() -> None:
         "std/builtin/Int",
         hosted_on_mojolang=False,
     ) == (f"{MOJOLANG_ORIGIN}/docs/std/builtin/Int")
+
+
+def test_private_module_path_returns_empty_href() -> None:
+    assert (
+        resolve_api_href(
+            "/docs/std/collections/dict/_DictValueIter",
+            hosted_on_mojolang=True,
+        )
+        == ""
+    )
+
+
+def test_private_symbol_in_public_module_returns_empty_href() -> None:
+    assert (
+        resolve_api_href(
+            "/docs/std/python/_cpython/PyObjectPtr",
+            hosted_on_mojolang=False,
+        )
+        == ""
+    )
+
+
+def test_public_std_path_still_links() -> None:
+    assert (
+        resolve_api_href(
+            "/std/traits/movable/Movable",
+            hosted_on_mojolang=True,
+        )
+        == "/docs/std/traits/movable/Movable"
+    )
+
+
+def test_private_path_renders_plain_type_markup() -> None:
+    assert (
+        create_api_link(
+            "_DictValueIter",
+            "/std/collections/dict/_DictValueIter",
+            hosted_on_mojolang=True,
+        )
+        == "`_DictValueIter`"
+    )
+
+
+def test_public_path_renders_markdown_link() -> None:
+    assert (
+        create_api_link(
+            "Movable",
+            "/std/traits/movable/Movable",
+            hosted_on_mojolang=True,
+        )
+        == "[`Movable`](/docs/std/traits/movable/Movable)"
+    )
+
+
+def test_padding_plain_when_private() -> None:
+    assert (
+        create_api_link(
+            "List[Int]",
+            "/std/collections/_Private",
+            padding=True,
+            hosted_on_mojolang=True,
+        )
+        == "``List[Int]``"
+    )
+
+
+def test_missing_path_renders_plain_type() -> None:
+    assert create_api_link("Int", None, hosted_on_mojolang=True) == "`Int`"

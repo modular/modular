@@ -14,22 +14,10 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
-from typing import Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, Literal
 
-import numpy as np
-from max.driver import Buffer, Device
-from max.engine import InferenceSession
-from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
-from max.pipelines.lib import (
-    KVCacheConfig,
-    ModelInputs,
-    ModelOutputs,
-    ModuleV3PipelineModelWithKVCache,
-    PipelineConfig,
-)
+from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lora import LoRATargetModule
 
@@ -39,35 +27,6 @@ from .lora import LLAMA3_LORA_TARGETS
 from .model_config import Llama3Config
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class Llama3Inputs(ModelInputs):
-    """A class representing inputs for the Llama3 model."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    return_n_logits: Buffer
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        if isinstance(self.input_row_offsets, np.ndarray):
-            input_row_offsets = Buffer.from_numpy(self.input_row_offsets).to(
-                self.tokens.device
-            )
-        else:
-            input_row_offsets = self.input_row_offsets
-        return (
-            self.tokens,
-            self.return_n_logits,
-            input_row_offsets,
-            *(
-                self.kv_cache_inputs.flatten()
-                if self.kv_cache_inputs is not None
-                else ()
-            ),
-            *self.lora_buffers,
-        )
 
 
 class Llama3Model(
@@ -82,7 +41,7 @@ class Llama3Model(
     )
 
     config_class: type[Any] = Llama3Config
-    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
     attention_bias: bool = False
 
     #: Serve LoRA via the ModuleV3 adapters-as-inputs path (LoRAManagerV3).
@@ -91,33 +50,10 @@ class Llama3Model(
     #: q/k/v) and o_proj.
     lora_targets: ClassVar[tuple[LoRATargetModule, ...]] = LLAMA3_LORA_TARGETS
 
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        max_batch_size: int = 1,
-    ) -> None:
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
-            max_batch_size=max_batch_size,
-        )
-        self.model = self.load_model()
-
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        model_config = self.config_class.initialize(self.pipeline_config)
+        model_config = self.config_class.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
@@ -132,42 +68,3 @@ class Llama3Model(
         nn_model = Llama3(model_config, self.kv_params)
         nn_model.to(self.devices[0])
         return nn_model
-
-    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        model_inputs = cast(Llama3Inputs, model_inputs)
-        model_outputs = self.model(*model_inputs.buffers)
-
-        has_offsets = self.return_logits in (
-            ReturnLogits.VARIABLE,
-            ReturnLogits.ALL,
-        )
-        has_hidden_states = self.return_hidden_states != ReturnHiddenStates.NONE
-
-        if has_offsets and has_hidden_states:
-            assert len(model_outputs) == 4
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-                hidden_states=cast(Buffer, model_outputs[3].driver_tensor),
-            )
-        elif has_offsets:
-            assert len(model_outputs) == 3
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-            )
-        elif has_hidden_states:
-            assert len(model_outputs) == 2
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[0].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                hidden_states=cast(Buffer, model_outputs[1].driver_tensor),
-            )
-        else:
-            assert len(model_outputs) == 1
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[0].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-            )

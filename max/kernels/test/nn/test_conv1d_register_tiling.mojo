@@ -15,7 +15,7 @@
 
 from std.sys import simd_width_of
 
-from layout import TileTensor, Idx, row_major
+from layout import Coord, TileTensor, Idx, row_major
 from nn.conv.conv import conv1d_update_wo_tile
 from nn.conv.conv_utils import ConvShape
 from std.testing import assert_equal
@@ -56,9 +56,9 @@ comptime filter_shape = row_major[num_micro_tile, S, C, micro_kernel_f_size]()
 
 
 def conv1d_register_tiling(
-    output: UnsafePointer[mut=True, Scalar[type], _],
-    input: UnsafePointer[mut=False, Scalar[type], _],
-    filter: UnsafePointer[mut=False, Scalar[type], _],
+    output: MutPointer[Scalar[type], _],
+    input: ImmPointer[Scalar[type], _],
+    filter: ImmPointer[Scalar[type], _],
     c_tile_size: Int,
     f_tile_offset: Int,
     f_tile_size: Int,
@@ -66,16 +66,16 @@ def conv1d_register_tiling(
 ) abi("C"):
     var conv_shape = ConvShape[2](
         n=N,
-        input_dims=Index(H, W),
-        output_dims=Index(HO, WO),
-        filter_dims=Index(R, S),
+        input_dims=Coord(Index(H, W)),
+        output_dims=Coord(Index(HO, WO)),
+        filter_dims=Coord(Index(R, S)),
         c=C,
         f=F,
-        stride=Index(stride_h, stride_w),
-        dilation=Index(dilation_h, dilation_w),
-        pad_d=Index(0, 0),
-        pad_h=Index(pad_bottom, pad_top),
-        pad_w=Index(pad_left, pad_right),
+        stride=Coord(Index(stride_h, stride_w)),
+        dilation=Coord(Index(dilation_h, dilation_w)),
+        pad_d=Coord(Index(0, 0)),
+        pad_h=Coord(Index(pad_bottom, pad_top)),
+        pad_w=Coord(Index(pad_left, pad_right)),
         num_groups=1,
     )
 
@@ -103,21 +103,15 @@ def conv1d_register_tiling(
 
 def test_conv1d_register_tiling() raises:
     var output_stack = Array[Scalar[type], Int(output_shape.product())](
-        uninitialized=True
+        fill=0.0
     )
     var output = TileTensor(output_stack, output_shape)
-    var input_stack = Array[Scalar[type], Int(input_shape.product())](
-        uninitialized=True
-    )
+    var input_stack = Array[Scalar[type], Int(input_shape.product())](fill=1.0)
     var input = TileTensor(input_stack, input_shape)
     var filter_stack = Array[Scalar[type], Int(filter_shape.product())](
-        uninitialized=True
+        fill=1.0
     )
     var filter = TileTensor(filter_stack, filter_shape)
-
-    _ = output.fill(0.0)
-    _ = input.fill(1.0)
-    _ = filter.fill(1.0)
 
     var c_tile_offset = 0
     var c_tile_size = C

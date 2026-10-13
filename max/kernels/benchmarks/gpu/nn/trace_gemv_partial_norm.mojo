@@ -29,10 +29,9 @@
 #   mojo build -O3 trace_gemv_partial_norm.mojo -o trace_driver
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import alloc
-
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
+from std.math import ceildiv
 
 from nn.gemv_partial_norm import (
     GEMV_TRACE_EVENTS_PER_BLOCK,
@@ -54,13 +53,13 @@ def main() raises:
     var N_NORMED = 1536
     var N_UNNORMED = N - N_NORMED
 
-    comptime a_shape = row_major(Coord(Idx[1], Idx[7168]))
-    comptime b_shape = row_major(Coord(Idx[2112], Idx[7168]))
-    comptime normed_shape = row_major(Coord(Idx[1], Idx[1536]))
-    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime a_shape = row_major(Idx[1], Idx[7168])
+    comptime b_shape = row_major(Idx[2112], Idx[7168])
+    comptime normed_shape = row_major(Idx[1], Idx[1536])
+    var unnormed_shape = row_major(Idx[1], N_UNNORMED)
     comptime gamma_shape = row_major(Idx[1536])
 
-    var num_blocks = (N + tile_n - 1) // tile_n
+    var num_blocks = ceildiv(N, tile_n)
 
     with DeviceContext() as ctx:
         var a_dev = ctx.enqueue_create_buffer[a_type](M * K)
@@ -83,11 +82,11 @@ def main() raises:
 
         var eps = Float32(0.001)
 
-        var counter_buf = ctx.enqueue_create_buffer[DType.int32](1)
-        ctx.enqueue_memset(counter_buf, Scalar[DType.int32](0))
+        var counter_buf = ctx.enqueue_create_buffer[.int32](1)
+        ctx.enqueue_memset(counter_buf, Int32(0))
 
         # Trace buffer: num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK uint64.
-        var trace_buf = ctx.enqueue_create_buffer[DType.uint64](
+        var trace_buf = ctx.enqueue_create_buffer[.uint64](
             num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK
         )
         ctx.enqueue_memset(trace_buf, UInt64(0))
@@ -135,7 +134,7 @@ def main() raises:
 
         var trace_host = List(
             length=num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK,
-            fill=Scalar[DType.uint64](0),
+            fill=UInt64(0),
         )
         ctx.enqueue_copy(trace_host, trace_buf)
         ctx.synchronize()

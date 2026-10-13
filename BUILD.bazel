@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
-load("//bazel:api.bzl", "mojo_binary", "requirement")
+load("//bazel:api.bzl", "modular_cc_library", "mojo_binary", "requirement")
 load("//bazel:config.bzl", "ALLOW_UNUSED_TAG", "DEFAULT_GPU_MEMORY", "MODULAR_CONFIGS", "TOP_LEVEL_TAG")
 
 # gazelle:default_visibility :see_docs_and_update_this_for_your_package
@@ -89,13 +89,13 @@ config_setting(
 
 string_flag(
     name = "max_base_version",
-    build_setting_default = "26.6.0",
+    build_setting_default = "26.7.0",
     make_variable = "MAX_BASE_VERSION",
 )
 
 string_flag(
     name = "mojo_base_version",
-    build_setting_default = "1.1.0",
+    build_setting_default = "1.2.0",
     make_variable = "MOJO_BASE_VERSION",
 )
 
@@ -228,7 +228,6 @@ platform(
         "Pool": "b200-executors",
         "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
         "dockerNetwork": "off",
-        "test.resources:gpu-count": "0.01",
         "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
         "test.resources:gpu-1": "0.01",
     },
@@ -248,7 +247,6 @@ platform(
         "Pool": "b200-executors-benchmark",
         "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
         "dockerNetwork": "off",
-        "test.resources:gpu-count": "0.01",
         "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
         "test.resources:gpu-1": "0.01",
     },
@@ -269,7 +267,6 @@ platform(
         "Pool": "mi355-executors",
         "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-rocm",
         "dockerNetwork": "off",
-        "test.resources:gpu-count": "0.01",
         "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
         "test.resources:gpu-1": "0.01",
     },
@@ -409,6 +406,27 @@ filegroup(
     tags = [TOP_LEVEL_TAG],
 )
 
+# Opt-in accelerator backend support. Gates an accelerator's dialect
+# registration and its third-party dependency edges, so a default build
+# neither fetches nor links them.
+bool_flag(
+    name = "accel_backend",
+    build_setting_default = False,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+# The gated accelerator backend lives outside this tree; nothing to link here.
+modular_cc_library(
+    name = "accel_registration",
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "accel_backend_setting",
+    flag_values = {"//:accel_backend": "true"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 bool_flag(
     name = "use_sglang",
     build_setting_default = False,
@@ -427,6 +445,16 @@ bool_flag(
 config_setting(
     name = "use_vllm_setting",
     flag_values = {"//:use_vllm": "true"},
+)
+
+bool_flag(
+    name = "use_aiperf",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_aiperf_setting",
+    flag_values = {"//:use_aiperf": "true"},
 )
 
 # When set, GPU tests disable MAX's device memory manager (caching allocator)

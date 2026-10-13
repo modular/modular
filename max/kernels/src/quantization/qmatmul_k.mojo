@@ -21,7 +21,7 @@ from std.algorithm import tile
 
 from max.algorithm import sync_parallelize
 from max.gpu.host import DeviceContext
-from layout import LayoutTensor, TileTensor
+from layout import TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
 from linalg.arch.cpu.vnni_intrinsics import (
@@ -41,8 +41,6 @@ from std.memory import (
 from std.memory.alloc import Layout as AllocLayout
 
 from max.runtime.asyncrt import parallelism_level
-
-from std.utils.index import Index
 
 from ._utils import roundeven_to_int32
 
@@ -100,7 +98,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         [ b3 b2 b1 b0 a3 a2 a1 a0 ]
     """
 
-    @always_inline
+    @inline(.always)
     def _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
         comptime assert Self.bit_width == 4
         comptime assert (Self.block_m % (2 * Self._tuple_width)) == 0
@@ -111,7 +109,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
         for _m in range(0, Self.block_m, 2 * Self._tuple_width):
             comptime for col in range(Self._tile_n):
-                var packed_bits = SIMD[DType.uint8, Self._simd_width](0)
+                var packed_bits = SIMD[.uint8, Self._simd_width](0)
 
                 comptime for i in range(2):
                     var bytes = (src_ptr + i * Self._packed_stride).load[
@@ -126,7 +124,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
             src_ptr += Self._packed_stride
 
-    @always_inline
+    @inline(.always)
     def _unpack_int4(self, var dst_ptr: UnsafePointer[mut=True, UInt8, _]):
         comptime assert Self.bit_width == 4
         comptime assert (Self.block_m % (2 * Self._tuple_width)) == 0
@@ -154,7 +152,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     #     [ d3 d2 b5 b4 b3 b2 b1 b0 ]
     #     [ d5 d6 c5 c4 c3 c2 c1 c0 ]
 
-    @always_inline
+    @inline(.always)
     def _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
         comptime assert Self.bit_width == 6
         comptime assert (Self.block_m % (4 * Self._tuple_width)) == 0
@@ -186,7 +184,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
             src_ptr += Self._packed_stride * 4
 
-    @always_inline
+    @inline(.always)
     def _unpack_int6[
         zero_point: UInt8
     ](self, var dst_ptr: UnsafePointer[mut=True, UInt8, _]):
@@ -201,7 +199,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             var dst_col_ptr = dst_ptr
 
             comptime for col in range(Self._tile_n):
-                var hi_bytes = SIMD[DType.uint8, length=Self._simd_width](0)
+                var hi_bytes = SIMD[.uint8, length=Self._simd_width](0)
 
                 comptime for i in range(3):
                     var packed_bits = bits_ptr.load[width=Self._simd_width]()
@@ -221,32 +219,34 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
 
             dst_ptr += Self._packed_stride * 4
 
-    @always_inline
+    @inline(.always)
     def pack(mut self, var src_ptr: UnsafePointer[UInt8, ...]):
         """Packs the supplied external buffer to local storage."""
         comptime assert (Self._packed_stride % Self._simd_width) == 0
 
-        comptime if Self.bit_width == 4:
-            return self._pack_int4(src_ptr)
-        elif Self.bit_width == 6:
-            return self._pack_int6(src_ptr)
-        else:
-            comptime assert False, "unsupported bit width"
+        comptime match Self.bit_width:
+            case 4:
+                return self._pack_int4(src_ptr)
+            case 6:
+                return self._pack_int6(src_ptr)
+            case _:
+                comptime assert False, "unsupported bit width"
 
-    @always_inline
+    @inline(.always)
     def unpack[
         *, zero_point: UInt8 = 0
     ](self, var dst_ptr: UnsafePointer[mut=True, UInt8, _]):
         """Unpacks the local storage to the supplied external buffer."""
         comptime assert (Self._packed_stride % Self._simd_width) == 0
 
-        comptime if Self.bit_width == 4:
-            comptime assert zero_point == 0, "zero point not implemented"
-            return self._unpack_int4(dst_ptr)
-        elif Self.bit_width == 6:
-            return self._unpack_int6[zero_point](dst_ptr)
-        else:
-            comptime assert False, "unsupported bit width"
+        comptime match Self.bit_width:
+            case 4:
+                comptime assert zero_point == 0, "zero point not implemented"
+                return self._unpack_int4(dst_ptr)
+            case 6:
+                return self._unpack_int6[zero_point](dst_ptr)
+            case _:
+                comptime assert False, "unsupported bit width"
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
@@ -274,15 +274,15 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 def _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: LayoutTensor[mut=False, dtype, ...]) -> Allocation[
+](a: TileTensor[mut=False, dtype, ...]) -> Allocation[
     _block_Q8_K_packed[group_size]
 ]:
     comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
     comptime group_count = quantized_k // group_size
 
-    var M = a.dim[0]()
-    var K = a.dim[1]()
+    var M = Int(a.dim[0]())
+    var K = Int(a.dim[1]())
 
     var packed_base_alloc = alloc(
         AllocLayout[_block_Q8_K_packed[group_size]](
@@ -296,9 +296,8 @@ def _quantize_a_Q8_K[
     for ko in range(0, K, quantized_k):
         var am_ptr = a.ptr + ko
 
-        @__parameter
-        @always_inline
-        def process_rows[tile_m: Int](m: Int):
+        @inline(.always)
+        def process_rows[tile_m: Int](m: Int) {mut am_ptr, mut packed_ptr, imm}:
             comptime assert (
                 size_of[_block_Q8_K_packed[group_size]]() * tile_m
                 == size_of[_block_Q8_K_packed[group_size, tile_m]]()
@@ -319,13 +318,13 @@ def _quantize_a_Q8_K[
                     max_value_simd = max(abs(fp_data), max_value_simd)
 
                 var max_value = max_value_simd.reduce_max()
-                var scale = (max_value / 127.0).cast[DType.float32]()
+                var scale = (max_value / 127.0).cast[.float32]()
                 var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
 
                 for g in range(group_count):
                     var fp_data = am_ptr.load[width=group_size](g * group_size)
                     var q_data_i32 = roundeven_to_int32(fp_data * multiplier)
-                    var q_data_i8 = q_data_i32.cast[DType.int8]()
+                    var q_data_i8 = q_data_i32.cast[.int8]()
                     var group_sum = q_data_i32.reduce_add()
 
                     q_bits_ptr.store(
@@ -336,11 +335,11 @@ def _quantize_a_Q8_K[
                     comptime if interleave_group_sums:
                         block_ptr[].group_sums[
                             ((g >> 1) * tile_m + row) * 2 + (g & 1)
-                        ] = group_sum.cast[DType.int16]()
+                        ] = group_sum.cast[.int16]()
                     else:
                         block_ptr[].group_sums[
                             g * tile_m + row
-                        ] = group_sum.cast[DType.int16]()
+                        ] = group_sum.cast[.int16]()
 
                 block_ptr[].scales[row] = scale
 
@@ -348,7 +347,7 @@ def _quantize_a_Q8_K[
 
             packed_ptr += tile_m
 
-        tile[process_rows, [4, 2, 1]](0, M)
+        tile[[4, 2, 1]](0, M, process_rows)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = am_ptr
 
@@ -507,7 +506,7 @@ def _pack_block_Q4_K[
             var q_mins_row_0_val = q_mins_row_0_ptr[n]
             var q_mins_row_1_val = q_mins_row_1_ptr[n]
 
-            comptime if CompilationTarget.is_x86():
+            comptime if CompilationTarget.has_sse4():
                 var reorder_idx = g * block_n + n * 2
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
@@ -570,12 +569,8 @@ def _pack_block_Q6_K[
 
 
 def matmul_Q4_K_pack_b(
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_packed_tt: TileTensor[
-        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
+    b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
 ):
     """Packs Q4_K quantized weights into the blocked layout consumed by the compute kernel.
 
@@ -583,19 +578,17 @@ def matmul_Q4_K_pack_b(
         b_tt: Source tensor holding the unpacked Q4_K quantized weights.
         b_packed_tt: Destination tensor for the packed weights.
     """
-    var b = b_tt.to_layout_tensor()
-    var b_packed = b_packed_tt.to_layout_tensor()
-    comptime assert b.rank == 2
-    comptime assert b_packed.rank == 2
-    var N = b.dim[0]()
-    var K = b.dim[1]()
+    comptime assert b_tt.rank == 2
+    comptime assert b_packed_tt.rank == 2
+    var N = Int(b_tt.dim[0]())
+    var K = Int(b_tt.dim[1]())
     var k_blocks = K // size_of[_block_Q4_K]()
 
     comptime simd_width = simd_width_of[DType.float32]()
     comptime block_n = simd_width * 2
 
-    var src_ptr = b.ptr.bitcast[_block_Q4_K]()
-    var dst_ptr = b_packed.ptr.bitcast[_block_Q4_K_packed[block_n]]()
+    var src_ptr = b_tt.ptr.bitcast[_block_Q4_K]()
+    var dst_ptr = b_packed_tt.ptr.bitcast[_block_Q4_K_packed[block_n]]()
 
     for _kb in range(k_blocks):
         var src_n_ptr = src_ptr
@@ -610,12 +603,8 @@ def matmul_Q4_K_pack_b(
 
 
 def matmul_Q6_K_pack_b(
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_packed_tt: TileTensor[
-        mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
+    b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    b_packed_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
 ):
     """Packs Q6_K quantized weights into the blocked layout consumed by the compute kernel.
 
@@ -623,19 +612,17 @@ def matmul_Q6_K_pack_b(
         b_tt: Source tensor holding the unpacked Q6_K quantized weights.
         b_packed_tt: Destination tensor for the packed weights.
     """
-    var b = b_tt.to_layout_tensor()
-    var b_packed = b_packed_tt.to_layout_tensor()
-    comptime assert b.rank == 2
-    comptime assert b_packed.rank == 2
-    var N = b.dim[0]()
-    var K = b.dim[1]()
+    comptime assert b_tt.rank == 2
+    comptime assert b_packed_tt.rank == 2
+    var N = Int(b_tt.dim[0]())
+    var K = Int(b_tt.dim[1]())
     var k_blocks = K // size_of[_block_Q6_K]()
 
     comptime simd_width = simd_width_of[DType.float32]()
     comptime block_n = simd_width * 2
 
-    var src_ptr = b.ptr.bitcast[_block_Q6_K]()
-    var dst_ptr = b_packed.ptr.bitcast[_block_Q6_K_packed[block_n]]()
+    var src_ptr = b_tt.ptr.bitcast[_block_Q6_K]()
+    var dst_ptr = b_packed_tt.ptr.bitcast[_block_Q6_K_packed[block_n]]()
 
     for _kb in range(k_blocks):
         var src_n_ptr = src_ptr
@@ -649,26 +636,30 @@ def matmul_Q6_K_pack_b(
         src_ptr += 1
 
 
-@always_inline
+@inline(.always)
 def _matmul_group_stream_x86[
-    tile_k: Int,
     tile_m: Int,
     tile_n: Int,
     simd_width: Int,
+    b_width: SIMDLength,
+    b_count: Int,
     //,
     group_size: Int,
-    stream_b_vals_fn: def(
-        mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
-        ]
-    ) capturing[_] -> None,
+    tile_k: Int,
 ](
     a_q_bits_ptr: UnsafePointer[Int8, _],
-    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
+    stream_b_vals_fn: Some[
+        def(mut b_vals: Array[SIMD[.uint8, b_width], b_count]) -> None
+    ],
 ):
-    var b_vals = Array[
-        SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
-    ](fill=0)
+    # The array type is spelled with free `b_width`/`b_count` parameters
+    # because dependent expressions like `SIMDLength(simd_width) * 4` fold
+    # differently in the caller's closure signature and fail to unify.
+    comptime assert b_width == SIMDLength(simd_width) * 4
+    comptime assert b_count == tile_n * tile_k
+
+    var b_vals = Array[SIMD[.uint8, b_width], b_count](fill=0)
 
     comptime for k in range(0, group_size, tile_k * 4):
         stream_b_vals_fn(b_vals)
@@ -676,8 +667,8 @@ def _matmul_group_stream_x86[
         comptime for tk in range(tile_k):
             comptime for col in range(tile_n):
                 comptime for row in range(tile_m):
-                    var a_val = SIMD[DType.int32, simd_width](
-                        bitcast[DType.int32, 1](
+                    var a_val = SIMD[.int32, simd_width](
+                        bitcast[.int32, 1](
                             (a_q_bits_ptr + row * group_size + k + tk * 4).load[
                                 width=4
                             ]()
@@ -685,86 +676,89 @@ def _matmul_group_stream_x86[
                     )
                     c_int32_group[row, col] = dot_i8_to_i32_saturated_x86(
                         c_int32_group[row, col],
-                        bitcast[DType.int32, simd_width](
-                            b_vals[col * tile_k + tk]
-                        ),
+                        bitcast[.int32, simd_width](b_vals[col * tile_k + tk]),
                         a_val,
                     )
 
 
-@always_inline
+@inline(.always)
 def _matmul_group_stream_neon_dotprod[
-    tile_k: Int,
     tile_m: Int,
     tile_n: Int,
     simd_width: Int,
+    b_width: SIMDLength,
+    b_count: Int,
     //,
     group_size: Int,
-    stream_b_vals_fn: def(
-        mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
-        ]
-    ) capturing[_] -> None,
+    tile_k: Int,
 ](
     a_q_bits_ptr: UnsafePointer[Int8, ...],
-    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
+    stream_b_vals_fn: Some[
+        def(mut b_vals: Array[SIMD[.uint8, b_width], b_count]) -> None
+    ],
 ):
-    var b_vals = Array[
-        SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
-    ](fill=0)
+    comptime assert b_width == SIMDLength(simd_width) * 4
+    comptime assert b_count == tile_n * tile_k
+
+    var b_vals = Array[SIMD[.uint8, b_width], b_count](fill=0)
 
     comptime for k in range(0, group_size, 16):
-        var a_tile = Array[SIMD[DType.int8, 16], tile_m](uninitialized=True)
-
-        comptime for row in range(tile_m):
-            a_tile[row] = (a_q_bits_ptr + row * group_size + k).load[width=16]()
+        var a_tile = Array[_, tile_m](
+            fill_with=lambda (row: Int) {imm a_q_bits_ptr} -> SIMD[.int8, 16]: (
+                a_q_bits_ptr + row * group_size + k
+            ).load[width=16]()
+        )
 
         comptime for lane in range(0, 4, tile_k):
-            stream_b_vals_fn[](b_vals)
+            stream_b_vals_fn(b_vals)
 
             comptime for tk in range(tile_k):
                 comptime for col in range(tile_n):
                     comptime for row in range(tile_m):
                         c_int32_group[row, col] = _neon_dotprod_lane[lane + tk](
                             c_int32_group[row, col],
-                            b_vals[col * tile_k + tk].cast[DType.int8](),
+                            rebind[SIMD[.int8, SIMDLength(simd_width) * 4]](
+                                b_vals[col * tile_k + tk].cast[.int8]()
+                            ),
                             a_tile[row],
                         )
 
 
-@always_inline
+@inline(.always)
 def _matmul_group_stream[
-    tile_k: Int,
     tile_m: Int,
     tile_n: Int,
     simd_width: Int,
-    origins: OriginSet,
+    b_width: SIMDLength,
+    b_count: Int,
     //,
     group_size: Int,
-    stream_b_vals_fn: def(
-        mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
-        ]
-    ) capturing[origins] -> None,
+    tile_k: Int,
 ](
     a_q_bits_ptr: UnsafePointer[Int8, _],
-    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
+    stream_b_vals_fn: Some[
+        def(mut b_vals: Array[SIMD[.uint8, b_width], b_count]) -> None
+    ],
 ):
     comptime assert Bool(tile_k.is_power_of_two()) and tile_k <= 4
+    comptime assert b_width == SIMDLength(simd_width) * 4
+    comptime assert b_count == tile_n * tile_k
 
-    comptime if CompilationTarget.is_x86():
-        return _matmul_group_stream_x86[group_size, stream_b_vals_fn](
-            a_q_bits_ptr, c_int32_group
+    comptime if CompilationTarget.has_sse4():
+        return _matmul_group_stream_x86[group_size, tile_k=tile_k](
+            a_q_bits_ptr, c_int32_group, stream_b_vals_fn
         )
     elif CompilationTarget.has_neon():
-        return _matmul_group_stream_neon_dotprod[group_size, stream_b_vals_fn](
-            a_q_bits_ptr, c_int32_group
+        return _matmul_group_stream_neon_dotprod[group_size, tile_k=tile_k](
+            a_q_bits_ptr, c_int32_group, stream_b_vals_fn
         )
     else:
         comptime assert False, "unsupported architecture"
 
 
-@always_inline
+@inline(.always)
 def _matmul_group_unpacked[
     tile_m: Int,
     tile_n: Int,
@@ -774,71 +768,63 @@ def _matmul_group_unpacked[
 ](
     a_q_bits_ptr: UnsafePointer[mut=False, Int8, _],
     mut b_q_bits_ptr: UnsafePointer[mut=True, UInt8, _],
-    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
 ):
     """Streaming matrix multiplication where the B matrix has been unpacked to
     local storage.
     """
 
-    @__parameter
     def stream_b_vals(
-        mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * 1
-        ]
-    ):
+        mut b_vals: Array[SIMD[.uint8, SIMDLength(simd_width) * 4], tile_n * 1]
+    ) {mut b_q_bits_ptr, imm}:
         comptime for col in range(tile_n):
             b_vals[col] = b_q_bits_ptr.load[width=SIMDLength(simd_width) * 4]()
             b_q_bits_ptr += simd_width * 4
 
-    _matmul_group_stream[
-        tile_k=1,
-        tile_m=tile_m,
-        tile_n=tile_n,
-        simd_width=simd_width,
-        group_size,
-        stream_b_vals,
-    ](a_q_bits_ptr, c_int32_group)
+    _matmul_group_stream[group_size, tile_k=1](
+        a_q_bits_ptr, c_int32_group, stream_b_vals
+    )
 
 
-@always_inline
+@inline(.always)
 def _apply_base_scales[
     tile_m: Int, tile_n: Int, simd_width: Int
 ](
     b_base_scales_ptr: UnsafePointer[Float16, _],
-    c_int32_block: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
-    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    c_int32_block: _Accumulator[.int32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
 ):
     # Convert to floating point and apply the block scale of matrix B.
     comptime for col in range(tile_n):
         var b_scale = (
             (b_base_scales_ptr + col * simd_width)
             .load[width=simd_width]()
-            .cast[DType.float32]()
+            .cast[.float32]()
         )
 
         comptime for row in range(tile_m):
             c_float[row, col] = (
-                c_int32_block[row, col].cast[DType.float32]() * b_scale
+                c_int32_block[row, col].cast[.float32]() * b_scale
             )
 
 
-@always_inline
+@inline(.always)
 def _apply_zero_point_correction[
     group_count: Int, tile_m: Int, tile_n: Int, simd_width: Int
 ](
     a_group_sums_ptr: UnsafePointer[Int16, _],
     b_q_mins_ptr: UnsafePointer[UInt8, _],
     b_base_mins_ptr: UnsafePointer[Float16, _],
-    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
 ):
     """Applies the zero point correction to the running float accumulator."""
     comptime block_n = tile_n * simd_width
 
-    var corrections = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+    var corrections = _Accumulator[.int32, tile_m, tile_n, simd_width]()
     corrections.init()
 
     for g in range(0, group_count, 2):
-        comptime if CompilationTarget.is_x86():
+        comptime if CompilationTarget.has_sse4():
             # Use `pmaddwd` + `paddd' (optimized to `vpdpwssd` on processors
             # that support VNNI) to multiply/add a pair of minimum values with
             # a pair of group sums from matrix A.
@@ -848,7 +834,7 @@ def _apply_zero_point_correction[
                 #       [n0_g0 n0_g1 : n1_g0 n1_g1 : n2_g0 n2_g1 : n3_g0 n3_g1]
                 var q_mins = b_q_mins_ptr.load[
                     width=SIMDLength(simd_width) * 2
-                ](g * block_n + col * simd_width * 2).cast[DType.int16]()
+                ](g * block_n + col * simd_width * 2).cast[.int16]()
 
                 comptime for row in range(tile_m):
                     var a_group_sums = a_group_sums_ptr.load[width=2](
@@ -857,9 +843,9 @@ def _apply_zero_point_correction[
                     corrections[row, col] = dot_i16_to_i32_x86(
                         corrections[row, col],
                         q_mins,
-                        bitcast[DType.int16, SIMDLength(simd_width) * 2](
-                            SIMD[DType.int32, simd_width](
-                                bitcast[DType.int32, 1](a_group_sums)
+                        bitcast[.int16, SIMDLength(simd_width) * 2](
+                            SIMD[.int32, simd_width](
+                                bitcast[.int32, 1](a_group_sums)
                             )
                         ),
                     )
@@ -877,7 +863,7 @@ def _apply_zero_point_correction[
                 #       [n0_g0 n1_g0 n2_g0 n3_g0 : n0_g1 n1_g1 n2_g1 n3_g1]
                 var q_mins = b_q_mins_ptr.load[width=simd_width * 2](
                     g * block_n + col * simd_width * 2
-                ).cast[DType.int16]()
+                ).cast[.int16]()
 
                 # Logically slice the minimum values vector. This selects
                 # between `smull` (lower half) or `smull2` (upper half).
@@ -891,14 +877,14 @@ def _apply_zero_point_correction[
                     # the same IR pattern to emit this instruction.
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",
-                        SIMD[DType.int32, simd_width],
+                        SIMD[.int32, simd_width],
                     ](
                         q_mins_lo_hi[0],
                         SIMD[length=simd_width](group_sums[row * 2 + 0]),
                     )
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",
-                        SIMD[DType.int32, simd_width],
+                        SIMD[.int32, simd_width],
                     ](
                         q_mins_lo_hi[1],
                         SIMD[length=simd_width](group_sums[row * 2 + 1]),
@@ -913,21 +899,21 @@ def _apply_zero_point_correction[
         var base_mins = (
             (b_base_mins_ptr + col * simd_width)
             .load[width=simd_width]()
-            .cast[DType.float32]()
+            .cast[.float32]()
         )
 
         comptime for row in range(tile_m):
             c_float[row, col] -= (
-                corrections[row, col].cast[DType.float32]() * base_mins
+                corrections[row, col].cast[.float32]() * base_mins
             )
 
 
-@always_inline
+@inline(.always)
 def _apply_a_scales[
     tile_m: Int, tile_n: Int, simd_width: Int
 ](
     a_scales_ptr: UnsafePointer[Float32, _],
-    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
 ):
     comptime if CompilationTarget.has_neon():
         # NEON supports a multiply instruction that can broadcast from a
@@ -947,7 +933,7 @@ def _apply_a_scales[
                 c_float[row, col] *= a_scale
 
 
-@always_inline
+@inline(.always)
 def _accumulate_and_store[
     tile_m: Int,
     tile_n: Int,
@@ -957,15 +943,13 @@ def _accumulate_and_store[
     c_ptr: UnsafePointer[mut=True, Float32, _],
     N: Int,
     accumulate: Bool,
-    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[.float32, tile_m, tile_n, simd_width],
     m: Int,
     n: Int,
     is_last_k_iter: Bool,
 ):
     if accumulate:
-        var c_existing = _Accumulator[
-            DType.float32, tile_m, tile_n, simd_width
-        ]()
+        var c_existing = _Accumulator[.float32, tile_m, tile_n, simd_width]()
 
         c_existing.load(c_ptr, N)
 
@@ -975,23 +959,17 @@ def _accumulate_and_store[
 
     c_float.store(c_ptr, N)
 
-    comptime if elementwise_lambda_fn:
-        comptime func = elementwise_lambda_fn.value()
-
+    comptime if case .Some(func) = elementwise_lambda_fn:
         if is_last_k_iter:
             comptime for mm in range(tile_m):
                 comptime for nn in range(tile_n):
                     var val = c_float[mm, nn]
-                    func[DType.float32, simd_width](
-                        Index(
-                            m + mm,
-                            n + nn * simd_width,
-                        ),
-                        val,
+                    func[.float32, simd_width](
+                        (m + mm, n + nn * simd_width), val
                     )
 
 
-@always_inline
+@inline(.always)
 def _matmul_group_packed_Q4_K[
     tile_m: Int,
     tile_n: Int,
@@ -1000,17 +978,16 @@ def _matmul_group_packed_Q4_K[
 ](
     a_q_bits_ptr: UnsafePointer[Int8, _],
     mut b_q_bits_ptr: UnsafePointer[UInt8, _],
-    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
 ):
     comptime group_size = _block_Q4_K.group_size
     comptime tile_k = 2
 
-    @__parameter
     def stream_b_vals(
         mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
+            SIMD[.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
-    ):
+    ) {mut b_q_bits_ptr, imm}:
         comptime for col in range(tile_n):
             var packed_bits = b_q_bits_ptr.load[
                 width=SIMDLength(simd_width) * 4
@@ -1021,26 +998,17 @@ def _matmul_group_packed_Q4_K[
                 var bytes = (packed_bits >> UInt8(i * 4)) & 15
                 b_vals[col * tile_k + i] = bytes
 
-    _matmul_group_stream[
-        tile_k=tile_k,
-        tile_m=tile_m,
-        tile_n=tile_n,
-        simd_width=simd_width,
-        group_size,
-        stream_b_vals,
-    ](a_q_bits_ptr, c_int32_group)
+    _matmul_group_stream[group_size, tile_k=tile_k](
+        a_q_bits_ptr, c_int32_group, stream_b_vals
+    )
 
 
-@always_inline
+@inline(.always)
 def _matmul_Q4_K_tile[
     tile_m: Int,
     tile_n: Int,
     simd_width: Int,
     //,
-    matmul_group_fn: def(
-        a_ptr: UnsafePointer[Int8, _],
-        mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
-    ) capturing[_] -> None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size], _],
@@ -1052,6 +1020,14 @@ def _matmul_Q4_K_tile[
     m: Int,
     n: Int,
     is_last_k_iter: Bool,
+    matmul_group_fn: Some[
+        # The pointer origin is concrete because a `_` wildcard becomes a
+        # distinct anonymous parameter on each side and fails to unify.
+        def(
+            a_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
+            mut c_int32: _Accumulator[.int32, tile_m, tile_n, simd_width],
+        ) -> None
+    ],
 ):
     comptime group_size = _block_Q4_K.group_size
     comptime group_count = _block_Q4_K.group_count
@@ -1064,7 +1040,7 @@ def _matmul_Q4_K_tile[
     var b_q_scales_ptr = b_q_scales_and_mins_buf
     var b_q_mins_ptr = b_q_scales_and_mins_buf + group_count * block_n
 
-    var c_int32_block = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+    var c_int32_block = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
     c_int32_block.init()
 
@@ -1073,14 +1049,15 @@ def _matmul_Q4_K_tile[
     ] = a_tile_ptr[].q_bits.unsafe_ptr()
 
     for g in range(group_count):
-        var c_int32_group = _Accumulator[
-            DType.int32, tile_m, tile_n, simd_width
-        ]()
+        var c_int32_group = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
         c_int32_group.init()
 
         # Matrix multiply a single group of the block.
-        matmul_group_fn(a_q_bits_ptr, c_int32_group)
+        matmul_group_fn(
+            a_q_bits_ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+            c_int32_group,
+        )
         a_q_bits_ptr += tile_m * group_size
 
         # Scale the accumulator for this group and add to the block level
@@ -1088,14 +1065,14 @@ def _matmul_Q4_K_tile[
         comptime for col in range(tile_n):
             var b_q_scale_val = b_q_scales_ptr.load[width=simd_width](
                 col * simd_width + g * block_n
-            ).cast[DType.int32]()
+            ).cast[.int32]()
 
             comptime for row in range(tile_m):
                 c_int32_block[row, col] += (
                     c_int32_group[row, col] * b_q_scale_val
                 )
 
-    var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
+    var c_float = _Accumulator[.float32, tile_m, tile_n, simd_width]()
 
     _apply_base_scales(
         b_tile_ptr[].base_scales.unsafe_ptr(), c_int32_block, c_float
@@ -1134,7 +1111,7 @@ def _matmul_Q4_K_columns[
     comptime group_size = _block_Q4_K.group_size
     comptime group_count = _block_Q4_K.group_count
 
-    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime alignment = align_of[SIMD[.float32, simd_width]]()
     comptime block_n = tile_n * simd_width
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
@@ -1147,21 +1124,23 @@ def _matmul_Q4_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr: UnsafePointer[
-            UInt8, origin_of(b_tile_ptr[].q_bits.bits)
-        ] = b_tile_ptr[].q_bits.bits.unsafe_ptr()
+        # The pointee is read-only, and the tracked origin must be erased so
+        # the closure's captured pointer does not alias the `b_ptr` argument
+        # in the `_matmul_Q4_K_tile` call below.
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_imm()
+            .unsafe_origin_cast[ImmutAnyOrigin]()
+        )
 
-        @__parameter
         def matmul_group_packed(
-            a_q_bits_ptr: UnsafePointer[Int8, _],
-            mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
-        ):
+            a_q_bits_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
+            mut c_int32_group: _Accumulator[.int32, 1, tile_n, simd_width],
+        ) {mut b_q_bits_ptr, imm}:
             _matmul_group_packed_Q4_K(a_q_bits_ptr, b_q_bits_ptr, c_int32_group)
 
-        _matmul_Q4_K_tile[
-            matmul_group_packed,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
+        _matmul_Q4_K_tile[elementwise_lambda_fn=elementwise_lambda_fn,](
             a_ptr,
             b_ptr,
             b_q_scales_and_mins_buf,
@@ -1171,6 +1150,7 @@ def _matmul_Q4_K_columns[
             0,
             n,
             is_last_k_iter,
+            matmul_group_packed,
         )
         _ = b_q_bits_ptr
 
@@ -1182,27 +1162,27 @@ def _matmul_Q4_K_columns[
     ]()
     b_tile_ptr[].q_bits.unpack(b_q_bits)
 
-    @__parameter
-    @__copy_capture(b_tile_ptr, b_q_scales_and_mins_buf, b_q_bits)
-    @always_inline
-    def process_rows[tile_m: Int](m: Int):
+    @inline(.always)
+    def process_rows[
+        tile_m: Int
+    ](m: Int) {
+        var b_q_scales_and_mins_buf,
+        var b_q_bits,
+        mut a_ptr,
+        mut c_ptr,
+        imm,
+    }:
         var b_q_bits_ptr = b_q_bits.unsafe_origin_cast[MutAnyOrigin]()
 
-        @__parameter
         def matmul_group_unpacked(
-            a_ptr: UnsafePointer[Int8, _],
-            mut c_int32_group: _Accumulator[
-                DType.int32, tile_m, tile_n, simd_width
-            ],
-        ):
+            a_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
+            mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
+        ) {mut b_q_bits_ptr, imm}:
             _matmul_group_unpacked[group_size](
                 a_ptr, b_q_bits_ptr, c_int32_group
             )
 
-        _matmul_Q4_K_tile[
-            matmul_group_unpacked,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
+        _matmul_Q4_K_tile[elementwise_lambda_fn=elementwise_lambda_fn,](
             a_ptr,
             b_ptr,
             b_q_scales_and_mins_buf,
@@ -1212,16 +1192,17 @@ def _matmul_Q4_K_columns[
             m,
             n,
             is_last_k_iter,
+            matmul_group_unpacked,
         )
         _ = b_q_bits_ptr
 
         a_ptr += tile_m
         c_ptr += tile_m * N
 
-    tile[process_rows, [4, 2, 1]](0, M)
+    tile[[4, 2, 1]](0, M, process_rows)
 
 
-@always_inline
+@inline(.always)
 def _matmul_group_packed_Q6_K[
     tile_m: Int,
     tile_n: Int,
@@ -1232,21 +1213,18 @@ def _matmul_group_packed_Q6_K[
 ](
     a_q_bits_ptr: UnsafePointer[Int8, _],
     mut b_q_bits_ptr: UnsafePointer[UInt8, _],
-    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
 ):
     comptime group_size = _block_Q6_K.group_size
     comptime tile_k = 4
 
-    @__parameter
     def stream_b_vals(
         mut b_vals: Array[
-            SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
+            SIMD[.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
         ]
-    ):
+    ) {mut b_q_bits_ptr, imm}:
         comptime for col in range(tile_n):
-            var hi_bytes = SIMD[DType.uint8, length=SIMDLength(simd_width) * 4](
-                0
-            )
+            var hi_bytes = SIMD[.uint8, length=SIMDLength(simd_width) * 4](0)
 
             comptime for i in range(3):
                 var packed_bits = b_q_bits_ptr.load[
@@ -1261,28 +1239,17 @@ def _matmul_group_packed_Q6_K[
 
             b_vals[col * tile_k + 3] = hi_bytes - zero_point
 
-    _matmul_group_stream[
-        tile_k=4,
-        tile_m=tile_m,
-        tile_n=tile_n,
-        simd_width=simd_width,
-        group_size,
-        stream_b_vals,
-    ](a_q_bits_ptr, c_int32_group)
+    _matmul_group_stream[group_size, tile_k=tile_k](
+        a_q_bits_ptr, c_int32_group, stream_b_vals
+    )
 
 
-@always_inline
+@inline(.always)
 def _matmul_Q6_K_tile[
     tile_m: Int,
     tile_n: Int,
     simd_width: Int,
     //,
-    matmul_group_fn: def(
-        a_ptr: UnsafePointer[Int8, _],
-        mut c_int32_group: _Accumulator[
-            DType.int32, tile_m, tile_n, simd_width
-        ],
-    ) capturing[_] -> None,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_ptr: UnsafePointer[
@@ -1295,6 +1262,13 @@ def _matmul_Q6_K_tile[
     m: Int,
     n: Int,
     is_last_k_iter: Bool,
+    matmul_group_fn: Some[
+        # See `_matmul_Q4_K_tile` for why the origin is concrete.
+        def(
+            a_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
+            mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
+        ) -> None
+    ],
 ):
     comptime group_size = _block_Q6_K.group_size
     comptime group_count = _block_Q6_K.group_count
@@ -1304,7 +1278,7 @@ def _matmul_Q6_K_tile[
     var a_tile_ptr = a_ptr.bitcast[_block_Q8_K_packed[group_size, tile_m]]()
     var b_tile_ptr = b_ptr.bitcast[_block_Q6_K_packed[block_n]]()
 
-    var c_int32_block = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
+    var c_int32_block = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
     c_int32_block.init()
 
@@ -1313,30 +1287,27 @@ def _matmul_Q6_K_tile[
     ] = a_tile_ptr[].q_bits.unsafe_ptr()
 
     for g in range(group_count):
-        var c_int32_group = _Accumulator[
-            DType.int32, tile_m, tile_n, simd_width
-        ]()
+        var c_int32_group = _Accumulator[.int32, tile_m, tile_n, simd_width]()
 
         c_int32_group.init()
 
-        comptime if CompilationTarget.is_x86():
+        comptime if CompilationTarget.has_sse4():
             # Initialize the accumulators with the zero point correction
             # values. This is necessary for x86 as there are no VNNI
             # instructions for s8s8.
             comptime for row in range(tile_m):
                 var group_sum = (
-                    a_tile_ptr[]
-                    .group_sums[g * tile_m + row]
-                    .cast[DType.int32]()
+                    a_tile_ptr[].group_sums[g * tile_m + row].cast[.int32]()
                 )
-                var correction_val = SIMD[DType.int32, simd_width](
-                    -32 * group_sum
-                )
+                var correction_val = SIMD[.int32, simd_width](-32 * group_sum)
 
                 comptime for col in range(tile_n):
                     c_int32_group[row, col] = correction_val
         # Matrix multiply a single group of the block.
-        matmul_group_fn(a_q_bits_ptr, c_int32_group)
+        matmul_group_fn(
+            a_q_bits_ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+            c_int32_group,
+        )
 
         a_q_bits_ptr += tile_m * group_size
 
@@ -1349,14 +1320,14 @@ def _matmul_Q6_K_tile[
         comptime for col in range(tile_n):
             var b_q_scale_val = b_q_scales_ptr.load[width=simd_width](
                 col * simd_width + g * block_n
-            ).cast[DType.int32]()
+            ).cast[.int32]()
 
             comptime for row in range(tile_m):
                 c_int32_block[row, col] += (
                     c_int32_group[row, col] * b_q_scale_val
                 )
 
-    var c_float = _Accumulator[DType.float32, tile_m, tile_n, simd_width]()
+    var c_float = _Accumulator[.float32, tile_m, tile_n, simd_width]()
 
     _apply_base_scales(
         b_tile_ptr[].base_scales.unsafe_ptr(), c_int32_block, c_float
@@ -1388,7 +1359,7 @@ def _matmul_Q6_K_columns[
     comptime group_size = _block_Q6_K.group_size
     comptime group_count = _block_Q6_K.group_count
 
-    comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
+    comptime alignment = align_of[SIMD[.float32, simd_width]]()
     comptime block_n = tile_n * simd_width
 
     var b_tile_ptr = b_ptr.bitcast[_block_Q6_K_packed[block_n]]()
@@ -1399,23 +1370,33 @@ def _matmul_Q6_K_columns[
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:
-        var b_q_bits_ptr: UnsafePointer[
-            UInt8, origin_of(b_tile_ptr[].q_bits.bits)
-        ] = b_tile_ptr[].q_bits.bits.unsafe_ptr()
+        # See the Q4_K fast path for why the origin is erased.
+        var b_q_bits_ptr = (
+            b_tile_ptr[]
+            .q_bits.bits.unsafe_ptr()
+            .as_imm()
+            .unsafe_origin_cast[ImmutAnyOrigin]()
+        )
 
-        @__parameter
         def matmul_group_packed(
-            a_q_bits_ptr: UnsafePointer[Int8, _],
-            mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
-        ):
+            a_q_bits_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
+            mut c_int32_group: _Accumulator[.int32, 1, tile_n, simd_width],
+        ) {mut b_q_bits_ptr, imm}:
             _matmul_group_packed_Q6_K[zero_point=UInt8(b_zero_point)](
                 a_q_bits_ptr, b_q_bits_ptr, c_int32_group
             )
 
-        _matmul_Q6_K_tile[
+        _matmul_Q6_K_tile[elementwise_lambda_fn=elementwise_lambda_fn,](
+            a_ptr,
+            b_ptr,
+            c_ptr,
+            N,
+            accumulate,
+            0,
+            n,
+            is_last_k_iter,
             matmul_group_packed,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](a_ptr, b_ptr, c_ptr, N, accumulate, 0, n, is_last_k_iter)
+        )
         _ = b_q_bits_ptr
 
         return
@@ -1426,36 +1407,40 @@ def _matmul_Q6_K_columns[
     ]()
     b_tile_ptr[].q_bits.unpack[zero_point=UInt8(b_zero_point)](b_q_bits)
 
-    @__parameter
-    @__copy_capture(b_tile_ptr, b_q_bits)
-    @always_inline
-    def process_rows[tile_m: Int](m: Int):
+    @inline(.always)
+    def process_rows[
+        tile_m: Int
+    ](m: Int) {var b_q_bits, mut a_ptr, mut c_ptr, imm}:
         var b_q_bits_ptr = b_q_bits.as_unsafe_any_origin()
 
-        @__parameter
         def matmul_group_unpacked(
-            a_ptr: UnsafePointer[Int8, _],
-            mut c_int32_group: _Accumulator[
-                DType.int32, tile_m, tile_n, simd_width
-            ],
-        ):
+            a_ptr: UnsafePointer[Int8, ImmutAnyOrigin],
+            mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
+        ) {mut b_q_bits_ptr}:
             _matmul_group_unpacked[group_size](
                 a_ptr, b_q_bits_ptr, c_int32_group
             )
 
-        _matmul_Q6_K_tile[
+        _matmul_Q6_K_tile[elementwise_lambda_fn=elementwise_lambda_fn,](
+            a_ptr,
+            b_ptr,
+            c_ptr,
+            N,
+            accumulate,
+            m,
+            n,
+            is_last_k_iter,
             matmul_group_unpacked,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](a_ptr, b_ptr, c_ptr, N, accumulate, m, n, is_last_k_iter)
+        )
         _ = b_q_bits_ptr
 
         a_ptr += tile_m
         c_ptr += tile_m * N
 
-    tile[process_rows, [4, 2, 1]](0, M)
+    tile[[4, 2, 1]](0, M, process_rows)
 
 
-@always_inline
+@inline(.always)
 def _matmul_Qb_K[
     group_size: Int,
     b_type: AnyType,
@@ -1478,16 +1463,10 @@ def _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    b: LayoutTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    c: LayoutTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    ctx: Optional[DeviceContext] = None,
+    a: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1495,9 +1474,9 @@ def _matmul_Qb_K[
 
     comptime simd_width = simd_width_of[DType.float32]()
 
-    var M = a.dim[0]()
-    var N = b.dim[0]()
-    var K = a.dim[1]()
+    var M = Int(a.dim[0]())
+    var N = Int(b.dim[0]())
+    var K = Int(a.dim[1]())
     var k_blocks = K // _block_QK_K.quantized_k
 
     var a_packed_base_alloc = _quantize_a_Q8_K[
@@ -1512,11 +1491,18 @@ def _matmul_Qb_K[
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level(ctx))
 
-    @__parameter
-    @__copy_capture(
-        a_packed_base_ptr, k_blocks, M, N, K, work_count, num_workers
-    )
-    def task_func(task_id: Int):
+    def task_func(
+        task_id: Int,
+    ) {
+        var a_packed_base_ptr,
+        var k_blocks,
+        var M,
+        var N,
+        var K,
+        var work_count,
+        var num_workers,
+        imm,
+    }:
         var block_range = partition_work(task_id, num_workers, work_count, 1)
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
@@ -1532,9 +1518,12 @@ def _matmul_Qb_K[
             # only run epilogue for the last iter of K loop
             var is_last_k_iter = k_block == k_blocks - 1
 
-            @__parameter
-            @always_inline
-            def process_cols[tile_n: Int](n_idx: Int):
+            @inline(.always)
+            def process_cols[
+                tile_n: Int
+            ](n_idx: Int) {
+                mut a_packed_ptr, mut bn_packed_ptr, mut cn_ptr, imm
+            }:
                 columns_fn[
                     tile_n,
                     simd_width,
@@ -1553,7 +1542,7 @@ def _matmul_Qb_K[
                 bn_packed_ptr += tile_n * simd_width
                 cn_ptr += tile_n * simd_width
 
-            tile[process_cols, [2, 1]](0, ceildiv(task_n_count, simd_width))
+            tile[[2, 1]](0, ceildiv(task_n_count, simd_width), process_cols)
             # TODO(MOCO-2074): Suppress false positive unused var warning.
             _ = bn_packed_ptr
             _ = cn_ptr
@@ -1563,7 +1552,7 @@ def _matmul_Qb_K[
             a_packed_ptr += M
             b_packed_ptr += N
 
-    sync_parallelize[task_func](num_workers, ctx)
+    sync_parallelize(task_func, num_workers, ctx)
 
     dealloc(a_packed_base_alloc^)
 
@@ -1571,16 +1560,10 @@ def _matmul_Qb_K[
 def matmul_Q4_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a_tt: TileTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    c_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    ctx: Optional[DeviceContext] = None,
+    a_tt: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    c_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes a matrix multiplication with Q4_K block-quantized weights.
 
@@ -1596,12 +1579,9 @@ def matmul_Q4_K[
         c_tt: Output tensor in float32.
         ctx: Optional device context for parallel execution.
     """
-    var a = a_tt.to_layout_tensor()
-    var b = b_tt.to_layout_tensor()
-    var c = c_tt.to_layout_tensor()
-    comptime assert a.rank == 2
-    comptime assert b.rank == 2
-    comptime assert c.rank == 2
+    comptime assert a_tt.rank == 2
+    comptime assert b_tt.rank == 2
+    comptime assert c_tt.rank == 2
 
     _matmul_Qb_K[
         group_size=_block_Q4_K.group_size,
@@ -1609,22 +1589,16 @@ def matmul_Q4_K[
         columns_fn=_matmul_Q4_K_columns,
         interleave_group_sums=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](a, b, c, ctx)
+    ](a_tt, b_tt, c_tt, ctx)
 
 
 def matmul_Q6_K[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None
 ](
-    a_tt: TileTensor[
-        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_tt: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    c_tt: TileTensor[
-        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
-    ],
-    ctx: Optional[DeviceContext] = None,
+    a_tt: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    c_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes a matrix multiplication with Q6_K block-quantized weights.
 
@@ -1640,16 +1614,13 @@ def matmul_Q6_K[
         c_tt: Output tensor in float32.
         ctx: Optional device context for parallel execution.
     """
-    var a = a_tt.to_layout_tensor()
-    var b = b_tt.to_layout_tensor()
-    var c = c_tt.to_layout_tensor()
-    comptime assert a.rank == 2
-    comptime assert b.rank == 2
-    comptime assert c.rank == 2
+    comptime assert a_tt.rank == 2
+    comptime assert b_tt.rank == 2
+    comptime assert c_tt.rank == 2
 
     _matmul_Qb_K[
         group_size=_block_Q6_K.group_size,
         b_type=_block_Q6_K_packed[],
         columns_fn=_matmul_Q6_K_columns,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](a, b, c, ctx)
+    ](a_tt, b_tt, c_tt, ctx)

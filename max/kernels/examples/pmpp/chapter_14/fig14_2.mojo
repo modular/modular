@@ -13,7 +13,7 @@
 
 """Figure 14.2: Parallel odd-even sort kernel implementation in Mojo."""
 
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.random import random_ui64
 
@@ -118,8 +118,8 @@ def main() raises:
     var ctx = DeviceContext()
 
     # Allocate device memory
-    var d_data = ctx.enqueue_create_buffer[DType.uint32](N)
-    var d_hasChanged = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_data = ctx.enqueue_create_buffer[.uint32](N)
+    var d_hasChanged = ctx.enqueue_create_buffer[.uint32](1)
 
     # Copy to device
     ctx.enqueue_copy(d_data, h_data)

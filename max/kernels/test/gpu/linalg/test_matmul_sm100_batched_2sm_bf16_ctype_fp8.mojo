@@ -16,12 +16,10 @@ from std.testing import assert_equal
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 
 # from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
-    Coord,
     CoordLike,
     Idx,
     TileTensor,
@@ -66,7 +64,7 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     swapAB: Bool = False,
     k_group_size: Int = 1,
-    accum_dtype: DType = DType.float32,
+    accum_dtype: DType = .float32,
 ](ctx: DeviceContext, batch: BatchType, m: MType, n: NType, k: KType) raises:
     var B = Int(batch.value())
     var M = Int(m.value())
@@ -81,16 +79,14 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]))
+    var a_shape = row_major(batch, m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            batch,
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        batch,
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
-    var c_ref_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
+    var c_shape = row_major(batch, m, Idx[NType.static_value])
+    var c_ref_shape = row_major(batch, m, Idx[NType.static_value])
 
     var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
     var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
@@ -129,8 +125,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
                         b_type
                     ]()
     else:
-        rand(a_host._storage, a_host.num_elements(), min=-1.0, max=1.0)
-        rand(b_host._storage, b_host.num_elements(), min=-1.0, max=1.0)
+        rand(a_host.as_span(), min=-1.0, max=1.0)
+        rand(b_host.as_span(), min=-1.0, max=1.0)
 
     # Move operands to device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -187,8 +183,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
             for j in range(N):
                 comptime assert c_host.flat_rank == 3
                 assert_equal(
-                    c_host[b, i, j].cast[DType.float64](),
-                    c_host_ref[b, i, j].cast[c_type]().cast[DType.float64](),
+                    c_host[b, i, j].cast[.float64](),
+                    c_host_ref[b, i, j].cast[c_type]().cast[.float64](),
                     msg="At [" + String(i) + ", " + String(j) + "]",
                 )
 
@@ -221,7 +217,7 @@ def main() raises:
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
                     dtype,
                     dtype,
-                    DType.float8_e4m3fn,
+                    .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -238,7 +234,7 @@ def main() raises:
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
                     dtype,
                     dtype,
-                    DType.float8_e4m3fn,
+                    .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -255,7 +251,7 @@ def main() raises:
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
                     dtype,
                     dtype,
-                    DType.float8_e4m3fn,
+                    .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
                     cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -273,7 +269,7 @@ def main() raises:
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
                     dtype,
                     dtype,
-                    DType.float8_e4m3fn,
+                    .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
                     cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
@@ -291,7 +287,7 @@ def main() raises:
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
                     dtype,
                     dtype,
-                    DType.float8_e4m3fn,
+                    .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
                     cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
@@ -313,7 +309,7 @@ def main() raises:
             test_blackwell_batched_matmul_tma_umma_warp_specialized[
                 dtype,
                 dtype,
-                DType.float8_e4m3fn,
+                .float8_e4m3fn,
                 block_tile_shape,
                 umma_shape,
                 cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
@@ -330,7 +326,7 @@ def main() raises:
             test_blackwell_batched_matmul_tma_umma_warp_specialized[
                 dtype,
                 dtype,
-                DType.float8_e4m3fn,
+                .float8_e4m3fn,
                 block_tile_shape,
                 umma_shape,
                 cluster_shape=StaticTuple[Int32, 3](2, 1, 1),

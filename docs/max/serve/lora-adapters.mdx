@@ -77,6 +77,8 @@ You can statically or dynamically load LoRA adapters when serving a model with
 the [`max` CLI](/cli). To use LoRA adapters, configure the appropriate
 [`max serve`](/cli/serve) arguments for your use case:
 
+- `--prefer-module-v3`: LoRA serving requires a ModuleV3 architecture, so you
+  must pass this flag to select the ModuleV3 variant of the model.
 - `--lora-paths {name}={path} {name}={path}`: **(optional)** A mapping from
 each adapter's name to its path, in the form of `{name}={path} {name}={path}`.
 - `--max-lora-rank`: **(optional, `int`)** Any LoRA adapter loaded when serving
@@ -108,6 +110,7 @@ with the `--enable-lora` argument:
 ```bash
 max serve \
       --model meta-llama/Llama-3.1-8B-Instruct \
+      --prefer-module-v3 \
       --enable-lora \
       --no-enable-prefix-caching
 ```
@@ -160,6 +163,14 @@ adapter must only use the following layer projections:
 - `v_proj`
 - `o_proj`
 
+MAX fuses the query, key, and value projections into a single `qkv_proj`
+layer internally and applies each adapter to its corresponding projection.
+
+LoRA adapters are not compatible with the overlap scheduler. MAX
+automatically keeps the overlap scheduler off when you enable LoRA, and
+explicitly passing `--enable-overlap-scheduler` together with `--enable-lora`
+raises an error.
+
 ## Quickstart
 
 We can quickly deploy Llama 3.1 8B Instruct using MAX as a backend with LoRA
@@ -198,6 +209,7 @@ adapters.
     ```bash
     max serve \
       --model meta-llama/Llama-3.1-8B-Instruct \
+      --prefer-module-v3 \
       --enable-lora \
       --no-enable-prefix-caching \
       --max-num-loras 10 \

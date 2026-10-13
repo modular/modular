@@ -14,6 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
+from max.pipelines.speculative._dflash import dflash_draft_width
 
 from ..kimik2_5 import weight_adapters
 from ..kimik2_5.context import KimiK2_5TextAndVisionContext
@@ -48,4 +49,5 @@ unified_dflash_kimi_k25_arch = SupportedArchitecture(
     reasoning_parser="kimik2_5",
     memory_planner=KimiK25MemoryPlanner,
     supports_device_graph_capture=False,
+    checkpoint_draft_width=dflash_draft_width,
 )

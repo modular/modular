@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Low-level probe for the mechanism `DevicePointerStorage` relies on.
+"""Low-level probe for the mechanism `DevicePointerEngine` relies on.
 
-`DevicePointerStorage` (in `layout/tensor_storage.mojo`) is a `TensorStorage`
+`DevicePointerEngine` (in `layout/tensor_engine.mojo`) is a `TensorEngine`
 whose handle is a `DevicePointer`. At the kernel boundary the `DevicePointer`
 encodes to a bare device `Pointer` (`DevicePointer._to_device_type` ->
 `encode_device_ptr`), and the device-side operations reinterpret the handle's
@@ -31,7 +31,7 @@ A. A host-side struct containing a `DevicePointer` can be the host type of a
 
 B. On the device, code can reinterpret the struct's first
    `size_of[Pointer]` bytes as a `Pointer` and use it — the cast
-   pattern `DevicePointerStorage.load`/`store` use on device.
+   pattern `DevicePointerEngine.unsafe_ptr` uses on device.
 
 This stays in the OneS/TwoS pattern (distinct host and device types, manual
 conversion in `_to_device_type`) — the host struct keeps the full
@@ -40,8 +40,8 @@ conversion in `_to_device_type`) — the host struct keeps the full
 
 from asyncrt_test_utils import create_test_device_context
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from std.gpu import global_idx
-from max.gpu.host import DeviceContext, DevicePointer
+from max.gpu import global_idx
+from max.gpu.host import DevicePointer
 from std.testing import TestSuite, assert_equal
 
 
@@ -76,12 +76,12 @@ struct DevicePtrAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
 struct DevicePointerAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
     DevicePassable, ImplicitlyCopyable
 ):
-    var dp: DevicePointer[DType.float32, Self.origin]
+    var dp: DevicePointer[.float32, Self.origin]
     var sentinel: Int32
 
     def __init__(
         out self,
-        var dp: DevicePointer[DType.float32, Self.origin],
+        var dp: DevicePointer[.float32, Self.origin],
         sentinel: Int32,
     ):
         self.dp = dp
@@ -122,7 +122,7 @@ def write_sentinel_via_reinterpret(arg: DevicePtrAndSentinel[MutAnyOrigin]):
     struct as a `Pointer` and write through it, instead of using the
     named field.
 
-    This is the cast pattern `DevicePointerStorage.load`/`store` use on device
+    This is the cast pattern `DevicePointerEngine.unsafe_ptr` uses on device
     — the struct's static type wouldn't necessarily expose a `Pointer`
     field, but its first bytes ARE one.
 
@@ -144,7 +144,7 @@ def test_kernel_receives_encoded_pointer_and_sibling() raises:
     var ctx = create_test_device_context()
     comptime expected: Int32 = 0x1234
 
-    var buf = ctx.enqueue_create_buffer[DType.float32](1)
+    var buf = ctx.enqueue_create_buffer[.float32](1)
     buf.enqueue_fill(Float32(-1))
 
     var arg = DevicePointerAndSentinel(buf.device_ptr(), expected)
@@ -161,7 +161,7 @@ def test_kernel_reinterpret_first_bytes_as_unsafe_pointer() raises:
     var ctx = create_test_device_context()
     comptime expected: Int32 = 0xC0DE
 
-    var buf = ctx.enqueue_create_buffer[DType.float32](1)
+    var buf = ctx.enqueue_create_buffer[.float32](1)
     buf.enqueue_fill(Float32(-1))
 
     var arg = DevicePointerAndSentinel(buf.device_ptr(), expected)

@@ -14,12 +14,17 @@
 
 from __future__ import annotations
 
+import logging
+from types import SimpleNamespace
+
 import pytest
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
     compute_synthetic_acceptance_base_rate,
 )
+from max.pipelines.speculative._dflash import dflash_draft_width
 from max.pipelines.speculative.config import SpeculativeConfig
+from pydantic import ValidationError
 
 
 def test_is_eagle() -> None:
@@ -53,37 +58,27 @@ def test_num_speculative_tokens() -> None:
     )
 
 
-def test_rejection_sampling_strategy_default() -> None:
-    """Verify rejection_sampling_strategy defaults to None (resolved later based on method)."""
-    config = SpeculativeConfig()
-    assert config.rejection_sampling_strategy is None
+def test_speculative_config_is_frozen() -> None:
+    config = SpeculativeConfig(speculative_method="eagle")
+    field = "num_speculative_tokens"
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(config, field, 5)
+    assert config.num_speculative_tokens == 2
 
 
-def test_rejection_sampling_strategy_values() -> None:
-    """Verify rejection_sampling_strategy accepts valid values."""
-    assert (
-        SpeculativeConfig(
-            rejection_sampling_strategy="greedy"
-        ).rejection_sampling_strategy
-        == "greedy"
-    )
-    assert (
-        SpeculativeConfig(
-            rejection_sampling_strategy="residual"
-        ).rejection_sampling_strategy
-        == "residual"
-    )
+def test_speculative_config_model_copy_update() -> None:
+    config = SpeculativeConfig(speculative_method="dflash")
+    patched = config.model_copy(update={"num_speculative_tokens": 7})
+    assert patched.num_speculative_tokens == 7
+    assert config.num_speculative_tokens is None
 
 
-def test_uses_greedy_rejection() -> None:
-    """Verify uses_greedy_rejection() returns correct boolean."""
-    assert SpeculativeConfig(
-        rejection_sampling_strategy="greedy"
-    ).uses_greedy_rejection()
-    assert not SpeculativeConfig(
-        rejection_sampling_strategy="residual"
-    ).uses_greedy_rejection()
-    assert not SpeculativeConfig().uses_greedy_rejection()
+def test_rejection_sampling_strategy_is_rejected() -> None:
+    """The removed field fails validation instead of being silently ignored."""
+    with pytest.raises(ValidationError, match="rejection_sampling_strategy"):
+        SpeculativeConfig.model_validate(
+            {"rejection_sampling_strategy": "greedy"}
+        )
 
 
 def test_synthetic_acceptance_rate_defaults_none() -> None:
@@ -174,3 +169,63 @@ def test_acceptance_sampler_synthetic() -> None:
         sum(sampler._base_rate ** (i + 1) for i in range(num_steps)) / num_steps
     )
     assert abs(mean_joint - rate) < 1e-6
+
+
+def test_dflash_width_comes_from_the_draft_checkpoint() -> None:
+    """The width is the trained block size, whatever the draft is named."""
+    draft_hf = SimpleNamespace(
+        architectures=["LlamaForCausalLM"],
+        dflash_config={
+            "mask_token_id": 3,
+            "target_layer_ids": [1],
+            "block_size": 7,
+        },
+    )
+    spec = SpeculativeConfig(speculative_method="dflash")
+    assert dflash_draft_width(spec, None, draft_hf) == 6
+
+    mismatched = SpeculativeConfig(
+        speculative_method="dflash", num_speculative_tokens=3
+    )
+    assert dflash_draft_width(mismatched, None, draft_hf) == 6
+
+
+def test_eagle_width_is_already_final() -> None:
+    """Eagle takes its default at construction; no architecture supplies it."""
+    spec = SpeculativeConfig(speculative_method="eagle")
+    assert spec.num_speculative_tokens == 2
+
+
+def test_acceptance_sampler_reports_the_rule_it_dispatches_to(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The sampler must name the acceptance rule it will actually run.
+
+    The rule in effect is only knowable from the sampler's own dispatch:
+    synthetic beats stochastic beats greedy.
+    """
+    with caplog.at_level(logging.INFO, logger="max.pipelines"):
+        assert AcceptanceSampler().acceptance_rule == "greedy"
+        assert (
+            AcceptanceSampler(use_stochastic=True).acceptance_rule
+            == "stochastic"
+        )
+        # Synthetic wins even with stochastic asked for, matching __call__.
+        assert (
+            AcceptanceSampler(
+                synthetic_acceptance_rate=0.8,
+                num_draft_steps=3,
+                use_stochastic=True,
+            ).acceptance_rule
+            == "synthetic"
+        )
+
+    logged = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "max.pipelines" and "acceptance rule" in r.getMessage()
+    ]
+    assert len(logged) == 3, logged
+    assert "greedy" in logged[0]
+    assert "stochastic" in logged[1]
+    assert "synthetic" in logged[2]

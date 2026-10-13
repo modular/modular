@@ -30,101 +30,95 @@ from std.utils import IndexList
 def test_sync_parallelize() raises:
     var num_work_items = 4
 
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](fill={})
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = Scalar[DType.int](i)
+        vector[i] = Int(i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
-    @always_inline
-    @__copy_capture(vector, chunk_size)
-    @__parameter
-    def parallel_fn(thread_id: Int):
+    @inline(.always)
+    def parallel_fn(thread_id: Int) {var vector, var chunk_size}:
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
-        @always_inline
+        @inline(.always)
         def add_two(idx: Int) {var}:
             vector[start + idx] = vector[start + idx] + 2
 
         map(end - start, add_two)
 
-    sync_parallelize[parallel_fn](num_work_items)
+    sync_parallelize(parallel_fn, num_work_items)
 
     for i in range(len(vector)):
-        assert_equal(vector[i], Scalar[DType.int](i + 2))
+        assert_equal(vector[i], Int(i + 2))
 
 
 def test_parallelize() raises:
     var num_work_items = num_physical_cores()
 
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](fill={})
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = Scalar[DType.int](i)
+        vector[i] = Int(i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
-    @__parameter
-    @__copy_capture(vector, chunk_size)
-    @always_inline
-    def parallel_fn(thread_id: Int):
+    @inline(.always)
+    def parallel_fn(thread_id: Int) {var vector, var chunk_size}:
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
-        @always_inline
+        @inline(.always)
         def add_two(idx: Int) {var}:
             vector[start + idx] = vector[start + idx] + 2
 
         map(end - start, add_two)
 
-    parallelize[parallel_fn](num_work_items)
+    parallelize(parallel_fn, num_work_items)
 
 
-@__parameter
 def printme(i: Int):
     print(i, end="")
 
 
 def test_parallelize_no_workers() raises:
     # With ASSERT=warn, this prints a warning but doesn't abort.
-    parallelize[printme](10, 0)
+    parallelize(printme, 10, 0)
 
 
 def test_parallelize_negative_workers() raises:
     # With ASSERT=warn, this prints a warning but doesn't abort.
-    parallelize[printme](10, -1)
+    parallelize(printme, 10, -1)
 
 
 def test_parallelize_negative_work() raises:
     # This should do nothing
-    parallelize[printme](-1, 4)
+    parallelize(printme, -1, 4)
 
 
 def test_parallelize_over_rows_zero_work() raises:
     # This should do nothing
-    @__parameter
-    def noop(start: Int, end: Int):
+    def noop(start: Int, end: Int) {}:
         pass
 
-    parallelize_over_rows[noop](IndexList[1](0), 0, 1)
+    parallelize_over_rows(noop, IndexList[1](0), 0, 1)
 
 
 def test_parallelize_unified() raises:
     var num_work_items = num_physical_cores()
 
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](fill={})
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = Scalar[DType.int](i)
+        vector[i] = Int(i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
-    @always_inline
+    @inline(.always)
     def parallel_fn(
         thread_id: Int,
     ) {imm vector, imm chunk_size,}:
@@ -137,21 +131,21 @@ def test_parallelize_unified() raises:
     parallelize(parallel_fn, num_work_items)
 
     for i in range(len(vector)):
-        assert_equal(vector[i], Scalar[DType.int](i + 2))
+        assert_equal(vector[i], Int(i + 2))
 
 
 def test_sync_parallelize_unified() raises:
     var num_work_items = 4
 
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](fill={})
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector[i] = Scalar[DType.int](i)
+        vector[i] = Int(i)
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
-    @always_inline
+    @inline(.always)
     def add_two_parallel(
         thread_id: Int,
     ) {imm vector, imm chunk_size,}:
@@ -164,13 +158,13 @@ def test_sync_parallelize_unified() raises:
     sync_parallelize(add_two_parallel, num_work_items)
 
     for i in range(len(vector)):
-        assert_equal(vector[i], Scalar[DType.int](i + 2))
+        assert_equal(vector[i], Int(i + 2))
 
 
 def test_sync_parallelize_unified_single_item() raises:
     var result = 0
 
-    @always_inline
+    @inline(.always)
     def set_result(
         i: Int,
     ) {mut result,}:
@@ -184,7 +178,7 @@ def test_sync_parallelize_unified_single_item() raises:
 def test_sync_parallelize_unified_zero_items() raises:
     var called = False
 
-    @always_inline
+    @inline(.always)
     def should_not_run(
         i: Int,
     ) {mut called,}:
@@ -200,23 +194,22 @@ def test_parallelize_over_rows() raises:
     var num_rows = shape[0]
     var row_size = shape[1]
 
-    var data_stack = Array[Scalar[DType.int], 32](uninitialized=True)
+    var data_stack = Array[Int, 32](fill={})
     var data = Span(data_stack)
 
     for i in range(num_rows * row_size):
-        data[i] = Scalar[DType.int](0)
+        data[i] = Int(0)
 
-    @__parameter
-    def process_rows(start_row: Int, end_row: Int):
+    def process_rows(start_row: Int, end_row: Int) {imm}:
         for row in range(start_row, end_row):
             for col in range(row_size):
-                data[row * row_size + col] = Scalar[DType.int](row + 1)
+                data[row * row_size + col] = Int(row + 1)
 
-    parallelize_over_rows[process_rows](shape, 1, 1)
+    parallelize_over_rows(process_rows, shape, 1, 1)
 
     for row in range(num_rows):
         for col in range(row_size):
-            assert_equal(data[row * row_size + col], Scalar[DType.int](row + 1))
+            assert_equal(data[row * row_size + col], Int(row + 1))
 
 
 def main() raises:

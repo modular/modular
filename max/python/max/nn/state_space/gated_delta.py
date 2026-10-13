@@ -33,10 +33,14 @@ design — kernel does pointer arithmetic ``state_ptr += slot * stride``
 into a long-lived pool, no per-step pool allocation.
 
 
-Usage
------
-::
+**Usage:**
 
+.. skip: next
+
+.. code-block:: python
+
+    # Illustrative fragment: the pools and projected tensors come from a
+    # live gated-deltanet layer, so it isn't runnable standalone.
     from max.nn.state_space import (
         gated_delta_conv1d_fwd,
         gated_delta_recurrence_fwd,
@@ -68,7 +72,44 @@ from __future__ import annotations
 from typing import cast
 
 from max.dtype import DType
-from max.graph import BufferValue, TensorType, TensorValue, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Dim,
+    DimLike,
+    TensorType,
+    TensorValue,
+    ops,
+)
+
+
+def _as_uint32(value: TensorValue) -> TensorValue:
+    return (
+        value if value.type.dtype == DType.uint32 else value.cast(DType.uint32)
+    )
+
+
+def verify_width_operand(num_draft_tokens: DimLike) -> TensorValue:
+    """Returns the operand the speculative state ops read the verify width from.
+
+    The ops read only its length, which is host metadata, so choosing between
+    landing the state on the forward and deferring it to the rollback costs
+    no device synchronization. At a width of zero there is no draft to
+    reject.
+
+    Args:
+        num_draft_tokens: The graph's draft width ``K``, as a dim.
+
+    Returns:
+        A ``[K]`` int64 tensor on the host.
+    """
+    return ops.range(
+        start=0,
+        stop=Dim(num_draft_tokens),
+        out_dim=num_draft_tokens,
+        device=DeviceRef.CPU(),
+        dtype=DType.int64,
+    )
 
 
 def gated_delta_conv1d_fwd(
@@ -77,23 +118,31 @@ def gated_delta_conv1d_fwd(
     conv_state: BufferValue,
     slot_idx: TensorValue,
     input_row_offsets: TensorValue,
+    *,
+    write_state: bool = True,
 ) -> TensorValue:
-    """Pass 1: causal conv1d that mutates a slot-indexed pool in place.
+    """Applies the causal conv1d pass, mutating a slot-indexed conv-state
+    pool in place.
 
-    ``conv_state`` is a mutable pool of shape ``[max_slots, conv_dim, K-1]``
-    and the kernel reads/writes slot ``slot_idx[batch_item]`` directly.
-    There is no ``conv_state_out`` graph output: the pool is mutated in
-    place.
+    ``conv_state`` is a mutable pool of shape ``[max_slots, conv_dim,
+    kernel_size - 1]`` and the kernel reads/writes slot
+    ``slot_idx[batch_item]`` directly. There is no ``conv_state_out``
+    graph output: the pool is mutated in place.
 
     Args:
-        qkv_input_ragged: ``[total_seq_len, conv_dim]`` projected QKV input.
-        conv_weight: ``[conv_dim, kernel_size]`` depthwise conv weights.
-        conv_state: ``[max_slots, conv_dim, kernel_size-1]`` mutable pool.
-        slot_idx: ``[batch_size]`` uint32 slot indices into the pool.
-        input_row_offsets: ``[batch_size + 1]`` uint32 ragged offsets.
+        qkv_input_ragged: The ``[total_seq_len, conv_dim]`` projected QKV
+            input.
+        conv_weight: The ``[conv_dim, kernel_size]`` depthwise conv
+            weights.
+        conv_state: The ``[max_slots, conv_dim, kernel_size - 1]``
+            mutable pool.
+        slot_idx: The ``[batch_size]`` uint32 slot indices into the pool.
+        input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
+        write_state: Whether to write the updated window back to
+            ``conv_state``. ``False`` only reads it for the look-back.
 
     Returns:
-        ``conv_output_ragged: [total_seq_len, conv_dim]``.
+        The conv output, ``[total_seq_len, conv_dim]``.
     """
     device = qkv_input_ragged.device
     total_seq_len = qkv_input_ragged.shape[0]
@@ -126,6 +175,59 @@ def gated_delta_conv1d_fwd(
             offsets_uint32,
         ],
         [conv_output_ragged_type],
+        parameters={"write_state": write_state},
+    )
+    return cast(TensorValue, results[0])
+
+
+def gated_delta_conv1d_verify_fwd(
+    qkv_input_ragged: TensorValue,
+    conv_weight: TensorValue,
+    conv_state: BufferValue,
+    slot_idx: TensorValue,
+    input_row_offsets: TensorValue,
+    verify_width: TensorValue,
+    *,
+    rollback: bool,
+) -> TensorValue:
+    """Runs :func:`gated_delta_conv1d_fwd` in a speculative verify graph.
+
+    At a verify width of zero the forward launch writes the window and the
+    rollback launch does nothing, leaving its output unwritten. Otherwise the
+    forward launch only reads the window and the rollback launch writes it.
+
+    Args:
+        qkv_input_ragged: The ``[total_seq_len, conv_dim]`` conv input.
+        conv_weight: The ``[conv_dim, kernel_size]`` depthwise weights.
+        conv_state: The ``[max_slots, conv_dim, kernel_size - 1]`` pool.
+        slot_idx: The ``[batch_size]`` uint32 pool rows.
+        input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
+        verify_width: The operand :func:`verify_width_operand` returns.
+        rollback: Whether this is the rollback's launch.
+
+    Returns:
+        The conv output, ``[total_seq_len, conv_dim]``.
+    """
+    device = qkv_input_ragged.device
+    results = ops.inplace_custom(
+        "gated_delta_conv1d_verify_fwd",
+        device,
+        [
+            qkv_input_ragged,
+            conv_weight,
+            conv_state,
+            _as_uint32(slot_idx),
+            _as_uint32(input_row_offsets),
+            verify_width,
+        ],
+        [
+            TensorType(
+                DType.float32,
+                [qkv_input_ragged.shape[0], qkv_input_ragged.shape[1]],
+                device,
+            )
+        ],
+        parameters={"rollback": rollback},
     )
     return cast(TensorValue, results[0])
 
@@ -138,24 +240,26 @@ def gated_delta_recurrence_fwd(
     slot_idx: TensorValue,
     input_row_offsets: TensorValue,
 ) -> TensorValue:
-    """Pass 2: gated delta recurrence mutating a slot-indexed pool in place.
+    """Applies the gated delta recurrence pass, mutating a slot-indexed
+    state pool in place.
 
-    ``recurrent_state`` is a mutable pool of shape ``[max_slots, nv, KD, VD]``
-    and the kernel reads/writes slot ``slot_idx[batch_item]`` directly.
-    There is no ``recurrent_state_out`` graph output: the pool is mutated
-    in place.
+    ``recurrent_state`` is a mutable pool of shape ``[max_slots, nv, KD,
+    VD]`` and the kernel reads/writes slot ``slot_idx[batch_item]``
+    directly. There is no ``recurrent_state_out`` graph output: the pool
+    is mutated in place.
 
     Args:
-        qkv_conv_output: ``[total_seq_len, conv_dim]`` from
+        qkv_conv_output: The ``[total_seq_len, conv_dim]`` output of
             :func:`gated_delta_conv1d_fwd`.
-        decay_per_token: ``[total_seq_len, num_value_heads]`` decays.
-        beta_per_token: ``[total_seq_len, num_value_heads]`` beta gates.
-        recurrent_state: ``[max_slots, nv, KD, VD]`` mutable pool.
-        slot_idx: ``[batch_size]`` uint32 slot indices into the pool.
-        input_row_offsets: ``[batch_size + 1]`` uint32 ragged offsets.
+        decay_per_token: The ``[total_seq_len, num_value_heads]`` decays.
+        beta_per_token: The ``[total_seq_len, num_value_heads]`` beta
+            gates.
+        recurrent_state: The ``[max_slots, nv, KD, VD]`` mutable pool.
+        slot_idx: The ``[batch_size]`` uint32 slot indices into the pool.
+        input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
 
     Returns:
-        ``recurrence_output: [total_seq_len, value_dim]``.
+        The recurrence output, ``[total_seq_len, value_dim]``.
     """
     device = qkv_conv_output.device
     total_seq_len = qkv_conv_output.shape[0]
@@ -194,3 +298,105 @@ def gated_delta_recurrence_fwd(
         [recurrence_output_type],
     )
     return cast(TensorValue, results[0])
+
+
+def gated_delta_recurrence_verify_ring_fwd(
+    qkv_conv_output: TensorValue,
+    decay_per_token: TensorValue,
+    beta_per_token: TensorValue,
+    recurrent_state: BufferValue,
+    ring: BufferValue,
+    slot_idx: TensorValue,
+    ring_slot_idx: TensorValue,
+    input_row_offsets: TensorValue,
+    verify_width: TensorValue,
+) -> TensorValue:
+    """Runs the recurrence over a speculative verify window into a ring.
+
+    Produces the same readout as :func:`gated_delta_recurrence_fwd` without
+    writing ``recurrent_state``. Each token writes its decay, raw key and
+    delta factor to its request's ``ring`` row, which
+    :func:`gated_delta_state_fold` applies once acceptance is known.
+
+    At a verify width of zero this is :func:`gated_delta_recurrence_fwd` on
+    ``recurrent_state``, and no ring is written.
+
+    Args:
+        qkv_conv_output: The ``[total_seq_len, conv_dim]`` conv output.
+        decay_per_token: The ``[total_seq_len, nv]`` decays.
+        beta_per_token: The ``[total_seq_len, nv]`` beta gates.
+        recurrent_state: The ``[max_slots, nv, KD, VD]`` live pool, written
+            only at a verify width of zero.
+        ring: The ``[ring_rows, nk, RING_LEN, record_stride]`` ring pool.
+        slot_idx: The ``[batch_size]`` live pool rows.
+        ring_slot_idx: The ``[batch_size]`` ring rows.
+        input_row_offsets: The ``[batch_size + 1]`` uint32 ragged offsets.
+        verify_width: The operand :func:`verify_width_operand` returns.
+
+    Returns:
+        The recurrence output, ``[total_seq_len, value_dim]``.
+    """
+    device = qkv_conv_output.device
+    value_dim = decay_per_token.shape[1] * recurrent_state.shape[3]
+    results = ops.inplace_custom(
+        "gated_delta_recurrence_verify_ring_fwd",
+        device,
+        [
+            qkv_conv_output,
+            decay_per_token,
+            beta_per_token,
+            recurrent_state,
+            ring,
+            _as_uint32(slot_idx),
+            _as_uint32(ring_slot_idx),
+            _as_uint32(input_row_offsets),
+            verify_width,
+        ],
+        [
+            TensorType(
+                DType.float32, [qkv_conv_output.shape[0], value_dim], device
+            )
+        ],
+    )
+    return cast(TensorValue, results[0])
+
+
+def gated_delta_state_fold(
+    recurrent_state: BufferValue,
+    ring: BufferValue,
+    row_ids: TensorValue,
+    ring_row_ids: TensorValue,
+    num_accepted: TensorValue,
+    verify_width: TensorValue,
+) -> None:
+    """Applies a verify's accepted ring records to the state pool.
+
+    Advances ``recurrent_state`` over the first ``num_accepted[b]`` records
+    written by :func:`gated_delta_recurrence_verify_ring_fwd`, for every
+    layer in one launch. A row with ``num_accepted[b] == 0`` is left
+    unchanged. Nothing runs at a verify width of zero, where the verify wrote
+    no records.
+
+    Args:
+        recurrent_state: The ``[max_slots, nv, KD, VD]`` live pool, folded in
+            place.
+        ring: The ``[ring_rows, nk, RING_LEN, record_stride]`` ring pool.
+        row_ids: The ``[num_layers, batch_size]`` live pool rows.
+        ring_row_ids: The ``[num_layers, batch_size]`` ring rows.
+        num_accepted: The ``[batch_size]`` records to fold. A count past
+            ``RING_LEN`` names a row the verify was too long to record and
+            committed itself, and is skipped.
+        verify_width: The operand :func:`verify_width_operand` returns.
+    """
+    ops.inplace_custom(
+        "gated_delta_state_fold",
+        recurrent_state.device,
+        [
+            recurrent_state,
+            ring,
+            _as_uint32(row_ids),
+            _as_uint32(ring_row_ids),
+            _as_uint32(num_accepted),
+            verify_width,
+        ],
+    )

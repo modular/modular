@@ -37,9 +37,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import (
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
@@ -66,9 +67,8 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 from max.nn.quant_ops import quantized_fused_qkv_index_matmul
-from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
 def _skip_if_not_supported() -> None:
@@ -131,42 +131,17 @@ def _cosine_and_rel_l2(out: np.ndarray, ref: np.ndarray) -> tuple[float, float]:
 
 
 def _make_cache(
-    kv_params: KVCacheParams,
-    session: InferenceSession,
-    seq_len: int,
+    kv_params: KVCacheParams, seq_len: int
 ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
     """Allocate a single request's KV cache and return its runtime inputs."""
-    manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=8,
-    )
-    context = create_text_context(np.empty(seq_len))
-    manager.claim(context)
-    manager.alloc(context)
-    return manager.runtime_inputs_for_leaf([[context]]).inputs[0]
+    return paged_kv_cache_inputs(kv_params, [seq_len], total_num_pages=8)
 
 
 def _make_cache_batch(
-    kv_params: KVCacheParams,
-    session: InferenceSession,
-    prompt_lens: list[int],
+    kv_params: KVCacheParams, prompt_lens: list[int]
 ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
     """Allocate one request per prompt length and return the runtime inputs."""
-    manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=32,
-        session=session,
-        max_batch_size=8,
-    )
-    contexts = []
-    for n in prompt_lens:
-        context = create_text_context(np.empty(n))
-        manager.claim(context)
-        manager.alloc(context)
-        contexts.append(context)
-    return manager.runtime_inputs_for_leaf([contexts]).inputs[0]
+    return paged_kv_cache_inputs(kv_params, prompt_lens, total_num_pages=32)
 
 
 def _build_qkv_value(
@@ -217,22 +192,19 @@ def _build_qkv_value(
     )
 
 
-def _run_path(
+def _load_path(
     *,
     is_mxfp8: bool,
-    a_np: np.ndarray,
-    wqkv_np: np.ndarray,
     seq_len: int,
+    hidden: int,
+    qkv_dim: int,
     num_heads: int,
     kv_params: KVCacheParams,
-    device: Accelerator,
     device_ref: DeviceRef,
     session: InferenceSession,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Build, run one QKV path; return (Q output, KV cache blocks)."""
-    hidden = a_np.shape[1]
-    qkv_dim = wqkv_np.shape[0]
-    kv_symbolic = kv_params.get_symbolic_inputs().inputs[0]
+) -> Model:
+    """Build and compile one QKV path."""
+    kv_symbolic = kv_params.get_symbolic_inputs()[0]
 
     with Graph(
         f"qkv_{'mxfp8' if is_mxfp8 else 'bf16'}",
@@ -244,28 +216,12 @@ def _run_path(
             TensorType(
                 DType.bfloat16, shape=(qkv_dim, hidden), device=device_ref
             ),
-            *kv_symbolic.flatten(),
+            *tree.leaves(kv_symbolic),
         ],
     ) as graph:
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
-        (
-            a,
-            input_row_offsets,
-            wqkv,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            max_prompt_length,
-            max_cache_length,
-            *_rest,
-        ) = graph.inputs
-        kv_collection = PagedCacheValues(
-            blocks.buffer,
-            cache_lengths.tensor,
-            lookup_table.tensor,
-            max_prompt_length.tensor,
-            max_cache_length.tensor,
-        )
+        a, input_row_offsets, wqkv, *kv_inputs = graph.inputs
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
         q_out = _build_qkv_value(
             is_mxfp8=is_mxfp8,
             a=a.tensor,
@@ -278,8 +234,20 @@ def _run_path(
         )
         graph.output(q_out)
 
-    model = session.load(graph)
-    kv_runtime = _make_cache(kv_params, session, seq_len)
+    return session.load(graph)
+
+
+def _execute_path(
+    model: Model,
+    *,
+    a_np: np.ndarray,
+    wqkv_np: np.ndarray,
+    seq_len: int,
+    kv_params: KVCacheParams,
+    device: Accelerator,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run one compiled QKV path; return (Q output, KV cache blocks)."""
+    kv_runtime = _make_cache(kv_params, seq_len)
 
     a_buf = Buffer.from_dlpack(torch.from_numpy(a_np).to(torch.bfloat16)).to(
         device
@@ -292,7 +260,10 @@ def _run_path(
     ).to(device)
 
     (out_buf,) = model.execute(
-        a_buf, row_offsets_buf, wqkv_buf, *kv_runtime.flatten()
+        a_buf,
+        row_offsets_buf,
+        wqkv_buf,
+        *tree.leaves(kv_runtime),
     )
     q_out_np = torch.from_dlpack(out_buf).to(torch.float32).cpu().numpy()
     # The cache is bf16, which numpy can't represent, so read it through torch.
@@ -347,28 +318,52 @@ def test_fused_qkv_mxfp8_matmul(
         devices=[device_ref],
     )
 
-    q_mxfp8, kv_mxfp8 = _run_path(
-        is_mxfp8=True,
-        a_np=a_np,
-        wqkv_np=wqkv_np,
-        seq_len=seq_len,
-        num_heads=num_heads,
-        kv_params=kv_params,
-        device=device,
-        device_ref=device_ref,
-        session=session,
+    # The FP8 KV-cache store below is checked on the prefill shape only.
+    fp8_params = (
+        MHAKVCacheParams(
+            dtype=DType.float8_e4m3fn,
+            page_size=128,
+            n_kv_heads=num_kv_heads,
+            head_dim=head_dim,
+            num_layers=1,
+            devices=[device_ref],
+        )
+        if label == "prefill"
+        else None
     )
-    _q_ref, kv_ref = _run_path(
-        is_mxfp8=False,
-        a_np=a_np,
-        wqkv_np=wqkv_np,
-        seq_len=seq_len,
-        num_heads=num_heads,
-        kv_params=kv_params,
-        device=device,
-        device_ref=device_ref,
-        session=session,
-    )
+
+    # Every graph is compiled before any executes, so a precompiled run records
+    # all of them.
+    def load(is_mxfp8: bool, params: KVCacheParams) -> Model:
+        return _load_path(
+            is_mxfp8=is_mxfp8,
+            seq_len=seq_len,
+            hidden=hidden,
+            qkv_dim=qkv_dim,
+            num_heads=num_heads,
+            kv_params=params,
+            device_ref=device_ref,
+            session=session,
+        )
+
+    mxfp8_model = load(True, kv_params)
+    ref_model = load(False, kv_params)
+    fp8_model = load(True, fp8_params) if fp8_params is not None else None
+
+    def execute(
+        model: Model, params: KVCacheParams
+    ) -> tuple[np.ndarray, np.ndarray]:
+        return _execute_path(
+            model,
+            a_np=a_np,
+            wqkv_np=wqkv_np,
+            seq_len=seq_len,
+            kv_params=params,
+            device=device,
+        )
+
+    q_mxfp8, kv_mxfp8 = execute(mxfp8_model, kv_params)
+    _q_ref, kv_ref = execute(ref_model, kv_params)
 
     q_dim = num_heads * head_dim
     q_host_ref = (a_np @ wqkv_np.T)[:, :q_dim]
@@ -398,28 +393,11 @@ def test_fused_qkv_mxfp8_matmul(
     # scale-free FP8 cache must match the BF16-cache store within FP8 rounding.
     # Checked on the prefill shape only, reusing the MXFP8 K/V computed above as
     # the BF16 baseline so no extra reference graph is compiled.
-    if label == "prefill":
-        fp8_params = MHAKVCacheParams(
-            dtype=DType.float8_e4m3fn,
-            page_size=128,
-            n_kv_heads=num_kv_heads,
-            head_dim=head_dim,
-            num_layers=1,
-            devices=[device_ref],
-        )
+    if fp8_params is not None:
+        assert fp8_model is not None
         assert fp8_params.is_fp8_kv_dtype
         assert not fp8_params.quantized_kv_cache
-        _q_fp8, kv_fp8 = _run_path(
-            is_mxfp8=True,
-            a_np=a_np,
-            wqkv_np=wqkv_np,
-            seq_len=seq_len,
-            num_heads=num_heads,
-            kv_params=fp8_params,
-            device=device,
-            device_ref=device_ref,
-            session=session,
-        )
+        _q_fp8, kv_fp8 = execute(fp8_model, fp8_params)
         fp8_cos, _ = _cosine_and_rel_l2(kv_fp8, kv_mxfp8)
         assert np.all(np.isfinite(kv_fp8)), "FP8 KV cache has non-finite values"
         assert np.any(kv_fp8 != 0.0), "FP8 KV cache is all zeros"
@@ -459,13 +437,10 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
     device_ref = DeviceRef(device.label, device.id)
     session = InferenceSession(devices=[device])
 
-    def _run(
+    def _params(
         main_dtype: DType,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Run the 5-way op with a main cache of ``main_dtype`` (index BF16).
-
-        Returns ``(Q, IndexQ, main-cache K/V blocks)`` as fp32.
-        """
+    ) -> tuple[MHAKVCacheParams, MLAKVCacheParams]:
+        """A main cache of ``main_dtype`` and a BF16 index cache."""
         main_params = MHAKVCacheParams(
             dtype=main_dtype,
             page_size=128,
@@ -482,10 +457,14 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
             devices=[device_ref],
             num_q_heads=num_index_heads,
         )
+        return main_params, index_params
 
-        main_sym = main_params.get_symbolic_inputs().inputs[0]
-        index_sym = index_params.get_symbolic_inputs().inputs[0]
-        n_main = len(main_sym.flatten())
+    def _load(main_dtype: DType) -> Model:
+        """Build and compile the 5-way op with a main cache of ``main_dtype``."""
+        main_params, index_params = _params(main_dtype)
+        main_sym = main_params.get_symbolic_inputs()[0]
+        index_sym = index_params.get_symbolic_inputs()[0]
+        n_main = len(tree.leaves(main_sym))
 
         with Graph(
             f"qkv_index_mxfp8_{main_dtype}_main_cache",
@@ -497,8 +476,8 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
                 TensorType(
                     DType.bfloat16, (n_total, hidden), device=device_ref
                 ),
-                *main_sym.flatten(),
-                *index_sym.flatten(),
+                *tree.leaves(main_sym),
+                *tree.leaves(index_sym),
             ],
         ) as graph:
             a, iro, wqkv, *rest = graph.inputs
@@ -516,20 +495,8 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
                 scales_type=DType.float8_e8m0fnu,
                 out_type=DType.float8_e4m3fn,
             )
-            main_kv = PagedCacheValues(
-                main_in[0].buffer,
-                main_in[1].tensor,
-                main_in[2].tensor,
-                main_in[3].tensor,
-                main_in[4].tensor,
-            )
-            index_kv = PagedCacheValues(
-                index_in[0].buffer,
-                index_in[1].tensor,
-                index_in[2].tensor,
-                index_in[3].tensor,
-                index_in[4].tensor,
-            )
+            main_kv = main_params.unflatten_kv_inputs(iter(main_in))[0]
+            index_kv = index_params.unflatten_kv_inputs(iter(index_in))[0]
             q, index_q = _fused_qkv_index_ragged_matmul_scaled_mxfp8(
                 main_params,
                 index_params,
@@ -547,9 +514,15 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
             )
             graph.output(q, index_q)
 
-        model = session.load(graph)
-        main_rt = _make_cache(main_params, session, seq_len)
-        index_rt = _make_cache(index_params, session, seq_len)
+        return session.load(graph)
+
+    def _execute(
+        model: Model, main_dtype: DType
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Run the compiled op; returns ``(Q, IndexQ, main K/V blocks)`` as fp32."""
+        main_params, index_params = _params(main_dtype)
+        main_rt = _make_cache(main_params, seq_len)
+        index_rt = _make_cache(index_params, seq_len)
 
         a_buf = Buffer.from_dlpack(
             torch.from_numpy(a_np).to(torch.bfloat16)
@@ -562,7 +535,11 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
         ).to(device)
 
         q_buf, iq_buf = model.execute(
-            a_buf, iro_buf, wqkv_buf, *main_rt.flatten(), *index_rt.flatten()
+            a_buf,
+            iro_buf,
+            wqkv_buf,
+            *tree.leaves(main_rt),
+            *tree.leaves(index_rt),
         )
         q_np = torch.from_dlpack(q_buf).to(torch.float32).cpu().numpy()
         iq_np = torch.from_dlpack(iq_buf).to(torch.float32).cpu().numpy()
@@ -571,8 +548,12 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
         )
         return q_np, iq_np, main_kv_np
 
-    q_fp8, iq_fp8, kv_fp8 = _run(DType.float8_e4m3fn)
-    q_bf16, iq_bf16, kv_bf16 = _run(DType.bfloat16)
+    # Both graphs compile before either executes, so a precompiled run records
+    # both.
+    fp8_model = _load(DType.float8_e4m3fn)
+    bf16_model = _load(DType.bfloat16)
+    q_fp8, iq_fp8, kv_fp8 = _execute(fp8_model, DType.float8_e4m3fn)
+    q_bf16, iq_bf16, kv_bf16 = _execute(bf16_model, DType.bfloat16)
 
     kv_cos, kv_rel = _cosine_and_rel_l2(kv_fp8, kv_bf16)
     print(
@@ -650,18 +631,15 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
         num_q_heads=num_index_heads,
     )
 
-    def _run(
-        stacked: bool,
-        pre: str | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Run one path; returns (Q, IndexQ, main blocks, index blocks) as fp32.
+    def _load(stacked: bool, pre: str | None = None) -> Model:
+        """Build and compile one path.
 
         `pre` is the `(fp8, e8m0)` pair a producer epilogue would hand the op:
         "same" is what the op would compute itself, "foreign" unrelated rows.
         """
-        main_sym = main_params.get_symbolic_inputs().inputs[0]
-        index_sym = index_params.get_symbolic_inputs().inputs[0]
-        n_main = len(main_sym.flatten())
+        main_sym = main_params.get_symbolic_inputs()[0]
+        index_sym = index_params.get_symbolic_inputs()[0]
+        n_main = len(tree.leaves(main_sym))
 
         name = "stacked" if stacked else "separate"
         if pre is not None:
@@ -680,27 +658,15 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                 TensorType(
                     DType.bfloat16, (n_total, hidden), device=device_ref
                 ),
-                *main_sym.flatten(),
-                *index_sym.flatten(),
+                *tree.leaves(main_sym),
+                *tree.leaves(index_sym),
             ],
         ) as graph:
             a, iro, wqkv, *rest = graph.inputs
             main_in, index_in = rest[:n_main], rest[n_main:]
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
-            main_kv = PagedCacheValues(
-                main_in[0].buffer,
-                main_in[1].tensor,
-                main_in[2].tensor,
-                main_in[3].tensor,
-                main_in[4].tensor,
-            )
-            index_kv = PagedCacheValues(
-                index_in[0].buffer,
-                index_in[1].tensor,
-                index_in[2].tensor,
-                index_in[3].tensor,
-                index_in[4].tensor,
-            )
+            main_kv = main_params.unflatten_kv_inputs(iter(main_in))[0]
+            index_kv = index_params.unflatten_kv_inputs(iter(index_in))[0]
             # On AMD this returns rank-2 [N, K // 32] E8M0 scales -- the
             # checkpoint layout, which the CDNA4 matmul consumes uninterleaved.
             w_q, w_scales = quantize_dynamic_block_scaled(
@@ -781,9 +747,14 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                 )
             graph.output(q, index_q)
 
-        model = session.load(graph)
-        main_rt = _make_cache_batch(main_params, session, prompt_lens)
-        index_rt = _make_cache_batch(index_params, session, prompt_lens)
+        return session.load(graph)
+
+    def _execute(
+        model: Model,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Run one compiled path; returns (Q, IndexQ, main blocks, index blocks) as fp32."""
+        main_rt = _make_cache_batch(main_params, prompt_lens)
+        index_rt = _make_cache_batch(index_params, prompt_lens)
 
         a_buf = Buffer.from_dlpack(
             torch.from_numpy(a_np).to(torch.bfloat16)
@@ -796,7 +767,11 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
         ).to(device)
 
         q_buf, iq_buf = model.execute(
-            a_buf, iro_buf, wqkv_buf, *main_rt.flatten(), *index_rt.flatten()
+            a_buf,
+            iro_buf,
+            wqkv_buf,
+            *tree.leaves(main_rt),
+            *tree.leaves(index_rt),
         )
 
         # The caches are bf16, which numpy can't represent, so read through torch.
@@ -810,8 +785,15 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
             to_np(index_rt.kv_blocks),
         )
 
-    q_st, iq_st, main_st, index_st = _run(stacked=True)
-    q_sep, iq_sep, main_sep, index_sep = _run(stacked=False)
+    # Every graph compiles before any executes, so a precompiled run records
+    # all of them.
+    stacked_model = _load(stacked=True)
+    separate_model = _load(stacked=False)
+    pre_same_model = _load(stacked=True, pre="same")
+    pre_foreign_model = _load(stacked=True, pre="foreign")
+
+    q_st, iq_st, main_st, index_st = _execute(stacked_model)
+    q_sep, iq_sep, main_sep, index_sep = _execute(separate_model)
 
     q_cos, q_rel = _cosine_and_rel_l2(q_st, q_sep)
     iq_cos, iq_rel = _cosine_and_rel_l2(iq_st, iq_sep)
@@ -840,13 +822,13 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
     # Two arms: byte-equality against the op's own quantize is the layout gate,
     # but an op ignoring the pair and requantizing `x` would pass it too -- so
     # arm 2 feeds unrelated rows and requires the outputs to MOVE.
-    q_same, iq_same, main_same, index_same = _run(stacked=True, pre="same")
+    q_same, iq_same, main_same, index_same = _execute(pre_same_model)
     np.testing.assert_array_equal(q_same, q_st)
     np.testing.assert_array_equal(iq_same, iq_st)
     np.testing.assert_array_equal(main_same, main_st)
     np.testing.assert_array_equal(index_same, index_st)
 
-    q_fgn, iq_fgn, main_fgn, index_fgn = _run(stacked=True, pre="foreign")
+    q_fgn, iq_fgn, main_fgn, index_fgn = _execute(pre_foreign_model)
     for name, got, ref in (
         ("Q", q_fgn, q_st),
         ("IndexQ", iq_fgn, iq_st),

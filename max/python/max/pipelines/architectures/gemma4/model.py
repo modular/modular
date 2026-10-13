@@ -20,10 +20,18 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    Module,
+    TensorType,
+    ops,
+)
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import MultiKVCacheParams
@@ -37,6 +45,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.profiler import traced
 
@@ -79,7 +88,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     """
 
     tokens: npt.NDArray[np.integer[Any]] | Buffer
-    input_row_offsets: npt.NDArray[np.integer[Any]] | list[Buffer]
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer
     signal_buffers: list[Buffer]
     return_n_logits: Buffer
 
@@ -90,11 +99,11 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return (
             self.tokens,
             self.return_n_logits,
-            *self.input_row_offsets,
+            self.input_row_offsets,
             *self.vision_embeddings,
             *self.vision_scatter_indices,
             *self.signal_buffers,
-            *self.kv_cache_inputs.flatten(),
+            *tree.leaves(self.kv_cache_inputs),
         )
 
 
@@ -147,19 +156,22 @@ class Gemma3_MultiModalModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
+            memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
@@ -238,7 +250,7 @@ class Gemma3_MultiModalModel(
         return self._cached_empty_embeddings
 
     def _load_state_dict(self) -> dict[str, Any]:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
@@ -254,7 +266,7 @@ class Gemma3_MultiModalModel(
         self, state_dict: dict[str, Any]
     ) -> Gemma4ForConditionalGenerationConfig:
         model_config = Gemma4ForConditionalGenerationConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -286,14 +298,9 @@ class Gemma3_MultiModalModel(
             DType.int64, shape=["total_seq_len"], device=device_ref
         )
 
-        input_row_offsets_types = [
-            TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
 
         image_embeddings_types = [
             TensorType(
@@ -328,7 +335,7 @@ class Gemma3_MultiModalModel(
         return (
             tokens_type,
             return_n_logits_type,
-            *input_row_offsets_types,
+            input_row_offsets_type,
             *image_embeddings_types,
             *image_token_indices_types,
             *signals.input_types(),
@@ -346,6 +353,9 @@ class Gemma3_MultiModalModel(
             "gemma4_language",
             input_types=self._language_model_input_types(config),
             module=module,
+            is_device_graph=(
+                self.pipeline_config.runtime.experimental_device_graph_synthesis
+            ),
         ) as graph:
             language_model = Gemma4TextModel(config)
             language_model.load_state_dict(
@@ -355,13 +365,9 @@ class Gemma3_MultiModalModel(
             )
 
             # Unpack inputs following InternVL pattern
-            (tokens, return_n_logits, *variadic_args) = graph.inputs
-
-            # Extract input_row_offsets (one per device)
-            input_row_offsets = [
-                v.tensor for v in variadic_args[: len(self.devices)]
-            ]
-            variadic_args = variadic_args[len(self.devices) :]
+            (tokens, return_n_logits, row_offsets, *variadic_args) = (
+                graph.inputs
+            )
 
             # Extract image embeddings (one per device).
             image_embeddings = [
@@ -379,6 +385,13 @@ class Gemma3_MultiModalModel(
                 v.buffer for v in variadic_args[: len(self.devices)]
             ]
             variadic_args = variadic_args[len(self.devices) :]
+
+            # Staged once on the first device. A collective rather than a
+            # transfer per device: those sync across streams, which breaks
+            # graph capture.
+            input_row_offsets = ops.distributed_broadcast(
+                row_offsets.tensor, signal_buffers
+            )
 
             # Extract KV cache inputs from the unified {sliding, global} tree.
             kv_cache_local, kv_cache_global = (

@@ -34,6 +34,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import BertBatchProcessor
 from .graph import build_graph
@@ -61,6 +62,8 @@ class BertPipelineModel(GraphPipelineModel[TextContext]):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
         max_batch_size: int = 1,
@@ -71,9 +74,10 @@ class BertPipelineModel(GraphPipelineModel[TextContext]):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
         self.model = self.load_model(session)
 
@@ -89,7 +93,7 @@ class BertPipelineModel(GraphPipelineModel[TextContext]):
         self, state_dict: dict[str, Any]
     ) -> BertModelConfig:
         del state_dict
-        return BertModelConfig.initialize(self.pipeline_config)
+        return self.arch_config_as(BertModelConfig)
 
     def _build_graph_for_compile(
         self,

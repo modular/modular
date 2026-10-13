@@ -25,11 +25,11 @@ inserted by the NanCheckPass compiler pass. The architecture is:
 """
 
 from max.algorithm import elementwise
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
-from std.memory import alloc, dealloc, unsafe_stack_allocation
+from std.memory import alloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 from std.atomic import Atomic
 from std.sys import simd_width_of
@@ -38,7 +38,6 @@ from std.utils.numerics import isinf, isnan
 from std.math import ceildiv
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 from extensibility import InputTensor, OutputTensor
 
 
@@ -48,16 +47,12 @@ def _nan_check_gpu_kernel[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     total_elements: Int32,
-    out_nan: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-    out_inf: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    out_nan: UnsafePointer[Int32, MutAnyOrigin],
+    out_inf: UnsafePointer[Int32, MutAnyOrigin],
 ):
     """GPU kernel: count NaN/Inf values via parallel reduction."""
-    var nan_local = unsafe_stack_allocation[
-        1, Int32, address_space=AddressSpace.SHARED
-    ]()
-    var inf_local = unsafe_stack_allocation[
-        1, Int32, address_space=AddressSpace.SHARED
-    ]()
+    var nan_local = unsafe_stack_allocation[1, Int32, address_space=.SHARED]()
+    var inf_local = unsafe_stack_allocation[1, Int32, address_space=.SHARED]()
     if thread_idx.x == 0:
         nan_local[0] = Int32(0)
         inf_local[0] = Int32(0)
@@ -92,8 +87,8 @@ def nan_check_count[
     rank: Int,
     target: StaticString,
 ](
-    nan_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
-    inf_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
+    nan_count_out: OutputTensor[dtype=.int32, rank=1, ...],
+    inf_count_out: OutputTensor[dtype=.int32, rank=1, ...],
     input: InputTensor[dtype=dtype, rank=rank, ...],
     ctx: DeviceContext,
 ) raises:
@@ -108,12 +103,8 @@ def nan_check_count[
 
     comptime if is_cpu[target]():
         # CPU path: vectorized scan using elementwise with atomic accumulators.
-        var nan_acc = alloc(
-            AllocLayout[Scalar[DType.int32]](count=1)
-        ).into_managed()
-        var inf_acc = alloc(
-            AllocLayout[Scalar[DType.int32]](count=1)
-        ).into_managed()
+        var nan_acc = alloc(AllocLayout[Int32](count=1)).into_managed()
+        var inf_acc = alloc(AllocLayout[Int32](count=1)).into_managed()
 
         var nan_acc_ptr = nan_acc.unsafe_ptr()
         var inf_acc_ptr = inf_acc.unsafe_ptr()
@@ -121,13 +112,13 @@ def nan_check_count[
         nan_acc_ptr[] = Int32(0)
         inf_acc_ptr[] = Int32(0)
 
-        @always_inline
+        @inline(.always)
         def scan[width: Int, alignment: Int = 1](idx: Coord) {var}:
             var flat = idx[0].value()
             var ptr = input.unsafe_ptr()
             var val = ptr.load[width=width](flat)
-            var nans = isnan(val).cast[DType.int32]().reduce_add()
-            var infs = isinf(val).cast[DType.int32]().reduce_add()
+            var nans = isnan(val).cast[.int32]().reduce_add()
+            var infs = isinf(val).cast[.int32]().reduce_add()
             if nans > 0:
                 _ = Atomic.fetch_add(nan_acc_ptr, nans)
             if infs > 0:
@@ -145,11 +136,10 @@ def nan_check_count[
         var out_nan_ptr = nan_count_out.unsafe_ptr()
         var out_inf_ptr = inf_count_out.unsafe_ptr()
 
-        @__parameter
         @__name(t"nan_check_zero_counts")
         def zero_counts(
-            nan_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
-            inf_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+            nan_ptr: UnsafePointer[Int32, MutAnyOrigin],
+            inf_ptr: UnsafePointer[Int32, MutAnyOrigin],
         ):
             nan_ptr[] = Int32(0)
             inf_ptr[] = Int32(0)
@@ -182,8 +172,8 @@ def nan_check_raise[
     label: StaticString,
     type_str: StaticString,
 ](
-    nan_count: InputTensor[dtype=DType.int32, rank=1, ...],
-    inf_count: InputTensor[dtype=DType.int32, rank=1, ...],
+    nan_count: InputTensor[dtype=.int32, rank=1, ...],
+    inf_count: InputTensor[dtype=.int32, rank=1, ...],
 ) raises:
     """Raises an error if NaN or Inf counts are non-zero.
 

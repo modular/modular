@@ -15,11 +15,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import heapq
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import Any
 
@@ -36,17 +35,25 @@ from max.pipelines.lib import (
     TextAndVisionTokenizer,
     VisionPreprocessCache,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import open_image, resolve_single_special_token
+from max.pipelines.lib.tokenizer import (
+    ReasoningDelimitersMixin,
+    encode_dkv_cache_hint,
+    open_image,
+    run_with_default_executor,
+)
 from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    TokenIds,
+    VisionPreprocessCacheStats,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
-from transformers import AutoTokenizer, GenerationConfig
+from transformers import AutoTokenizer
 
 from .context import Gemma4Context
 from .image_processor import Gemma4ImageProcessor
@@ -85,12 +92,15 @@ REASONING_OPEN = "<|channel>thought\n"
 MODEL_TURN_OPEN = "<|turn>model\n"
 
 
-class Gemma4Tokenizer(TextAndVisionTokenizer):
+class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
     """Gemma4-specific tokenizer handling text and vision inputs.
 
     Uses a custom ``Gemma4ImageProcessor`` (numpy/PIL only) instead of
     HuggingFace's ``AutoProcessor`` to avoid pulling in torch.
     """
+
+    # Gemma 4 wraps reasoning in ``<|channel>thought\n...<channel|>`` blocks.
+    reasoning_delimiters = ("<|channel>", "<channel|>")
 
     def __init__(
         self,
@@ -122,48 +132,15 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                 f"HuggingFace config is required for '{model_path}'"
             )
 
-        # EOS token IDs
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
-        if eos_token_id := getattr(config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._eos_token_ids.update(eos_token_id)
-
-        # Gemma 4 ships an ``eos_token_id`` list in ``generation_config.json``
-        # that extends what ``config.json`` declares — for the 31B-IT release
-        # it adds ``<|tool_response>`` (id 50) alongside ``<eos>`` and
-        # ``<turn|>``. Google uses ``<|tool_response>`` as the assistant's
-        # tool-call-turn terminator, so without picking it up the model can
-        # emit token 50 and keep generating past the tool call. Mirror
-        # vLLM's ``update_from_generation_config`` behavior by reading
-        # ``generation_config.json`` here.
-        try:
-            gen_config = GenerationConfig.from_pretrained(
-                model_path,
-                revision=revision,
-                trust_remote_code=trust_remote_code,
-            )
-        except Exception:
-            # ``generation_config.json`` is optional and HF may raise for a
-            # variety of reasons (missing file, malformed JSON, hub
-            # connection error). None of those should fail tokenizer init.
-            gen_config = None
-        if gen_config is not None:
-            gen_eos = getattr(gen_config, "eos_token_id", None)
-            if isinstance(gen_eos, int):
-                self._eos_token_ids.add(gen_eos)
-            elif isinstance(gen_eos, list):
-                self._eos_token_ids.update(gen_eos)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
         )
         self.enable_vision_caching = (
-            pipeline_config.runtime.max_vision_cache_entries > 0
+            pipeline_config.runtime.vision_cache_utilization != 0
         )
         # Image token IDs — try both naming conventions
         self.image_token_id: int = _require_attr(
@@ -258,26 +235,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             set(self.delegate.all_special_ids) - tool_token_ids
         )
 
-        # ReasoningPipelineTokenizer surface — Gemma 4 wraps reasoning in
-        # ``<|channel>thought\n...<channel|>`` blocks; expose the delimiter
-        # ids so the overlap pipeline's thinking-mode temperature scaling
-        # can find them without hardcoding ``<think>``/``</think>``.
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, "<|channel>"
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, "<channel|>"
-        )
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<|channel>`` (opens a Gemma 4 reasoning span)."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``<channel|>`` (closes a Gemma 4 reasoning span)."""
-        return self._reasoning_end_token_id
+        self._resolve_reasoning_delimiters(self.delegate)
 
     def _patch_chat_template_for_video(self) -> None:
         """Patch the chat template to handle ``type == 'video'`` if missing.
@@ -357,35 +315,41 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
 
         return templated_message
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decode tokens, preserving tool-related special tokens.
 
         Gemma4 marks tool tokens as special (unlike Kimi), so we need
         to selectively preserve them when skip_special_tokens=True by filtering
         unwanted special tokens before decoding.
         """
-        # Log-probability responses decode one token id (a plain int) at a
-        # time; match the text tokenizer's handling.
-        if isinstance(encoded, int):
-            encoded = np.array(encoded)
+        # Log-probability responses decode one token id (a plain int) and the
+        # CLI passes a token list; normalize both to a rank-1 array.
+        token_ids = np.atleast_1d(np.asarray(encoded))
         skip_special_tokens = kwargs.get("skip_special_tokens", True)
 
         if not skip_special_tokens:
             # No filtering needed
-            return await super().decode(encoded, **kwargs)
+            return await super().decode(token_ids, **kwargs)
 
         # Filter out special tokens that should be skipped (all except tool tokens)
         filtered_ids = [
             token_id
-            for token_id in encoded.tolist()
+            for token_id in token_ids.tolist()
             if token_id not in self.skipped_special_token_ids
         ]
 
         # Decode with skip_special_tokens=False since we already filtered
         kwargs_no_skip = {**kwargs, "skip_special_tokens": False}
         return await super().decode(np.array(filtered_ids), **kwargs_no_skip)
+
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's :class:`PreprocessCacheStatsProbe` snapshot."""
+        return {
+            "image": self._preprocess_cache.stats(),
+            "video": self._video_preprocess_cache.stats(),
+        }
 
     def _preprocess_image(
         self, image_hash: int | None, image: bytes | Image.Image
@@ -475,7 +439,11 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(
+            # Rendering is pure-Python Jinja over the whole conversation;
+            # inline it and a long multi-turn history blocks the API server's
+            # event loop for the full render, serializing request intake.
+            prompt = await run_with_default_executor(
+                self.apply_chat_template,
                 request.messages,
                 request.tools,
                 **(request.chat_template_options or {}),
@@ -540,7 +508,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                 if needs_image_hash or self._video_preprocess_cache.enabled
                 else [None] * len(request.videos)
             )
-            per_video = await asyncio.to_thread(
+            per_video = await run_with_default_executor(
                 self._preprocess_videos, computed_video_hashes, request.videos
             )
             padded_pvs = [pvs for pvs, _, _, _ in per_video]
@@ -605,9 +573,12 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
                 for t in text_list
             ]
 
-        # Tokenize
+        # Tokenize. Off-loop for the same reason as the template render
+        # above -- the delegate is CPU-bound, and encode() elsewhere in this
+        # codebase already runs it on the default executor.
         if text_list is not None:
-            tokenizer_out = self.delegate(
+            tokenizer_out = await run_with_default_executor(
+                self.delegate,
                 text_list,
                 add_special_tokens=add_special_tokens,
                 padding=False,
@@ -744,6 +715,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             request_id=request.request_id,
             eos_tracker=eos_tracker,
             target_endpoint=request.target_endpoint,
+            dkv_cache_hint=encode_dkv_cache_hint(request.dkv_cache_hint),
             mm_token_type_ids=mm_token_type_ids.astype(np.int64, copy=False),
             pixel_position_ids=pixel_position_ids_ordered,
             tokens=TokenBuffer(

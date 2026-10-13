@@ -18,7 +18,6 @@ for shared fixtures.
 """
 
 import copy
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -38,14 +37,13 @@ from conftest import (
     Gemma4RotaryEmbedding,
     Gemma4TextAttention,
 )
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
-from test_common.mef_precompile import init_from_mef, mefs_from_env
 from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
@@ -65,6 +63,10 @@ def text_config() -> Gemma4TextConfig:
     return make_text_config()
 
 
+# Staging this needs a GPU, so every test below requests it after the compiled
+# fixtures it uses: that way the CPU build action that records the compiles
+# reaches them before anything asks for hardware it does not have. See
+# `docs/internal/CompileOnCpuRunOnGpu.md`.
 @pytest.fixture(scope="module")
 def input_tensor(text_config: Gemma4TextConfig) -> torch.Tensor:
     torch.manual_seed(42)
@@ -169,7 +171,6 @@ def generate_torch_outputs(
 
 
 def build_max_attention(
-    mef_path: Path,
     session: InferenceSession,
     text_config: Gemma4TextConfig,
     attention_weights: dict[str, torch.Tensor],
@@ -179,7 +180,7 @@ def build_max_attention(
     *,
     cache_dtype: DType | None = None,
 ) -> CompiledAttention:
-    _, attention, kv_params = build_max_attention_graph(
+    graph, attention, kv_params = build_max_attention_graph(
         text_config,
         attention_weights,
         dtype,
@@ -188,15 +189,11 @@ def build_max_attention(
         cache_dtype=cache_dtype,
     )
 
-    # Set up blank KV cache.
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-    compiled = init_from_mef(session, mef_path, attention.state_dict())
-    return CompiledAttention(compiled=compiled, kv_manager=kv_manager)
+    # Only the compile: the bundle allocates its KV cache on first use, so a
+    # CPU build action recording this test reaches every compile before
+    # anything asks for the device.
+    compiled = session.load(graph, weights_registry=attention.state_dict())
+    return CompiledAttention(compiled, session, kv_params)
 
 
 def execute_max_attention(
@@ -210,7 +207,7 @@ def execute_max_attention(
     accumulate state across test invocations.
     """
     input_seq_len = input_tensor.shape[1]
-    kv_manager = compiled_attention.kv_manager
+    kv_manager = compiled_attention.claim_kv_manager()
     compiled = compiled_attention.compiled
 
     batch = [create_text_context(np.empty(input_seq_len))]
@@ -227,7 +224,7 @@ def execute_max_attention(
             Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
                 device
             ),
-            *kv_runtime_inputs.flatten(),
+            *tree.leaves(kv_runtime_inputs),
         ]
         output = compiled.execute(*execute_args)[0]
     finally:
@@ -289,9 +286,7 @@ def compiled_local_bf16(
     text_config: Gemma4TextConfig,
     attention_weights_local: dict[str, torch.Tensor],
 ) -> CompiledAttention:
-    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_local_bf16.mef"]
     return build_max_attention(
-        mef_path,
         session,
         text_config,
         attention_weights_local,
@@ -307,9 +302,7 @@ def compiled_global_bf16(
     text_config: Gemma4TextConfig,
     attention_weights_global: dict[str, torch.Tensor],
 ) -> CompiledAttention:
-    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_global_bf16.mef"]
     return build_max_attention(
-        mef_path,
         session,
         text_config,
         attention_weights_global,
@@ -332,9 +325,7 @@ def compiled_local_native_fp8(
 ) -> CompiledAttention:
     if not is_b100_b200():
         pytest.skip("Native FP8 MHA requires B200 (SM100)")
-    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_local_native_fp8.mef"]
     return build_max_attention(
-        mef_path,
         session,
         text_config,
         attention_weights_local,
@@ -353,9 +344,7 @@ def compiled_global_native_fp8(
 ) -> CompiledAttention:
     if not is_b100_b200():
         pytest.skip("Native FP8 MHA requires B200 (SM100)")
-    mef_path = mefs_from_env("MEF_RLOCATIONS")["compiled_global_native_fp8.mef"]
     return build_max_attention(
-        mef_path,
         session,
         text_config,
         attention_weights_global,
@@ -373,9 +362,9 @@ def compiled_global_native_fp8(
 
 def test_attention_local(
     text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
     attention_weights_local: dict[str, torch.Tensor],
     compiled_local_bf16: CompiledAttention,
+    input_tensor: torch.Tensor,
     device: Device,
 ) -> None:
     max_output = execute_max_attention(
@@ -396,9 +385,9 @@ def test_attention_local(
 
 def test_attention_global(
     text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
     attention_weights_global: dict[str, torch.Tensor],
     compiled_global_bf16: CompiledAttention,
+    input_tensor: torch.Tensor,
     device: Device,
 ) -> None:
     max_output = execute_max_attention(
@@ -434,9 +423,9 @@ def test_attention_global(
 
 def test_attention_native_fp8_matches_bf16_local(
     text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
     compiled_local_bf16: CompiledAttention,
     compiled_local_native_fp8: CompiledAttention,
+    input_tensor: torch.Tensor,
     device: Device,
 ) -> None:
     """Native pure-fp8 (no scales) sliding (head_dim=256) layer vs bf16."""
@@ -452,9 +441,9 @@ def test_attention_native_fp8_matches_bf16_local(
 
 def test_attention_native_fp8_matches_bf16_global(
     text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
     compiled_global_bf16: CompiledAttention,
     compiled_global_native_fp8: CompiledAttention,
+    input_tensor: torch.Tensor,
     device: Device,
 ) -> None:
     """Native pure-fp8 (no scales) global (head_dim=512) layer vs bf16."""

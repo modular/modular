@@ -37,9 +37,9 @@ from std.math import ceildiv
 from std.random import rand, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext, HostBuffer
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 
 from _fuzz import boundary_int, collect_args, flag, flag_int, numeric_check
@@ -55,9 +55,9 @@ comptime budget = get_defined_int["budget", 16]()
 
 
 def naive_matmul_ref_kernel(
-    c: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    a: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    b: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    c: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a: MutPointer[Scalar[dtype], MutAnyOrigin],
+    b: MutPointer[Scalar[dtype], MutAnyOrigin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -78,8 +78,8 @@ def naive_matmul_ref_kernel(
         var acc = Float32(0)
         for k_i in range(k):
             acc += (
-                a[row * k + k_i].cast[DType.float32]()
-                * b[col * k + k_i].cast[DType.float32]()
+                a[row * k + k_i].cast[.float32]()
+                * b[col * k + k_i].cast[.float32]()
             )
         c[row * n + col] = acc.cast[dtype]()
 
@@ -119,9 +119,9 @@ def run_one_case(
     ctx.enqueue_copy(b_dev, b_host)
 
     # M runtime (bare Int); N, K comptime (Idx[...]) so the tuned kernel engages.
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](c, a, b, ctx)
     ctx.synchronize()
@@ -233,9 +233,9 @@ def _run_rows(
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](c, a, b, ctx)
     ctx.synchronize()
@@ -260,8 +260,8 @@ def _row_bit_diff(
     var n_diff = 0
     var max_abs = Float64(0)
     for j in range(N):
-        var a = row_out[off + j].cast[DType.float64]()
-        var b = ref_out[ref_off + j].cast[DType.float64]()
+        var a = row_out[off + j].cast[.float64]()
+        var b = ref_out[ref_off + j].cast[.float64]()
         if a != b:
             n_diff += 1
             var ad = abs(a - b)

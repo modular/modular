@@ -14,7 +14,7 @@
 from std.random import random_float64
 from std.itertools import product
 
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -46,8 +46,8 @@ def stencil_kernel(
     # Allocate shared memory tile (includes halo cells)
     var in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # Get thread and block indices
@@ -64,7 +64,7 @@ def stencil_kernel(
     if i >= 0 and i < N and j >= 0 and j < N and k >= 0 and k < N:
         var global_idx = i * N * N + j * N + k
         var shared_idx = tz * IN_TILE_DIM * IN_TILE_DIM + ty * IN_TILE_DIM + tx
-        in_s[shared_idx] = Scalar[DType.float32](d_in[global_idx])
+        in_s[shared_idx] = Float32(d_in[global_idx])
 
     # Wait for all threads to finish loading
     barrier()

@@ -15,7 +15,7 @@
 # Demonstrates how to use shared memory to optimize matrix multiplication
 
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -44,13 +44,13 @@ def matrix_mul_tiled_kernel(
     # Allocate shared memory tiles
     var sA = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var sB = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # Get global and shared indices
@@ -64,10 +64,10 @@ def matrix_mul_tiled_kernel(
     # Go through tiles
     for ph in range(Width // TILE_WIDTH):
         # Load tiles into shared memory
-        sA[s_row * TILE_WIDTH + s_col] = Scalar[DType.float32](
+        sA[s_row * TILE_WIDTH + s_col] = Float32(
             M[g_row * Width + (ph * TILE_WIDTH + s_col)]
         )
-        sB[s_row * TILE_WIDTH + s_col] = Scalar[DType.float32](
+        sB[s_row * TILE_WIDTH + s_col] = Float32(
             N[(s_row + ph * TILE_WIDTH) * Width + g_col]
         )
         barrier()

@@ -134,8 +134,8 @@ struct MatmulConfig[
         # Heuristic: Use 1 consumer group for small M, 2 otherwise
 
         var num_consumer_groups: Int
-        if consumer_groups:
-            num_consumer_groups = consumer_groups.value()
+        if case .Some(consumer_groups) = consumer_groups:
+            num_consumer_groups = consumer_groups
         else:
             num_consumer_groups = 1 if M <= 64 else 2
 
@@ -186,8 +186,8 @@ struct MatmulConfig[
         self.num_pipeline_stages = 4  # Default for compilation
         self.k_group_size = 1
 
-        if k_groups:
-            self.k_group_size = k_groups.value()
+        if case .Some(k_groups) = k_groups:
+            self.k_group_size = k_groups
         else:
             var output_block_size = mma_mn[0] * mma_mn[1]
 
@@ -338,17 +338,17 @@ struct MatmulConfig[
         Args:
             hasher: The hasher instance.
         """
-        hasher.update(Self.a_type)
-        hasher.update(Self.b_type)
-        hasher.update(Self.c_type)
-        hasher.update(Self.transpose_b)
-        hasher.update(self.block_tile_shape)
-        hasher.update(self.mma_shape)
-        hasher.update(self.cluster_shape)
-        hasher.update(self.num_pipeline_stages)
-        hasher.update(self.num_k_partitions)
-        hasher.update(self.num_consumer)
-        hasher.update(self.partitioned_multicast)
+        Self.a_type.__hash__(hasher)
+        Self.b_type.__hash__(hasher)
+        Self.c_type.__hash__(hasher)
+        Self.transpose_b.__hash__(hasher)
+        self.block_tile_shape.__hash__(hasher)
+        self.mma_shape.__hash__(hasher)
+        self.cluster_shape.__hash__(hasher)
+        self.num_pipeline_stages.__hash__(hasher)
+        self.num_k_partitions.__hash__(hasher)
+        self.num_consumer.__hash__(hasher)
+        self.partitioned_multicast.__hash__(hasher)
 
 
 def build_configs[
@@ -724,12 +724,7 @@ def build_configs_generic[
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
     for m in range(M_start, M_end):
-        var config = config_fn.__call__[
-            _a_type=a_type,
-            _b_type=b_type,
-            _c_type=c_type,
-            _transpose_b=transpose_b,
-        ](m)
+        var config = config_fn(m)
         if config not in set:
             set.add(config)
 

@@ -10,32 +10,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The fungible page pool that every flat KV cache draws from."""
+"""The fungible page pool that every flat KV cache draws from.
+
+The pool itself, :class:`JengaBlockPool`, lives in Rust (``kv-core``) and is
+re-exported here; this module plans the geometry it is built with.
+"""
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
-from functools import reduce
-from math import gcd
+from dataclasses import dataclass
+from math import lcm
 
+from max._kv_core import JengaBlockPool as JengaBlockPool
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.support.math import ceildiv
 
-from .block_utils import (
-    FreeHugeKVCacheBlockQueue,
-    FreeLittleKVCacheBlockQueue,
-    HugeKVCacheBlock,
-    InsufficientBlocksError,
-    LittleKVCacheBlock,
+# A padded page may spend at most this share of itself on bytes the kernel
+# never reads. Zero by default.
+_MAX_PADDING_FRACTION = float(
+    os.getenv("MODULAR_KV_JENGA_MAX_PADDING_FRACTION") or 0.0
 )
 
+# The search will not consider a huge block larger than this. Past it the
+# allocation quantum is coarse enough that stranding beats any padding it saves.
+_MAX_HUGE_PAGE_BYTES = int(
+    os.getenv("MODULAR_KV_JENGA_MAX_HUGE_PAGE_BYTES") or 128 * 1024 * 1024
+)
 
-def lcm(*numbers: int) -> int:
-    """Returns the least common multiple of ``numbers``."""
-    return reduce(lambda x, y: x * y // gcd(x, y), numbers)
+# How many little pages of one cache a huge block is considered to hold. Bounds
+# the candidate search; ratios above this imply a page so much smaller than the
+# block that padding it tightly is free anyway.
+_MAX_TILING_RATIO = int(os.getenv("MODULAR_KV_JENGA_MAX_TILING_RATIO") or 256)
 
 
 def compute_jenga_ratios(
-    available_bytes: int, cache_sizes: Mapping[str, int]
+    available_bytes: int,
+    cache_sizes: Mapping[str, int],
+    include_null_block: bool = True,
 ) -> tuple[int, int, dict[str, int]]:
     """Fits a byte budget to a huge block geometry every cache tiles exactly.
 
@@ -48,6 +61,7 @@ def compute_jenga_ratios(
     Args:
         available_bytes: The per-device KV budget the pool may occupy.
         cache_sizes: Each cache's page size in bytes.
+        include_null_block: Whether to include the null block.
 
     Returns:
         How many huge blocks the budget holds, size of each huge block in bytes,
@@ -68,11 +82,12 @@ def compute_jenga_ratios(
 
     huge_page_bytes = lcm(*cache_sizes.values())
     num_huge_blocks = available_bytes // huge_page_bytes
-    if num_huge_blocks < 2:
-        pages = ", ".join(
-            f"{cache_id}={to_human_readable_bytes(size)}"
-            for cache_id, size in cache_sizes.items()
-        )
+
+    pages = ", ".join(
+        f"{cache_id}={to_human_readable_bytes(size)}"
+        for cache_id, size in cache_sizes.items()
+    )
+    if include_null_block and num_huge_blocks < 2:
         raise ValueError(
             f"{to_human_readable_bytes(available_bytes)} is too small to "
             f"build a pool. A huge block is the least common multiple of the "
@@ -82,6 +97,15 @@ def compute_jenga_ratios(
             f"{to_human_readable_bytes(2 * huge_page_bytes)} -- because huge "
             f"block 0 is the null page every cache shares."
         )
+    if num_huge_blocks < 1:
+        raise ValueError(
+            f"{to_human_readable_bytes(available_bytes)} is too small to "
+            f"build a pool. A huge block is the least common multiple of the "
+            f"page sizes ({pages}), so it takes "
+            f"{to_human_readable_bytes(huge_page_bytes)}, and the pool needs "
+            f"at least one of them."
+        )
+
     return (
         num_huge_blocks,
         huge_page_bytes,
@@ -92,281 +116,276 @@ def compute_jenga_ratios(
     )
 
 
-class JengaBlockPool:
-    """A pool of huge blocks, each subdividable into one cache's little blocks.
+@dataclass(frozen=True)
+class JengaGeometry:
+    """A huge-block geometry every cache tiles exactly, once padded.
 
-    Every cache tiles the same bytes at its own page size, so a huge block is
-    ``cache_ratios[cache_id]`` blocks of cache ``cache_id``. Huge block 0 is
-    spent on the null block (``N``) that dummy and padding requests share,
-    which leaves the rest of it (``.``) unusable, and starts real ids at 1 and
-    at ``ratio``::
+    :func:`compute_jenga_ratios` demands exact tiling, which makes the huge
+    block the least common multiple of the page sizes -- cheap when they divide
+    each other, ruinous when a coprime factor survives into one of them (an odd
+    layer count, a head width that is not a power of two). Padding each page up
+    to a divisor of a *searched* huge block buys tractability back: a leaf
+    spends a few percent of its page on bytes the kernel never reads, and the
+    huge block stays small enough to allocate against a real budget.
 
-      huge block     |     0     |     1     |     2     |     3     |
-      global  (x4)   | N| .| .| .| 4| 5| 6| 7| 8| 9|10|11|12|13|14|15|
-      sliding (x2)   |  N  |  .  |  2  |  3  |  4  |  5  |  6  |  7  |
-
-    A little block's ``bid`` is thus the page index the kernel cache lookup
-    table holds. ``num_huge_blocks`` counts huge block 0, so a pool needs at
-    least two of them to hand anything out.
-
-    Those views alias, so a huge block serves one cache at a time -- its
-    ``little_block_type`` -- and at most one row of each column exists. Here
-    the global cache holds huge block 1, the sliding cache holds 2, and 3 is
-    free for either of them to claim::
-
-      huge block     |     0     |     1     |     2     |     3     |
-      global  (x4)   | N| .| .| .| 4| 5| 6| 7| - - - - - | - - - - - |
-      sliding (x2)   |  N  |  .  | - - - - - |  4  |  5  | - - - - - |
-
-    Bytes change hands only while nothing references them, so the split
-    between caches follows live demand rather than a knob. A huge block is
-    therefore always in one of two states::
-
-      parked                                      claimed by cache c
-      +-------------------------------+           +--------------------------+
-      | ref_cnt == 0                  |   claim   | ref_cnt >= 1             |
-      | in free_huge_blocks           |  ------>  | little_block_type == c   |
-      | any cache may claim it        |  <------  | only c allocates from it |
-      | commits still in prefix cache |   park    |                          |
-      +-------------------------------+           +--------------------------+
-
-    Parked means no request holds any of its little blocks, so the bytes are
-    up for grabs. Claimed means one cache owns them: each of that cache's
-    little blocks in the huge block is either referenced by a request or
-    queued in that cache's free list as an eviction candidate, never both and
-    never neither.
-
-    ``alloc_block`` claims a parked block when its cache has no free little
-    block left, and ``touch`` claims one back when a prefix hit takes its
-    reference count up from 0. ``free_block`` parks the block again as soon as
-    its last reference goes away, which is what lets another cache reuse the
-    bytes.
-
-    Parking keeps commits: a parked block's little blocks stay in their cache's
-    prefix cache, so that cache can reclaim it and still hit them. Only another
-    cache claiming the bytes evicts them.
     """
 
-    def __init__(
-        self, num_huge_blocks: int, cache_ratios: Mapping[str, int]
-    ) -> None:
-        if num_huge_blocks < 2:
-            raise ValueError(
-                "num_huge_blocks must be at least 2, since huge block 0 is the "
-                f"null block, found {num_huge_blocks}"
-            )
-        if len(cache_ratios) == 0:
-            raise ValueError(
-                f"cache_ratios must be non-empty, found {cache_ratios}"
-            )
-        if any(ratio <= 0 for ratio in cache_ratios.values()):
-            raise ValueError(
-                f"cache_ratios must be positive, found {cache_ratios}"
-            )
+    num_huge_blocks: int
+    """How many huge blocks the budget holds, counting the null block when one
+    was requested."""
 
-        self.cache_ratios = cache_ratios
-        # Huge block 0 is the null block, so the allocatable ones start at 1.
-        self.huge_blocks: list[HugeKVCacheBlock] = [
-            HugeKVCacheBlock(idx) for idx in range(1, num_huge_blocks)
-        ]
-        self.little_blocks: dict[str, list[LittleKVCacheBlock]] = {
-            cache_id: [
-                LittleKVCacheBlock(
-                    idx, cache_id, self.huge_blocks[idx // ratio - 1]
-                )
-                for idx in range(ratio, ratio * num_huge_blocks)
-            ]
-            for cache_id, ratio in cache_ratios.items()
-        }
-        for bid, huge_block in enumerate(self.huge_blocks):
-            huge_block.little_blocks = {
-                cache_id: self.little_blocks[cache_id][
-                    bid * ratio : bid * ratio + ratio
-                ]
-                for cache_id, ratio in cache_ratios.items()
-            }
+    huge_page_bytes: int
+    """Size of one huge block."""
 
-        # Every huge block starts untyped, so no cache has any little block in
-        # circulation yet.
-        self.free_little_blocks = {
-            cache_id: FreeLittleKVCacheBlockQueue() for cache_id in cache_ratios
-        }
-        self.free_huge_blocks = FreeHugeKVCacheBlockQueue(self.huge_blocks)
-        self.prefix_caches: dict[str, dict[bytes, LittleKVCacheBlock]] = {
-            cache_id: {} for cache_id in cache_ratios
-        }
+    ratios: dict[str, int]
+    """How many little pages of each cache one huge block holds."""
 
-        # The block dummy and padding requests point at. Its reference count is
-        # pinned so no path can free it, evict it, or hand it out.
-        self.null_huge_block = HugeKVCacheBlock(0)
-        self.null_little_blocks = {
-            cache_id: LittleKVCacheBlock(
-                0, cache_id, self.null_huge_block, ref_cnt=42, is_null=True
-            )
-            for cache_id in cache_ratios
-        }
-        self.null_huge_block.little_blocks = {
-            cache_id: [block]
-            for cache_id, block in self.null_little_blocks.items()
-        }
+    padded_sizes: dict[str, int]
+    """Each cache's page size after padding. Every value divides
+    ``huge_page_bytes`` and is a whole number of that cache's rows."""
 
-    def alloc_block(self, cache_id: str) -> LittleKVCacheBlock:
-        """Returns a fresh block of ``cache_id``, claiming huge blocks as needed.
+    def padding_fraction(self, cache_id: str, data_bytes: int) -> float:
+        """Returns the share of ``cache_id``'s page that is padding."""
+        return self.padded_sizes[cache_id] / data_bytes - 1
 
-        Raises:
-            InsufficientBlocksError: If the pool has no bytes left to serve this
-                cache.
-        """
-        free_little_block_queue = self.free_little_blocks[cache_id]
 
-        # If no free little blocks are available, allocate a huge block and
-        # split it into little blocks.
-        if len(free_little_block_queue) == 0:
-            if len(self.free_huge_blocks) == 0:
-                raise InsufficientBlocksError(
-                    f"No free blocks available for {cache_id}"
-                )
-            self._claim_huge_block(self.free_huge_blocks.popleft(), cache_id)
+def _smallest_tiling_page(
+    huge_page_bytes: int, data_bytes: int, row_bytes: int
+) -> int | None:
+    """Returns the smallest page holding ``data_bytes`` that tiles the block.
 
-        little_block = free_little_block_queue.popleft()
-        # Handing out a committed block evicts it: its bytes are about to be
-        # overwritten, so it can no longer serve its hash.
-        self.uncommit_block(little_block)
-        little_block.ref_cnt += 1
-        return little_block
+    A page must divide ``huge_page_bytes``, so a huge block holds a whole
+    number of them, and must be a whole number of rows, because
+    ``PagedKVCache`` expresses paging as row arithmetic -- ``_stride()`` divides
+    the page stride by ``num_heads * head_size`` and that division has to be
+    exact, or there is no row index for the start of a page.
 
-    def _claim_huge_block(
-        self, huge_block: HugeKVCacheBlock, cache_id: str
-    ) -> None:
-        """Puts an unreferenced huge block's little blocks in circulation.
+    Searching the ratio rather than the page keeps this cheap: the ratio cannot
+    exceed ``huge_page_bytes // data_bytes``, a few hundred at the sizes we
+    allocate, and the largest valid ratio yields the smallest page.
 
-        Retyping to a different cache hands the bytes over, so whatever the
-        outgoing cache had committed in them is evicted first. Reclaiming for
-        the same cache keeps those commits, so a prefix hit can still serve
-        them.
-        """
-        assert huge_block.ref_cnt == 0
-        if huge_block in self.free_huge_blocks:
-            self.free_huge_blocks.remove(huge_block)
+    Returns:
+        The page size, or ``None`` when no divisor of ``huge_page_bytes``
+        qualifies.
+    """
+    for ratio in range(huge_page_bytes // data_bytes, 0, -1):
+        if huge_page_bytes % ratio:
+            continue
+        page = huge_page_bytes // ratio
+        if page % row_bytes == 0:
+            return page
+    return None
 
-        prev_type = huge_block.little_block_type
-        if prev_type is not None and prev_type != cache_id:
-            for block in huge_block.little_blocks[prev_type]:
-                self.uncommit_block(block)
 
-        huge_block.little_block_type = cache_id
-        for little_block in huge_block.little_blocks[cache_id]:
-            self.free_little_blocks[cache_id].append(little_block)
+def _fit_huge_page(
+    huge_page_bytes: int,
+    cache_sizes: Mapping[str, int],
+    row_sizes: Mapping[str, int],
+    max_padding_fraction: float,
+) -> dict[str, int] | None:
+    """Pads every cache onto ``huge_page_bytes``, or gives up on it.
 
-    def uncommit_block(self, block: LittleKVCacheBlock) -> None:
-        """Drops a block from its cache's prefix cache, if it is committed."""
-        if block.block_hash is None:
-            return
-        del self.prefix_caches[block.cache_id][block.block_hash]
-        block.block_hash = None
+    Returns ``None`` if any cache cannot tile the block, or would have to spend
+    more than ``max_padding_fraction`` of its page on padding to do so.
+    """
+    padded: dict[str, int] = {}
+    for cache_id, data_bytes in cache_sizes.items():
+        page = _smallest_tiling_page(
+            huge_page_bytes, data_bytes, row_sizes[cache_id]
+        )
+        if page is None or page / data_bytes - 1 > max_padding_fraction:
+            return None
+        padded[cache_id] = page
+    return padded
 
-    def commit_into_prefix_cache(
-        self, block_hash: bytes, block: LittleKVCacheBlock
-    ) -> None:
-        """Makes a filled block reusable by anyone hashing the same tokens."""
-        assert not block.is_null, "Null blocks should not be committed"
-        assert block.block_hash is None
-        prefix_cache = self.prefix_caches[block.cache_id]
-        assert block_hash not in prefix_cache
-        prefix_cache[block_hash] = block
-        block.block_hash = block_hash
 
-    def free_block(self, block: LittleKVCacheBlock) -> None:
-        """Drops one reference, parking the huge block once it holds none."""
-        if block.is_null:
-            return
+def _geometry_cost(
+    available_bytes: int,
+    huge_page_bytes: int,
+    cache_sizes: Mapping[str, int],
+    padded_sizes: Mapping[str, int],
+    include_null_block: bool,
+) -> float | None:
+    """Returns the share of the budget a geometry cannot put cache data in.
 
-        block.ref_cnt -= 1
-        assert block.ref_cnt >= 0
-        if block.ref_cnt == 0:
-            free_block_queue = self.free_little_blocks[block.cache_id]
-            free_block_queue.append(block)
+    Two terms, and they pull against each other -- which is why the huge block
+    is chosen on their sum rather than on padding alone. A larger block lets
+    every page land closer above its data (less padding) but quantises the
+    budget more coarsely, so it strands a bigger remainder and spends more on
+    the null block. Minimising padding alone walks straight into the coarse end.
 
-            huge_block = block.huge_block
-            if huge_block.ref_cnt == 0:
-                # The whole huge block went idle, so park it where any cache can
-                # claim it. Its little blocks leave circulation but stay
-                # committed, and the block stays typed: whoever claims it next
-                # needs to know whose commits its bytes still back, to evict
-                # them only if the bytes change hands.
-                assert huge_block.little_block_type == block.cache_id
-                for little_block in huge_block.little_blocks[block.cache_id]:
-                    free_block_queue.remove(little_block)
-                self.free_huge_blocks.append(huge_block)
-
-    def get_or_commit_into_prefix_cache(
-        self, block_hash: bytes, block: LittleKVCacheBlock
-    ) -> None | LittleKVCacheBlock:
-        """Commits a block, or returns the twin already holding its bytes.
-
-        Returns:
-            The committed block to use instead of ``block``, which has been
-            freed, or ``None`` if ``block`` itself now serves the hash.
-        """
-        assert not block.is_null, "Null blocks should not be committed"
-        prefix_cache = self.prefix_caches[block.cache_id]
-        if block_hash in prefix_cache:
-            # Check if a block with the same hash is already committed.
-            # If so, we reuse the already committed block.
-            prefix_cache_block = prefix_cache[block_hash]
-            if block.bid == prefix_cache_block.bid:
-                return None
-
-            self.touch(prefix_cache_block)
-
-            # Free the block we currently have.
-            assert block.block_hash is None
-            self.free_block(block)
-
-            return prefix_cache_block
-
-        self.commit_into_prefix_cache(block_hash, block)
+    Returns ``None`` when the budget cannot hold the blocks the pool needs.
+    """
+    num_huge_blocks = available_bytes // huge_page_bytes
+    if num_huge_blocks < (2 if include_null_block else 1):
         return None
 
-    def touch(self, block: LittleKVCacheBlock) -> None:
-        """Takes a reference on a block, reviving it if it was out of use."""
-        # Reviving a block whose bytes changed hands would hand back another
-        # cache's tensor, so only its own cache's commits are touchable.
-        assert block.huge_block.little_block_type == block.cache_id
+    padding = sum(
+        padded_sizes[cache_id] / data_bytes - 1
+        for cache_id, data_bytes in cache_sizes.items()
+    ) / len(cache_sizes)
+    unusable = available_bytes - num_huge_blocks * huge_page_bytes
+    if include_null_block:
+        unusable += huge_page_bytes
+    return padding + unusable / available_bytes
 
-        # ref_cnt=0 means this block is out of circulation: either an eviction
-        # candidate in its cache's free queue, or parked with the rest of an
-        # idle huge block, which referencing it takes back for this cache.
-        if block.ref_cnt == 0:
-            if block.huge_block in self.free_huge_blocks:
-                self._claim_huge_block(block.huge_block, block.cache_id)
-            self.free_little_blocks[block.cache_id].remove(block)
 
-        block.ref_cnt += 1
+def _huge_page_candidates(
+    cache_sizes: Mapping[str, int],
+    row_sizes: Mapping[str, int],
+    ceiling: int,
+) -> list[int]:
+    """Returns the huge-block sizes worth pricing, smallest first.
 
-    def num_free_blocks(self, cache_id: str) -> int:
-        """Returns how many more blocks of ``cache_id`` the pool can still serve."""
-        num_huge_blocks = len(self.free_huge_blocks)
-        num_little_blocks = len(self.free_little_blocks[cache_id])
-        return num_huge_blocks * self.cache_ratios[cache_id] + num_little_blocks
+    Every page is a whole number of its own rows and divides the huge block, so
+    the block is necessarily a multiple of ``lcm(row_sizes)`` -- which is the
+    grid the search runs on. On that grid the sizes that matter are the ones
+    where some cache tiles *tightly*: for each cache and each small ratio, the
+    smallest grid point at or above ``ratio * page``. That keeps the candidate
+    set in the low thousands while still containing the optimum, since a
+    geometry is only as good as its worst-padded leaf.
+    """
+    grid = lcm(*row_sizes.values())
+    floor = max(cache_sizes.values())
+    candidates = set()
+    for data_bytes in cache_sizes.values():
+        for ratio in range(1, _MAX_TILING_RATIO + 1):
+            size = ceildiv(ratio * data_bytes, grid) * grid
+            if size < floor:
+                continue
+            if size > ceiling:
+                break
+            candidates.add(size)
+    return sorted(candidates)
 
-    def reset_prefix_cache(self) -> dict[str, int]:
-        """Drops every commit no request is holding, in every cache.
 
-        A commit a request still references survives, because its block cannot
-        be handed out while it is in use.
+def plan_jenga_geometry(
+    available_bytes: int,
+    cache_sizes: Mapping[str, int],
+    row_sizes: Mapping[str, int],
+    *,
+    include_null_block: bool = True,
+    max_padding_fraction: float = _MAX_PADDING_FRACTION,
+) -> JengaGeometry:
+    """Fits a byte budget to a huge-block geometry, padding pages to get there.
 
-        Returns:
-            How many blocks were purged from each cache's prefix cache.
-        """
-        purged: dict[str, int] = {}
-        for cache_id, prefix_cache in self.prefix_caches.items():
-            unreferenced = [
-                block_hash
-                for block_hash, block in prefix_cache.items()
-                if block.ref_cnt == 0
-            ]
-            for block_hash in unreferenced:
-                prefix_cache.pop(block_hash).block_hash = None
-            purged[cache_id] = len(unreferenced)
-        return purged
+    The exact-tiling geometry :func:`compute_jenga_ratios` computes is priced
+    first and wins whenever it is competitive, so a model whose page sizes
+    already divide each other is allocated exactly as before. When a coprime
+    factor makes that least common multiple too coarse to allocate -- the case
+    that takes a vision tower pooled with a text cache to a 23.7 GiB huge block
+    -- the search pads each page up to a divisor of a smaller block instead.
+
+    Args:
+        available_bytes: The per-device KV budget the pool may occupy.
+        cache_sizes: Each cache's page size in bytes, before padding.
+        row_sizes: The granularity each cache's padded page must be a whole
+            number of -- a row, ``num_heads * head_size * dtype_size``, widened
+            where a kernel needs more alignment than a row gives.
+        include_null_block: Whether to include the null block.
+        max_padding_fraction: The most of a page any one cache may spend on
+            padding. Caps the search rather than the result: a geometry needing
+            more is simply not considered. Defaults to
+            ``MODULAR_KV_JENGA_MAX_PADDING_FRACTION``, itself zero.
+
+    Returns:
+        The geometry to allocate.
+
+    Raises:
+        ValueError: If the arguments are not positive or disagree on cache ids,
+            or if no geometry fits the budget.
+    """
+    if len(cache_sizes) == 0:
+        raise ValueError(f"cache_sizes must be non-empty, found {cache_sizes}")
+    if any(size <= 0 for size in cache_sizes.values()):
+        raise ValueError(f"cache_sizes must be positive, found {cache_sizes}")
+    if any(size <= 0 for size in row_sizes.values()):
+        raise ValueError(f"row_sizes must be positive, found {row_sizes}")
+    if cache_sizes.keys() != row_sizes.keys():
+        raise ValueError(
+            f"cache_sizes and row_sizes must cover the same caches, found "
+            f"{sorted(cache_sizes)} and {sorted(row_sizes)}"
+        )
+    for cache_id, data_bytes in cache_sizes.items():
+        if data_bytes % row_sizes[cache_id]:
+            raise ValueError(
+                f"cache {cache_id!r} holds {data_bytes} bytes per page, which "
+                f"is not a whole number of its {row_sizes[cache_id]}-byte "
+                f"rows. A page the kernel addresses by row cannot be a "
+                f"fraction of one."
+            )
+    if available_bytes <= 0:
+        raise ValueError(
+            f"available_bytes must be positive, found {available_bytes}"
+        )
+
+    best: tuple[float, int, dict[str, int]] | None = None
+
+    exact = lcm(*cache_sizes.values())
+    exact_cost = _geometry_cost(
+        available_bytes, exact, cache_sizes, cache_sizes, include_null_block
+    )
+    if exact_cost is not None:
+        best = (exact_cost, exact, dict(cache_sizes))
+
+    ceiling = min(_MAX_HUGE_PAGE_BYTES, available_bytes // 2)
+    for huge_page_bytes in _huge_page_candidates(
+        cache_sizes, row_sizes, ceiling
+    ):
+        padded = _fit_huge_page(
+            huge_page_bytes, cache_sizes, row_sizes, max_padding_fraction
+        )
+        if padded is None:
+            continue
+        cost = _geometry_cost(
+            available_bytes,
+            huge_page_bytes,
+            cache_sizes,
+            padded,
+            include_null_block,
+        )
+        # Ties go to the smaller block: same cost, finer allocation quantum.
+        if cost is not None and (best is None or cost < best[0]):
+            best = (cost, huge_page_bytes, padded)
+
+    if best is None:
+        pages = ", ".join(
+            f"{cache_id}={to_human_readable_bytes(size)}"
+            for cache_id, size in cache_sizes.items()
+        )
+        raise ValueError(
+            f"{to_human_readable_bytes(available_bytes)} is too small to build "
+            f"a pool from the page sizes ({pages}), even allowing each page to "
+            f"pad by {max_padding_fraction:.0%} to tile a smaller huge block. "
+            f"Exact tiling would take "
+            f"{to_human_readable_bytes(exact)} per huge block."
+        )
+
+    _cost, huge_page_bytes, padded_sizes = best
+    return JengaGeometry(
+        num_huge_blocks=available_bytes // huge_page_bytes,
+        huge_page_bytes=huge_page_bytes,
+        ratios={
+            cache_id: huge_page_bytes // size
+            for cache_id, size in padded_sizes.items()
+        },
+        padded_sizes=padded_sizes,
+    )
+
+
+def _pristine_pool_can_satisfy(
+    allocatable_huge_blocks: int,
+    cache_ratios: Mapping[str, int],
+    demand: Mapping[str, int],
+) -> bool:
+    """Returns whether an empty pool can carve ``demand`` blocks per cache.
+
+    A huge block is carved for exactly one cache, so every cache's demand,
+    converted at its own ratio, is charged against the same huge blocks.
+    Depends on the geometry alone, not on a pool instance.
+    """
+    claimable = allocatable_huge_blocks
+    for cache_id, num_blocks in demand.items():
+        if num_blocks > 0:
+            claimable -= ceildiv(num_blocks, cache_ratios[cache_id])
+    return claimable >= 0

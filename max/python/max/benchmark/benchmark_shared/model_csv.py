@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -70,7 +69,7 @@ from pydantic import BaseModel
 from typing_extensions import TypedDict, TypeIs
 
 if TYPE_CHECKING:
-    from _csv import _writer as _CsvWriter
+    from _csv import Writer as _CsvWriter
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +231,7 @@ def _group_raw(key: str) -> bool:
         "request_complete_times",
         "per_turn_cached_token_rates",
         "per_turn_cache_retentions",
+        "request_records",
         "session_server_stats",
         "aggregate_server_stats",
     )
@@ -700,7 +700,7 @@ class _DataclassInstance(Protocol):
 
 def _is_structured_type(
     t: object,
-) -> TypeIs[type[BaseModel] | type[_DataclassInstance]]:
+) -> TypeIs[type[BaseModel | _DataclassInstance]]:
     """Returns ``True`` if ``t`` is a ``BaseModel`` subclass or a dataclass."""
     return isinstance(t, type) and (
         issubclass(t, BaseModel) or dataclasses.is_dataclass(t)
@@ -709,7 +709,7 @@ def _is_structured_type(
 
 def _unwrap_optional_structured_type(
     annotation: object,
-) -> type[BaseModel] | type[_DataclassInstance] | None:
+) -> type[BaseModel | _DataclassInstance] | None:
     """Returns the inner structured type when ``annotation`` wraps one, or ``None``.
 
     A structured type is a ``BaseModel`` subclass or a dataclass.
@@ -753,14 +753,35 @@ def _iter_fields(model_type: type[ModelT]) -> Iterable[tuple[str, object]]:
         raise TypeError(f"Expected BaseModel or dataclass, got {model_type}")
 
 
+def _csv_mode_opaque(model_type: type[ModelT], field_name: str) -> bool:
+    """Returns True when a BaseModel field opts out of structured CSV expansion.
+
+    Set ``Field(json_schema_extra={"csv_mode": "opaque"})`` on presentation
+    views that duplicate other structured fields (such as ``result_groups``) so
+    they stay one JSON cell instead of exploding into duplicate columns.
+    """
+    if not isinstance(model_type, type) or not issubclass(
+        model_type, BaseModel
+    ):
+        return False
+    field_info = model_type.model_fields.get(field_name)
+    if field_info is None:
+        return False
+    extra = field_info.json_schema_extra
+    return isinstance(extra, dict) and extra.get("csv_mode") == "opaque"
+
+
 def columns_for_type(
-    model_type: type[BaseModel] | type[_DataclassInstance],
+    model_type: type[BaseModel | _DataclassInstance],
 ) -> Iterable[str]:
     """Yields flattened column names for a ``BaseModel`` or dataclass type.
 
     Nested structured fields are recursively expanded with dot-separated names.
     """
     for field_name, annotation in _iter_fields(model_type):
+        if _csv_mode_opaque(model_type, field_name):
+            yield field_name
+            continue
         nested_type = _unwrap_optional_structured_type(annotation)
         if nested_type is not None:
             for column in columns_for_type(nested_type):
@@ -776,7 +797,7 @@ def flatten_model(model_type: type[ModelT], model: ModelT) -> dict[str, str]:
     (``model_dump(mode="json")``) rather than from the live field objects, so
     the CSV is a flat projection of the same JSON/schema blob the JSON reporter
     emits — one serialization source of truth, no independent field walk. This
-    also means fields whose runtime value is a non-JSON-native object (e.g. the
+    also means fields whose runtime value is a non-JSON-native object (such as the
     percentile-metric containers) serialize via pydantic instead of tripping
     ``json.dumps``.
     """
@@ -801,7 +822,10 @@ def _flatten_jsonable(
     flattened: dict[str, str] = {}
     for field_name, annotation in _iter_fields(model_type):
         field_value = dumped.get(field_name)
-        nested_type = _unwrap_optional_structured_type(annotation)
+        if _csv_mode_opaque(model_type, field_name):
+            nested_type = None
+        else:
+            nested_type = _unwrap_optional_structured_type(annotation)
         if nested_type is not None:
             if field_value is None:
                 for col in columns_for_type(nested_type):

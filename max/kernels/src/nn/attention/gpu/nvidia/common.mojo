@@ -25,18 +25,21 @@ from std.memory import (
 from std.sys import size_of
 from std.sys._assembly import inlined_assembly
 
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma import st_matrix
 from layout import (
     ComptimeInt,
     Coord,
+    coord,
     IntTuple,
     Layout,
     LayoutTensor,
+    DefaultEngine,
     RuntimeLayout,
     RuntimeTuple,
+    TensorEngine,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -77,12 +80,12 @@ from nn.attention.mha_utils import (
     get_start_and_end_for_partitions,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
-@always_inline
+@inline(.always)
 def elect() -> Int32:
     """Elects a single lane in the warp via the `elect.sync` PTX instruction."""
     # CAUTION: This function cannot be used to guard a `print`, else it will
@@ -100,23 +103,35 @@ def elect() -> Int32:
     ](-1)
 
 
-comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[
+comptime _LocalTT[
+    dtype: DType,
+    layout: InternalLayout,
+    *,
+    Engine: TensorEngine,
+] = TileTensor[
     dtype,
     InternalLayout[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.LOCAL,
+    Engine=Engine,
+    address_space=.LOCAL,
 ]
-comptime _SharedMemTT[dtype: DType, layout: InternalLayout] = TileTensor[
+comptime _SharedMemTT[
+    dtype: DType,
+    layout: InternalLayout,
+    *,
+    Engine: TensorEngine,
+] = TileTensor[
     dtype,
     InternalLayout[
         shape_types=layout.shape_types,
         stride_types=layout.stride_types,
     ],
     MutAnyOrigin,
-    address_space=AddressSpace.SHARED,
+    Engine=Engine,
+    address_space=.SHARED,
 ]
 
 # TileTensor type alias for 1D row-major tensors with dynamic size, used for
@@ -125,11 +140,34 @@ comptime _1d_row_major_tt_layout = InternalLayout[
     shape_types=Coord[Int64].element_types,
     stride_types=Coord[ComptimeInt[1]].element_types,
 ]
-comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
-    dtype,
-    _1d_row_major_tt_layout,
-    ImmutAnyOrigin,
-]
+comptime ImmutTileTensor1D[
+    dtype: DType, *, Engine: TensorEngine = DefaultEngine[element_width=1]
+] = TileTensor[dtype, _1d_row_major_tt_layout, ImmutAnyOrigin, Engine=Engine]
+
+
+def immut_tile_tensor_1d[
+    mut: Bool, dtype: DType, origin: Origin[mut=mut], //
+](ptr: UnsafePointer[Scalar[dtype], origin], size: Int) -> ImmutTileTensor1D[
+    dtype
+]:
+    """Views `size` contiguous elements at `ptr` as an `ImmutTileTensor1D`.
+
+    Parameters:
+        mut: Mutability of `ptr`'s origin (inferred).
+        dtype: Element type of the viewed memory (inferred).
+        origin: Origin of `ptr` (inferred).
+
+    Args:
+        ptr: Pointer to the first element.
+        size: Number of elements.
+
+    Returns:
+        An immutable, untracked-origin 1-D view over the elements.
+    """
+    return ImmutTileTensor1D[dtype](
+        ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+        _1d_row_major_tt_layout(Coord(Int64(size)), Coord(ComptimeInt[1]())),
+    )
 
 
 struct Pack[
@@ -169,13 +207,13 @@ struct Pack[
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self](self, target)
 
     @staticmethod
     def get_type_name() -> String:
         return "Pack"
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         mask: Self.MaskType,
@@ -242,7 +280,7 @@ struct MHAPosition[
         2, ceildiv(Self.group, 8)
     ) if Self.decoding else 1
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         q_row: UInt32,
@@ -262,21 +300,21 @@ struct MHAPosition[
         self.prompt_offset = seq_info.prompt_offset
         self.prompt_idx = seq_info.prompt_idx  # batch idx
 
-    @always_inline
+    @inline(.always)
     def q_head_idx(self) -> UInt32:
         comptime if Self.decoding:
             return self.head_idx * UInt32(Self.group)
         else:
             return self.head_idx
 
-    @always_inline
+    @inline(.always)
     def kv_head_idx(self) -> UInt32:
         comptime if Self.decoding:
             return self.head_idx
         else:
             return self.head_idx // UInt32(Self.group)
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
@@ -296,22 +334,25 @@ struct MHAPosition[
             ")",
         )
 
-    @always_inline
+    @inline(.always)
     def q_tile_num_rows(self) -> UInt32:
         comptime if Self.decoding:
             return UInt32(Self.group)
         else:
             return min(self.seq_len - self.prompt_offset, UInt32(Self.BM))
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self.q_out_offset == other.q_out_offset
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self.q_out_offset != other.q_out_offset
 
-    @always_inline
+    # Legacy masked view: runtime row-count + masked semantics feed the
+    # caller's legacy `copy_sram_to_dram`, whose TileTensor counterpart
+    # supports neither masking nor the fp32->half downcast yet.
+    @inline(.always)
     def q_out_gmem_tensor[
         dtype: DType
     ](
@@ -321,8 +362,8 @@ struct MHAPosition[
             dtype,
             Self.q_output_gmem_layout,
             type_of(ptr).origin,
-            layout_int_type=DType.int32,
-            linear_idx_type=DType.int32,
+            layout_int_type=.int32,
+            linear_idx_type=.int32,
             masked=True,
         ],
     ):
@@ -336,7 +377,7 @@ struct MHAPosition[
             ),
         }
 
-    @always_inline
+    @inline(.always)
     def mask_status[
         MaskType: MHAMask
     ](self, mask: MaskType, kv_tile_start_row: UInt32) -> TileMaskStatus:
@@ -365,14 +406,14 @@ struct MHAPosition[
                 Index[dtype=DType.int32](Self.BM, Self.BN),
             )
 
-    @always_inline
+    @inline(.always)
     def get_score_row(self) -> UInt32:
         comptime if Self.decoding:
             return self.num_keys - 1
         else:
             return self.prompt_offset + self.start_pos
 
-    @always_inline
+    @inline(.always)
     def exp_sum_qk_max_ptr[
         partition_t: MHAPartitionScheme
     ](
@@ -383,28 +424,14 @@ struct MHAPosition[
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
     ]:
-        # Every caller already reaches this under `comptime if
-        # PartitionType.do_partition`; asserting it here is what makes the
-        # mutability laundering below sound, since only `SplitKPartition` owns a
-        # real buffer.
         comptime assert partition_t.do_partition, (
             "exp_sum_qk_max_ptr is split-K only; a non-partitioning scheme has"
             " no partial-statistics buffer to point at"
         )
-        # `NullPointer.value()` returns a dangling address rather than trapping,
-        # so non-nullness has to be established before the unwrap below. The
-        # SM100 2Q kernel pins the full biconditional
-        # (`do_partition == not LSEPointerType.is_null`), but it is instantiated
-        # only from `sm100/kernel.mojo` — the sm90, MSA, and `mha_1q` callers of
-        # this method never reach it. For those this assert is the only check,
-        # not a redundant one.
         comptime assert not partition_t.LSEPointerType.is_null, (
             "the split-K LSE pointer must be the non-null conformer before"
             " `value()`"
         )
-        # Both conformers derive `LSEPointerType` from `accum_dtype`, but that
-        # tie is not expressible in the trait, so the equality is asserted here
-        # and the `rebind` below reconciles the (identically-represented) types.
         comptime assert (
             partition_t.LSEPointerType.dtype == partition_t.accum_dtype
         ), "the split-K LSE buffer must be typed by the scheme's accum_dtype"
@@ -422,7 +449,7 @@ struct MHAPosition[
         )
         return (exp_sum_ptr, qk_max_ptr)
 
-    @always_inline
+    @inline(.always)
     def get_start_and_end_for_partitions[
         PartitionType: MHAPartitionScheme, MaskType: MHAMask, //, page_size: Int
     ](self, partition: PartitionType, mask: MaskType) -> Tuple[UInt32, UInt32]:
@@ -441,7 +468,7 @@ struct MHAPosition[
             return (start_col, self.num_keys)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_q_gmem_row[
         MaxSeqLenType: OptionallyStaticInt, //, ragged: Bool
     ](seq_info: SeqInfo, max_seq_len: MaxSeqLenType) -> UInt32:
@@ -466,7 +493,7 @@ struct MHAPosition[
             return q_row + seq_info.prompt_offset
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_q_gmem_row[
         ragged: Bool
     ](seq_info: SeqInfo, max_seq_len: UInt32) -> UInt32:
@@ -485,7 +512,7 @@ struct MHAPosition[
         return q_row + seq_info.prompt_offset
 
 
-@always_inline
+@inline(.always)
 def get_seq_info[
     MaxSeqLenType: OptionallyStaticInt,
     ValidLengthType: OptionalPointer,
@@ -552,7 +579,7 @@ def get_seq_info[
     # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
+            UInt32, MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling(),
         tile_summary,
     )
@@ -566,13 +593,13 @@ struct PositionSummary(TrivialRegisterPassable):
     var num_keys: UInt32
     var score_row: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, num_keys: UInt32, score_row: UInt32):
         self.num_keys = num_keys
         self.score_row = score_row
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_start_pos[
         KVLUTType: MHAOperand,
         //,
@@ -589,7 +616,7 @@ struct PositionSummary(TrivialRegisterPassable):
             )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_num_keys[
         MaxSeqLenType: OptionallyStaticInt,
         KVInputRowOffsetsType: OptionalPointer,
@@ -622,7 +649,7 @@ struct PositionSummary(TrivialRegisterPassable):
                 return cur_kv_len + start_pos
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_score_row[
         *, ragged: Bool, _is_cache_length_accurate: Bool, decoding: Bool
     ](seq_info: SeqInfo, num_keys: UInt32, start_pos: UInt32) -> UInt32:
@@ -634,7 +661,7 @@ struct PositionSummary(TrivialRegisterPassable):
             return seq_info.prompt_offset + start_pos
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def create[
         KVLUTType: MHAOperand,
         KVRowOffsetsType: OptionalPointer,
@@ -671,7 +698,39 @@ struct PositionSummary(TrivialRegisterPassable):
         return {num_keys, score_row}
 
 
-def q_smem_shape[
+def q_smem_shape_prefill[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    depth: Int,
+    num_qk_stages: Int = 1,
+](
+    out res: Coord[
+        ComptimeInt[BM],
+        ComptimeInt[1],
+        ComptimeInt[
+            depth if num_qk_stages
+            == 1 else align_up(depth, swizzle_mode.bytes() // size_of[dtype]())
+            // num_qk_stages
+        ],
+    ],
+):
+    """Computes the rank-3 shared-memory shape for a prefill (non-decoding,
+    non-fused) Q tensor TMA tile.
+
+    Parameters:
+        dtype: Element type of the Q tensor.
+        swizzle_mode: TMA swizzle mode for the Q tensor tile.
+        BM: Tile block size in the query (row) dimension, in elements.
+        depth: Head dimension of the attention layer, in elements.
+        num_qk_stages: Number of pipeline stages used to split the Q
+            shared-memory tile along the depth dimension (defaults to 1).
+    """
+    res = Coord[*res.element_types]()
+
+
+def q_smem_shape_fused[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
     *,
@@ -681,8 +740,23 @@ def q_smem_shape[
     decoding: Bool,
     fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
-](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
-    """Computes the shared-memory shape for a Q tensor TMA tile based on the tile configuration.
+](
+    out res: Coord[
+        ComptimeInt[1 if decoding else BM // group],
+        ComptimeInt[1],
+        ComptimeInt[max(group, 8) if decoding else group],
+        ComptimeInt[
+            swizzle_mode.bytes() // size_of[dtype]() if decoding
+            or fuse_gqa
+            and BM % group != 0 else depth if fuse_gqa
+            and num_qk_stages
+            == 1 else align_up(depth, swizzle_mode.bytes() // size_of[dtype]())
+            // num_qk_stages
+        ],
+    ],
+):
+    """Computes the rank-4 shared-memory shape for a decoding or
+    fused-GQA Q tensor TMA tile.
 
     Parameters:
         dtype: Element type of the Q tensor.
@@ -697,66 +771,72 @@ def q_smem_shape[
         num_qk_stages: Number of pipeline stages used to split the Q
             shared-memory tile along the depth dimension (defaults to 1).
     """
-    comptime L = res.size
-    comptime assert L in (3, 4)
-    comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
-
-    comptime if decoding:
-        return {1, 1, max(group, 8), swizzle_granularity}
-    elif fuse_gqa:
-        comptime if num_qk_stages == 1:
-            return {BM // group, 1, group, depth}
-        else:
-            return {
-                BM // group,
-                1,
-                group,
-                align_up(depth, swizzle_granularity) // num_qk_stages,
-            }
-    else:
-        comptime if num_qk_stages == 1:
-            return {BM, 1, depth}
-        else:
-            return {
-                BM,
-                1,
-                align_up(depth, swizzle_granularity) // num_qk_stages,
-            }
+    res = Coord[*res.element_types]()
 
 
-def q_gmem_shape[
-    dtype: DType,
-    swizzle_mode: TensorMapSwizzle,
+def q_gmem_shape_prefill[
+    *,
+    q_num_heads: Int,
+    depth: Int,
+](
+    out res: Coord[
+        ComptimeInt[UNKNOWN_VALUE],
+        ComptimeInt[q_num_heads],
+        ComptimeInt[depth],
+    ],
+):
+    """Computes the rank-3 global-memory shape for a prefill (non-decoding,
+    non-fused) Q tensor TMA tile.
+
+    Parameters:
+        q_num_heads: Number of query attention heads.
+        depth: Head dimension of the attention layer, in elements.
+    """
+    res = Coord[*res.element_types]()
+
+
+def q_gmem_shape_fused[
     *,
     group: Int,
     q_num_heads: Int,
     depth: Int,
-    decoding: Bool,
-    fuse_gqa: Bool = False,
-](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
-    """Computes the global-memory shape for a Q tensor TMA tile based on the tile configuration.
+](
+    out res: Coord[
+        ComptimeInt[UNKNOWN_VALUE],
+        ComptimeInt[q_num_heads // group],
+        ComptimeInt[group],
+        ComptimeInt[depth],
+    ],
+):
+    """Computes the rank-4 global-memory shape for a decoding or fused-GQA
+    Q tensor TMA tile.
 
     Parameters:
-        dtype: Element type of the Q tensor.
-        swizzle_mode: TMA swizzle mode for the Q tensor tile.
         group: Grouped-query attention group size, in query heads per KV
             head.
         q_num_heads: Number of query attention heads.
         depth: Head dimension of the attention layer, in elements.
-        decoding: Whether the kernel runs in single-token decoding mode.
-        fuse_gqa: Whether to fuse grouped-query attention into the tile
-            shape (defaults to `False`).
     """
-    comptime L = res.size
-    comptime assert L in (3, 4)
-
-    comptime if L == 3:  # prefill, no fusion
-        return {UNKNOWN_VALUE, q_num_heads, depth}
-    else:  # decoding or fuse_gqa prefill
-        return {UNKNOWN_VALUE, q_num_heads // group, group, depth}
+    res = Coord[*res.element_types]()
 
 
-comptime QTMATile[
+comptime QTMATilePrefill[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    depth: Int,
+    num_qk_stages: Int = 1,
+] = SplitLastDimTMATensorTile[
+    dtype,
+    q_smem_shape_prefill[
+        dtype, swizzle_mode, BM=BM, depth=depth, num_qk_stages=num_qk_stages
+    ](),
+    swizzle_mode,
+]
+"""Prefill (rank-3 Q tile) counterpart of the old `QTMATile`."""
+
+comptime QTMATileFused[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
     *,
@@ -768,7 +848,7 @@ comptime QTMATile[
     num_qk_stages: Int = 1,
 ] = SplitLastDimTMATensorTile[
     dtype,
-    q_smem_shape[
+    q_smem_shape_fused[
         dtype,
         swizzle_mode,
         BM=BM,
@@ -780,6 +860,14 @@ comptime QTMATile[
     ](),
     swizzle_mode,
 ]
+"""Decoding/fused-GQA (rank-4 Q tile) counterpart of the old `QTMATile`."""
+
+# Backward-compat alias: KGEN cannot fold a Coord-typed conditional, so the
+# rank-3/rank-4 choice must be made by spelling QTMATilePrefill or
+# QTMATileFused at the use site. This alias remains for the prefill shape
+# only; decoding/fuse_gqa callers MUST use QTMATileFused.
+# All callers migrated; the alias has been removed.
+
 
 comptime KVTMATile[
     dtype: DType,
@@ -789,13 +877,48 @@ comptime KVTMATile[
     BK: Int,
 ] = SplitLastDimTMATensorTile[
     dtype,
-    IndexList[3](BN, 1, BK),
+    coord[BN, 1, BK],
     swizzle_mode,
 ]
 
 
-@always_inline
-def q_tma[
+@inline(.always)
+def q_tma_prefill[
+    dtype: DType,
+    //,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    depth: Int,
+    q_num_heads: Int,
+    num_qk_stages: Int = 1,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[dtype], _],
+    rows: Int,
+) raises -> QTMATilePrefill[
+    dtype, swizzle_mode, BM=BM, depth=depth, num_qk_stages=num_qk_stages
+]:
+    """Creates a split TMA descriptor for a prefill (rank-3) Q tensor tile,
+    pairing the shared-memory tile shape with the global-memory layout.
+
+    Args:
+        ctx: Device context used to create the TMA descriptor.
+        ptr: Base pointer to the Q tensor in global memory.
+        rows: Number of rows in the Q tensor exposed via the TMA
+            descriptor.
+    """
+    comptime smem_dim = q_smem_shape_prefill[
+        dtype, swizzle_mode, BM=BM, depth=depth, num_qk_stages=num_qk_stages
+    ]()
+    comptime gmem_dim = q_gmem_shape_prefill[
+        q_num_heads=q_num_heads, depth=depth
+    ]()
+    return create_split_tma[smem_dim, gmem_dim, swizzle_mode](ctx, ptr, rows)
+
+
+@inline(.always)
+def q_tma_fused[
     dtype: DType,
     //,
     swizzle_mode: TensorMapSwizzle,
@@ -811,7 +934,7 @@ def q_tma[
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype], _],
     rows: Int,
-) raises -> QTMATile[
+) raises -> QTMATileFused[
     dtype,
     swizzle_mode,
     BM=BM,
@@ -821,21 +944,9 @@ def q_tma[
     fuse_gqa=fuse_gqa,
     num_qk_stages=num_qk_stages,
 ]:
-    """Creates a split TMA descriptor for the Q tensor, pairing the shared-memory tile shape with the global-memory layout.
-
-    Parameters:
-        dtype: Element type of the Q tensor (inferred).
-        swizzle_mode: TMA swizzle mode for the Q tensor tile.
-        BM: Tile block size in the query (row) dimension, in elements.
-        depth: Head dimension of the attention layer, in elements.
-        q_num_heads: Number of query attention heads.
-        group: Grouped-query attention group size, in query heads per KV
-            head.
-        decoding: Whether the kernel runs in single-token decoding mode.
-        fuse_gqa: Whether to fuse grouped-query attention into the tile
-            shape (defaults to `False`).
-        num_qk_stages: Number of pipeline stages used to split the Q
-            shared-memory tile along the depth dimension (defaults to 1).
+    """Creates a split TMA descriptor for a decoding/fused-GQA (rank-4) Q
+    tensor tile, pairing the shared-memory tile shape with the global-memory
+    layout.
 
     Args:
         ctx: Device context used to create the TMA descriptor.
@@ -843,7 +954,7 @@ def q_tma[
         rows: Number of rows in the Q tensor exposed via the TMA
             descriptor.
     """
-    comptime smem_dim = q_smem_shape[
+    comptime smem_dim = q_smem_shape_fused[
         dtype,
         swizzle_mode,
         BM=BM,
@@ -853,19 +964,15 @@ def q_tma[
         fuse_gqa=fuse_gqa,
         num_qk_stages=num_qk_stages,
     ]()
-    comptime gmem_dim = q_gmem_shape[
-        dtype,
-        swizzle_mode,
+    comptime gmem_dim = q_gmem_shape_fused[
         group=group,
         q_num_heads=q_num_heads,
         depth=depth,
-        decoding=decoding,
-        fuse_gqa=fuse_gqa,
     ]()
     return create_split_tma[smem_dim, gmem_dim, swizzle_mode](ctx, ptr, rows)
 
 
-@always_inline
+@inline(.always)
 def q_coord[
     *,
     depth: Int,
@@ -899,7 +1006,7 @@ def q_coord[
     res[rank - 1] = row
 
 
-@always_inline
+@inline(.always)
 def kv_coord[
     *, depth: Int
 ](row: UInt32, head_idx: UInt32) -> StaticTuple[UInt32, 3]:
@@ -915,7 +1022,7 @@ def kv_coord[
     return {0, head_idx, row}
 
 
-@always_inline
+@inline(.always)
 def output_reg_to_smem_st_matrix[
     output_type: DType,
     accum_type: DType,
@@ -929,8 +1036,12 @@ def output_reg_to_smem_st_matrix[
 ](
     warp_group_thread_idx: UInt32,
     local_warp_group_idx: UInt32,
-    output_reg_tile: _LocalTT[accum_type, row_major[num_m_mmas, o_frag_size]()],
-    accum_smem_tile: _SharedMemTT[output_type, row_major[BM, padded_depth]()],
+    output_reg_tile: _LocalTT[
+        accum_type, row_major[num_m_mmas, o_frag_size](), Engine=_
+    ],
+    accum_smem_tile: _SharedMemTT[
+        output_type, row_major[BM, padded_depth](), Engine=_
+    ],
 ):
     """Stores output register fragments to shared memory using the `stmatrix` PTX instruction.
 
@@ -969,8 +1080,8 @@ def output_reg_to_smem_st_matrix[
         st_matrix_n_layout[
             output_type, padded_depth, num_m_mmas, num_consumer
         ](),
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+        element_type=.int32,
+        linear_idx_type=.int32,
     ]()
 
     comptime for m_mma in range(num_m_mmas):
@@ -988,5 +1099,5 @@ def output_reg_to_smem_st_matrix[
             var output_frag = output_reg_tile.raw_load[width=8](
                 m_mma * o_frag_size + i * 8
             ).cast[output_type]()
-            var output_frag_f32_packed = bitcast[DType.float32, 4](output_frag)
+            var output_frag_f32_packed = bitcast[.float32, 4](output_frag)
             st_matrix[simd_width=4](offset, output_frag_f32_packed)

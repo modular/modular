@@ -14,9 +14,19 @@ max.pipelines.lib
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.lib.arch_lookup
+   max.pipelines.lib.interfaces
+   max.pipelines.lib.log_probabilities
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
+   pipelines.lib.arch_lookup
+   pipelines.lib.generate
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
 
@@ -29,6 +39,7 @@ Configuration
    :template: autosummary/class.rst
 
    DenoisingCacheConfig
+   DenoisingCacheSettings
    KVConnectorConfig
    MAXConfig
    MAXModelConfigBase
@@ -55,6 +66,7 @@ Model interface
    :template: autosummary/class.rst
 
    AlwaysSignalBuffersMixin
+   ModuleV3PipelineModelWithKVCache
    PipelineModelWithKVCache
    UnifiedEagleOutputs
 
@@ -66,6 +78,7 @@ Tokenizers
    :toctree: generated
    :template: autosummary/class.rst
 
+   AudioGenerationTokenizer
    PixelGenerationTokenizer
 
 Utilities
@@ -78,7 +91,10 @@ Utilities
 
    CompilationTimer
    HuggingFaceRepo
+   MemoryPlan
    ModelManifest
+   RetrievedPipeline
+   Speculator
    VisionPreprocessCache
    WeightPathParser
 
@@ -99,6 +115,7 @@ Functions
    get_default_max_config_file_section_name
    max_tokens_to_generate
    parse_quant_config
+   resolve_eos_token_ids
    resolve_max_config_inheritance
    try_to_load_from_cache
    validate_hf_repo_access

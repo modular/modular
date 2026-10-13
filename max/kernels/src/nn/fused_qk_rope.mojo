@@ -14,30 +14,28 @@
 
 from std.collections import OptionalReg
 from std.math import gcd
-from std.sys.info import _current_target, align_of, simd_width_of
+from std.sys.info import CompilationTarget, align_of, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.utils.numerics import get_accum_type
 from std.complex import ComplexSIMD
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheT, KVCollectionT
 from layout import (
     Coord,
     CoordLike,
-    Idx,
+    DefaultEngine,
     RowMajorLayout,
+    TensorEngine,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from std.utils import IndexList
 
-
-@always_inline
+@inline(.always)
 def rope_value[
     dtype: DType,
     freq_dtype: DType,
@@ -70,7 +68,7 @@ def rope_value[
 # In GGUF, weights are organized as real, imag, real, imag, real, imag, …,
 # while in safetensors, the data is stored as real, …, real, imag, …, imag.
 # This function return the indices for the real and imaginary part.
-@always_inline
+@inline(.always)
 def get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
     """Returns the real and imaginary element indices for a safetensors layout.
 
@@ -88,7 +86,7 @@ def get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
     return (head_dim_idx // 2, head_dim_idx // 2 + head_size // 2)
 
 
-@always_inline
+@inline(.always)
 def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
     """Returns a SIMD vector representing an identity RoPE coefficient.
 
@@ -109,11 +107,10 @@ def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
     )
 
 
-@always_inline
+@inline(.always)
 def rope_q_proj[
     dtype: DType,
     freq_dtype: DType,
-    rank: Int,
     width: SIMDLength,
     output_dtype: DType,
     //,
@@ -125,7 +122,7 @@ def rope_q_proj[
 ](
     q_proj: TileTensor[dtype, ...],
     output: TileTensor[mut=True, output_dtype, ...],
-    idx: IndexList[rank],
+    idx: Coord,
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
@@ -141,7 +138,6 @@ def rope_q_proj[
         dtype: Element type of the `q_proj` tile tensor (inferred).
         freq_dtype: Element type of the `freq_val` frequency
             coefficients (inferred).
-        rank: Rank of the index list and tile tensors (inferred).
         width: Number of elements per SIMD vector (inferred).
         output_dtype: Element type of the `output` tile tensor (inferred).
         interleaved: Whether the RoPE weights use interleaved real and
@@ -156,15 +152,18 @@ def rope_q_proj[
     Args:
         q_proj: The query projection tile tensor to read from.
         output: The mutable output tile tensor to write the rotated result.
-        idx: The index list identifying the load and store coordinate.
+        idx: The coordinate identifying the load and store position.
         freq_val: The RoPE frequency coefficients for this position.
         head_size: The size of each attention head dimension.
     """
+    comptime rank = idx.rank
     comptime assert q_proj.flat_rank == rank
     comptime assert output.flat_rank == rank
-    var coord = Coord(idx)
-    comptime assert q_proj.flat_rank >= coord.flat_rank
-    comptime assert output.flat_rank >= coord.flat_rank
+    comptime assert q_proj.flat_rank >= idx.flat_rank
+    comptime assert output.flat_rank >= idx.flat_rank
+    # Normalize to all-dynamic elements: the last element is reassigned at
+    # runtime below, which static (`ComptimeInt`) elements forbid.
+    var idx_dyn = idx.make_dynamic[.int64]()
 
     comptime width_2 = width // 2
     comptime half_alignment = align_of[
@@ -172,19 +171,19 @@ def rope_q_proj[
     ]() if alignment == align_of[SIMD[dtype, width]]() else alignment
 
     comptime if interleaved:
-        var val_inter = q_proj.load[width=width, alignment=alignment](coord)
+        var val_inter = q_proj.load[width=width, alignment=alignment](idx_dyn)
         var res_inter = cast_saturating[output_dtype](
             rope_value(val_inter, freq_val)
         )
-        output.store[alignment=alignment](coord, res_inter)
+        output.store[alignment=alignment](idx_dyn, res_inter)
     else:
         comptime if has_nope_prefix:
-            if idx[rank - 1] >= rope_dim:
+            if Int(idx[rank - 1].value()) >= rope_dim:
                 var val_pass = q_proj.load[width=width, alignment=alignment](
-                    coord
+                    idx_dyn
                 )
                 output.store[alignment=alignment](
-                    coord, cast_saturating[output_dtype](val_pass)
+                    idx_dyn, cast_saturating[output_dtype](val_pass)
                 )
                 return
 
@@ -194,30 +193,29 @@ def rope_q_proj[
         else:
             split_size = head_size
 
-        var indices = get_safetensors_idx(idx[rank - 1], split_size)
-        var pos_re = idx
-        var pos_im = idx
-        pos_re[rank - 1] = indices[0]
-        pos_im[rank - 1] = indices[1]
-
-        var coord_re = Coord(pos_re)
-        var coord_im = Coord(pos_im)
+        var indices = get_safetensors_idx(
+            Int(idx[rank - 1].value()), split_size
+        )
+        var pos_re = idx_dyn
+        var pos_im = idx_dyn
+        pos_re.replace_dynamic[rank - 1](Int64(indices[0]))
+        pos_im.replace_dynamic[rank - 1](Int64(indices[1]))
 
         var val = rebind[SIMD[dtype, width]](
             q_proj.load[width=width_2, alignment=half_alignment](
-                coord_re
+                pos_re
             ).interleave(
-                q_proj.load[width=width_2, alignment=half_alignment](coord_im)
+                q_proj.load[width=width_2, alignment=half_alignment](pos_im)
             )
         )
 
         var res = cast_saturating[output_dtype](rope_value(val, freq_val))
         var output_re, output_im = res.deinterleave()
-        output.store[alignment=half_alignment](coord_re, output_re)
-        output.store[alignment=half_alignment](coord_im, output_im)
+        output.store[alignment=half_alignment](pos_re, output_re)
+        output.store[alignment=half_alignment](pos_im, output_im)
 
 
-@always_inline
+@inline(.always)
 def rope_k_cache[
     freq_dtype: DType,
     cache_t: KVCacheT,
@@ -302,141 +300,7 @@ def rope_k_cache[
         k_cache.store(b_idx, h_idx, s_idx, h_im, output_im)
 
 
-@always_inline
-def fused_qk_rope[
-    dtype: DType,
-    collection_t: KVCollectionT,
-    //,
-    cache_t: KVCacheT,
-    *,
-    interleaved: Bool,
-    target: StaticString,
-](
-    q_proj: TileTensor[dtype, ...],
-    kv_collection: collection_t,
-    freqs_cis: TileTensor[dtype, ...],
-    layer_idx: UInt32,
-    valid_lengths: TileTensor[DType.uint32, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    context: DeviceContext,
-) raises:
-    """Applies RoPE to query and key tensors.
-
-    Parameters:
-        dtype: The element type of `q_proj`, `freqs_cis`, and
-            `output` (inferred).
-        collection_t: The KV cache collection type holding the key
-            cache (inferred).
-        cache_t: The KV cache type used to store and load key cache entries.
-        interleaved: Whether the RoPE weights use interleaved real and
-            imaginary layout.
-        target: The compilation target string for the kernel.
-
-    Args:
-        q_proj: Query projection tensor of shape [batch, seq_len, n_heads, head_dim].
-        kv_collection: The KV cache collection containing the key cache.
-        freqs_cis: Frequency tensor for RoPE of shape [max_seq_len, head_dim].
-        layer_idx: The layer index for accessing the correct cache.
-        valid_lengths: Tensor of shape [batch] containing the valid length for each
-            sequence. RoPE is only applied to positions within these lengths.
-        output: Output tensor for Q with RoPE applied, same shape as q_proj.
-        context: Optional device context for GPU execution.
-    """
-    comptime assert q_proj.flat_rank == 4
-    comptime assert freqs_cis.flat_rank == 2
-    comptime assert output.flat_rank == 4
-    comptime assert valid_lengths.flat_rank == 1
-
-    comptime kv_params = cache_t.kv_params
-
-    var batch_size = Int(q_proj.dim[0]())
-    var new_seq_len = Int(q_proj.dim[1]())
-    comptime num_q_heads = Int(q_proj.static_shape[2])
-    comptime num_k_heads = kv_params.num_heads
-    comptime head_size = Int(q_proj.static_shape[3])
-
-    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-
-    # TODO: This elementwise body captures a KV cache view (`CacheType`),
-    # which fails codegen when stored into a unified closure ('pop.store'
-    # pointer element-type verification). Keep using the deprecated
-    # parameter-closure overload until cache captures in unified closures are
-    # supported.
-    @always_inline
-    @__parameter
-    @__copy_capture(k_cache, valid_lengths)
-    def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
-        comptime assert idx.rank == 4, "Invalid rank passed to rope kernel"
-
-        comptime if width == 1:
-            return
-        else:
-            var bs_idx = Int(idx[0].value())
-            var seq_idx = Int(idx[1].value())
-
-            # Check if this position is within the valid length for this batch
-            var valid_len = Int(valid_lengths[bs_idx])
-            if seq_idx >= valid_len:
-                return
-
-            # post_seq_idx: sum of start_pos (cache_lengths[batch_idx]) and
-            # seq_idx (idx[1]).
-            var post_seq_idx = k_cache.cache_length(bs_idx) + seq_idx
-            var head_idx = Int(idx[2].value())
-            var head_dim_idx = Int(idx[3].value())
-
-            # WARN assumes head_size % simd_width == 0
-            # guarded by constrained statement below
-            var is_q_proj = head_idx < num_q_heads
-            comptime _alignment = 1 if is_cpu[target]() else align_of[
-                SIMD[dtype, width]
-            ]()
-            var f_c_temp = freqs_cis.load[width=width, alignment=_alignment](
-                (post_seq_idx, head_dim_idx)
-            )
-
-            if is_q_proj:
-                rope_q_proj[interleaved=interleaved, alignment=_alignment](
-                    q_proj,
-                    output,
-                    coord_to_index_list(idx),
-                    f_c_temp,
-                    head_size,
-                )
-            else:
-                head_idx -= num_q_heads
-                rope_k_cache[interleaved=interleaved](
-                    k_cache,
-                    bs_idx,
-                    head_idx,
-                    post_seq_idx,
-                    head_dim_idx,
-                    f_c_temp,
-                    head_size,
-                )
-
-    var launch_shape = (
-        batch_size,
-        new_seq_len,
-        num_q_heads + num_k_heads,  # concat q and k along head dim
-        head_size,
-    )
-    comptime compile_target = _current_target() if is_cpu[
-        target
-    ]() else get_gpu_target()
-    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
-    comptime kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
-    comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
-
-    elementwise[
-        func=rope_fn,
-        simd_width=kernel_simd_width,
-        target=target,
-        _trace_description="fused_qk_rope",
-    ](launch_shape, context)
-
-
-@always_inline
+@inline(.always)
 def fused_qk_rope_ragged[
     dtype: DType,
     freq_dtype: DType,
@@ -453,13 +317,20 @@ def fused_qk_rope_ragged[
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
         *Coord[Int64, Int64].element_types
     ],
+    # `position_ids` is optional, so its engine cannot be inferred.
+    PositionIdsEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     q_proj: TileTensor[dtype, ...],
-    input_row_offsets: TileTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[.uint32, ...],
     kv_collection: collection_t,
     freqs_cis: TileTensor[freq_dtype, ...],
     position_ids: OptionalReg[
-        TileTensor[DType.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            .uint32,
+            PositionIdsLayoutType,
+            ImmutAnyOrigin,
+            Engine=PositionIdsEngine,
+        ]
     ],
     layer_idx: UInt32,
     output: TileTensor[mut=True, dtype, ...],
@@ -488,6 +359,8 @@ def fused_qk_rope_ragged[
             (defaults to `None`).
         PositionIdsLayoutType: The tensor layout of the `position_ids`
             tensor (defaults to `RowMajorLayout`).
+        PositionIdsEngine: The engine policy of the `position_ids` tensor
+            (defaults to `DefaultEngine`).
 
     Args:
         q_proj: Query projection tensor of shape [total_tokens, n_heads, head_dim].
@@ -545,10 +418,8 @@ def fused_qk_rope_ragged[
     # pointer element-type verification). Keep using the deprecated
     # parameter-closure overload until cache captures in unified closures are
     # supported.
-    @always_inline
-    @__parameter
-    @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
-    def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
+    @inline(.always)
+    def rope_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 3, "Invalid rank passed to rope kernel"
 
         comptime if width == 1:
@@ -569,25 +440,23 @@ def fused_qk_rope_ragged[
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
             var position_ids_idx = post_seq_idx
-            if position_ids:
-                comptime PIdTensor = type_of(position_ids.value())
+            if case .Some(position_ids) = position_ids:
+                comptime PIdTensor = type_of(position_ids)
                 comptime assert PIdTensor.flat_rank == 2
 
-                comptime if mrope_section:
+                comptime if case .Some(sections) = mrope_section:
                     var section_idx = 0
 
-                    comptime for i in range(len(mrope_section.value())):
-                        comptime val = Int(mrope_section.value()[i].value())
+                    comptime for i in range(len(sections)):
+                        comptime val = Int(sections[i].value())
                         if head_dim_idx < val:
                             section_idx = i
                             break
                     position_ids_idx = Int(
-                        position_ids.value()[section_idx, global_token_idx]
+                        position_ids[section_idx, global_token_idx]
                     )
                 else:
-                    position_ids_idx = Int(
-                        position_ids.value()[0, global_token_idx]
-                    )
+                    position_ids_idx = Int(position_ids[0, global_token_idx])
 
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
@@ -626,7 +495,7 @@ def fused_qk_rope_ragged[
                 ](
                     q_proj,
                     output,
-                    coord_to_index_list(idx),
+                    idx,
                     f_c_temp,
                     q_head_size,
                 )
@@ -660,23 +529,23 @@ def fused_qk_rope_ragged[
         num_q_heads + num_k_heads,  # concat q and k along head dim
         q_head_size,
     )
-    comptime compile_target = _current_target() if is_cpu[
-        target
-    ]() else get_gpu_target()
-    comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime target_simd_width = (
+        simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
+            target
+        ]() else simd_width_of[dtype, target=context.target]()
+    )
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    comptime if mrope_section:
-        comptime for i in range(len(mrope_section.value())):
+    comptime if case .Some(sections) = mrope_section:
+        comptime for i in range(len(sections)):
             comptime assert (
-                Int(mrope_section.value()[i].value()) % kernel_simd_width == 0
+                Int(sections[i].value()) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
     elementwise[
-        func=rope_fn,
         simd_width=kernel_simd_width,
         target=target,
         _trace_description="fused_qk_rope_ragged",
-    ](launch_shape, context)
+    ](rope_fn, launch_shape, context)

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from std.gpu import block_dim, block_idx, global_idx
+from max.gpu import block_dim, block_idx, global_idx
 from std.memory import Pointer, alloc
 from std.ffi import c_size_t
 from shmem import *
@@ -66,8 +66,8 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
 
-    var send_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
-    var recv_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
+    var send_data = ctx.enqueue_create_buffer[.float32](num_elems)
+    var recv_data = ctx.enqueue_create_buffer[.float32](num_elems)
 
     ctx.barrier_all()
 

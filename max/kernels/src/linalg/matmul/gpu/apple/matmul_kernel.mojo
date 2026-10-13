@@ -27,16 +27,19 @@ tails. Operands load DRAM->register directly -- threadgroup-memory staging
 """
 
 from std.collections import Array, Optional
-from std.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
-from std.math import align_down, ceildiv
+from max.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
+from std.math import align_down, ceildiv, divmod
 from max.gpu.host import DeviceContext
 from std.sys import align_of, size_of
-from std.utils import IndexList
-from layout import TensorStorage, TileTensor, Idx
+from layout import TensorEngine, TileTensor, Idx
 from layout.tile_layout import Layout, TensorLayout, row_major
 from layout.coord import Coord
 from linalg.arch.apple.mma import ConvIm2colParams, MmaOpApple
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    ElementwiseEpilogueFn,
+    elementwise_epilogue_type,
+    no_epilogue_fn,
+)
 
 
 # === A-operand loader abstraction ========================================== #
@@ -69,7 +72,7 @@ comptime _BodyMma[
     num_m: Int = 2,
     num_n: Int = 2,
     b_type: DType = in_type,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
 ] = MmaOpApple[
     accum_type, in_type, num_m_mmas=num_m, num_n_mmas=num_n, b_type=b_type
 ]
@@ -107,7 +110,7 @@ trait AOperandLoader:
     comptime num_m_mmas: Int
     comptime num_n_mmas: Int
 
-    @always_inline
+    @inline(.always)
     def accumulate_strip[
         bounded: Bool, b_layout: TensorLayout
     ](
@@ -191,7 +194,7 @@ struct DenseALoader[
 
     var a_slab: TileTensor[Self.dtype, Self.a_layout, ImmUntrackedOrigin]
 
-    @always_inline
+    @inline(.always)
     def accumulate_strip[
         bounded: Bool, b_layout: TensorLayout
     ](
@@ -300,7 +303,7 @@ struct Im2colALoader[
         self.s = copy.s
         self.k_total = copy.k_total
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         input_ptr: UnsafePointer[Scalar[Self.dtype], ImmUntrackedOrigin],
@@ -341,10 +344,8 @@ struct Im2colALoader[
             comptime mi = ri // 2
             comptime half = ri % 2
             var m = row_base + Int32(mi * 16 + half * 8) + rb
-            var batch = m // HW_out
-            var spatial = m % HW_out
-            var h_out = spatial // conv.W_out
-            var w_out = spatial % conv.W_out
+            var batch, spatial = divmod(m, HW_out)
+            var h_out, w_out = divmod(spatial, conv.W_out)
             self.h_base[ri] = h_out * conv.stride_h - conv.pad_h
             self.w_base[ri] = w_out * conv.stride_w - conv.pad_w
             self.batch_base[ri] = batch * hwc
@@ -359,7 +360,7 @@ struct Im2colALoader[
         self.s = sc // conv.C
         self.c0 = sc % conv.C
 
-    @always_inline
+    @inline(.always)
     def accumulate_strip[
         bounded: Bool, b_layout: TensorLayout
     ](
@@ -461,7 +462,7 @@ trait WeightLoader:
 
 
 @fieldwise_init
-struct DenseWeightLoader[b_dtype: DType, accum_dtype: DType = DType.float32](
+struct DenseWeightLoader[b_dtype: DType, accum_dtype: DType = .float32](
     ImplicitlyCopyable, Movable, WeightLoader
 ):
     """Direct-DRAM B policy: dense-bf16 and FP8-W8A16.
@@ -481,7 +482,7 @@ struct DenseWeightLoader[b_dtype: DType, accum_dtype: DType = DType.float32](
 
 struct AppleM5MatMul[
     in_type: DType,
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     block_m: Int = 64,
@@ -491,10 +492,10 @@ struct AppleM5MatMul[
     sg_n: Int = 32,
     k_unroll: Int = 1,
     use_x2: Bool = False,
-    linear_idx_type: DType = DType.int64,
+    linear_idx_type: DType = .int64,
     clamp_edge: Bool = False,
     b_type: DType = in_type,
-    accum_type: DType = DType.float32,
+    accum_type: DType = .float32,
 ]:
     """Apple M5 simdgroup-tiled GEMM (Metal 4 hardware MMA).
 
@@ -676,7 +677,7 @@ struct AppleM5MatMul[
     # `loader.accumulate_strip(...)` seam in the K-loop is the only divergence
     # (see the "A-operand loader abstraction" header above).
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _sg_row_base(log2_grid_m: UInt32, log2_grid_n: UInt32) -> Int32:
         """This simdgroup's absolute M-row base: `tile_m*BM + sg_m_idx*SG_M`.
@@ -697,25 +698,29 @@ struct AppleM5MatMul[
         var sg_m_idx = sg_id // Int32(Self.NUM_SG_N)
         return tile_m * Int32(Self.BM) + sg_m_idx * Int32(Self.SG_M)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def _run_gemm_body[
         L: AOperandLoader,
+        EpilogueFnType: ElementwiseEpilogueFn,
         //,
         W: WeightLoader,
         c_layout: TensorLayout,
         b_layout: TensorLayout,
         seed_from_output: Bool = False,
+        has_epilogue_fn: Bool = False,
     ](
         mut loader: L,
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=_],
-        b: TileTensor[L.b_type, b_layout, ImmutAnyOrigin, Storage=_],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=_],
+        b: TileTensor[L.b_type, b_layout, ImmutAnyOrigin, Engine=_],
         k: Int,
         conv: ConvIm2colParams,
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
         k_strip_start: Int = 0,
         k_strip_end: Int = -1,
+        *,
+        epilogue_fn: EpilogueFnType,
     ):
         """Shared GEMM body; A side from `loader`, B policy from `W`.
 
@@ -736,6 +741,10 @@ struct AppleM5MatMul[
         `seed_from_output`/`k_strip_start`/`k_strip_end` support
         `run_chained`'s 2-pass dispatch; other callers (`run`, `run_conv`)
         use the defaults for a single full-K pass.
+
+        With `has_epilogue_fn`, `epilogue_fn` receives each output at its
+        `(row, col)` in `c` in place of `elementwise_lambda_fn`; callers
+        without one pass `no_epilogue_fn`.
         """
         comptime assert (
             W.b_type == Self.b_type and W.accum_type == Self.accum_type
@@ -745,7 +754,7 @@ struct AppleM5MatMul[
         # accumulation (int8 W8A8) generalizes the A-loader + epilogue in a later
         # slice, so keep the body fp32-only until then.
         comptime assert (
-            Self.accum_type == DType.float32
+            Self.accum_type == .float32
         ), "shared GEMM body is fp32-accumulate; int32 accum is a later slice"
         comptime assert (
             L.b_type == Self.b_type
@@ -780,7 +789,9 @@ struct AppleM5MatMul[
         # `clamp_edge` only applies on the fast fp32 store path, never with
         # the cast/lambda epilogue below (see struct docstring).
         comptime clamp_active = Self.clamp_edge and not (
-            Self.c_type != DType.float32 or Self.elementwise_lambda_fn
+            Self.c_type != .float32
+            or Self.elementwise_lambda_fn
+            or has_epilogue_fn
         )
         # `c_type` / `elementwise_lambda_fn` / `transpose_b` are struct *params*:
         # spelled `Self.x` below (a param can't be aliased to a same-name local
@@ -800,8 +811,7 @@ struct AppleM5MatMul[
         var grid_n = ceildiv(n_i32, BN_i32)
 
         var sg_id = Int32(thread_idx.x) // Int32(WARP_SIZE)
-        var sg_m_idx = sg_id // NUM_SG_N_i32
-        var sg_n_idx = sg_id % NUM_SG_N_i32
+        var sg_m_idx, sg_n_idx = divmod(sg_id, NUM_SG_N_i32)
 
         var flat_idx = UInt32(block_idx.x)
 
@@ -922,13 +932,15 @@ struct AppleM5MatMul[
         # here was already written by pass 0, and a stray read of a
         # neighbor's cell gets discarded by this tile's own bounded store.
         comptime do_seed = seed_from_output and not (
-            Self.c_type != DType.float32 or Self.elementwise_lambda_fn
+            Self.c_type != .float32
+            or Self.elementwise_lambda_fn
+            or has_epilogue_fn
         )
         var accum: Mma.AccumType
         comptime if do_seed:
-            var c_ptr_fp32_seed = rebind[
-                UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-            ](c_ptr_shifted)
+            var c_ptr_fp32_seed = rebind[UnsafePointer[Float32, MutAnyOrigin]](
+                c_ptr_shifted
+            )
             var c_mat_fp32_seed = TileTensor[
                 linear_idx_type=Self.linear_idx_type
             ](c_ptr_fp32_seed, row_major(m, n))
@@ -941,19 +953,19 @@ struct AppleM5MatMul[
 
         # fp32 out with no fused lambda takes the fast `mma_op.store` path;
         # every other (c_type, lambda) combo flows through the epilogue below.
-        comptime use_epilogue_path = (
-            Self.c_type != DType.float32 or Self.elementwise_lambda_fn
+        comptime has_epilogue = (
+            Bool(Self.elementwise_lambda_fn) or has_epilogue_fn
         )
+        comptime use_epilogue_path = Self.c_type != .float32 or has_epilogue
 
         # Cast-then-store epilogue (non-fp32 out and/or a fused
         # `elementwise_lambda_fn`). Writes through a `.tile`-derived simdgroup
         # view of C -- no pointer arithmetic. The lambda contract matches AMD's:
         # it receives `SIMD[c_type, width]` at absolute (row, col).
-        @always_inline
-        @__parameter
+        @inline(.always)
         def _apply_epilogue[
             bounded: Bool
-        ](tile_row_base: Int, tile_col_base: Int):
+        ](tile_row_base: Int, tile_col_base: Int) {imm}:
             var c_sub = TileTensor[linear_idx_type=Self.linear_idx_type](
                 c_ptr, row_major(m, n)
             ).tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
@@ -963,15 +975,14 @@ struct AppleM5MatMul[
             comptime elem_align = align_of[Scalar[Self.c_type]]()
             var c_vec = c_sub.vectorize[1, 4]()
 
-            @always_inline
-            @__parameter
+            @inline(.always)
             def _write4(
                 lrow: Int,
                 lcol: Int,
                 arow: Int,
                 acol: Int,
-                v_fp32: SIMD[DType.float32, 4],
-            ):
+                v_fp32: SIMD[.float32, 4],
+            ) {imm}:
                 # `lrow,lcol`: coords inside the simdgroup tile (C store).
                 # `arow,acol`: absolute coords (bounds + the lambda contract).
                 var y = v_fp32.cast[Self.c_type]()
@@ -980,17 +991,17 @@ struct AppleM5MatMul[
                     comptime if bounded:
                         if acol + 3 < n:
                             epilogue[Self.c_type, 4, alignment=elem_align](
-                                IndexList[2](arow, acol), y
+                                (arow, acol), y
                             )
                         else:
                             for e in range(min(4, n - acol)):
                                 epilogue[Self.c_type, 1](
-                                    IndexList[2](arow, acol + e),
+                                    (arow, acol + e),
                                     SIMD[Self.c_type, 1](y[e]),
                                 )
                     else:
                         epilogue[Self.c_type, 4, alignment=elem_align](
-                            IndexList[2](arow, acol), y
+                            (arow, acol), y
                         )
                 else:
                     comptime if bounded:
@@ -1016,7 +1027,35 @@ struct AppleM5MatMul[
                     var lrow = mi * 16 + Int(mma_op.rb)
                     var acol = tile_col_base + lcol
                     var arow = tile_row_base + lrow
-                    comptime if bounded:
+                    comptime if has_epilogue_fn:
+                        # Inline rather than in `_write4`: capturing the
+                        # closure value there breaks `c_vec`'s capture.
+                        comptime for h in range(2):
+                            var row = arow + 8 * h
+                            var y = frag.slice[4, offset=4 * h]().cast[
+                                Self.c_type
+                            ]()
+                            comptime if bounded:
+                                if row < m:
+                                    if acol + 3 < n:
+                                        epilogue_fn[
+                                            Self.c_type,
+                                            4,
+                                            alignment=elem_align,
+                                        ]((row, acol), y)
+                                    else:
+                                        for e in range(min(4, n - acol)):
+                                            epilogue_fn[
+                                                Self.c_type, 1, alignment=1
+                                            ](
+                                                (row, acol + e),
+                                                SIMD[Self.c_type, 1](y[e]),
+                                            )
+                            else:
+                                epilogue_fn[
+                                    Self.c_type, 4, alignment=elem_align
+                                ]((row, acol), y)
+                    elif bounded:
                         if arow < m:
                             _write4(
                                 lrow,
@@ -1048,14 +1087,13 @@ struct AppleM5MatMul[
         # `rebind` to fp32 so `mma_op.store{,_bounded}` typechecks; this branch
         # is only entered when `c_type == fp32` (use_epilogue_path is False),
         # so the rebind is a no-op at runtime.
-        @always_inline
-        @__parameter
+        @inline(.always)
         def _fast_path_store[
             bounded: Bool
-        ](valid_rows: Int = 0, valid_cols: Int = 0):
-            var c_ptr_fp32 = rebind[
-                UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
-            ](c_ptr_shifted)
+        ](valid_rows: Int = 0, valid_cols: Int = 0) {imm}:
+            var c_ptr_fp32 = rebind[UnsafePointer[Float32, MutAnyOrigin]](
+                c_ptr_shifted
+            )
             var c_mat_fp32 = TileTensor[linear_idx_type=Self.linear_idx_type](
                 c_ptr_fp32, row_major(m, n)
             )
@@ -1113,9 +1151,10 @@ struct AppleM5MatMul[
                 _fast_path_store[bounded=True](Int(valid_rows), Int(valid_cols))
         else:
 
-            @always_inline
-            @__parameter
-            def _full_strip(k_strip: Int32):
+            @inline(.always)
+            def _full_strip(
+                k_strip: Int32,
+            ) {mut loader, mut mma_op, mut accum, imm}:
                 var b_sub = b_slab.tile[BK, SG_N](Int(k_strip), 0)
                 loader.accumulate_strip[bounded=False](
                     mma_op,
@@ -1177,15 +1216,13 @@ struct AppleM5MatMul[
         c_layout: TensorLayout,
         a_layout: TensorLayout,
         b_layout: TensorLayout,
-        c_storage: TensorStorage,
-        a_storage: TensorStorage,
-        b_storage: TensorStorage,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
-        a: TileTensor[
-            Self.in_type, a_layout, ImmutAnyOrigin, Storage=a_storage
-        ],
-        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
     ):
@@ -1204,9 +1241,9 @@ struct AppleM5MatMul[
             c_layout: `TensorLayout` of the output `C` operand.
             a_layout: `TensorLayout` of the A operand.
             b_layout: `TensorLayout` of the B operand.
-            c_storage: `TensorStorage` of the output `C` operand.
-            a_storage: `TensorStorage` of the A operand.
-            b_storage: `TensorStorage` of the B operand.
+            c_engine: `TensorEngine` of the output `C` operand.
+            a_engine: `TensorEngine` of the A operand.
+            b_engine: `TensorEngine` of the B operand.
 
         Args:
             c: Output matrix `(M, N)` row-major; `M` and `N` derive from its
@@ -1220,6 +1257,82 @@ struct AppleM5MatMul[
             log2_grid_n: Base-2 logarithm of the N-axis grid extent; the grid
                 spans `1<<log2_grid_n` threadgroups along N.
         """
+        Self._run[has_epilogue_fn=False](
+            c, a, b, log2_grid_m, log2_grid_n, no_epilogue_fn
+        )
+
+    @__name(
+        t"apple_matmul_run_epilogue_fn_{Self.in_type}_{Self.c_type}_tb{Self.transpose_b}_b{Self.b_type}"
+    )
+    @staticmethod
+    def run_with_epilogue_fn[
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+    ](
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        log2_grid_m: UInt32,
+        log2_grid_n: UInt32,
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Same as `run`, storing the output through `epilogue_fn`.
+
+        Launch with `host_arg=epilogue_fn`. Requires `elementwise_lambda_fn`
+        to be unset.
+
+        Parameters:
+            c_layout: `TensorLayout` of the output `C` operand.
+            a_layout: `TensorLayout` of the A operand.
+            b_layout: `TensorLayout` of the B operand.
+            c_engine: `TensorEngine` of the output `C` operand.
+            a_engine: `TensorEngine` of the A operand.
+            b_engine: `TensorEngine` of the B operand.
+            EpilogueFnType: Type of `epilogue_fn`.
+
+        Args:
+            c: Output matrix `(M, N)`. Gives the epilogue its shape.
+            a: A operand matrix `(M, K)` row-major.
+            b: B operand matrix, `(K, N)` for `transpose_b=False` or `(N, K)`
+                for `transpose_b=True`.
+            log2_grid_m: Base-2 logarithm of the M-axis grid extent.
+            log2_grid_n: Base-2 logarithm of the N-axis grid extent.
+            epilogue_fn: Stores each output element at its `(row, col)`.
+        """
+        comptime assert not Self.elementwise_lambda_fn, (
+            "run_with_epilogue_fn takes the epilogue as a value; leave"
+            " elementwise_lambda_fn unset"
+        )
+        Self._run[has_epilogue_fn=True](
+            c, a, b, log2_grid_m, log2_grid_n, epilogue_fn
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run[
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+    ](
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        log2_grid_m: UInt32,
+        log2_grid_n: UInt32,
+        epilogue_fn: EpilogueFnType,
+    ):
         var m = Int(c.dim[0]())
         var k = Int(a.dim[1]())
 
@@ -1253,8 +1366,18 @@ struct AppleM5MatMul[
 
         var no_conv = ConvIm2colParams()  # dense path ignores conv
         # B policy: direct-DRAM (dense-bf16 or FP8-W8A16), no SMEM.
-        Self._run_gemm_body[W=DenseWeightLoader[Self.b_type, Self.accum_type]](
-            loader, c, b, k, no_conv, log2_grid_m, log2_grid_n
+        Self._run_gemm_body[
+            W=DenseWeightLoader[Self.b_type, Self.accum_type],
+            has_epilogue_fn=has_epilogue_fn,
+        ](
+            loader,
+            c,
+            b,
+            k,
+            no_conv,
+            log2_grid_m,
+            log2_grid_n,
+            epilogue_fn=epilogue_fn,
         )
 
     # === Chained clamp_v2 kernel: 2-pass, no partials buffer =============== #
@@ -1267,16 +1390,14 @@ struct AppleM5MatMul[
         c_layout: TensorLayout,
         a_layout: TensorLayout,
         b_layout: TensorLayout,
-        c_storage: TensorStorage,
-        a_storage: TensorStorage,
-        b_storage: TensorStorage,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
         seed_from_output: Bool = False,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
-        a: TileTensor[
-            Self.in_type, a_layout, ImmutAnyOrigin, Storage=a_storage
-        ],
-        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
         k_strip_start_dev: Int32,
@@ -1293,7 +1414,7 @@ struct AppleM5MatMul[
         var k_strip_end = Int(k_strip_end_dev)
         comptime assert (
             Self.clamp_edge
-            and Self.c_type == DType.float32
+            and Self.c_type == .float32
             and not Self.elementwise_lambda_fn
         ), (
             "run_chained requires clamp_edge=True, c_type=float32, no"
@@ -1345,6 +1466,7 @@ struct AppleM5MatMul[
             log2_grid_n,
             k_strip_start,
             k_strip_end,
+            epilogue_fn=no_epilogue_fn,
         )
 
     # === Fused online-im2col conv kernel =================================== #
@@ -1366,21 +1488,19 @@ struct AppleM5MatMul[
         c_layout: TensorLayout,
         input_layout: TensorLayout,
         b_layout: TensorLayout,
-        c_storage: TensorStorage,
-        input_storage: TensorStorage,
-        b_storage: TensorStorage,
+        c_engine: TensorEngine,
+        input_engine: TensorEngine,
+        b_engine: TensorEngine,
         c_aligned: Bool = False,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
         input: TileTensor[
-            Self.in_type, input_layout, ImmutAnyOrigin, Storage=input_storage
+            Self.in_type, input_layout, ImmutAnyOrigin, Engine=input_engine
         ],
         # Conv filter is `in_type` (the `Im2colALoader`'s `b_type == in_type`);
         # the body's `b` param keys on the loader's `b_type`, so this stays
         # `Self.in_type`, not `Self.b_type`.
-        b: TileTensor[
-            Self.in_type, b_layout, ImmutAnyOrigin, Storage=b_storage
-        ],
+        b: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         conv: ConvIm2colParams,
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
@@ -1403,9 +1523,9 @@ struct AppleM5MatMul[
             c_layout: `TensorLayout` of the output `C` operand.
             input_layout: `TensorLayout` of the NHWC `input` operand.
             b_layout: `TensorLayout` of the filter `B` operand.
-            c_storage: `TensorStorage` of the output `C` operand.
-            input_storage: `TensorStorage` of the NHWC `input` operand.
-            b_storage: `TensorStorage` of the filter `B` operand.
+            c_engine: `TensorEngine` of the output `C` operand.
+            input_engine: `TensorEngine` of the NHWC `input` operand.
+            b_engine: `TensorEngine` of the filter `B` operand.
             c_aligned: When True, assume `conv.C` is a multiple of 8 so the
                 channel run is contiguous and a single width-8 load suffices
                 (defaults to False).
@@ -1456,7 +1576,14 @@ struct AppleM5MatMul[
         )
         # Conv B (the filter) is `in_type`; direct-DRAM policy, no SMEM.
         Self._run_gemm_body[W=DenseWeightLoader[Self.b_type, Self.accum_type]](
-            loader, c, b, k, conv, log2_grid_m, log2_grid_n
+            loader,
+            c,
+            b,
+            k,
+            conv,
+            log2_grid_m,
+            log2_grid_n,
+            epilogue_fn=no_epilogue_fn,
         )
 
     # === Split-K kernels =================================================== #
@@ -1471,16 +1598,12 @@ struct AppleM5MatMul[
     def run_split_k_partial[
         a_layout: TensorLayout,
         b_layout: TensorLayout,
-        a_storage: TensorStorage,
-        b_storage: TensorStorage,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
     ](
-        partials_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-        a: TileTensor[
-            Self.in_type, a_layout, ImmutAnyOrigin, Storage=a_storage
-        ],
-        b: TileTensor[
-            Self.in_type, b_layout, ImmutAnyOrigin, Storage=b_storage
-        ],
+        partials_ptr: UnsafePointer[Float32, MutAnyOrigin],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.in_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
         k_per_split: Int32,
@@ -1497,8 +1620,8 @@ struct AppleM5MatMul[
         Parameters:
             a_layout: `TensorLayout` of the A operand.
             b_layout: `TensorLayout` of the B operand.
-            a_storage: `TensorStorage` of the A operand.
-            b_storage: `TensorStorage` of the B operand.
+            a_engine: `TensorEngine` of the A operand.
+            b_engine: `TensorEngine` of the B operand.
 
         Args:
             partials_ptr: Pointer to the fp32 partials workspace; split `s`
@@ -1568,8 +1691,7 @@ struct AppleM5MatMul[
         var has_tail = (span % BK_i32) != 0
 
         var sg_id = Int32(thread_idx.x) // Int32(WARP_SIZE)
-        var sg_m_idx = sg_id // NUM_SG_N_i32
-        var sg_n_idx = sg_id % NUM_SG_N_i32
+        var sg_m_idx, sg_n_idx = divmod(sg_id, NUM_SG_N_i32)
 
         var mma_op = Mma()
         var accum = Mma.zero_accum()
@@ -1619,9 +1741,8 @@ struct AppleM5MatMul[
             )
         else:
 
-            @always_inline
-            @__parameter
-            def _full_strip(gstrip: Int32):
+            @inline(.always)
+            def _full_strip(gstrip: Int32) {mut accum, imm}:
                 var a_sub = a_slab.tile[SG_M, BK](0, Int(gstrip))
                 var b_sub = b_slab.tile[BK, SG_N](Int(gstrip), 0)
                 comptime if Self.use_x2:
@@ -1663,10 +1784,10 @@ struct AppleM5MatMul[
     @staticmethod
     def run_split_k_reduce[
         c_layout: TensorLayout,
-        c_storage: TensorStorage,
+        c_engine: TensorEngine,
     ](
-        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
-        partials_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        partials_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
         num_splits: Int32,
     ):
         """Sum `num_splits` fp32 partials per output element, cast, store / fuse.
@@ -1677,7 +1798,7 @@ struct AppleM5MatMul[
 
         Parameters:
             c_layout: `TensorLayout` of the output `C` operand.
-            c_storage: `TensorStorage` of the output `C` operand.
+            c_engine: `TensorEngine` of the output `C` operand.
 
         Args:
             c: Output matrix `(M, N)` row-major; `M` and `N` derive from its
@@ -1692,7 +1813,7 @@ struct AppleM5MatMul[
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
 
-        var idx = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+        var idx = block_idx.x * block_dim.x + thread_idx.x
         var total = m * n
         if idx >= total:
             return
@@ -1703,11 +1824,9 @@ struct AppleM5MatMul[
             acc += partials_ptr[s * mn + idx]
 
         var y = acc.cast[Self.c_type]()
-        comptime if Self.elementwise_lambda_fn:
-            comptime epilogue = Self.elementwise_lambda_fn.value()
-            epilogue[Self.c_type, 1](
-                IndexList[2](idx // n, idx % n), SIMD[Self.c_type, 1](y)
-            )
+        comptime if case .Some(epilogue) = Self.elementwise_lambda_fn:
+            var row, col = divmod(idx, n)
+            epilogue[Self.c_type, 1]((row, col), SIMD[Self.c_type, 1](y))
         else:
             c_ptr[idx] = y
 
@@ -1715,10 +1834,10 @@ struct AppleM5MatMul[
 # === Host-side launchers (standalone for testing) ========================== #
 
 
-@always_inline
+@inline(.always)
 def enqueue_apple_matmul[
     in_type: DType,
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
@@ -1769,11 +1888,11 @@ def enqueue_apple_matmul[
     # param docs), so they're mutually exclusive here. fp32 gets neither
     # (unvalidated).
     comptime use_x2 = transpose_b and (
-        in_type == DType.bfloat16 or in_type == DType.float16
+        in_type == .bfloat16 or in_type == .float16
     )
     comptime block_k = 32 if use_x2 else 16
     comptime k_unroll = 4 if (
-        not use_x2 and (in_type == DType.bfloat16 or in_type == DType.float16)
+        not use_x2 and (in_type == .bfloat16 or in_type == .float16)
     ) else 1
 
     comptime MM = AppleM5MatMul[
@@ -1801,9 +1920,7 @@ def enqueue_apple_matmul[
         )
 
     comptime assert (
-        c_type == DType.float16
-        or c_type == DType.bfloat16
-        or c_type == DType.float32
+        c_type == .float16 or c_type == .bfloat16 or c_type == .float32
     ), "enqueue_apple_matmul: c_type must be one of {fp16, bf16, fp32}"
 
     var m = Int(c.dim[0]())
@@ -1851,7 +1968,7 @@ def enqueue_apple_matmul[
     # normal shapes (many tiles) take the single-pass launch below.
     var tiles = grid_m * grid_n
     var num_strips = ceildiv(k, MM.BK)
-    var route_split_k = force_split_k.value() if force_split_k else (
+    var route_split_k = force_split_k.or_else(
         tiles <= 16 and num_strips >= 32 and num_strips >= 8 * tiles
     )
     if route_split_k:
@@ -1875,8 +1992,8 @@ def enqueue_apple_matmul[
     # it would still get monomorphized (and fail that assert) for every
     # `enqueue_apple_matmul` instantiation, e.g. `c_type=float16`.
     comptime clamp_chain_dtype_ok = (
-        in_type == DType.bfloat16
-        and c_type == DType.float32
+        in_type == .bfloat16
+        and c_type == .float32
         and not elementwise_lambda_fn
         and not transpose_b
     )
@@ -1921,9 +2038,9 @@ def enqueue_apple_matmul[
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,
-        type_of(c).Storage,
-        type_of(a).Storage,
-        type_of(b).Storage,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
     ]
     comptime MM_i32 = AppleM5MatMul[
         in_type,
@@ -1933,15 +2050,15 @@ def enqueue_apple_matmul[
         block_k=block_k,
         use_x2=use_x2,
         k_unroll=k_unroll,
-        linear_idx_type=DType.int32,
+        linear_idx_type=.int32,
     ]
     comptime kernel_i32 = MM_i32.run[
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,
-        type_of(c).Storage,
-        type_of(a).Storage,
-        type_of(b).Storage,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
     ]
     if fits_i32:
         ctx.enqueue_function[kernel_i32](
@@ -1965,10 +2082,10 @@ def enqueue_apple_matmul[
     )
 
 
-@always_inline
+@inline(.always)
 def enqueue_apple_conv2d[
     in_type: DType,
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -2090,21 +2207,20 @@ def enqueue_apple_conv2d[
     # alignment can be lifted to a comptime kernel parameter without a per-shape
     # recompile. `c_aligned` lets the kernel DCE the per-element slow gather on
     # the interior strips (see `_load_a_im2col_fragment_x2`).
-    @__parameter
-    def _launch[c_aligned: Bool]() raises:
+    def _launch[c_aligned: Bool]() raises {imm}:
         comptime kernel = MM.run_conv[
             type_of(c).LayoutType,
             type_of(input).LayoutType,
             type_of(filter_nk).LayoutType,
-            type_of(c).Storage,
-            type_of(input).Storage,
-            type_of(filter_nk).Storage,
+            type_of(c).Engine,
+            type_of(input).Engine,
+            type_of(filter_nk).Engine,
             c_aligned=c_aligned,
         ]
         ctx.enqueue_function[kernel](
             c,
-            input.as_immut(),
-            filter_nk.as_immut(),
+            input.as_imm(),
+            filter_nk.as_imm(),
             conv,
             log2_m,
             log2_n,
@@ -2118,10 +2234,10 @@ def enqueue_apple_conv2d[
         _launch[False]()
 
 
-@always_inline
+@inline(.always)
 def enqueue_apple_matmul_split_k[
     in_type: DType,
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
@@ -2166,11 +2282,11 @@ def enqueue_apple_matmul_split_k[
     # gets the same measured wins as the single-pass kernel instead of
     # comparing an optimized kernel to an unoptimized one.
     comptime use_x2 = transpose_b and (
-        in_type == DType.bfloat16 or in_type == DType.float16
+        in_type == .bfloat16 or in_type == .float16
     )
     comptime block_k = 32 if use_x2 else 16
     comptime k_unroll = 4 if (
-        not use_x2 and (in_type == DType.bfloat16 or in_type == DType.float16)
+        not use_x2 and (in_type == .bfloat16 or in_type == .float16)
     ) else 1
 
     comptime MM = AppleM5MatMul[
@@ -2224,9 +2340,7 @@ def enqueue_apple_matmul_split_k[
     var actual_splits = ceildiv(num_strips, strips_per_split)
     var k_per_split = strips_per_split * MM.BK
 
-    var partials = ctx.enqueue_create_buffer[DType.float32](
-        actual_splits * m * n
-    )
+    var partials = ctx.enqueue_create_buffer[.float32](actual_splits * m * n)
 
     # int32 offsets are only correct if every A/B/partials tile offset fits
     # int32; gate on byte extent (mirrors enqueue_apple_matmul's guard).
@@ -2249,19 +2363,19 @@ def enqueue_apple_matmul_split_k[
         block_k=block_k,
         use_x2=use_x2,
         k_unroll=k_unroll,
-        linear_idx_type=DType.int32,
+        linear_idx_type=.int32,
     ]
     comptime partial_kernel_i64 = MM.run_split_k_partial[
         type_of(a).LayoutType,
         type_of(b).LayoutType,
-        type_of(a).Storage,
-        type_of(b).Storage,
+        type_of(a).Engine,
+        type_of(b).Engine,
     ]
     comptime partial_kernel_i32 = MM_i32.run_split_k_partial[
         type_of(a).LayoutType,
         type_of(b).LayoutType,
-        type_of(a).Storage,
-        type_of(b).Storage,
+        type_of(a).Engine,
+        type_of(b).Engine,
     ]
     if fits_i32:
         ctx.enqueue_function[partial_kernel_i32](
@@ -2286,7 +2400,7 @@ def enqueue_apple_matmul_split_k[
             block_dim=(MM.THREADS_PER_BLOCK),
         )
     comptime reduce_kernel = MM.run_split_k_reduce[
-        type_of(c).LayoutType, type_of(c).Storage
+        type_of(c).LayoutType, type_of(c).Engine
     ]
     var n_elems = m * n
     ctx.enqueue_function[reduce_kernel](
@@ -2300,10 +2414,10 @@ def enqueue_apple_matmul_split_k[
     _ = partials^
 
 
-@always_inline
+@inline(.always)
 def enqueue_apple_matmul_clamp_chain[
     in_type: DType,
-    c_type: DType = DType.float32,
+    c_type: DType = .float32,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[in_type, ...],
@@ -2322,7 +2436,7 @@ def enqueue_apple_matmul_clamp_chain[
     """
     comptime block_k = 16
     comptime k_unroll = 4 if (
-        in_type == DType.bfloat16 or in_type == DType.float16
+        in_type == .bfloat16 or in_type == .float16
     ) else 1
 
     comptime MM = AppleM5MatMul[
@@ -2382,43 +2496,43 @@ def enqueue_apple_matmul_clamp_chain[
         block_k=block_k,
         k_unroll=k_unroll,
         clamp_edge=True,
-        linear_idx_type=DType.int32,
+        linear_idx_type=.int32,
     ]
 
     comptime pass0_i64 = MM.run_chained[
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,
-        type_of(c).Storage,
-        type_of(a).Storage,
-        type_of(b).Storage,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
         seed_from_output=False,
     ]
     comptime pass1_i64 = MM.run_chained[
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,
-        type_of(c).Storage,
-        type_of(a).Storage,
-        type_of(b).Storage,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
         seed_from_output=True,
     ]
     comptime pass0_i32 = MM_i32.run_chained[
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,
-        type_of(c).Storage,
-        type_of(a).Storage,
-        type_of(b).Storage,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
         seed_from_output=False,
     ]
     comptime pass1_i32 = MM_i32.run_chained[
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,
-        type_of(c).Storage,
-        type_of(a).Storage,
-        type_of(b).Storage,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
         seed_from_output=True,
     ]
 

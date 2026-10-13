@@ -21,10 +21,10 @@ timeline entry to the workspace.
 
 
 from std.time.time import global_perf_counter_ns
-from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
-from std.gpu import sm_id
+from max.gpu import sm_id
 
 
 comptime MatmulWarpSpecializationWorkSpaceManager[
@@ -79,24 +79,23 @@ struct BlackwellWarpProfilingWorkspaceManager[
     comptime entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp
 
     @staticmethod
-    @__parameter
     def _get_warp_count[warp_role: UInt32]() -> UInt32:
-        comptime if warp_role == 0:
-            return Self.load_warps
-        elif warp_role == 1:
-            return Self.scheduler_warps
-        elif warp_role == 2:
-            return Self.mma_warps
-        else:
-            return Self.epilogue_warps
+        comptime match warp_role:
+            case 0:
+                return Self.load_warps
+            case 1:
+                return Self.scheduler_warps
+            case 2:
+                return Self.mma_warps
+            case _:
+                return Self.epilogue_warps
 
     @staticmethod
-    @__parameter
     def _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
         return warp_role * Self.max_entries_per_warp
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _get_workspace_offset[
         warp_role: UInt32
     ](sm_idx: UInt32, entry_idx: UInt32) -> UInt32:
@@ -112,19 +111,18 @@ struct BlackwellWarpProfilingWorkspaceManager[
         )
 
     @staticmethod
-    @__parameter
     def _calculate_buffer_length() -> UInt32:
         return (
             UInt32(Self.sm_count) * Self.entries_per_sm * Self.total_data_points
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_workspace(
         ctx: DeviceContext,
     ) raises -> Span[UInt64, MutAnyOrigin]:
         var length = Int(Self._calculate_buffer_length())
-        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](length)
+        var device_buffer = ctx.enqueue_create_buffer[.uint64](length)
         device_buffer.enqueue_fill(0)
         return Span[UInt64, MutAnyOrigin](
             unsafe_ptr=device_buffer.unsafe_ptr().as_unsafe_any_origin(),
@@ -132,7 +130,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def write_to_workspace[
         workspace_origin: MutOrigin, //, warp_role: UInt32
     ](
@@ -157,14 +155,14 @@ struct BlackwellWarpProfilingWorkspaceManager[
             workspace[start_idx + 6] = UInt64(entry_idx)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def dump_workspace_as_csv(
         ctx: DeviceContext,
         workspace: Span[UInt64, MutAnyOrigin],
         filename: StaticString,
     ) raises:
         var length = Int(Self._calculate_buffer_length())
-        var host_buffer = ctx.enqueue_create_host_buffer[DType.uint64](length)
+        var host_buffer = ctx.enqueue_create_host_buffer[.uint64](length)
         ctx.enqueue_copy(host_buffer, workspace)
         ctx.synchronize()
 
@@ -238,7 +236,7 @@ struct BlackwellProfileWarp[
     # which entry is going to be written to the workspace for this warp
     var entry_idx: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         workspace: Span[UInt64, Self.workspace_origin],
@@ -248,12 +246,12 @@ struct BlackwellProfileWarp[
         self.workspace = workspace
         self.entry_idx = entry_idx
 
-    @always_inline
+    @inline(.always)
     def __enter__(mut self):
         comptime if Self.enable_profiling:
             self.timeline[0] = global_perf_counter_ns()
 
-    @always_inline
+    @inline(.always)
     def __exit__(mut self):
         comptime if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()

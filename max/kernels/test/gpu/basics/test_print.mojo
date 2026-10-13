@@ -35,13 +35,11 @@ def test_gpu_print_formattable() raises:
         # Test printing SIMD values
         #
 
-        var simd = SIMD[DType.float64, 4](
-            0.0, -1.0, Float64.MIN, Float64.MAX_FINITE
-        )
+        var simd = SIMD[.float64, 4](0.0, -1.0, Float64.MIN, Float64.MAX_FINITE)
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:45:30
+        # CHECK: test_print.mojo:43:30
         print(source_location())
 
         # ------------------------------
@@ -54,9 +52,9 @@ def test_gpu_print_formattable() raises:
         #   a 16 bit type.
 
         def print_casts(value: Float32):
-            var a = value.cast[DType.float64]()
-            var b = value.cast[DType.bfloat16]()
-            var c = value.cast[DType.bfloat16]().cast[DType.float64]()
+            var a = value.cast[.float64]()
+            var b = value.cast[.bfloat16]()
+            var c = value.cast[.bfloat16]().cast[.float64]()
 
             print("  original fp32:", value)
             print("        => fp64:", a)

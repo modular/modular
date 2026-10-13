@@ -19,12 +19,12 @@ from std.math import ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of
 
-from std.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx, lane_id, warp_id as get_warp_id
+from max.gpu import block_idx, lane_id, warp_id as get_warp_id
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
@@ -40,7 +40,7 @@ from structured_kernels.tile_types import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from std.logger import Logger
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -65,15 +65,12 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    a_scales_tile_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_tile_rank],
-    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -88,14 +85,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     # the kernel's BK.
     b_scaling_block_n: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type,
-        a_scales_tile_rank,
-        a_scales_tile_shape,
-        a_scales_desc_shape,
+        a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     num_iters: Int32,
@@ -107,7 +101,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime accum_type = get_accum_type[a_type]()
 
     comptime assert (
-        b_scales_type == a_scales_type == accum_type == DType.float32
+        b_scales_type == a_scales_type == accum_type == .float32
     ), "Only support float32 for a_scales and b_scales"
 
     comptime N = c_layout.static_shape[1]
@@ -144,7 +138,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
     var a_smem = external_memory[
         Scalar[a_type],
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=128,
         name="tmem_test_dynamic_shared_memory",
     ]().as_unsafe_any_origin()
@@ -457,12 +451,9 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                             )
                         )
 
-                        comptime if elementwise_lambda_fn:
+                        comptime if case .Some(ep) = elementwise_lambda_fn:
                             comptime alignment = align_of[SIMD[c_type, 2]]()
-                            comptime epilogue = elementwise_lambda_fn.value()
-                            epilogue[alignment=alignment](
-                                (Int(m), Int(n)), c_mn
-                            )
+                            ep[alignment=alignment]((Int(m), Int(n)), c_mn)
                         else:
                             c_gmem_frag[m_vec, n_vec] = c_mn
 
@@ -484,15 +475,12 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    a_scales_tile_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_tile_rank],
-    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -503,14 +491,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_scaling_block_n: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type,
-        a_scales_tile_rank,
-        a_scales_tile_shape,
-        a_scales_desc_shape,
+        a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     num_iters: Int32,
@@ -532,13 +517,10 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         c_layout,
         a_scales_layout,
         b_scales_layout,
-        a_tile_rank,
         a_tile_shape,
         a_desc_shape,
-        b_tile_rank,
         b_tile_shape,
         b_desc_shape,
-        a_scales_tile_rank,
         a_scales_tile_shape,
         a_scales_desc_shape,
         block_tile_shape,
@@ -619,11 +601,11 @@ def matmul_sm100_blockwise_scaled_fp8[
     comptime b_scales_type = type_of(b_scales).dtype
 
     comptime assert (
-        a_type == b_type and a_type == DType.float8_e4m3fn
+        a_type == b_type and a_type == .float8_e4m3fn
     ), "Only support float8_e4m3fn"
 
     comptime assert (
-        a_scales_type == b_scales_type and a_scales_type == DType.float32
+        a_scales_type == b_scales_type and a_scales_type == .float32
     ), "Only support float32 for scales"
 
     comptime assert (
@@ -702,13 +684,13 @@ def matmul_sm100_blockwise_scaled_fp8[
     )
 
     var a_tma_op = create_tensor_tile[
-        Index(1, BM, BK),
+        coord[1, BM, BK],
         swizzle_mode=a_swizzle,
     ](ctx, a_3D)
 
-    comptime b_tile_shape = Index(1, BN, BK) if transpose_b else Index(
-        1, BK, BN
-    )
+    comptime b_m = BN if transpose_b else BK
+    comptime b_n = BK if transpose_b else BN
+    comptime b_tile_shape = coord[1, b_m, b_n]
 
     var b_tma_op = create_tensor_tile[
         b_tile_shape,
@@ -716,8 +698,8 @@ def matmul_sm100_blockwise_scaled_fp8[
     ](ctx, b_3D)
 
     var a_scales_tma_op = create_tensor_tile[
-        Index(1, 1, BM),
-        __desc_shape=Index(1, 1, BM),
+        coord[1, 1, BM],
+        __desc_shape=coord[1, 1, BM],
     ](ctx, a_scales_3D)
     # NOTE: desc shape must be specified otherwise a constraint fails
 
@@ -728,7 +710,7 @@ def matmul_sm100_blockwise_scaled_fp8[
     comptime block_dim = 128
 
     var c_kernel = c.as_unsafe_any_origin()
-    var b_scales_kernel = b_scales.as_immut().as_unsafe_any_origin()
+    var b_scales_kernel = b_scales.as_imm().as_unsafe_any_origin()
 
     comptime kernel = matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         a_type,
@@ -740,13 +722,10 @@ def matmul_sm100_blockwise_scaled_fp8[
         type_of(c_kernel).LayoutType,
         type_of(a_scales_3D).LayoutType,
         type_of(b_scales_kernel).LayoutType,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,

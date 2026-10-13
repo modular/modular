@@ -12,15 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext, FuncAttribute
-from std.collections import Optional
 from std.math import ceildiv
 from std.random import rand
-from std.sys import align_of, has_nvidia_gpu_accelerator
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     ComptimeInt,
+    Coord,
     Idx,
     RowMajorLayout,
     TileTensor,
@@ -28,19 +26,16 @@ from layout import (
 )
 from linalg.matmul.gpu import matmul_kernel_naive, multistage_gemm
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
-from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulKernels
-
-from std.utils import IndexList
 
 
 def multistage_gemm_simple[
     M: Int,
     N: Int,
     K: Int,
-    a_type: DType = DType.bfloat16,
-    b_type: DType = DType.bfloat16,
-    c_type: DType = DType.bfloat16,
+    a_type: DType = .bfloat16,
+    b_type: DType = .bfloat16,
+    c_type: DType = .bfloat16,
     transpose_b: Bool = False,
 ](ctx: DeviceContext,) raises:
     comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
@@ -66,9 +61,9 @@ def multistage_gemm_simple[
         b_type,
         b_tt_layout,
         transpose_b,
-        c_linear_idx_type=DType.int64,
-        a_linear_idx_type=DType.int64,
-        b_linear_idx_type=DType.int64,
+        c_linear_idx_type=.int64,
+        a_linear_idx_type=.int64,
+        b_linear_idx_type=.int64,
         config=config,
     ]
 
@@ -93,9 +88,9 @@ def multistage_gemm_fp32_run[
 
     print("M:", M, "N:", N, "K:", K, "use_epilogue:", use_epilogue)
 
-    var a_shape = row_major(Coord(Idx[M], Idx[K]))
-    var b_shape = row_major(Coord(Idx[N], Idx[K]))
-    var c_shape = row_major(Coord(Idx[M], Idx[N]))
+    var a_shape = row_major(Idx[M], Idx[K])
+    var b_shape = row_major(Idx[N], Idx[K])
+    var c_shape = row_major(Idx[M], Idx[N])
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](M * K)
     var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](N * K)
@@ -117,8 +112,8 @@ def multistage_gemm_fp32_run[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 
@@ -127,33 +122,25 @@ def multistage_gemm_fp32_run[
     ctx.enqueue_copy(c_device, c_host_ptr)
     ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
-    @__parameter
-    @always_inline
-    @__copy_capture(c_tensor_lt)
-    def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[store_alignment=alignment](
-            idx, rebind[SIMD[dtype, width]](val)
-        )
+    def compute_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val
 
     # The config the vendor BLAS fallback hardcodes (KERN-1812).
     comptime config = MatmulKernels[
         dtype, dtype, dtype, transpose_b
     ]().ampere_256x64_4
 
-    multistage_gemm[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            epilogue_fn
-        ) if use_epilogue else None,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+    comptime if use_epilogue:
+        multistage_gemm[transpose_b=transpose_b, config=config](
+            c_tensor, a_tensor, b_tensor, compute_fn, ctx
+        )
+    else:
+        multistage_gemm[transpose_b=transpose_b, config=config](
+            c_tensor, a_tensor, b_tensor, ctx
+        )
 
     # cuBLAS rejects these shapes, so the reference is the naive GPU kernel,
     # the same one the vendor BLAS fallback uses for small K.
@@ -203,30 +190,30 @@ def main() raises:
             1024,
             1024,
             1024,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             False,
         ](ctx)
         multistage_gemm_simple[
             1024,
             1024,
             1024,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
+            .bfloat16,
+            .bfloat16,
+            .bfloat16,
             False,
         ](ctx)
 
         multistage_gemm_simple[
-            550, 2048, 8, DType.float32, DType.float32, DType.float32, False
+            550, 2048, 8, .float32, .float32, .float32, False
         ](ctx)
 
         # fp32 C shapes the vectorized store cannot take: an odd N misaligns
         # every other row, and an N that is not a multiple of the block tile
         # leaves the trailing block running past the last column. NVIDIA-only,
         # since only that path vectorizes C along N.
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu():
             # Odd N.
             multistage_gemm_fp32_run[M=20, N=257, K=768](ctx)
             multistage_gemm_fp32_run[M=20, N=257, K=768, use_epilogue=True](ctx)

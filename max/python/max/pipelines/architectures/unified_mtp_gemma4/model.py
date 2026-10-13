@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Module
@@ -42,6 +43,7 @@ from max.pipelines.lib import (
     UnifiedEagleOutputs,
     UnifiedSpecDecodeInputs,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -66,6 +68,7 @@ from ..gemma4.weight_adapters import (
 from ..gemma4_assistant.gemma4_assistant import Gemma4Assistant
 from ..gemma4_assistant.model_config import Gemma4AssistantConfig
 from .batch_processor import UnifiedMTPGemma4BatchProcessor
+from .spec_adapters import GLOBAL_KV
 from .unified_mtp_gemma4 import UnifiedMTPGemma4
 from .weight_adapters import convert_unified_safetensor_state_dict
 
@@ -103,7 +106,7 @@ class UnifiedMTPGemma4Inputs(UnifiedSpecDecodeInputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *self.kv_cache_inputs.flatten(),
+            *tree.leaves(self.kv_cache_inputs),
             *self.batch_context_lengths,
         )
         return prefix + self._spec_decode_tail_buffers(
@@ -139,21 +142,24 @@ class UnifiedMTPGemma4Model(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
             devices,
             kv_cache_config,
             weights,
-            adapter,
+            adapter=adapter,
             return_logits=ReturnLogits.VARIABLE,
             return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+            memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         # Force signal buffer initialization.
@@ -173,7 +179,7 @@ class UnifiedMTPGemma4Model(
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
         self._vision_weights_dict = convert_safetensor_vision_state_dict(
@@ -200,7 +206,7 @@ class UnifiedMTPGemma4Model(
         self, state_dict: dict[str, Any]
     ) -> Gemma4ForConditionalGenerationConfig:
         config = Gemma4ForConditionalGenerationConfig.initialize(
-            self.pipeline_config
+            self.pipeline_config, max_seq_len=self.max_seq_len
         )
         config.finalize(
             huggingface_config=self.huggingface_config,
@@ -259,9 +265,18 @@ class UnifiedMTPGemma4Model(
         spec_cfg = self.pipeline_config.speculative
         assert spec_cfg is not None
 
+        assert isinstance(self._target_sliding_kv_params, KVCacheParams)
+        assert isinstance(self._target_global_kv_params, KVCacheParams)
+        draft = Gemma4Assistant(
+            self._draft_config,
+            target_layer_types=self._target_layer_types,
+            target_sliding_kv_params=self._target_sliding_kv_params,
+            target_global_kv_params=self._target_global_kv_params,
+        )
         nn_model = UnifiedMTPGemma4(
             model_config,
             self._draft_config,
+            draft,
             speculative_config=spec_cfg,
             enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
             use_greedy_acceptance=spec_cfg.use_greedy_acceptance,
@@ -270,14 +285,6 @@ class UnifiedMTPGemma4Model(
         nn_model.target.return_logits = ReturnLogits.VARIABLE
         nn_model.target.return_hidden_states = ReturnHiddenStates.ALL_NORMALIZED
 
-        assert isinstance(self._target_sliding_kv_params, KVCacheParams)
-        assert isinstance(self._target_global_kv_params, KVCacheParams)
-        nn_model.draft = Gemma4Assistant(
-            self._draft_config,
-            target_layer_types=self._target_layer_types,
-            target_sliding_kv_params=self._target_sliding_kv_params,
-            target_global_kv_params=self._target_global_kv_params,
-        )
         # Share the target's embed_tokens for the concat(embed, hidden)
         # input step.  The assistant's own 1024-dim draft_embed_tokens
         # and tied lm_head are loaded from the assistant checkpoint.
@@ -296,85 +303,38 @@ class UnifiedMTPGemma4Model(
         )
         weights_registry = nn_model.state_dict()
 
-        n_devs = len(self.devices)
         with Graph(
             "gemma4_with_mtp_graph",
             input_types=nn_model.input_types(self.kv_params),
             module=module,
         ) as graph:
-            graph_inputs = iter(graph.inputs)
-            tokens = next(graph_inputs)
-            # Vision embeds + scatter indices follow tokens, matching
-            # build_spec_decode_input_types(enable_vision=True).
-            image_embeddings = [
-                next(graph_inputs).tensor for _ in range(n_devs)
-            ]
-            image_token_indices = [
-                next(graph_inputs).tensor for _ in range(n_devs)
-            ]
-            device_input_row_offsets = next(graph_inputs)
-            host_input_row_offsets = next(graph_inputs)
-            return_n_logits = next(graph_inputs)
-            data_parallel_splits = next(graph_inputs)
-            variadic_args = list(graph_inputs)
-
-            variadic_args_iter = iter(variadic_args)
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            # Unflatten the hybrid {sliding, global} KV tree.
-            sliding_kv_collections, global_kv_collections = (
-                self.kv_params.unflatten_basic_kv_tree(variadic_args_iter)
-            )
-
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            draft_tokens = next(variadic_args_iter).tensor
-
-            seed = next(variadic_args_iter).tensor
-            temperature = next(variadic_args_iter).tensor
-            top_k = next(variadic_args_iter).tensor
-            max_k = next(variadic_args_iter).tensor
-            top_p = next(variadic_args_iter).tensor
-            min_top_p = next(variadic_args_iter).tensor
-            in_thinking_phase = next(variadic_args_iter).tensor
-
-            pinned_bitmask_graph = None
-            wait_payload_graph = None
-            device_bitmask_scratch_graph = None
-            if nn_model.enable_structured_output:
-                pinned_bitmask_graph = next(variadic_args_iter).tensor
-                wait_payload_graph = next(variadic_args_iter).buffer
-                device_bitmask_scratch_graph = next(variadic_args_iter).buffer
+            graph_inputs = nn_model.decode_inputs(graph.inputs, self.kv_params)
 
             outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=device_input_row_offsets.tensor,
-                image_embeddings=image_embeddings,
-                image_token_indices=image_token_indices,
-                draft_tokens=draft_tokens,
-                signal_buffers=signal_buffers,
-                sliding_kv_collections=sliding_kv_collections,
-                global_kv_collections=global_kv_collections,
-                return_n_logits=return_n_logits.tensor,
-                host_input_row_offsets=host_input_row_offsets.tensor,
-                data_parallel_splits=data_parallel_splits.tensor,
-                batch_context_lengths=batch_context_lengths,
-                seed=seed,
-                temperature=temperature,
-                top_k=top_k,
-                max_k=max_k,
-                top_p=top_p,
-                min_top_p=min_top_p,
-                in_thinking_phase=in_thinking_phase,
-                pinned_bitmask=pinned_bitmask_graph,
-                wait_payload=wait_payload_graph,
-                device_bitmask_scratch=device_bitmask_scratch_graph,
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                vision_embeddings=graph_inputs.vision_embeddings,
+                vision_scatter_indices=graph_inputs.vision_scatter_indices,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                # The draft cross-attends into the target's sliding cache.
+                kv_collections=graph_inputs.kv("sliding_attention"),
+                draft_kv_collections=graph_inputs.kv("sliding_attention"),
+                passthrough_kv={GLOBAL_KV: graph_inputs.kv("full_attention")},
+                return_n_logits=graph_inputs.return_n_logits,
+                host_input_row_offsets=graph_inputs.host_offsets,
+                data_parallel_splits=graph_inputs.dp_splits,
+                batch_context_lengths=graph_inputs.batch_context_lengths,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
             )
 
             graph.output(*outputs)
@@ -520,14 +480,6 @@ class UnifiedMTPGemma4Model(
             *raw.cu_seqlens,
             *raw.pool_gather_index,
             raw.max_seq_len,
-        )
-
-    @classmethod
-    def calculate_max_seq_len(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        return Gemma4ForConditionalGenerationConfig.calculate_max_seq_len(
-            pipeline_config, huggingface_config
         )
 
     def _convert_draft_weights(

@@ -66,13 +66,7 @@ Example (prefill sweep at N=K=4096):
        max/kernels/benchmarks/misc/bench_amd_matmul.mojo
 """
 
-from std.collections import Optional
-from std.sys import (
-    get_defined_bool,
-    get_defined_dtype,
-    get_defined_int,
-    align_of,
-)
+from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.benchmark import bencher_iter_custom
@@ -116,7 +110,7 @@ comptime SHAPE_ALL = 3
 comptime SHAPE_SINGLE = 4
 
 
-@always_inline
+@inline(.always)
 def _launch_default[
     dtype: DType,
     c_dtype: DType,
@@ -149,7 +143,14 @@ def _launch_default[
         c_dtype,
         True,
         config,
-    ].run[c.LayoutType, a.LayoutType, b.LayoutType]
+    ].run[
+        c.LayoutType,
+        a.LayoutType,
+        b.LayoutType,
+        c.Engine,
+        a.Engine,
+        b.Engine,
+    ]
     ctx.enqueue_function[k](
         c,
         a,
@@ -159,7 +160,7 @@ def _launch_default[
     )
 
 
-@always_inline
+@inline(.always)
 def _kernel_name[kernel_id: Int]() -> String:
     comptime if kernel_id == KERNEL_DEFAULT:
         return "default"
@@ -174,7 +175,7 @@ def _kernel_name[kernel_id: Int]() -> String:
     return "unknown"
 
 
-@always_inline
+@inline(.always)
 def _shape_set_label[shape_set_id: Int]() -> String:
     comptime if shape_set_id == SHAPE_LARGE:
         return "large"
@@ -267,13 +268,20 @@ def _bench_one_kernel[
         # Dummy 1-element workspace for non-split-K kernels — never read.
         split_k_workspace = SplitKWorkspace[num_splits](ctx, 1)
 
-    @__parameter
-    @__copy_capture(
-        cb_a, cb_b, cb_c, shape_c, shape_a, shape_b, split_k_workspace
-    )
-    @always_inline
-    def bench_func(mut b: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_func(
+        mut b: Bencher,
+    ) {
+        var cb_a,
+        var cb_b,
+        var cb_c,
+        var shape_c,
+        var shape_a,
+        var shape_b,
+        var split_k_workspace,
+        imm,
+    }:
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
@@ -332,7 +340,8 @@ def _bench_one_kernel[
         * Int(shape_c[1].value())
         * Int(shape_a[1].value()),
     )
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(
             _get_run_name[
                 dtype,
@@ -391,7 +400,7 @@ def bench_shape[
         Idx[K_static if transpose_b else N_static],
     )
 
-    @always_inline
+    @inline(.always)
     def get_size(shape: Coord) -> Int:
         return Int(shape[0].value()) * Int(shape[1].value())
 
@@ -509,9 +518,9 @@ def _shape_set_m_values(shape_set_id: Int, N: Int, single_M: Int) -> List[Int]:
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.float8_e4m3fn]()
+    comptime dtype = get_defined_dtype["dtype", .float8_e4m3fn]()
     comptime assert (
-        dtype.is_float8() or dtype == DType.bfloat16 or dtype == DType.float16
+        dtype.is_float8() or dtype == .bfloat16 or dtype == .float16
     ), "bench_amd_matmul supports float8_e4m3fn, bfloat16, or float16"
 
     comptime N = get_defined_int["N", 4096]()

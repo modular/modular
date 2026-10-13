@@ -14,7 +14,7 @@
 from std.random import random_float64
 from std.itertools import product
 
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -50,18 +50,18 @@ def stencil_kernel(
     # Allocate shared memory for three 2D planes
     var prev_in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var curr_in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var next_in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # Get thread and block indices (only x and y, no z)
@@ -87,7 +87,7 @@ def stencil_kernel(
         and in_col < N
     ):
         var global_idx = i_prev * N * N + in_row * N + in_col
-        prev_in_s[shared_idx] = Scalar[DType.float32](d_in[global_idx])
+        prev_in_s[shared_idx] = Float32(d_in[global_idx])
 
     # Load curr plane (i_start)
     if (
@@ -99,7 +99,7 @@ def stencil_kernel(
         and in_col < N
     ):
         var global_idx = i_start * N * N + in_row * N + in_col
-        curr_in_s[shared_idx] = Scalar[DType.float32](d_in[global_idx])
+        curr_in_s[shared_idx] = Float32(d_in[global_idx])
 
     barrier()
 
@@ -116,7 +116,7 @@ def stencil_kernel(
             and in_col < N
         ):
             var global_idx = next_z * N * N + in_row * N + in_col
-            next_in_s[shared_idx] = Scalar[DType.float32](d_in[global_idx])
+            next_in_s[shared_idx] = Float32(d_in[global_idx])
 
         barrier()
 

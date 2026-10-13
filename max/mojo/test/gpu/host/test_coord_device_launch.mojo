@@ -61,11 +61,11 @@ def test_coord_field_survives_device_launch() raises:
         var box = CoordBox(
             dims=Coord[Int64, Int64](Int64(11), Int64(22)), tag=33
         )
-        var out_dev = ctx.enqueue_create_buffer[DType.int64](3)
+        var out_dev = ctx.enqueue_create_buffer[.int64](3)
         ctx.enqueue_function[_read_back_kernel](
             box, out_dev.unsafe_ptr(), grid_dim=1, block_dim=1
         )
-        var out_host = ctx.enqueue_create_host_buffer[DType.int64](3)
+        var out_host = ctx.enqueue_create_host_buffer[.int64](3)
         ctx.enqueue_copy(out_host, out_dev)
         ctx.synchronize()
         # The `Coord` field transferred intact through the launch boundary.

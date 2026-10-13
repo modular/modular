@@ -11,19 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Host-side pins for the MLA decode split-K partition choice.
+"""Host-side pins for the MLA decode split-K partition choice and the runtime
+head-count binding that reaches it.
 
 The split count is numerically inert: every bucket reduces to the same answer,
 so choosing a worse one costs wall time and nothing else. No GPU test can see
-that, which leaves the policy free to drift silently. These pins assert the
-decision itself, on the host, where it is just arithmetic.
+that, which leaves the policy free to drift silently. The binding is invisible
+for the opposite reason -- the GPU tests instantiate the comptime dispatch
+directly and never cross the runtime enumeration at all. These pins assert both
+decisions on the host, where they are just arithmetic.
 """
+
+from std.math import ceildiv
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     _NUM_PARTITION_BUCKETS,
     _bucket_num_partitions,
     _compute_num_partitions,
     _get_partition_bucket,
+    compute_mla_dispatch_scalars,
+    compute_mla_dispatch_scalars_runtime,
 )
 
 comptime SM_COUNT = 148
@@ -319,9 +326,204 @@ def test_multi_head_group_ignores_the_cost_model() raises:
                 )
 
 
+# Every head count `compute_mla_dispatch_scalars_runtime` enumerates.
+comptime _RUNTIME_HEAD_COUNTS = [8, 12, 16, 24, 32, 48, 64, 128]
+
+
+def _probe_shapes() -> List[Tuple[Int, Int, Int]]:
+    """`(batch, cache, q)` triples that spread the head counts apart.
+
+    Within one head group `num_heads` reaches the split count only through the
+    spec-decode fold predicate `num_heads * q <= 64`, so every count collapses
+    onto the same answer at `q = 1` and a decode-shaped probe would pin
+    nothing. The last shape is the one where `is_fp8_kv` moves the np=1 clamp.
+    """
+    return [
+        (4, 8192, 4),
+        (8, 8192, 2),
+        (2, 8192, 8),
+        (4, 8192, 5),
+        (64, 256, 1),
+    ]
+
+
+def _comptime_np_table[is_fp8_kv: Bool]() -> List[Int]:
+    """Split count per (head count, probe shape), head-count major."""
+    var shapes = _probe_shapes()
+    var table = List[Int]()
+    comptime for num_heads in _RUNTIME_HEAD_COUNTS:
+        for si in range(len(shapes)):
+            table.append(
+                compute_mla_dispatch_scalars[num_heads, is_fp8_kv=is_fp8_kv](
+                    shapes[si][0], shapes[si][1], shapes[si][2], SM_COUNT
+                )[2]
+            )
+    return table^
+
+
+def _head_counts() -> List[Int]:
+    """`_RUNTIME_HEAD_COUNTS` as a runtime list, for the pairwise sweep."""
+    var out = List[Int]()
+    comptime for num_heads in _RUNTIME_HEAD_COUNTS:
+        out.append(num_heads)
+    return out^
+
+
+def _expect_at(
+    what: StringLiteral,
+    num_heads: Int,
+    is_fp8_kv: Bool,
+    shape: Tuple[Int, Int, Int],
+    got: Int,
+    want: Int,
+) raises:
+    if got != want:
+        raise Error(
+            what,
+            " at num_heads=",
+            num_heads,
+            " is_fp8_kv=",
+            is_fp8_kv,
+            " (batch=",
+            shape[0],
+            " cache=",
+            shape[1],
+            " q=",
+            shape[2],
+            "): got ",
+            got,
+            ", want ",
+            want,
+        )
+
+
+def test_runtime_binding_matches_its_own_specialization() raises:
+    """The runtime entry point hand-writes one arm per head count, and nothing
+    else checks that an arm forwards to the specialization it names.
+
+    The GPU tests cannot: they build `MLADispatchScalarArgs[num_heads=...]`,
+    which calls `compute_mla_dispatch_scalars` at comptime and never crosses
+    the runtime enumeration. A copy-paste slip binding a count to a
+    neighbour's instantiation would leave them all green.
+    """
+    var shapes = _probe_shapes()
+    comptime for is_fp8_kv in [False, True]:
+        var want = _comptime_np_table[is_fp8_kv]()
+        var i = 0
+        comptime for num_heads in _RUNTIME_HEAD_COUNTS:
+            for si in range(len(shapes)):
+                var shape = shapes[si]
+                var got = compute_mla_dispatch_scalars_runtime(
+                    shape[0], shape[1], shape[2], num_heads, is_fp8_kv, SM_COUNT
+                )
+                _expect_at(
+                    "batch_size", num_heads, is_fp8_kv, shape, got[0], shape[0]
+                )
+                _expect_at(
+                    "q_max_seq_len",
+                    num_heads,
+                    is_fp8_kv,
+                    shape,
+                    got[1],
+                    shape[2],
+                )
+                _expect_at(
+                    "num_partitions",
+                    num_heads,
+                    is_fp8_kv,
+                    shape,
+                    got[2],
+                    want[i],
+                )
+                i += 1
+
+
+def _separable_in_principle(a: Int, b: Int) -> Bool:
+    """Whether any input at all can tell two head counts apart.
+
+    Across head groups `ceildiv(num_heads, 64)` scales the CTA count. Within
+    one, `num_heads` reaches the split count only through the fold predicate
+    `num_heads * q <= 64`, so two counts on the same side of it for every `q`
+    return identical metadata for every input, forever. Beyond `q = 64` both
+    products exceed 64 for any positive count, so the sweep is exhaustive.
+    """
+    if ceildiv(a, 64) != ceildiv(b, 64):
+        return True
+    for q in range(1, 65):
+        if (a * q <= 64) != (b * q <= 64):
+            return True
+    return False
+
+
+def test_the_binding_pin_is_not_vacuous() raises:
+    """Shapes that map every head count onto one answer would pass the pin
+    above whatever the arms are bound to.
+
+    So hold the probe set to the separation the heuristic actually admits:
+    every pair it can tell apart, these shapes must tell apart. The pairs it
+    cannot -- 24/32 and 48/64, which sit on the same side of the fold predicate
+    for every `q` -- must stay indistinguishable, or the reasoning in
+    `_separable_in_principle` has gone stale. A mis-binding within such a pair
+    returns identical metadata for every input and is unobservable here.
+    """
+    var shapes = _probe_shapes()
+    var n = len(shapes)
+    var bf16 = _comptime_np_table[False]()
+    var fp8 = _comptime_np_table[True]()
+
+    var fp8_matters = False
+    for i in range(len(bf16)):
+        if bf16[i] != fp8[i]:
+            fp8_matters = True
+    if not fp8_matters:
+        raise Error(
+            "no probe shape separates is_fp8_kv, so the fp8 half of the"
+            " binding pin proves nothing"
+        )
+
+    var counts = _head_counts()
+    for a in range(len(counts)):
+        for b in range(a + 1, len(counts)):
+            var separated = False
+            for si in range(n):
+                if (
+                    bf16[a * n + si] != bf16[b * n + si]
+                    or fp8[a * n + si] != fp8[b * n + si]
+                ):
+                    separated = True
+            var expected = _separable_in_principle(counts[a], counts[b])
+            if separated != expected:
+                raise Error(
+                    "num_heads=",
+                    counts[a],
+                    " vs ",
+                    counts[b],
+                    ": probe shapes ",
+                    "separate" if separated else "do not separate",
+                    " them, but the heuristic ",
+                    "can" if expected else "cannot",
+                )
+
+
+def test_unenumerated_head_count_raises() raises:
+    """The enumeration is deliberately partial, so the fall-through is a
+    supported outcome and has to stay an error rather than a silent answer.
+    """
+    var raised = False
+    try:
+        _ = compute_mla_dispatch_scalars_runtime(1, 1024, 1, 7, False, SM_COUNT)
+    except:
+        raised = True
+    if not raised:
+        raise Error("unenumerated num_heads=7 returned instead of raising")
+
+
 def main() raises:
     test_bucket_tables_agree()
     test_every_split_has_a_combine_kernel()
     test_cost_model_split_is_pinned()
     test_multi_head_group_ignores_the_cost_model()
+    test_runtime_binding_matches_its_own_specialization()
+    test_the_binding_pin_is_not_vacuous()
+    test_unenumerated_head_count_raises()
     print("split policy pins OK")

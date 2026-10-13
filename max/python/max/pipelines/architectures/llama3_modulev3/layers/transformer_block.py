@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.attention import AttentionWithRope
 from max.experimental.tensor import Tensor
@@ -60,19 +59,13 @@ class LlamaTransformerBlock(Module[..., Tensor]):
         )
 
         if self.residual_multiplier != 1.0:
-            multiplier = F.constant(
-                self.residual_multiplier, x.dtype, device=x.device
-            )
-            attn_out = attn_out * multiplier
+            attn_out = attn_out * float(self.residual_multiplier)
 
         h = x + attn_out
 
         mlp_out = self.mlp(self.post_attention_layernorm(h))
 
         if self.residual_multiplier != 1.0:
-            multiplier = F.constant(
-                self.residual_multiplier, x.dtype, device=x.device
-            )
-            mlp_out = mlp_out * multiplier
+            mlp_out = mlp_out * float(self.residual_multiplier)
 
         return h + mlp_out

@@ -18,6 +18,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 
+from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
@@ -28,13 +29,14 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import LayerNorm, RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
+from max.graph import ops
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.mlp import LlamaStackedMLP
 from .layers.rotary_embedding import (
@@ -46,7 +48,7 @@ from .model_config import Llama3Config
 
 
 class Llama3TextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[[Tensor, PagedCacheValues, Tensor, Tensor], ModuleV3Outputs]
 ):
     """The Llama3 language model.
 
@@ -175,13 +177,11 @@ class Llama3TextModel(
         kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * F.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         # Run through transformer layers.
         for idx, layer in enumerate(self.layers):
@@ -216,7 +216,7 @@ class Llama3TextModel(
             logits = self._compute_logits(self.norm(last_tokens))
             offsets = ops.range(
                 0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 device=h.device,
@@ -231,20 +231,21 @@ class Llama3TextModel(
             if logits is not None:
                 logits = logits / self.logits_scaling
 
-        ret_val: tuple[Tensor, ...] = (last_logits,)
-        if offsets is not None:
-            assert logits is not None
-            ret_val += (logits, offsets)
-
+        hidden_states = None
         if self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_h,)
+            hidden_states = last_h
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            ret_val += (self.norm(h),)
+            hidden_states = self.norm(h)
 
-        return ret_val
+        return ModuleV3Outputs(
+            next_token_logits=last_logits,
+            logits=logits,
+            logit_offsets=offsets,
+            hidden_states=hidden_states,
+        )
 
 
-class Llama3(Module[..., tuple[Tensor, ...]]):
+class Llama3(Module[..., ModuleV3Outputs]):
     """The Llama3 model.
 
     Top-level wrapper that unflattens the variadic KV cache arguments
@@ -267,11 +268,12 @@ class Llama3(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(symbolic_inputs, KVCacheInputs)
-        kv_collections = symbolic_inputs.inputs
+        kv_collections = tree.leaves(
+            symbolic_inputs, leaf=KVCacheInputsPerDevice
+        )
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets
         )

@@ -103,20 +103,26 @@ def app(
 ) -> FastAPI:
     """The FastAPI app used to serve the model."""
 
-    pipeline_task = PipelineTask.TEXT_GENERATION
-    if pipeline_config.model_path == "sentence-transformers/all-mpnet-base-v2":
-        pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
+    pipeline_task = pipeline_config.task
+    if pipeline_task == PipelineTask.UNDEFINED:
+        pipeline_task = PipelineTask.TEXT_GENERATION
+        if (
+            pipeline_config.model_path
+            == "sentence-transformers/all-mpnet-base-v2"
+        ):
+            pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
     pipeline_cfg = PipelineConfig.from_args(pipeline_config)
-    tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+    retrieved = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_cfg, task=pipeline_task
     )
 
     serving_settings = ServingTokenGeneratorSettings(
-        model_factory=pipeline_factory,
+        model_factory=retrieved.factory,
         pipeline_config=pipeline_cfg,
-        tokenizer=tokenizer,
+        tokenizer=retrieved.tokenizer,
         task=pipeline_task,
+        memory_plan=retrieved.memory_plan,
     )
 
     settings = Settings(**settings_config)

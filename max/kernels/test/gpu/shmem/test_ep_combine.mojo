@@ -22,7 +22,7 @@ from std.random import randint, randn, seed
 from std.sys import argv, size_of
 
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import TileTensor, Idx
+from layout import Coord, TileTensor, Idx
 from layout.tile_layout import row_major
 from std.memory import Pointer
 from shmem import *
@@ -35,6 +35,7 @@ from shmem.ep_comm import (
     dispatch_async_kernel,
 )
 from std.testing import assert_equal
+from std.utils.index import IndexList
 
 
 def is_benchmark() -> Bool:
@@ -51,7 +52,7 @@ def is_pressure_test() -> Bool:
     return False
 
 
-@always_inline
+@inline(.always)
 def welford_update(
     mut mean: Float64, mut m2: Float64, count: Int, new_value: Float64
 ):
@@ -120,17 +121,15 @@ def test_combine[
             n_tokens_per_rank,
         )
 
-    var send_buf = shmem_malloc[DType.uint8](
-        top_k * n_tokens_per_rank * msg_bytes
-    )
-    var recv_buf = shmem_malloc[DType.uint8](
+    var send_buf = shmem_malloc[.uint8](top_k * n_tokens_per_rank * msg_bytes)
+    var recv_buf = shmem_malloc[.uint8](
         n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
     )
-    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
+    var recv_count = shmem_malloc[.uint64](n_local_experts * n_ranks)
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
-    var atomic_counter = ctx.enqueue_create_buffer[DType.int32](
+    var atomic_counter = ctx.enqueue_create_buffer[.int32](
         EPLocalSyncCounters[n_experts].total_size()
     )
 
@@ -142,7 +141,7 @@ def test_combine[
         n_tokens_per_rank * hidden_size
     )
 
-    var device_topk_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_topk_buf = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * top_k
     )
     var device_input_buf = ctx.enqueue_create_buffer[input_type](
@@ -151,13 +150,13 @@ def test_combine[
     var device_output_buf = ctx.enqueue_create_buffer[input_type](
         n_tokens_per_rank * n_ranks * n_local_experts * hidden_size
     )
-    var device_row_offsets_buf = ctx.enqueue_create_buffer[DType.uint32](
+    var device_row_offsets_buf = ctx.enqueue_create_buffer[.uint32](
         n_local_experts + 1
     )
-    var device_expert_ids_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_expert_ids_buf = ctx.enqueue_create_buffer[.int32](
         n_local_experts
     )
-    var device_src_token_info_buf = ctx.enqueue_create_buffer[DType.int32](
+    var device_src_token_info_buf = ctx.enqueue_create_buffer[.int32](
         n_tokens_per_rank * n_ranks * n_local_experts * 2
     )
 
@@ -239,16 +238,26 @@ def test_combine[
     var func_combine_async = ctx.compile_function[combine_async]()
     shmem_module_init(func_combine_async)
 
+    @inline(.always)
+    @__parameter
+    @__copy_capture(output_2_tensor)
+    def store_output_2[
+        dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
+    ](coords: IndexList[rank], val: SIMD[dtype, width]):
+        output_2_tensor.store[
+            width=width, alignment=alignment * size_of[dtype]()
+        ](Coord(coords), rebind[SIMD[input_type, width]](val))
+
     comptime combine_wait = combine_wait_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        output_2_tensor.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
         n_ranks,
         combine_msg_bytes,
         n_tokens_per_rank,
+        store_output_2,
     ]
     var func_combine_async_wait = ctx.compile_function[combine_wait]()
 
@@ -260,9 +269,8 @@ def test_combine[
     var e2e_stat_m: Float64 = 0
     var e2e_stat_m2: Float64 = 0
 
-    @always_inline
-    @__parameter
-    def run_full_dispatch(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_full_dispatch(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [recv_buf]
         var recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [
@@ -296,9 +304,8 @@ def test_combine[
         )
         shmem_barrier_all_on_stream(ctx.stream())
 
-    @always_inline
-    @__parameter
-    def run_combine_async(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_combine_async(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var combine_recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [
             send_buf
@@ -309,8 +316,8 @@ def test_combine[
 
         ctx.enqueue_function(
             func_combine_async,
-            output_tensor.as_immut(),
-            src_token_info_tensor.as_immut(),
+            output_tensor.as_imm(),
+            src_token_info_tensor.as_imm(),
             recv_buf,
             combine_recv_buf_ptrs,
             combine_recv_count_ptrs,
@@ -320,12 +327,13 @@ def test_combine[
             block_dim=hw_info.max_thread_block_size,
         )
 
-    @always_inline
-    @__parameter
-    def run_combine_async_wait(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_combine_async_wait(
+        ctx: DeviceContext,
+    ) raises {var atomic_counter, imm}:
         ctx.enqueue_function(
             func_combine_async_wait,
-            output_2_tensor,
+            Int32(n_tokens_per_rank),
             send_buf,
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
@@ -334,9 +342,8 @@ def test_combine[
             block_dim=hw_info.max_thread_block_size,
         )
 
-    @always_inline
-    @__parameter
-    def run_e2e(ctx: DeviceContext) raises:
+    @inline(.always)
+    def run_e2e(ctx: DeviceContext) raises {imm}:
         run_combine_async(ctx)
         run_combine_async_wait(ctx)
 
@@ -364,7 +371,7 @@ def test_combine[
 
         # First, bench kernel overhead
         run_full_dispatch(ctx)
-        new_value = Float64(ctx.execution_time[run_combine_async](1)) * 1e-3
+        new_value = Float64(ctx.execution_time(run_combine_async, 1)) * 1e-3
         welford_update(
             combine_async_stat_m, combine_async_stat_m2, i + 1, new_value
         )
@@ -373,7 +380,7 @@ def test_combine[
         std.time.sleep(1e-2)
 
         new_value = (
-            Float64(ctx.execution_time[run_combine_async_wait](1)) * 1e-3
+            Float64(ctx.execution_time(run_combine_async_wait, 1)) * 1e-3
         )
         welford_update(
             combine_wait_stat_m, combine_wait_stat_m2, i + 1, new_value
@@ -382,7 +389,7 @@ def test_combine[
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
         run_full_dispatch(ctx)
-        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
+        new_value = Float64(ctx.execution_time(run_e2e, 1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 
@@ -436,7 +443,7 @@ def main() raises:
     comptime test_gpu_counts = (8,)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
-        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 

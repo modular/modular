@@ -22,14 +22,12 @@ Target: Apple silicon M5 (compute_capability == 5), bf16/fp16.
 Run with: `mojo max/kernels/test/gpu/nn/test_conv2d_im2col_apple.mojo`.
 """
 
-from std.math import ceildiv, round
+from std.math import round
 
 from layout import (
     Coord,
-    Idx,
     LTToTTLayout,
     Layout,
-    LayoutTensor,
     TileTensor,
     row_major,
 )
@@ -49,7 +47,7 @@ from std.utils.index import Index, IndexList
 # Opaque identity barrier: keep the conv dims runtime-valued so the fused-conv
 # kernel is JIT-compiled with full dynamic index math (no static-shape constant
 # folding) -- the exact instantiation FLUX.2's [dyn,dyn,dyn,*] conv hits.
-@no_inline
+@inline(.never)
 def _dyn(x: Int) -> Int:
     return x
 
@@ -92,35 +90,31 @@ def test_conv2d_fused_apple_dynamic_round(
     var filter_size = R * S * C_in * C_out
     var output_size = batch * H_out * W_out * C_out
 
-    var input_host = ctx.enqueue_create_host_buffer[DType.bfloat16](input_size)
-    var filter_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        filter_size
-    )
-    var output_gpu_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
-        output_size
-    )
+    var input_host = ctx.enqueue_create_host_buffer[.bfloat16](input_size)
+    var filter_host = ctx.enqueue_create_host_buffer[.bfloat16](filter_size)
+    var output_gpu_host = ctx.enqueue_create_host_buffer[.bfloat16](output_size)
     ctx.synchronize()
 
     for i in range(input_size):
         var t = Float64(i % 17) / 17.0
-        input_host[i] = Scalar[DType.bfloat16](t * 1.0 - 0.5)
+        input_host[i] = BFloat16(t * 1.0 - 0.5)
     for i in range(filter_size):
         var t = Float64(i % 13) / 13.0
-        filter_host[i] = Scalar[DType.bfloat16](t * 0.5 - 0.25)
+        filter_host[i] = BFloat16(t * 0.5 - 0.25)
 
-    var input_dev = ctx.enqueue_create_buffer[DType.bfloat16](input_size)
-    var filter_dev = ctx.enqueue_create_buffer[DType.bfloat16](filter_size)
-    var output_dev = ctx.enqueue_create_buffer[DType.bfloat16](output_size)
+    var input_dev = ctx.enqueue_create_buffer[.bfloat16](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[.bfloat16](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[.bfloat16](output_size)
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
     # Dynamic (runtime-shaped) NHWC input + RSCF filter + NHWC output.
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), row_major(batch, H, W, C_in)
-    ).as_immut()
+    ).as_imm()
     var filter_tt = TileTensor(
         filter_dev.unsafe_ptr(), row_major(R, S, C_in, C_out)
-    ).as_immut()
+    ).as_imm()
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), row_major(batch, H_out, W_out, C_out)
     )
@@ -131,21 +125,25 @@ def test_conv2d_fused_apple_dynamic_round(
     var C_out_i = C_out
 
     @__parameter
-    @always_inline
+    @inline(.always)
     @__copy_capture(out_ptr, W_out_i, HW_out_i, C_out_i)
     def round_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         # FLUX conv_out-style tail: scale, shift, clamp to [0,255], round.
-        var x = val.cast[DType.float32]()
+        var x = val.cast[.float32]()
         x = x * 8.0 + 4.0
         x = max(x, 0.0)
         x = min(x, 255.0)
         x = round(x)
         var y = x.cast[_dtype]()
-        var b = rebind[IndexList[4]](coords)
-        var flat = (b[0] * HW_out_i + b[1] * W_out_i + b[2]) * C_out_i + b[3]
-        (out_ptr + flat).store(rebind[SIMD[DType.bfloat16, _width]](y))
+        comptime assert coords.rank == 4
+        var flat = (
+            Int(coords[0].value()) * HW_out_i
+            + Int(coords[1].value()) * W_out_i
+            + Int(coords[2].value())
+        ) * C_out_i + Int(coords[3].value())
+        (out_ptr + flat).store(rebind[SIMD[.bfloat16, _width]](y))
 
     var handled = dispatch_fused_im2col_conv2d_apple[
         maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
@@ -310,7 +308,9 @@ def test_conv2d_im2col_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var output_lt = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
+    var output_tt_store = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
+    )
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -325,17 +325,17 @@ def test_conv2d_im2col_direct[
     comptime if with_epilogue:
 
         @__parameter
-        @always_inline
-        @__copy_capture(output_lt)
+        @inline(.always)
+        @__copy_capture(output_tt_store)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
+            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
+            output_tt_store.store[
+                width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                rebind[IndexList[4]](coords),
-                rebind[SIMD[dtype, _width]](scaled),
+                coords,
+                scaled,
             )
 
         handled = dispatch_im2col_matmul_conv2d[
@@ -470,7 +470,9 @@ def test_conv2d_fused_apple[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var output_lt = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
+    var output_tt_store = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
+    )
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -485,17 +487,17 @@ def test_conv2d_fused_apple[
     comptime if with_epilogue:
 
         @__parameter
-        @always_inline
-        @__copy_capture(output_lt)
+        @inline(.always)
+        @__copy_capture(output_tt_store)
         def scale_epilogue[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
+            var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
+            output_tt_store.store[
+                width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                rebind[IndexList[4]](coords),
-                rebind[SIMD[dtype, _width]](scaled),
+                coords,
+                scaled,
             )
 
         handled = dispatch_fused_im2col_conv2d_apple[
@@ -628,7 +630,9 @@ def test_conv2d_gpu_dispatch[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var output_lt = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
+    var output_tt_store = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
+    )
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -640,17 +644,17 @@ def test_conv2d_gpu_dispatch[
     )
 
     @__parameter
-    @always_inline
-    @__copy_capture(output_lt)
+    @inline(.always)
+    @__copy_capture(output_tt_store)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
-        var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
-        output_lt.store[
-            width=_width, store_alignment=align_of[dtype]() * _alignment
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
+        var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
+        output_tt_store.store[
+            width=_width, alignment=align_of[dtype]() * _alignment
         ](
-            rebind[IndexList[4]](coords),
-            rebind[SIMD[dtype, _width]](scaled),
+            coords,
+            scaled,
         )
 
     conv_gpu[

@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, thread_idx, WARP_SIZE
+from max.gpu import block_idx, thread_idx, WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
-from std.gpu.primitives.id import lane_id, warp_id
-from std.gpu.primitives.warp import shuffle_up
+from max.gpu.primitives.id import lane_id, warp_id
+from max.gpu.primitives.warp import shuffle_up
 
 from std.math import abs
 from std.atomic import Atomic
@@ -73,12 +73,12 @@ def test_interblock_scan(
     var warp_sums = unsafe_stack_allocation[
         NUM_WARPS,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var prev_block_sum_ptr = unsafe_stack_allocation[
         1,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Block-level scan using warp primitives
@@ -178,7 +178,7 @@ def main() raises:
         var d_input = ctx.enqueue_create_buffer[dtype](N)
         var d_output = ctx.enqueue_create_buffer[dtype](N)
         var d_partial_sums = ctx.enqueue_create_buffer[dtype](num_blocks)
-        var d_flags = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
+        var d_flags = ctx.enqueue_create_buffer[.uint32](num_blocks)
 
         # Copy data to device and initialize flags to 0
         ctx.enqueue_copy(d_input, h_input)

@@ -57,8 +57,7 @@ from std.benchmark import (
 from std.random import rand
 
 from max.benchmark import bencher_iter_custom
-from max.gpu.host import DeviceContext, get_gpu_target
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import PDLLevel
 
 from internal_utils import CacheBustingBuffer, arg_parse
@@ -109,9 +108,9 @@ def bench_rms_norm_gemm_pdl[
         b: Benchmark harness.
         ctx: Device context.
     """
-    comptime assert dtype == DType.bfloat16, "this bench is bf16-only"
+    comptime assert dtype == .bfloat16, "this bench is bf16-only"
 
-    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=ctx.target]()
     comptime MMA_K = 16
 
     comptime gemm_config_off = MatmulConfig[dtype, dtype, dtype, True](
@@ -178,13 +177,11 @@ def bench_rms_norm_gemm_pdl[
     ctx.enqueue_copy(a_raw_dev, a_host)
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    var a_raw = TileTensor(a_raw_dev, row_major(Coord(num_rows, Idx[num_cols])))
-    var a_normed = TileTensor(
-        a_normed_dev, row_major(Coord(num_rows, Idx[num_cols]))
-    )
-    var gamma = TileTensor(gamma_dev, row_major(Coord(Idx[num_cols])))
-    var c_out = TileTensor(c_dev, row_major(Coord(num_rows, Idx[gemm_n])))
-    var c_ref = TileTensor(c_ref_dev, row_major(Coord(num_rows, Idx[gemm_n])))
+    var a_raw = TileTensor(a_raw_dev, row_major(num_rows, Idx[num_cols]))
+    var a_normed = TileTensor(a_normed_dev, row_major(num_rows, Idx[num_cols]))
+    var gamma = TileTensor(gamma_dev, row_major(Idx[num_cols]))
+    var c_out = TileTensor(c_dev, row_major(num_rows, Idx[gemm_n]))
+    var c_ref = TileTensor(c_ref_dev, row_major(num_rows, Idx[gemm_n]))
     var norm_shape = Index(num_rows, num_cols)
 
     # `[N, K]` (transpose_b) with BOTH dims static, as the SM100 kernel needs.
@@ -192,17 +189,17 @@ def bench_rms_norm_gemm_pdl[
     # each iteration streams cold weights -- the cost the prefetch must hide.
     comptime WeightType = TileTensor[
         dtype,
-        type_of(row_major(Coord(Idx[gemm_n], Idx[num_cols]))),
+        type_of(row_major(Idx[gemm_n], Idx[num_cols])),
         ImmutAnyOrigin,
     ]
 
-    @always_inline
-    @__copy_capture(a_raw)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        return a_raw.raw_load[width=width](a_raw.layout(coords))
+    comptime ARawType = type_of(a_raw)
+    comptime ANormedType = type_of(a_normed)
+    comptime GammaType = type_of(gamma)
+    comptime CBWeightsType = type_of(cb_weights)
+    comptime NormShapeType = type_of(norm_shape)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(a_normed)
     @__parameter
     def output_fn[
@@ -212,8 +209,7 @@ def bench_rms_norm_gemm_pdl[
             a_normed.layout(coords), val
         )
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def run_pair[
         norm_pdl: PDLLevel,
         gemm_pdl: PDLLevel,
@@ -223,8 +219,21 @@ def bench_rms_norm_gemm_pdl[
     ](
         ctx_inner: DeviceContext,
         cache_iter: Int,
-        c_tile: TileTensor[mut=True, dtype, ...],
-    ) raises:
+        mut c_tile: TileTensor[mut=True, dtype, ...],
+        a_raw: ARawType,
+        a_normed: ANormedType,
+        mut cb_weights: CBWeightsType,
+        gamma: GammaType,
+        epsilon: Float32,
+        weight_offset: Scalar[dtype],
+        norm_shape: NormShapeType,
+    ) raises {}:
+        @inline(.always)
+        @__copy_capture(a_raw)
+        @__parameter
+        def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+            return a_raw.raw_load[width=width](a_raw.layout(coords))
+
         comptime if not gemm_only:
             rms_norm_gpu[
                 2,
@@ -244,10 +253,10 @@ def bench_rms_norm_gemm_pdl[
                 c_tile,
                 a_normed,
                 WeightType(
-                    rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                         cb_weights.offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Idx[gemm_n], Idx[num_cols])),
+                    row_major(Idx[gemm_n], Idx[num_cols]),
                 ),
                 ctx_inner,
             )
@@ -256,7 +265,18 @@ def bench_rms_norm_gemm_pdl[
     # loads, never arithmetic, so the GEMM output must be BIT-identical across
     # all variants. If this diverges, the GEMM is reading the norm's output
     # before it is written and every timing below is meaningless. ---
-    run_pair[PDLLevel.OFF, PDLLevel.OFF, False](ctx, 0, c_ref)
+    run_pair[PDLLevel.OFF, PDLLevel.OFF, False](
+        ctx,
+        0,
+        c_ref,
+        a_raw,
+        a_normed,
+        cb_weights,
+        gamma,
+        epsilon,
+        weight_offset,
+        norm_shape,
+    )
     ctx.synchronize()
     var want = List[Scalar[dtype]](unsafe_uninit_length=c_elems)
     ctx.enqueue_copy(want, c_ref_dev)
@@ -267,7 +287,18 @@ def bench_rms_norm_gemm_pdl[
             PDLLevel.OVERLAP_AT_END if v <= 2 else PDLLevel.OVERLAP_AT_BEGINNING
         )
         comptime use_pf = v == 2 or v == 4
-        run_pair[norm_pdl, PDLLevel.ON, use_pf](ctx, 0, c_out)
+        run_pair[norm_pdl, PDLLevel.ON, use_pf](
+            ctx,
+            0,
+            c_out,
+            a_raw,
+            a_normed,
+            cb_weights,
+            gamma,
+            epsilon,
+            weight_offset,
+            norm_shape,
+        )
         ctx.synchronize()
         var got = List[Scalar[dtype]](unsafe_uninit_length=c_elems)
         ctx.enqueue_copy(got, c_dev)
@@ -319,23 +350,44 @@ def bench_rms_norm_gemm_pdl[
             == 5 else "gemm_only"
         )
 
-        @__parameter
-        @always_inline
-        def bench_fn(mut bench: Bencher) raises:
-            @__parameter
-            @always_inline
-            def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-                run_pair[
-                    norm_pdl,
-                    gemm_pdl,
-                    use_pf,
-                    norm_only=v == 5,
-                    gemm_only=v == 6,
-                ](ctx_inner, cache_iter, c_out)
+        @inline(.always)
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {
+            mut c_out,
+            mut cb_weights,
+            imm a_raw,
+            imm a_normed,
+            imm gamma,
+            var epsilon,
+            var weight_offset,
+            var norm_shape,
+        }:
+            run_pair[
+                norm_pdl,
+                gemm_pdl,
+                use_pf,
+                norm_only=v == 5,
+                gemm_only=v == 6,
+            ](
+                ctx_inner,
+                cache_iter,
+                c_out,
+                a_raw,
+                a_normed,
+                cb_weights,
+                gamma,
+                epsilon,
+                weight_offset,
+                norm_shape,
+            )
 
-            bencher_iter_custom[call_fn](bench, ctx)
+        @inline(.always)
+        def bench_fn(mut bench: Bencher) raises {imm}:
+            bencher_iter_custom(bench, call_fn, ctx)
 
-        b.bench_function[bench_fn](
+        b.bench_function(
+            bench_fn,
             BenchId(vname, input_id=bench_prefix),
             [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
         )
@@ -355,7 +407,7 @@ def bench_rms_norm_gemm_pdl[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_cols = get_defined_int["num_cols", 6144]()
     comptime gemm_n = get_defined_int["gemm_n", 2624]()
     comptime mma_m = get_defined_int["mma_m", 128]()

@@ -110,7 +110,7 @@ if [[ "${{MODULAR_SYSTEM_LLDB:-}}" == "1" ]]; then
 fi
 
 if [[ "${{MODULAR_VSCODE_DEBUG:-}}" == "1" ]]; then
-  env {pairs} MODULAR_HOME=$PWD/.derived bazel-bin/KGEN/tools/mojo/mojo debug --vscode -- {args}
+  env {pairs} MODULAR_HOME=$PWD/.derived bazel-bin/Mojo/tools/mojo/mojo debug --vscode -- {args}
 elif [[ "${{MODULAR_GDB:-}}" == "1" || "${{MODULAR_ROCGDB:-}}" == "1" ]]; then
   exe=/usr/bin/rocgdb
   if [[ "${{MODULAR_GDB:-}}" == "1" ]]; then
@@ -131,7 +131,7 @@ elif [[ "${{MODULAR_RR:-}}" == "1" ]]; then
 else
   env {pairs} \
       "$lldb_bin" \
-      --one-line-before-file 'plugin load bazel-bin/KGEN/libMojoLLDB.{extension}' \
+      --one-line-before-file 'plugin load bazel-bin/Mojo/libMojoLLDB.{extension}' \
       --one-line-before-file 'settings set target.launch-working-dir {pwd}' \
       -- {args}
 fi

@@ -12,12 +12,14 @@ modular_py_test(
     srcs = glob(
         [
             "*.py",
+            "audio_generation/*.py",
             "pixel_generation/*.py",
             "text_generation/*.py",
         ],
     ),
     deps = [
         "//max/python/max:_core",
+        "//max/python/max/pipelines/audio",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/request",

@@ -62,18 +62,21 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import hf_repo_lock
 import numpy as np
 import pytest
 import torch
 from huggingface_hub import snapshot_download
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import load_weights
 from max.nn.comm import Signals
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.architectures.gemma4.gemma4 import Gemma4TextModel
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
@@ -95,8 +98,6 @@ from transformers.models.gemma4.modeling_gemma4 import (
 )
 
 TARGET_REPO_ID = "google/gemma-4-31B-it"
-TARGET_REVISION = hf_repo_lock.revision_for_hf_repo(TARGET_REPO_ID)
-
 MAX_DTYPE = DType.bfloat16
 
 # From the RedHat checkpoint's speculators config (vLLM eagle convention);
@@ -153,9 +154,7 @@ def _cos_dist(a: torch.Tensor, b: torch.Tensor) -> float:
 
 
 def _tokenize_prompts() -> list[np.ndarray]:
-    tokenizer = AutoTokenizer.from_pretrained(
-        TARGET_REPO_ID, revision=TARGET_REVISION
-    )
+    tokenizer = AutoTokenizer.from_pretrained(TARGET_REPO_ID)
     return [np.asarray(tokenizer(p).input_ids, dtype=np.int64) for p in PROMPTS]
 
 
@@ -171,7 +170,6 @@ def _torch_layer_input_dumps(
     """
     model = Gemma4ForConditionalGeneration.from_pretrained(
         TARGET_REPO_ID,
-        revision=TARGET_REVISION,
         dtype=dtype,
         device_map=device,
     )
@@ -323,7 +321,6 @@ def _max_layer_output_captures(
     snapshot_dir = Path(
         snapshot_download(
             TARGET_REPO_ID,
-            revision=TARGET_REVISION,
             allow_patterns=["*.safetensors", "*.json"],
         )
     )
@@ -418,7 +415,7 @@ def _max_layer_output_captures(
             Buffer.zeros(
                 shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=device
             ),
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
         )
     finally:
         for context in contexts:
@@ -436,9 +433,6 @@ def _max_layer_output_captures(
 def test_target_tap_parity() -> None:
     if os.environ.get("HF_HUB_OFFLINE", "0") == "1":
         pytest.skip("HF Hub offline mode is enabled")
-    assert TARGET_REVISION is not None, (
-        f"{TARGET_REPO_ID} must be present in hf-repo-lock.tsv"
-    )
     prompt_ids = _tokenize_prompts()
 
     # Sequential passes: torch bf16 on GPU (~62 GiB, freed before MAX

@@ -1,14 +1,14 @@
-"""Aliases for mojo packages."""
+"""Aliases for Mojo packages."""
 
 _PACKAGES = {
-    "std": "mojo/stdlib/std",
-    "python": "mojo/python/mojo",
-    "test_utils": "mojo/stdlib/test/test_utils",
+    "std": "Mojo/stdlib/std",
+    "python": "Mojo/python/mojo",
+    "test_utils": "Mojo/stdlib/test/test_utils",
 }
 
 _EXTRA_ALIASES = {
-    "__init__.mojo": "mojo/stdlib/std:__init__.mojo",
-    "std_srcs": "mojo/stdlib/std:std_srcs",
+    "__init__.mojo": "Mojo/stdlib/std:__init__.mojo",
+    "std_srcs": "Mojo/stdlib/std:std_srcs",
 }
 
 _MAX_PACKAGES = {
@@ -40,11 +40,13 @@ _MAX_PACKAGES = {
 
 INTERNAL_PACKAGES = [
     "//Kernels/lib/attn_res",
+    "//Kernels/lib/kda",
     "//Kernels/lib/matmul_rs",
+    "//Kernels/lib/mega_ffn",
     "//Kernels/lib/msa",
-    "//Kernels/src/mega_ffn",
-    "//max/internal/driver/src/_hal",
-    "//max/internal/driver/src/machine",
+    "//Kernels/lib/qsa",
+    "//max/driver/src/mcl/_hal",
+    "//max/driver/src/mcl/machine",
 ]
 
 # Packages that are marked testonly and cannot be used by production targets
@@ -57,7 +59,7 @@ def _mojo_aliases_impl(rctx):
         if override:
             actual = override
         else:
-            actual = "\"@//" + rctx.attr.prefix + target + "\""
+            actual = "\"@//" + target + "\""
         alias_rules.append("""
 alias(
     name = "{name}",
@@ -130,10 +132,6 @@ def max_aliases():
 mojo_aliases = repository_rule(
     implementation = _mojo_aliases_impl,
     attrs = {
-        "prefix": attr.string(
-            doc = "The prefix of the modular/modular repo root",
-            default = "",
-        ),
         "overrides": attr.string_dict(
             doc = "Override certain aliases to other targets.",
             default = {},

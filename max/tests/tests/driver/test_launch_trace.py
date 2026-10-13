@@ -21,9 +21,9 @@ capturing a compiled graph's internal kernel launches without a stream handle.
 
 from __future__ import annotations
 
-import max.driver as driver
 import numpy as np
 import pytest
+from max import driver
 from max.driver import Accelerator, Buffer, LaunchTraceEntry, accelerator_count
 
 

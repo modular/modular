@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # DOC: max/tile-tensor/tensors.mdx
-from std.gpu import (
+from max.gpu import (
     thread_idx,
     block_idx,
     global_idx,
@@ -25,13 +25,7 @@ from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Coord, Idx, stack_allocation, TileTensor
 from layout.tile_layout import row_major, blocked_product
 from std.sys import has_accelerator
-from std.sys.info import (
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-    is_apple_gpu,
-    is_nvidia_gpu,
-    simd_width_of,
-)
+from std.sys.info import simd_width_of
 from std.testing import assert_equal, assert_false, assert_true
 from std.sys import exit
 
@@ -46,13 +40,13 @@ def shared_memory_alloc_example() raises:
     def kernel(tensor: TileTensor[dtype, type_of(input_layout), MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         # start-shared-memory-alloc-example
         comptime tile_layout = row_major[block_size, block_size]()
-        var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
-        ](tile_layout)
+        var shared_tile = stack_allocation[dtype, address_space=.SHARED](
+            tile_layout
+        )
         # end-shared-memory-alloc-example
 
         # Copy one element from the global tile to the shared tile.
@@ -105,9 +99,9 @@ def tile_tensor_vectorized_example() raises:
     comptime rows = 64
     comptime columns = 64
     comptime layout = row_major[rows, columns]()
-    var storage = Array[Scalar[dtype], rows * columns](uninitialized=True)
-    for i in range(rows * columns):
-        storage[i] = Int32(i)
+    var storage = Array[Scalar[dtype], rows * columns](
+        fill_with=lambda (i: Int) -> Scalar[dtype]: Int32(i)
+    )
     var tensor = TileTensor(storage, layout)
     # start-vectorize-tensor-example
     var vectorized_tensor = tensor.vectorize[1, 4]()
@@ -135,10 +129,8 @@ def tile_tensor_distribute_example() raises:
 
     try:
         var ctx = DeviceContext()
-        var dev_buf = ctx.enqueue_create_buffer[DType.int32](rows * columns)
-        var host_buf = ctx.enqueue_create_host_buffer[DType.int32](
-            rows * columns
-        )
+        var dev_buf = ctx.enqueue_create_buffer[.int32](rows * columns)
+        var host_buf = ctx.enqueue_create_host_buffer[.int32](rows * columns)
         for i in range(rows * columns):
             host_buf[i] = Int32(i)
         var tensor = TileTensor(dev_buf, layout)
@@ -166,12 +158,12 @@ def simple_copy_example():
     def kernel(tensor: TileTensor[dtype, type_of(input_layout), MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         comptime tile_layout = row_major[block_size, block_size]()
-        var shared_tile = stack_allocation[
-            dtype, address_space=AddressSpace.SHARED
-        ](tile_layout)
+        var shared_tile = stack_allocation[dtype, address_space=.SHARED](
+            tile_layout
+        )
 
         if global_idx.y < rows and global_idx.x < cols:
             shared_tile[thread_idx.y, thread_idx.x] = global_tile[

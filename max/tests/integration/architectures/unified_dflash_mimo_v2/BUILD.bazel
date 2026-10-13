@@ -1,0 +1,236 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+load("//max/tests/integration/test_common:mef_precompile.bzl", "precompiled_mefs")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_arch_registration",
+    size = "small",
+    srcs = ["test_arch_registration.py"],
+    # Importing max.pipelines times out pytest collection on contended macOS
+    # workers, and macOS adds no coverage to these CPU-only tests.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/pipelines/weights",
+    ],
+)
+
+modular_py_test(
+    name = "test_drafter_loading",
+    size = "small",
+    srcs = ["test_drafter_loading.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/weights",
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "mimo_dflash_harness",
+    testonly = True,
+    srcs = ["mimo_dflash_harness.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/pipelines/weights",
+        "//max/tests/integration/test_common:mef_precompile",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# CPU producer: compiles one of the tiny model's graphs to a MEF under
+# virtual B200s. Run only as a build action by precompiled_mefs.
+modular_py_binary(
+    name = "precompile_mimo_dflash_bin",
+    testonly = True,
+    srcs = ["precompile_mimo_dflash.py"],
+    imports = ["."],
+    main = "precompile_mimo_dflash.py",
+    tags = ["manual"],
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/tests/integration/test_common:mef_precompile",
+    ],
+)
+
+# One CPU build action per graph the GPU tests run, so the tests initialize
+# them instead of compiling on the GPU worker. The target's W4A8 experts are
+# SM100 kernels, so the graphs build only for the B200 lane.
+precompiled_mefs(
+    name = "mimo_dflash_mefs",
+    producer = ":precompile_mimo_dflash_bin",
+    specs = [
+        "base",
+        "base_ctx",
+        "fused_k3",
+        "fused_k7",
+        "fused_k7_accept_one_extra",
+        "fused_k7_sampled",
+    ],
+    # Built only as the postsubmit GPU tests' data.
+    tags = ["manual"],
+    target_compatible_with = ["//:b200_gpu"],
+)
+
+# Builds, never compiles, the fused and base-ctx graphs at tensor parallelism 2
+# on virtual B200s: no GPU.
+modular_py_test(
+    name = "test_capture_safe_graphs",
+    size = "small",
+    srcs = ["test_capture_safe_graphs.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2",
+    ],
+)
+
+modular_py_test(
+    name = "test_fused_module",
+    size = "small",
+    srcs = ["test_fused_module.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Runs every graph a spec-on deployment serves on a random-weight model, at
+# tensor parallelism 2, from the MEFs compiled above. The target's W4A8
+# experts run only on SM100.
+modular_py_test(
+    name = "test_fused_graph_gpu",
+    size = "large",
+    srcs = ["test_fused_graph_gpu.py"],
+    data = [":mimo_dflash_mefs"],
+    env = {
+        "MIMO_DFLASH_MEF_RLOCATIONS": "$(rlocationpaths :mimo_dflash_mefs)",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    # Postsubmit: an expensive B200 test that presubmit would rerun on any
+    # change to its dependencies.
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2",
+        requirement("numpy"),
+    ],
+)
+
+# Sampled acceptance and the lm_head padding rows on the fused graph of a
+# random-weight model, at tensor parallelism 2.
+modular_py_test(
+    name = "test_sampled_acceptance_gpu",
+    size = "large",
+    srcs = ["test_sampled_acceptance_gpu.py"],
+    data = [":mimo_dflash_mefs"],
+    env = {
+        "MIMO_DFLASH_MEF_RLOCATIONS": "$(rlocationpaths :mimo_dflash_mefs)",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    # Postsubmit: an expensive B200 test that presubmit would rerun on any
+    # change to its dependencies.
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+# The fused graph on the real checkpoint: that every committed token is the
+# target's argmax, the verify path's calibration and the drafter-context
+# oracle. Needs the checkpoint, the fixtures and the GPUs, so it runs by hand.
+modular_py_binary(
+    name = "check_fused_graph",
+    testonly = True,
+    srcs = ["check_fused_graph.py"],
+    main = "check_fused_graph.py",
+    tags = ["manual"],
+    deps = [
+        ":mimo_dflash_harness",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)

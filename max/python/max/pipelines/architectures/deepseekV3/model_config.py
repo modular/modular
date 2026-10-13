@@ -30,7 +30,9 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
@@ -159,6 +161,17 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
 
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        return upper_bounded_default(
+            upper_bound=huggingface_config.max_position_embeddings,
+            default=model_config.max_length,
+        )
+
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
@@ -212,12 +225,14 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config and so on)
         should be set via the `finalize()` method.
 
         Args:
@@ -254,11 +269,6 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             devices=device_refs,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
-        )
-
-        max_seq_len = upper_bounded_default(
-            upper_bound=config.max_position_embeddings,
-            default=model_config.max_length,
         )
 
         return cls(

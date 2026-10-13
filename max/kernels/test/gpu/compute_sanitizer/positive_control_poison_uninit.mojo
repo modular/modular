@@ -28,16 +28,16 @@
 # Expected with poison ON: assertion fires (dst is NaN). With poison OFF: the
 # read returns pool garbage and the test may silently "pass". Tagged `manual`.
 
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from std.math import isnan
 
 
 def copy_uninitialized(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     # `src` was never written by the host -> reading it is an uninitialized
     # global read. With poison, this yields NaN.
     dst[tid] = src[tid]
@@ -46,10 +46,8 @@ def copy_uninitialized(
 def main() raises:
     with DeviceContext() as ctx:
         var n = 16
-        var src = ctx.enqueue_create_buffer[DType.float32](
-            n
-        )  # never initialized
-        var dst = ctx.enqueue_create_buffer[DType.float32](n)
+        var src = ctx.enqueue_create_buffer[.float32](n)  # never initialized
+        var dst = ctx.enqueue_create_buffer[.float32](n)
         ctx.enqueue_function[copy_uninitialized](
             src, dst, grid_dim=(1,), block_dim=(n,)
         )

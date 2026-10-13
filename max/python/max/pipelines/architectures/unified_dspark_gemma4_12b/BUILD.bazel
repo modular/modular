@@ -6,9 +6,9 @@ modular_py_library(
     name = "unified_dspark_gemma4_12b",
     srcs = glob(["**/*.py"]),
     deps = [
-        requirement("numpy"),
         requirement("transformers"),
         requirement("typing-extensions"),
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

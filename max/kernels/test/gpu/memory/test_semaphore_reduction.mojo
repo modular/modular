@@ -13,7 +13,7 @@
 
 from std.random import rand
 
-from std.gpu import block_dim, block_idx, grid_dim, thread_idx
+from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.sync.semaphore import Semaphore
 from std.memory import unsafe_memset_zero
@@ -25,9 +25,9 @@ def semaphore_vector_reduce[
     N: Int,
     num_parts: Int,
 ](
-    c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -70,7 +70,7 @@ def run_vector_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PN)
     var c_device = ctx.enqueue_create_buffer[dtype](N)
-    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
+    var lock_dev = ctx.enqueue_create_buffer[.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -107,9 +107,9 @@ def run_vector_reduction[
 def semaphore_matrix_reduce[
     dtype: DType, M: Int, N: Int, num_parts: Int
 ](
-    c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -119,8 +119,7 @@ def semaphore_matrix_reduce[
 
     sema.wait(block_idx)
     for x in range(tid, M * N, block_dim.x):
-        var row = x // N
-        var col = x % N
+        var row, col = divmod(x, N)
         c_ptr[row * N + col] += a_ptr[
             row * (N * num_parts) + (block_idx * num_parts + col)
         ]
@@ -158,7 +157,7 @@ def run_matrix_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PX)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
+    var lock_dev = ctx.enqueue_create_buffer[.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -199,5 +198,5 @@ def run_matrix_reduction[
 
 def main() raises:
     with DeviceContext() as ctx:
-        run_vector_reduction[DType.float32, 128, 4](ctx)
-        run_matrix_reduction[DType.float32, 128, 128, 4](ctx)
+        run_vector_reduction[.float32, 128, 4](ctx)
+        run_matrix_reduction[.float32, 128, 128, 4](ctx)

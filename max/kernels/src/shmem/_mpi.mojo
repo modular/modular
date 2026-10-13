@@ -20,7 +20,7 @@ from std.ffi import (
     c_int,
     RTLD,
 )
-from std.sys.info import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from std.sys import default_accelerator
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -30,7 +30,7 @@ comptime MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 def mpi_lib_name() -> String:
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         return "nvshmem_bootstrap_mpi.so.3"
     else:
         return "libmpi.so"
@@ -50,7 +50,7 @@ def _init_mpi_dylib() -> OwnedDLHandle:
     var flags = RTLD.NOW | RTLD.GLOBAL
 
     # AMD interaction with libmpi needs the handle to stay alive after MPI_Finalize
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         flags = flags | RTLD.NODELETE
 
     try:
@@ -59,7 +59,7 @@ def _init_mpi_dylib() -> OwnedDLHandle:
         abort(t"failed to load MPI library: {e}")
 
 
-@always_inline
+@inline(.always)
 def _get_mpi_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -200,7 +200,7 @@ def get_mpi_comm_world() raises -> MPIComm:
     """
     var handle = MPI_LIBRARY.get_or_create_ptr()[].borrow()
     var comm_world_ptr = handle.get_symbol[OpaquePointer[MutUntrackedOrigin]](
-        cstr_name="ompi_mpi_comm_world".as_c_string_slice()
+        cstr_name="ompi_mpi_comm_world".as_c_string_span()
     )
     if not comm_world_ptr:
         raise Error("symbol ompi_mpi_comm_world not found in MPI library")

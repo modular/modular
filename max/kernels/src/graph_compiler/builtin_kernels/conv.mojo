@@ -26,7 +26,7 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from layout import IntTuple
+from layout import Coord, IntTuple, TileTensor, coord_to_index_list
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
@@ -37,9 +37,18 @@ from nn.conv.conv_transpose import (
 )
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
-from nn.pad_gpu import pad_constant as pad_constant_gpu
+from nn.pad_gpu import (
+    pad_constant as pad_constant_gpu,
+    pad_reflect as pad_reflect_gpu,
+    pad_repeat as pad_repeat_gpu,
+)
 from nn.pool import avg_pool, pool_shape, pool_shape_ceil
-from extensibility import InputTensor, OutputTensor
+from extensibility import (
+    InputTensor,
+    OutputTensor,
+    Tensor,
+    TileTensorable,
+)
 from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
@@ -67,24 +76,30 @@ struct ConvertE4M3FNToE4M3FNUZ:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float8_e4m3fnuz, rank=2, ...],
-        input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        output: OutputTensor[dtype=.float8_e4m3fnuz, rank=2, ...],
+        input: InputTensor[dtype=.float8_e4m3fn, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         convert_e4m3fn_to_e4m3fnuz(
-            input.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
 
 @extensibility.register_shape_function("mo.convert_e4m3fn_to_e4m3fnuz")
 def convert_e4m3fn_to_e4m3fnuz_shape(
-    input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
-) -> IndexList[2]:
+    input: Some[Tensor],
+) -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.convert_e4m3fn_to_e4m3fnuz` graph op.
     """
-    return IndexList[2](input.dim_size[0](), input.dim_size[1]())
+    comptime assert (
+        type_of(input).dtype == .float8_e4m3fn
+    ), "input dtype must be float8_e4m3fn"
+    comptime assert type_of(input).rank == 2, "input must be rank 2"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 @extensibility.register("mo.avg_pool")
@@ -107,36 +122,47 @@ struct AvgPool:
         ctx: DeviceContext,
     ) raises:
         avg_pool[count_boundary=count_boundary, target=target](
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            strides.to_tile_tensor[.int64](),
+            dilations.to_tile_tensor[.int64](),
+            paddings.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             False,
             ctx,
         )
 
 
 @extensibility.register_shape_function("mo.avg_pool")
-def avg_pool_shape[
-    dtype: DType,
-    int_type: DType,
-](
-    input: InputTensor[dtype=dtype, rank=4, ...],
-    filter: InputTensor[dtype=int_type, rank=1, ...],
-    strides: InputTensor[dtype=int_type, rank=1, ...],
-    dilations: InputTensor[dtype=int_type, rank=1, ...],
-    paddings: InputTensor[dtype=int_type, rank=1, ...],
-) raises -> IndexList[input.rank]:
+def avg_pool_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.avg_pool` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 1, "filter must be rank 1"
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(filter).dtype == type_of(strides).dtype
+    ), "filter dtype must match strides dtype"
+    comptime assert (
+        type_of(filter).dtype == type_of(dilations).dtype
+    ), "filter dtype must match dilations dtype"
+    comptime assert (
+        type_of(filter).dtype == type_of(paddings).dtype
+    ), "filter dtype must match paddings dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pool_shape(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
     )
 
@@ -162,37 +188,48 @@ struct AvgPoolCeilModeTrue:
         ctx: DeviceContext,
     ) raises:
         avg_pool[count_boundary=count_boundary, target=target](
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
-            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[.int64](),
+            filter.to_tile_tensor[.int64](),
+            strides.to_tile_tensor[.int64](),
+            dilations.to_tile_tensor[.int64](),
+            paddings.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.int64](),
             True,
             ctx,
         )
 
 
 @extensibility.register_shape_function("mo.avg_pool_ceil_mode_true")
-def avg_pool_ceil_mode_true_shape[
-    dtype: DType,
-    int_type: DType,
-](
-    input: InputTensor[dtype=dtype, rank=4, ...],
-    filter: InputTensor[dtype=int_type, rank=1, ...],
-    strides: InputTensor[dtype=int_type, rank=1, ...],
-    dilations: InputTensor[dtype=int_type, rank=1, ...],
-    paddings: InputTensor[dtype=int_type, rank=1, ...],
-) raises -> IndexList[input.rank]:
+def avg_pool_ceil_mode_true_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.avg_pool_ceil_mode_true` graph op.
     """
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 1, "filter must be rank 1"
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(filter).dtype == type_of(strides).dtype
+    ), "filter dtype must match strides dtype"
+    comptime assert (
+        type_of(filter).dtype == type_of(dilations).dtype
+    ), "filter dtype must match dilations dtype"
+    comptime assert (
+        type_of(filter).dtype == type_of(paddings).dtype
+    ), "filter dtype must match paddings dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pool_shape_ceil(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
         )
     )
 
@@ -215,8 +252,8 @@ struct PadConstant:
 
         comptime if is_cpu[target]():
             pad_constant(
-                output.to_tile_tensor[DType.int64](),
-                input.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
                 paddings_ptr,
                 constant,
             )
@@ -236,20 +273,24 @@ struct PadConstant:
 
 @extensibility.register_shape_function("mo.pad.constant")
 def pad_constant_shape[
-    dtype: DType,
-    rank: Int,
+    constant_dtype: DType,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    padding: InputTensor[rank=1, ...],
-    constant: Scalar[dtype=dtype],
-) raises -> IndexList[rank]:
+    input: Some[TileTensorable],
+    padding: Some[TileTensorable],
+    # `constant` binds its own dtype parameter. The graph compiler's
+    # scalar-attribute binding cannot resolve a trait projection like
+    # `type_of(input).dtype`. The `comptime assert` below restores the tie.
+    constant: Scalar[dtype=constant_dtype],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.pad.constant` graph op."""
-    # rebind is required because mojo can't figure out that
-    # input.static_spec.to_layout_tensor().rank == input.rank
-    return rebind[IndexList[rank]](
+    comptime assert type_of(padding).rank == 1, "padding must be rank 1"
+    comptime assert (
+        constant_dtype == type_of(input).dtype
+    ), "constant dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         pad_shape(
-            input.to_tile_tensor[DType.int64](),
-            padding.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            padding.to_tile_tensor(),
         )
     )
 
@@ -262,32 +303,44 @@ struct PadRepeat:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         padding: InputTensor[rank=1, ...],
-    ):
+        ctx: DeviceContext,
+    ) raises:
         var paddings_ptr = padding._ptr
-        pad_repeat(
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            paddings_ptr,
-        )
+
+        comptime if is_cpu[target]():
+            pad_repeat(
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                paddings_ptr,
+            )
+        elif is_gpu[target]():
+            pad_repeat_gpu(
+                output._ptr,
+                output.shape(),
+                input._ptr,
+                input.shape(),
+                paddings_ptr,
+                ctx,
+            )
+        else:
+            comptime assert False, "Unknown target " + target
 
 
 @extensibility.register_shape_function("mo.pad.repeat")
-def pad_repeat_shape[
-    dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    padding: InputTensor[rank=1, ...],
-) raises -> IndexList[rank]:
+def pad_repeat_shape(
+    input: Some[TileTensorable], padding: Some[TileTensorable]
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.pad.repeat` graph op."""
-    return rebind[IndexList[rank]](
+    comptime assert type_of(padding).rank == 1, "padding must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
         pad_shape(
-            input.to_tile_tensor[DType.int64](),
-            padding.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            padding.to_tile_tensor(),
         )
     )
 
@@ -300,32 +353,44 @@ struct PadReflect:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         padding: InputTensor[rank=1, ...],
-    ):
+        ctx: DeviceContext,
+    ) raises:
         var paddings_ptr = padding._ptr
-        pad_reflect(
-            output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            paddings_ptr,
-        )
+
+        comptime if is_cpu[target]():
+            pad_reflect(
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                paddings_ptr,
+            )
+        elif is_gpu[target]():
+            pad_reflect_gpu(
+                output._ptr,
+                output.shape(),
+                input._ptr,
+                input.shape(),
+                paddings_ptr,
+                ctx,
+            )
+        else:
+            comptime assert False, "Unknown target " + target
 
 
 @extensibility.register_shape_function("mo.pad.reflect")
-def pad_reflect_shape[
-    dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    padding: InputTensor[rank=1, ...],
-) raises -> IndexList[rank]:
+def pad_reflect_shape(
+    input: Some[TileTensorable], padding: Some[TileTensorable]
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.pad.reflect` graph op."""
-    return rebind[IndexList[rank]](
+    comptime assert type_of(padding).rank == 1, "padding must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
         pad_shape(
-            input.to_tile_tensor[DType.int64](),
-            padding.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            padding.to_tile_tensor(),
         )
     )
 
@@ -355,14 +420,13 @@ struct Conv:
         ctx: DeviceContext,
     ) capturing raises:
         @__parameter
-        @always_inline
+        @inline(.always)
         @__copy_capture(output)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](val),
+                coords, rebind[SIMD[output.dtype, _width]](val)
             )
 
         comptime assert (
@@ -393,15 +457,16 @@ struct Conv:
         var pad_h_tuple = IndexList[2](0)
         var pad_w_tuple = IndexList[2](0)
 
-        comptime if input.rank == 3:
-            pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-        elif input.rank == 4:
-            pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-            pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
-        elif input.rank == 5:
-            pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
-            pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
-            pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
+        comptime match input.rank:
+            case 3:
+                pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+            case 4:
+                pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+                pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+            case 5:
+                pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+                pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+                pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
 
         comptime input_shape_val = Int(
             input._static_shape_tuple[input.rank - 1]
@@ -420,24 +485,15 @@ struct Conv:
         comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
         comptime filter_is_fcrs = filter_layout == "FCRS"
 
-        var input_tt = input.to_tile_tensor[DType.int64]()
-        var filter_tt = filter.to_tile_tensor[DType.int64]()
-        var output_tt = output.to_tile_tensor[DType.int64]()
+        var input_tt = input.to_tile_tensor[.int64]()
+        var filter_tt = filter.to_tile_tensor[.int64]()
+        var output_tt = output.to_tile_tensor[.int64]()
 
         comptime if is_cpu[target]():
             comptime assert (
                 not filter_is_fcrs
             ), "Filter layout FCRS is not supported on CPU"
-            # Pass LayoutTensor layouts explicitly so ConvDirectNHWC gets the
-            # same compile-time shape/stride info as before the TileTensor
-            # migration.
-            comptime _input_layout = input.static_spec.to_layout()
-            comptime _filter_layout = filter.static_spec.to_layout()
-            comptime _output_layout = output.static_spec.to_layout()
             conv_nhwc_direct[
-                _input_layout,
-                _filter_layout,
-                _output_layout,
                 input.dtype,
                 filter.dtype,
                 output.dtype,
@@ -455,7 +511,7 @@ struct Conv:
                 pad_h_tuple,
                 pad_w_tuple,
                 Int(num_groups),
-                Optional[DeviceContext](ctx),
+                Optional(ctx.assert_cpu_target()),
             )
         else:
             comptime assert (input.rank == 4 and filter.rank == 4) or (
@@ -490,21 +546,24 @@ struct Conv:
 
 @extensibility.register_shape_function("mo.conv")
 def mo_conv_shape(
-    input: InputTensor,
-    filter: InputTensor,
-    strides: InputTensor[rank=1, ...],
-    dilations: InputTensor[rank=1, ...],
-    paddings: InputTensor[rank=1, ...],
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
     num_groups: Scalar,
-) raises -> IndexList[input.rank]:
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.conv` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    return rebind[IndexList[type_of(input).rank]](
         conv_shape(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
             num_groups,
         )
     )
@@ -541,30 +600,29 @@ struct Conv2dResidualAdd:
         ctx: DeviceContext,
     ) capturing raises:
         @__parameter
-        @always_inline
+        @inline(.always)
         @__copy_capture(output, bias)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
             var result = val
 
             comptime if has_bias:
-                var c_idx = coords[_rank - 1]
+                var c_idx = Int(coords[coords.rank - 1].value())
                 var bias_vec = (bias.unsafe_ptr() + c_idx).load[width=_width]()
                 result = val + bias_vec.cast[_dtype]()
 
             output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](result),
+                coords, rebind[SIMD[output.dtype, _width]](result)
             )
 
         comptime assert not is_cpu[
             target
         ](), "conv2d_residual_add is only supported on GPU"
 
-        var input_tt = input.to_tile_tensor[DType.int64]()
-        var filter_tt = filter.to_tile_tensor[DType.int64]()
-        var output_tt = output.to_tile_tensor[DType.int64]()
+        var input_tt = input.to_tile_tensor[.int64]()
+        var filter_tt = filter.to_tile_tensor[.int64]()
+        var output_tt = output.to_tile_tensor[.int64]()
 
         var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
         var stride_tuple = IndexList[2](stride_h, stride_w)
@@ -593,14 +651,20 @@ struct Conv2dResidualAdd:
 
 @extensibility.register_shape_function("conv2d_residual_add")
 def conv2d_residual_add_shape(
-    input: InputTensor[rank=4, ...],
-    filter: InputTensor[rank=4, ...],
-    source: InputTensor[rank=4, ...],
-    bias: InputTensor[rank=1, ...],
-) raises -> IndexList[4]:
+    input: Some[Tensor],
+    filter: Some[Tensor],
+    source: Some[Tensor],
+    bias: Some[Tensor],
+) raises -> IndexList[type_of(source).rank]:
     """Computes the output shape for the `conv2d_residual_add` graph op."""
+    comptime assert type_of(input).rank == 4, "input must be rank 4"
+    comptime assert type_of(filter).rank == 4, "filter must be rank 4"
+    comptime assert type_of(source).rank == 4, "source must be rank 4"
+    comptime assert type_of(bias).rank == 1, "bias must be rank 1"
     # Output shape is the same as source shape (residual tensor).
-    return source.shape()
+    return rebind[IndexList[type_of(source).rank]](
+        coord_to_index_list(source.shape().tuple())
+    )
 
 
 @extensibility.register("mo.conv_transpose")
@@ -651,10 +715,10 @@ struct ConvTranspose:
             )
 
         var stride_tuple = IndexList[
-            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+            type_of(input.to_tile_tensor[.int64]()).rank - 2
         ](0)
         var dilation_tuple = IndexList[
-            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+            type_of(input.to_tile_tensor[.int64]()).rank - 2
         ](0)
 
         comptime for i in range(input.rank - 2):
@@ -676,13 +740,12 @@ struct ConvTranspose:
             pad_w = Index(paddings[4], paddings[5])
 
         @__parameter
-        @always_inline
+        @inline(.always)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+        ](coords: Coord, val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, _width]](val),
+                coords, rebind[SIMD[output.dtype, _width]](val)
             )
 
         comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
@@ -695,15 +758,15 @@ struct ConvTranspose:
                 has_epilogue_fusion,
                 output_fn,
             ](
-                output.to_tile_tensor[DType.int64](),
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                filter.to_tile_tensor[.int64](),
                 stride_tuple,
                 dilation_tuple,
                 pad_d,
                 pad_h,
                 pad_w,
-                Optional[DeviceContext](ctx),
+                Optional(ctx.assert_cpu_target()),
             )
         else:
             comptime assert (
@@ -714,7 +777,7 @@ struct ConvTranspose:
             ), "only unpacked filter is supported on cuda gpu"
 
             var pad_tuple = IndexList[
-                type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+                type_of(input.to_tile_tensor[.int64]()).rank - 2
             ](0)
 
             comptime if input.rank == 4:
@@ -731,9 +794,9 @@ struct ConvTranspose:
                     elementwise_simd_epilogue_type
                 ](),
             ](
-                output.to_tile_tensor[DType.int64](),
-                input.to_tile_tensor[DType.int64](),
-                filter.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[.int64](),
+                input.to_tile_tensor[.int64](),
+                filter.to_tile_tensor[.int64](),
                 stride_tuple,
                 dilation_tuple,
                 pad_tuple,
@@ -742,25 +805,32 @@ struct ConvTranspose:
 
 
 @extensibility.register_shape_function("mo.conv_transpose")
-def mo_conv_transpose_shape[
-    dtype: DType
-](
-    input: InputTensor[dtype=dtype, ...],
-    filter: InputTensor[dtype=dtype, ...],
-    strides: InputTensor[rank=1, ...],
-    dilations: InputTensor[rank=1, ...],
-    paddings: InputTensor[rank=1, ...],
-    output_paddings: InputTensor[rank=1, ...],
-) raises -> IndexList[input.rank]:
+def mo_conv_transpose_shape(
+    input: Some[TileTensorable],
+    filter: Some[TileTensorable],
+    strides: Some[TileTensorable],
+    dilations: Some[TileTensorable],
+    paddings: Some[TileTensorable],
+    output_paddings: Some[TileTensorable],
+) raises -> IndexList[type_of(input).rank]:
     """Computes the output shape for the `mo.conv_transpose` graph op."""
-    return rebind[IndexList[input.rank]](
+    comptime assert type_of(strides).rank == 1, "strides must be rank 1"
+    comptime assert type_of(dilations).rank == 1, "dilations must be rank 1"
+    comptime assert type_of(paddings).rank == 1, "paddings must be rank 1"
+    comptime assert (
+        type_of(output_paddings).rank == 1
+    ), "output_paddings must be rank 1"
+    comptime assert (
+        type_of(filter).dtype == type_of(input).dtype
+    ), "filter dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
         conv_transpose_shape(
-            input.to_tile_tensor[DType.int64](),
-            filter.to_tile_tensor[DType.int64](),
-            strides.to_tile_tensor[DType.int64](),
-            dilations.to_tile_tensor[DType.int64](),
-            paddings.to_tile_tensor[DType.int64](),
-            output_paddings.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor().bitcast[type_of(input).dtype](),
+            strides.to_tile_tensor(),
+            dilations.to_tile_tensor(),
+            paddings.to_tile_tensor(),
+            output_paddings.to_tile_tensor(),
         )
     )
 
@@ -770,7 +840,7 @@ struct LayoutTransformRSFC2FRSCf:
     """Registers the `layout_transform_RSFC_to_FRSCf` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType, filter_rank: Int, packed_filter_rank: Int
@@ -786,7 +856,7 @@ struct LayoutTransformQRSFC2FQRSCf:
     """Registers the `layout_transform_QRSFC_to_FQRSCf` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType, filter_rank: Int, packed_filter_rank: Int
@@ -802,7 +872,7 @@ struct PackConvFilterShape:
     """Registers the `pack_conv_filter_shape` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute(filter_buf: InputTensor) raises:
         raise Error("Only meant to be used for shape function!")
@@ -810,8 +880,6 @@ struct PackConvFilterShape:
 
 @extensibility.register_shape_function("pack_conv_filter_shape")
 def pack_conv_filter_shape_fn[
-    rank: Int,
-    filter_type: DType,
     input_shape: IntTuple,
     filter_shape: IntTuple,
     output_shape: IntTuple,
@@ -819,15 +887,11 @@ def pack_conv_filter_shape_fn[
     dilations: IntTuple,
     paddings: IntTuple,
     num_groups: Int,
-](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
-    rank + 1
-]:
+](filter_buf: Some[TileTensorable]) -> IndexList[type_of(filter_buf).rank + 1]:
     """
     Compute the output shape of convolution filter packing.
 
     Parameters:
-        rank: Rank of the un-packed filter.
-        filter_type: Type of the filter.
         input_shape: NHWC layout.
         filter_shape: Filter shape.
         output_shape: NHWC layout.
@@ -843,9 +907,9 @@ def pack_conv_filter_shape_fn[
         The output shape.
     """
 
-    return rebind[IndexList[rank + 1]](
+    return rebind[IndexList[type_of(filter_buf).rank + 1]](
         pack_filter_shape_conv[
-            filter_type,
+            type_of(filter_buf).dtype,
             input_shape,
             filter_shape,
             output_shape,
@@ -853,7 +917,7 @@ def pack_conv_filter_shape_fn[
             dilations,
             paddings,
             num_groups,
-        ](filter_buf.to_tile_tensor[DType.int64]())
+        ](filter_buf.to_tile_tensor())
     )
 
 
@@ -862,7 +926,7 @@ struct LayoutTransformQRSCF2FQRSCf:
     """Registers the `layout_transform_QRSCF_to_FQRSCf` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
@@ -880,7 +944,7 @@ struct LayoutTransformRSCF2FRSCf:
     """Registers the `layout_transform_RSCF_to_FRSCf` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
@@ -898,7 +962,7 @@ struct LayoutTransformFCRS2FRSCf:
     """Registers the `layout_transform_FCRS_to_FRSCf` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
@@ -916,7 +980,7 @@ struct LayoutTransformFCQRS2FQRSCf:
     """Registers the `layout_transform_FCQRS_to_FQRSCf` graph op with the graph compiler.
     """
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def execute[
         dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int

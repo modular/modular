@@ -19,7 +19,6 @@ modular_py_library(
     ],
     deps = [
         requirement("av"),
-        requirement("llguidance"),
         requirement("numpy"),
         requirement("pillow"),
         requirement("tiktoken"),  # Required by HF custom tokenizer for Kimi K2.5
@@ -28,6 +27,7 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
@@ -38,9 +38,9 @@ modular_py_library(
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
-        "//max/python/max/pipelines/request",
         "//max/python/max/pipelines/weights",
         "//max/python/max/support",
         "//max/python/max:tensor",
+        "//max/python/max:tree",
     ],
 )

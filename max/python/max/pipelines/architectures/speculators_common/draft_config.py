@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Config parsing for vLLM speculators-format DSpark draft checkpoints.
 
-A speculators DSpark checkpoint (e.g.
+A speculators DSpark checkpoint (such as
 ``RedHatAI/gemma-4-31B-it-speculator.dspark``) has no top-level
 ``model_type`` (MAX's raw-JSON config fallback wraps it in a
 ``PretrainedConfig``), DSpark fields at the top level, and the llama-style
@@ -36,6 +36,7 @@ from max.pipelines.lib.config import (
     PipelineConfig,
     SpeculativeConfig,
 )
+from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -129,7 +130,7 @@ class DSparkSpeculatorsDraftConfig:
         ``sample_from_anchor`` is set."""
         return self.block_size - (0 if self.sample_from_anchor else 1)
 
-    def resolve_num_speculative_tokens(
+    def checkpoint_draft_width(
         self, speculative_config: SpeculativeConfig
     ) -> int:
         """Resolves the per-step draft count against the trained block.
@@ -156,13 +157,11 @@ class DSparkSpeculatorsDraftConfig:
         """
         trained = self.num_speculative_tokens
         requested = speculative_config.num_speculative_tokens
-        if requested is None:
-            return trained
-        if requested < 1:
+        if requested is not None and requested < 1:
             raise ValueError(
                 f"num_speculative_tokens={requested} must be at least 1."
             )
-        if requested > trained:
+        if requested is not None and requested > trained:
             logger.warning(
                 "This DSpark drafter was trained at block_size=%d"
                 " (sample_from_anchor=%s), i.e. %d drafted tokens per step;"
@@ -174,7 +173,8 @@ class DSparkSpeculatorsDraftConfig:
                 trained,
                 requested,
             )
-        return requested
+        resolved = trained if requested is None else requested
+        return resolved
 
     @property
     def target_layer_ids(self) -> tuple[int, ...]:
@@ -189,6 +189,19 @@ class DSparkSpeculatorsDraftConfig:
     @property
     def num_context_features(self) -> int:
         return len(self.aux_hidden_state_layer_ids)
+
+    @property
+    def has_d2t(self) -> bool:
+        """Whether the checkpoint carries a draft-to-target vocabulary map.
+
+        ``d2t`` exists to undo vocabulary pruning, so a drafter trained on
+        the full target vocabulary ships none and its draft ids are already
+        target ids. Both cases occur in published checkpoints:
+        ``RedHatAI/gemma-4-31B-it-speculator.dspark`` prunes 262144 to 32000
+        and carries ``d2t``; ``RedHatAI/Kimi-K3-speculator.dspark`` keeps all
+        163840 and carries none.
+        """
+        return self.draft_vocab_size < self.vocab_size
 
     @classmethod
     def from_huggingface_config(
@@ -397,6 +410,8 @@ class DSparkSpeculatorsDraftArchConfig:
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> DSparkSpeculatorsDraftArchConfig:
         del pipeline_config
         assert model_config is not None
@@ -417,3 +432,38 @@ class DSparkSpeculatorsDraftArchConfig:
 
     def get_max_seq_len(self) -> int:
         return self.max_position_embeddings
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        del model_config
+        layer_cfg = _get(huggingface_config, "transformer_layer_config")
+        max_pos = (
+            _get(layer_cfg, "max_position_embeddings")
+            if layer_cfg is not None
+            else None
+        )
+        if max_pos is None:
+            raise ValueError(
+                "DSpark speculators draft config is missing"
+                " transformer_layer_config.max_position_embeddings."
+            )
+        return int(max_pos)
+
+
+def speculators_dspark_width(
+    speculative: SpeculativeConfig,
+    target_huggingface_config: Any,
+    draft_huggingface_config: Any,
+) -> int:
+    """Returns the user's width if set, else the draft's trained width."""
+    del target_huggingface_config
+    if draft_huggingface_config is None:
+        raise ValueError("DSpark requires a draft model.")
+    draft = DSparkSpeculatorsDraftConfig.from_huggingface_config(
+        draft_huggingface_config
+    )
+    return draft.checkpoint_draft_width(speculative)

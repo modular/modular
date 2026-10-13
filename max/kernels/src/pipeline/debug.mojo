@@ -36,7 +36,7 @@ print_wait_counts("kernel  ", counts)
 from std.collections import List
 
 from .pipeline_dsl import ScheduleEntry
-from .types import KOffsetKind, OpDesc, _Ops
+from .types import KOffsetKind, _Ops
 
 
 # =============================================================================
@@ -58,36 +58,38 @@ def default_op_name(tag: Int) -> StaticString:
         Fixed-width display string for the tag, padded so that columns
         align across rows.
     """
-    if tag == _Ops.BARRIER.value:
-        return "BARRIER        "
-    elif tag == _Ops.WAIT_VM.value:
-        return "WAIT_VM        "
-    elif tag == _Ops.WAIT_LGKM.value:
-        return "WAIT_LGKM      "
-    elif tag == _Ops.SET_PRIO.value:
-        return "SET_PRIO       "
-    elif tag == _Ops.SCHEDULE_BARRIER.value:
-        return "SCHED_BARRIER  "
-    elif tag == _Ops.NONE.value:
-        return "NONE           "
-    elif tag < 128:
-        # Kernel-specific tag — caller didn't supply a name function.
-        return "OP             "
-    else:
-        return "?              "
+    match tag:
+        case _Ops.BARRIER.value:
+            return "BARRIER        "
+        case _Ops.WAIT_VM.value:
+            return "WAIT_VM        "
+        case _Ops.WAIT_LGKM.value:
+            return "WAIT_LGKM      "
+        case _Ops.SET_PRIO.value:
+            return "SET_PRIO       "
+        case _Ops.SCHEDULE_BARRIER.value:
+            return "SCHED_BARRIER  "
+        case _Ops.NONE.value:
+            return "NONE           "
+        case _ if tag < 128:
+            # Kernel-specific tag — caller didn't supply a name function.
+            return "OP             "
+        case _:
+            return "?              "
 
 
 def _koff_name(k: KOffsetKind) -> StaticString:
-    if k == KOffsetKind.K0:
-        return "K0   "
-    elif k == KOffsetKind.K1:
-        return "K1   "
-    elif k == KOffsetKind.K_NEXT:
-        return "KNEXT"
-    elif k == KOffsetKind.K_PREV:
-        return "KPREV"
-    else:
-        return "-    "
+    match k:
+        case .K0:
+            return "K0   "
+        case .K1:
+            return "K1   "
+        case .K_NEXT:
+            return "KNEXT"
+        case .K_PREV:
+            return "KPREV"
+        case _:
+            return "-    "
 
 
 # =============================================================================
@@ -212,16 +214,17 @@ def update_wait_counts(mut counts: WaitCounts, e: ScheduleEntry, next_tag: Int):
             vm+lgkm pairs. Pass `_Ops.NONE.value` for the last entry.
     """
     var t = e.op.tag
-    if t == _Ops.WAIT_VM.value:
-        counts.n_vm += 1
-        if next_tag == _Ops.WAIT_LGKM.value:
-            counts.n_combined += 1
-    elif t == _Ops.WAIT_LGKM.value:
-        counts.n_lgkm += 1
-    elif t == _Ops.BARRIER.value:
-        counts.n_barrier += 1
-    elif t == _Ops.SCHEDULE_BARRIER.value:
-        counts.n_sched_barrier += 1
+    match t:
+        case _Ops.WAIT_VM.value:
+            counts.n_vm += 1
+            if next_tag == _Ops.WAIT_LGKM.value:
+                counts.n_combined += 1
+        case _Ops.WAIT_LGKM.value:
+            counts.n_lgkm += 1
+        case _Ops.BARRIER.value:
+            counts.n_barrier += 1
+        case _Ops.SCHEDULE_BARRIER.value:
+            counts.n_sched_barrier += 1
 
 
 def print_wait_counts(label: StaticString, c: WaitCounts):

@@ -18,26 +18,23 @@ to half SMEM, TMA store to GMEM.
 """
 
 from std.math import align_up, ceildiv
-from std.sys import size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
-    Coord,
-    Idx,
-    PointerStorage,
+    coord,
+    DefaultEngine,
     RowMajorLayout,
+    TensorEngine,
     TensorLayout,
     TileTensor,
-    row_major as tt_row_major,
 )
 from std.collections import OptionalReg
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from .config import FusedSwiGLUMatmulConfig
@@ -53,13 +50,19 @@ def _blackwell_matmul_swiglu[
     config: FusedSwiGLUMatmulConfig[_, _, _, transpose_b],
     pdl_level: PDLLevel = PDLLevel(),
     BiasLayoutType: TensorLayout = RowMajorLayout[Int64],
+    BiasEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
-    c_out: TileTensor[Storage=PointerStorage[element_width=1], ...],
+    c_out: TileTensor[...],
     a_device: TileTensor,
     b_device: TileTensor,
     ctx: DeviceContext,
     bias_tensor: OptionalReg[
-        TileTensor[config.c_type, BiasLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            config.c_type,
+            BiasLayoutType,
+            ImmutAnyOrigin,
+            Engine=BiasEngine,
+        ]
     ] = None,
 ) raises:
     """Launch fused GEMM+SwiGLU kernel on SM100.
@@ -109,6 +112,7 @@ def _blackwell_matmul_swiglu[
         c_type,
         transpose_b,
         config=config,
+        BiasEngine=BiasEngine,
     ]
 
     # Reshape rank-2 inputs to rank-3 for TMA (batch=1)
@@ -116,7 +120,7 @@ def _blackwell_matmul_swiglu[
     var b_3d = _to_batched_3d(b_device)
 
     # Create TMA descriptors for A and B (same as default kernel)
-    comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
+    comptime a_tma_tile_shape = coord[1, BM // cluster_shape[1], BK]
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
@@ -124,9 +128,9 @@ def _blackwell_matmul_swiglu[
         swizzle_mode=config.a_swizzle,
     ](ctx, a_3d)
 
-    comptime b_tma_tile_shape = Index(
+    comptime b_tma_tile_shape = coord[
         1, BN // (cluster_shape[0] // config.cta_group), BK
-    )
+    ]
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
@@ -137,9 +141,9 @@ def _blackwell_matmul_swiglu[
     # Create 2D TMA descriptor for C output: [M, H] with half-width tiles.
     # ``c_tma_inner`` may pad ``HalfN`` up to 8 when ``register_swiglu``
     # is True (descriptor is allocated but unused in that path).
-    comptime c_tma_tile_shape = Index(
+    comptime c_tma_tile_shape = coord[
         KernelType.c_store_m, KernelType.c_tma_inner
-    )
+    ]
     var c_tma_op = create_tma_tile[
         KernelType.CTileLayout,
         KernelType.CDescLayout,
@@ -166,19 +170,19 @@ def _blackwell_matmul_swiglu[
 
     # c_out is always user-frame [user_M, user_H]; derive H from c_out so
     # this is correct under both AB_swapped values.
-    var c_gmem_ptr = c_out._storage
+    var c_gmem_ptr = c_out.ptr
     var c_gmem_stride = UInt32(Int(c_out.dim[1]()))
 
-    # Build 1D bias tile (real ptr when use_bias, dummy c_out ptr otherwise).
-    comptime ImmutPtr = UnsafePointer[Scalar[c_type], ImmutAnyOrigin]
-    var bias_1d_ptr: ImmutPtr
+    var bias_1d_tile: OptionalReg[KernelType.Bias1DTile]
     comptime if config.use_bias:
-        bias_1d_ptr = rebind[ImmutPtr](bias_tensor.value()._storage)
+        bias_1d_tile = KernelType.Bias1DTile(
+            bias_tensor.value()._unsafe_storage_cast[
+                to_origin=ImmutAnyOrigin
+            ](),
+            KernelType.Bias1DTileLayout,
+        )
     else:
-        bias_1d_ptr = rebind[ImmutPtr](c_out._storage)
-    var bias_1d_tile = KernelType.Bias1DTile(
-        bias_1d_ptr, KernelType.Bias1DTileLayout
-    )
+        bias_1d_tile = None
 
     comptime cluster_tuple = StaticTuple[Int32, 3](
         Int32(config.cluster_shape[0]),
@@ -188,23 +192,21 @@ def _blackwell_matmul_swiglu[
 
     # Fully specialize the kernel, extracting TMA type parameters from the
     # concrete TMA op objects via type_of().  This matches the pattern in
-    # matmul_bf16fp8.mojo and avoids the "failed to infer a_rank" error
+    # matmul_bf16fp8.mojo and avoids the "failed to infer" error
     # that occurs when using a partial specialization in enqueue_function.
     comptime kernel = blackwell_swiglu_warp_specialized_kernel[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(c_tma_op).rank,
         type_of(c_tma_op).tile_shape,
         type_of(c_tma_op).desc_shape,
         transpose_b,
         config=config,
+        BiasEngine=BiasEngine,
         cluster_shape=cluster_tuple,
         pdl_level=pdl_level,
     ]

@@ -40,13 +40,18 @@ def _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
     if len(shape) == 0:
         return String(t"i={flat_idx}")
 
-    # Compute N-dimensional indices from flat index (row-major order)
-    var indices = List[Int](capacity=len(shape))
+    # Compute N-dimensional indices from flat index (row-major order).
+    # `next_digit` is called for i in [0, len(shape)), so it walks
+    # dimensions from last to first -- matching the row-major unravel order.
     var remaining = flat_idx
-    for dim_idx in range(len(shape) - 1, -1, -1):
-        var dim_size = shape[dim_idx]
-        indices.append(remaining % dim_size)
+
+    def next_digit(i: Int) {mut remaining, imm shape} -> Int:
+        var dim_size = shape[len(shape) - 1 - i]
+        var digit = remaining % dim_size
         remaining //= dim_size
+        return digit
+
+    var indices = List(length=len(shape), fill_with=next_digit)
 
     # Build string in correct order (indices were computed in reverse)
     var result = String("[")
@@ -89,7 +94,7 @@ def _check_span_length(
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def assert_almost_equal[
     dtype: DType,
     //,
@@ -141,7 +146,7 @@ def assert_almost_equal[
     )
 
 
-@always_inline
+@inline(.always)
 def assert_almost_equal[
     dtype: DType,
     //,
@@ -207,7 +212,7 @@ def assert_almost_equal[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def assert_equal[
     dtype: DType,
     //,
@@ -256,7 +261,7 @@ def assert_equal[
         )
 
 
-@always_inline
+@inline(.always)
 def assert_equal[
     dtype: DType,
     //,
@@ -295,7 +300,7 @@ def assert_equal[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def assert_with_measure[
     dtype: DType,
     //,
@@ -347,10 +352,10 @@ def assert_with_measure[
     """
     comptime sqrt_eps = exp2(
         -0.5 * Float64(FPUtils[dtype].mantissa_width())
-    ).cast[DType.float64]()
+    ).cast[.float64]()
     var m = measure(
-        x.address_space_cast[AddressSpace.GENERIC](),
-        y.address_space_cast[AddressSpace.GENERIC](),
+        x.address_space_cast[.GENERIC](),
+        y.address_space_cast[.GENERIC](),
         num_elements,
     )
     var t = threshold.or_else(sqrt_eps)
@@ -368,7 +373,7 @@ def assert_with_measure[
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
     """Get PyTorch-like default tolerances for a given dtype.
 
@@ -383,21 +388,22 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
 
     Example:
         ```mojo
-        rtol, atol = pytorch_like_tolerances_for[DType.float16]()
+        rtol, atol = pytorch_like_tolerances_for[.float16]()
         assert_almost_equal(x, y, n, rtol=rtol, atol=atol)
         ```
     """
 
-    comptime if dtype == DType.float16:
-        return (1e-3, 1e-5)
-    elif dtype == DType.bfloat16:
-        return (1.6e-2, 1e-5)
-    elif dtype == DType.float32:
-        return (1.3e-6, 1e-5)
-    elif dtype == DType.float64:
-        return (1e-7, 1e-7)
-    else:
-        return (0.0, 0.0)
+    comptime match dtype:
+        case .float16:
+            return (1e-3, 1e-5)
+        case .bfloat16:
+            return (1.6e-2, 1e-5)
+        case .float32:
+            return (1.3e-6, 1e-5)
+        case .float64:
+            return (1e-7, 1e-7)
+        case _:
+            return (0.0, 0.0)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -405,11 +411,10 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
-@__parameter
+@inline(.always)
 def test_value_for_gpu_element[
     dtype: DType,
-    modulo: Int = 251 if dtype == DType.float32 else 13,
+    modulo: Int = 251 if dtype == .float32 else 13,
 ](gpu_rank: Int, element_idx: Int) -> Scalar[dtype]:
     """Generates unique deterministic test values per GPU and element index.
 
@@ -425,7 +430,7 @@ def test_value_for_gpu_element[
         A unique scalar value for this GPU and element combination.
 
     Examples:
-        `test_value_for_gpu_element[DType.float32](0, 0)` !=
-        `test_value_for_gpu_element[DType.float32](1, 0)`.
+        `test_value_for_gpu_element[.float32](0, 0)` !=
+        `test_value_for_gpu_element[.float32](1, 0)`.
     """
     return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % modulo)

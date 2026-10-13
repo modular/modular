@@ -30,10 +30,11 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, DeviceRef, Graph, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, Graph, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import (
     Signals,  # noqa: F401  (kept for parity; unused single-GPU)
@@ -47,6 +48,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     SupportsSSMStateWarmup,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from typing_extensions import override
@@ -88,7 +90,7 @@ class NemotronHInputs(Llama3Inputs):
             self.input_row_offsets,
             self.return_n_logits,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -120,6 +122,8 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
@@ -131,10 +135,11 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
-            return_hidden_states,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
     @traced
@@ -179,16 +184,6 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
             ).to(self.devices[0])
         return model
 
-    @property
-    def _fold_sampler_into_graph(self) -> bool:
-        """Whether to append a folded greedy-token (argmax) graph output."""
-        return self.pipeline_config.runtime.fold_sampler_into_graph
-
-    @property
-    def emits_folded_sampled_tokens(self) -> bool:
-        """The graph appends a folded argmax token when the fold flag is on."""
-        return self._fold_sampler_into_graph
-
     @override
     def _create_model_config(
         self, state_dict: dict[str, Any]
@@ -201,6 +196,7 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
             self.dtype,
             self.kv_params,
             [device_ref],
+            max_seq_len=self.max_seq_len,
         )
         # FP8 is per-module: a Linear is FP8 iff its weight_scale is present in
         # the checkpoint. Record which layers are FP8 from weight_scale keys.
@@ -304,17 +300,7 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
                 ssm_pools,
                 has_initial_state_g,
             )
-            if self._fold_sampler_into_graph:
-                # Fold greedy token selection into the captured graph: append
-                # argmax over the last-token logits (``outputs[0]``, shape
-                # ``[B, V]``) as a trailing ``[B, 1]`` int64 output. argmax is a
-                # pure device op (no host readback), so it is capture-safe. The
-                # overlap pipeline consumes this only for all-greedy decode
-                # batches; otherwise it is ignored and the separate sampler runs.
-                sampled_tokens = ops.argmax(outputs[0], axis=-1)
-                graph.output(*outputs, sampled_tokens)
-            else:
-                graph.output(*outputs)
+            graph.output(*outputs)
             return graph, weights_registry
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -322,15 +308,6 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
         assert model_inputs.kv_cache_inputs is not None
 
         model_outputs = list(self.model.execute(*model_inputs.buffers))
-
-        # When the greedy-token fold is enabled, the last graph output is the
-        # folded argmax token buffer; peel it off so the remaining buffers map
-        # onto the logits fields exactly as in the unfolded path.
-        sampled_tokens: Buffer | None = None
-        if self._fold_sampler_into_graph:
-            popped = model_outputs.pop()
-            assert isinstance(popped, Buffer)
-            sampled_tokens = popped
 
         # Both the conv pools and SSM pools are mutated in place by their
         # respective inplace ops; the only graph output is the logits (plus
@@ -344,12 +321,10 @@ class NemotronHModel(LlamaModelBase, SupportsSSMStateWarmup):
                 logits=model_outputs[1],
                 next_token_logits=logits,
                 logit_offsets=model_outputs[2],
-                sampled_tokens=sampled_tokens,
             )
         return ModelOutputs(
             logits=logits,
             next_token_logits=logits,
-            sampled_tokens=sampled_tokens,
         )
 
     def prepare_initial_token_inputs(

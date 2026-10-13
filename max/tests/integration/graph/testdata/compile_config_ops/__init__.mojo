@@ -29,7 +29,7 @@ comptime logger = Logger()
 struct UseSplitkReductionScheme:
     @staticmethod
     def execute(
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=.int32, rank=1, ...],
     ):
         comptime split_k_reduction_scheme = get_defined_int[
             "SPLITK_REDUCTION_SCHEME", 2
@@ -41,7 +41,7 @@ struct UseSplitkReductionScheme:
 struct UseLogger:
     @staticmethod
     def execute(
-        output: OutputTensor[dtype=DType.int32, rank=1, ...],
+        output: OutputTensor[dtype=.int32, rank=1, ...],
     ):
         logger.error("I'm a custom Mojo function!")
         output[0] = Int32(logger.level._value)
@@ -57,11 +57,10 @@ struct AddOneCustom:
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @__parameter
-        def add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
+        def add_one[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[add_one, target=target](output, ctx)
+        foreach[target=target](add_one, output, ctx)
 
 
 @extensibility.register_shape_function("add_one_custom")

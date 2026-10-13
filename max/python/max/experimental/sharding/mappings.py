@@ -15,10 +15,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sized
 from dataclasses import dataclass
 
-from .mesh import DeviceMesh, get_active_mesh
+from max.driver import Device
+from max.graph import DeviceRef
+
+from .mesh import DeviceMesh, get_default_mesh
 from .placements import (
     Partial,
     Placement,
@@ -49,6 +52,18 @@ class DeviceMapping:
     mesh: DeviceMesh
     placements: tuple[Placement, ...]
 
+    @classmethod
+    def replicated(cls, mesh: DeviceMesh) -> DeviceMapping:
+        """Builds a mapping that replicates a tensor on every axis of ``mesh``.
+
+        Args:
+            mesh: The device mesh to replicate over.
+
+        Returns:
+            A mapping with :class:`Replicated` on each of ``mesh``'s axes.
+        """
+        return cls(mesh, (Replicated(),) * mesh.ndim)
+
     def __post_init__(self) -> None:
         if len(self.placements) != self.mesh.ndim:
             raise ValueError(
@@ -56,45 +71,60 @@ class DeviceMapping:
                 f"got {len(self.placements)}."
             )
 
-    def to_placements(self) -> tuple[Placement, ...]:
-        """Back-compat alias for :attr:`placements`."""
-        return self.placements
+    def check_shape(self, shape: Sized) -> None:
+        """Raises if this mapping shards an axis ``shape`` does not have.
+
+        Args:
+            shape: The global shape to check against.
+
+        Raises:
+            ValueError: If a :class:`Sharded` axis is out of range.
+        """
+        for placement in self.placements:
+            if isinstance(placement, Sharded) and not (
+                0 <= placement.axis < len(shape)
+            ):
+                raise ValueError(
+                    f"Sharded(axis={placement.axis}) is out of range for a "
+                    f"rank-{len(shape)} shape."
+                )
 
     @property
     def is_fully_replicated(self) -> bool:
         """``True`` when every mesh axis is :class:`Replicated`."""
         return all(isinstance(p, Replicated) for p in self.placements)
 
-    def to_mesh(self, mesh: DeviceMesh) -> DeviceMapping:
-        """Rebinds this mapping onto ``mesh`` by axis-name correspondence.
-
-        For each axis in ``mesh``: if its name exists in
-        :attr:`self.mesh`, copy that axis's placement; otherwise the
-        axis becomes :class:`Replicated`. Axes unique to the source
-        mesh drop away.
-        """
-        old_by_name = dict(
-            zip(self.mesh.axis_names, self.placements, strict=False)
-        )
-        return DeviceMapping(
-            mesh,
-            tuple(
-                old_by_name.get(name, Replicated()) for name in mesh.axis_names
-            ),
-        )
-
     def __repr__(self) -> str:
         placement_str = ", ".join(repr(p) for p in self.placements)
         return f"{type(self).__name__}({self.mesh}, [{placement_str}])"
 
 
-PlacementMapping = DeviceMapping
-"""Back-compat alias for :class:`DeviceMapping`."""
+def as_device_mapping(
+    device: Device | DeviceRef | DeviceMesh | DeviceMapping,
+) -> DeviceMapping:
+    """Coerces any way of naming where a value sits into a mapping.
 
+    Args:
+        device: A single device, a mesh to replicate over, or a mapping.
 
-def is_fully_replicated(mapping: DeviceMapping) -> bool:
-    """``True`` when every mesh axis is :class:`Replicated`."""
-    return all(isinstance(p, Replicated) for p in mapping.placements)
+    Returns:
+        The equivalent :class:`DeviceMapping`.
+
+    Raises:
+        TypeError: If ``device`` is none of those.
+    """
+    if isinstance(device, DeviceMapping):
+        return device
+    if isinstance(device, DeviceRef):
+        device = device.to_device()
+    if isinstance(device, Device):
+        device = DeviceMesh.single(device)
+    if isinstance(device, DeviceMesh):
+        return DeviceMapping(device, (Replicated(),) * device.ndim)
+    raise TypeError(
+        f"expected a Device, DeviceRef, DeviceMesh or DeviceMapping, got "
+        f"{type(device).__name__}: {device!r}"
+    )
 
 
 class NamedMapping(DeviceMapping):
@@ -108,14 +138,14 @@ class NamedMapping(DeviceMapping):
     a regular :class:`DeviceMapping`; the spec is forgotten.
 
     Args:
-        mesh: The target device mesh, or :obj:`None` to take the one published
-            by :func:`~max.experimental.sharding.mesh_context`.
+        mesh: The target device mesh, or :obj:`None` to take the one set by
+            :func:`~max.experimental.tensor.default_device`.
         spec: One entry per tensor dimension.
         unreduced: Mesh axes carrying pending reductions.
 
     Raises:
         ValueError: If ``mesh`` is :obj:`None` and no
-            :func:`~max.experimental.sharding.mesh_context` is active, leaving
+            :func:`~max.experimental.tensor.default_device` is active, leaving
             the spec with nothing to resolve against.
     """
 
@@ -131,10 +161,10 @@ class NamedMapping(DeviceMapping):
         unreduced: Iterable[str] = (),
     ) -> None:
         if mesh is None:
-            if (mesh := get_active_mesh()) is None:
+            if (mesh := get_default_mesh()) is None:
                 raise ValueError(
                     "NamedMapping needs a mesh to resolve its spec against: "
-                    "pass one, or construct inside a mesh_context()."
+                    "pass one, or construct inside a default_device()."
                 )
         unreduced_t = tuple(unreduced)
         placements = _spec_to_placements(mesh, spec, unreduced_t)

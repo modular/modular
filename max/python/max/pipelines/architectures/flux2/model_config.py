@@ -120,31 +120,16 @@ def _make_nvfp4_config(num_layers: int, num_single_layers: int) -> QuantConfig:
     Mirrors the modelopt NVFP4 format used by FLUX.2-NVFP4: block size 16
     on the K axis, static per-tensor input scales, FP8 weight scales.
     """
-    input_spec = InputScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        origin=ScaleOrigin.STATIC,
-        dtype=DType.float32,
-        block_size=(1, 16),
-    )
-    weight_spec = WeightScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        dtype=DType.float8_e4m3fn,
-        block_size=(1, 16),
-    )
-    all_layers = set(range(num_layers + num_single_layers))
-    return QuantConfig(
-        input_scale=input_spec,
-        weight_scale=weight_spec,
+    # BFL ships scales in 5D TCGEN5 interleaved layout flattened to 2D, but
+    # that storage can't be K-sharded by slicing axis 1 (the 5D dims mix rows
+    # and K-blocks). The weight adapter deinterleaves to true ``[M, K//16]``
+    # at load time, so ``scales_pre_interleaved`` stays off and the runtime
+    # ``block_scales_interleave`` op rebuilds the 5D layout per-shard.
+    all_layers = range(num_layers + num_single_layers)
+    return QuantConfig.nvfp4(
         mlp_quantized_layers=all_layers,
         attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
-        format=QuantFormat.NVFP4,
-        # BFL ships scales in 5D TCGEN5 interleaved layout flattened to 2D,
-        # but that storage can't be K-sharded by slicing axis 1 (the 5D dims
-        # mix rows and K-blocks). The weight adapter deinterleaves to true
-        # ``[M, K//16]`` at load time and lets the runtime
-        # ``block_scales_interleave`` op rebuild the 5D layout per-shard.
-        scales_pre_interleaved=False,
     )
 
 

@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -38,7 +39,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
@@ -49,6 +50,7 @@ from max.pipelines.lib import (
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import Qwen3VLMoeBatchProcessor
 from .context import Qwen3VLTextAndVisionContext
@@ -83,9 +85,7 @@ class Qwen3VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] = field(
-        kw_only=True
-    )
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -128,7 +128,9 @@ class Qwen3VLInputs(ModelInputs):
 
 class Qwen3VLModel(
     AlwaysSignalBuffersMixin,
-    MultiGraphPipelineModelWithKVCache[Qwen3VLTextAndVisionContext],
+    MultiGraphPipelineModelWithKVCache[
+        Qwen3VLTextAndVisionContext, Qwen3VLConfig
+    ],
 ):
     """A Qwen3VL pipeline model for multimodal text generation."""
 
@@ -153,6 +155,8 @@ class Qwen3VLModel(
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
@@ -163,9 +167,10 @@ class Qwen3VLModel(
             devices,
             kv_cache_config,
             weights,
-            adapter,
-            return_logits,
+            adapter=adapter,
+            return_logits=return_logits,
             max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
         )
 
         self.model_config = None
@@ -214,6 +219,7 @@ class Qwen3VLModel(
         qwen3vl_config = Qwen3VLConfig.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
+            max_seq_len=self.max_seq_len,
         )
         qwen3vl_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -238,7 +244,6 @@ class Qwen3VLModel(
     ) -> tuple[Graph, dict[str, WeightData]]:
         """Build the vision model graph for processing images."""
         del state_dict
-        assert isinstance(config, Qwen3VLConfig)
         assert isinstance(self.model, Qwen3VL)
         vision_encoder = self.model.vision_encoder
 
@@ -252,10 +257,14 @@ class Qwen3VLModel(
             for device in self.devices
         ]
 
+        # Own dimension, not `vision_seq_len`: the bilinear position grid is
+        # interpolated once per FRAME while the pixels and rotary ids carry one
+        # row per temporal PATCH. The two coincide only for still images, and
+        # this arch shares `Qwen3VLTokenizer`, which now emits clips.
         weights_types = [
             TensorType(
                 DType.float32,
-                shape=[4, "vision_seq_len", 1],
+                shape=[4, "vision_pos_len", 1],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
@@ -264,7 +273,7 @@ class Qwen3VLModel(
         indices_types = [
             TensorType(
                 DType.int64,
-                shape=[4, "vision_seq_len"],
+                shape=[4, "vision_pos_len"],
                 device=DeviceRef.from_device(device),
             )
             for device in self.devices
@@ -323,18 +332,16 @@ class Qwen3VLModel(
         # Build the vision graph
         with Graph(
             "qwen3vl_vision",
-            input_types=tuple(
-                [
-                    *pixel_values_types,
-                    *weights_types,
-                    *indices_types,
-                    *vision_rot_pos_ids_types,
-                    *max_grid_size_types,
-                    *grid_thw_types,
-                    *cu_seqlens_types,
-                    *max_seqlen_types,
-                    *signals.input_types(),
-                ]
+            input_types=(
+                *pixel_values_types,
+                *weights_types,
+                *indices_types,
+                *vision_rot_pos_ids_types,
+                *max_grid_size_types,
+                *grid_thw_types,
+                *cu_seqlens_types,
+                *max_seqlen_types,
+                *signals.input_types(),
             ),
             module=module,
         ) as graph:
@@ -472,7 +479,7 @@ class Qwen3VLModel(
         )
 
         # Flatten kv types for each device
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
@@ -498,7 +505,6 @@ class Qwen3VLModel(
     ) -> tuple[Graph, dict[str, WeightData]]:
         """Build the language model graph for text generation with image embeddings."""
         del state_dict
-        assert isinstance(config, Qwen3VLConfig)
         assert isinstance(self.model, Qwen3VL)
         language_model = self.model.language_model
         assert language_model is not None, "Language model must be initialized"
@@ -565,7 +571,7 @@ class Qwen3VLModel(
 
             # Calculate how many KV cache inputs there are
             kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = kv_inputs.flatten()
+            flattened_kv_types = tree.leaves(kv_inputs)
             num_kv_inputs = len(flattened_kv_types)
 
             # Extract KV cache inputs (they come after signal buffers in the graph)
@@ -685,7 +691,7 @@ class Qwen3VLModel(
 
         # Prepare KV cache inputs as list of tensors
         assert model_inputs.kv_cache_inputs
-        kv_cache_inputs_list = list(model_inputs.kv_cache_inputs.flatten())
+        kv_cache_inputs_list = list(tree.leaves(model_inputs.kv_cache_inputs))
 
         # Execute language model with text and image embeddings and deepstack features
         # deepstack_image_embeddings Structure: [layer0_device0, layer0_device1, ..., layer1_device0, layer1_device1, ...]

@@ -13,11 +13,11 @@
 
 from layout import TileTensor, row_major
 from max.gpu.host import DeviceContext
-from nn.gather_scatter import scatter_nd_generator
+from nn.gather_scatter import _atomic_reduce, scatter_nd_generator
 from std.testing import assert_equal
 
 
-@always_inline
+@inline(.always)
 def use_update[
     dtype: DType, width: SIMDLength, //
 ](input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]) -> SIMD[
@@ -221,7 +221,7 @@ def main() raises:
             8,
         ]
 
-        scatter_nd_generator[reduce_fn=use_update](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[use_update]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -427,13 +427,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _add[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[reduce_fn=_add](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_add]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -639,13 +639,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _max[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_nd_generator[reduce_fn=_max](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_max]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -851,13 +851,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _min[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
-        scatter_nd_generator[reduce_fn=_min](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_min]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -1063,13 +1063,13 @@ def main() raises:
             8,
         ]
 
-        @always_inline
+        @inline(.always)
         def _mul[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
-        scatter_nd_generator[reduce_fn=_mul](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_mul]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 
@@ -1109,13 +1109,13 @@ def main() raises:
         var output_ptr = List(length=rows * cols, fill=Float32(0))
         var output = TileTensor(output_ptr, row_major[rows, cols]())
 
-        @always_inline
+        @inline(.always)
         def _add[
             ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[reduce_fn=_add](
+        scatter_nd_generator[atomic_update_fn=_atomic_reduce[_add]](
             data, indices, updates, output, DeviceContext(api="cpu")
         )
 

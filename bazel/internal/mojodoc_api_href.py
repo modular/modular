@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -22,8 +21,8 @@ The ``hosted_on_mojolang`` flag chooses root-relative vs absolute, so that
 each href works regardless of where the rendered Markdown lives:
 
 - Mojolang-hosted (stdlib): std hrefs are root-relative; cross-site MAX Mojo
-  API hrefs are absolute ``https://docs.modular.com/...``.
-- Docs.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
+  API hrefs are absolute ``https://max.modular.com/...``.
+- max.modular.com-hosted (kernels and MAX Mojo library): API hrefs are
   root-relative; cross-site std hrefs are absolute
   ``https://mojolang.org/...``."""
 
@@ -31,7 +30,7 @@ from __future__ import annotations
 
 MOJOLANG_ORIGIN = "https://mojolang.org"
 MOJOLANG_PATH_PREFIX = "/docs"
-MAX_MOJO_ORIGIN = "https://docs.modular.com"
+MAX_MOJO_ORIGIN = "https://max.modular.com"
 MAX_MOJO_PATH_PREFIX = "/api/mojo"
 
 
@@ -47,6 +46,40 @@ def _max_mojo_href(site_path: str, *, hosted_on_mojolang: bool) -> str:
     if hosted_on_mojolang:
         return f"{MAX_MOJO_ORIGIN}{site_path}"
     return site_path
+
+
+def _is_private_api_path(path: str) -> bool:
+    segments = [segment for segment in path.split("/") if segment]
+    return any(segment.startswith("_") for segment in segments)
+
+
+def pad_backticks(value: str) -> str:
+    """Add space around strings that start or end with a backtick."""
+    if value.startswith("`") or value.endswith("`"):
+        return " " + value + " "
+    return value
+
+
+def create_api_link(
+    type_str: str,
+    path: str | None = None,
+    *,
+    hosted_on_mojolang: bool = False,
+    padding: bool = False,
+) -> str:
+    """Render a type as markdown, linking only when ``path`` resolves to a href."""
+    if padding:
+        inner = f"``{pad_backticks(type_str)}``"
+    else:
+        inner = f"`{type_str}`"
+
+    if not path:
+        return inner
+
+    href = resolve_api_href(path, hosted_on_mojolang=hosted_on_mojolang)
+    if href:
+        return f"[{inner}]({href})"
+    return inner
 
 
 def _mojo_docs_site_path(path: str) -> str:
@@ -74,7 +107,7 @@ def resolve_api_href(
     Returns:
         Empty string when ``path`` is empty; otherwise the resolved href.
     """
-    if path is None or path == "":
+    if not path:
         return ""
 
     fragment = ""
@@ -86,6 +119,9 @@ def resolve_api_href(
 
     if not path.startswith("/"):
         path = "/" + path
+
+    if _is_private_api_path(path):
+        return ""
 
     # Stdlib type referenced from any package
     if path == "/std" or path.startswith("/std/"):

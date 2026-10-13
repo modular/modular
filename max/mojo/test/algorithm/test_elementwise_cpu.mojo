@@ -16,7 +16,7 @@ from max.algorithm.functional import (
     elementwise,
 )
 from max.gpu.host import DeviceContext
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal
 from std.testing import TestSuite
 
 from std.utils.coord import Coord, coord_to_index_list
@@ -44,13 +44,13 @@ def test_elementwise() raises:
         outer_rank: Int,
         shape: IndexList[outer_rank],
     ](ctx: DeviceContext) raises:
-        var memory1 = Array[Float32, numelems](uninitialized=True)
+        var memory1 = Array[Float32, numelems](fill={})
         var buffer1 = Span(memory1)
 
-        var memory2 = Array[Float32, numelems](uninitialized=True)
+        var memory2 = Array[Float32, numelems](fill={})
         var buffer2 = Span(memory2)
 
-        var memory3 = Array[Float32, numelems](uninitialized=True)
+        var memory3 = Array[Float32, numelems](fill={})
         var out_buffer = Span(memory3)
 
         var x: Float32 = 1.0
@@ -60,10 +60,10 @@ def test_elementwise() raises:
             out_buffer.unsafe_ptr()[unsafe_offset=i] = 0.0
             x += 1.0
 
-        @always_inline
-        @__copy_capture(buffer1, buffer2, out_buffer, shape)
-        @__parameter
-        def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+        @inline(.always)
+        def func[
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var buffer1, var buffer2, var out_buffer}:
             var index = rebind[IndexList[outer_rank]](coord_to_index_list(idx))
             var linear_idx = _linear_index(index, shape)
             var in1 = buffer1.unsafe_ptr().unsafe_load[width=simd_width](
@@ -76,7 +76,8 @@ def test_elementwise() raises:
                 linear_idx, in1 * in2
             )
 
-        elementwise[func, simd_width=1](
+        elementwise[simd_width=1](
+            func,
             Coord(shape),
             ctx,
         )
@@ -97,19 +98,17 @@ def test_elementwise() raises:
 
 def test_elementwise_implicit_runtime() raises:
     var ctx = DeviceContext(api="cpu")
-    var vector_stack = Array[Scalar[DType.int], 20](uninitialized=True)
+    var vector_stack = Array[Int, 20](fill={})
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
-        vector.unsafe_ptr()[unsafe_offset=i] = Scalar[DType.int](i)
+        vector.unsafe_ptr()[unsafe_offset=i] = Int(i)
 
-    @always_inline
-    @__copy_capture(vector)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    @inline(.always)
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var vector}:
         vector.unsafe_ptr()[unsafe_offset=idx[0].value()] = 42
 
-    elementwise[func, simd_width=1](20, ctx)
+    elementwise[simd_width=1](func, Coord(20), ctx)
 
     for i in range(len(vector)):
         assert_equal(vector.unsafe_ptr()[unsafe_offset=i], 42)

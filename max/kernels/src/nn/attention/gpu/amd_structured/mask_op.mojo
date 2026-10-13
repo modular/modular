@@ -32,7 +32,7 @@ from std.math.constants import log2e
 from std.math.uutils import umod
 from std.sys import _RegisterPackType
 from std.sys._assembly import inlined_assembly
-from std.gpu import block_idx, lane_id
+from max.gpu import block_idx, lane_id
 from std.utils import IndexList
 
 from layout import TileTensor
@@ -142,7 +142,7 @@ struct MaskTileOp[
     comptime _lane_col_stride = 4
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def apply(
         masked: Bool,
         kv_tile_start_row: UInt32,
@@ -311,7 +311,7 @@ struct MaskTileOp[
                         # at its KV head's first. S==1 is split out
                         # (byte-identical). Only head-keyed masks consume this;
                         # Causal/Null ignore it.
-                        var q_head_idx = Int(block_idx.x)
+                        var q_head_idx = block_idx.x
                         comptime if Self.token_gen:
                             comptime if fold_seq_len == 1:
                                 q_head_idx = block_idx.y * Self.group + umod(
@@ -327,7 +327,7 @@ struct MaskTileOp[
                                     % Self.num_heads_per_token
                                 )
                                 q_head_idx = (
-                                    Int(block_idx.y) * Self.head_base_stride
+                                    block_idx.y * Self.head_base_stride
                                     + head_in_token
                                 )
                         comptime for j in range(0, output_frag_size, 1):
@@ -335,7 +335,7 @@ struct MaskTileOp[
                                 Self.FragmentLayoutT()(Idx[j])
                             )
                             frag[j] = mask.mask(
-                                IndexList[4, element_type=DType.uint32](
+                                IndexList[4, element_type=.uint32](
                                     block_idx.z,
                                     q_head_idx,
                                     Int(score_row_with_start_pos),
@@ -366,11 +366,11 @@ struct MaskTileOp[
                         var bound_x = num_keys if Self.token_gen else seq_len
 
                         frag[j] = _kernel_mask(
-                            IndexList[2, element_type=DType.uint32](
+                            IndexList[2, element_type=.uint32](
                                 Int(score_row),
                                 Int(score_col + UInt32(fragment_col)),
                             ),
-                            IndexList[2, element_type=DType.uint32](
+                            IndexList[2, element_type=.uint32](
                                 Int(bound_x), Int(bound_y)
                             ),
                             frag[j],

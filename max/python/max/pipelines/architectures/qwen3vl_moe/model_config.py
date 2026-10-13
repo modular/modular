@@ -20,7 +20,7 @@ from typing import ClassVar, Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
@@ -192,7 +192,7 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 
     quantization_encoding: SupportedEncoding | None = None
 
-    def get_kv_params(self) -> KVCacheParams:
+    def get_kv_params(self) -> KVCacheParamInterface:
         """Returns the KV cache parameters from the embedded LLM config."""
         return self.llm_config.get_kv_params()
 
@@ -210,6 +210,8 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3VLConfig instance from pipeline configuration.
 
@@ -227,13 +229,17 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Qwen3VLConfig from pipeline and HuggingFace configs.
 
@@ -297,7 +303,7 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
             )
 
         llm_config = Llama3Config.initialize_from_config(
-            pipeline_config, text_config
+            pipeline_config, text_config, max_seq_len=max_seq_len
         )
 
         # Handle both MoE (e.g., 30B) and dense (e.g., VL 2B 4B etc) variants.
@@ -343,7 +349,7 @@ class Qwen3VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         llm_state_dict: dict[str, WeightData],
         vision_state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
     ) -> None:
         """Finalize the Qwen3VLConfig instance with state_dict dependent fields.
 

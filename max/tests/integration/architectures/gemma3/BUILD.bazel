@@ -37,6 +37,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

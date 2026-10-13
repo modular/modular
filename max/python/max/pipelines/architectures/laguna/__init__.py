@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Laguna architecture: a decoder-only MoE model that extends the
+Llama 3 architecture.
+"""
+
 # The ``laguna`` model_type is registered as a local ``AutoConfig`` shim in
 # ``..hf_config_shims`` (eagerly imported by the architectures package), so
 # ``config.json`` loads without ``trust_remote_code`` and without executing the

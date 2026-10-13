@@ -9,6 +9,7 @@ modular_py_library(
     srcs = glob(
         ["**/*.py"],
         exclude = [
+            "allocator.py",
             "gpu_query.py",
             "pipelines.py",
             "replay_recording.py",
@@ -35,6 +36,7 @@ modular_py_library(
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve/worker_interface",
+        "//max/python/max/support",
         requirement("click"),
         requirement("gguf"),
         requirement("psutil"),
@@ -57,15 +59,19 @@ modular_py_library(
         "pipelines.py",
     ],
     deps = [
+        ":allocator",
         "//max/python/max/_entrypoints",
         "//max/python/max:_core",
         "//max/python/max:_eager_policy",
+        "//max/python/max/engine",
         "//max/python/max/profiler",
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve:config",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/experimental/cascade/deployment:context_config",
+        "//max/python/max/experimental/cascade/serve:main_lib",
         # These all point to the symlinked version of the benchmark directory.
         "//max/python/max/benchmark:benchmark_serving_lib",
         requirement("click"),
@@ -75,6 +81,12 @@ modular_py_library(
     ],
 )
 
+modular_py_library(
+    name = "allocator",
+    srcs = ["allocator.py"],
+    deps = ["@mojo//:python"],
+)
+
 modular_py_binary(
     name = "pipelines",
     srcs = [
@@ -82,7 +94,10 @@ modular_py_binary(
     ],
     data = [
         "@nvshmem_prebuilt//:host",
-    ],
+    ] + select({
+        "@platforms//os:linux": ["//AsyncRT:JemallocPreload"],
+        "//conditions:default": [],
+    }),
     env = {
         "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
@@ -97,10 +112,14 @@ modular_py_binary(
     mojo_deps = PROD_MOJOPKGS,
     deps = ALL_ARCHITECTURES + [
         ":_entrypoints",
+        ":allocator",
         "//max/python/max:_core",
         "//max/python/max:_eager_policy",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/benchmark:benchmark_serving_lib",
+        "//max/python/max/engine",
+        "//max/python/max/experimental/cascade/deployment:context_config",
+        "//max/python/max/experimental/cascade/serve:main_lib",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -120,6 +139,10 @@ modular_py_binary(
         "cli/entrypoint.py",
         "pipelines.py",
     ],
+    data = select({
+        "@platforms//os:linux": ["//AsyncRT:JemallocPreload"],
+        "//conditions:default": [],
+    }),
     main = "pipelines.py",
     tags = [
         # Tons of lazy imports
@@ -127,6 +150,7 @@ modular_py_binary(
         "no-pydeps",
     ],
     deps = [
+        ":allocator",
         "//max/python/max:_eager_policy",
         "//max/python/max/benchmark:benchmark_serving_lib",
         requirement("rich"),

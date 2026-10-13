@@ -26,13 +26,11 @@ def interpolate_2d_nearest(
 ) -> Tensor:
     """Upsamples a 2D tensor using nearest-neighbor interpolation.
 
-    This is a workaround implementation because MAX framework's ops.resize
-    does not support NEAREST mode (only BICUBIC is currently supported).
-    The workaround uses reshape and broadcast operations to achieve
-    nearest-neighbor upsampling by a factor of 2.
-
-    Note:
-        This workaround can be removed once ops.resize supports NEAREST mode.
+    Delegates to ``F.resize_nearest`` with the asymmetric transform and
+    floor rounding, which at an exact 2x scale maps each output coordinate
+    to ``out_coord // 2`` -- the same replication the old hand-rolled
+    reshape + broadcast expansion produced. The resize kernel's
+    integer-scale fast path makes this as cheap as the broadcast trick.
 
     Args:
         x: Input tensor of shape [N, C, H, W] in NCHW format.
@@ -55,19 +53,12 @@ def interpolate_2d_nearest(
         )
 
     n, c, h, w = x.shape
-    target_shape = [n, c, h * scale_factor, w * scale_factor]
-
-    # Reshape: [N, C, H, W] -> [N, C, H, 1, W, 1]
-    x_reshaped = x.reshape([n, c, h, 1, w, 1])
-
-    ones_scalar = F.constant(1.0, dtype=x.dtype, device=x.device)
-    ones = ones_scalar.broadcast_to([1, 1, 1, scale_factor, 1, scale_factor])
-
-    # Broadcast: [N, C, H, 1, W, 1] * [1, 1, 1, 2, 1, 2] -> [N, C, H, 2, W, 2]
-    x_expanded = x_reshaped * ones
-
-    # Reshape: [N, C, H, 2, W, 2] -> [N, C, H*2, W*2]
-    return x_expanded.reshape(target_shape)
+    return F.resize_nearest(
+        x,
+        [n, c, h * scale_factor, w * scale_factor],
+        coordinate_transform_mode=2,
+        round_mode=2,
+    )
 
 
 class Upsample2D(Module[[Tensor], Tensor]):

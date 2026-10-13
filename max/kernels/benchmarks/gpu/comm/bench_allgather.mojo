@@ -31,18 +31,17 @@ from max.benchmark import (
     bench_multicontext,
     bencher_iter_custom,
 )
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from comm.sync import enable_p2p
 from comm.allgather import allgather
-from comm import MAX_GPUS, Signal
+from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 
 from std.testing import assert_true
 
 
-@always_inline
-@__parameter
+@inline(.always)
 def _per_gpu_value[dtype: DType](gpu_rank: Int, j: Int) -> Scalar[dtype]:
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
     return Scalar[dtype](Scalar[dtype](gpu_rank + 1) + Scalar[dtype](j % 251))
@@ -140,10 +139,7 @@ def bench_allgather[
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus * ngpus)
 
     # Create signal buffers for synchronization.
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
 
     for gpu_idx in range(ngpus):
         var length = lengths[gpu_idx]
@@ -189,19 +185,15 @@ def bench_allgather[
 
         # Signal buffers.
         signal_buffers.append(
-            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
-                size_of[Signal]()
-            )
+            list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
-            signal_buffers[gpu_idx], 0
-        )
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+        list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Build TileTensor arrays for allgather.
     comptime InTileType = TileTensor[
@@ -223,12 +215,11 @@ def bench_allgather[
             )
         list_of_ctx[gpu_idx].synchronize()
 
-    @__parameter
-    @always_inline
+    @inline(.always)
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises:
-        @always_inline
+    ) raises {mut tt_in, imm}:
+        @inline(.always)
         def call_fn(
             ctx_inner: DeviceContext, cache_iter: Int
         ) raises {mut tt_in, imm}:
@@ -237,15 +228,13 @@ def bench_allgather[
                 tt_in[i] = TileTensor(
                     cb_inputs[i].offset_ptr(cache_iter),
                     row_major(lengths[i]),
-                ).as_immut()
+                ).as_imm()
 
-            var device_out = Array[OutTileType, ngpus](uninitialized=True)
-            comptime for src_idx in range(ngpus):
-                device_out[src_idx] = tt_out[ctx_idx * ngpus + src_idx]
-
+            # `tt_out` is already the world-view output array `allgather`
+            # expects (`ngpus * ngpus` for this full-world, ungrouped bench).
             allgather(
                 tt_in,
-                device_out,
+                tt_out,
                 rank_sigs,
                 ctx_inner,
                 ctx_idx,
@@ -254,8 +243,9 @@ def bench_allgather[
 
         bencher_iter_custom(bencher, call_fn, ctx)
 
-    bench_multicontext[bench_iter](
+    bench_multicontext(
         b,
+        bench_iter,
         list_of_ctx,
         BenchId(name),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
@@ -321,7 +311,7 @@ def bench_allgather[
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
 
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", .bfloat16]()
     comptime num_gpus = get_defined_int["num_gpus", 2]()
     comptime cache_busting = get_defined_bool["cache_busting", True]()
     comptime length_mode = get_defined_string["length_mode", "uniform"]()

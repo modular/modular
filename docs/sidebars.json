@@ -27,8 +27,12 @@
         "serve/image-to-text",
         "serve/image-generation",
         "serve/video-generation",
+        "serve/audio-generation",
         "serve/embeddings",
+        "serve/decisions",
         "serve/function-calling",
+        "serve/chat-templates",
+        "serve/reasoning",
         "serve/structured-output",
         "develop/max-pipeline-bring-your-own-model",
         "models"
@@ -51,9 +55,12 @@
           "className": "tutorial-link"
         },
         "serve/prefix-caching",
+        "serve/prefill-decode-disaggregation",
         "serve/lora-adapters",
         "serve/speculative-decoding",
-        "serve/recipes"
+        "serve/parallelism",
+        "serve/recipes",
+        "serve/metrics"
       ]
     },
     {
@@ -242,6 +249,17 @@
             "id": "api/python/experimental"
           },
           "items": [
+            {
+              "type": "category",
+              "label": "compilation",
+              "link": {
+                "type": "doc",
+                "id": "api/python/experimental.compilation"
+              },
+              "items": [
+                "__AUTOGEN:max.experimental.compilation__"
+              ]
+            },
             "api/python/experimental.functional",
             {
               "type": "category",
@@ -252,6 +270,17 @@
               },
               "items": [
                 "__AUTOGEN:max.experimental.nn__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "nn.functional_kernels",
+              "link": {
+                "type": "doc",
+                "id": "api/python/experimental.nn.common_layers.functional_kernels"
+              },
+              "items": [
+                "__AUTOGEN:max.experimental.nn.common_layers.functional_kernels__"
               ]
             },
             {
@@ -387,6 +416,50 @@
                 "__AUTOGEN:max.nn.kv_cache__"
               ]
             },
+            {
+              "type": "category",
+              "label": "moe",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.moe"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.moe__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "sampling",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.sampling"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.sampling__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "state_space",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.state_space"
+              },
+              "items": [
+                {
+                  "type": "category",
+                  "label": "kimi_delta",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/nn.state_space.kimi_delta"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.nn.state_space.kimi_delta__"
+                  ]
+                },
+                "__AUTOGEN:max.nn.state_space__"
+              ]
+            },
             "__AUTOGEN:max.nn__"
           ]
         },
@@ -411,6 +484,8 @@
                 "api/python/pipelines.architectures.deepseekV3",
                 "api/python/pipelines.architectures.deepseekV3_2",
                 "api/python/pipelines.architectures.deepseekV3_nextn",
+                "api/python/pipelines.architectures.deepseekV4",
+                "api/python/pipelines.architectures.dflash2_qwen3_5",
                 "api/python/pipelines.architectures.dflash_llama3",
                 "api/python/pipelines.architectures.diffusion_gemma",
                 "api/python/pipelines.architectures.dspark_draft",
@@ -422,6 +497,7 @@
                 "api/python/pipelines.architectures.gemma4",
                 "api/python/pipelines.architectures.gemma4_assistant",
                 "api/python/pipelines.architectures.glm5_1",
+                "api/python/pipelines.architectures.glm5_next",
                 "api/python/pipelines.architectures.gpt_oss",
                 "api/python/pipelines.architectures.granite",
                 "api/python/pipelines.architectures.hy_v3",
@@ -435,10 +511,13 @@
                 "api/python/pipelines.architectures.llama3",
                 "api/python/pipelines.architectures.llama4",
                 "api/python/pipelines.architectures.mamba",
+                "api/python/pipelines.architectures.mimo_v2",
                 "api/python/pipelines.architectures.minimax_m2",
+                "api/python/pipelines.architectures.minimax_music3",
                 "api/python/pipelines.architectures.mistral",
                 "api/python/pipelines.architectures.mistral3",
                 "api/python/pipelines.architectures.mpnet",
+                "api/python/pipelines.architectures.muse_glimmer",
                 "api/python/pipelines.architectures.nemotron_h",
                 "api/python/pipelines.architectures.olmo",
                 "api/python/pipelines.architectures.olmo2",
@@ -454,16 +533,32 @@
                 "api/python/pipelines.architectures.qwen_image",
                 "api/python/pipelines.architectures.qwen_image_edit",
                 "api/python/pipelines.architectures.step3p5",
+                "api/python/pipelines.architectures.unified_dflash2_qwen3_5",
                 "api/python/pipelines.architectures.unified_dflash_gemma4_31b",
                 "api/python/pipelines.architectures.unified_dflash_kimi_k25",
                 "api/python/pipelines.architectures.unified_dflash_llama3",
+                "api/python/pipelines.architectures.unified_dflash_mimo_v2",
+                "api/python/pipelines.architectures.unified_dspark_deepseekV4",
                 "api/python/pipelines.architectures.unified_dspark_gemma4_12b",
                 "api/python/pipelines.architectures.unified_dspark_gemma4_31b",
                 "api/python/pipelines.architectures.unified_eagle_llama3",
                 "api/python/pipelines.architectures.unified_mtp_deepseekV3",
                 "api/python/pipelines.architectures.unified_mtp_gemma4",
                 "api/python/pipelines.architectures.unified_mtp_glm5_2",
+                "api/python/pipelines.architectures.unified_mtp_inkling",
+                "api/python/pipelines.architectures.unified_mtp_qwen3_5",
                 "api/python/pipelines.architectures.wan"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "audio",
+              "link": {
+                "type": "doc",
+                "id": "api/python/pipelines.audio"
+              },
+              "items": [
+                "__AUTOGEN:max.pipelines.audio__"
               ]
             },
             {
@@ -487,6 +582,17 @@
               "items": [
                 {
                   "type": "category",
+                  "label": "config",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.diffusion.config"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.diffusion.config__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "schedulers",
                   "link": {
                     "type": "doc",
@@ -507,6 +613,28 @@
                 "id": "api/python/pipelines.kv_cache"
               },
               "items": [
+                {
+                  "type": "category",
+                  "label": "kv_group_coordinator",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.kv_cache.paged_kv_cache.kv_group_coordinator"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.kv_cache.paged_kv_cache.kv_group_coordinator__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "recurrent_coordinator",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.kv_cache.paged_kv_cache.recurrent_coordinator"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.kv_cache.paged_kv_cache.recurrent_coordinator__"
+                  ]
+                },
                 "__AUTOGEN:max.pipelines.kv_cache__"
               ]
             },
@@ -553,6 +681,28 @@
               "items": [
                 {
                   "type": "category",
+                  "label": "arch_lookup",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.arch_lookup"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.arch_lookup__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "generate",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.generate"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.generate__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "interfaces",
                   "link": {
                     "type": "doc",
@@ -582,6 +732,17 @@
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.lib.registry__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "request_text",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.request_text"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.request_text__"
                   ]
                 },
                 "__AUTOGEN:max.pipelines.lib__"
@@ -678,6 +839,61 @@
                 "id": "api/python/pipelines.speculative"
               },
               "items": [
+                {
+                  "type": "category",
+                  "label": "adaptive_width",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.adaptive_width"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.adaptive_width__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "block_driver",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.block_driver"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.block_driver__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "depth_schedule",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.depth_schedule"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.depth_schedule__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "driver",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.driver"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.driver__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "spec_target",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.spec_target"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.spec_target__"
+                  ]
+                },
                 "__AUTOGEN:max.pipelines.speculative__"
               ]
             },
@@ -719,6 +935,17 @@
         },
         {
           "type": "category",
+          "label": "max.serve.media",
+          "link": {
+            "type": "doc",
+            "id": "api/python/serve.media"
+          },
+          "items": [
+            "__AUTOGEN:max.serve.media__"
+          ]
+        },
+        {
+          "type": "category",
           "label": "max.support.image",
           "link": {
             "type": "doc",
@@ -726,6 +953,17 @@
           },
           "items": [
             "__AUTOGEN:max.support.image__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.tree",
+          "link": {
+            "type": "doc",
+            "id": "api/python/tree"
+          },
+          "items": [
+            "__AUTOGEN:max.tree__"
           ]
         }
       ]

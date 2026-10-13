@@ -8,7 +8,7 @@ package(default_visibility = [
 
 modular_py_test(
     name = "laguna",
-    size = "small",
+    size = "medium",
     srcs = glob(["*.py"]),
     imports = ["."],
     # These are trivial pure-Python unit tests, but importing
@@ -20,9 +20,12 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/laguna",
         requirement("numpy"),
+        requirement("torch"),
     ],
 )

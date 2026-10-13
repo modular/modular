@@ -35,30 +35,30 @@ from linalg.mxfp4_dequant import dequant_mxfp4
 
 
 def bench_dequant_stack[
-    N: Int, K: Int, num_rows_total: Int, out_type: DType = DType.bfloat16
+    N: Int, K: Int, num_rows_total: Int, out_type: DType = .bfloat16
 ](ctx: DeviceContext, mut b: Bench) raises:
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
 
-    var b_packed_device = ctx.enqueue_create_buffer[DType.uint8](
+    var b_packed_device = ctx.enqueue_create_buffer[.uint8](
         num_rows_total * packed_K
     )
-    var b_scales_device = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var b_scales_device = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         num_rows_total * scale_K
     )
     var b_out_device = ctx.enqueue_create_buffer[out_type](num_rows_total * K)
 
-    init_vector_launch[DType.uint8](
+    init_vector_launch[.uint8](
         b_packed_device,
         num_rows_total * packed_K,
         InitializationType.uniform_distribution,
         ctx,
     )
-    var bs_hbuf = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+    var bs_hbuf = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
         num_rows_total * scale_K
     )
     for i in range(num_rows_total * scale_K):
-        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 
@@ -70,7 +70,7 @@ def bench_dequant_stack[
     )
     var b_out_tt = TileTensor(b_out_device, row_major((num_rows_total, Idx[K])))
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
         ctx: DeviceContext, iteration: Int
     ) raises {mut b_out_tt, imm}:
@@ -83,9 +83,8 @@ def bench_dequant_stack[
             num_cols=K,
         )
 
-    @__parameter
-    @always_inline
-    def bench_func(mut bencher: Bencher) raises:
+    @inline(.always)
+    def bench_func(mut bencher: Bencher) raises {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 
     comptime total_bytes = (
@@ -95,7 +94,8 @@ def bench_dequant_stack[
     )
     var bandwidth = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(
             String(
                 "dequant_mxfp4_to_bf16(N=",

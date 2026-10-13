@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""TileTensor-level probe for `DevicePointerStorage`.
+"""TileTensor-level probe for `DevicePointerEngine`.
 
 This is the parent-struct analogue of the lower-level
 `test_nested_device_pointer_kernel` probe in the asyncrt test suite. It passes
-a whole `TileTensor[..., Storage=DevicePointerStorage]` to a GPU kernel that
+a whole `TileTensor[..., Engine=DevicePointerEngine]` to a GPU kernel that
 reads `tile.layout` (the field laid out *after* the storage handle) and writes
 through that storage. Together those two accesses close the loop on the
-`DevicePointerStorage` design:
+`DevicePointerEngine` design:
 
 - The tile's storage handle is a `DevicePointer`, whose host representation
   carries a non-owning reference to the owning `DeviceBuffer` plus an element
@@ -38,8 +38,8 @@ through that storage. Together those two accesses close the loop on the
   the `layout` field.)
 - The kernel reads the extents with `tile.dim[i]()` (a load from the `layout`
   field) and writes through `tile.raw_store(...)` (the device pointer).
-  `DevicePointerStorage.store` reinterprets the handle's first bytes as a bare
-  device pointer — the cast pattern the lower-level probe validated in
+  `DevicePointerEngine.unsafe_ptr` reinterprets the handle's first bytes as a
+  bare device pointer — the cast pattern the lower-level probe validated in
   isolation. The two together prove the `layout` field decoded at the right
   device offset and the encoded pointer is the real device address. (We store
   at linear indices via `raw_store` rather than via `tile[r, c]`: the variadic
@@ -53,17 +53,18 @@ which walks the struct and encodes each field at its device-layout offset: a
 `DevicePassable` field runs its own `_to_device_type` (so the `_storage`
 handle's `DevicePointer` substitutes its device-side leaf — a real device
 address written via `encode_device_ptr` — rather than being byte-copied as the
-host `DeviceBuffer` reference), while the plain `layout` field is bit-copied.
+host `DeviceBuffer` reference), while the `layout` field's `Coord`s are
+bit-copied.
 A flat `encoder.encode(self, target)` would instead byte-copy the whole host
-struct — correct only for a plain `PointerStorage`-backed tile, but for a
+struct — correct only for a plain `DefaultEngine`-backed tile, but for a
 `DevicePointer` handle it would copy the host reference verbatim and the kernel
 would write to a bogus address.
 """
 
 from layout import TensorLayout, TileTensor, row_major
-from layout.tensor_storage import DevicePointerStorage
+from layout.tensor_engine import DevicePointerEngine
 
-from std.gpu import global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 
 from std.testing import assert_equal
@@ -83,10 +84,10 @@ comptime _NUM_ELEMENTS = _ROWS * _COLS
 # matches the origin-erased type the kernel parameter names after
 # `as_unsafe_any_origin()`.
 comptime _ProbeTile[LayoutType: TensorLayout] = TileTensor[
-    DType.float32,
+    .float32,
     LayoutType,
     UnsafeAnyOrigin[mut=True],
-    Storage=DevicePointerStorage[element_width=1],
+    Engine=DevicePointerEngine[element_width=1],
 ]
 
 
@@ -125,17 +126,17 @@ def fill_tile_via_layout_and_device_pointer_kernel[
 def test_kernel_reads_dynamic_layout_dims_after_device_pointer(
     ctx: DeviceContext,
 ) raises:
-    """A whole `TileTensor[..., Storage=DevicePointerStorage]` round-trips its
+    """A whole `TileTensor[..., Engine=DevicePointerEngine]` round-trips its
     layout extents back through the device pointer."""
     print("== test_kernel_reads_dynamic_layout_dims_after_device_pointer")
 
-    var buf = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var buf = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
 
     # Runtime extents -> a dynamic layout whose shape lives in the struct's
     # bytes (see module docstring for why static dims would defeat the probe).
     # `buffer.device_ptr()` selects the `DevicePointer` constructor (see
-    # `TileTensor.DeviceGenericType`), producing a `DevicePointerStorage`-backed
+    # `TileTensor.DeviceGenericType`), producing a `DevicePointerEngine`-backed
     # tile that `as_unsafe_any_origin()` casts to the kernel parameter type.
     var rows = _ROWS
     var cols = _COLS
@@ -148,7 +149,7 @@ def test_kernel_reads_dynamic_layout_dims_after_device_pointer(
         tile.as_unsafe_any_origin(), grid_dim=1, block_dim=1
     )
 
-    var host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()
 
@@ -165,7 +166,7 @@ def test_kernel_fills_tile_via_dynamic_layout_and_device_pointer(
     the device pointer, verifying shape + stride decode and every store."""
     print("== test_kernel_fills_tile_via_dynamic_layout_and_device_pointer")
 
-    var buf = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var buf = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
 
     var rows = _ROWS
@@ -179,7 +180,7 @@ def test_kernel_fills_tile_via_dynamic_layout_and_device_pointer(
         tile.as_unsafe_any_origin(), grid_dim=1, block_dim=1
     )
 
-    var host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()
 

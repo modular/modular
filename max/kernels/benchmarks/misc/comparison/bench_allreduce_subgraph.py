@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -371,7 +370,7 @@ def main() -> None:
         dist.destroy_process_group()
 
     name = "bench_allreduce_subgraph"
-    met_sec, bytes = result if result else [0, 0]
+    met_sec, bytes = result or [0, 0]
     bytes = args.num_bytes
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 

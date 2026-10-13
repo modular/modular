@@ -14,18 +14,17 @@
 from std.sys import size_of
 from std.math.uutils import umod, udivmod
 
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.sync import barrier
-from std.gpu import warp_id as get_warp_id
+from max.gpu import warp_id as get_warp_id
 from max.gpu.host import DeviceContext
 from max.gpu.memory import async_copy
 from max.gpu.sync import async_copy_arrive
 from layout.tma_async import PipelineState, SharedMemBarrier
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import TileTensor, row_major
 from layout._fillers import random
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
-from std.utils import IndexList
 
 
 def producer_consumer_kernel[NUM_THREADS: Int]():
@@ -33,7 +32,7 @@ def producer_consumer_kernel[NUM_THREADS: Int]():
     var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -73,13 +72,13 @@ def producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var producer_mbar = unsafe_stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
     var consumer_mbar = unsafe_stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -159,7 +158,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
         size_per_stage * num_stages,
         DType.float32,
         alignment=16,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Initialize smem buffer
@@ -175,13 +174,13 @@ def cpaysnc_producer_consumer_pipeline_kernel[
     var produced_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
     var consumed_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
         alignment=8,
     ]()
 
@@ -198,9 +197,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             var offset = i * size_per_stage + thread_idx.x * size_per_copy
             async_copy[16](
-                (src.unsafe_ptr() + offset).address_space_cast[
-                    AddressSpace.GLOBAL
-                ](),
+                (src.unsafe_ptr() + offset).address_space_cast[.GLOBAL](),
                 smem + offset,
             )
             async_copy_arrive(produced_mbar[i].unsafe_ptr())
@@ -233,29 +230,18 @@ def test_cpasync_producer_consumer_pipeline[
 ](ctx: DeviceContext) raises:
     comptime size_per_stage = 128 * (16 // size_of[DType.float32]())
     comptime size = num_stages * size_per_stage
-    comptime shape1d = IndexList[1](size)
-
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var src_device_buffer = ctx.enqueue_create_buffer[DType.float32](size)
-    var src_device = LayoutTensor[DType.float32, layout_1d](
-        src_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
-    )
+    var src_device_buffer = ctx.enqueue_create_buffer[.float32](size)
     with src_device_buffer.map_to_host() as src_host_buffer:
-        random(
-            LayoutTensor[DType.float32, layout_1d](
-                src_host_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
-            )
-        )
+        random(TileTensor(src_host_buffer, row_major[size]()))
 
-    var dst_device_buffer = ctx.enqueue_create_buffer[DType.float32](size)
-    var dst_device = LayoutTensor[DType.float32, layout_1d](
-        dst_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
-    )
+    var dst_device_buffer = ctx.enqueue_create_buffer[.float32](size)
 
     comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
     ctx.enqueue_function[kernel](
-        Span[Float32](unsafe_ptr=src_device.ptr, length=size).as_imm(),
-        Span[Float32](unsafe_ptr=dst_device.ptr, length=size),
+        Span[Float32](
+            unsafe_ptr=src_device_buffer.unsafe_ptr(), length=size
+        ).as_imm(),
+        Span[Float32](unsafe_ptr=dst_device_buffer.unsafe_ptr(), length=size),
         grid_dim=(1),
         block_dim=(256),
     )

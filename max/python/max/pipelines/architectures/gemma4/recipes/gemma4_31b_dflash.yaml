@@ -34,6 +34,6 @@ speculative:
 # resolves to a default whose per-batch-size capture pools do not fit next
 # to the bf16 target weights on one 180 GB device.
 runtime:
-  max_vision_cache_entries: 0
+  vision_cache_utilization: 0
   device_graph_capture: true
   max_batch_size: 64

@@ -23,6 +23,12 @@ Tier mapping CPU ↔ GPU:
 - **Inner-axis cooperative** (`emit_tile_width == 1`, `axis == rank - 1`):
   one worker per row, vectorize the row at `simd_width`. Mirrors the
   GPU block tier with `BLOCK_SIZE = 1`.
+- **Inner-axis split-axis** (reduce-shaped, few long rows): each row
+  splits across workers; the last to arrive joins the partials and
+  emits. Mirrors the GPU single-state split-K tier.
+- **Inner-axis pointwise split-axis** (normalize-shaped, one long row):
+  the row splits across workers, one `sync_parallelize` per phase.
+  Mirrors the GPU K+1-launch pointwise split-K tier.
 - **Non-inner-axis tiled** (`emit_tile_width > 1`, `supports_tiled`): one
   worker per slice; tile the innermost-non-axis dim with
   `W = simd_width` independent accumulators. Mirrors the GPU tiled
@@ -40,12 +46,19 @@ from std.math import align_down, ceildiv
 from std.math.math import min as _min
 from std.memory import UnsafePointer, unsafe_memset_zero
 from std.memory import alloc as ptr_alloc
-from std.sys.info import simd_width_of
+from std.sys import size_of
 
 from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import IndexList
 
-from algorithm.rowwise_types import Context, ContextParams, ReduceTier, RowBody
+from algorithm.rowwise_types import (
+    Context,
+    ContextParams,
+    ReduceTier,
+    RowBody,
+    RowCoord,
+    _SPLITK_STATE_BYTES,
+    _num_outputs_excluding_axis,
+)
 from max.algorithm.backend.cpu.parallelize import (
     _get_num_workers,
     sync_parallelize,
@@ -53,12 +66,6 @@ from max.algorithm.backend.cpu.parallelize import (
 from algorithm.reduce_op import ReduceOp, Reducer
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
-
-# Bytes per partial-state slot in the split-axis scratch buffer.
-# Mirrors the GPU split-K convention; covers every common monoid
-# (`ReduceSum` ≤ 16, `ArgMax` ≤ 16, `OnlineLogSumExp` ≤ 16,
-# Welford ≤ 24).
-comptime _SPLITK_STATE_BYTES = 128
 
 # Gating constants for the CPU axis-split tier. Enable only when the
 # worker pool is significantly under-saturated (`num_outputs * 4 <
@@ -72,6 +79,10 @@ comptime _SPLITK_STATE_BYTES = 128
 comptime _CPU_SPLITK_MIN_AXIS = 262144
 comptime _CPU_SPLITK_MIN_AXIS_PER_SPLIT = 32768
 comptime _CPU_SPLITK_MIN_SPLITS = 2
+# Split cap for the pointwise (normalize-shaped) split-axis tier. Each phase
+# is its own `sync_parallelize`, so more splits pay more launch overhead; past
+# 8 the single-row gain flattens for f32 and run-to-run variance grows.
+comptime _CPU_POINTWISE_SPLIT_MAX_SPLITS = 8
 
 
 # Inner-axis cooperative tier, wide-accumulator (opt-in via `associative`).
@@ -104,12 +115,12 @@ struct SerialReducer(Reducer, TrivialRegisterPassable):
     finalization (e.g. `ReduceSum` horizontally reducing its SIMD-wide
     accumulator into the scalar `acc` field exposed to bodies)."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Initializes the stateless single-participant reducer."""
         pass
 
-    @always_inline
+    @inline(.always)
     def sum[dtype: DType](self, val: Scalar[dtype]) -> Scalar[dtype]:
         """Returns `val` unchanged — nothing to sum across on CPU.
 
@@ -124,7 +135,7 @@ struct SerialReducer(Reducer, TrivialRegisterPassable):
         """
         return val
 
-    @always_inline
+    @inline(.always)
     def max[dtype: DType](self, val: Scalar[dtype]) -> Scalar[dtype]:
         """Returns `val` unchanged — nothing to combine across on CPU.
 
@@ -139,7 +150,7 @@ struct SerialReducer(Reducer, TrivialRegisterPassable):
         """
         return val
 
-    @always_inline
+    @inline(.always)
     def min[dtype: DType](self, val: Scalar[dtype]) -> Scalar[dtype]:
         """Returns `val` unchanged — nothing to combine across on CPU.
 
@@ -154,7 +165,7 @@ struct SerialReducer(Reducer, TrivialRegisterPassable):
         """
         return val
 
-    @always_inline
+    @inline(.always)
     def generic[S: ReduceOp](self, mut state: S):
         """No-op cross-thread combine — one worker per output on CPU.
 
@@ -172,13 +183,14 @@ struct SerialReducer(Reducer, TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _simd_walk_unrolled[
     W: Int,
     rank: Int,
     //,
-    TileFn: ImplicitlyCopyable & (def[ws: Int, _r: Int](IndexList[_r]) -> None),
-](mut coords: IndexList[rank], axis: Int, lo: Int, hi: Int, tile_fn: TileFn):
+    axis: Int,
+    TileFn: ImplicitlyCopyable & (def[ws: Int](RowCoord[rank]) -> None),
+](mut coords: RowCoord[rank], lo: Int, hi: Int, tile_fn: TileFn):
     """8-way-unrolled SIMD walk over `[lo, hi)` along `axis`, then SIMD
     and scalar tails. Shared by the split-axis tier (`[lo, hi)` a
     per-worker stripe) and the inner-axis cooperative tier
@@ -193,30 +205,30 @@ def _simd_walk_unrolled[
     var k = lo
     while k < simd_unrolled:
         comptime for u in range(UNROLL):
-            coords[axis] = k + u * W
-            tile_fn[W, rank](coords)
+            coords.write_axis[axis](k + u * W)
+            tile_fn[W](coords)
         k += W_U
     while k < simd_aligned:
-        coords[axis] = k
-        tile_fn[W, rank](coords)
+        coords.write_axis[axis](k)
+        tile_fn[W](coords)
         k += W
     while k < hi:
-        coords[axis] = k
-        tile_fn[1, rank](coords)
+        coords.write_axis[axis](k)
+        tile_fn[1](coords)
         k += 1
 
 
-@always_inline
+@inline(.always)
 def _simd_walk_unrolled[
     State: ReduceOp,
     W: Int,
     rank: Int,
     //,
-    TileFn: ImplicitlyCopyable
-    & (def[ws: Int, _r: Int](mut State, IndexList[_r]) -> None),
-](
-    mut coords: IndexList[rank],
     axis: Int,
+    TileFn: ImplicitlyCopyable
+    & (def[ws: Int](mut State, RowCoord[rank]) -> None),
+](
+    mut coords: RowCoord[rank],
     lo: Int,
     hi: Int,
     mut state: State,
@@ -232,25 +244,31 @@ def _simd_walk_unrolled[
     var k = lo
     while k < simd_unrolled:
         comptime for u in range(UNROLL):
-            coords[axis] = k + u * W
-            tile_fn[W, rank](state, coords)
+            coords.write_axis[axis](k + u * W)
+            tile_fn[W](state, coords)
         k += W_U
     while k < simd_aligned:
-        coords[axis] = k
-        tile_fn[W, rank](state, coords)
+        coords.write_axis[axis](k)
+        tile_fn[W](state, coords)
         k += W
     while k < hi:
-        coords[axis] = k
-        tile_fn[1, rank](state, coords)
+        coords.write_axis[axis](k)
+        tile_fn[1](state, coords)
         k += 1
 
 
-@always_inline
+@inline(.always)
 def reduce[
     params: ContextParams,
+    rank: Int,
     //,
-    TileFn: ImplicitlyCopyable & (def[ws: Int, _r: Int](IndexList[_r]) -> None),
-](row_coords: Coord, axis_size: Int, ctx: Context[params], tile_fn: TileFn):
+    TileFn: ImplicitlyCopyable & (def[ws: Int](RowCoord[rank]) -> None),
+](
+    row_coords: RowCoord[rank],
+    axis_size: Int,
+    ctx: Context[params],
+    tile_fn: TileFn,
+):
     """Drives `tile_fn` over the reduce axis, CPU-side, with no monoid
     state — pure per-tile iteration for map/emit terminals (see the
     state-carrying overload below for reduce phases).
@@ -269,8 +287,7 @@ def reduce[
             params reads).
         tile_fn: Per-tile callback; closes over input/output closures.
     """
-    comptime rank = row_coords.rank
-    var coords = coord_to_index_list(row_coords)
+    var coords = row_coords
 
     comptime if ctx._tier == ReduceTier.Splitk:
         var num_splits = Int(ctx._blocks_per_row)
@@ -278,29 +295,30 @@ def reduce[
         var stripe = ceildiv(axis_size, num_splits)
         var lo = split * stripe
         var hi = _min((split + 1) * stripe, axis_size)
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank](
-            coords, ctx.axis, lo, hi, tile_fn
+        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+            coords, lo, hi, tile_fn
         )
     elif ctx.emit_tile_width > 1:
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords[ctx.axis] = k
-            tile_fn[W, rank](coords)
+            coords.write_axis[ctx.axis](k)
+            tile_fn[W](coords)
     else:
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank](
-            coords, ctx.axis, 0, axis_size, tile_fn
+        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+            coords, 0, axis_size, tile_fn
         )
 
 
-@always_inline
+@inline(.always)
 def reduce[
     State: ReduceOp,
     params: ContextParams,
+    rank: Int,
     //,
     TileFn: ImplicitlyCopyable
-    & (def[ws: Int, _r: Int](mut State, IndexList[_r]) -> None),
+    & (def[ws: Int](mut State, RowCoord[rank]) -> None),
 ](
-    row_coords: Coord,
+    row_coords: RowCoord[rank],
     axis_size: Int,
     ctx: Context[params],
     mut state: State,
@@ -341,8 +359,7 @@ def reduce[
         tile_fn: Per-tile callback; closes over input closures and
             folds each tile into `state`.
     """
-    comptime rank = row_coords.rank
-    var coords = coord_to_index_list(row_coords)
+    var coords = row_coords
 
     comptime if ctx._tier == ReduceTier.Splitk:
         # Split-axis tier: each worker walks ONE stripe of the reduce
@@ -351,30 +368,33 @@ def reduce[
         # the cross-worker cache-line interleave that helps GPU warps.
         # SIMD-vectorized within the stripe, 8-way unrolled like the
         # cooperative tier (`_simd_walk_unrolled` — shared with it).
-        var num_splits = Int(ctx._blocks_per_row)
+        # A state too large for a partial slot can't be joined across
+        # workers, so worker 0 walks the whole row alone (see `pjoin`).
+        comptime fits = size_of[State.Single]() <= _SPLITK_STATE_BYTES
+        var num_splits = Int(ctx._blocks_per_row) if fits else 1
         var split = Int(ctx._block_in_row)
         var stripe = ceildiv(axis_size, num_splits)
-        var lo = split * stripe
+        var lo = _min(split * stripe, axis_size)
         var hi = _min((split + 1) * stripe, axis_size)
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank](
-            coords, ctx.axis, lo, hi, state, tile_fn
+        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+            coords, lo, hi, state, tile_fn
         )
     elif ctx.emit_tile_width > 1:
         comptime W = ctx.emit_tile_width
         for k in range(axis_size):
-            coords[ctx.axis] = k
-            tile_fn[W, rank](state, coords)
+            coords.write_axis[ctx.axis](k)
+            tile_fn[W](state, coords)
     else:
         # 8-way unrolled SIMD walk along the whole axis (unroll factor
         # from `_reduce_along_inner_dimension`); the unroll lets the OoO
         # core overlap loads + reduces. Shared with the split-axis tier
         # above via `_simd_walk_unrolled` — same walk, `[0, axis_size)`.
-        _simd_walk_unrolled[W=ctx.simd_width, rank=rank](
-            coords, ctx.axis, 0, axis_size, state, tile_fn
+        _simd_walk_unrolled[W=ctx.simd_width, rank=rank, axis=ctx.axis](
+            coords, 0, axis_size, state, tile_fn
         )
 
 
-@always_inline
+@inline(.always)
 def pjoin[
     State: ReduceOp,
     params: ContextParams,
@@ -393,12 +413,12 @@ def pjoin[
       accumulator into the scalar `acc` field).
     - Tiled (`emit_tile_width > 1`): per-output accumulators already final;
       each lane is a separate output; skip the cross-participant join.
-    - Split-axis (`is_splitk_tier`): write this worker's partial to its
-      slot in `ctx._partials_base`, atomically increment
+    - Split-axis (`is_splitk_tier`): write this worker's width-1
+      partial to its slot (`ctx.row_partial`), atomically increment
       `counters_base[row_idx]`, and — only the worker whose increment
       brings the counter to `blocks_per_row` — gather all partials,
-      `join` them into `self.state`, and set `ctx._is_last_block` so
-      `rowwise.once` gates emission.
+      `join` them, run `join_parallel` once on the merged result, and
+      set `ctx._is_last_block` so `rowwise.once` gates emission.
 
     Parameters:
         State: The monoid type being joined.
@@ -411,37 +431,34 @@ def pjoin[
             `rowwise.once` knows which worker emits.
     """
     comptime if ctx._tier == ReduceTier.Splitk:
-        # Per-worker finalization first: collapse the lanes to a width-1
-        # scalar, finalize (SerialReducer is a one-worker no-op), broadcast
-        # back. Branchless (reduce/broadcast are identity at W == 1).
-        var sc = state.reduce()
-        sc.join_parallel(SerialReducer())
-        state = State(sc)
-        var num_splits = Int(ctx._blocks_per_row)
-        var split = Int(ctx._block_in_row)
-        var row_idx_ = Int(ctx._row_idx)
-        var row_base_bytes = (
-            ctx._partials_base + row_idx_ * num_splits * _SPLITK_STATE_BYTES
-        )
-        var slot_ptr = (row_base_bytes + split * _SPLITK_STATE_BYTES).bitcast[
-            State
-        ]()
-        slot_ptr[0] = state
-        var counter_ptr = ctx._counters_base + row_idx_
-        # `fetch_add` returns the prior value; `prev + 1 == num_splits`
-        # means this worker arrived last.
-        var prev = Atomic[Int32].fetch_add(counter_ptr, Int32(1))
-        var is_last = Int(prev) + 1 == num_splits
-        ctx._is_last_block = is_last
-        if is_last:
-            # Merge other workers' partials into self.
-            for s in range(num_splits):
-                if s == split:
-                    continue
-                var other_ptr = (
-                    row_base_bytes + s * _SPLITK_STATE_BYTES
-                ).bitcast[State]()
-                state.join(other_ptr[0])
+        comptime if size_of[State.Single]() > _SPLITK_STATE_BYTES:
+            # Worker 0 reduced the whole row (see `reduce`); it emits.
+            var sc = state.reduce()
+            sc.join_parallel(SerialReducer())
+            state = State(sc)
+            ctx._is_last_block = Int(ctx._block_in_row) == 0
+        else:
+            # Collapse this worker's lanes to width 1 and publish the raw
+            # width-1 partial, so it stays `join`-able for the cross-worker
+            # merge. Finalization happens once, on the fully merged state.
+            var sc = state.reduce()
+            var num_splits = Int(ctx._blocks_per_row)
+            var split = Int(ctx._block_in_row)
+            ctx.row_partial[State.Single](split)[0] = sc
+            var counter_ptr = ctx._counters_base + Int(ctx._row_idx)
+            # `fetch_add` returns the prior value; `prev + 1 == num_splits`
+            # means this worker arrived last.
+            var prev = Atomic[Int32].fetch_add(counter_ptr, Int32(1))
+            var is_last = Int(prev) + 1 == num_splits
+            ctx._is_last_block = is_last
+            if is_last:
+                # Merge other workers' partials into self.
+                for s in range(num_splits):
+                    if s == split:
+                        continue
+                    sc.join(ctx.row_partial[State.Single](s)[0])
+                sc.join_parallel(SerialReducer())
+            state = State(sc)
     elif ctx.emit_tile_width == 1:
         # Cooperative: collapse lanes to a width-1 scalar, finalize, broadcast
         # back (branchless — identity at W == 1).
@@ -450,7 +467,7 @@ def pjoin[
         state = State(sc)
 
 
-@always_inline
+@inline(.always)
 def once[
     Emit: ImplicitlyCopyable & RegisterPassable & (def() -> None),
     params: ContextParams,
@@ -478,6 +495,69 @@ def once[
 
 
 # ===-----------------------------------------------------------------------===#
+# Per-element-output (pointwise) split-axis helpers.
+#
+# CPU counterpart of the GPU's K+1-launch pointwise split-K: `launch` runs one
+# `sync_parallelize` per phase over `(row, split)` workers, and `Row` routes
+# reduce `i` in phase `p` to combine (`i < p`), partial (`i == p`), or no-op
+# (`i > p`). The `sync_parallelize` return between phases is the cross-worker
+# sync, so no atomics. Scratch layout matches the GPU's (see
+# `Context.phase_partial`).
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.always)
+def pointwise_splitk_store_partial[
+    State: ReduceOp, params: ContextParams, //
+](mut state: State, ctx: Context[params], reduce_index: Int):
+    """Stores this worker's raw width-1 partial for reduce `reduce_index`.
+
+    Finalization (`join_parallel`) is deferred to the combine, which runs it
+    once on the fully joined state, as the reduce-shaped split-axis tier does.
+
+    Parameters:
+        State: The monoid type being reduced.
+        params: Comptime dispatch parameters.
+
+    Args:
+        state: This worker's stripe state; collapsed to width 1 on return.
+        ctx: The dispatch bundle.
+        reduce_index: Order index of the reduce within the body.
+    """
+    comptime assert (
+        size_of[State.Single]() <= _SPLITK_STATE_BYTES
+    ), "monoid state too large for per-element split-K; pass dtype_size=0"
+    var s = state.reduce()
+    ctx.phase_partial[State.Single](reduce_index, Int(ctx._block_in_row))[0] = s
+    state = State(s)
+
+
+@inline(.always)
+def pointwise_splitk_combine[
+    params: ContextParams, //, State: ReduceOp
+](ctx: Context[params], reduce_index: Int) -> State:
+    """Joins the row's `num_splits` partials for reduce `reduce_index` into
+    the finalized global state. Every worker runs this independently.
+
+    Parameters:
+        params: Comptime dispatch parameters.
+        State: The monoid type being combined.
+
+    Args:
+        ctx: The dispatch bundle.
+        reduce_index: Order index of the reduce within the body.
+
+    Returns:
+        The finalized row-wide state.
+    """
+    var sc = ctx.phase_partial[State.Single](reduce_index, 0)[0]
+    for s in range(1, Int(ctx._blocks_per_row)):
+        sc.join(ctx.phase_partial[State.Single](reduce_index, s)[0])
+    sc.join_parallel(SerialReducer())
+    return State(sc)
+
+
+# ===-----------------------------------------------------------------------===#
 # `launch` — top-level CPU scaffolder.
 # ===-----------------------------------------------------------------------===#
 
@@ -489,6 +569,8 @@ def launch[
     simd_width: Int,
     supports_tiled: Bool = False,
     associative: Bool = False,
+    supports_splitk: Bool = False,
+    num_phases: Int = 0,
 ](body: Body, shape: Coord) raises:
     """Top-level CPU scaffolder. Picks the tier from `axis` and
     `supports_tiled`, parallelizes over outputs (or output tiles), and
@@ -519,6 +601,14 @@ def launch[
             accumulate dependency chain. Additive reductions
             (`reduce_sum`, `reduce_mean`) set this `True`; everything
             else keeps the native width.
+        supports_splitk: Whether the body can run in the inner-axis
+            split-axis tier, where only the last worker to arrive sees the
+            joined state. Reduce-shaped bodies set this `True`;
+            normalize-shaped bodies need the joined state in every worker.
+        num_phases: Normalize-shaped opt-in for the pointwise split-axis
+            tier: `num_phases - 1` dependent reduces, then the
+            per-element write, each run as its own `sync_parallelize`.
+            `<= 1` disables it.
 
     Args:
         body: The per-row computation. Receives a `Context` and the
@@ -535,9 +625,16 @@ def launch[
     var shape_il = coord_to_index_list(shape)
     var axis_size = shape_il[axis]
     var total_size = shape_il.flattened_length()
-    if total_size == 0 or axis_size == 0:
+    # `num_outputs` is the product of every dim other than `axis`, so it
+    # stays well-defined when the reduce axis itself is empty
+    # (`axis_size == 0`) — unlike `total_size // axis_size`, which is a
+    # `0 // 0` form in that case. A reduce-shaped body still owns one
+    # output per row when the axis is empty (the monoid identity), so
+    # only `num_outputs == 0` (no rows at all) means there is truly
+    # nothing to run.
+    var num_outputs = _num_outputs_excluding_axis[axis](shape)
+    if num_outputs == 0:
         return
-    var num_outputs = total_size // axis_size
 
     var num_workers = _get_num_workers(total_size)
 
@@ -560,8 +657,84 @@ def launch[
         var splits_pool = num_workers // num_outputs if num_outputs > 0 else 1
         var splits_axis = axis_size // _CPU_SPLITK_MIN_AXIS_PER_SPLIT
         var splits_per_row = _min(splits_pool, splits_axis)
+
+        comptime if num_phases > 1:
+            # Only a single row splits: with two or more rows the
+            # cooperative tier already runs rows in parallel, and the extra
+            # phase launches plus the lost per-core cache locality between
+            # phases outweigh the added parallelism (f32 measured 1.4-2x
+            # slower from 4 rows up on a 2-socket, 192-thread host).
+            var phased_splits = _min(
+                _min(num_workers, axis_size // _CPU_SPLITK_MIN_AXIS_PER_SPLIT),
+                _CPU_POINTWISE_SPLIT_MAX_SPLITS,
+            )
+            if (
+                num_outputs == 1
+                and phased_splits >= _CPU_SPLITK_MIN_SPLITS
+                and axis_size >= _CPU_SPLITK_MIN_AXIS
+            ):
+                # ---- pointwise split-axis tier ----
+                # One `sync_parallelize` per phase over `(row, split)`
+                # workers; every worker sees each joined stat before the
+                # final per-element write of its own stripe.
+                comptime params_phased = ContextParams(
+                    axis=axis,
+                    emit_tile_width=1,
+                    BLOCK_SIZE=1,
+                    tier=ReduceTier.Splitk,
+                    simd_width=effective_simd,
+                    target="cpu",
+                    num_phases=num_phases,
+                )
+                var num_splits = phased_splits
+                var total_workers = num_outputs * num_splits
+                # No memset: slot [row, reduce, split] is written in its
+                # reduce's partial phase before any combine reads it.
+                var phased_buf = rebind[
+                    UnsafePointer[UInt8, MutUntrackedOrigin]
+                ](
+                    ptr_alloc[UInt8](
+                        num_outputs
+                        * (num_phases - 1)
+                        * num_splits
+                        * _SPLITK_STATE_BYTES
+                    )
+                )
+
+                for phase in range(num_phases):
+
+                    @inline(.always)
+                    def phase_worker(
+                        w: Int,
+                    ) {
+                        var phased_buf, var num_splits, var phase, var body, imm
+                    }:
+                        var row_idx, split_idx = divmod(w, num_splits)
+                        var row_coords = _get_nd_indices_from_flat_index(
+                            row_idx, shape_il, axis
+                        )
+                        var ctx = Context[params_phased](
+                            partials_base=phased_buf,
+                            counters_base=UnsafePointer[
+                                Int32, MutUntrackedOrigin
+                            ](unsafe_from_address=1),
+                            blocks_per_row=Int32(num_splits),
+                            block_in_row=Int32(split_idx),
+                            row_idx=Int32(row_idx),
+                            is_last_block=False,
+                            phase=Int32(phase),
+                        )
+                        body[params_phased](
+                            Coord(row_coords.canonicalize()), ctx
+                        )
+
+                    sync_parallelize(phase_worker, total_workers)
+                phased_buf.free()
+                return
+
         if (
-            num_outputs * 4 <= num_workers
+            supports_splitk
+            and num_outputs * 4 <= num_workers
             and splits_per_row >= _CPU_SPLITK_MIN_SPLITS
             and axis_size >= _CPU_SPLITK_MIN_AXIS
         ):
@@ -593,12 +766,17 @@ def launch[
             )
             unsafe_memset_zero(counters_buf, num_outputs)
 
-            @always_inline
-            @__parameter
-            @__copy_capture(partials_buf, counters_buf, num_splits, body)
-            def split_worker(w: Int):
-                var row_idx = w // num_splits
-                var split_idx = w % num_splits
+            @inline(.always)
+            def split_worker(
+                w: Int,
+            ) {
+                var partials_buf,
+                var counters_buf,
+                var num_splits,
+                var body,
+                imm,
+            }:
+                var row_idx, split_idx = divmod(w, num_splits)
                 var row_coords = _get_nd_indices_from_flat_index(
                     row_idx, shape_il, axis
                 )
@@ -612,7 +790,7 @@ def launch[
                 )
                 body[params_splitk](Coord(row_coords.canonicalize()), ctx)
 
-            sync_parallelize[split_worker](total_workers)
+            sync_parallelize(split_worker, total_workers)
             partials_buf.free()
             counters_buf.free()
         else:
@@ -626,13 +804,10 @@ def launch[
             var actual_workers = _min(num_workers, num_outputs)
             var chunk = ceildiv(num_outputs, actual_workers)
 
-            @always_inline
-            @__parameter
-            def run_coop[params: ContextParams]():
-                @always_inline
-                @__parameter
-                @__copy_capture(body)
-                def row_worker(w: Int):
+            @inline(.always)
+            def run_coop[params: ContextParams]() {imm}:
+                @inline(.always)
+                def row_worker(w: Int) {var body, imm}:
                     var start = w * chunk
                     var end = _min((w + 1) * chunk, num_outputs)
                     if start >= end:
@@ -644,7 +819,7 @@ def launch[
                         )
                         body[params](Coord(row_coords.canonicalize()), ctx)
 
-                sync_parallelize[row_worker](actual_workers)
+                sync_parallelize(row_worker, actual_workers)
 
             # Opt-in wide-bf16-accumulator path for large rows (`associative`,
             # sum/mean only): a `_CPU_ILP_ACCUMULATORS * simd_width`-wide monoid
@@ -666,7 +841,12 @@ def launch[
     else:
         comptime inner_axis = rank - 1
         var inner_dim = shape_il[inner_axis]
-        var slice_size = total_size // (axis_size * inner_dim)
+        # `num_outputs // inner_dim` rather than `total_size // (axis_size *
+        # inner_dim)`: the latter is `0 // 0` when `axis_size == 0`.
+        # `inner_dim` is one of the dims `num_outputs` multiplies over (it
+        # isn't `axis` in this non-inner-axis branch), so `num_outputs > 0`
+        # (checked above) guarantees `inner_dim > 0` here.
+        var slice_size = num_outputs // inner_dim
         var chunk = ceildiv(slice_size, num_workers)
 
         # NON-inner axis. Two sub-tiers, mirroring the GPU non-inner split:
@@ -702,10 +882,8 @@ def launch[
             target="cpu",
         )
 
-        @always_inline
-        @__parameter
-        @__copy_capture(body)
-        def slice_worker(w: Int):
+        @inline(.always)
+        def slice_worker(w: Int) {var body, imm}:
             var s_start = w * chunk
             var s_end = _min((w + 1) * chunk, slice_size)
             if s_start >= s_end:
@@ -735,4 +913,4 @@ def launch[
                     body[params_scalar_strided](Coord(slice_coords), ctx_scalar)
                     k += 1
 
-        sync_parallelize[slice_worker](num_workers)
+        sync_parallelize(slice_worker, num_workers)

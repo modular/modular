@@ -298,6 +298,89 @@ def truncation_stats(
     return len(truncated_rows), mean_finished, p50_finished
 
 
+def _graded_correct(row: dict[str, Any]) -> bool:
+    """Reads the correctness flag most evals record directly on the row."""
+    return bool(row.get("correct"))
+
+
+def finish_stats(
+    results: list[dict[str, Any]],
+    is_correct: Callable[[dict[str, Any]], bool] = _graded_correct,
+) -> dict[str, Any]:
+    """Counts finish reasons and splits accuracy by how generation ended.
+
+    ``stop_ratio`` is the share of completed responses that finished with
+    ``stop`` rather than by hitting the token cap (``length``), mirroring how
+    the vendor reference reports it. Rows that errored have no finish reason
+    and stay out of the ratio.
+
+    ``accuracy_given_stop`` and ``accuracy_given_length`` are accuracy over the
+    stopped and the truncated rows, so accuracy over the completed rows factors
+    exactly::
+
+        completed = accuracy_given_stop   * stop_ratio
+                  + accuracy_given_length * (1 - stop_ratio)
+
+    Reporting the factors rather than only their sum keeps a shift in how often
+    the model fails to terminate from reading as a regression in answer
+    quality: on a reasoning model at a high token cap the runaway tail is
+    concentrated on a handful of prompts and moves far more easily than quality
+    does, so the two move independently and a single number cannot say which
+    one did.
+
+    ``accuracy_given_length`` is normally ``0.0``, because a response truncated
+    mid-reasoning carries no parseable answer. That holds because of what the
+    endpoint returns, though, not because of anything enforced here -- the
+    graders parse whatever content came back without consulting
+    ``finish_reason``, so a truncated response that happens to contain a
+    parseable answer does grade correct. Reporting the term measures that per
+    run instead of assuming it, and leaves the identity above exact either way.
+
+    Errored rows sit outside it entirely. :func:`exact_match_score` keeps them
+    in the denominator of the headline ``accuracy`` so that dropping the hardest
+    problems cannot inflate it, so the two agree only on an error-free run.
+    Otherwise ``accuracy`` is the completed-row figure scaled by the
+    ``answered / total`` completion factor, whose terms that summary reports
+    alongside it.
+
+    The reported ratios are rounded, so reconstruct from ``correct_given_stop``
+    and ``correct_given_length`` when the identity has to hold to the last bit.
+
+    Args:
+        results: The graded rows, including any that errored.
+        is_correct: Reads whether a row was graded correct. Defaults to the
+            ``correct`` flag; evals that grade into some other field (such as
+            AA-Omniscience's four-way ``verdict``) pass their own reader rather
+            than duplicating the grade onto the row.
+
+    Returns:
+        The finish-reason counts, ``stop_ratio``, and the correct-count and
+        accuracy conditioned on each finish reason. An accuracy is ``None``
+        when its finish reason never occurred, so that "no such rows" stays
+        distinguishable from "those rows all graded wrong".
+    """
+    stop_rows = [r for r in results if r.get("finish_reason") == "stop"]
+    length_rows = [r for r in results if r.get("finish_reason") == "length"]
+    stop = len(stop_rows)
+    length = len(length_rows)
+    completed = stop + length
+    correct_given_stop = sum(1 for r in stop_rows if is_correct(r))
+    correct_given_length = sum(1 for r in length_rows if is_correct(r))
+    return {
+        "finish_stop": stop,
+        "finish_length": length,
+        "stop_ratio": round(stop / completed, 4) if completed else None,
+        "correct_given_stop": correct_given_stop,
+        "accuracy_given_stop": (
+            round(correct_given_stop / stop, 4) if stop else None
+        ),
+        "correct_given_length": correct_given_length,
+        "accuracy_given_length": (
+            round(correct_given_length / length, 4) if length else None
+        ),
+    }
+
+
 def exact_match_score(
     results: list[dict[str, Any]], total: int, errors: int
 ) -> dict[str, Any]:
@@ -319,8 +402,12 @@ def exact_match_score(
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
         "truncated": truncated,
+        "stop_ratio": round((total - errors - truncated) / (total - errors), 4)
+        if (total - errors) > 0
+        else 0.0,
         "mean_output_tokens_finished": mean_finished,
         "p50_output_tokens_finished": p50_finished,
+        **finish_stats(results),
     }
 
 
@@ -363,6 +450,36 @@ def enforce_error_budget(summary: dict[str, Any]) -> None:
     raise SystemExit(1)
 
 
+#: Minimum share of completed responses that finish with ``stop`` rather than
+#: the token cap. Nothing sets this yet; floors are dataset-specific, so each
+#: dataset opts in via its workflow env. Parsed at import so typos fail fast.
+_MIN_STOP_RATIO_ENV = os.environ.get("EVAL_MIN_STOP_RATIO") or ""
+MIN_STOP_RATIO = float(_MIN_STOP_RATIO_ENV) if _MIN_STOP_RATIO_ENV else None
+
+
+def enforce_stop_ratio(summary: dict[str, Any]) -> None:
+    """Exits nonzero when too many responses hit the token cap to trust the run.
+
+    Off unless ``EVAL_MIN_STOP_RATIO`` is set, and skipped for summaries that
+    report no usable ``stop_ratio``.
+    """
+    if MIN_STOP_RATIO is None:
+        return
+    ratio = summary.get("stop_ratio")
+    if not isinstance(ratio, (int, float)):
+        return
+    floor = MIN_STOP_RATIO
+    if ratio >= floor:
+        return
+    print(
+        f"::error::stop_ratio {ratio:.4f} is below the {floor:.4f} floor: "
+        f"{summary.get('finish_length')} of "
+        f"{summary.get('finish_stop', 0) + summary.get('finish_length', 0)} "
+        f"completed responses hit the token cap instead of stopping."
+    )
+    raise SystemExit(1)
+
+
 def dump_score(out_dir: str, summary: dict[str, Any]) -> None:
     """Writes ``score.json`` (pretty-printed) into ``out_dir``.
 
@@ -373,6 +490,7 @@ def dump_score(out_dir: str, summary: dict[str, Any]) -> None:
     with open(os.path.join(out_dir, "score.json"), "w") as f:
         json.dump(summary, f, indent=2)
     enforce_error_budget(summary)
+    enforce_stop_ratio(summary)
 
 
 def append_github_env(

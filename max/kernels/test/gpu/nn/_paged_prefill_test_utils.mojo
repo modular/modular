@@ -42,22 +42,13 @@ from std.testing import assert_almost_equal
 
 from max.gpu.host import DeviceContext
 from std.memory import alloc
-from std.utils.index import Index, IndexList
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.gpu.mla import flare_mla_prefill
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 
 # ===-----------------------------------------------------------------------===#
@@ -85,7 +76,7 @@ comptime ROPE_SCALE_BLOCK_IDX = HEAD_DIM_GRAN - 1  # 8 — the block holding rop
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def paged_block_elems(
     total_pages: Int, page_size: Int, head_size: Int = CACHE_DEPTH
 ) -> Int:
@@ -98,19 +89,19 @@ def paged_block_elems(
     return total_pages * NUM_LAYERS * page_size * KV_NUM_HEADS * head_size
 
 
-@always_inline
+@inline(.always)
 def page_stride(page_size: Int, head_size: Int = CACHE_DEPTH) -> Int:
     """Per-page element stride in the paged block array."""
     return NUM_LAYERS * page_size * KV_NUM_HEADS * head_size
 
 
-@always_inline
+@inline(.always)
 def token_stride(head_size: Int = CACHE_DEPTH) -> Int:
     """Per-token element stride within a page."""
     return KV_NUM_HEADS * head_size
 
 
-@always_inline
+@inline(.always)
 def lut_max_pages_per_batch(num_keys: Int, page_size: Int) -> Int:
     """LUT row stride (pages-per-batch padded to multiple of 8).
 
@@ -128,7 +119,7 @@ def lut_max_pages_per_batch(num_keys: Int, page_size: Int) -> Int:
 def fill_paged_blocks_uniform[
     kv_type: DType,
 ](
-    blocks_host: UnsafePointer[mut=True, Scalar[kv_type], _],
+    blocks_host: MutPointer[Scalar[kv_type], _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -157,7 +148,7 @@ def fill_paged_blocks_uniform[
 
     # Random bf16 → cast to kv_type.
     var blocks_bf16 = alloc[BFloat16](block_elems)
-    randn[DType.bfloat16](
+    randn[.bfloat16](
         blocks_bf16,
         block_elems,
         mean=0.0,
@@ -188,7 +179,7 @@ def fill_paged_blocks_uniform[
 
 
 def fill_uniform_lookup_table(
-    lookup_table_host: UnsafePointer[mut=True, UInt32, _],
+    lookup_table_host: MutPointer[UInt32, _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -219,8 +210,8 @@ def fill_uniform_lookup_table(
 def extract_k_rope_for_batch[
     kv_type: DType,
 ](
-    blocks_host: UnsafePointer[Scalar[kv_type], MutAnyOrigin],
-    out_host: UnsafePointer[Scalar[kv_type], MutAnyOrigin],
+    blocks_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
+    out_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
     batch_idx: Int,
     num_keys: Int,
     page_size: Int,
@@ -245,9 +236,133 @@ def extract_k_rope_for_batch[
     var tstride = token_stride(head_size)
 
     for tok in range(num_keys):
+        var page_idx, tok_in_page = divmod(tok, page_size)
+        var physical_page = page_base + page_idx
+
+        var src_offset = (
+            physical_page * pstride
+            + tok_in_page * tstride
+            + rope_offset_in_token
+        )
+        var dst_offset = tok * ROPE_DEPTH
+        for d in range(ROPE_DEPTH):
+            out_host[dst_offset + d] = blocks_host[src_offset + d]
+
+
+# ===-----------------------------------------------------------------------===#
+# Scattered (non-contiguous) paged blocks + LUT, single batch
+# ===-----------------------------------------------------------------------===#
+#
+# The other fill helpers give a sequence's pages the contiguous layout
+# `[b * num_pages_per_batch, (b+1) * num_pages_per_batch)`. A production
+# paged-KV allocator does not: pages land wherever a shared pool has a
+# free slot, so they can be non-contiguous, out of order, and interleaved
+# with other sequences' pages. These two helpers build that geometry: a
+# sequence's pages are placed in reversed order and spaced
+# `scatter_pool_factor` slots apart in a pool otherwise filled with
+# foreign random content. Single-batch (`batch_size == 1`) only.
+
+
+def fill_scattered_paged_blocks_and_lut[
+    kv_type: DType,
+](
+    blocks_host: MutPointer[Scalar[kv_type], _],
+    lookup_table_host: MutPointer[UInt32, _],
+    num_keys: Int,
+    page_size: Int,
+    max_pages_per_batch: Int,
+    head_size: Int = CACHE_DEPTH,
+    standard_deviation: Float64 = 0.5,
+    scatter_pool_factor: Int = 3,
+) raises:
+    """Fills a `num_pages_per_batch * scatter_pool_factor`-page pool with
+    foreign noise, then overwrites this sequence's real pages (in reversed
+    logical order, `scatter_pool_factor` slots apart) with fresh random
+    content, and points `lookup_table_host` at those physical slots.
+
+    ``blocks_host`` must be sized for ``num_pages_per_batch *
+    scatter_pool_factor`` pages (see ``paged_block_elems``);
+    ``lookup_table_host`` for ``max_pages_per_batch`` entries. Only
+    populates batch 0 — callers combine this with ``batch_size=1``.
+    """
+    if scatter_pool_factor < 2:
+        raise Error(
+            "fill_scattered_paged_blocks_and_lut requires"
+            " scatter_pool_factor >= 2 (an offset of 1 slot per page needs"
+            " room to stay in bounds); got "
+            + String(scatter_pool_factor)
+            + "."
+        )
+
+    var num_pages_per_batch = ceildiv(num_keys, page_size)
+    var total_pages_padded = num_pages_per_batch * scatter_pool_factor
+
+    # Foreign filler: every physical slot gets independent random content,
+    # including the ones this sequence's real pages will land in (below).
+    fill_paged_blocks_uniform[kv_type](
+        blocks_host,
+        batch_size=1,
+        num_keys=total_pages_padded * page_size,
+        page_size=page_size,
+        head_size=head_size,
+        standard_deviation=standard_deviation,
+    )
+
+    var pstride = page_stride(page_size, head_size)
+    var tstride = token_stride(head_size)
+    var real_page_bf16 = alloc[BFloat16](page_size * head_size)
+    for p in range(num_pages_per_batch):
+        var phys = (num_pages_per_batch - 1 - p) * scatter_pool_factor + 1
+        randn[.bfloat16](
+            real_page_bf16,
+            page_size * head_size,
+            mean=0.0,
+            standard_deviation=standard_deviation,
+        )
+        var tokens_before_page = p * page_size
+        var valid_in_page = (
+            page_size if tokens_before_page + page_size
+            <= num_keys else (num_keys - tokens_before_page)
+        )
+        var base = phys * pstride
+        for tok in range(page_size):
+            for d in range(head_size):
+                blocks_host[base + tok * tstride + d] = real_page_bf16[
+                    tok * head_size + d
+                ].cast[kv_type]() if tok < valid_in_page else Scalar[kv_type](0)
+        lookup_table_host[p] = UInt32(phys)
+    for p in range(num_pages_per_batch, max_pages_per_batch):
+        lookup_table_host[p] = UInt32(0)
+    real_page_bf16.free()
+
+
+def extract_k_rope_for_batch_via_lut[
+    kv_type: DType,
+](
+    blocks_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
+    lookup_table_host: MutPointer[UInt32, _],
+    out_host: MutPointer[Scalar[kv_type], MutAnyOrigin],
+    batch_idx: Int,
+    num_keys: Int,
+    page_size: Int,
+    max_pages_per_batch: Int,
+    head_size: Int = CACHE_DEPTH,
+):
+    """Same contract as ``extract_k_rope_for_batch``, but follows
+    ``lookup_table_host`` for each page's physical location instead of
+    assuming the contiguous ``[b * num_pages_per_batch, ...)`` layout --
+    correct for both the contiguous and the scattered fill above.
+    """
+    var rope_offset_in_token = head_size - ROPE_DEPTH
+    var pstride = page_stride(page_size, head_size)
+    var tstride = token_stride(head_size)
+
+    for tok in range(num_keys):
         var page_idx = tok // page_size
         var tok_in_page = tok % page_size
-        var physical_page = page_base + page_idx
+        var physical_page = Int(
+            lookup_table_host[batch_idx * max_pages_per_batch + page_idx]
+        )
 
         var src_offset = (
             physical_page * pstride
@@ -276,6 +391,10 @@ def run_test_paged_prefill[
     batch_size: Int = 1,
     diagnostic_bands: Bool = False,
     cache_length: Int = 0,  # pre-existing KV prefix per batch (start_pos)
+    # 1 (default) = the contiguous layout every call site used before this
+    # parameter existed. >1 = scatter pages across a `scatter_pool_factor`x
+    # pool (`fill_scattered_paged_blocks_and_lut`); requires batch_size=1.
+    scatter_pool_factor: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     """Runs one paged-KV MLA-prefill shape and asserts the output matches
     naive MHA.
@@ -391,8 +510,19 @@ def run_test_paged_prefill[
     # ``MLAPositionSummary.get_num_keys_and_start_pos`` in
     # ``mla_prefill_utils.mojo``.
     # ------------------------------------------------------------------
+    if scatter_pool_factor != 1 and batch_size != 1:
+        raise Error(
+            "run_test_paged_prefill: scatter_pool_factor > 1 requires"
+            " batch_size == 1 (fill_scattered_paged_blocks_and_lut is"
+            " single-batch only)."
+        )
+
     var num_pages_per_batch = ceildiv(num_keys, page_size)
-    var total_pages = batch_size * num_pages_per_batch
+    var total_pages: Int
+    comptime if scatter_pool_factor == 1:
+        total_pages = batch_size * num_pages_per_batch
+    else:
+        total_pages = num_pages_per_batch * scatter_pool_factor
     var max_pages_per_batch = lut_max_pages_per_batch(num_keys, page_size)
     var lut_size = batch_size * max_pages_per_batch
     var block_elems = paged_block_elems(total_pages, page_size, CACHE_DEPTH)
@@ -401,9 +531,19 @@ def run_test_paged_prefill[
     var cache_lengths_host = alloc[UInt32](batch_size)
     var lookup_table_host = alloc[UInt32](lut_size)
 
-    fill_paged_blocks_uniform[k_rope_type](
-        blocks_host, batch_size, num_keys, page_size
-    )
+    comptime if scatter_pool_factor == 1:
+        fill_paged_blocks_uniform[k_rope_type](
+            blocks_host, batch_size, num_keys, page_size
+        )
+    else:
+        fill_scattered_paged_blocks_and_lut[k_rope_type](
+            blocks_host,
+            lookup_table_host,
+            num_keys,
+            page_size,
+            max_pages_per_batch,
+            scatter_pool_factor=scatter_pool_factor,
+        )
     # The naive-MHA reference (Step 9) places the ``seq_len`` queries at the
     # TAIL of the ``num_keys``-token sequence: query ``y`` attends keys
     # ``[0, y + (num_keys - seq_len)]`` under ``CausalMask`` (its start_pos is
@@ -428,13 +568,16 @@ def run_test_paged_prefill[
         )
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_length)
-    fill_uniform_lookup_table(
-        lookup_table_host,
-        batch_size,
-        num_keys,
-        page_size,
-        max_pages_per_batch,
-    )
+    # Scattered mode already filled the LUT above, alongside the pages
+    # themselves (the two are computed together there).
+    comptime if scatter_pool_factor == 1:
+        fill_uniform_lookup_table(
+            lookup_table_host,
+            batch_size,
+            num_keys,
+            page_size,
+            max_pages_per_batch,
+        )
 
     # ------------------------------------------------------------------
     # Step 4: Device buffers + copy.
@@ -443,13 +586,11 @@ def run_test_paged_prefill[
     var k_device_buf = ctx.enqueue_create_buffer[qkv_type](k_size)
     var v_device_buf = ctx.enqueue_create_buffer[qkv_type](v_size)
     var output_device_buf = ctx.enqueue_create_buffer[output_type](o_size)
-    var input_ro_buf = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
-    var cache_ro_buf = ctx.enqueue_create_buffer[DType.uint32](batch_size + 1)
+    var input_ro_buf = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
+    var cache_ro_buf = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     var blocks_device = ctx.enqueue_create_buffer[k_rope_type](block_elems)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
 
     ctx.enqueue_copy(q_device_buf, q_ptr)
     ctx.enqueue_copy(k_device_buf, k_ptr)
@@ -490,67 +631,46 @@ def run_test_paged_prefill[
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
-        total_pages,
-        1,  # kv_dim2 = 1 for is_mla
-        NUM_LAYERS,
+
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
+    )
+
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
+        k_rope_type,
+        kv_params,
         page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
-
-    var blocks_lt = LayoutTensor[k_rope_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[
-        k_rope_type, kv_params, page_size
-    ](
-        LayoutTensor[k_rope_type, Layout.row_major[6](), MutAnyOrigin](
-            blocks_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
-            lookup_table_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),  # max_seq_length
         UInt32(num_keys),  # max_cache_length
     )
 
     var kv_cache = kv_collection.get_key_cache(0)
-
-    # k and v need LayoutTensor form (the paged overload signature).
-    var k_lt = k_device.to_layout_tensor()
-    var v_lt = v_device.to_layout_tensor()
 
     # ------------------------------------------------------------------
     # Step 7: Launch the kernel.
@@ -560,8 +680,8 @@ def run_test_paged_prefill[
     flare_mla_prefill[rank=3](
         output_device,
         q_device,
-        k_lt,
-        v_lt,
+        k_device,
+        v_device,
         kv_cache,
         CausalMask(),
         input_ro_tt,
@@ -591,13 +711,24 @@ def run_test_paged_prefill[
     var k_rope_one_batch = alloc[Scalar[k_rope_type]](num_keys * ROPE_DEPTH)
 
     for b in range(batch_size):
-        extract_k_rope_for_batch[k_rope_type](
-            blocks_host.as_unsafe_any_origin(),
-            k_rope_one_batch.as_unsafe_any_origin(),
-            b,
-            num_keys,
-            page_size,
-        )
+        comptime if scatter_pool_factor == 1:
+            extract_k_rope_for_batch[k_rope_type](
+                blocks_host.as_unsafe_any_origin(),
+                k_rope_one_batch.as_unsafe_any_origin(),
+                b,
+                num_keys,
+                page_size,
+            )
+        else:
+            extract_k_rope_for_batch_via_lut[k_rope_type](
+                blocks_host.as_unsafe_any_origin(),
+                lookup_table_host,
+                k_rope_one_batch.as_unsafe_any_origin(),
+                b,
+                num_keys,
+                page_size,
+                max_pages_per_batch,
+            )
         for s in range(num_keys):
             for h in range(num_heads):
                 var dst_base = (
@@ -654,26 +785,24 @@ def run_test_paged_prefill[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_device.as_immut().as_unsafe_any_origin()
+    var k_ref_operand = TileTensorMHAOperand(
+        k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_device.as_immut().as_unsafe_any_origin()
+    var v_ref_operand = TileTensorMHAOperand(
+        v_ref_device.as_imm().as_unsafe_any_origin()
     )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_device_rank4.to_layout_tensor(),
+        q_device_rank4,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
+        output_ref_device,
         null_valid_length,
         scale,
         batch_size,
@@ -713,10 +842,10 @@ def run_test_paged_prefill[
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var expect = output_ref_host.load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var abs_err = abs(actual - expect)
                         if abs_err > max_abs_err:
                             max_abs_err = abs_err
@@ -764,10 +893,10 @@ def run_test_paged_prefill[
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var expect = output_ref_host.load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         assert_almost_equal(
                             actual, expect, atol=atol, rtol=rtol
                         )
@@ -782,10 +911,10 @@ def run_test_paged_prefill[
                             (b * seq_len + s) * num_heads * v_dim
                             + h * v_dim
                             + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var expect = output_ref_host.load(
                             ((b * seq_len + s) * num_heads + h) * depth + d
-                        ).cast[DType.float64]()
+                        ).cast[.float64]()
                         var abs_err = abs(actual - expect)
                         if abs_err > max_abs_err:
                             max_abs_err = abs_err
@@ -860,7 +989,7 @@ def run_test_paged_prefill[
 # contiguously per-token.
 
 
-@always_inline
+@inline(.always)
 def paged_scale_block_elems(
     total_pages: Int, page_size: Int, head_dim_gran: Int = HEAD_DIM_GRAN
 ) -> Int:
@@ -872,7 +1001,7 @@ def paged_scale_block_elems(
     return total_pages * NUM_LAYERS * page_size * KV_NUM_HEADS * head_dim_gran
 
 
-@always_inline
+@inline(.always)
 def scale_page_stride(
     page_size: Int, head_dim_gran: Int = HEAD_DIM_GRAN
 ) -> Int:
@@ -880,13 +1009,13 @@ def scale_page_stride(
     return NUM_LAYERS * page_size * KV_NUM_HEADS * head_dim_gran
 
 
-@always_inline
+@inline(.always)
 def scale_token_stride(head_dim_gran: Int = HEAD_DIM_GRAN) -> Int:
     """Per-token element stride within a page in the paged scales array."""
     return KV_NUM_HEADS * head_dim_gran
 
 
-@always_inline
+@inline(.always)
 def _palette_scale(idx: Int) -> Float32:
     """Pick a non-uniform scale from a tight 8-entry palette centered
     around 1.0.
@@ -915,7 +1044,7 @@ def _palette_scale(idx: Int) -> Float32:
 
 
 def fill_paged_block_scales(
-    scales_host: UnsafePointer[mut=True, Float32, _],
+    scales_host: MutPointer[Float32, _],
     batch_size: Int,
     num_keys: Int,
     page_size: Int,
@@ -935,7 +1064,7 @@ def fill_paged_block_scales(
     behavior, which uses scale=1 for OOB rows — see
     ``cvt_block_fp8_to_bf16_with_scale`` in ``mla_prefill_utils.mojo``).
     """
-    var num_pages_per_batch = (num_keys + page_size - 1) // page_size
+    var num_pages_per_batch = ceildiv(num_keys, page_size)
     var pstride = scale_page_stride(page_size, head_dim_gran)
     var tstride = scale_token_stride(head_dim_gran)
 
@@ -962,9 +1091,9 @@ def extract_dequantized_k_rope_for_batch[
     fp8_type: DType,
     out_type: DType,
 ](
-    blocks_host: UnsafePointer[mut=False, Scalar[fp8_type], _],
-    scales_host: UnsafePointer[mut=False, Float32, _],
-    out_host: UnsafePointer[mut=True, Scalar[out_type], _],
+    blocks_host: ImmPointer[Scalar[fp8_type], _],
+    scales_host: ImmPointer[Float32, _],
+    out_host: MutPointer[Scalar[out_type], _],
     batch_idx: Int,
     num_keys: Int,
     page_size: Int,
@@ -985,7 +1114,7 @@ def extract_dequantized_k_rope_for_batch[
     ``out_host`` must point to a buffer of at least
     ``num_keys * ROPE_DEPTH`` ``Scalar[out_type]`` elements.
     """
-    var num_pages_per_batch = (num_keys + page_size - 1) // page_size
+    var num_pages_per_batch = ceildiv(num_keys, page_size)
     var page_base = batch_idx * num_pages_per_batch
     var rope_offset_in_token = head_size - ROPE_DEPTH
 
@@ -995,8 +1124,7 @@ def extract_dequantized_k_rope_for_batch[
     var ststride = scale_token_stride(head_dim_gran)
 
     for tok in range(num_keys):
-        var page_idx = tok // page_size
-        var tok_in_page = tok % page_size
+        var page_idx, tok_in_page = divmod(tok, page_size)
         var physical_page = page_base + page_idx
 
         var src_offset = (
@@ -1013,7 +1141,7 @@ def extract_dequantized_k_rope_for_batch[
 
         var dst_offset = tok * ROPE_DEPTH
         for d in range(ROPE_DEPTH):
-            var fp8_val = blocks_host[src_offset + d].cast[DType.float32]()
+            var fp8_val = blocks_host[src_offset + d].cast[.float32]()
             out_host[dst_offset + d] = (fp8_val * scale_val).cast[out_type]()
 
 

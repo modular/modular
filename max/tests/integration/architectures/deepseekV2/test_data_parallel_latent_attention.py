@@ -16,6 +16,7 @@ import typing
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max._core.engine import PrintStyle
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
@@ -123,7 +124,7 @@ def generate_latent_attention_max_outputs_dp(
             input_row_offsets = graph.inputs[1].tensor
             kv_collection = kv_params.unflatten_kv_inputs(
                 iter(graph.inputs[2:])
-            ).inputs[0]
+            )[0]
             out_list = dp_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 xs=[hidden_states],
@@ -159,7 +160,7 @@ def generate_latent_attention_max_outputs_dp(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx)
-            kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+            kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -170,7 +171,7 @@ def generate_latent_attention_max_outputs_dp(
             max_output = compiled.execute(
                 input_tensor_device,
                 input_row_offsets.to(device0),
-                *kv_inputs.flatten(),
+                *tree.leaves(kv_inputs),
             )
 
             for ctx in batch:
@@ -184,14 +185,16 @@ def generate_latent_attention_max_outputs_dp(
 
     for ctx in batch:
         kv_manager.alloc(ctx)
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
+        input_tensor_device,
+        input_row_offsets.to(device0),
+        *tree.leaves(kv_inputs),
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

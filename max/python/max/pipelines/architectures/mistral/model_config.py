@@ -27,7 +27,6 @@ from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
-    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
@@ -41,7 +40,6 @@ from typing_extensions import Self, override
 
 @dataclass(kw_only=True)
 class MistralConfig(
-    ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
     ArchConfigWithKVCache,
 ):
@@ -82,6 +80,8 @@ class MistralConfig(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a MistralConfig instance from pipeline configuration.
 
@@ -102,11 +102,17 @@ class MistralConfig(
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         kv_cache_config = pipeline_config.model.kv_cache
         quantization_encoding = _select_quantization_encoding(
@@ -140,9 +146,7 @@ class MistralConfig(
             head_dim=huggingface_config.head_dim,
             vocab_size=huggingface_config.vocab_size,
             rope_theta=get_rope_theta(huggingface_config),
-            max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config, huggingface_config
-            ),
+            max_seq_len=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             feed_forward_length=huggingface_config.intermediate_size,
             dtype=dtype,

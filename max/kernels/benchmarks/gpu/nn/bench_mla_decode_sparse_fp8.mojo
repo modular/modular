@@ -32,12 +32,9 @@ from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mla import flare_mla_decoding
@@ -46,7 +43,6 @@ from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.memory import UnsafePointer
 from std.utils.index import IndexList
 
 comptime KV_LATENT_DIM = 512
@@ -151,14 +147,12 @@ def execute_mla_decode_sparse[
         rand(blocks_host.as_span())
 
     var lut_size = batch_size * pages_per_seq
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     with lookup_table_device.map_to_host() as lut_host:
         for i in range(lut_size):
             lut_host[i] = UInt32(i)
 
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with cache_lengths_device.map_to_host() as cl_host:
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_len)
@@ -169,13 +163,13 @@ def execute_mla_decode_sparse[
     with q_device.map_to_host() as q_host:
         rand(q_host.as_span())
 
-    var out_device = ctx.enqueue_create_buffer[DType.bfloat16](
+    var out_device = ctx.enqueue_create_buffer[.bfloat16](
         total_q_tokens * num_heads * V_DEPTH
     )
 
     # Physical slot ids, spread across the sequence's pages the way a real
     # top-k list is rather than clustered.
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](
         total_q_tokens * top_k
     )
     var mult = _coprime_multiplier(num_keys)
@@ -190,93 +184,112 @@ def execute_mla_decode_sparse[
                         block_id * page_size + t % page_size
                     )
 
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     with row_offsets_device.map_to_host() as ro_host:
         for i in range(batch_size + 1):
             ro_host[i] = UInt32(i * seq_len)
     ctx.synchronize()
 
-    comptime blocks_layout = Layout.row_major[6]()
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lut_layout = Layout.row_major[2]()
-
-    var kv_collection = PagedKVCacheCollection[kv_dtype, kv_params, page_size](
-        LayoutTensor[kv_dtype, blocks_layout, MutAnyOrigin](
-            blocks_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[blocks_layout].row_major(block_shape),
-        ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-        ),
-        LayoutTensor[DType.uint32, lut_layout, ImmutAnyOrigin](
-            lookup_table_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[lut_layout].row_major(
-                IndexList[2](batch_size, pages_per_seq)
-            ),
-        ),
+    comptime Collection = PagedKVCacheCollection[
+        kv_dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime blocks_layout_type = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*blocks_layout_type.shape_types]()
+    blocks_shape[0] = Int64(total_pages)
+    blocks_shape[2] = Int64(NUM_LAYERS)
+    var blocks_strides = Coord[*blocks_layout_type.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var blocks = TileTensor(
+        blocks_device, blocks_layout_type(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var lookup_table = (
+        TileTensor(
+            lookup_table_device,
+            row_major(Int64(batch_size), Int64(pages_per_seq)),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var kv_collection = Collection(
+        blocks,
+        cache_lengths,
+        lookup_table,
         UInt32(seq_len),
         UInt32(cache_len),
     )
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
+        q_device, row_major(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])
     )
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+        out_device,
+        row_major(total_q_tokens, Idx[num_heads], Idx[V_DEPTH]),
     )
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(), row_major(batch_size + 1)
+        row_offsets_device, row_major(len(row_offsets_device))
     )
 
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads, is_fp8_kv=True](
         batch_size, cache_len, seq_len, ctx
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
-    var d_indices = rebind[UnsafePointer[Int32, MutAnyOrigin]](
+    var d_indices = rebind[MutPointer[Int32, MutAnyOrigin]](
         d_indices_device.unsafe_ptr()
     )
 
-    @__parameter
-    @__copy_capture(
-        out_tt, q_tt, row_offsets_tt, scalar_args_buf_tt, kv_cache, d_indices
-    )
-    @always_inline
-    def bench_func(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(launch_ctx: DeviceContext) raises:
-            flare_mla_decoding[
-                rank=3,
-                config=MHAConfig[q_dtype](num_heads, Q_DEPTH),
-                ragged=True,
-                sparse=True,
-            ](
-                out_tt,
-                q_tt,
-                kv_cache,
-                CausalMask(),
-                row_offsets_tt,
-                scale,
-                launch_ctx,
-                scalar_args_buf_tt,
-                d_indices=d_indices,
-                indices_stride=top_k,
-            )
+    @inline(.always)
+    def kernel_launch(
+        launch_ctx: DeviceContext,
+    ) raises {
+        mut out_tt,
+        imm q_tt,
+        imm kv_cache,
+        imm row_offsets_tt,
+        imm scalar_args_buf_tt,
+        imm d_indices,
+    }:
+        flare_mla_decoding[
+            rank=3,
+            config=MHAConfig[q_dtype](num_heads, Q_DEPTH),
+            ragged=True,
+            sparse=True,
+        ](
+            out_tt,
+            q_tt,
+            kv_cache,
+            CausalMask(),
+            row_offsets_tt,
+            scale,
+            launch_ctx,
+            scalar_args_buf_tt,
+            d_indices=d_indices,
+            indices_stride=top_k,
+        )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+    @inline(.always)
+    def bench_func(mut b: Bencher) raises {imm}:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
-    m.bench_function[bench_func](
+    m.bench_function(
+        bench_func,
         BenchId(
             _run_name[q_dtype, num_heads, page_size, top_k](
                 batch_size, seq_len, cache_len
             )
-        )
+        ),
     )
 
     _ = mla_args
@@ -290,7 +303,7 @@ def execute_mla_decode_sparse[
 
 
 def main() raises:
-    comptime q_dtype = get_defined_dtype["q_dtype", DType.float8_e4m3fn]()
+    comptime q_dtype = get_defined_dtype["q_dtype", .float8_e4m3fn]()
     comptime num_heads = get_defined_int["num_heads", 8]()
     comptime page_size = get_defined_int["page_size", 128]()
     comptime top_k = get_defined_int["top_k", 2048]()

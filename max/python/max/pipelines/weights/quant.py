@@ -19,11 +19,16 @@ import fnmatch
 import json
 import logging
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import huggingface_hub
-from max.driver import accelerator_api
+from max.driver import (
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig
 from max.graph.weights import WeightData
@@ -189,6 +194,42 @@ def _modelopt_ignore_patterns(
     return [_normalize_modelopt_ignore_pattern(str(entry)) for entry in ignore]
 
 
+_ATTENTION_SUBTREES = ("self_attn", "linear_attn")
+"""Module names a layer's attention block can go by.
+
+A hybrid checkpoint carries only one of them per layer -- Qwen3.8-Flash-Next
+alternates three ``linear_attn`` layers with one ``self_attn`` -- and
+``layer_types`` says which. This pair is the fallback for a config that does
+not say, where either spelling being ignored has to count for the layer:
+reading ``self_attn`` alone would mark a linear-attention layer quantized and
+build FP4 projections over bf16 weights.
+"""
+
+
+def _attention_subtree_per_layer(
+    huggingface_config: AutoConfig, num_hidden_layers: int
+) -> list[tuple[str, ...]]:
+    """Which attention module name each layer actually carries.
+
+    Reading both names for every layer conflates the two: a checkpoint that
+    ignores ``*.linear_attn.*`` while quantizing full attention would lose its
+    ``self_attn`` layers too, and their packed weights would then be read as
+    bf16. ``layer_types`` is what separates them, and it is the same field the
+    hybrid architectures build their own layer stack from.
+    """
+    text_config = getattr(huggingface_config, "text_config", huggingface_config)
+    layer_types = getattr(text_config, "layer_types", None) or []
+    if len(layer_types) != num_hidden_layers:
+        return [_ATTENTION_SUBTREES] * num_hidden_layers
+    # Every non-linear entry -- ``full_attention``, ``sliding_attention``, and
+    # the ``qwen_sparse_attention`` a Flash-Next config rewrites it to -- names
+    # a layer whose tensors live under ``self_attn``.
+    return [
+        ("linear_attn",) if "linear" in str(layer_type) else ("self_attn",)
+        for layer_type in layer_types
+    ]
+
+
 def _modelopt_layer_subtree_ignored(
     layer_idx: int,
     subtree: str,
@@ -196,27 +237,27 @@ def _modelopt_layer_subtree_ignored(
     *,
     modules_prefix: str = "model.",
 ) -> bool:
-    """Return whether an entire layer subtree (``mlp`` or ``self_attn``) is ignored.
+    """Return whether a whole layer subtree (MLP or attention) is ignored.
 
-    Matches modelopt-style globs such as ``model.layers.3.self_attn*`` from
-    https://huggingface.co/lukealonso/GLM-5.1-NVFP4/blob/main/config.json.
+    Matches modelopt-style globs, both the ``model.layers.3.self_attn*``
+    shape of https://huggingface.co/lukealonso/GLM-5.1-NVFP4 and the
+    ``*.self_attn.*`` shape of
+    https://huggingface.co/RadixArk/Qwen3.8-Flash-Next-NVFP4.
     """
     layered = f"layers.{layer_idx}.{subtree}"
-    prefix_path = f"{modules_prefix}{layered}"
-    candidate_paths = (
-        (prefix_path, f"{prefix_path}*"),
-        (layered, f"{layered}*"),
-    )
+    candidate_paths = (f"{modules_prefix}{layered}", layered)
     for pattern in ignore_patterns:
-        for module_path, wildcard_path in candidate_paths:
-            if pattern in (module_path, wildcard_path):
-                return True
-            if fnmatch.fnmatch(module_path, pattern):
-                return True
-            # Only glob patterns (containing ``*``) ignore an entire subtree.
-            # Exact paths such as ``layers.0.mlp.gate_up_proj`` skip one module
-            # but leave the rest of the MLP quantized (e.g. ``down_proj``).
-            if "*" in pattern and fnmatch.fnmatch(wildcard_path, pattern):
+        # A glob ending in ``.*`` names every descendant of the subtree without
+        # matching the subtree itself, so it has to be tested against the head.
+        # The distinction is the whole point: ``*.self_attn.*`` leaves the
+        # layer's attention entirely bf16, while ``*.mlp.gate*`` names only the
+        # router and must leave the routed experts quantized. Both end in
+        # ``*``; only the character before it tells them apart.
+        heads = [pattern]
+        if pattern.endswith(".*"):
+            heads.append(pattern.removesuffix(".*"))
+        for module_path in candidate_paths:
+            if any(fnmatch.fnmatch(module_path, head) for head in heads):
                 return True
     return False
 
@@ -229,6 +270,9 @@ def _quantized_layers_from_modelopt_ignore(
 ) -> tuple[set[int], set[int]]:
     """Derive per-layer MLP/attention quantization from modelopt ``ignore`` globs."""
     num_hidden_layers = _get_num_hidden_layers(huggingface_config)
+    attention_subtrees = _attention_subtree_per_layer(
+        huggingface_config, num_hidden_layers
+    )
     mlp_quantized_layers: set[int] = set()
     attn_quantized_layers: set[int] = set()
 
@@ -237,15 +281,27 @@ def _quantized_layers_from_modelopt_ignore(
             layer_idx, "mlp", ignore_patterns, modules_prefix=modules_prefix
         ):
             mlp_quantized_layers.add(layer_idx)
-        if not _modelopt_layer_subtree_ignored(
-            layer_idx,
-            "self_attn",
-            ignore_patterns,
-            modules_prefix=modules_prefix,
+        if not any(
+            _modelopt_layer_subtree_ignored(
+                layer_idx,
+                subtree,
+                ignore_patterns,
+                modules_prefix=modules_prefix,
+            )
+            for subtree in attention_subtrees[layer_idx]
         ):
             attn_quantized_layers.add(layer_idx)
 
     return mlp_quantized_layers, attn_quantized_layers
+
+
+_SHARED_EXPERT_NAMES = ("shared_expert", "shared_experts")
+"""Module names a MoE shared expert goes by.
+
+Qwen writes the singular (``*.mlp.shared_expert.*``); DeepSeek and GLM write
+the plural. Reading only one spelling leaves the other's bf16 shared expert
+marked quantized, which mis-types the weights silently rather than failing.
+"""
 
 
 def _modelopt_shared_experts_quantized_dtype(
@@ -253,12 +309,25 @@ def _modelopt_shared_experts_quantized_dtype(
 ) -> DType | None:
     """Return quant dtype if MoE shared experts are quantized (not in ``ignore``)."""
     # modelopt leaves unquantized modules in ``ignore`` as per-layer globs like
-    # ``layers.3.mlp.shared_experts*``, so any ignore entry naming shared_experts
-    # means they stay bf16. A substring test sidesteps the ``model.`` prefix that
-    # ``_normalize_modelopt_ignore_pattern`` strips from ``layers.*`` globs.
+    # ``layers.3.mlp.shared_experts*``, so any ignore entry naming a shared
+    # expert means it stays bf16. Testing one path segment at a time sidesteps
+    # the ``model.`` prefix that ``_normalize_modelopt_ignore_pattern`` strips
+    # from ``layers.*`` globs, and the per-layer index that makes a glob match
+    # no single representative path.
+    #
+    # The segment boundary is what separates the shared expert from
+    # ``shared_expert_gate``, a separate one-column gating projection that a
+    # checkpoint can leave bf16 while quantizing the expert itself. A substring
+    # test reads that config as a bf16 shared expert and mis-types its packed
+    # weights.
     for pattern in ignore_patterns:
-        if "shared_experts" in pattern:
-            return DType.bfloat16
+        for segment in pattern.split("."):
+            if "shared_expert" not in segment:
+                continue
+            if any(
+                fnmatch.fnmatch(name, segment) for name in _SHARED_EXPERT_NAMES
+            ):
+                return DType.bfloat16
     return None
 
 
@@ -613,33 +682,16 @@ def _parse_blockscaled_fp8_config(
             "could not find weight scale dtype for FP8 quantized weights"
         )
 
-    input_spec = InputScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        origin=ScaleOrigin.DYNAMIC,
-        dtype=weight_scale_dtype,
-        block_size=(1, 128),
-    )
-    weight_spec = WeightScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        dtype=weight_scale_dtype,
-        block_size=(128, 128),
-    )
-
-    bias_dtype = _bias_dtype(state_dict)
-
     # All layers use FP8 in this format (e.g. Qwen3-30B-A3B FP8, DeepSeekV3).
     # modules_to_not_convert only lists layernorms and router gate, not linear layers.
-    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
-    all_layers = set(range(num_hidden_layers))
+    all_layers = range(_get_num_hidden_layers(huggingface_config))
 
-    return QuantConfig(
-        input_scale=input_spec,
-        weight_scale=weight_spec,
+    return QuantConfig.blockscaled_fp8(
         mlp_quantized_layers=all_layers,
         attn_quantized_layers=all_layers,
+        scale_dtype=weight_scale_dtype,
         embedding_output_dtype=DType.bfloat16,
-        bias_dtype=bias_dtype,
-        format=QuantFormat.BLOCKSCALED_FP8,
+        bias_dtype=_bias_dtype(state_dict),
     )
 
 
@@ -766,7 +818,7 @@ def _load_standalone_quant_config(
 ) -> dict[str, Any] | None:
     """Try to load quantization config from a standalone hf_quant_config.json file.
 
-    Some models (e.g., nvidia/Llama-3.1-405B-Instruct-NVFP4) store their quantization
+    Some models (such as nvidia/Llama-3.1-405B-Instruct-NVFP4) store their quantization
     config in a separate hf_quant_config.json file rather than in the main config.json.
 
     The standalone file has a different structure:
@@ -825,6 +877,11 @@ def _load_standalone_quant_config(
             }
             if "ignore" in quantization:
                 mapped["ignore"] = quantization["ignore"]
+            # modelopt records per-module algorithms here for mixed-precision
+            # checkpoints; without it a `MIXED_PRECISION` quant_algo is
+            # uninterpretable.
+            if "quantized_layers" in quantization:
+                mapped["quantized_layers"] = quantization["quantized_layers"]
             return mapped
         return None
 
@@ -833,10 +890,26 @@ def _load_standalone_quant_config(
         return None
 
 
-def _resolve_quant_config(
+def resolve_hf_quant_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
 ) -> dict[str, Any] | None:
+    """Resolves a checkpoint's Hugging Face quantization config.
+
+    Tries, in order: the config's own ``quantization_config`` field, a
+    standalone ``hf_quant_config.json`` beside the weights, and finally a sniff
+    of the state dict for modelopt NVFP4's ``weight_scale_2`` tensors.
+
+    Args:
+        huggingface_config: The config to read ``quantization_config`` from.
+            For a nested multimodal config this must be the top-level one --
+            the sub-config does not carry the field.
+        state_dict: The checkpoint weights, used only by the final sniff.
+
+    Returns:
+        The resolved quantization config, or ``None`` when the checkpoint
+        declares no quantization.
+    """
     if hf_quant_config := getattr(
         huggingface_config, "quantization_config", None
     ):
@@ -852,6 +925,122 @@ def _resolve_quant_config(
     return None
 
 
+@dataclass(frozen=True)
+class ModelOptModuleQuant:
+    """One entry of a modelopt ``quantized_layers`` map."""
+
+    quant_algo: str
+    """The module's algorithm, such as ``"FP8"`` or ``"W4A16_NVFP4"``."""
+
+    group_size: int | None
+    """Inputs covered by one weight scale, or ``None`` when not declared."""
+
+
+def read_modelopt_quantized_layers(
+    hf_quant_config: Mapping[str, object],
+    *,
+    allowed: Collection[tuple[str, int | None]],
+    expected_modules: Collection[str] | None = None,
+    quant_algos: Collection[str] = ("MIXED_PRECISION",),
+    kv_cache_quant_algos: Collection[str | None] | None = None,
+    model_name: str | None = None,
+) -> dict[str, ModelOptModuleQuant]:
+    """Reads and validates the per-module map of a modelopt checkpoint.
+
+    modelopt exports a checkpoint whose modules differ in precision as
+    ``quant_algo: "MIXED_PRECISION"`` and records each quantized module's
+    algorithm in ``quantized_layers``; every module it does not list is
+    unquantized. A module read in the wrong format loads without error and
+    produces wrong logits, so everything the caller has not declared it can
+    read is refused here.
+
+    Args:
+        hf_quant_config: The resolved quantization config, from
+            :func:`resolve_hf_quant_config`.
+        allowed: The ``(quant_algo, group_size)`` pairs the caller can load.
+            A ``group_size`` of ``None`` matches an entry that declares none.
+        expected_modules: When given, the exact set of module names
+            ``quantized_layers`` must list.
+        quant_algos: The top-level ``quant_algo`` values to accept.
+        kv_cache_quant_algos: When given, the ``kv_cache_quant_algo`` values
+            to accept, with ``None`` for an unquantized KV cache.
+        model_name: The name that prefixes each error message.
+
+    Returns:
+        Each listed module's quantization, keyed by its checkpoint name.
+
+    Raises:
+        ValueError: If the config is not a modelopt config with an accepted
+            ``quant_algo`` and ``kv_cache_quant_algo``, carries no
+            ``quantized_layers`` map, lists a module outside
+            ``expected_modules`` or misses one of them, or declares an entry
+            outside ``allowed``.
+    """
+    prefix = f"{model_name}: " if model_name else ""
+    method = hf_quant_config.get("quant_method")
+    algo = hf_quant_config.get("quant_algo")
+    if method not in (None, "modelopt") or algo not in quant_algos:
+        raise ValueError(
+            f"{prefix}quantization_config is quant_method={method!r}, "
+            f"quant_algo={algo!r}; cannot read quant_algo {algo!r}. Expected "
+            f"modelopt with quant_algo in {sorted(quant_algos)}."
+        )
+    if kv_cache_quant_algos is not None:
+        kv_algo = hf_quant_config.get("kv_cache_quant_algo")
+        if kv_algo not in kv_cache_quant_algos:
+            raise ValueError(
+                f"{prefix}kv_cache_quant_algo is {kv_algo!r}; only "
+                f"{sorted(map(repr, kv_cache_quant_algos))} can be read."
+            )
+
+    quantized_layers = hf_quant_config.get("quantized_layers")
+    if not isinstance(quantized_layers, Mapping) or not quantized_layers:
+        raise ValueError(
+            f"{prefix}the checkpoint declares quant_algo {algo!r} but carries "
+            "no 'quantized_layers' map, so which modules are quantized, and "
+            "in which format, is unknowable."
+        )
+
+    if expected_modules is not None:
+        expected = set(expected_modules)
+        if unexpected := sorted(set(quantized_layers) - expected):
+            raise ValueError(
+                f"{prefix}quantized_layers names {len(unexpected)} module(s) "
+                f"outside the {len(expected)} expected, e.g. "
+                f"{unexpected[:3]}. Refusing to guess their precision."
+            )
+        if missing := sorted(expected - set(quantized_layers)):
+            raise ValueError(
+                f"{prefix}quantized_layers lists {len(quantized_layers)} of "
+                f"the {len(expected)} expected modules; missing e.g. "
+                f"{missing[:3]}."
+            )
+
+    accepted = ", ".join(
+        f"{a!r} with group_size {g}" for a, g in sorted(allowed, key=repr)
+    )
+    modules: dict[str, ModelOptModuleQuant] = {}
+    for module, entry in quantized_layers.items():
+        entry_algo = (
+            entry.get("quant_algo") if isinstance(entry, Mapping) else None
+        )
+        group_size = (
+            entry.get("group_size") if isinstance(entry, Mapping) else None
+        )
+        if (
+            not isinstance(entry_algo, str)
+            or not isinstance(group_size, int | None)
+            or (entry_algo, group_size) not in allowed
+        ):
+            raise ValueError(
+                f"{prefix}quantized_layers[{module!r}] is {entry!r}, "
+                f"quantized as {entry_algo!r} with group_size {group_size}; "
+                f"expected one of: {accepted}."
+            )
+        modules[str(module)] = ModelOptModuleQuant(entry_algo, group_size)
+    return modules
+
+
 def _parse_modelopt_float4_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -862,7 +1051,7 @@ def _parse_modelopt_float4_config(
     state_dict_name_prefix: str = "",
     ignored_modules_prefix: str = "model.",
 ) -> QuantConfig | None:
-    resolved_quant_config = _resolve_quant_config(
+    resolved_quant_config = resolve_hf_quant_config(
         huggingface_config, state_dict
     )
     quant_method = quant_method_override
@@ -872,20 +1061,58 @@ def _parse_modelopt_float4_config(
         quant_algo = resolved_quant_config.get("quant_algo", quant_algo)
     if not quant_method or not quant_algo:
         return None
+    if quant_algo != "NVFP4":
+        # The builder below hard-codes the NVFP4 two-level scheme. Returning it
+        # for another algorithm silently reinterprets the payload: a
+        # MIXED_PRECISION checkpoint's FP8 bases would be read as packed FP4.
+        raise ValueError(
+            f"modelopt quant_algo {quant_algo!r} cannot be loaded as NVFP4. "
+            "Only 'NVFP4' is uniform enough for a single QuantConfig; a "
+            "mixed-precision checkpoint needs per-module handling in its "
+            "architecture, read with `read_modelopt_quantized_layers`."
+        )
 
-    input_spec = InputScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        origin=ScaleOrigin.STATIC,
-        dtype=DType.float32,
-        block_size=(1, 16),
-    )
-    weight_spec = WeightScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        dtype=DType.float8_e4m3fn,
-        block_size=(1, 16),
+    return build_modelopt_nvfp4_config(
+        huggingface_config,
+        state_dict,
+        resolved_quant_config,
+        state_dict_name_prefix=state_dict_name_prefix,
+        ignored_modules_prefix=ignored_modules_prefix,
     )
 
-    bias_dtype = _bias_dtype(state_dict)
+
+def build_modelopt_nvfp4_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    resolved_quant_config: Mapping[str, Any] | None,
+    *,
+    state_dict_name_prefix: str = "",
+    ignored_modules_prefix: str = "model.",
+) -> QuantConfig:
+    """Builds the QuantConfig for modelopt's NVFP4 two-level scheme.
+
+    Skips the whole-checkpoint ``quant_algo == "NVFP4"`` check that a
+    ``MIXED_PRECISION`` export cannot pass, so the caller must have
+    established which modules are NVFP4: handing this config to one
+    quantized some other way reads its payload as packed FP4 and yields
+    garbage.
+
+    Args:
+        huggingface_config: The config the layer count is read from.
+        state_dict: The checkpoint weights, read for the bias and
+            embedding dtypes.
+        resolved_quant_config: The resolved quantization config, from
+            :func:`resolve_hf_quant_config`. Only its ``ignore`` globs
+            are read; ``None`` means nothing is ignored.
+        state_dict_name_prefix: The optional prefix on the ``state_dict``
+            keys.
+        ignored_modules_prefix: The prefix the ``ignore`` globs are
+            written against.
+
+    Returns:
+        The NVFP4 config, with the fused-kernel flags left at their
+        defaults for :func:`apply_fused_kernel_flags` to set.
+    """
     ignore_patterns = (
         _modelopt_ignore_patterns(resolved_quant_config)
         if resolved_quant_config
@@ -905,19 +1132,14 @@ def _parse_modelopt_float4_config(
         modules_prefix=ignored_modules_prefix,
     )
 
-    shared_experts_weight_dtype = _modelopt_shared_experts_quantized_dtype(
-        ignore_patterns
-    )
-
-    return QuantConfig(
-        input_scale=input_spec,
-        weight_scale=weight_spec,
+    return QuantConfig.nvfp4(
         mlp_quantized_layers=mlp_quantized_layers,
         attn_quantized_layers=attn_quantized_layers,
         embedding_output_dtype=embedding_output_dtype,
-        bias_dtype=bias_dtype,
-        shared_experts_weight_dtype=shared_experts_weight_dtype,
-        format=QuantFormat.NVFP4,
+        bias_dtype=_bias_dtype(state_dict),
+        shared_experts_weight_dtype=_modelopt_shared_experts_quantized_dtype(
+            ignore_patterns
+        ),
     )
 
 
@@ -936,6 +1158,11 @@ def _is_mxfp4_config(hf_quant_config: dict[str, Any]) -> bool:
             weight_cfg.get("scale_format") == "e8m0"
             and weight_cfg.get("dtype") == "fp4"
         )
+    # compressed-tensors carries the scheme in `format` rather than in
+    # `quant_method`, which it shares with FP8 and INT4 checkpoints, so the
+    # format string is the only thing that distinguishes MXFP4 here.
+    if quant_method.lower() == "compressed-tensors":
+        return "mxfp4" in str(hf_quant_config.get("format", "")).lower()
     return False
 
 
@@ -1023,6 +1250,31 @@ def _parse_mxfp6_config(
     )
 
 
+def is_mxfp4_checkpoint(huggingface_config: AutoConfig) -> bool:
+    """Reports whether a checkpoint's quantization config describes MXFP4.
+
+    Unlike :func:`parse_quant_config` this reads the HuggingFace config alone,
+    so a caller that must decide before the weights are loaded can still ask.
+    Sizing an expert-parallel dispatch is the motivating case: the dispatch
+    dtype has to be fixed while the ``EPConfig`` is built, which happens before
+    the state dict exists.
+
+    Args:
+        huggingface_config: The config carrying ``quantization_config``. Pass
+            the text config for multimodal checkpoints that nest it there.
+
+    Returns:
+        ``True`` if the checkpoint stores MXFP4 weights.
+    """
+    hf_quant_config = getattr(huggingface_config, "quantization_config", None)
+    # `isinstance`, not a truthiness check: the attribute is untyped, and a
+    # config that carries something other than a mapping would otherwise reach
+    # `_is_mxfp4_config` and fail on `.get`.
+    if not isinstance(hf_quant_config, dict):
+        return False
+    return _is_mxfp4_config(hf_quant_config)
+
+
 def _parse_mxfp4_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -1035,34 +1287,12 @@ def _parse_mxfp4_config(
 
     The caller must verify :func:`_is_mxfp4_config` before calling this function.
     """
-    # MXFP4: block-scaled with 32-element blocks, E8M0 scales
-    input_spec = InputScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        origin=ScaleOrigin.DYNAMIC,
-        dtype=DType.float32,
-        block_size=(1, 32),
-    )
-    weight_spec = WeightScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        dtype=DType.float8_e8m0fnu,
-        block_size=(1, 32),
-    )
-
-    bias_dtype = _bias_dtype(state_dict)
-
-    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
-    all_layers = set(range(num_hidden_layers))
-
     # `mlp_quantized_layers` controls which layers carry a QuantConfig
     # (StackedMoE checks it for the MXFP4 path).
-    return QuantConfig(
-        input_scale=input_spec,
-        weight_scale=weight_spec,
-        mlp_quantized_layers=all_layers,
-        attn_quantized_layers=set(),
+    return QuantConfig.mxfp4(
+        mlp_quantized_layers=range(_get_num_hidden_layers(huggingface_config)),
         embedding_output_dtype=DType.bfloat16,
-        bias_dtype=bias_dtype,
-        format=QuantFormat.MXFP4,
+        bias_dtype=_bias_dtype(state_dict),
         can_use_fused_mlp=can_use_fused_mlp(state_dict),
     )
 
@@ -1078,7 +1308,7 @@ def _parse_float4_config(
     if dtype not in _FP4_DTYPES:
         return None
 
-    quant_config = _resolve_quant_config(huggingface_config, state_dict)
+    quant_config = resolve_hf_quant_config(huggingface_config, state_dict)
     if not quant_config:
         return None
 
@@ -1113,7 +1343,7 @@ def parse_quant_config(
     Args:
         huggingface_config: HuggingFace model configuration.
         state_dict: Weight state dict to inspect for scales.
-        dtype: Target dtype (e.g. float8_e4m3fn or packed fp4).
+        dtype: Target dtype (such as float8_e4m3fn or packed fp4).
         state_dict_name_prefix: Optional prefix for state dict keys.
         ignored_modules_prefix: Prefix of modules to ignore when parsing.
 
@@ -1170,40 +1400,66 @@ def parse_quant_config(
         config = None
 
     if config is not None:
-        config.can_use_fused_mlp = can_use_fused_mlp(
-            state_dict,
-            tensor_wise=(
-                config.weight_scale.is_tensor
-                and config.input_scale.is_tensor
-                and not config.is_static
-            ),
+        apply_fused_kernel_flags(config, state_dict)
+
+    return config
+
+
+def apply_fused_kernel_flags(
+    config: QuantConfig, state_dict: Mapping[str, WeightData]
+) -> QuantConfig:
+    """Sets the fused-kernel eligibility flags on a freshly built QuantConfig.
+
+    The last step of :func:`parse_quant_config`, split out for callers that
+    build a config through one of the format-specific builders. Skipping it
+    leaves both flags off, silently dropping the fused MoE path.
+
+    Args:
+        config: The config to finish, mutated in place.
+        state_dict: The checkpoint weights, read to decide MLP fusion.
+
+    Returns:
+        ``config``, for chaining.
+    """
+    config.can_use_fused_mlp = can_use_fused_mlp(
+        state_dict,
+        tensor_wise=(
+            config.weight_scale.is_tensor
+            and config.input_scale.is_tensor
+            and not config.is_static
+        ),
+    )
+    if not config.can_use_fused_mlp:
+        _logger.warning(
+            "Fused MLP is not supported for this model. "
+            "This may impact performance."
         )
-        if not config.can_use_fused_mlp:
-            _logger.warning(
-                "Fused MLP is not supported for this model. "
-                "This may impact performance."
-            )
-        # Default-on for NVFP4: the SM100 fused SwiGLU+NVFP4 grouped matmul
-        # kernel folds the MoE gate/up matmul + SwiGLU + NVFP4 quant into a
-        # single launch, saving one BF16 HBM round trip per MoE layer.
-        # Process-time kill-switch: ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1``.
-        # The kill-switch flips the QuantConfig flag so the model's
-        # ``gate_up_proj`` and ``gate_up_proj_scales`` properties (which
-        # gate the sigma-permutation on this flag) stay byte-equal to the
-        # historical chained-kernel path.
-        # NOTE: `accelerator_api()` probes the LOCAL machine, so this flag --
-        # and with it the sigma-permutation applied to `gate_up_proj` -- is a
-        # function of the build host, not the target device. Parsing the same
-        # checkpoint on a CPU-only host yields a different weight layout. The
-        # assumption is build-host == inference-target; fixing it properly
-        # means threading the target device spec in here.
-        # MXFP8 is cuda-only here: the fused kernel is SM100, and on AMD the
-        # MoE gate/up SwiGLU is fused by `fused_silu_mx_kernel` off the
-        # chained path instead (as MXFP4 already does). Gating the flag rather
-        # than the call site keeps the sigma-permutation and the kernel choice
-        # consistent.
-        config.can_use_fused_swiglu = (
-            config.is_nvfp4 or (config.is_mxfp8 and accelerator_api() == "cuda")
-        ) and (os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1")
+    # Default-on for NVFP4: the SM100 fused SwiGLU+NVFP4 grouped matmul
+    # kernel folds the MoE gate/up matmul + SwiGLU + NVFP4 quant into a
+    # single launch, saving one BF16 HBM round trip per MoE layer.
+    # Process-time kill-switch: ``MAX_DISABLE_FUSED_SWIGLU_NVFP4=1``.
+    # The kill-switch flips the QuantConfig flag so the model's
+    # ``gate_up_proj`` and ``gate_up_proj_scales`` properties (which
+    # gate the sigma-permutation on this flag) stay byte-equal to the
+    # historical chained-kernel path.
+    # NOTE: `accelerator_api()` probes the LOCAL machine, so this flag --
+    # and with it the sigma-permutation applied to `gate_up_proj` -- is a
+    # function of the build host, not the target device. Parsing the same
+    # checkpoint on a CPU-only host yields a different weight layout. The
+    # assumption is build-host == inference-target; fixing it properly
+    # means threading the target device spec in here.
+    # The flag means "gate_up is sigma-permuted on N", not "use the SM100
+    # kernel", so every consumer of that layout keys off it. Widen the gfx950
+    # term only once another AMD arch grows an interleaved gate/up reader.
+    # `accelerator_architecture_name()` raises on a GPU-less host and this runs
+    # during checkpoint parsing, so the count check comes first.
+    on_gfx950 = (
+        accelerator_count() > 0 and accelerator_architecture_name() == "gfx950"
+    )
+    config.can_use_fused_swiglu = (
+        config.is_nvfp4
+        or (config.is_mxfp8 and accelerator_api() == "cuda")
+        or (config.is_mxfp8 and on_gfx950)
+    ) and (os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1")
 
     return config

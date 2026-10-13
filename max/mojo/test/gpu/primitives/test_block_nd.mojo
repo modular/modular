@@ -19,8 +19,8 @@ result, and that result matches the expected value computed over all linearized
 thread IDs in the block.
 """
 
-from std.gpu import thread_idx
-from std.gpu.globals import WARP_SIZE
+from max.gpu import thread_idx
+from max.gpu.globals import WARP_SIZE
 from std.testing import assert_equal, TestSuite
 
 from max.gpu.host import DeviceContext
@@ -43,11 +43,11 @@ def test_block_sum_1d() raises:
     comptime N = WARP_SIZE * 4
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](N)
+        var buf = ctx.enqueue_create_buffer[.float32](N)
         ctx.enqueue_function[block_sum_1d_kernel[N]](
             buf, grid_dim=1, block_dim=N
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](N)
+        var result = ctx.enqueue_create_host_buffer[.float32](N)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -73,11 +73,11 @@ def test_block_max_1d() raises:
     comptime N = WARP_SIZE * 4
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](N)
+        var buf = ctx.enqueue_create_buffer[.float32](N)
         ctx.enqueue_function[block_max_1d_kernel[N]](
             buf, grid_dim=1, block_dim=N
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](N)
+        var result = ctx.enqueue_create_host_buffer[.float32](N)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -104,11 +104,11 @@ def test_block_min_1d() raises:
     comptime N = WARP_SIZE * 4
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](N)
+        var buf = ctx.enqueue_create_buffer[.float32](N)
         ctx.enqueue_function[block_min_1d_kernel[N]](
             buf, grid_dim=1, block_dim=N
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](N)
+        var result = ctx.enqueue_create_host_buffer[.float32](N)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -136,11 +136,11 @@ def test_block_broadcast_1d() raises:
     comptime src = WARP_SIZE + 1
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](N)
+        var buf = ctx.enqueue_create_buffer[.float32](N)
         ctx.enqueue_function[block_broadcast_1d_kernel[N, src]](
             buf, grid_dim=1, block_dim=N
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](N)
+        var result = ctx.enqueue_create_host_buffer[.float32](N)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -167,11 +167,11 @@ def test_block_prefix_sum_1d() raises:
     comptime N = WARP_SIZE * 4
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](N)
+        var buf = ctx.enqueue_create_buffer[.float32](N)
         ctx.enqueue_function[block_prefix_sum_1d_kernel[N]](
             buf, grid_dim=1, block_dim=N
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](N)
+        var result = ctx.enqueue_create_host_buffer[.float32](N)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -201,11 +201,11 @@ def test_block_sum_2d() raises:
     comptime total = BX * BY
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](total)
+        var buf = ctx.enqueue_create_buffer[.float32](total)
         ctx.enqueue_function[block_sum_2d_kernel[BX, BY]](
             buf, grid_dim=1, block_dim=(BX, BY)
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](total)
+        var result = ctx.enqueue_create_host_buffer[.float32](total)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -243,11 +243,11 @@ def test_block_sum_3d() raises:
     comptime total = BX * BY * BZ
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](total)
+        var buf = ctx.enqueue_create_buffer[.float32](total)
         ctx.enqueue_function[block_sum_3d_kernel[BX, BY, BZ]](
             buf, grid_dim=1, block_dim=(BX, BY, BZ)
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](total)
+        var result = ctx.enqueue_create_host_buffer[.float32](total)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -277,11 +277,11 @@ def test_block_max_2d() raises:
     comptime total = BX * BY
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](total)
+        var buf = ctx.enqueue_create_buffer[.float32](total)
         ctx.enqueue_function[block_max_2d_kernel[BX, BY]](
             buf, grid_dim=1, block_dim=(BX, BY)
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](total)
+        var result = ctx.enqueue_create_host_buffer[.float32](total)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -312,11 +312,11 @@ def test_block_min_2d() raises:
     comptime total = BX * BY
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](total)
+        var buf = ctx.enqueue_create_buffer[.float32](total)
         ctx.enqueue_function[block_min_2d_kernel[BX, BY]](
             buf, grid_dim=1, block_dim=(BX, BY)
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](total)
+        var result = ctx.enqueue_create_host_buffer[.float32](total)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -350,11 +350,11 @@ def test_block_broadcast_2d() raises:
     comptime src: Int = 33
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](total)
+        var buf = ctx.enqueue_create_buffer[.float32](total)
         ctx.enqueue_function[block_broadcast_2d_kernel[BX, BY, src]](
             buf, grid_dim=1, block_dim=(BX, BY)
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](total)
+        var result = ctx.enqueue_create_host_buffer[.float32](total)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 
@@ -385,11 +385,11 @@ def test_block_prefix_sum_2d() raises:
     comptime total = BX * BY
 
     with DeviceContext() as ctx:
-        var buf = ctx.enqueue_create_buffer[DType.float32](total)
+        var buf = ctx.enqueue_create_buffer[.float32](total)
         ctx.enqueue_function[block_prefix_sum_2d_kernel[BX, BY]](
             buf, grid_dim=1, block_dim=(BX, BY)
         )
-        var result = ctx.enqueue_create_host_buffer[DType.float32](total)
+        var result = ctx.enqueue_create_host_buffer[.float32](total)
         ctx.enqueue_copy(result, buf)
         ctx.synchronize()
 

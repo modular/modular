@@ -19,7 +19,7 @@ from typing import ClassVar, Literal
 
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
@@ -83,7 +83,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         total_patches = patches_per_side * patches_per_side
         return total_patches // (self.scale_factor * self.scale_factor)
 
-    def get_kv_params(self) -> KVCacheParams:
+    def get_kv_params(self) -> KVCacheParamInterface:
         """Returns the KV cache parameters from the embedded text config."""
         return self.text_config.get_kv_params()
 
@@ -101,6 +101,8 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes an Idefics3Config instance from pipeline configuration."""
         model_config = model_config or pipeline_config.model
@@ -118,7 +120,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 
         # Build a V3 Llama3Config for the text component.
         text_config = _create_llama3_text_config(
-            pipeline_config, hf_text_config
+            pipeline_config, hf_text_config, max_seq_len
         )
 
         vision_config = Idefics3VisionConfig.initialize_from_config(
@@ -149,7 +151,7 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         llm_state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
     ) -> None:
         """Finalize the Idefics3Config with state_dict-dependent fields."""
         hf_text_config = getattr(
@@ -168,10 +170,11 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 def _create_llama3_text_config(
     pipeline_config: PipelineConfig,
     hf_text_config: AutoConfig,
+    max_seq_len: int,
 ) -> Llama3Config:
     """Create a V3 Llama3Config from a text sub-config.
 
-    This replicates the initialization logic of Llama3Config.initialize()
+    This replicates the initialization logic of Llama3Config.initialize(max_seq_len=max_seq_len)
     but accepts a specific HuggingFace text sub-config rather than reading
     from pipeline_config.model.huggingface_config.
     """
@@ -211,10 +214,6 @@ def _create_llama3_text_config(
 
     attention_multiplier = Llama3Config.calculate_attention_multiplier(
         hf_text_config
-    )
-
-    max_seq_len = Llama3Config.calculate_max_seq_len(
-        pipeline_config, huggingface_config=hf_text_config
     )
 
     return Llama3Config(

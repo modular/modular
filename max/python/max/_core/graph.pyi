@@ -63,9 +63,19 @@ def frame_loc(
 ) -> max._mlir.ir.Location:
     """Creates an opaque MLIR location containing a Python stack frame."""
 
-def to_mlir_with_source_locations(op: max._core.Operation) -> str:
+def profile_scope_location(
+    ctx: max._mlir.ir.Context,
+    name: str,
+    child: max._mlir.ir.Location,
+    color: str | None = None,
+) -> max._mlir.ir.Location:
     """
-    Serializes the operation to MLIR assembly text with each op's Python source location materialized into printable form. Does not mutate the operation.
+    Wraps `child` in a MOGG::ProfileScopeLocationAttr naming the active Graph.profile_scope(), with an optional color.
+    """
+
+def source_locations_bytecode(op: max._core.Operation) -> bytes:
+    """
+    Serializes the operation to MLIR bytecode with each op's Python source location materialized into printable form. Print it by reparsing through max.mlir. Does not mutate the operation.
     """
 
 def _init_and_register_max_context(mlir_ctx: max._mlir.ir.Context) -> None:

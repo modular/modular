@@ -10,11 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling safetensors adapter: prefix strip, skip the towers, few reshapes."""
+"""Inkling safetensors adapter: prefix strip, skip the audio tower, few
+reshapes."""
 
 from __future__ import annotations
 
 import logging
+import re
 
 import numpy as np
 from max.driver import Buffer
@@ -23,6 +25,8 @@ from max.graph import Shape
 from max.graph.weights import WeightData, Weights
 from transformers import AutoConfig
 
+from .layers.moe import padded_router_rows
+
 logger = logging.getLogger("max.pipelines")
 
 # Inkling ships raw input_amax without a precomputed input_scale, so we
@@ -30,11 +34,14 @@ logger = logging.getLogger("max.pipelines")
 _FP8_E4M3_MAX = 448.0
 _FP4_E2M1_MAX = 6.0
 _TEXT = "model.llm."
+_VISION = "model.visual."
 _SKIP = {
     "model.mtp.": "MTP draft heads, which this architecture does not implement",
     "model.audio.": "the audio tower, which this architecture does not serve",
-    "model.visual.": "the vision tower, which this architecture does not serve",
 }
+
+VISION_PREFIX = "vision."
+"""Marks the tower's weights, which compile into a graph of their own."""
 
 
 def nvfp4_input_scale(input_amax: float) -> float:
@@ -93,10 +100,36 @@ def _sink_down(data: WeightData, name: str) -> WeightData:
     )
 
 
+def _pad_router_rows(data: WeightData, name: str) -> WeightData:
+    """Pads the gate weight up to the row count the graph declares."""
+    rows, hidden = (int(d) for d in data.shape)
+    padded = padded_router_rows(rows)
+    if padded == rows:
+        return _rename(data, name)
+    byte_rows = _as_bytes(data)
+    return _from_bytes(
+        np.pad(byte_rows, ((0, padded - rows), (0, 0))),
+        data,
+        [padded, hidden],
+        name,
+    )
+
+
+def _as_float32(data: WeightData) -> np.ndarray:
+    """Widens a float weight to float32 on the host.
+
+    Workaround: WeightData.astype is a no-op under virtual devices, and numpy
+    has no bfloat16, so bf16 bits are shifted into the high half of an fp32.
+    """
+    buf = data.to_buffer()
+    if data.dtype == DType.bfloat16:
+        bits = buf.view(DType.uint16).to_numpy().astype(np.uint32)
+        return (bits << 16).view(np.float32)
+    return buf.to_numpy().astype(np.float32)
+
+
 def _input_scale(data: WeightData, name: str) -> WeightData:
-    amax = np.from_dlpack(
-        Buffer.from_dlpack(data.astype(DType.float32).data)
-    ).reshape(-1)
+    amax = _as_float32(data).reshape(-1)
     # The graph declares a single input scale shared by every expert in a
     # stacked tensor; a checkpoint with per-expert amax values must not be
     # silently collapsed to expert 0's scale.
@@ -113,10 +146,20 @@ def _input_scale(data: WeightData, name: str) -> WeightData:
 
 
 def _convert(name: str, data: WeightData) -> dict[str, WeightData]:
+    if name.startswith(_VISION):
+        # The tower holds its linears and norms in LayerLists, so the
+        # checkpoint's layers.linear_N and layers.norm_N become linears.N
+        # and norms.N.
+        target = VISION_PREFIX + re.sub(
+            r"^layers\.(linear|norm)_(\d+)\.",
+            r"\g<1>s.\g<2>.",
+            name[len(_VISION) :],
+        )
+        return {target: _rename(data, target)}
     if not name.startswith(_TEXT):
         raise ValueError(
             f"unrecognized Inkling checkpoint weight {name!r}: expected "
-            f"{_TEXT!r} or one of {sorted(_SKIP)}"
+            f"{_TEXT!r}, {_VISION!r}, or one of {sorted(_SKIP)}"
         )
 
     rest = name[len(_TEXT) :]
@@ -139,6 +182,8 @@ def _convert(name: str, data: WeightData) -> dict[str, WeightData]:
     if rest.endswith("shared_experts.shared_w2_weight"):
         target = f"{prefix}shared_experts.down_proj.weight"
         return {target: _sink_down(data, target)}
+    if rest.endswith("mlp.gate.weight"):
+        return {rest: _pad_router_rows(data, rest)}
     if rest.endswith(".input_amax"):
         target = rest[: -len(".input_amax")] + ".input_scale"
         return {target: _input_scale(data, target)}
@@ -151,8 +196,7 @@ def _convert(name: str, data: WeightData) -> dict[str, WeightData]:
             target = rest[: -len(suffix)] + house
             return {target: _rename(data, target)}
     if rest.endswith("global_scale"):
-        wide = data.astype(DType.float32)
-        return {rest: _rename(wide, rest)}
+        return {rest: WeightData.from_numpy(_as_float32(data), rest)}
     return {rest: _rename(data, rest)}
 
 

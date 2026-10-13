@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """GPU implementation of elementwise functions."""
 
-from std.gpu import (
+from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -38,12 +38,12 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
 from max.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
-from std.math import ceildiv, clamp
+from std.math import clamp
 from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import unsafe_stack_allocation
 from std.sys._assembly import inlined_assembly
 from std.sys.defines import get_defined_bool, get_defined_int
-from std.sys.info import _has_sm_100x_or_newer, has_nvidia_gpu_accelerator
+from std.sys.info import _has_sm_100x_or_newer
 from std.utils.coord import Coord, CoordLike, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -63,9 +63,9 @@ comptime _USE_CLC_WORK_STEALING = get_defined_bool[
 comptime _PDL_LEVEL = PDLLevel.ON
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _mbarrier_wait_acquire_cta(
-    mbar: Pointer[mut=True, Int64, _, address_space=AddressSpace.SHARED],
+    mbar: Pointer[mut=False, Int64, _, address_space=.SHARED],
     phase: UInt32,
 ):
     """Spin-waits on an mbarrier until the given phase completes, with acquire
@@ -85,7 +85,7 @@ def _mbarrier_wait_acquire_cta(
     ](Int32(Int(mbar)), phase)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _advance_indices[
     rank: Int
 ](
@@ -100,7 +100,7 @@ def _advance_indices[
             idx[d - 1] += 1
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _start_indices_of_nth_element[
     rank: Int, //, shape_types: TypeList[Trait=CoordLike, ...]
 ](n: Int, shape: IndexList[rank, element_type=_], out res: type_of(shape)):
@@ -179,25 +179,25 @@ struct _ClcKernel[
         var result = unsafe_stack_allocation[
             1,
             UInt128,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=16,
         ]()
         var mbar = unsafe_stack_allocation[
             1,
             Int64,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
             alignment=8,
         ]()
         # Shared variables for single-barrier broadcast of cancel results.
         var canceled = unsafe_stack_allocation[
             1,
             UInt32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
         var next_tile = unsafe_stack_allocation[
             1,
             UInt32,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ]()
 
         var tile_id = block_idx.x
@@ -302,7 +302,7 @@ struct _ClcKernel[
                 )
 
 
-@always_inline
+@inline(.always)
 def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
@@ -359,9 +359,8 @@ def _elementwise_impl_gpu_clc[
     if num_tiles == 0:
         num_tiles = 1
 
-    @__parameter
-    @always_inline
-    def launch[handle_uneven_simd: Bool]() raises:
+    @inline(.always)
+    def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _ClcKernel[
             shape_types=shape_types,
             handle_uneven_simd=handle_uneven_simd,
@@ -383,7 +382,7 @@ def _elementwise_impl_gpu_clc[
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
 
-    unswitch[launch](shape[rank - 1] % simd_width != 0)
+    unswitch(shape[rank - 1] % simd_width != 0, launch)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -481,7 +480,7 @@ struct _GridStrideKernel[
                 )
 
 
-@always_inline
+@inline(.always)
 def _elementwise_impl_gpu_grid_stride[
     rank: Int,
     //,
@@ -545,9 +544,8 @@ def _elementwise_impl_gpu_grid_stride[
         * num_waves,
     )
 
-    @__parameter
-    @always_inline
-    def launch[handle_uneven_simd: Bool]() raises:
+    @inline(.always)
+    def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _GridStrideKernel[
             shape_types=shape_types,
             handle_uneven_simd=handle_uneven_simd,
@@ -569,7 +567,7 @@ def _elementwise_impl_gpu_grid_stride[
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
 
-    unswitch[launch](shape[rank - 1] % simd_width != 0)
+    unswitch(shape[rank - 1] % simd_width != 0, launch)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -711,7 +709,7 @@ struct _DualGridStrideKernel[
                 )
 
 
-@always_inline
+@inline(.always)
 def _dual_elementwise_impl_gpu_grid_stride[
     simd_width: Int,
     block_size: Int,
@@ -792,9 +790,8 @@ def _dual_elementwise_impl_gpu_grid_stride[
         or Int(shape_1[rank - 1].value()) % simd_width != 0
     )
 
-    @__parameter
-    @always_inline
-    def launch[handle_uneven_simd: Bool]() raises:
+    @inline(.always)
+    def launch[handle_uneven_simd: Bool]() raises {imm}:
         var k = _DualGridStrideKernel[
             handle_uneven_simd=handle_uneven_simd,
             simd_width=simd_width,
@@ -821,7 +818,7 @@ def _dual_elementwise_impl_gpu_grid_stride[
             attributes=pdl_launch_attributes(_PDL_LEVEL),
         )
 
-    unswitch[launch](any_unaligned)
+    unswitch(any_unaligned, launch)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -829,7 +826,7 @@ def _dual_elementwise_impl_gpu_grid_stride[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _elementwise_impl_gpu[
     simd_width: Int,
     FuncType: ImplicitlyCopyable
@@ -885,7 +882,7 @@ def _elementwise_impl_gpu[
     ]()
     comptime elems_per_thread = get_defined_int[
         "MOJO_ELEMENTWISE_ELEMS_PER_THREAD",
-        4 if has_nvidia_gpu_accelerator() else 1,
+        4 if ctx.target.is_nvidia_gpu() else 1,
     ]()
     comptime clc_min_packed_per_row = get_defined_int[
         "MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9
@@ -923,7 +920,7 @@ def _elementwise_impl_gpu[
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_grid_stride[
                     shape_types=type_of(shape).ParamListType,
@@ -934,7 +931,7 @@ def _elementwise_impl_gpu[
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
         else:
             if use_32bit:
                 _elementwise_impl_gpu_clc[
@@ -943,7 +940,7 @@ def _elementwise_impl_gpu[
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_clc[
                     shape_types=type_of(shape).ParamListType,
@@ -951,7 +948,7 @@ def _elementwise_impl_gpu[
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     trace_description=trace_description,
-                ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+                ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
     else:
         if use_32bit:
             _elementwise_impl_gpu_grid_stride[
@@ -963,7 +960,7 @@ def _elementwise_impl_gpu[
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 trace_description=trace_description,
-            ](func=func, shape=shape_idx.cast[DType.uint32](), ctx=ctx)
+            ](func=func, shape=shape_idx.cast[.uint32](), ctx=ctx)
         else:
             _elementwise_impl_gpu_grid_stride[
                 shape_types=type_of(shape).ParamListType,
@@ -974,10 +971,10 @@ def _elementwise_impl_gpu[
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 trace_description=trace_description,
-            ](func=func, shape=shape_idx.cast[DType.uint64](), ctx=ctx)
+            ](func=func, shape=shape_idx.cast[.uint64](), ctx=ctx)
 
 
-@always_inline
+@inline(.always)
 def _dual_elementwise_impl_gpu[
     simd_width: Int,
     Func0Type: ImplicitlyCopyable
@@ -1039,7 +1036,7 @@ def _dual_elementwise_impl_gpu[
     ]()
     comptime elems_per_thread = get_defined_int[
         "MOJO_ELEMENTWISE_ELEMS_PER_THREAD",
-        4 if has_nvidia_gpu_accelerator() else 1,
+        4 if ctx.target.is_nvidia_gpu() else 1,
     ]()
 
     var max_length = Int(shape_0.product())
@@ -1063,8 +1060,8 @@ def _dual_elementwise_impl_gpu[
         ](
             func_0=func_0,
             func_1=func_1,
-            shape_0=shape_0.cast[DType.uint32](),
-            shape_1=shape_1.cast[DType.uint32](),
+            shape_0=shape_0.cast[.uint32](),
+            shape_1=shape_1.cast[.uint32](),
             ctx=ctx,
         )
     else:
@@ -1079,7 +1076,7 @@ def _dual_elementwise_impl_gpu[
         ](
             func_0=func_0,
             func_1=func_1,
-            shape_0=shape_0.cast[DType.uint64](),
-            shape_1=shape_1.cast[DType.uint64](),
+            shape_0=shape_0.cast[.uint64](),
+            shape_1=shape_1.cast[.uint64](),
             ctx=ctx,
         )

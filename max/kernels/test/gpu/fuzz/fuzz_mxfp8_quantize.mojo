@@ -127,7 +127,7 @@ def _check_contract(
             var c0 = b * SF_VECTOR_SIZE
             var finite_block = True
             for c in range(c0, c0 + SF_VECTOR_SIZE):
-                if not isfinite(inp[r * N + c].cast[DType.float32]()):
+                if not isfinite(inp[r * N + c].cast[.float32]()):
                     finite_block = False
                     break
             if not finite_block:
@@ -136,16 +136,16 @@ def _check_contract(
             comptime if scales.rank == 5:
                 sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     scales, r, c0
-                ).cast[DType.float32]()
+                ).cast[.float32]()
             else:
                 sf = rebind[Scalar[scales_dtype]](
                     scales[Coord(r, c0 // SF_VECTOR_SIZE)]
-                ).cast[DType.float32]()
+                ).cast[.float32]()
             if not isfinite(sf):
                 print("FUZZ_CONTRACT_FAIL kind=scale row=", r, "block=", b)
                 return False
             for c in range(c0, c0 + SF_VECTOR_SIZE):
-                var o = outp[r * N + c].cast[DType.float32]()
+                var o = outp[r * N + c].cast[.float32]()
                 if not isfinite(o):
                     print(
                         "FUZZ_CONTRACT_FAIL kind=output row=",
@@ -170,19 +170,19 @@ def _check_roundtrip(
     var total = 0
     for r in range(m):
         for c in range(N):
-            var x = inp[r * N + c].cast[DType.float32]()
+            var x = inp[r * N + c].cast[.float32]()
             if not isfinite(x):
                 continue
             var sf: Float32
             comptime if scales.rank == 5:
                 sf = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     scales, r, c
-                ).cast[DType.float32]()
+                ).cast[.float32]()
             else:
                 sf = rebind[Scalar[scales_dtype]](
                     scales[Coord(r, c // SF_VECTOR_SIZE)]
-                ).cast[DType.float32]()
-            var deq = outp[r * N + c].cast[DType.float32]() * sf
+                ).cast[.float32]()
+            var deq = outp[r * N + c].cast[.float32]() * sf
             total += 1
             if abs(deq - x) > 1.0 + 0.15 * abs(x):
                 mismatch += 1
@@ -216,21 +216,19 @@ def run_one_case(
     var out_dev = ctx.enqueue_create_buffer[out_dtype](m * N)
     ctx.enqueue_copy(in_dev, in_host)
 
-    var input_tt = TileTensor(in_dev, row_major(Coord(m, Idx[N])))
-    var output_tt = TileTensor(out_dev, row_major(Coord(m, Idx[N])))
+    var input_tt = TileTensor(in_dev, row_major(m, Idx[N]))
+    var output_tt = TileTensor(out_dev, row_major(m, Idx[N]))
 
     # Scale-factor layout is vendor-specific: SM100 (B200) needs the 5D
     # TCGEN-interleaved atom layout; AMD CDNA4 (MI355X) uses plain rank-2
     # row-major scales.
     comptime if _is_sm10x_gpu(ctx.default_device_info):
         var scales_shape = row_major(
-            Coord(
-                ceildiv(m, SF_MN_GROUP_SIZE),
-                Idx[ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            ceildiv(m, SF_MN_GROUP_SIZE),
+            Idx[ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
         var scales_total = scales_shape.product()
         var scales_dev = ctx.enqueue_create_buffer[scales_dtype](scales_total)
@@ -276,7 +274,7 @@ def run_one_case(
         _ = out_dev
         _ = scales_dev
     else:
-        var scales_shape = row_major(Coord(m, Idx[N // SF_VECTOR_SIZE]))
+        var scales_shape = row_major(m, Idx[N // SF_VECTOR_SIZE])
         var scales_total = scales_shape.product()
         var scales_dev = ctx.enqueue_create_buffer[scales_dtype](scales_total)
         var scales_tt = TileTensor(scales_dev, scales_shape)

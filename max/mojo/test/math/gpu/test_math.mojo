@@ -19,11 +19,12 @@ from std.testing import TestSuite
 
 def run_func[
     dtype: DType,
-    kernel_fn: def[dtype: DType, width: SIMDLength](
-        SIMD[dtype, width]
-    ) thin -> SIMD[dtype, width],
-](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
-    @__parameter
+    kernel_fn: def[fn_dtype: DType, width: SIMDLength](
+        SIMD[fn_dtype, width]
+    ) thin -> SIMD[fn_dtype, width] where fn_dtype.is_floating_point(),
+](
+    ctx: DeviceContext, val: Scalar[dtype] = 0
+) raises where dtype.is_floating_point():
     def kernel(
         output: Pointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
     ):
@@ -91,18 +92,17 @@ def powf_fn(val: SIMD) -> type_of(val):
 def test_math() raises:
     with DeviceContext() as ctx:
 
-        @__parameter
         def test[
-            *kernel_fns: def[dtype: DType, width: SIMDLength](
-                SIMD[dtype, width]
-            ) thin -> SIMD[dtype, width]
+            *kernel_fns: def[fn_dtype: DType, width: SIMDLength](
+                SIMD[fn_dtype, width]
+            ) thin -> SIMD[fn_dtype, width] where fn_dtype.is_floating_point()
         ](ctx: DeviceContext) raises:
             comptime ls = kernel_fns.size
 
             comptime for idx in range(ls):
                 comptime kernel_fn = kernel_fns[idx]
-                run_func[DType.float32, kernel_fn[...]](ctx)
-                run_func[DType.float16, kernel_fn[...]](ctx)
+                run_func[.float32, kernel_fn[...]](ctx)
+                run_func[.float16, kernel_fn[...]](ctx)
 
         # Anything that's commented does not work atm and needs to be
         # implemented. This list is also not exhaustive and needs to be
@@ -116,13 +116,13 @@ def test_math() raises:
             log2,
             log10,
             log1p,
-            # logb,
+            logb,
             cbrt,
-            # hypot_fn,
+            hypot_fn,
             erfc,
-            # lgamma,
+            lgamma,
             # gamma,
-            # remainder_fn,
+            remainder_fn,
             # j0,
             # j1,
             # y0,

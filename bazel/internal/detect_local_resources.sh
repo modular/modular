@@ -51,6 +51,7 @@ if [[ "$(uname)" == "Linux" ]]; then
         exit 1
     else
         # No GPUs
+        echo "build --local_resources=gpu-memory=0"
         exit 0
     fi
 else # We assume Mac is the only other case

@@ -44,7 +44,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
     B columns. Handles tail elements in the K dimension with scalar cleanup.
     """
 
-    @always_inline
+    @inline(.always)
     def _accumulate_lane[
         simd_size: Int,
         a_col_size: Int,
@@ -83,16 +83,15 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
             Coord(n_outer_idx, tile_n_k_idx[1], Idx[0])
         )
 
-        var a_vals = Array[SIMD[c_local.dtype, a_col_size], kernel_rows](
-            uninitialized=True
+        var a_vals = Array[_, kernel_rows](
+            fill_with_unrolled=lambda [row: Int]() -> SIMD[
+                c_local.dtype, a_col_size
+            ]: a.load[width=a_col_size](
+                Coord(global_offset.M + row, global_k)
+            ).cast[
+                c_local.dtype
+            ]()
         )
-
-        comptime for row in range(kernel_rows):
-            var global_m = global_offset.M + row
-            var a_val = a.load[width=a_col_size](
-                Coord(global_m, global_k)
-            ).cast[c_local.dtype]()
-            a_vals[row] = a_val
 
         comptime for lane in range(a_col_size):
             comptime for col in range(kernel_cols // simd_size):
@@ -112,7 +111,7 @@ struct Inner_matmul_neon(InnerMatmulKernel, Movable):
 
             b_ptr = b_ptr + kernel_cols
 
-    @always_inline
+    @inline(.always)
     def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,

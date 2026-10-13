@@ -14,7 +14,7 @@
 from std.random import random_float64
 from std.itertools import product
 
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -52,7 +52,7 @@ def stencil_kernel(
     var curr_in_s = unsafe_stack_allocation[
         IN_TILE_DIM * IN_TILE_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Z-neighbors stored in REGISTERS (not shared memory)

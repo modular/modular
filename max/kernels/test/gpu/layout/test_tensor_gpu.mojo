@@ -11,39 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx
+from max.gpu import block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
 )
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
-from layout import Layout, LayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout import TileTensor, row_major, stack_allocation
 from std.testing import assert_true
 
 
 def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
     print("== test_copy_dram_to_sram_async")
-    comptime tensor_layout = Layout.row_major(4, 16)
-    var tensor = ManagedLayoutTensor[DType.float32, tensor_layout](ctx)
-    arange(tensor.tensor())
+    comptime tensor_layout = row_major[4, 16]()
+    var tensor = HostDeviceTileTensor[.float32](tensor_layout, ctx)
+    arange(tensor.host_tensor())
+    tensor.to_device()
 
     var check_state = True
 
-    def copy_to_sram_test_kernel[
-        layout: Layout,
-    ](
-        dram_tensor: LayoutTensor[DType.float32, layout, ImmutAnyOrigin],
-        flag: UnsafePointer[Scalar[DType.bool], MutAnyOrigin],
+    def copy_to_sram_test_kernel(
+        dram_tensor: TileTensor[
+            .float32, type_of(tensor_layout), ImmutAnyOrigin
+        ],
+        flag: MutPointer[Scalar[.bool], MutAnyOrigin],
     ):
         var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
-        var sram_tensor = LayoutTensor[
-            DType.float32,
-            Layout.row_major(4, 4),
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
-        ].stack_allocation()
+        var sram_tensor = stack_allocation[.float32, address_space=.SHARED](
+            row_major[4, 4]()
+        )
         sram_tensor.copy_from_async(dram_tile)
 
         async_copy_commit_group()
@@ -56,13 +54,13 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
                 if sram_tensor[r, c] != Float32(r * 16 + col_offset + c):
                     flag[] = False
 
-    comptime kernel = copy_to_sram_test_kernel[tensor_layout]
-    var ptr = UnsafePointer(to=check_state).bitcast[Scalar[DType.bool]]()
+    comptime kernel = copy_to_sram_test_kernel
+    var ptr = Pointer(to=check_state).bitcast[Scalar[.bool]]()
     ctx.enqueue_function[kernel](
-        tensor.device_tensor(),
-        DeviceBuffer[DType.bool](
+        tensor.device_tensor().as_imm(),
+        DeviceBuffer[.bool](
             ctx,
-            rebind[UnsafePointer[Scalar[DType.bool], MutAnyOrigin]](ptr),
+            rebind[MutPointer[Scalar[.bool], MutAnyOrigin]](ptr),
             1,
             owning=False,
         ),

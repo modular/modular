@@ -37,6 +37,7 @@ from max.pipelines.architectures.unified_dspark_gemma4_12b.dspark_gemma4 import 
 )
 from max.pipelines.architectures.unified_dspark_gemma4_12b.model_config import (
     UnifiedDSparkGemma4_12BConfig,
+    gemma4_dspark_12b_width,
     resolve_dspark_num_speculative_tokens,
 )
 from max.pipelines.lib import (
@@ -156,7 +157,7 @@ def _make_pipeline_config(
     return PipelineConfig.model_construct(
         models=ModelManifest({"main": model_config, "draft": draft_config}),
         speculative=SpeculativeConfig(
-            speculative_method="dflash",
+            speculative_method="dspark",
             num_speculative_tokens=num_speculative_tokens,
         ),
     )
@@ -248,13 +249,13 @@ def _make_arch_config(
 def test_validate_never_mutates_speculative_config(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    unset = SpeculativeConfig(speculative_method="dflash")
+    unset = SpeculativeConfig(speculative_method="dspark")
     config = _make_arch_config(unset)
     config.validate_dspark_fields()
     assert unset.num_speculative_tokens is None
 
     mismatched = SpeculativeConfig(
-        speculative_method="dflash", num_speculative_tokens=4
+        speculative_method="dspark", num_speculative_tokens=4
     )
     config = _make_arch_config(mismatched)
     with caplog.at_level(logging.WARNING, logger="max.pipelines"):
@@ -265,3 +266,15 @@ def test_validate_never_mutates_speculative_config(
     # Module construction reads the trained width off the arch config
     # regardless of the CLI value.
     assert config.resolve_block_size() == BLOCK_SIZE
+
+
+def test_width_forces_block_size() -> None:
+    draft_hf = SimpleNamespace(
+        architectures=["Gemma4DSparkModel"], block_size=BLOCK_SIZE
+    )
+    unset = SpeculativeConfig(speculative_method="dspark")
+    assert gemma4_dspark_12b_width(unset, None, draft_hf) == BLOCK_SIZE
+    explicit = SpeculativeConfig(
+        speculative_method="dspark", num_speculative_tokens=4
+    )
+    assert gemma4_dspark_12b_width(explicit, None, draft_hf) == BLOCK_SIZE

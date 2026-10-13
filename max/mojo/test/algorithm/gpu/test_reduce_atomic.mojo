@@ -14,12 +14,11 @@
 from std.math import ceildiv
 from std.atomic import Atomic
 
-from std.gpu import global_idx, thread_idx
+from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import AddressSpace, unsafe_stack_allocation
 from std.testing import assert_equal, TestSuite
-from std.sys import is_apple_gpu, has_apple_gpu_accelerator
 
 
 @fieldwise_init
@@ -82,9 +81,7 @@ def reduce_add_via_shared_cas(
     local-address-space `cmpxchg` path."""
     # `Int` is not device-passable; widen the fixed-width arg.
     var len = Int(len_dev)
-    var shared = unsafe_stack_allocation[
-        1, Float32, address_space=AddressSpace.SHARED
-    ]()
+    var shared = unsafe_stack_allocation[1, Float32, address_space=.SHARED]()
 
     if thread_idx.x == 0:
         shared[unsafe_offset=0] = 0
@@ -166,7 +163,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var res_min = Float32(0)
     var res_max = Float32(0)
 
-    comptime if not has_apple_gpu_accelerator():
+    comptime if not ctx.target.is_apple_gpu():
         var res_min_device = ctx.enqueue_create_buffer[F32](1)
         res_min_device.enqueue_fill(0)
 
@@ -188,27 +185,27 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
 
     if fill_strategy == FillStrategy.LINSPACE:
         assert_equal(res, n * (n - 1) // 2)
-        if not has_apple_gpu_accelerator():
+        if not ctx.target.is_apple_gpu():
             assert_equal(res_min, 0)
             assert_equal(res_max, n - 1)
     elif fill_strategy == FillStrategy.NEG_LINSPACE:
         assert_equal(res, -n * (n - 1) // 2)
-        if not has_apple_gpu_accelerator():
+        if not ctx.target.is_apple_gpu():
             assert_equal(res_min, -n + 1)
             assert_equal(res_max, 0)
     elif fill_strategy == FillStrategy.SYMMETRIC_LINSPACE:
         assert_equal(res, -n // 2)
-        if not has_apple_gpu_accelerator():
+        if not ctx.target.is_apple_gpu():
             assert_equal(res_min, -n // 2)
             assert_equal(res_max, (n - 1) // 2)
     elif fill_strategy == FillStrategy.ZEROS:
         assert_equal(res, 0)
-        if not has_apple_gpu_accelerator():
+        if not ctx.target.is_apple_gpu():
             assert_equal(res_min, 0)
             assert_equal(res_max, 0)
     elif fill_strategy == FillStrategy.ONES:
         assert_equal(res, n)
-        if not has_apple_gpu_accelerator():
+        if not ctx.target.is_apple_gpu():
             assert_equal(res_min, 0)
             assert_equal(res_max, 1)
 

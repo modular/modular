@@ -52,6 +52,7 @@ from eval_common import (
     build_chat_kwargs,
     dump_jsonl,
     dump_score,
+    finish_stats,
     load_gated,
     make_client,
     run_parallel,
@@ -176,6 +177,7 @@ def score(results: list[dict[str, Any]], total: int) -> dict[str, Any]:
         "truncated": truncated,
         "mean_output_tokens_finished": mean_finished,
         "p50_output_tokens_finished": p50_finished,
+        **finish_stats(results),
     }
 
 

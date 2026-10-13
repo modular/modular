@@ -20,10 +20,9 @@ from typing import Literal
 
 from max._core.driver import (  # noqa: F401
     CPU,
-    NPU,
     Accelerator,
     Device,
-    DeviceStream,
+    DeviceQueue,
     accelerator_count,
 )
 
@@ -45,6 +44,16 @@ def accelerator_architecture_name() -> str:
 @dataclass(frozen=True)
 class DeviceSpec:
     """A device specification containing an ID and device type.
+
+    Use :func:`load_devices` to turn a spec into a :class:`Device`:
+
+    .. code-block:: python
+
+        from max.driver import DeviceSpec, load_devices
+
+        cpu_spec = DeviceSpec.cpu()
+        device = load_devices([cpu_spec])[0]
+        print(device.label)
 
     Args:
         id: The device identifier.

@@ -23,6 +23,7 @@ CPU worker. The compile + execute coverage lives in the GPU tests
 from __future__ import annotations
 
 from _mla_sparse_test_utils import paged_kv_from_flat_graph_inputs
+from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention.mask_config import MHAMaskVariant
@@ -146,7 +147,7 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
         DType.int32, ["buf_len_chunks"], DeviceRef.GPU()
     )
 
-    kv_sym = kv_params.get_symbolic_inputs().inputs[0].flatten()
+    kv_sym = tree.leaves(kv_params.get_symbolic_inputs()[0])
 
     def construct() -> Graph:
         with Graph(
@@ -220,6 +221,7 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
                 w_uv_scale=w_uv_scale,
                 quant_config=quant_config,
                 sparse_indices=sparse_indices,
+                physical_indices=False,
                 sparse_topk_lengths=sparse_topk_lengths,
                 sparse_attn_sink=sparse_attn_sink,
                 sparse_indices_stride=indices_stride,

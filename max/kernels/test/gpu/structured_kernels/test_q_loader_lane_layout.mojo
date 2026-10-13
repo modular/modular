@@ -34,10 +34,8 @@ fragment matches the contiguous formula
 `frag[f] == (lid // 32) * 32 / 8 + f / 8` for `f in [0, 32)`.
 """
 
-from std.gpu import lane_id, thread_idx
-from max.gpu.sync import barrier
+from max.gpu import lane_id
 from max.gpu.host import DeviceContext
-from std.memory import AddressSpace
 from std.testing import assert_equal
 
 from layout import TileTensor
@@ -50,7 +48,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import MhaPrefillV2
 # Per-col group pattern. Returns `c // 8` packed into FP8 e4m3fn.
 # Column groups of 8 keep all distinct values exactly representable in FP8
 # at d=128: {0, 1, ..., 15}.
-@always_inline
+@inline(.always)
 def _pattern_fp8(r: Int, c: Int) -> Float8_e4m3fn:
     return Float8_e4m3fn(Float32(c // 8))
 
@@ -59,8 +57,8 @@ def kernel_load_q_fp8[
     cfg: MhaConfigV2,
     depth: Int,
 ](
-    q_ptr: UnsafePointer[Scalar[cfg.dtype], MutAnyOrigin],
-    dump_ptr: UnsafePointer[Scalar[cfg.dtype], MutAnyOrigin],
+    q_ptr: MutPointer[Scalar[cfg.dtype], MutAnyOrigin],
+    dump_ptr: MutPointer[Scalar[cfg.dtype], MutAnyOrigin],
 ):
     """Calls `MhaPrefillV2._load_q_and_scale` and dumps each lane's
     per-base-tile fragment to gmem.
@@ -112,7 +110,7 @@ def test_q_loader_contiguous_lane_layout(ctx: DeviceContext) raises:
         num_kv_heads=1,
         dtype=DType.float8_e4m3fn,
     )
-    comptime _Op = MhaMmaOp[DType.float8_e4m3fn, CFG]
+    comptime _Op = MhaMmaOp[.float8_e4m3fn, CFG]
     comptime _Q_SIZE = Q_BLOCK_SIZE * DEPTH
     comptime _H = _Op.Q_LAYOUT.static_shape[0]
     comptime _W = _Op.Q_LAYOUT.static_shape[1]
@@ -120,8 +118,8 @@ def test_q_loader_contiguous_lane_layout(ctx: DeviceContext) raises:
     comptime _total_per_lane = _H * _W * _F
     comptime _DUMP_SIZE = 64 * _total_per_lane
 
-    var dev_q = ctx.enqueue_create_buffer[DType.float8_e4m3fn](_Q_SIZE)
-    var dev_dump = ctx.enqueue_create_buffer[DType.float8_e4m3fn](_DUMP_SIZE)
+    var dev_q = ctx.enqueue_create_buffer[.float8_e4m3fn](_Q_SIZE)
+    var dev_dump = ctx.enqueue_create_buffer[.float8_e4m3fn](_DUMP_SIZE)
 
     with dev_q.map_to_host() as host_q:
         for r in range(Q_BLOCK_SIZE):
@@ -170,8 +168,8 @@ def test_q_loader_contiguous_lane_layout(ctx: DeviceContext) raises:
                         )
                         var got = host_dump[idx]
                         assert_equal(
-                            got.cast[DType.float32](),
-                            expected.cast[DType.float32](),
+                            got.cast[.float32](),
+                            expected.cast[.float32](),
                         )
 
     _ = dev_q^

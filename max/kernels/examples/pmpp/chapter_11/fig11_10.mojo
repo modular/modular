@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, thread_idx, WARP_SIZE
+from max.gpu import block_idx, thread_idx, WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
-from std.gpu.primitives.id import lane_id, warp_id
-from std.gpu.primitives.warp import shuffle_up
+from max.gpu.primitives.id import lane_id, warp_id
+from max.gpu.primitives.warp import shuffle_up
 
 from std.math import abs
 
@@ -64,7 +64,7 @@ def block_scan(val: Float32) -> Float32:
     var warp_sums_s = unsafe_stack_allocation[
         NUM_WARPS,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Step 2: Collect warp sums

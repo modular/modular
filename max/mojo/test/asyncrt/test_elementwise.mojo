@@ -15,20 +15,19 @@ from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
 from asyncrt_test_utils import create_test_device_context
-from std.gpu import *
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu import *
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 from std.utils import IndexList
 from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import Index
 
 
 def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     print("-")
     print("run_elementwise[", dtype, "]:")
 
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     comptime rank = 2
     comptime dim_x = 2
@@ -47,10 +46,10 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     var in_buffer = Span(unsafe_ptr=in0.unsafe_ptr(), length=length)
     var out_buffer = Span(unsafe_ptr=out.unsafe_ptr(), length=length)
 
-    @always_inline
-    @__copy_capture(in_buffer, out_buffer)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    @inline(.always)
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var in_buffer, var out_buffer}:
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         out_buffer.unsafe_ptr().unsafe_store(
             idx[0] * dim_y + idx[1],
@@ -60,7 +59,8 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             + 42,
         )
 
-    elementwise[func, pack_size, target="gpu"](
+    elementwise[pack_size, target="gpu"](
+        func,
         (2, 8),
         ctx,
     )
@@ -82,22 +82,22 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
 def test_elementwise_float32() raises:
     var ctx = create_test_device_context()
-    run_elementwise[DType.float32](ctx)
+    run_elementwise[.float32](ctx)
 
 
 def test_elementwise_bfloat16() raises:
     var ctx = create_test_device_context()
-    run_elementwise[DType.bfloat16](ctx)
+    run_elementwise[.bfloat16](ctx)
 
 
 def test_elementwise_float16() raises:
     var ctx = create_test_device_context()
-    run_elementwise[DType.float16](ctx)
+    run_elementwise[.float16](ctx)
 
 
 def test_elementwise_int8() raises:
     var ctx = create_test_device_context()
-    run_elementwise[DType.int8](ctx)
+    run_elementwise[.int8](ctx)
 
 
 def main() raises:

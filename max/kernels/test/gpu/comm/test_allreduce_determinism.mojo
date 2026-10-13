@@ -45,7 +45,7 @@
 
 from std.sys import size_of
 
-from comm import MAX_GPUS, Signal, group_end, group_start
+from comm import Signal, group_end, group_start
 from comm.allreduce import allreduce, allreduce_tuning_table
 from comm.device_query import dispatch_select_comm_config
 from comm.sync import enable_p2p, init_signal_buffer
@@ -71,12 +71,12 @@ comptime LEN_LARGE = 2 * 1024 * 1024
 
 def _elem_bits_u64[dtype: DType](x: Scalar[dtype]) -> UInt64:
     """Reinterprets one float element's bits as a `UInt64` (zero-extended)."""
-    return x.to_bits().cast[DType.uint64]()
+    return x.to_bits().cast[.uint64]()
 
 
 def hash_output[
     dtype: DType
-](p: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], length: Int) -> UInt64:
+](p: MutPointer[Scalar[dtype], MutUntrackedOrigin], length: Int) -> UInt64:
     """Order-sensitive FNV-1a over a host buffer's element bit patterns.
 
     Sensitive to any single-bit change and to element order, and (unlike an
@@ -95,14 +95,14 @@ def hash_positive_control() raises -> None:
     runs (and gives evidence) even on a single-GPU box.
     """
     comptime n = 4096
-    var buf = alloc[Scalar[DType.float32]](n)
+    var buf = alloc[Float32](n)
     for j in range(n):
         buf[j] = Float32(j) * 0.5 - 1024.0
 
     var h0 = hash_output(buf, n)
     # Flip the lowest bit of one element through an integer view (a true
     # single-bit change of the stored float bits), re-hash, then restore.
-    var ibuf = buf.bitcast[Scalar[DType.uint32]]()
+    var ibuf = buf.bitcast[UInt32]()
     var saved_bits = ibuf[n // 2]
     ibuf[n // 2] = saved_bits ^ 1
     var h1 = hash_output(buf, n)
@@ -132,17 +132,14 @@ def allreduce_determinism_test[
 
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_in = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var host_in = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
-    var host_out = List[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]](
+    var host_out = List[MutPointer[Scalar[dtype], MutUntrackedOrigin]](
         capacity=ngpus
     )
 
-    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        uninitialized=True
-    )
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
 
     for i in range(ngpus):
@@ -161,36 +158,40 @@ def allreduce_determinism_test[
             h_in[j] = Scalar[dtype](Float64(t - 1019) * 0.001953125)
 
         signal_buffers.append(
-            list_of_ctx[i].create_buffer_sync[DType.uint8](
+            list_of_ctx[i].create_buffer_sync[.uint8](
                 size_of[Signal]() + temp_buffer_num_bytes
             )
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
         list_of_ctx[i].enqueue_copy(in_dev[i], host_in[i])
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        in_tensors[i] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+    var in_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InTensorType: TileTensor(
+            rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                 in_dev[i].unsafe_ptr()
             ),
             row_major(length),
         )
+    )
 
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
-    for i in range(ngpus):
-        out_tensors[i] = TileTensor(out_dev[i], row_major(length))
+    var out_tensors = Array[_, ngpus](
+        fill_with=lambda (i: Int) {
+            mut out_dev, imm
+        } -> OutTensorType: TileTensor(
+            out_dev[i], row_major(length)
+        ).as_unsafe_any_origin()
+    )
 
     # One-time signal-buffer init (barrier counters + Lamport sentinel), then
     # sync so every rank is initialized before the first push.
@@ -280,15 +281,15 @@ def run_determinism_sweep() raises -> None:
 
     comptime for d in range(len(dtypes)):
         comptime for g in range(len(gpu_counts)):
-            comptime dtype = rebind[DType](dtypes[d])
-            comptime ngpus = rebind[Int](gpu_counts[g])
+            comptime dtype = dtypes[d]
+            comptime ngpus = gpu_counts[g]
             if DeviceContext.number_of_devices() < ngpus:
                 continue
             var ctx = List[DeviceContext]()
             for i in range(ngpus):
                 ctx.append(DeviceContext(device_id=i))
             comptime for li in range(len(lengths)):
-                comptime length = rebind[Int](lengths[li])
+                comptime length = lengths[li]
                 allreduce_determinism_test[dtype=dtype, ngpus=ngpus](
                     ctx, length
                 )

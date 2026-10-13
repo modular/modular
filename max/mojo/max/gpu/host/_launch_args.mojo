@@ -20,7 +20,7 @@ the public API.
 from std.collections.optional import Optional
 
 
-@always_inline
+@inline(.always)
 def _compact_zero_sized_capture_slots(
     dense_args_addrs: Pointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin],
     capture_sizes: Pointer[UInt64, ImmUntrackedOrigin],
@@ -71,9 +71,9 @@ def _compact_zero_sized_capture_slots(
             dense_args_addrs[unsafe_offset=effective_argc] = dense_args_addrs[
                 unsafe_offset=num_leading_args + i
             ]
-            if dense_args_sizes:
-                dense_args_sizes.value()[
-                    unsafe_offset=effective_argc
-                ] = capture_sizes[unsafe_offset=i]
+            if case .Some(dense_args_sizes) = dense_args_sizes:
+                dense_args_sizes[unsafe_offset=effective_argc] = capture_sizes[
+                    unsafe_offset=i
+                ]
             effective_argc += 1
     return effective_argc

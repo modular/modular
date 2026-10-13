@@ -11,6 +11,7 @@ bazel_dep(name = "fmt", version = "11.2.0")
 bazel_dep(name = "gazelle", version = "0.50.0")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
 bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "jemalloc", version = "5.3.0-bcr.4")
 bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
@@ -29,6 +30,8 @@ bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 bazel_dep(name = "xxhash", version = "0.8.3.bcr.1")
 
 # Necessary for LLVM
+bazel_dep(name = "libxml2", version = "2.15.3")
+bazel_dep(name = "xz", version = "5.4.5.bcr.9", repo_name = "llvm_xz")
 bazel_dep(name = "zlib-ng", version = "2.3.3", repo_name = "llvm_zlib")
 bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
 
@@ -75,6 +78,9 @@ archive_override(
         "//bazel/public-patches:rules_mypy_pyi_files.patch",
         # https://github.com/bazel-contrib/rules_mypy/pull/141
         "//bazel/public-patches:rules_mypy_transitives.patch",
+        # The aspect applies to every top-level target, so target-configured
+        # type stubs make any cross-compile fail during loading. TODO: upstream.
+        "//bazel/public-patches:rules_mypy_exec_types.patch",
     ],
     strip_prefix = "rules_mypy-0.41.0",
     urls = [
@@ -223,18 +229,27 @@ http_archive(
     name = "nixl_upstream",
     build_file = "//bazel/public-patches:nixl_upstream.BUILD",
     patch_args = ["-p1"],
-    patches = [],
-    sha256 = "74ab77453bd117e80e4bda14aa5fe4050b7767cedb04357b65b485e7c7101612",
-    strip_prefix = "nixl-1.3.0",
-    url = "https://github.com/ai-dynamo/nixl/archive/refs/tags/v1.3.0.tar.gz",
+    patches = [
+        # TODO(GEX-4323): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-rail-ep-lock.patch",
+        # TODO(GEX-4324): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-release-inflight.patch",
+        # TODO(GEX-4312): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-vmm-cuda-ctx.patch",
+        # TODO(GEX-4374): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-src-addr-peer-limit.patch",
+    ],
+    sha256 = "1dc9d1c070491ed8ed89942f14124c5d914b85be279cf694678203fd7a94c927",
+    strip_prefix = "nixl-1.5.0",
+    url = "https://github.com/ai-dynamo/nixl/archive/refs/tags/v1.5.0.tar.gz",
 )
 # END_NIXL_GENERATED
 
 http_archive(
     name = "ucx_prebuilt",
     build_file = "//bazel/public-patches:ucx_prebuilt.BUILD",
-    sha256 = "5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/ucx_prebuilt/501d8fd1611247ac46efb1a56fca3b16b9feae2f/5e3488de55c83f8a6440c597063117721319fa8433c0d35a66c1a14702f7d46c/ucx-prebuilt-linux-x86-64.tar.gz",
+    sha256 = "a88fa1f779d7e27185bcef7fe0fa53243705936f093fcc62da218c3aefdc1a1c",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/ucx_prebuilt/1b9edc29f8ca0728f13e01d0d4397f5d910f74fa/a88fa1f779d7e27185bcef7fe0fa53243705936f093fcc62da218c3aefdc1a1c/ucx-prebuilt-linux-x86-64.tar.gz",
 )
 
 # UCCL transport library for the AMD NIXL UCCL backend. Built by
@@ -243,24 +258,24 @@ http_archive(
 http_archive(
     name = "uccl_prebuilt",
     build_file = "//bazel/public-patches:uccl_prebuilt.BUILD",
-    sha256 = "d27db64e4d88db03f2c0c61ffa1a9681c93a6aa023298c110b659749101ac985",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/uccl_prebuilt/66170bc299205228f0170bc1638594a39af9ffd5/d27db64e4d88db03f2c0c61ffa1a9681c93a6aa023298c110b659749101ac985/uccl-prebuilt-rocm-linux-x86-64.tar.gz",
+    sha256 = "7e0075c406319230c94326a29cbd741d516cc783d61e48480c5c4ac27bb46a3a",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/uccl_prebuilt/341835eb5894a437e785ef56ae0afc4d96e856f4/7e0075c406319230c94326a29cbd741d516cc783d61e48480c5c4ac27bb46a3a/uccl-prebuilt-rocm-linux-x86-64.tar.gz",
 )
 
 http_archive(
     name = "efa_libfabric_prebuilt",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "a35ed6624ddadd0db37be561c844c0a5cfe71aaf604e6c919e1a8bf914b4cd1f",
+    sha256 = "40fddd77f62e14bb60bafff5b979011cbaa3ac61598d53183da168db779eafda",
     strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod3/a35ed6624ddadd0db37be561c844c0a5cfe71aaf604e6c919e1a8bf914b4cd1f/efa-libfabric-prebuilt-cpu.tar.xz",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod4/40fddd77f62e14bb60bafff5b979011cbaa3ac61598d53183da168db779eafda/efa-libfabric-prebuilt-cpu.tar.xz",
 )
 
 http_archive(
     name = "efa_libfabric_prebuilt_cuda",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "0bfd9160bcc4a79e65833c94b5fee3e873488d0cac830f5da3cb9d308926a3fa",
+    sha256 = "b11916953f7737b5967ff4b8e188a87ee0141196c333cc7dbf54878c90d535f2",
     strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod3/0bfd9160bcc4a79e65833c94b5fee3e873488d0cac830f5da3cb9d308926a3fa/efa-libfabric-prebuilt-cuda.tar.xz",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod4/b11916953f7737b5967ff4b8e188a87ee0141196c333cc7dbf54878c90d535f2/efa-libfabric-prebuilt-cuda.tar.xz",
 )
 
 # CUDA Driver API + runtime headers used by libfabric_plugin_lib (-DHAVE_CUDA).
@@ -519,8 +534,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/22.1.4/2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b/llvm-linux-x86_64.tar.xz",
+    sha256 = "4a8c1bd46ac42ee8ff73a27d86b2ec7d922304e0e9ded8b8b7e50c29cc38408f",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/23.1.1/4a8c1bd46ac42ee8ff73a27d86b2ec7d922304e0e9ded8b8b7e50c29cc38408f/llvm-linux-x86_64.tar.xz",
 )
 
 http_archive(
@@ -528,8 +543,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/22.1.4/474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab/llvm-linux-aarch64.tar.xz",
+    sha256 = "29cc18da13b7a730bc7a9a67c8cfa3048d62cb2133f171a276d41924303f90db",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/23.1.1/29cc18da13b7a730bc7a9a67c8cfa3048d62cb2133f171a276d41924303f90db/llvm-linux-aarch64.tar.xz",
 )
 
 http_archive(
@@ -537,8 +552,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/22.1.4/ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c/llvm-macos.tar.xz",
+    sha256 = "84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.1/84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3/llvm-macos.tar.xz",
 )
 
 SHELLCHECK_VERSION = "v0.11.0"
@@ -741,17 +756,36 @@ node.toolchain(node_version = "22.15.1")
 
 npm.npm_translate_lock(
     name = "mojo-lsp-server-node-tests",
-    data = ["//KGEN/test/mojo-lsp-server-node:package.json"],
+    data = ["//Mojo/test/mojo-lsp-server-node:package.json"],
     dev = True,
-    pnpm_lock = "//KGEN/test/mojo-lsp-server-node:pnpm-lock.yaml",
+    pnpm_lock = "//Mojo/test/mojo-lsp-server-node:pnpm-lock.yaml",
 )
 use_repo(npm, "mojo-lsp-server-node-tests")
 
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext", dev_dependency = True)
 rules_ts_ext.deps(
-    ts_version_from = "//KGEN/test/mojo-lsp-server-node:package.json",
+    ts_version_from = "//Mojo/test/mojo-lsp-server-node:package.json",
 )
 use_repo(rules_ts_ext, "npm_typescript")
+
+# Used by nanobind
+http_archive(
+    name = "robin_map",
+    build_file = "//bazel/public-patches:robin_map.BUILD",
+    sha256 = "7930dbf9634acfc02686d87f615c0f4f33135948130b8922331c16d90a03250c",
+    strip_prefix = "robin-map-1.4.0",
+    url = "https://github.com/Tessil/robin-map/archive/refs/tags/v1.4.0.tar.gz",
+)
+
+http_archive(
+    name = "nanobind",
+    build_file = "//bazel/public-patches:nanobind.BUILD",
+    integrity = "sha256-JdKEQXtOcml45y690w0nMM4WT89IFXlVS7KE4YmTodU=",
+    strip_prefix = "nanobind-eb2414ef2eda40f07fadaca400bdf9558ed121fe",
+    urls = [
+        "https://github.com/wjakob/nanobind/archive/eb2414ef2eda40f07fadaca400bdf9558ed121fe.tar.gz",
+    ],
+)
 
 # BEGIN GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES
 

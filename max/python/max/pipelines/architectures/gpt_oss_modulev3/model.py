@@ -14,47 +14,24 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 import numpy as np
-from max.driver import Buffer, Device
-from max.engine import InferenceSession
-from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max import tree
+from max.driver import Buffer
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     ModuleV3PipelineModelWithKVCache,
-    PipelineConfig,
 )
 
 from .batch_processor import GptOssModuleV3BatchProcessor
 from .gpt_oss import GptOss
+from .inputs import GptOssInputs
 from .model_config import GptOssConfig
 
 logger = logging.getLogger("max.pipelines")
-
-
-@dataclass
-class GptOssInputs(ModelInputs):
-    """A class representing inputs for the GPT OSS model.
-
-    This class encapsulates the input tensors required for the GPT OSS model
-    execution.
-    """
-
-    tokens: Buffer
-    """Buffer containing the input token IDs."""
-
-    input_row_offsets: Buffer
-    """Buffer containing the offsets for each row in the ragged input sequence.
-    """
-
-    return_n_logits: Buffer
-    """Number of logits to return."""
 
 
 class GptOssModel(ModuleV3PipelineModelWithKVCache[TextContext]):
@@ -70,45 +47,10 @@ class GptOssModel(ModuleV3PipelineModelWithKVCache[TextContext]):
         GptOssModuleV3BatchProcessor
     )
 
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        max_batch_size: int = 1,
-    ) -> None:
-        """
-        Args:
-            pipeline_config: The configuration settings for the entire pipeline.
-            session: The MAX Engine inference session managing the runtime.
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
-                run the model on.
-            kv_cache_config: Configuration settings for the Key-Value cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            weights: The model weights (:obj:`max.graph.weights.Weights`).
-            adapter: An optional adapter to modify weights before loading
-                (:obj:`max.graph.weights.WeightsAdapter`).
-            return_logits: The number of top logits to return from the model
-                execution.
-        """
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter,
-            return_logits,
-            max_batch_size=max_batch_size,
-        )
-        self.model = self.load_model()
-
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        model_config = GptOssConfig.initialize(self.pipeline_config)
+        model_config = GptOssConfig.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
         model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=state_dict,
@@ -148,16 +90,6 @@ class GptOssModel(ModuleV3PipelineModelWithKVCache[TextContext]):
             model_inputs.tokens,
             model_inputs.return_n_logits,
             input_row_offsets,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
-        if len(model_outputs) == 3:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-            )
-        else:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[0].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-            )
+        return self._to_model_outputs(model_outputs)

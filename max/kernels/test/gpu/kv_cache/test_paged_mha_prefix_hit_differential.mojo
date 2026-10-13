@@ -90,12 +90,11 @@ from std.random import randn, seed
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext, HostBuffer
-from std.utils import IndexList
 from std.utils.numerics import nan
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from kv_cache_test_utils import padded_lut_cols
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 
@@ -154,8 +153,7 @@ def _run_paged_mha[
     for i in range(kv_block_size):
         kv_host[i] = Scalar[dtype](0)
     for tok in range(phys_tokens):
-        var lblk = tok // PAGE_SIZE
-        var off = tok % PAGE_SIZE
+        var lblk, off = divmod(tok, PAGE_SIZE)
         var page = lut[lblk]
         var is_valid = tok < total_keys
         for kh in range(head_kv):
@@ -191,13 +189,13 @@ def _run_paged_mha[
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
     var o_dev = ctx.enqueue_create_buffer[dtype](q_size)
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
-    var cl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
-    var lut_dev = ctx.enqueue_create_buffer[DType.uint32](lut_cols)
-    var ro_dev = ctx.enqueue_create_buffer[DType.uint32](2)
+    var cl_dev = ctx.enqueue_create_buffer[.uint32](1)
+    var lut_dev = ctx.enqueue_create_buffer[.uint32](lut_cols)
+    var ro_dev = ctx.enqueue_create_buffer[.uint32](2)
 
-    var cl_host = ctx.enqueue_create_host_buffer[DType.uint32](1)
-    var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](lut_cols)
-    var ro_host = ctx.enqueue_create_host_buffer[DType.uint32](2)
+    var cl_host = ctx.enqueue_create_host_buffer[.uint32](1)
+    var lut_host = ctx.enqueue_create_host_buffer[.uint32](lut_cols)
+    var ro_host = ctx.enqueue_create_host_buffer[.uint32](2)
     ctx.synchronize()
     cl_host[0] = UInt32(prefix)
     for p in range(lut_cols):
@@ -211,51 +209,48 @@ def _run_paged_mha[
     ctx.enqueue_copy(dst_buf=lut_dev, src_buf=lut_host)
     ctx.enqueue_copy(dst_buf=ro_dev, src_buf=ro_host)
 
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
-        kv_block_dev,
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](num_pages, 2, NUM_LAYERS, PAGE_SIZE, head_kv, head_dim)
-        ),
-    )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cl_tensor = LayoutTensor[mut=False, DType.uint32, cl_layout](
-        cl_dev, RuntimeLayout[cl_layout].row_major(IndexList[1](1))
-    )
-    comptime lut_layout = Layout.row_major[2]()
-    var lut_tensor = LayoutTensor[mut=False, DType.uint32, lut_layout](
-        lut_dev, RuntimeLayout[lut_layout].row_major(IndexList[2](1, lut_cols))
-    )
-
-    var kv_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=head_kv, head_size=head_dim),
         PAGE_SIZE,
-    ](
-        kv_block_tensor.as_unsafe_any_origin(),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_pages)
+    blocks_shape[2] = Int64(NUM_LAYERS)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var kv_block_tensor = TileTensor(
+        kv_block_dev, BlocksLayout(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
+    var cl_tensor = (
+        TileTensor(cl_dev, row_major(Int64(1))).as_imm().as_unsafe_any_origin()
+    )
+    var lut_tensor = (
+        TileTensor(lut_dev, row_major(Int64(1), Int64(lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var kv_collection = Collection(
+        kv_block_tensor,
         cl_tensor,
         lut_tensor,
         UInt32(extend),  # max_prompt_length
         UInt32(total_keys),  # max_full_context_length
     )
 
-    comptime qo_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
-    var q_tensor = LayoutTensor[mut=False, dtype, qo_layout](
-        q_dev,
-        RuntimeLayout[qo_layout].row_major(
-            IndexList[3](extend, num_q_heads, head_dim)
-        ),
+    var q_tensor = TileTensor(
+        q_dev, row_major(Int64(extend), Idx[num_q_heads], Idx[head_dim])
+    ).as_imm()
+    var o_tensor = TileTensor(
+        o_dev, row_major(Int64(extend), Idx[num_q_heads], Idx[head_dim])
     )
-    var o_tensor = LayoutTensor[dtype, qo_layout](
-        o_dev,
-        RuntimeLayout[qo_layout].row_major(
-            IndexList[3](extend, num_q_heads, head_dim)
-        ),
-    )
-    comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var ro_tensor = LayoutTensor[mut=False, DType.uint32, ro_layout](
-        ro_dev, RuntimeLayout[ro_layout].row_major(IndexList[1](2))
-    )
+    var ro_tensor = TileTensor(ro_dev, row_major(Int64(2))).as_imm()
 
     flash_attention[ragged=True](
         o_tensor,
@@ -275,7 +270,7 @@ def _run_paged_mha[
 
     var out = List[Float64](length=q_size, fill=Float64(0))
     for i in range(q_size):
-        out[i] = o_host[i].cast[DType.float64]()
+        out[i] = o_host[i].cast[.float64]()
     _ = q_dev
     _ = o_dev
     _ = kv_block_dev
@@ -327,8 +322,8 @@ def test_prefill_prefix_hit[
     var row_w = num_q_heads * head_dim
     var num_pages = ceildiv(L, PAGE_SIZE)
 
-    var cold_q = ctx.enqueue_create_host_buffer[DType.bfloat16](L * row_w)
-    var kv_rand = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var cold_q = ctx.enqueue_create_host_buffer[.bfloat16](L * row_w)
+    var kv_rand = ctx.enqueue_create_host_buffer[.bfloat16](
         L * head_kv * head_dim
     )
     ctx.synchronize()
@@ -336,7 +331,7 @@ def test_prefill_prefix_hit[
     randn(cold_q.as_span())
     randn(kv_rand.as_span())
 
-    var hit_q = ctx.enqueue_create_host_buffer[DType.bfloat16]((L - P) * row_w)
+    var hit_q = ctx.enqueue_create_host_buffer[.bfloat16]((L - P) * row_w)
     ctx.synchronize()
     for r in range(L - P):
         for c in range(row_w):
@@ -446,8 +441,8 @@ def test_decode_page_layout[
     )
 
     var row_w = num_q_heads * head_dim
-    var q_host = ctx.enqueue_create_host_buffer[DType.bfloat16](row_w)
-    var kv_rand = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var q_host = ctx.enqueue_create_host_buffer[.bfloat16](row_w)
+    var kv_rand = ctx.enqueue_create_host_buffer[.bfloat16](
         total_keys * head_kv * head_dim
     )
     ctx.synchronize()
@@ -575,10 +570,10 @@ def test_prefill_partial_block_nan_canary[
     )
 
     var row_w = num_q_heads * head_dim
-    var cold_q = ctx.enqueue_create_host_buffer[DType.bfloat16](L * row_w)
+    var cold_q = ctx.enqueue_create_host_buffer[.bfloat16](L * row_w)
     # kv_rand spans the full physical extent; the tail rows are overwritten by
     # garbage_tail inside _run_paged_mha, so their kv_rand values are unused.
-    var kv_rand = ctx.enqueue_create_host_buffer[DType.bfloat16](
+    var kv_rand = ctx.enqueue_create_host_buffer[.bfloat16](
         phys_tokens * head_kv * head_dim
     )
     ctx.synchronize()
@@ -586,7 +581,7 @@ def test_prefill_partial_block_nan_canary[
     randn(cold_q.as_span())
     randn(kv_rand.as_span())
 
-    var hit_q = ctx.enqueue_create_host_buffer[DType.bfloat16]((L - P) * row_w)
+    var hit_q = ctx.enqueue_create_host_buffer[.bfloat16]((L - P) * row_w)
     ctx.synchronize()
     for r in range(L - P):
         for c in range(row_w):
@@ -739,6 +734,6 @@ def main() raises:
         ](200, 128, Float64(5.0), ctx)
         test_prefill_partial_block_nan_canary[
             head_dim=128, num_q_heads=8, group=8
-        ](200, 128, nan[DType.float64](), ctx)
+        ](200, 128, nan[.float64](), ctx)
 
         print("all paged-MHA prefix-hit differential cases passed")

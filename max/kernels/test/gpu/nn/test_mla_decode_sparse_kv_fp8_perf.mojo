@@ -32,24 +32,19 @@ Not a correctness test: output is not verified here (see
 test_mla_decode_sparse_kv_fp8.mojo for numerics).
 """
 
+from std.builtin._closure import __ownership_keepalive
 from std.math import ceildiv
 from std.random import seed
-from std.sys import has_nvidia_gpu_accelerator
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from std.memory import UnsafePointer
-from std.utils import IndexList
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.mla import flare_mla_decoding
@@ -100,7 +95,7 @@ def bench_sparse_kv_fp8[
     # (one identity-ordered topk list shared by every q position).
     shared_index: Bool = False,
     # Output dtype defaults to BF16; pass q_type explicitly for non-FP8 callers.
-    output_type: DType = DType.bfloat16,
+    output_type: DType = .bfloat16,
 ](
     name: StringLiteral,
     batch_size: Int,
@@ -123,14 +118,6 @@ def bench_sparse_kv_fp8[
     var total_pages = batch_size * ceildiv(num_keys, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        NUM_LAYERS,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -147,9 +134,7 @@ def bench_sparse_kv_fp8[
 
     # Identity page table: gather scatter comes from token indices already.
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        lut_size
-    )
+    var lookup_table_host = ctx.enqueue_create_host_buffer[.uint32](lut_size)
     var page_offset = 0
     for bi in range(batch_size):
         for p in range(max_pages_per_batch):
@@ -157,17 +142,13 @@ def bench_sparse_kv_fp8[
                 page_offset + p
             )
         page_offset += max_pages_per_batch
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    var lookup_table_device = ctx.enqueue_create_buffer[.uint32](lut_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host)
 
-    var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](batch_size)
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_len)
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
     # Q: zeros (timing-independent).
@@ -181,7 +162,7 @@ def bench_sparse_kv_fp8[
     # Per-query-token topk indices: deterministic permutation, in
     # physical form block_id * PAGE_SIZE + tok_in_page (identity LUT).
     var total_indices = total_q_tokens * topk
-    var h_indices = ctx.enqueue_create_host_buffer[DType.int32](total_indices)
+    var h_indices = ctx.enqueue_create_host_buffer[.int32](total_indices)
     var mult = _coprime_multiplier(num_keys)
     for bi in range(batch_size):
         for s in range(q_max_seq_len):
@@ -194,90 +175,84 @@ def bench_sparse_kv_fp8[
                     t = i % num_keys
                 else:
                     t = (i * mult + 1 + s) % num_keys
-                var page_idx = t // PAGE_SIZE
-                var tok_in_page = t % PAGE_SIZE
+                var page_idx, tok_in_page = divmod(t, PAGE_SIZE)
                 var block_id = Int(
                     lookup_table_host[bi * max_pages_per_batch + page_idx]
                 )
                 h_indices[g * topk + i] = Int32(
                     block_id * PAGE_SIZE + tok_in_page
                 )
-    var d_indices_device = ctx.enqueue_create_buffer[DType.int32](total_indices)
+    var d_indices_device = ctx.enqueue_create_buffer[.int32](total_indices)
     ctx.enqueue_copy(d_indices_device, h_indices)
     ctx.synchronize()
 
     # -------------------------------------------------------------------
     # PagedKVCacheCollection
     # -------------------------------------------------------------------
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(total_pages)
+    blocks_shape[2] = Int64(NUM_LAYERS)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var blocks = TileTensor(
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    var lookup_table = (
+        TileTensor(
+            lookup_table_device,
+            row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, DType.uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    var kv_collection = Collection(
+        blocks,
+        cache_lengths,
+        lookup_table,
         UInt32(q_max_seq_len),
         UInt32(cache_len),
     )
+
     var kv_cache = kv_collection.get_key_cache(0)
 
     # -------------------------------------------------------------------
     # TileTensors + dispatch scalars + launch closure
     # -------------------------------------------------------------------
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
+        q_device, row_major(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])
     )
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+        out_device,
+        row_major(total_q_tokens, Idx[num_heads], Idx[V_DEPTH]),
     )
 
-    var row_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+    var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i * q_max_seq_len)
-    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
-    )
+    var row_offsets_device = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
-        row_major(batch_size + 1),
+        row_offsets_device,
+        row_major(len(row_offsets_device)),
     )
 
     var mla_args = MLADispatchScalarArgs[
@@ -294,8 +269,7 @@ def bench_sparse_kv_fp8[
 
     var indices_stride = topk
 
-    @__parameter
-    def _launch(ctx: DeviceContext) raises:
+    def _launch(ctx: DeviceContext) raises {imm}:
         flare_mla_decoding[
             rank=3,
             config=MHAConfig[q_type](num_heads, Q_DEPTH),
@@ -311,7 +285,7 @@ def bench_sparse_kv_fp8[
             scale,
             ctx,
             scalar_args_buf_tt,
-            d_indices=rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
                 d_indices_device.unsafe_ptr()
             ),
             indices_stride=indices_stride,
@@ -323,7 +297,7 @@ def bench_sparse_kv_fp8[
     ctx.synchronize()
 
     var us_per_iter = (
-        Float64(ctx.execution_time[_launch](iters)) / Float64(iters) / 1000.0
+        Float64(ctx.execution_time(_launch, iters)) / Float64(iters) / 1000.0
     )
     print(
         "PERF",
@@ -346,10 +320,23 @@ def bench_sparse_kv_fp8[
         us_per_iter,
     )
 
+    # The cache and sparse-index API expose non-owning pointers. Keep their
+    # backing allocations alive until all timed launches have completed.
+    __ownership_keepalive(
+        blocks_device,
+        lookup_table_device,
+        cache_lengths_device,
+        q_device,
+        out_device,
+        d_indices_device,
+        row_offsets_device,
+        mla_args,
+    )
+
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             seed(42)

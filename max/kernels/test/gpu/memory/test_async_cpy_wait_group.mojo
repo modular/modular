@@ -13,7 +13,7 @@
 
 from std.sys import size_of
 
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.memory import (
     async_copy,
@@ -26,18 +26,18 @@ from std.testing import assert_equal
 
 
 def copy_via_shared(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     var thread_id = thread_idx.x
-    var mem_buff: UnsafePointer[
-        Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
+    var mem_buff: MutPointer[
+        Float32, MutAnyOrigin, address_space=.SHARED
     ] = unsafe_stack_allocation[
-        16, Float32, address_space=AddressSpace.SHARED
+        16, Float32, address_space=.SHARED
     ]().as_unsafe_any_origin()
-    var src_global: UnsafePointer[
-        Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
-    ] = src.address_space_cast[AddressSpace.GLOBAL]()
+    var src_global: ImmPointer[
+        Float32, ImmutAnyOrigin, address_space=.GLOBAL
+    ] = src.address_space_cast[.GLOBAL]()
 
     async_copy[4](
         src_global + thread_id,
@@ -54,8 +54,8 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
     var in_data = alloc[Float32](16)
     var out_data = alloc[Float32](16)
-    var in_data_device = ctx.enqueue_create_buffer[DType.float32](16)
-    var out_data_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var in_data_device = ctx.enqueue_create_buffer[.float32](16)
+    var out_data_device = ctx.enqueue_create_buffer[.float32](16)
 
     for i in range(16):
         in_data[i] = Float32(i + 1)
@@ -85,14 +85,14 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
 
 
 def copy_with_src_size(
-    src: UnsafePointer[Float32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: ImmPointer[Float32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
     src_size_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var src_size = Int(src_size_dev)
     var smem = unsafe_stack_allocation[
-        8, DType.float32, address_space=AddressSpace.SHARED
+        8, DType.float32, address_space=.SHARED
     ]()
 
     for i in range(8):
@@ -100,14 +100,14 @@ def copy_with_src_size(
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
     async_copy[16, fill=Float32(0)](
-        src.address_space_cast[AddressSpace.GLOBAL](), smem, Int32(src_size)
+        src.address_space_cast[.GLOBAL](), smem, Int32(src_size)
     )
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
     async_copy[16, fill=Float32(0)](
-        src.address_space_cast[AddressSpace.GLOBAL]() + 4, smem + 4, 0
+        src.address_space_cast[.GLOBAL]() + 4, smem + 4, 0
     )
     async_copy_wait_all()
 
@@ -118,11 +118,11 @@ def copy_with_src_size(
 def copy_with_non_zero_fill[
     smem_size: Int
 ](
-    src: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    dst: UnsafePointer[BFloat16, MutAnyOrigin],
+    src: ImmPointer[BFloat16, ImmutAnyOrigin],
+    dst: MutPointer[BFloat16, MutAnyOrigin],
 ):
     var smem = unsafe_stack_allocation[
-        smem_size, DType.bfloat16, address_space=AddressSpace.SHARED
+        smem_size, DType.bfloat16, address_space=.SHARED
     ]()
 
     for i in range(smem_size):
@@ -131,11 +131,11 @@ def copy_with_non_zero_fill[
     var offset = smem_size // 2
 
     async_copy[16, fill=BFloat16(32)](
-        src.address_space_cast[AddressSpace.GLOBAL](), smem, predicate=True
+        src.address_space_cast[.GLOBAL](), smem, predicate=True
     )
 
     async_copy[16, fill=BFloat16(32)](
-        (src + offset).address_space_cast[AddressSpace.GLOBAL](),
+        (src + offset).address_space_cast[.GLOBAL](),
         smem + offset,
         predicate=False,
     )
@@ -158,8 +158,8 @@ def test_copy_with_src_size(ctx: DeviceContext) raises:
     for i in range(2 * size):
         b_host[i] = Float32(i + 1)
 
-    var a_device = ctx.enqueue_create_buffer[DType.float32](size)
-    var b_device = ctx.enqueue_create_buffer[DType.float32](2 * size)
+    var a_device = ctx.enqueue_create_buffer[.float32](size)
+    var b_device = ctx.enqueue_create_buffer[.float32](2 * size)
 
     ctx.enqueue_copy(a_device, a_host)
 
@@ -206,8 +206,8 @@ def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     for i in range(2 * size):
         b_host[i] = 0
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](size)
-    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](2 * size)
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](size)
+    var b_device = ctx.enqueue_create_buffer[.bfloat16](2 * size)
 
     ctx.enqueue_copy(a_device, a_host)
 

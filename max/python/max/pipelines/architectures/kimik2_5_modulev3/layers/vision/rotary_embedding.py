@@ -86,7 +86,7 @@ class Rope2DPosEmbRepeated(Module[[Tensor], Tensor]):
         flat = F.range(
             0, N, 1, out_dim=N, dtype=DType.float32, device=self.mapping
         )
-        mw = F.constant(self.max_width, DType.float32, device=self.mapping)
+        mw = float(self.max_width)
         x_pos = flat % mw
         y_pos = F.floor(flat / mw)
 

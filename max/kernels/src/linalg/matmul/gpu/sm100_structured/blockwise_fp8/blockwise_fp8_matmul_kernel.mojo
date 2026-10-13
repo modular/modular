@@ -30,7 +30,7 @@ Key differences from standard/block-scaled kernels:
 
 from std.sys import size_of
 
-from std.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE
 from max.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,
@@ -42,7 +42,13 @@ from max.gpu.memory import (
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
-from layout import Layout, TensorLayout, TileTensor
+from layout import (
+    Layout,
+    DefaultEngine,
+    TensorLayout,
+    TensorEngine,
+    TileTensor,
+)
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -119,6 +125,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # B-scale N-direction block size (independent of BK_kernel).
     n_scale_granularity: Int = 128,
+    b_scales_engine: TensorEngine = DefaultEngine[element_width=1],
 ]:
     """Blockwise FP8 matmul kernel with register-based accumulation.
 
@@ -140,6 +147,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             (defaults to `(1, 1, 1)`).
         n_scale_granularity: B-scales N-direction block size in elements
             (defaults to 128).
+        b_scales_engine: Engine of the B-scales `TileTensor`.
     """
 
     # ========== Derived Constants (from config) ==========
@@ -278,7 +286,10 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     # B-scales TileTensor type
     comptime BScalesTile = TileTensor[
-        Self.b_scales_type, Self.b_scales_layout, ImmutAnyOrigin
+        Self.b_scales_type,
+        Self.b_scales_layout,
+        ImmutAnyOrigin,
+        Engine=Self.b_scales_engine,
     ]
 
     # ========== Shared Memory Type ==========
@@ -437,7 +448,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Load Input Tiles ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_input_tiles[
         a_tma_origin: ImmOrigin,
         b_tma_origin: ImmOrigin,
@@ -553,7 +564,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== MMA Operation ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma[
         tiles_origin: MutOrigin,
         //,
@@ -618,7 +629,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Static Helper Methods ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def init_barriers(
         ctx: Self.Context,
         a_tma_op: Self.ATmaOp,
@@ -694,7 +705,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Kernel Entry Point ==========
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
@@ -718,8 +729,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
         # ===== Shared Memory Setup =====
         ref smem = external_memory[
-            Scalar[DType.uint8],
-            address_space=AddressSpace.SHARED,
+            UInt8,
+            address_space=.SHARED,
             alignment=128,
         ]().bitcast[Self.SmemType]()[]
 

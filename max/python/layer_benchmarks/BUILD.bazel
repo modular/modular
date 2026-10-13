@@ -64,7 +64,7 @@ modular_py_library(
     ],
     ignore_unresolved_imports = ["torch"],
     imports = ["."],
-    deps = _TESTBED_DEPS,
+    deps = _TESTBED_DEPS + ["//max/python/max:tree"],
 )
 
 modular_py_binary(
@@ -306,6 +306,7 @@ modular_py_test(
     gpu_constraints = _GPU_CONSTRAINTS,
     ignore_extra_deps = ["//max/python/max/pipelines/context"],
     imports = ["."],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [
         ":testbed",

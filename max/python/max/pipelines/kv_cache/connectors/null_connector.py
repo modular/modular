@@ -19,80 +19,55 @@ All operations are no-ops that return immediately.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
-from max.nn.kv_cache.cache_params import KVHashAlgo
+from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.kv_connector import (
-    BlockCount,
     CompletedTransfer,
+    KVConnector,
     KVConnectorTransfer,
-    TransferDirection,
+    KVTransfer,
 )
 
 
-class NullConnector:
+class NullConnector(KVConnector):
     """No-op connector for when external caching is disabled."""
+
+    @property
+    def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        return {"full": KVCacheGroupId.full()}
 
     @property
     def name(self) -> str:
         return "NullConnector"
 
-    def load(
+    def lookup(
         self,
-        device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> KVConnectorTransfer:
-        return CompletedTransfer(TransferDirection.LOAD)
+        hint: bytes | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        """Holds nothing, so every block is absent."""
+        return {leaf_id: [False] * len(block_hashes) for leaf_id in self.leaves}
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        return CompletedTransfer()
 
     def offload(
         self,
-        block_ids: list[int],
-        block_hashes: Sequence[bytes],
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        return CompletedTransfer(TransferDirection.OFFLOAD)
-
-    def touch(
-        self,
-        block_hashes: Sequence[bytes],
-        replica_idx: int = 0,
-    ) -> None:
-        pass
-
-    def count_cached_prefix(
-        self, block_hashes: Sequence[bytes]
-    ) -> tuple[int, int]:
-        return (0, 0)
-
-    def wait_for_loads(self) -> None:
-        pass
-
-    def wait_for_offloads(self) -> None:
-        pass
-
-    def shutdown(self) -> None:
-        pass
-
-    @property
-    def host_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
-
-    @property
-    def disk_block_count(self) -> BlockCount:
-        return BlockCount(free=0, total=0)
-
-    def reset_prefix_cache(self) -> None:
-        pass
+        return CompletedTransfer()
 
     @property
     def metrics(self) -> KVCacheMetrics:
         return KVCacheMetrics()
-
-    def reset_metrics(self) -> None:
-        pass
-
-    @property
-    def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
-        return frozenset({"ahash64", "sha256", "sha256_64"})

@@ -50,6 +50,10 @@ from max.nn.kv_cache import (
 )
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.gemma4.block_spec_adapters import (
+    SLIDING_KV,
+    block_dispatch_metadata,
+)
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
@@ -62,6 +66,9 @@ from max.pipelines.architectures.speculators_common import (
     DSparkSpeculatorsDraftConfig,
     construct_draft_kv_params,
 )
+from max.pipelines.architectures.speculators_common.draft_config import (
+    speculators_dspark_width,
+)
 from max.pipelines.architectures.unified_dspark_gemma4_31b.model import (
     UnifiedDSparkGemma4_31BInputs,
 )
@@ -70,12 +77,11 @@ from max.pipelines.architectures.unified_dspark_gemma4_31b.model_config import (
 )
 from max.pipelines.architectures.unified_dspark_gemma4_31b.unified_dspark_gemma4_31b import (
     UnifiedDSparkGemma4_31B,
-    _block_dispatch_metadata,
 )
 from max.pipelines.kv_cache import KVCacheConfig, cache_dtype_for_encoding
+from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.config import (
-    MAXModelConfig,
     PipelineConfig,
     SpeculativeConfig,
 )
@@ -308,24 +314,20 @@ def test_missing_nested_max_position_embeddings_rejected() -> None:
 
 
 def test_draft_arch_config_reads_nested_max_position_embeddings() -> None:
-    model_config = SimpleNamespace(
-        huggingface_config=PretrainedConfig.from_dict(_raw())
+    assert (
+        DSparkSpeculatorsDraftArchConfig.calculate_max_seq_len(
+            PretrainedConfig.from_dict(_raw()),
+            cast(MAXModelConfig, None),
+        )
+        == 262144
     )
-    arch_config = DSparkSpeculatorsDraftArchConfig.initialize(
-        cast(PipelineConfig, None),
-        model_config=cast(MAXModelConfig, model_config),
-    )
-    assert arch_config.get_max_seq_len() == 262144
 
     raw = _raw()
     del raw["transformer_layer_config"]["max_position_embeddings"]
-    model_config = SimpleNamespace(
-        huggingface_config=PretrainedConfig.from_dict(raw)
-    )
     with pytest.raises(ValueError, match="max_position_embeddings"):
-        DSparkSpeculatorsDraftArchConfig.initialize(
-            cast(PipelineConfig, None),
-            model_config=cast(MAXModelConfig, model_config),
+        DSparkSpeculatorsDraftArchConfig.calculate_max_seq_len(
+            PretrainedConfig.from_dict(raw),
+            cast(MAXModelConfig, None),
         )
 
 
@@ -359,7 +361,7 @@ def _make_unified(
     target = target if target is not None else _make_target()
     # None means unset: a config that never mentions num_speculative_tokens.
     speculative_config = SpeculativeConfig(
-        speculative_method="dflash",
+        speculative_method="dspark",
         num_speculative_tokens=num_speculative_tokens,
     )
     return UnifiedDSparkGemma4_31BConfig(
@@ -413,45 +415,42 @@ def test_validate_rejects_vocab_mismatch() -> None:
         config.validate_dspark_fields()
 
 
-def test_validate_honors_user_num_speculative_tokens() -> None:
+def test_construction_honors_user_num_speculative_tokens() -> None:
     # K=4 below the trained width (8 - 1 = 7) is honored: the draft block
     # is causal, so truncating trailing mask slots is prefix-stable. KV
     # headroom follows as the effective anchor+drafts width.
     config = _make_unified(_parse(_raw()), num_speculative_tokens=4)
-    config.validate_dspark_fields()
-    assert config.speculative_config.num_speculative_tokens == 4
+    assert config.resolved_num_speculative_tokens == 4
     assert config.effective_block_size == 5
 
 
-def test_validate_warns_num_speculative_tokens_beyond_trained(
+def test_construction_warns_num_speculative_tokens_beyond_trained(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # K=9 above the trained width (8 - 1 = 7) is honored too: the block is
     # width-generic and the extra positions run as extrapolation, so a
     # warning names the trained geometry. KV headroom still follows the
     # effective anchor+drafts width.
-    config = _make_unified(_parse(_raw()), num_speculative_tokens=9)
     with caplog.at_level(logging.WARNING, logger="max.pipelines"):
-        config.validate_dspark_fields()
-    assert config.speculative_config.num_speculative_tokens == 9
+        config = _make_unified(_parse(_raw()), num_speculative_tokens=9)
+    assert config.resolved_num_speculative_tokens == 9
     assert config.effective_block_size == 10
     assert any(
         "trained at block_size=8" in record.message for record in caplog.records
     )
 
 
-def test_validate_rejects_non_positive_num_speculative_tokens() -> None:
-    config = _make_unified(_parse(_raw()), num_speculative_tokens=0)
+def test_construction_rejects_non_positive_num_speculative_tokens() -> None:
     with pytest.raises(ValueError, match="num_speculative_tokens=0"):
-        config.validate_dspark_fields()
+        _make_unified(_parse(_raw()), num_speculative_tokens=0)
 
 
-def test_validate_defaults_num_speculative_tokens_to_trained() -> None:
+def test_construction_defaults_num_speculative_tokens_to_trained() -> None:
     # Unset keeps the drafter's trained width (block_size 8 -> 7 drafts).
     config = _make_unified(_parse(_raw()), num_speculative_tokens=None)
-    config.validate_dspark_fields()
-    assert config.speculative_config.num_speculative_tokens == 7
+    assert config.resolved_num_speculative_tokens == 7
     assert config.effective_block_size == 8
+    assert config.speculative_config.num_speculative_tokens is None
 
 
 def _kv_pipeline_stand_in(kv_cache: KVCacheConfig) -> PipelineConfig:
@@ -461,7 +460,7 @@ def _kv_pipeline_stand_in(kv_cache: KVCacheConfig) -> PipelineConfig:
         SimpleNamespace(
             model=SimpleNamespace(kv_cache=kv_cache, data_parallel_degree=1),
             speculative=SpeculativeConfig(
-                speculative_method="dflash", num_speculative_tokens=7
+                speculative_method="dspark", num_speculative_tokens=7
             ),
         ),
     )
@@ -712,7 +711,7 @@ def _make_unified_real(
         draft=draft,
         draft_kv_params=draft_kv_params,
         speculative_config=SpeculativeConfig(
-            speculative_method="dflash", num_speculative_tokens=7
+            speculative_method="dspark", num_speculative_tokens=7
         ),
         target_layer_ids=[0, 1],
         mask_token_id=draft.mask_token_id,
@@ -834,7 +833,7 @@ def test_inputs_buffer_tail_matches_graph_signature(
             _make_unified_real(_parse(_raw())),
             enable_structured_output=structured_output,
         )
-        n_kv = len(module._unified_kv_params().flattened_kv_inputs())
+        n_kv = len(module.signature_kv_params.flattened_kv_inputs())
         inputs = _make_placeholder_inputs(structured_output=structured_output)
         assert len(inputs.buffers) == len(module.input_types()) - n_kv
 
@@ -910,7 +909,7 @@ def test_relaxed_acceptance_threads_into_sampler(virtual_gpu: None) -> None:
 
     config = _make_unified_real(_parse(_raw()))
     config.speculative_config = SpeculativeConfig(
-        speculative_method="dflash",
+        speculative_method="dspark",
         num_speculative_tokens=7,
         use_relaxed_acceptance_for_thinking=True,
         relaxed_topk=5,
@@ -979,13 +978,35 @@ def test_block_forward_rebuilds_attention_dispatch_metadata(
         "unified_dspark_gemma4_31b_block_meta_test",
         input_types=nn_model.input_types(),
     ) as graph:
-        values = nn_model._unflatten_graph_inputs(graph.inputs)
-        graph.output(*nn_model(values))
+        graph_inputs = nn_model.decode_inputs(graph.inputs)
+        outputs = nn_model(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            signal_buffers=graph_inputs.signal_buffers,
+            kv_collections=graph_inputs.kv("target", "full_attention"),
+            passthrough_kv={
+                SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+            },
+            draft_kv_collections=graph_inputs.kv("draft"),
+            return_n_logits=graph_inputs.return_n_logits,
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            in_thinking_phase=graph_inputs.in_thinking_phase,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+        )
+        graph.output(*outputs)
 
     assert len(captured) == 1
     block_kv = captured[0]
     block_meta = block_kv.attention_dispatch_metadata
-    leaf_meta = values.draft_kv_collection.attention_dispatch_metadata
+    leaf_meta = graph_inputs.kv("draft")[0].attention_dispatch_metadata
     assert block_meta is not None
     assert leaf_meta is not None
     assert block_meta._mlir_value != leaf_meta._mlir_value
@@ -994,7 +1015,7 @@ def test_block_forward_rebuilds_attention_dispatch_metadata(
     # The paired query-width bound must be block-width too.
     assert (
         block_kv.max_prompt_length._mlir_value
-        != values.draft_kv_collection.max_prompt_length._mlir_value
+        != graph_inputs.kv("draft")[0].max_prompt_length._mlir_value
     )
 
 
@@ -1008,7 +1029,7 @@ def test_block_dispatch_metadata_rebuild_content() -> None:
         input_types=(TensorType(DType.int64, [4], DeviceRef.CPU()),),
     ) as graph:
         (meta,) = graph.inputs
-        graph.output(_block_dispatch_metadata(meta.tensor, 8))
+        graph.output(block_dispatch_metadata(meta.tensor, 8))
 
     session = InferenceSession(devices=[CPU()])
     compiled = session.load(graph)
@@ -1017,3 +1038,13 @@ def test_block_dispatch_metadata_rebuild_content() -> None:
     )
     assert isinstance(out, Buffer)
     np.testing.assert_array_equal(out.to_numpy(), [3, 8, 0, 4321])
+
+
+def test_width_honors_explicit() -> None:
+    draft_hf = _raw()
+    unset = SpeculativeConfig(speculative_method="dspark")
+    assert speculators_dspark_width(unset, None, draft_hf) == 7
+    explicit = SpeculativeConfig(
+        speculative_method="dspark", num_speculative_tokens=4
+    )
+    assert speculators_dspark_width(explicit, None, draft_hf) == 4

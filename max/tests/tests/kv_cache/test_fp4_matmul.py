@@ -33,6 +33,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
+    packed_page_stride,
 )
 
 
@@ -159,6 +160,7 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
 
         tester = FusedQKVRaggedMatmulScaledFloat4(kv_params, kv_collection, 32)
@@ -523,6 +525,25 @@ def test_grouped_matmul_block_scaled_w4a8_rejects_k_mismatch() -> None:
         match=r"expected weight is of shape \[num_experts, \*, 256\]",
     ):
         _call_fp4_matmul(input_types)
+
+
+@pytest.mark.parametrize("K", [640, 320, 160, 96, 32])
+def test_grouped_matmul_block_scaled_admits_split_expert_intermediate(
+    K: int,
+) -> None:
+    """Tests no K below the hidden size is rejected for being MoE-shaped.
+
+    Packed NVFP4 needs K in multiples of 32 elements, which the Mojo kernel
+    asserts, and it is tempting to restate that here as a multiple of 128 --
+    the bound the *W4A8* pair carries. Measured on one B200 through
+    ``max.nn.moe.MoEQuantized`` at NVFP4, an expert intermediate of 640, 320,
+    160, 96 or 32 compiles and executes, and 320 and 160 are the TP2 and TP4
+    splits of Qwen3.8-Flash-Next's 640, so tightening the bound here would
+    reject configurations the kernel runs.
+    """
+    input_types = _get_fp4_input_types(DeviceRef.CPU(), K=K)
+    output = _call_fp4_matmul(input_types)
+    assert output.shape == [99, 256]
 
 
 def test_grouped_matmul_block_scaled_rejects_misplaced_scales() -> None:

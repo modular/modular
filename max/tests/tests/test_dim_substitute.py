@@ -13,6 +13,7 @@
 """Tests for Dim.substitute."""
 
 import pytest
+from max._core.dialects import kgen
 from max.graph import AlgebraicDim, Dim
 from max.graph.dim import StaticDim
 
@@ -64,6 +65,18 @@ def test_substitute_zero_divisor_raises() -> None:
         (Dim("a") // Dim("b")).substitute({"b": 0})
     with pytest.raises(ZeroDivisionError):
         (Dim(8) // Dim("b")).substitute({"b": 0})
+
+
+def test_div_attr_always_carries_two_operands() -> None:
+    """Why `substitute`'s zero-divisor guard can index operand 1 safely.
+
+    The attribute verifier (`KGENAttrs.cpp`, POC::Div) refuses any other
+    operand count, so no `AlgebraicDim` over a div can be shorter -- not even
+    one built straight from a hand-made attribute, which is the only way
+    `Dim.from_mlir` could smuggle one in.
+    """
+    with pytest.raises(TypeError, match="div must have two operands"):
+        kgen.ParamOperatorAttr(kgen.POC.div, [Dim("a").to_mlir()])
 
 
 def test_substitute_zero_replacement_outside_division_is_fine() -> None:

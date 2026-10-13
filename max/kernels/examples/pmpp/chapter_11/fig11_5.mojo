@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -38,20 +38,20 @@ def scan_kernel(
     # Allocate shared memory for two buffers
     var bufferA = unsafe_stack_allocation[
         SEG_SIZE,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var bufferB = unsafe_stack_allocation[
         SEG_SIZE,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     var tx = thread_idx.x
     var idx = block_idx.x * SEG_SIZE + tx
 
     # Read input into first buffer
-    bufferA[tx] = Scalar[DType.float32](input[idx])
+    bufferA[tx] = Float32(input[idx])
 
     # Ping-pong between buffers
     var in_buffer = bufferA
@@ -64,7 +64,7 @@ def scan_kernel(
         if tx >= stride:
             addend = Float32(in_buffer[tx - stride])
         # Add it to output buffer position
-        out_buffer[tx] = Scalar[DType.float32](addend + Float32(in_buffer[tx]))
+        out_buffer[tx] = Float32(addend + Float32(in_buffer[tx]))
 
         # Swap buffers
         var tmp = in_buffer

@@ -25,23 +25,27 @@ Flow:
   used at replay -- so capture and replay agree by construction.
 - Serving replays by bucketing the runtime cache length up to a recorded length
   and looking up the recorded ``GraphKey`` (a pure CPU lookup; no resolver
-  kernel op on the hot path). ``q_max_seq_len`` must equal
-  ``1 + num_speculative_tokens``; any other value raises ``RuntimeError``.
+  kernel op on the hot path). ``q_max_seq_len`` must be ``1 + w`` for one of the
+  captured verify widths ``w``; any other value raises ``RuntimeError``.
 """
 
 from __future__ import annotations
 
 import bisect
 import logging
+import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import replace
+from functools import cached_property
+from typing import Any
 
+import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
-from max.experimental.nn.module import CompiledModel
+from max.experimental.compilation import CompiledCallable
 from max.nn.kv_cache import BatchCharacteristics, KVCacheParamInterface
 from max.nn.kv_cache.utils import AttnKeyInterface, MultiAttnKey
 from max.profiler import traced
@@ -62,6 +66,93 @@ WarmupModelInputs = Callable[
 ]
 
 
+_HOST_INPUT_GUARD_ENV = "MODULAR_DEBUG_CAPTURE_HOST_INPUTS"
+"""Enables the captured-host-input guard. ``report`` or ``abort``; unset is off.
+
+``report`` logs each offending input once and keeps replaying, so a single run
+enumerates every candidate; ``abort`` raises on the first one. The two modes
+mirror ``MOJO_STDLIB_SIMD_UNINIT_CHECK``, which makes the same trade for the
+same reason: when a run is expensive, iterating one site at a time is not
+affordable.
+"""
+
+_HOST_INPUT_GUARD_MODES = ("report", "abort")
+_HOST_INPUT_GUARD_OFF = ("", "0", "off", "false", "no")
+
+
+def _resolve_host_input_guard_mode() -> str | None:
+    """Returns the configured guard mode, or ``None`` when the guard is off.
+
+    Raises:
+        ValueError: If the variable is set to something other than ``report``,
+            ``abort``, or a recognized off value.
+    """
+    raw = os.environ.get(_HOST_INPUT_GUARD_ENV, "").strip().lower()
+    if raw in _HOST_INPUT_GUARD_OFF:
+        return None
+    if raw not in _HOST_INPUT_GUARD_MODES:
+        raise ValueError(
+            f"Invalid {_HOST_INPUT_GUARD_ENV}={raw!r}. Use one of "
+            f"{list(_HOST_INPUT_GUARD_MODES)}, or unset to disable."
+        )
+    return raw
+
+
+def _host_input_diagnostic(
+    name: str, index: int, captured: Buffer, live: Buffer
+) -> str | None:
+    """Reports a host-resident graph input whose value changed since capture.
+
+    Replay runs no host code, so anything an op derived on the host from this
+    input at capture time -- an allocation size, a launch extent, a tile
+    geometry -- is baked into the recorded graph nodes and will not be
+    recomputed. The per-replay refresh copies tensor bytes into the stable
+    buffers the recorded nodes read from, which fixes values read through a
+    device pointer and cannot fix a derived one. A changed value here means any
+    such derived quantity is stale for this replay.
+
+    **What this does not establish.** A changed value is a *candidate*, not a
+    defect: an input read only through a device pointer changes every step and
+    is refreshed correctly by the copy this check precedes. Confirming a real
+    defect means finding host code that consumed the value at capture. Equally,
+    silence is not proof of safety -- it means no host input changed, and says
+    nothing about a stale quantity derived from something that is not a graph
+    input at all. Treat a report as a place to look, not a verdict.
+
+    Args:
+        name: The input's name from the model's input metadata.
+        index: Its position in the model's input list, for when the name is
+            unavailable.
+        captured: The buffer the graph was captured with, read before the
+            per-replay refresh overwrites it.
+        live: The value this replay is about to install.
+
+    Returns:
+        A diagnostic naming the input and both values, or ``None`` if the value
+        is unchanged.
+    """
+    if captured.dtype == live.dtype and captured.shape == live.shape:
+        captured_np = captured.to_numpy()
+        live_np = live.to_numpy()
+        if np.array_equal(captured_np, live_np):
+            return None
+        detail = f"captured={captured_np!r} live={live_np!r}"
+    else:
+        detail = (
+            f"captured={captured.dtype}{list(captured.shape)} "
+            f"live={live.dtype}{list(live.shape)}"
+        )
+    return (
+        f"Captured host input {name!r} (index {index}) changed since capture: "
+        f"{detail}. Replay runs no host code, so any allocation size, launch "
+        "extent or tile geometry an op derived from this value at capture is "
+        "frozen at the captured value and is stale for this replay. Either "
+        "make the value a capture characteristic so each distinct value gets "
+        "its own recorded graph, or pin it to a constant upper bound so "
+        "capture and replay agree."
+    )
+
+
 def _release_graph_capture_outputs_to_borrowed(
     outputs: ModelOutputs,
 ) -> ModelOutputs:
@@ -77,7 +168,6 @@ def _release_graph_capture_outputs_to_borrowed(
         "next_token_logits",
         "logit_offsets",
         "hidden_states",
-        "sampled_tokens",
         "num_accepted_draft_tokens",
         "next_tokens",
         "next_draft_tokens",
@@ -98,6 +188,20 @@ def _release_graph_capture_outputs_to_borrowed(
     )
 
 
+def _engine_model_and_signal_buffers(
+    model: Model | CompiledCallable[..., Any],
+) -> tuple[Model, list[Buffer]]:
+    """Returns the engine model to capture and the inputs appended to each call.
+
+    A :class:`~max.experimental.compilation.CompiledCallable` (ModuleV3) wraps
+    its engine model and appends its signal buffers to every call, so capture,
+    replay and verification must append them too.
+    """
+    if isinstance(model, CompiledCallable):
+        return model.engine_model, model.signal_buffers
+    return model, []
+
+
 def _pack_model_graph_key(key: AttnKeyInterface) -> int:
     """Maps a capture key to a uint64 for the C++ capture layer."""
     return hash(key) & 0xFFFFFFFFFFFFFFFF
@@ -109,22 +213,24 @@ class ServeGraphCaptureRunner:
     def __init__(
         self,
         *,
-        model: Model,
+        model: Model | CompiledCallable[..., Any],
         kv_params: KVCacheParamInterface,
         warmup_model_inputs: WarmupModelInputs,
         max_cache_length_upper_bound: int,
         max_batch_size: int,
         num_speculative_tokens: int = 0,
-        fold_sampler_into_graph: bool = False,
+        widths_by_batch_size: Sequence[Sequence[int]] | None = None,
     ) -> None:
-        self._model = model
+        self._engine_model, self._signal_buffers = (
+            _engine_model_and_signal_buffers(model)
+        )
         self._warmup_model_inputs = warmup_model_inputs
         self._num_speculative_tokens = num_speculative_tokens
-        # When set, the architecture appends a folded greedy-token (argmax)
-        # buffer as the last forward-graph output; the capture path peels it
-        # off into ``ModelOutputs.sampled_tokens`` instead of mapping it
-        # positionally onto a logits field.
-        self._fold_sampler_into_graph = fold_sampler_into_graph
+        # Resolved once: replay is the hot path graph capture exists to keep
+        # free of host work, so when the guard is off the only cost it adds is
+        # this attribute being falsy.
+        self._host_input_guard_mode = _resolve_host_input_guard_mode()
+        self._host_inputs_reported: set[str] = set()
         if max_cache_length_upper_bound < 1:
             raise ValueError(
                 "Decode graph capture requires a positive decode "
@@ -142,8 +248,27 @@ class ServeGraphCaptureRunner:
         self._kv_params = kv_params
         self._is_spec_decode = num_speculative_tokens > 0
 
-        # The query (prompt) width every captured decode graph runs at.
-        self._q_max_seq_len = num_speculative_tokens + 1
+        # ``batch_size -> verify widths``. Only a batch size's own row is
+        # reachable, so only that row is probed there.
+        self._widths_by_batch_size = [
+            sorted(set(row))
+            for row in widths_by_batch_size or [[num_speculative_tokens]]
+        ]
+        widths = sorted(
+            {
+                width
+                for batch_size in range(1, self._max_batch_size + 1)
+                for width in self._probe_verify_widths(batch_size)
+            }
+        )
+        for width in widths:
+            if not 0 <= width <= num_speculative_tokens:
+                raise ValueError(
+                    f"Verify width {width} is outside [0, "
+                    f"{num_speculative_tokens}]: a step cannot verify more "
+                    "drafts than it carries."
+                )
+        self._verify_widths = widths
         # Block drafts (DFlash) run at q=num_draft_tokens_per_step; autoregressive
         # drafts (eagle/mtp) run at q=1.
         self._draft_q_at_capture = kv_params.num_draft_tokens_per_step
@@ -165,12 +290,21 @@ class ServeGraphCaptureRunner:
         unknown keys.
         """
         self.graph_entries.pop(key, None)
-        self._model.release_captured_graph(_pack_model_graph_key(key))
+        self._engine_model.release_captured_graph(_pack_model_graph_key(key))
+
+    def _probe_verify_widths(self, batch_size: int) -> list[int]:
+        """Returns the verify widths to capture for ``batch_size``."""
+        table = self._widths_by_batch_size
+        return table[min(batch_size, len(table) - 1)]
+
+    def captures_verify_width(self, verify_width: int) -> bool:
+        """Whether warmup recorded any graph at this verify width."""
+        return verify_width in self._verify_widths
 
     def _resolve_graph_key(
-        self, batch_size: int, cache_length: int
+        self, batch_size: int, cache_length: int, q_max_seq_len: int
     ) -> AttnKeyInterface:
-        """Resolves the ``GraphKey`` for a ``(batch_size, cache_length)`` shape.
+        """Resolves the ``GraphKey`` for a ``(batch_size, q, cache_length)`` shape.
 
         Resolves the verify-width dispatch metadata tree and, under speculative
         decoding, the draft-width tree via the KV cache params, then folds them
@@ -180,7 +314,7 @@ class ServeGraphCaptureRunner:
         """
         children: dict[str, AttnKeyInterface] = {}
         children["verify"] = self._kv_params.resolve_attn_key(
-            batch_size, self._q_max_seq_len, cache_length
+            batch_size, q_max_seq_len, cache_length
         )
         if self._is_spec_decode:
             # Block drafts (DFlash) run the draft at q=num_draft_tokens_per_step;
@@ -197,29 +331,43 @@ class ServeGraphCaptureRunner:
         """Captures decode buckets before the worker becomes ready."""
         logger.info(
             "Pre-capturing overlap device graphs for decode batch sizes [1..%d] "
-            "with num_steps=1.",
+            "at verify widths %s with num_steps=1.",
             self._max_batch_size,
+            self._verify_widths,
         )
-        probe_lengths = self._kv_params.graph_capture_probe_cache_lengths(
-            self._max_cache_length_upper_bound, self._q_max_seq_len
-        )
+        probe_lengths: set[int] = set()
+        for width in self._verify_widths:
+            probe_lengths.update(
+                self._kv_params.graph_capture_probe_cache_lengths(
+                    self._max_cache_length_upper_bound, width + 1
+                )
+            )
         recorded_lengths: set[int] = set()
-        # Capture largest-first (largest batch, then largest cache length, which
-        # yields the most partitions) so peak allocations happen up front and
-        # oversized configs fail fast.
-        batch_sizes = range(self._max_batch_size, 0, -1)
-        for batch_size in tqdm(
-            batch_sizes, desc="Capturing device graph shapes"
+        # Capture largest-first so peak allocations
+        # happen up front and oversized configs fail fast.
+        probes = sorted(
+            (
+                (width, batch_size)
+                for batch_size in range(1, self._max_batch_size + 1)
+                for width in self._probe_verify_widths(batch_size)
+            ),
+            reverse=True,
+        )
+        for q_max_seq_len, batch_size in tqdm(
+            [(width + 1, batch_size) for width, batch_size in probes],
+            desc="Capturing device graph shapes",
         ):
             for cache_length in sorted(probe_lengths, reverse=True):
                 recorded_lengths.add(cache_length)
-                graph_key = self._resolve_graph_key(batch_size, cache_length)
+                graph_key = self._resolve_graph_key(
+                    batch_size, cache_length, q_max_seq_len
+                )
                 # Record every probed length so replay can bucket to any of
                 # them; many lengths share one captured graph.
                 self._records[
                     BatchCharacteristics(
                         batch_size=batch_size,
-                        max_prompt_length=self._q_max_seq_len,
+                        max_prompt_length=q_max_seq_len,
                         max_cache_valid_length=cache_length,
                     )
                 ] = graph_key
@@ -230,42 +378,20 @@ class ServeGraphCaptureRunner:
                 # used at replay (``runtime_inputs(batch_characteristics=...)``).
                 batch_characteristics = BatchCharacteristics(
                     batch_size=batch_size,
-                    max_prompt_length=self._q_max_seq_len,
+                    max_prompt_length=q_max_seq_len,
                     max_cache_valid_length=cache_length,
                 )
                 with self._warmup_model_inputs(
                     batch_size, batch_characteristics
                 ) as model_inputs:
                     input_buffers = model_inputs.buffers
-                    if isinstance(self._model, CompiledModel):
-                        output_buffers = self._model.engine_model.capture(
-                            _pack_model_graph_key(graph_key),
-                            *input_buffers,
-                            *self._model.signal_buffers,
-                        )
-                    else:
-                        output_buffers = self._model.capture(
-                            _pack_model_graph_key(graph_key), *input_buffers
-                        )
+                    output_buffers = self._engine_model.capture(
+                        _pack_model_graph_key(graph_key),
+                        *input_buffers,
+                        *self._signal_buffers,
+                    )
                     if not self._is_spec_decode:
-                        model_output_buffers = list(output_buffers)
-                        sampled_tokens: Buffer | None = None
-                        if (
-                            self._fold_sampler_into_graph
-                            and len(model_output_buffers) > 1
-                        ):
-                            # The folded argmax token is the last graph output;
-                            # peel it off so the remaining buffers map onto the
-                            # logits fields positionally as usual. A
-                            # single-output capture means the architecture
-                            # emits no folded token (only the logits), so
-                            # there is nothing to peel even when the fold flag
-                            # is set.
-                            sampled_tokens = model_output_buffers.pop()
-                        outputs: ModelOutputs = ModelOutputs(
-                            *model_output_buffers
-                        )
-                        outputs.sampled_tokens = sampled_tokens
+                        outputs = ModelOutputs(*output_buffers)
                     else:
                         if len(output_buffers) not in (3, 4):
                             raise RuntimeError(
@@ -293,23 +419,57 @@ class ServeGraphCaptureRunner:
                     self.graph_entries[graph_key] = (input_buffers, outputs)
 
         self._recorded_cache_lengths = sorted(recorded_lengths)
+        logger.info(
+            "Captured %d distinct device graphs from %d probe records at "
+            "verify widths %s (%d recorded cache lengths).",
+            len(self.graph_entries),
+            len(self._records),
+            self._verify_widths,
+            len(self._recorded_cache_lengths),
+        )
 
-        if hasattr(self._model, "_await_device_graphs"):
-            logger.info(
-                "Awaiting remaining device graph instantiation threads."
-            )
-            t0 = time.perf_counter()
-            self._model._await_device_graphs()
-            logger.info(
-                "Device graph instantiation complete in %.3fs.",
-                time.perf_counter() - t0,
-            )
+        logger.info("Awaiting remaining device graph instantiation threads.")
+        t0 = time.perf_counter()
+        self._engine_model._await_device_graphs()
+        logger.info(
+            "Device graph instantiation complete in %.3fs.",
+            time.perf_counter() - t0,
+        )
 
         logger.info(
             "Overlap device graph pre-capture complete for decode batch sizes "
             "[1..%d] with num_steps=1.",
             self._max_batch_size,
         )
+
+    @cached_property
+    def _host_input_names(self) -> list[str]:
+        """Returns the engine model's input names, by position.
+
+        ``captured_inputs`` is the prefix of the model's declared inputs that
+        graph capture recorded -- ``replay`` appends the signal buffers after
+        it -- so positions line up with ``input_metadata`` over that prefix.
+        """
+        return [
+            spec.name or f"<input {index}>"
+            for index, spec in enumerate(self._engine_model.input_metadata)
+        ]
+
+    def _guard_host_input(
+        self, index: int, captured: Buffer, live: Buffer
+    ) -> None:
+        """Applies the configured guard to one host-resident replay input."""
+        name = self._host_input_names[index]
+        diagnostic = _host_input_diagnostic(name, index, captured, live)
+        if diagnostic is None:
+            return
+        if self._host_input_guard_mode == "abort":
+            raise RuntimeError(diagnostic)
+        # Report mode: one line per input, so a long run enumerates the
+        # candidates instead of repeating one of them every step.
+        if name not in self._host_inputs_reported:
+            self._host_inputs_reported.add(name)
+            logger.warning(diagnostic)
 
     def _bucket_cache_length(self, cache_length: int) -> int:
         """Rounds a runtime cache length up to the nearest recorded length.
@@ -352,14 +512,18 @@ class ServeGraphCaptureRunner:
             The aligned characteristics.
 
         Raises:
-            RuntimeError: If ``q_max_seq_len`` differs from the captured value
-                or the cache length exceeds the largest captured length.
+            RuntimeError: If ``q_max_seq_len`` matches no verify width captured
+                at this batch size or the cache length exceeds the largest
+                captured length.
         """
-        if characteristics.max_prompt_length != self._q_max_seq_len:
+        verify_width = characteristics.max_prompt_length - 1
+        captured = self._probe_verify_widths(characteristics.batch_size)
+        if verify_width not in captured:
             raise RuntimeError(
-                f"q_max_seq_len={characteristics.max_prompt_length} != "
-                f"{self._q_max_seq_len}; only q_max_seq_len="
-                f"{self._q_max_seq_len} graphs are captured."
+                f"q_max_seq_len={characteristics.max_prompt_length} implies "
+                f"verify width {verify_width}, which is not captured at batch "
+                f"size {characteristics.batch_size}; captured widths are "
+                f"{captured}."
             )
         aligned = replace(
             characteristics,
@@ -402,11 +566,15 @@ class ServeGraphCaptureRunner:
         # sequential fallback otherwise).
         dsts: list[Buffer] = []
         srcs: list[Buffer] = []
-        for src_value, dst_value in zip(
-            input_buffers, captured_inputs, strict=True
+        for index, (src_value, dst_value) in enumerate(
+            zip(input_buffers, captured_inputs, strict=True)
         ):
-            if dst_value.device.is_host:
-                dst_value.inplace_copy_from(src_value)
+            # Replay runs no host code, so host and pinned inputs were only
+            # read at capture and there is nothing to refresh. Copying into a
+            # pinned one would also sync the stream on HIP.
+            if dst_value.device.is_host or dst_value.pinned:
+                if self._host_input_guard_mode is not None:
+                    self._guard_host_input(index, dst_value, src_value)
                 continue
             assert src_value.device == dst_value.device, (
                 "Graph-capture replay refresh must be a same-device copy "
@@ -420,17 +588,13 @@ class ServeGraphCaptureRunner:
 
         if debug_verify_replay:
             verify_inputs = debug_verify_model_inputs or model_inputs
-            self._model.debug_verify_replay(
+            self._engine_model.debug_verify_replay(
                 packed_model_graph_key,
                 *verify_inputs.buffers,
+                *self._signal_buffers,
             )
 
-        if isinstance(self._model, CompiledModel):
-            self._model.engine_model.replay(
-                packed_model_graph_key,
-                *captured_inputs,
-                *self._model.signal_buffers,
-            )
-        else:
-            self._model.replay(packed_model_graph_key, *captured_inputs)
+        self._engine_model.replay(
+            packed_model_graph_key, *captured_inputs, *self._signal_buffers
+        )
         return outputs

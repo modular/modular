@@ -14,13 +14,12 @@
 from std.os import abort
 from std.pathlib import Path
 from std.sys import (
+    default_accelerator,
     has_accelerator,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
     size_of,
 )
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
-from std.ffi import CStringSlice, _Global, OwnedDLHandle, _try_find_dylib
+from std.ffi import CStringSpan, _Global, OwnedDLHandle, _try_find_dylib
 from std.sys.defines import get_defined_int
 
 from std.utils.variant import Variant
@@ -39,7 +38,7 @@ comptime ROCTX_LIBRARY_PATHS: List[Path] = [
     "/opt/rocm/lib/librocprofiler-sdk-roctx.so",
 ]
 
-comptime LIBRARY_PATHS = CUDA_NVTX_LIBRARY_PATHS if has_nvidia_gpu_accelerator() else ROCTX_LIBRARY_PATHS
+comptime LIBRARY_PATHS = CUDA_NVTX_LIBRARY_PATHS if default_accelerator().is_nvidia_gpu() else ROCTX_LIBRARY_PATHS
 
 
 comptime _TraceType_OTHER = 0
@@ -49,17 +48,17 @@ comptime _TraceType_KERNEL = 3
 comptime _TraceType_MAX = 4
 
 
-@always_inline
+@inline(.always)
 def _setup_category(
-    name_category: def(UInt32, CStringSlice[_]) thin abi("C") -> NoneType,
+    name_category: def(UInt32, CStringSpan[_]) thin abi("C") -> NoneType,
     value: Int,
     name: StaticString,
 ):
-    name_category(UInt32(value), name.as_c_string_slice())
+    name_category(UInt32(value), name.as_c_string_span())
 
 
 def _setup_categories(
-    name_category: def(UInt32, CStringSlice[_]) thin abi("C") -> NoneType
+    name_category: def(UInt32, CStringSpan[_]) thin abi("C") -> NoneType
 ):
     _setup_category(name_category, _TraceType_OTHER, "Other")
     _setup_category(name_category, _TraceType_ASYNCRT, "AsyncRT")
@@ -96,10 +95,10 @@ def _init_dylib() -> OwnedDLHandle:
             materialize[LIBRARY_PATHS]()
         )
 
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             _setup_categories(
                 dylib._handle.get_function[
-                    def(UInt32, CStringSlice[_]) thin abi("C") -> NoneType
+                    def(UInt32, CStringSpan[_]) thin abi("C") -> NoneType
                 ]("nvtxNameCategoryA")
             )
 
@@ -108,7 +107,7 @@ def _init_dylib() -> OwnedDLHandle:
         return OwnedDLHandle(unsafe_uninitialized=True)
 
 
-@always_inline
+@inline(.always)
 def _get_dylib_function[
     func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
@@ -149,25 +148,26 @@ struct Color(Intable, TrivialRegisterPassable):
         Args:
             colorname: The name of the color to use.
         """
-        if colorname == "modular_purple":
-            self = Color.MODULAR_PURPLE
-        elif colorname == "blue":
-            self = Color.BLUE
-        elif colorname == "green":
-            self = Color.GREEN
-        elif colorname == "orange":
-            self = Color.ORANGE
-        elif colorname == "purple":
-            self = Color.PURPLE
-        elif colorname == "red":
-            self = Color.RED
-        elif colorname == "white":
-            self = Color.WHITE
-        elif colorname == "yellow":
-            self = Color.YELLOW
-        else:
-            # Default to MODULAR_PURPLE for unknown color names
-            self = Color.MODULAR_PURPLE
+        match colorname:
+            case "modular_purple":
+                self = Color.MODULAR_PURPLE
+            case "blue":
+                self = Color.BLUE
+            case "green":
+                self = Color.GREEN
+            case "orange":
+                self = Color.ORANGE
+            case "purple":
+                self = Color.PURPLE
+            case "red":
+                self = Color.RED
+            case "white":
+                self = Color.WHITE
+            case "yellow":
+                self = Color.YELLOW
+            case _:
+                # Default to MODULAR_PURPLE for unknown color names
+                self = Color.MODULAR_PURPLE
 
     def __int__(self) -> Int:
         return self._value
@@ -202,7 +202,7 @@ struct _C_EventAttributes[message_origin: ImmOrigin](TrivialRegisterPassable):
     var message_type: Int32
     """Message type specified in this attribute structure."""
 
-    var message: CStringSlice[Self.message_origin]
+    var message: CStringSpan[Self.message_origin]
     """Message assigned to this attribute structure."""
 
 
@@ -212,7 +212,7 @@ def c_event_attrs_ffi(
     return rebind[_C_EventAttributes[ImmUntrackedOrigin]](attrs)
 
 
-@always_inline
+@inline(.always)
 def color_from_category(category: Int) -> Color:
     if category == _TraceType_MAX:
         return Color.MODULAR_PURPLE
@@ -228,18 +228,18 @@ def color_from_category(category: Int) -> Color:
 struct EventAttributes[message_origin: ImmOrigin](TrivialRegisterPassable):
     var _value: _C_EventAttributes[Self.message_origin]
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         *,
-        message: CStringSlice[Self.message_origin],
+        message: CStringSpan[Self.message_origin],
         category: Int = _TraceType_MAX,
         color: Optional[Color] = None,
     ):
         comptime ASCII = 1
         var resolved_color: Color
-        if color:
-            resolved_color = color.value()
+        if case .Some(color) = color:
+            resolved_color = color
         else:
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
@@ -307,12 +307,12 @@ comptime _nvtxRangePop = _dylib_function["nvtxRangePop", def() thin -> Int32]
 
 # ROCTX_API void roctxMarkA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxMarkA = _dylib_function[
-    "roctxMarkA", def(CStringSlice[ImmutAnyOrigin]) thin -> NoneType
+    "roctxMarkA", def(CStringSpan[ImmutAnyOrigin]) thin -> NoneType
 ]
 
 # ROCTX_API int roctxRangePushA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxRangePushA = _dylib_function[
-    "roctxRangePushA", def(CStringSlice[ImmutAnyOrigin]) thin -> Int32
+    "roctxRangePushA", def(CStringSpan[ImmutAnyOrigin]) thin -> Int32
 ]
 
 # ROCTX_API int roctxRangePop() ROCTX_VERSION_4_1;
@@ -320,7 +320,7 @@ comptime _roctxRangePop = _dylib_function["roctxRangePop", def() thin -> Int32]
 # ROCTX_API roctx_range_id_t roctxRangeStartA(const char* message)
 comptime _roctxRangeStartA = _dylib_function[
     "roctxRangeStartA",
-    def(CStringSlice[ImmutAnyOrigin]) thin -> RangeID,
+    def(CStringSpan[ImmutAnyOrigin]) thin -> RangeID,
 ]
 
 # ROCTX_API void roctxRangeStop(roctx_range_id_t id) ROCTX_VERSION_4_1;
@@ -337,18 +337,18 @@ struct _Mark:
     var _fn: Variant[_nvtxMarkEx.fn_type, _roctxMarkA.fn_type]
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxMarkEx.load()
         else:
             self._fn = _roctxMarkA.load()
 
     def __call__(self, val: _C_EventAttributes[_]):
-        comptime assert has_nvidia_gpu_accelerator()
+        comptime assert default_accelerator().is_nvidia_gpu()
         var attrs = c_event_attrs_ffi(val)
         self._fn[_nvtxMarkEx.fn_type](Pointer(to=attrs).as_unsafe_any_origin())
 
-    def __call__(self, val: CStringSlice[_]):
-        comptime assert has_amd_gpu_accelerator()
+    def __call__(self, val: CStringSpan[_]):
+        comptime assert default_accelerator().is_amd_gpu()
         self._fn[_roctxMarkA.fn_type](val.as_unsafe_any_origin())
 
 
@@ -356,7 +356,7 @@ struct _RangeStart:
     var _fn: Variant[_nvtxRangeStartEx.fn_type, _roctxRangeStartA.fn_type]
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxRangeStartEx.load()
         else:
             self._fn = _roctxRangeStartA.load()
@@ -365,14 +365,14 @@ struct _RangeStart:
         self,
         val: _C_EventAttributes[_],
     ) -> RangeID:
-        comptime assert has_nvidia_gpu_accelerator()
+        comptime assert default_accelerator().is_nvidia_gpu()
         var attrs = c_event_attrs_ffi(val)
         return self._fn[_nvtxRangeStartEx.fn_type](
             Pointer(to=attrs).as_unsafe_any_origin()
         )
 
-    def __call__(self, val: CStringSlice[_]) -> RangeID:
-        comptime assert has_amd_gpu_accelerator()
+    def __call__(self, val: CStringSpan[_]) -> RangeID:
+        comptime assert default_accelerator().is_amd_gpu()
         return self._fn[_roctxRangeStartA.fn_type](val.as_unsafe_any_origin())
 
 
@@ -380,7 +380,7 @@ struct _RangeEnd:
     var _fn: def(RangeID) thin -> NoneType
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxRangeEnd.load()
         else:
             self._fn = _roctxRangeStop.load()
@@ -393,20 +393,20 @@ struct _RangePush:
     var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxRangePushEx.load()
         else:
             self._fn = _roctxRangePushA.load()
 
     def __call__(self, val: _C_EventAttributes[_]) -> Int32:
-        comptime assert has_nvidia_gpu_accelerator()
+        comptime assert default_accelerator().is_nvidia_gpu()
         var attrs = c_event_attrs_ffi(val)
         return self._fn[_nvtxRangePushEx.fn_type](
             Pointer(to=attrs).as_unsafe_any_origin()
         )
 
-    def __call__(self, val: CStringSlice[_]) -> Int32:
-        comptime assert has_amd_gpu_accelerator()
+    def __call__(self, val: CStringSpan[_]) -> Int32:
+        comptime assert default_accelerator().is_amd_gpu()
         return self._fn[_roctxRangePushA.fn_type](val.as_unsafe_any_origin())
 
 
@@ -414,7 +414,7 @@ struct _RangePop:
     var _fn: _nvtxRangePop.fn_type
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxRangePop.load()
         else:
             self._fn = _roctxRangePop.load()
@@ -446,7 +446,7 @@ def _is_disabled() -> Bool:
     return not _is_enabled()
 
 
-@always_inline
+@inline(.always)
 def _start_range(
     *,
     var message: String = "",
@@ -456,24 +456,24 @@ def _start_range(
     comptime if _is_disabled():
         return 0
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         var info = EventAttributes(
-            message=message.as_c_string_slice(), color=color, category=category
+            message=message.as_c_string_span(), color=color, category=category
         )
         var result = _RangeStart()(info._value)
         return result
     else:
-        return _RangeStart()(message.as_c_string_slice())
+        return _RangeStart()(message.as_c_string_span())
 
 
-@always_inline
+@inline(.always)
 def _end_range(id: RangeID) raises:
     comptime if _is_disabled():
         return
     _RangeEnd()(id)
 
 
-@always_inline
+@inline(.always)
 def _mark(
     *,
     var message: String = "",
@@ -483,10 +483,10 @@ def _mark(
     comptime if _is_disabled():
         return
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         var info = EventAttributes(
-            message=message.as_c_string_slice(), color=color, category=category
+            message=message.as_c_string_span(), color=color, category=category
         )
         _Mark()(info._value)
     else:
-        _Mark()(message.as_c_string_slice())
+        _Mark()(message.as_c_string_span())

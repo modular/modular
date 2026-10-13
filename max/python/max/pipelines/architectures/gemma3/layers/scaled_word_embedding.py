@@ -16,7 +16,7 @@
 from collections.abc import Iterable
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike
 from max.graph.quantization import QuantizationEncoding
 from max.nn.embedding import VocabParallelEmbedding
 
@@ -79,11 +79,5 @@ class ScaledWordEmbedding(VocabParallelEmbedding):
         """
         result = super().__call__(indices, signal_buffers)
         return [
-            result_device
-            * ops.constant(
-                self.embed_scale,
-                result_device.dtype,
-                device=result_device.type.device,
-            )
-            for result_device in result
+            result_device * float(self.embed_scale) for result_device in result
         ]

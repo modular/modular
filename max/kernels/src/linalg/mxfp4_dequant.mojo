@@ -20,24 +20,21 @@ SF_VECTOR_SIZE (32) consecutive elements.
 """
 
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx, grid_dim, block_dim
+from max.gpu import block_idx, thread_idx, grid_dim, block_dim
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import GPUInfo
-from std.sys.info import _accelerator_arch
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
 from std.utils import StaticTuple
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
-from layout import TensorStorage, TileTensor
-from layout.coord import Coord, Idx
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
+from layout import TensorEngine, TileTensor
+from layout.coord import Coord
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
 from max.algorithm.functional import elementwise
-from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import Index, IndexList
 from std.sys.info import simd_width_of
 
 
@@ -52,16 +49,22 @@ def _dequant_mxfp4_to_fp8_kernel[
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
     input_layout: TensorLayout,
-    output_storage: TensorStorage,
-    scales_storage: TensorStorage,
-    input_storage: TensorStorage,
+    output_engine: TensorEngine,
+    scales_engine: TensorEngine,
+    input_engine: TensorEngine,
     *,
     SF_VECTOR_SIZE: Int = 32,
     ELEMENTS_PER_THREAD: Int = 8,
 ](
-    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
-    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
-    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    output: TileTensor[
+        out_dtype, output_layout, MutAnyOrigin, Engine=output_engine
+    ],
+    input: TileTensor[
+        in_dtype, input_layout, MutAnyOrigin, Engine=input_engine
+    ],
+    scales: TileTensor[
+        scales_dtype, scales_layout, MutAnyOrigin, Engine=scales_engine
+    ],
     num_rows: Int32,
     num_cols: Int32,
 ):
@@ -113,7 +116,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 # On SM100+ this uses PTX cvt.rn.bf16x2.ue8m0x2; on SM90
                 # it falls back to the bitcast approach with correct
                 # special-case handling for 0x00 and 0xFF.
-                var scale_f32 = scale_e8m0.cast[DType.float32]()
+                var scale_f32 = scale_e8m0.cast[.float32]()
 
                 # Apply scale and cast to output dtype
                 var scaled_values = fp32_values * scale_f32
@@ -126,7 +129,7 @@ def _dequant_mxfp4_to_fp8_kernel[
                 )
 
 
-@always_inline
+@inline(.always)
 def dequant_mxfp4[
     *, SF_VECTOR_SIZE: Int = 32
 ](
@@ -161,9 +164,9 @@ def dequant_mxfp4[
         DType.bfloat16,
     ), "output must be float8_e4m3fn or bfloat16"
     comptime assert (
-        scales_dtype == DType.float8_e8m0fnu
+        scales_dtype == .float8_e8m0fnu
     ), "scales must be float8_e8m0fnu"
-    comptime assert in_dtype == DType.uint8, "input must be uint8 (packed FP4)"
+    comptime assert in_dtype == .uint8, "input must be uint8 (packed FP4)"
     comptime assert (
         SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE
     ), "SF_VECTOR_SIZE must be 32 for MXFP4"
@@ -180,7 +183,7 @@ def dequant_mxfp4[
         "num_cols must be a multiple of ELEMENTS_PER_THREAD (8)",
     )
     comptime num_max_threads = 512
-    comptime _gpu = GPUInfo.from_name[_accelerator_arch()]()
+    comptime _gpu = GPUInfo.default_accelerator()
     comptime num_SMs = _gpu.sm_count
 
     var num_col_threads = ceildiv(num_cols, ELEMENTS_PER_THREAD)
@@ -201,7 +204,7 @@ def dequant_mxfp4[
             in_dtype,
             type_of(input).LayoutType,
             MutAnyOrigin,
-            Storage=type_of(input).Storage,
+            Engine=type_of(input).Engine,
         ]
     ](input)
     var scales_tt = rebind[
@@ -209,7 +212,7 @@ def dequant_mxfp4[
             scales_dtype,
             type_of(scales).LayoutType,
             MutAnyOrigin,
-            Storage=type_of(scales).Storage,
+            Engine=type_of(scales).Engine,
         ]
     ](scales)
 
@@ -220,9 +223,9 @@ def dequant_mxfp4[
         type_of(output).LayoutType,
         type_of(scales_tt).LayoutType,
         type_of(input_tt).LayoutType,
-        type_of(output).Storage,
-        type_of(scales_tt).Storage,
-        type_of(input_tt).Storage,
+        type_of(output).Engine,
+        type_of(scales_tt).Engine,
+        type_of(input_tt).Engine,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         ELEMENTS_PER_THREAD=ELEMENTS_PER_THREAD,
     ]
@@ -253,7 +256,7 @@ def _cast_bf16_to_fp8(
     comptime assert in_tt.flat_rank == 2, "input must be rank 2"
     comptime assert out_tt.mut, "output must be mutable"
 
-    @always_inline
+    @inline(.always)
     def cast_fn[width: Int, alignment: Int = 1](idx: Coord) {var}:
         comptime assert idx.rank == 2, "cast_fn only supports rank-2 tensors"
         out_tt.store[width=width](

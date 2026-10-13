@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.sys import default_accelerator
 from std.sys.info import CompilationTarget
 
-from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
 from nn.attention.mha_mask import (
     AndMask,
@@ -98,14 +97,12 @@ def test_causal_mask_asm() raises:
     print("== test_causal_mask_asm")
 
     def kernel(
-        q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
+        q_idx: UInt32, k_idx: UInt32, x: MutPointer[Float32, MutAnyOrigin]
     ):
         var mask = CausalMask()
         var vec = mask.mask(
-            IndexList[4, element_type=DType.uint32](
-                0, 0, Int(q_idx), Int(k_idx)
-            ),
-            SIMD[DType.float32, 4](0),
+            IndexList[4, element_type=.uint32](0, 0, Int(q_idx), Int(k_idx)),
+            SIMD[.float32, 4](0),
         )
         if (
             mask.status(
@@ -119,13 +116,15 @@ def test_causal_mask_asm() raises:
 
         x[0] = vec[2]
 
-    var asm = _compile_code[kernel, target=get_gpu_target()]().asm
+    comptime target = default_accelerator()
+
+    var asm = _compile_code[kernel, target=target]().asm
     print(asm)
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if target.is_nvidia_gpu():
         assert_true("setp.lt.u64" not in asm)
         assert_true("setp.lt.s64" not in asm)
-    elif has_amd_gpu_accelerator():
+    elif target.is_amd_gpu():
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
     else:
@@ -194,7 +193,7 @@ def test_sliding_window_causal_mask() raises:
 
     comptime mask = SlidingWindowCausalMask[3]()
 
-    @always_inline
+    @inline(.always)
     def check_status(
         offset: IndexList[2, ...],
         size: type_of(offset),
@@ -237,14 +236,12 @@ def test_sliding_window_causal_mask_asm() raises:
     print("== test_sliding_window_causal_mask_asm")
 
     def kernel(
-        q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
+        q_idx: UInt32, k_idx: UInt32, x: MutPointer[Float32, MutAnyOrigin]
     ):
         var mask = SlidingWindowCausalMask[8]()
         var vec = mask.mask(
-            IndexList[4, element_type=DType.uint32](
-                0, 0, Int(q_idx), Int(k_idx)
-            ),
-            SIMD[DType.float32, 4](0),
+            IndexList[4, element_type=.uint32](0, 0, Int(q_idx), Int(k_idx)),
+            SIMD[.float32, 4](0),
         )
         if (
             mask.status(
@@ -258,13 +255,15 @@ def test_sliding_window_causal_mask_asm() raises:
 
         x[0] = vec[2]
 
-    var asm = _compile_code[kernel, target=get_gpu_target()]().asm
+    comptime target = default_accelerator()
+
+    var asm = _compile_code[kernel, target=target]().asm
     print(asm)
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if target.is_nvidia_gpu():
         assert_true("setp.lt.u64" not in asm)
         assert_true("setp.lt.s64" not in asm)
-    elif has_amd_gpu_accelerator():
+    elif target.is_amd_gpu():
         # there is nothing special about these instructions
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
@@ -302,7 +301,7 @@ def test_sliding_window_noncausal_mask() raises:
     masked_vec = mask.mask(Index(0, 0, 2, 0), SIMD[type, 4](0, 1, 2, 3))
     assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
 
-    @always_inline
+    @inline(.always)
     def check_status(
         offset: IndexList[2, ...],
         size: type_of(offset),
@@ -338,13 +337,12 @@ def test_sliding_window_noncausal_mask_dispatch() raises:
 
     var dispatched_name = String("")
 
-    @__parameter
-    def capture[mask_t: MHAMask](mask: mask_t) raises:
+    def capture[mask_t: MHAMask](mask: mask_t) raises {mut}:
         dispatched_name = mask_t.get_type_name()
 
-    dispatch_mask[
-        MaskName.SLIDING_WINDOW_NONCAUSAL.name, capture, local_window_size=4
-    ]()
+    dispatch_mask[MaskName.SLIDING_WINDOW_NONCAUSAL.name, local_window_size=4](
+        capture
+    )
     assert_equal(dispatched_name, "SlidingWindowNonCausalMask")
 
 

@@ -25,10 +25,11 @@ from max.experimental.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
+from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
     Olmo2RMSNorm,
 )
@@ -68,7 +69,8 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
             num_key_value_heads: The number of key/value heads.
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params.
-            layer_idx: The layer number associated with this Attention block.
+            layer_idx: Index of this layer within its KV group (not the
+                global decoder index).
             mask_variant: The mask variant for attention (causal or sliding window).
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias.
@@ -194,7 +196,7 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
             layer_idx=layer_idx,
             n_heads=self.n_heads,
             interleaved=rope.interleaved,
-        )
+        ).rebind_mapping(qkv.mapping)
         q = q.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Step 5: Compute flash attention (reads K/V from cache)
@@ -207,7 +209,7 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
             mask_variant=self.mask_variant,
             scale=self.scale,
             local_window_size=self.local_window_size,
-        )
+        ).rebind_mapping(q.mapping)
 
         attn_out = F.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)

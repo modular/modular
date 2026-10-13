@@ -27,7 +27,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
+from max.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from std.memory import dealloc
@@ -50,18 +50,17 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from std.utils import IndexList
 
 
 def _verify_buffers_gpu[
     c_type: DType, BLOCK_SIZE: Int
 ](
-    output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
+    output: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
+    reference: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
     length_dev: Int32,
     atol: Float32,
     rtol: Float32,
-    result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    result: MutPointer[Float32, MutAnyOrigin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -84,8 +83,8 @@ def _verify_buffers_gpu[
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
     while i < length:
-        var x = output[i].cast[DType.float32]()
-        var y = reference[i].cast[DType.float32]()
+        var x = output[i].cast[.float32]()
+        var y = reference[i].cast[.float32]()
         abs_diff_sum += abs(x - y)
         abs_ref_sum += abs(y)
         max_violation = max(max_violation, abs(x - y) - (atol + rtol * abs(y)))
@@ -202,11 +201,11 @@ def verify_matmul[
     else:
         var rtol64: Float64
         var atol64: Float64
-        rtol64, atol64 = pytorch_like_tolerances_for[DType.bfloat16]()
+        rtol64, atol64 = pytorch_like_tolerances_for[.bfloat16]()
         rtol = Float32(rtol64)
         atol = Float32(atol64)
 
-    var result_device = ctx.enqueue_create_buffer[DType.float32](NUM_BLOCKS * 5)
+    var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function[kernel](
@@ -221,7 +220,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host_alloc = alloc[Scalar[DType.float32]](
+    var result_host_alloc = alloc[Float32](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
     var result_host = result_host_alloc.unsafe_ptr()
@@ -349,7 +348,7 @@ def bench_matmul[
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
-    @always_inline
+    @inline(.always)
     def get_size(shape: Coord) -> Int:
         return Int(shape[0].value()) * Int(shape[1].value())
 
@@ -421,7 +420,7 @@ def bench_matmul[
         cb_b,
         cb_c,
     )
-    @always_inline
+    @inline(.always)
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var tensor_a = TileTensor(
             cb_a.offset_ptr(iteration), row_major(shape_a)
@@ -435,17 +434,20 @@ def bench_matmul[
         comptime assert tensor_c.flat_rank >= 2
 
         @__parameter
-        @always_inline
+        @inline(.always)
         @__copy_capture(tensor_c)
         def test_lambda_add_coords_prod[
             _dtype: DType,
             width: Int,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
-            var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var x = tensor_c.load[width=width](idx).cast[_dtype]()
             var y = val * x
             return y
 
@@ -453,13 +455,16 @@ def bench_matmul[
             elementwise_compute_lambda_type
         ](test_lambda_add_coords_prod) if enable_compute_epilogue else None
 
-        @always_inline
+        @inline(.always)
         @__parameter
         @__copy_capture(tensor_c)
         def normal_elementwise_epilogue[
             dtype: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
+        ](idx: Coord, val: SIMD[dtype, width]) capturing -> None:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            tensor_c.store[width=width](idx, val.cast[c_type]())
 
         comptime optional_normal_lambda_fn = Optional[
             elementwise_epilogue_type
@@ -472,9 +477,8 @@ def bench_matmul[
             # transpose_b=True is hardcoded in the kernel (FP8 layout).
             structured_4wave_matmul(tensor_a, tensor_b, tensor_c, ctx)
 
-    @__parameter
-    @always_inline
-    def bench_func(mut b: Bencher) raises:
+    @inline(.always)
+    def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
@@ -486,7 +490,8 @@ def bench_matmul[
         * Int(shape_a[1].value()),
     )
     if run_benchmark:
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(
                 _get_run_name[
                     c_type,
@@ -567,8 +572,8 @@ def main() raises:
     # 4-wave kernel is FP8-only; default the bench dtype accordingly so
     # `bazel build` (no `-D dtype=...`) compiles cleanly. Override to
     # other FP8 variants via `-D dtype=...` at the command line.
-    comptime a_type = get_defined_dtype["dtype", DType.float8_e4m3fn]()
-    comptime c_type = get_defined_dtype["ctype", DType.bfloat16]()
+    comptime a_type = get_defined_dtype["dtype", .float8_e4m3fn]()
+    comptime c_type = get_defined_dtype["ctype", .bfloat16]()
 
     var M = Int(arg_parse("M", 1024))
     comptime N = get_defined_int["N", 16384]()

@@ -1,10 +1,12 @@
 # Full accuracy eval suite
 
-One `workflow_dispatch` of
+One dispatch of
 [`fullAccuracyEval.yaml`](../../../../../.github/workflows/fullAccuracyEval.yaml)
-runs the complete accuracy eval suite against a build and produces one
+evaluates the complete accuracy eval suite against a build and produces one
 consolidated `results.json` plus a score table in the run's step summary.
-MiniMax M3 is the first profile.
+MiniMax M3 is the first profile. The suite runs only when dispatched; scheduled
+accuracy tracking runs in
+[`mcloudEvalConfig.yaml`](../../../../../.github/workflows/mcloudEvalConfig.yaml).
 
 ## Trigger a run
 
@@ -46,7 +48,7 @@ One job per dataset, all in parallel, each on its own runner:
 
 | Toggle                        | Jobs                                                |
 |-------------------------------|-----------------------------------------------------|
-| run_text                      | aime25, gpqa, hle, aa-lcr, aa-omniscience           |
+| run_text                      | aime25, aime26, gpqa, hle, aa-lcr, aa-omniscience   |
 | run_scicode                   | scicode                                             |
 | run_multimodal                | mmmu-pro, omnidocbench, mmmu-video                  |
 | run_agent_class (default off) | agent-class (SWE-bench + GAIA health check)         |
@@ -69,6 +71,8 @@ it; its artifacts land in the same run when it finishes.
 - Per-dataset artifacts keep the full `results.jsonl` + `score.json`
   detail, prefixed by the job that produced them (`aime25-`, `scicode-`,
   `mmmu-video-`, ...).
+- Every run also mirrors its downloaded GitHub artifacts to
+  `s3://modular-ci-prod-artifact-bucket/full-accuracy-eval/run_id=<run-id>/attempt=<run-attempt>/`.
 
 ## Re-run a failed piece
 
@@ -91,6 +95,12 @@ re-running exact dataset rows; see `--row-ids` on the de-embedded evals.
 - The multimodal and agent-class benchmarks are not yet in the
   collector's `--expect` list (their score directory names need one
   validation run to pin down); their scores still appear in `results.json`
-  whenever present.
+  whenever present. MMMU-Video previously wrote only `summary.json` and so
+  never appeared in the collector's output at all (it only globs
+  `score.json`); it now writes both.
+- The provider verifier's unexpected-failure list (format-correctness tests
+  that failed and are not on its `KNOWN_FAILURES` allowlist) and pass@10
+  batch-verification metrics are folded into its own `score.json` and
+  rendered as extra sections below the main score table.
 - Verdicts (PASS/FAIL/CONSULT vs baselines) attach to the consolidated
   output once the report-only eval gate lands.

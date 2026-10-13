@@ -20,7 +20,7 @@ multiple grid point calculations.
 """
 
 from std.math import sqrt
-from std.gpu import block_idx, thread_idx, block_dim
+from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.itertools import product
 
@@ -31,8 +31,8 @@ comptime COARSEN_FACTOR = 4
 
 
 def cenergy_coarsening_kernel(
-    energygrid: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    atoms: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
+    energygrid: UnsafePointer[Float32, MutAnyOrigin],
+    atoms: UnsafePointer[Float32, ImmutAnyOrigin],
     grid_x_dev: Int32,
     grid_y_dev: Int32,
     gridspacing: Float32,
@@ -152,8 +152,8 @@ def main() raises:
         h_energygrid_gpu[i] = 0.0
 
     # Allocate device memory
-    var d_atoms = ctx.enqueue_create_buffer[DType.float32](atoms_size)
-    var d_energygrid = ctx.enqueue_create_buffer[DType.float32](grid_size)
+    var d_atoms = ctx.enqueue_create_buffer[.float32](atoms_size)
+    var d_energygrid = ctx.enqueue_create_buffer[.float32](grid_size)
 
     ctx.enqueue_copy(d_atoms, h_atoms)
 

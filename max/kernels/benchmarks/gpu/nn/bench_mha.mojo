@@ -22,7 +22,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import *
+from max.gpu import *
 from max.gpu.host import DeviceContext
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
@@ -92,11 +92,11 @@ def run_mha[
 
     if bench:
 
-        @__parameter
-        @always_inline
-        @__copy_capture(cb_q, cb_k, cb_v, cb_o)
-        def bench_func(mut b: Bencher):
-            @always_inline
+        @inline(.always)
+        def bench_func(
+            mut b: Bencher,
+        ) raises {var cb_q, var cb_k, var cb_v, var cb_o, imm}:
+            @inline(.always)
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 # Construct device buffers with offsets.
                 var q_device = TileTensor(
@@ -161,7 +161,8 @@ def run_mha[
             # Using causal mask, skip half of tiles.
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
-        m.bench_function[bench_func](
+        m.bench_function(
+            bench_func,
             BenchId(
                 "mha",
                 # fmt: off
@@ -357,8 +358,8 @@ struct MHA_cfg(ImplicitlyCopyable, Writable):
 
 
 def main() raises:
-    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
-    comptime mask_type = get_defined_dtype["mask_type", DType.float32]()
+    comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
+    comptime mask_type = get_defined_dtype["mask_type", .float32]()
     comptime depth = get_defined_int["depth", 128]()
     comptime num_heads = get_defined_int["num_heads", 32]()
     comptime group = get_defined_int["group", 1]()

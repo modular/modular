@@ -53,40 +53,40 @@ from max.gpu.compute.arch.mma_apple import _mma_apple
 # CHECK-MIXED: no valid implementation of mma
 def test_mixed_float_int():
     comptime if get_defined_bool["TEST_MIXED_FLOAT_INT", False]():
-        var a = SIMD[DType.int8, 8](0)
-        var b = SIMD[DType.float16, 8](0)
-        var c = SIMD[DType.float32, 8](0)
-        var d = SIMD[DType.float32, 8](0)
+        var a = SIMD[.int8, 8](0)
+        var b = SIMD[.float16, 8](0)
+        var c = SIMD[.float32, 8](0)
+        var d = SIMD[.float32, 8](0)
         _mma_apple(d, a, b, c)
 
 
 # CHECK-ACCUM: Apple MMA accumulator (C and D) must be 32-bit
 def test_bad_float_accum():
     comptime if get_defined_bool["TEST_BAD_FLOAT_ACCUM", False]():
-        var a = SIMD[DType.float16, 8](0)
-        var b = SIMD[DType.float16, 8](0)
-        var c = SIMD[DType.float16, 8](0)
-        var d = SIMD[DType.float16, 8](0)
+        var a = SIMD[.float16, 8](0)
+        var b = SIMD[.float16, 8](0)
+        var c = SIMD[.float16, 8](0)
+        var d = SIMD[.float16, 8](0)
         _mma_apple(d, a, b, c)
 
 
 # CHECK-F64: no valid implementation of mma
 def test_f64_input():
     comptime if get_defined_bool["TEST_F64_INPUT", False]():
-        var a = SIMD[DType.float64, 8](0)
-        var b = SIMD[DType.float64, 8](0)
-        var c = SIMD[DType.float32, 8](0)
-        var d = SIMD[DType.float32, 8](0)
+        var a = SIMD[.float64, 8](0)
+        var b = SIMD[.float64, 8](0)
+        var c = SIMD[.float32, 8](0)
+        var d = SIMD[.float32, 8](0)
         _mma_apple(d, a, b, c)
 
 
 # CHECK-SHAPE: Apple MMA requires 8-element fragments
 def test_wrong_shape():
     comptime if get_defined_bool["TEST_WRONG_SHAPE", False]():
-        var a = SIMD[DType.float16, 4](0)
-        var b = SIMD[DType.float16, 4](0)
-        var c = SIMD[DType.float32, 4](0)
-        var d = SIMD[DType.float32, 4](0)
+        var a = SIMD[.float16, 4](0)
+        var b = SIMD[.float16, 4](0)
+        var c = SIMD[.float32, 4](0)
+        var d = SIMD[.float32, 4](0)
         _mma_apple(d, a, b, c)
 
 

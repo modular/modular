@@ -14,7 +14,6 @@
 from max.gpu.host import DeviceContext
 from layout import (
     CoordLike,
-    Coord,
     Idx,
     TileTensor,
     row_major,
@@ -54,22 +53,18 @@ def test_matmul_dynamic_scaled_fp8[
     var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+    var c_host_ref_ptr = alloc[Float32](c_size)
 
-    var a_layout = row_major(Coord(m, k))
+    var a_layout = row_major(m, k)
     var b_layout = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_layout = row_major(Coord(m, n))
-    var a_scales_layout = row_major(Coord(Idx[1], m))
+    var c_layout = row_major(m, n)
+    var a_scales_layout = row_major(Idx[1], m)
     var b_scales_layout = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else 1],
-            Idx[1 if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else 1],
+        Idx[1 if transpose_b else NType.static_value],
     )
 
     var a_host = TileTensor(a_host_ptr, a_layout)
@@ -85,7 +80,7 @@ def test_matmul_dynamic_scaled_fp8[
     var c_device = ctx.enqueue_create_buffer[out_dtype](c_size)
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](a_scales_size)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](b_scales_size)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](c_size)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](c_size)
 
     comptime k_dim = KType.static_value
 
@@ -99,7 +94,7 @@ def test_matmul_dynamic_scaled_fp8[
     var c_tile = TileTensor(c_device, c_layout)
     var a_scales_tile = TileTensor(a_scales_device, a_scales_layout)
     var b_scales_tile = TileTensor(b_scales_device, b_scales_layout)
-    var c_ref_tile = TileTensor(c_device_ref, row_major(Coord(m, n)))
+    var c_ref_tile = TileTensor(c_device_ref, row_major(m, n))
 
     random(a_host)
     random(b_host)
@@ -130,11 +125,11 @@ def test_matmul_dynamic_scaled_fp8[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, 1, k_dim),
     ](
-        c_ref_tile.to_layout_tensor(),
-        a_tile.to_layout_tensor().as_imm(),
-        b_tile.to_layout_tensor().as_imm(),
-        a_scales_tile.to_layout_tensor().as_imm(),
-        b_scales_tile.to_layout_tensor().as_imm(),
+        c_ref_tile,
+        a_tile,
+        b_tile,
+        a_scales_tile,
+        b_scales_tile,
         ctx,
     )
 
@@ -146,7 +141,7 @@ def test_matmul_dynamic_scaled_fp8[
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
             assert_almost_equal(
-                c_host[i, j].cast[DType.float32](),
+                c_host[i, j].cast[.float32](),
                 c_host_ref[i, j][0],
                 msg="At [" + String(i) + ", " + String(j) + "]",
                 atol=1.5e-2,
@@ -188,18 +183,16 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](1)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](1)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+    var c_host_ref_ptr = alloc[Float32](c_size)
 
-    var a_layout = row_major(Coord(m, k))
+    var a_layout = row_major(m, k)
     var b_layout = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_layout = row_major(Coord(m, n))
-    var a_scales_layout = row_major(Coord(Idx[1], Idx[1]))
-    var b_scales_layout = row_major(Coord(Idx[1], Idx[1]))
+    var c_layout = row_major(m, n)
+    var a_scales_layout = row_major(Idx[1], Idx[1])
+    var b_scales_layout = row_major(Idx[1], Idx[1])
 
     var a_host = TileTensor(a_host_ptr, a_layout)
     var b_host = TileTensor(b_host_ptr, b_layout)
@@ -214,7 +207,7 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     var c_device = ctx.enqueue_create_buffer[out_dtype](c_size)
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](1)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](1)
-    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](c_size)
+    var c_device_ref = ctx.enqueue_create_buffer[.float32](c_size)
 
     comptime k_dim = KType.static_value
 
@@ -233,7 +226,7 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     var c_tile = TileTensor(c_device, c_layout)
     var a_scales_tile = TileTensor(a_scales_device, a_scales_layout)
     var b_scales_tile = TileTensor(b_scales_device, b_scales_layout)
-    var c_ref_tile = TileTensor(c_device_ref, row_major(Coord(m, n)))
+    var c_ref_tile = TileTensor(c_device_ref, row_major(m, n))
 
     matmul_dynamic_scaled_fp8[
         input_scale_granularity="tensor",
@@ -270,12 +263,10 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     for i in range(b_ref_scales_size):
         b_ref_scales_host_ptr[i] = b_scalar
 
-    var a_ref_scales_layout = row_major(Coord(Idx[1], m))
+    var a_ref_scales_layout = row_major(Idx[1], m)
     var b_ref_scales_layout = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else 1],
-            Idx[1 if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else 1],
+        Idx[1 if transpose_b else NType.static_value],
     )
 
     var a_ref_scales_device = ctx.enqueue_create_buffer[scales_dtype](
@@ -295,11 +286,11 @@ def test_matmul_dynamic_scaled_fp8_tensor[
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, 1, k_dim),
     ](
-        c_ref_tile.to_layout_tensor(),
-        a_tile.to_layout_tensor().as_imm(),
-        b_tile.to_layout_tensor().as_imm(),
-        a_ref_scales_tile.to_layout_tensor().as_imm(),
-        b_ref_scales_tile.to_layout_tensor().as_imm(),
+        c_ref_tile,
+        a_tile,
+        b_tile,
+        a_ref_scales_tile,
+        b_ref_scales_tile,
         ctx,
     )
 
@@ -311,7 +302,7 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
             assert_almost_equal(
-                c_host[i, j].cast[DType.float32](),
+                c_host[i, j].cast[.float32](),
                 c_host_ref[i, j][0],
                 msg="At [" + String(i) + ", " + String(j) + "]",
                 atol=1.5e-2,

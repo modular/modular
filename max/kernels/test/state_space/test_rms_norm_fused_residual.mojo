@@ -16,10 +16,8 @@ from std.math import sqrt
 from std.sys.info import CompilationTarget
 
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -27,31 +25,38 @@ from std.random import Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_cpu
 from std.testing import TestSuite, assert_almost_equal
 
+from std.utils.coord import coord_to_index_list
 from std.utils.index import Index, IndexList
 
 
 def compute_rms_ref[
     dtype: DType
-](data_ptr: UnsafePointer[Scalar[dtype], _], size: Int, eps: Float32) -> Scalar[
+](data_ptr: ImmPointer[Scalar[dtype], _], size: Int, eps: Float32) -> Scalar[
     DType.float32
 ]:
     """Compute reference RMS value."""
     var sum_of_squares = Float32()
     for i in range(size):
-        var d = data_ptr[i].cast[DType.float32]()
+        var d = data_ptr[i].cast[.float32]()
         sum_of_squares += d * d
     return sqrt((sum_of_squares / Float32(size)) + eps)
 
 
-def run_rms_norm_fused_residual_cpu[
-    dtype: DType, rank: Int
+def _run_rms_norm_fused_residual_cpu_impl[
+    dtype: DType
 ](
-    shape: IndexList[rank],
+    shape_coord: Coord,
     rtol: Float64 = 0.001,
     dropout_p: Float64 = 0.0,
     seed: UInt64 = 0,
 ) raises:
-    """Test rms_norm_fused_residual CPU implementation."""
+    """Test rms_norm_fused_residual CPU implementation.
+
+    Takes the shape as a `Coord` so a caller can supply statically known
+    leaves, as the op registrations' `shape_coord()` does.
+    """
+    comptime rank = type_of(shape_coord).rank
+    var shape = coord_to_index_list(shape_coord)
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
@@ -72,23 +77,21 @@ def run_rms_norm_fused_residual_cpu[
         gamma_ptr[i] = Scalar[dtype](Float64(i + cols) / Float64(cols))
 
     # Create tensors
-    comptime layout_nd = Layout.row_major[rank]()
-
-    var input_tensor = LayoutTensor[dtype, layout_nd, _](
+    var input_tensor = TileTensor(
         input_ptr,
-        RuntimeLayout[layout_nd].row_major(shape),
+        row_major(shape_coord),
     )
-    var residual_tensor = LayoutTensor[dtype, layout_nd, _](
+    var residual_tensor = TileTensor(
         residual_ptr,
-        RuntimeLayout[layout_nd].row_major(shape),
+        row_major(shape_coord),
     )
-    var output_tensor = LayoutTensor[dtype, layout_nd, _](
+    var output_tensor = TileTensor(
         output_ptr,
-        RuntimeLayout[layout_nd].row_major(shape),
+        row_major(shape_coord),
     )
-    var residual_output_tensor = LayoutTensor[dtype, layout_nd, _](
+    var residual_output_tensor = TileTensor(
         residual_output_ptr,
-        RuntimeLayout[layout_nd].row_major(shape),
+        row_major(shape_coord),
     )
     var gamma_tensor = TileTensor(gamma_ptr, row_major(cols))
 
@@ -96,33 +99,29 @@ def run_rms_norm_fused_residual_cpu[
     var weight_offset = Scalar[dtype](0.0)
 
     # Define input functions
-    @always_inline
+    @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {input_tensor} -> SIMD[dtype, width]:
-        return input_tensor.load[width=width](rebind[IndexList[rank]](coords))
+        width: Int
+    ](coords: Coord) {input_tensor} -> SIMD[dtype, width]:
+        return input_tensor.load[width=width](coords)
 
-    @always_inline
+    @inline(.always)
     def residual_input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {residual_tensor} -> SIMD[dtype, width]:
-        return residual_tensor.load[width=width](
-            rebind[IndexList[rank]](coords)
-        )
+        width: Int
+    ](coords: Coord) {residual_tensor} -> SIMD[dtype, width]:
+        return residual_tensor.load[width=width](coords)
 
     # Define output functions
-    @always_inline
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {output_tensor} -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {output_tensor} -> None:
         output_tensor.store[width=width](coords, val)
 
-    @always_inline
+    @inline(.always)
     def residual_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-        residual_output_tensor
-    } -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {residual_output_tensor} -> None:
         residual_output_tensor.store[width=width](coords, val)
 
     # Read back the (input + residual) buffer the kernel wrote in its first pass.
@@ -133,13 +132,11 @@ def run_rms_norm_fused_residual_cpu[
         residual_output_tensor.as_imm().as_unsafe_any_origin()
     )
 
-    @always_inline
+    @inline(.always)
     def residual_read_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {residual_output_immut} -> SIMD[dtype, width]:
-        return residual_output_immut.load[width=width](
-            rebind[IndexList[rank]](coords)
-        )
+        width: Int
+    ](coords: Coord) {residual_output_immut} -> SIMD[dtype, width]:
+        return residual_output_immut.load[width=width](coords)
 
     var dropout_p_scalar = Scalar[dtype](dropout_p)
 
@@ -150,7 +147,7 @@ def run_rms_norm_fused_residual_cpu[
         output_fn,
         residual_output_fn,
         residual_read_fn,
-        shape,
+        shape_coord,
         gamma_tensor,
         epsilon,
         weight_offset,
@@ -197,38 +194,65 @@ def run_rms_norm_fused_residual_cpu[
         # Verify normalized output
         for c in range(cols):
             var idx = r * cols + c
-            var sum_val = sum_ptr[c].cast[DType.float32]()
+            var sum_val = sum_ptr[c].cast[.float32]()
             var expected_norm = (sum_val / rms_val).cast[dtype]() * (
                 gamma_ptr[c] + weight_offset
             )
             assert_almost_equal(expected_norm, output_ptr[idx], rtol=rtol)
 
 
+def run_rms_norm_fused_residual_cpu[
+    dtype: DType, rank: Int
+](
+    shape: IndexList[rank],
+    rtol: Float64 = 0.001,
+    dropout_p: Float64 = 0.0,
+    seed: UInt64 = 0,
+) raises:
+    """Drive the CPU path with an all-dynamic shape `Coord`."""
+    _run_rms_norm_fused_residual_cpu_impl[dtype](
+        Coord(shape), rtol=rtol, dropout_p=dropout_p, seed=seed
+    )
+
+
 def test_rms_norm_fused_residual_float32_2d() raises:
     """Test rms_norm_fused_residual with float32 and 2D shape."""
-    run_rms_norm_fused_residual_cpu[DType.float32](Index(4, 16), rtol=1e-3)
+    run_rms_norm_fused_residual_cpu[.float32](Index(4, 16), rtol=1e-3)
 
 
 def test_rms_norm_fused_residual_float32_small() raises:
     """Test rms_norm_fused_residual with small dimensions."""
-    run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 8), rtol=1e-3)
+    run_rms_norm_fused_residual_cpu[.float32](Index(2, 8), rtol=1e-3)
 
 
 def test_rms_norm_fused_residual_float32_large_cols() raises:
     """Test rms_norm_fused_residual with larger column count."""
-    run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 128), rtol=1e-3)
+    run_rms_norm_fused_residual_cpu[.float32](Index(2, 128), rtol=1e-3)
 
 
 def test_rms_norm_fused_residual_float32_3d() raises:
     """Test rms_norm_fused_residual with 3D shape."""
-    run_rms_norm_fused_residual_cpu[DType.float32](Index(2, 3, 16), rtol=1e-3)
+    run_rms_norm_fused_residual_cpu[.float32](Index(2, 3, 16), rtol=1e-3)
+
+
+def test_rms_norm_fused_residual_float32_static_dims() raises:
+    """Drive the CPU path with statically known inner dims.
+
+    Every other CPU case builds `Coord(shape)` from a runtime `IndexList`, so
+    each leaf is dynamic and the `is_static_value` branch of the row -> rank-N
+    translation is never taken here; the op registrations reach this path with
+    `shape_coord()`, whose leaves can be static.
+    """
+    _run_rms_norm_fused_residual_cpu_impl[.float32](
+        Coord(Idx[2], Idx[3], Int64(16)), rtol=1e-3
+    )
 
 
 def test_rms_norm_fused_residual_bfloat16() raises:
     """Test rms_norm_fused_residual with bfloat16."""
 
     comptime if not CompilationTarget.has_neon():
-        run_rms_norm_fused_residual_cpu[DType.bfloat16](Index(4, 16), rtol=1e-2)
+        run_rms_norm_fused_residual_cpu[.bfloat16](Index(4, 16), rtol=1e-2)
 
 
 # =============================================================================
@@ -238,21 +262,21 @@ def test_rms_norm_fused_residual_bfloat16() raises:
 
 def test_rms_norm_fused_residual_dropout_float32_2d() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (float32, 2D)."""
-    run_rms_norm_fused_residual_cpu[DType.float32](
+    run_rms_norm_fused_residual_cpu[.float32](
         Index(4, 16), rtol=1e-3, dropout_p=0.3, seed=42
     )
 
 
 def test_rms_norm_fused_residual_dropout_float32_3d() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (float32, 3D)."""
-    run_rms_norm_fused_residual_cpu[DType.float32](
+    run_rms_norm_fused_residual_cpu[.float32](
         Index(2, 3, 16), rtol=1e-3, dropout_p=0.5, seed=123
     )
 
 
 def test_rms_norm_fused_residual_dropout_float32_large_cols() raises:
     """Test CPU dropout path with larger column count."""
-    run_rms_norm_fused_residual_cpu[DType.float32](
+    run_rms_norm_fused_residual_cpu[.float32](
         Index(2, 128), rtol=1e-3, dropout_p=0.1, seed=7
     )
 
@@ -261,7 +285,7 @@ def test_rms_norm_fused_residual_dropout_bfloat16() raises:
     """Test rms_norm_fused_residual CPU with dropout enabled (bfloat16)."""
 
     comptime if not CompilationTarget.has_neon():
-        run_rms_norm_fused_residual_cpu[DType.bfloat16](
+        run_rms_norm_fused_residual_cpu[.bfloat16](
             Index(4, 16), rtol=1e-2, dropout_p=0.2, seed=99
         )
 

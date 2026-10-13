@@ -33,7 +33,6 @@ Runtime arguments:
 
 from std.math import ceildiv
 from std.sys import get_defined_int, size_of
-from std.random import rand, randint
 from std.memory import bitcast
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
@@ -46,7 +45,7 @@ from std.benchmark import (
 from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
-from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import (
@@ -59,9 +58,9 @@ def _fill_random_mxfp4_data[
     N: Int, K: Int
 ](
     ctx: DeviceContext,
-    a_device: DeviceBuffer[DType.bfloat16],
-    b_packed_device: DeviceBuffer[DType.uint8],
-    b_scales_device: DeviceBuffer[DType.float8_e8m0fnu],
+    a_device: DeviceBuffer[.bfloat16],
+    b_packed_device: DeviceBuffer[.uint8],
+    b_scales_device: DeviceBuffer[.float8_e8m0fnu],
     M: Int,
 ) raises:
     """Fill input buffers with random data."""
@@ -69,7 +68,7 @@ def _fill_random_mxfp4_data[
     comptime scale_K = ceildiv(K, 32)
 
     # BF16 activations: random on device
-    init_vector_launch[DType.bfloat16](
+    init_vector_launch[.bfloat16](
         a_device,
         M * K,
         InitializationType.uniform_distribution,
@@ -77,7 +76,7 @@ def _fill_random_mxfp4_data[
     )
 
     # Packed FP4 weights: random on device
-    init_vector_launch[DType.uint8](
+    init_vector_launch[.uint8](
         b_packed_device,
         N * packed_K,
         InitializationType.uniform_distribution,
@@ -87,11 +86,9 @@ def _fill_random_mxfp4_data[
     # E8M0 scales: fill on host then copy.
     # float8_e8m0fnu has no zero representation so init_vector_launch crashes.
     # Use exponent 127 (scale=1.0) for all scales.
-    var bs_hbuf = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
-        N * scale_K
-    )
+    var bs_hbuf = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](N * scale_K)
     for i in range(N * scale_K):
-        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 
@@ -100,10 +97,10 @@ def verify_mxfp4_matmul[
     N: Int, K: Int
 ](
     ctx: DeviceContext,
-    c_device: DeviceBuffer[DType.bfloat16],
-    a_device: DeviceBuffer[DType.bfloat16],
-    b_packed_device: DeviceBuffer[DType.uint8],
-    b_scales_device: DeviceBuffer[DType.float8_e8m0fnu],
+    c_device: DeviceBuffer[.bfloat16],
+    a_device: DeviceBuffer[.bfloat16],
+    b_packed_device: DeviceBuffer[.uint8],
+    b_scales_device: DeviceBuffer[.float8_e8m0fnu],
     M: Int,
 ) raises:
     """Verify mxfp4_dequant_matmul_amd output against vendor BLAS on dequanted FP8 data.
@@ -134,21 +131,21 @@ def verify_mxfp4_matmul[
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a_tt, M, K)
     ctx.synchronize()
 
-    var c_ref = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
-    var c_ref_lt = LayoutTensor[DType.bfloat16, Layout.row_major(N, N)](c_ref)
+    var c_ref = ctx.enqueue_create_buffer[.bfloat16](M * N)
+    var c_ref_tt = TileTensor(c_ref, row_major((M, Idx[N])))
 
     vendor_blas.matmul(
         ctx,
-        c_ref_lt,
-        a_fp8_tt.to_layout_tensor(),
-        b_fp8_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_fp8_tt,
+        b_fp8_tt,
         c_row_major=True,
         transpose_b=True,
     )
     ctx.synchronize()
 
-    var c_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * N)
-    var c_ref_host = ctx.enqueue_create_host_buffer[DType.bfloat16](M * N)
+    var c_host = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
+    var c_ref_host = ctx.enqueue_create_host_buffer[.bfloat16](M * N)
     ctx.enqueue_copy(c_host, c_device)
     ctx.enqueue_copy(c_ref_host, c_ref)
     ctx.synchronize()
@@ -156,8 +153,8 @@ def verify_mxfp4_matmul[
     var sum_abs_diff = Float64(0.0)
     var sum_abs_ref = Float64(0.0)
     for i in range(M * N):
-        var got = c_host[i].cast[DType.float64]()
-        var exp = c_ref_host[i].cast[DType.float64]()
+        var got = c_host[i].cast[.float64]()
+        var exp = c_ref_host[i].cast[.float64]()
         sum_abs_diff += abs(got - exp)
         sum_abs_ref += abs(exp)
 
@@ -177,23 +174,21 @@ def bench_dequant_mxfp4[
     comptime scale_K = ceildiv(K, 32)
     comptime fp8_type = DType.float8_e4m3fn
 
-    var b_packed_device = ctx.enqueue_create_buffer[DType.uint8](N * packed_K)
-    var b_scales_device = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var b_packed_device = ctx.enqueue_create_buffer[.uint8](N * packed_K)
+    var b_scales_device = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         N * scale_K
     )
     var b_fp8_device = ctx.enqueue_create_buffer[fp8_type](N * K)
 
-    init_vector_launch[DType.uint8](
+    init_vector_launch[.uint8](
         b_packed_device,
         N * packed_K,
         InitializationType.uniform_distribution,
         ctx,
     )
-    var bs_hbuf = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
-        N * scale_K
-    )
+    var bs_hbuf = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](N * scale_K)
     for i in range(N * scale_K):
-        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 
@@ -201,10 +196,10 @@ def bench_dequant_mxfp4[
     var b_scales_tt = TileTensor(b_scales_device, row_major[N, scale_K]())
     var b_fp8_tt = TileTensor(b_fp8_device, row_major((Idx[N], Idx[K])))
 
-    @__copy_capture(b_fp8_tt, b_packed_tt, b_scales_tt)
-    @__parameter
-    @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut b_fp8_tt, imm}:
         dequant_mxfp4(
             ctx,
             b_fp8_tt,
@@ -214,10 +209,9 @@ def bench_dequant_mxfp4[
             num_cols=K,
         )
 
-    @__parameter
-    @always_inline
-    def bench_func(mut bencher: Bencher) raises:
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+    @inline(.always)
+    def bench_func(mut bencher: Bencher) raises {imm}:
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     # Memory traffic: read packed (N*K/2) + scales (N*K/32), write FP8 (N*K)
     comptime total_bytes = N * packed_K + N * scale_K + N * K * size_of[
@@ -225,7 +219,8 @@ def bench_dequant_mxfp4[
     ]()
     var bandwidth = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(String("dequant_mxfp4(N=", N, ",K=", K, ")")),
         [bandwidth],
     )
@@ -237,10 +232,10 @@ def bench_cast_bf16_to_fp8[
     """Benchmark BF16 to FP8 activation cast independently."""
     comptime fp8_type = DType.float8_e4m3fn
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
     var a_fp8_device = ctx.enqueue_create_buffer[fp8_type](M * K)
 
-    init_vector_launch[DType.bfloat16](
+    init_vector_launch[.bfloat16](
         a_device,
         M * K,
         InitializationType.uniform_distribution,
@@ -252,22 +247,22 @@ def bench_cast_bf16_to_fp8[
 
     from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 
-    @__copy_capture(a_fp8_tt, a_tt)
-    @__parameter
-    @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut a_fp8_tt, imm}:
         _cast_bf16_to_fp8(ctx, a_fp8_tt, a_tt, M, K)
 
-    @__parameter
-    @always_inline
-    def bench_func(mut bencher: Bencher) raises:
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+    @inline(.always)
+    def bench_func(mut bencher: Bencher) raises {imm}:
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     # Memory traffic: read BF16 (M*K*2), write FP8 (M*K*1)
     var total_bytes = M * K * (size_of[DType.bfloat16]() + size_of[fp8_type]())
     var bandwidth = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(String("cast_bf16_to_fp8(M=", M, ",K=", K, ")")),
         [bandwidth],
     )
@@ -280,15 +275,15 @@ def bench_fp8_matmul[
     comptime fp8_type = DType.float8_e4m3fn
 
     # Init as BF16 then cast to FP8 to avoid init_vector_launch FP8 issues
-    var a_bf16 = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var b_bf16 = ctx.enqueue_create_buffer[DType.bfloat16](N * K)
-    init_vector_launch[DType.bfloat16](
+    var a_bf16 = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_bf16 = ctx.enqueue_create_buffer[.bfloat16](N * K)
+    init_vector_launch[.bfloat16](
         a_bf16,
         M * K,
         InitializationType.uniform_distribution,
         ctx,
     )
-    init_vector_launch[DType.bfloat16](
+    init_vector_launch[.bfloat16](
         b_bf16,
         N * K,
         InitializationType.uniform_distribution,
@@ -308,27 +303,27 @@ def bench_fp8_matmul[
     _cast_bf16_to_fp8(ctx, b_fp8_tt, b_bf16_tt, N, K)
     ctx.synchronize()
 
-    var c_device = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
+    var c_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
     var c_tt = TileTensor(c_device, row_major((M, Idx[N])))
 
     from linalg.matmul.gpu import _matmul_gpu
 
-    @__copy_capture(c_tt, a_fp8_tt, b_fp8_tt)
-    @__parameter
-    @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut c_tt, imm}:
         _matmul_gpu[use_tensor_core=True, transpose_b=True](
             c_tt, a_fp8_tt, b_fp8_tt, ctx
         )
 
-    @__parameter
-    @always_inline
-    def bench_func(mut bencher: Bencher) raises:
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+    @inline(.always)
+    def bench_func(mut bencher: Bencher) raises {imm}:
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(BenchMetric.flops, 2 * M * N * K)
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(String("fp8_matmul(M=", M, ",N=", N, ",K=", K, ")")),
         [flops],
     )
@@ -346,12 +341,12 @@ def bench_mxfp4_matmul[
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
 
-    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-    var b_packed_device = ctx.enqueue_create_buffer[DType.uint8](N * packed_K)
-    var b_scales_device = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](
+    var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_packed_device = ctx.enqueue_create_buffer[.uint8](N * packed_K)
+    var b_scales_device = ctx.enqueue_create_buffer[.float8_e8m0fnu](
         N * scale_K
     )
-    var c_device = ctx.enqueue_create_buffer[DType.bfloat16](M * N)
+    var c_device = ctx.enqueue_create_buffer[.bfloat16](M * N)
 
     _fill_random_mxfp4_data[N, K](
         ctx, a_device, b_packed_device, b_scales_device, M
@@ -362,23 +357,23 @@ def bench_mxfp4_matmul[
     var b_scales_tt = TileTensor(b_scales_device, row_major[N, scale_K]())
     var c_tt = TileTensor(c_device, row_major((M, Idx[N])))
 
-    @__copy_capture(c_tt, a_tt, b_packed_tt, b_scales_tt)
-    @__parameter
-    @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    @inline(.always)
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut c_tt, imm}:
         mxfp4_dequant_matmul_amd(c_tt, a_tt, b_packed_tt, b_scales_tt, ctx)
         ctx.synchronize()
 
     if run_benchmark:
 
-        @__parameter
-        @always_inline
-        def bench_func(mut bencher: Bencher) raises:
-            bencher_iter_custom[kernel_launch](bencher, ctx)
+        @inline(.always)
+        def bench_func(mut bencher: Bencher) raises {imm}:
+            bencher_iter_custom(bencher, kernel_launch, ctx)
 
         var flops = ThroughputMeasure(BenchMetric.flops, 2 * M * N * K)
 
-        b.bench_function[bench_func](
+        b.bench_function(
+            bench_func,
             BenchId(
                 String(
                     "mxfp4_matmul(M=",

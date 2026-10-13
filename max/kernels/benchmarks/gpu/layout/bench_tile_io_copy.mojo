@@ -20,12 +20,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from max.gpu.host.compile import get_gpu_target
 from std.memory import bitcast
-from std.os import abort
 from std.sys import (
     align_of,
     get_defined_dtype,
@@ -48,16 +46,16 @@ struct _CopyDirection(Equatable, TrivialRegisterPassable):
     comptime DRAMToSRAM = Self(0)
     comptime SRAMToDRAM = Self(1)
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
-@always_inline
+@inline(.always)
 def _thread_offset[
     N: Int, thread_cols: Int, simd_size: Int
 ](worker_idx: Int) -> Int:
@@ -66,7 +64,7 @@ def _thread_offset[
     ) * simd_size
 
 
-@always_inline
+@inline(.always)
 def _manual_copy[
     dtype: DType,
     M: Int,
@@ -76,20 +74,15 @@ def _manual_copy[
     simd_size: Int,
     direction: _CopyDirection,
 ](
-    dram_src_ptr: UnsafePointer[Scalar[dtype], ...],
-    dram_dst_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
-    smem_ptr: UnsafePointer[
-        mut=True,
-        Scalar[dtype],
-        address_space=AddressSpace.SHARED,
-        ...,
-    ],
+    dram_src_ptr: ImmPointer[Scalar[dtype], ...],
+    dram_dst_ptr: MutPointer[Scalar[dtype], ...],
+    smem_ptr: MutPointer[Scalar[dtype], address_space=.SHARED, ...],
 ):
     """Copies one leg manually using the benchmark's per-thread layout."""
     comptime rows_per_thread = M // thread_rows
     comptime row_stride = thread_rows * N
     comptime alignment = align_of[SIMD[dtype, simd_size]]()
-    var base = _thread_offset[N, thread_cols, simd_size](Int(thread_idx.x))
+    var base = _thread_offset[N, thread_cols, simd_size](thread_idx.x)
 
     comptime for i in range(rows_per_thread):
         var offset = base + i * row_stride
@@ -105,7 +98,7 @@ def _manual_copy[
             )
 
 
-@always_inline
+@inline(.always)
 def _tile_io_copy[
     dtype: DType,
     M: Int,
@@ -116,12 +109,12 @@ def _tile_io_copy[
     tile_io_dram_to_sram: Bool,
     tile_io_sram_to_dram: Bool,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     comptime thread_layout = row_major(Idx[thread_rows], Idx[thread_cols])
 
-    var smem = stack_allocation[dtype=dtype, address_space=AddressSpace.SHARED](
+    var smem = stack_allocation[dtype=dtype, address_space=.SHARED](
         row_major[M, N]()
     ).vectorize[1, simd_size]()
 
@@ -160,7 +153,7 @@ def _tile_io_copy[
         ](src_ptr, dst_ptr, smem.ptr)
 
 
-@always_inline
+@inline(.always)
 def _layout_tensor_copy[
     dtype: DType,
     tensor_layout: Layout,
@@ -172,8 +165,8 @@ def _layout_tensor_copy[
     layout_tensor_dram_to_sram: Bool,
     layout_tensor_sram_to_dram: Bool,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     comptime thread_layout = Layout.row_major(thread_rows, thread_cols)
 
@@ -181,7 +174,7 @@ def _layout_tensor_copy[
         dtype,
         tensor_layout,
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ].stack_allocation()
 
     comptime if layout_tensor_dram_to_sram:
@@ -227,8 +220,8 @@ def tile_io_copy_roundtrip_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Copies a TileTensor from global to shared memory and back."""
     _tile_io_copy[dtype, M, N, thread_rows, thread_cols, simd_size, True, True](
@@ -244,8 +237,8 @@ def tile_io_dram_to_sram_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks the tile_io global-to-shared copy with a common drain."""
     _tile_io_copy[
@@ -261,8 +254,8 @@ def tile_io_sram_to_dram_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks the tile_io shared-to-global copy with a common fill."""
     _tile_io_copy[
@@ -279,8 +272,8 @@ def layout_tensor_copy_roundtrip_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
-    dst: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Copies a LayoutTensor from global to shared memory and back."""
     _layout_tensor_copy[
@@ -293,7 +286,7 @@ def layout_tensor_copy_roundtrip_kernel[
         simd_size,
         True,
         True,
-    ](src.ptr, dst.ptr)
+    ](src_ptr, dst_ptr)
 
 
 def layout_tensor_dram_to_sram_kernel[
@@ -305,8 +298,8 @@ def layout_tensor_dram_to_sram_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks LayoutTensor DRAM-to-SRAM copy with a common drain."""
     _layout_tensor_copy[
@@ -319,7 +312,7 @@ def layout_tensor_dram_to_sram_kernel[
         simd_size,
         True,
         False,
-    ](src.ptr, dst_ptr)
+    ](src_ptr, dst_ptr)
 
 
 def layout_tensor_sram_to_dram_kernel[
@@ -331,8 +324,8 @@ def layout_tensor_sram_to_dram_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    dst: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks LayoutTensor SRAM-to-DRAM copy with a common fill."""
     _layout_tensor_copy[
@@ -345,15 +338,15 @@ def layout_tensor_sram_to_dram_kernel[
         simd_size,
         False,
         True,
-    ](src_ptr, dst.ptr)
+    ](src_ptr, dst_ptr)
 
 
-@always_inline
+@inline(.always)
 def _assert_buffers_equal[
     dtype: DType, simd_size: Int
 ](
-    actual_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    expected_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    actual_ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    expected_ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     num_elements: Int,
     label: String,
 ) raises:
@@ -363,8 +356,8 @@ def _assert_buffers_equal[
         var actual = actual_ptr.load[width=simd_size, alignment=1](i)
         var expected = expected_ptr.load[width=simd_size, alignment=1](i)
         comptime if dtype.is_float8():
-            var actual_bits = bitcast[DType.uint8, simd_size](actual)
-            var expected_bits = bitcast[DType.uint8, simd_size](expected)
+            var actual_bits = bitcast[.uint8, simd_size](actual)
+            var expected_bits = bitcast[.uint8, simd_size](expected)
             if actual_bits != expected_bits:
                 for lane in range(simd_size):
                     assert_equal(
@@ -385,8 +378,8 @@ def _assert_buffers_equal[
     while i < num_elements:
         comptime if dtype.is_float8():
             assert_equal(
-                bitcast[DType.uint8](actual_ptr[i]),
-                bitcast[DType.uint8](expected_ptr[i]),
+                bitcast[.uint8](actual_ptr[i]),
+                bitcast[.uint8](expected_ptr[i]),
                 String(label, " mismatch at element ", i),
             )
         else:
@@ -404,7 +397,7 @@ def bench_copy_roundtrip[
     N: Int,
     num_threads: Int,
 ](ctx: DeviceContext, mut bench: Bench) raises:
-    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_size = simd_width_of[dtype, target=ctx.target]()
     comptime tensor_layout = Layout.row_major(M, N)
 
     comptime assert (
@@ -422,17 +415,12 @@ def bench_copy_roundtrip[
     for i in range(num_elements):
         # Uses a small prime modulus to create a deterministic, non-power-of-two
         # input pattern while keeping values compact across dtypes.
-        src_host[i] = Scalar[DType.float32](i % 251).cast[dtype]()
+        src_host[i] = Float32(i % 251).cast[dtype]()
 
     var src_dev = ctx.enqueue_create_buffer[dtype](num_elements)
     var tile_io_dst_dev = ctx.enqueue_create_buffer[dtype](num_elements)
     var layout_tensor_dst_dev = ctx.enqueue_create_buffer[dtype](num_elements)
     ctx.enqueue_copy(src_dev, src_host)
-
-    var src_tensor = LayoutTensor[dtype, tensor_layout](src_dev)
-    var layout_tensor_dst = LayoutTensor[dtype, tensor_layout](
-        layout_tensor_dst_dev
-    )
 
     comptime tile_io_kernel = tile_io_copy_roundtrip_kernel[
         dtype, M, N, thread_rows, thread_cols, simd_size
@@ -464,8 +452,8 @@ def bench_copy_roundtrip[
         block_dim=(num_threads,),
     )
     ctx.enqueue_function[layout_tensor_kernel](
-        src_tensor,
-        layout_tensor_dst,
+        src_dev,
+        layout_tensor_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
     )
@@ -496,7 +484,7 @@ def bench_copy_roundtrip[
         block_dim=(num_threads,),
     )
     ctx.enqueue_function[layout_tensor_dram_to_sram_kernel_type](
-        src_tensor,
+        src_dev,
         layout_tensor_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
@@ -525,7 +513,7 @@ def bench_copy_roundtrip[
     )
     ctx.enqueue_function[layout_tensor_sram_to_dram_kernel_type](
         src_dev,
-        layout_tensor_dst,
+        layout_tensor_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
     )
@@ -545,9 +533,9 @@ def bench_copy_roundtrip[
         "layout_tensor_sram_to_dram",
     )
 
-    @always_inline
+    @inline(.always)
     def bench_tile_io_roundtrip(mut b: Bencher) {var}:
-        @always_inline
+        @inline(.always)
         def tile_io_roundtrip_launch(ctx: DeviceContext) raises {var}:
             ctx.enqueue_function[tile_io_kernel](
                 src_dev,
@@ -558,28 +546,22 @@ def bench_copy_roundtrip[
 
         bencher_iter_custom(b, tile_io_roundtrip_launch, ctx)
 
-    @always_inline
+    @inline(.always)
     def bench_layout_tensor_roundtrip(mut b: Bencher) {var}:
-        @always_inline
+        @inline(.always)
         def layout_tensor_roundtrip_launch(ctx: DeviceContext) raises {var}:
-            var src = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                src_dev.unsafe_ptr()
-            )
-            var dst = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                layout_tensor_dst_dev.unsafe_ptr()
-            )
             ctx.enqueue_function[layout_tensor_kernel](
-                src,
-                dst,
+                src_dev,
+                layout_tensor_dst_dev,
                 grid_dim=(1,),
                 block_dim=(num_threads,),
             )
 
         bencher_iter_custom(b, layout_tensor_roundtrip_launch, ctx)
 
-    @always_inline
+    @inline(.always)
     def bench_tile_io_dram_to_sram(mut b: Bencher) {var}:
-        @always_inline
+        @inline(.always)
         def tile_io_dram_to_sram_launch(ctx: DeviceContext) raises {var}:
             ctx.enqueue_function[tile_io_dram_to_sram_kernel_type](
                 src_dev,
@@ -590,15 +572,12 @@ def bench_copy_roundtrip[
 
         bencher_iter_custom(b, tile_io_dram_to_sram_launch, ctx)
 
-    @always_inline
+    @inline(.always)
     def bench_layout_tensor_dram_to_sram(mut b: Bencher) {var}:
-        @always_inline
+        @inline(.always)
         def layout_tensor_dram_to_sram_launch(ctx: DeviceContext) raises {var}:
-            var src = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                src_dev.unsafe_ptr()
-            )
             ctx.enqueue_function[layout_tensor_dram_to_sram_kernel_type](
-                src,
+                src_dev,
                 layout_tensor_dst_dev,
                 grid_dim=(1,),
                 block_dim=(num_threads,),
@@ -606,9 +585,9 @@ def bench_copy_roundtrip[
 
         bencher_iter_custom(b, layout_tensor_dram_to_sram_launch, ctx)
 
-    @always_inline
+    @inline(.always)
     def bench_tile_io_sram_to_dram(mut b: Bencher) {var}:
-        @always_inline
+        @inline(.always)
         def tile_io_sram_to_dram_launch(ctx: DeviceContext) raises {var}:
             ctx.enqueue_function[tile_io_sram_to_dram_kernel_type](
                 src_dev,
@@ -619,16 +598,13 @@ def bench_copy_roundtrip[
 
         bencher_iter_custom(b, tile_io_sram_to_dram_launch, ctx)
 
-    @always_inline
+    @inline(.always)
     def bench_layout_tensor_sram_to_dram(mut b: Bencher) {var}:
-        @always_inline
+        @inline(.always)
         def layout_tensor_sram_to_dram_launch(ctx: DeviceContext) raises {var}:
-            var dst = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                layout_tensor_dst_dev.unsafe_ptr()
-            )
             ctx.enqueue_function[layout_tensor_sram_to_dram_kernel_type](
                 src_dev,
-                dst,
+                layout_tensor_dst_dev,
                 grid_dim=(1,),
                 block_dim=(num_threads,),
             )
@@ -676,7 +652,7 @@ def bench_copy_roundtrip[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.float32]()
+    comptime dtype = get_defined_dtype["dtype", .float32]()
     comptime M = get_defined_int["M", 64]()
     comptime N = get_defined_int["N", 64]()
     comptime num_threads = get_defined_int["num_threads", 128]()

@@ -15,11 +15,10 @@ from std.math import rsqrt, sqrt
 from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
-from std.gpu import *
-from max.gpu.host import DeviceContext, HostBuffer, get_gpu_target
+from max.gpu import *
+from max.gpu.host import DeviceContext, HostBuffer
 from std.testing import *
 
-from std.utils import IndexList
 from std.utils.coord import Coord
 
 
@@ -31,7 +30,7 @@ def run_elementwise[
 ](ctx: DeviceContext) raises where dtype.is_floating_point():
     comptime length = 256
 
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=ctx.target]()
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)
@@ -45,10 +44,10 @@ def run_elementwise[
     var in_buffer = Span(unsafe_ptr=in_device.unsafe_ptr(), length=length)
     var out_buffer = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
 
-    @always_inline
-    @__copy_capture(out_buffer, in_buffer)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    @inline(.always)
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx: Coord) {var out_buffer, var in_buffer}:
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx[0].value(),
             rsqrt(
@@ -58,7 +57,7 @@ def run_elementwise[
             ),
         )
 
-    elementwise[func, pack_size, target="gpu"](Coord(length), ctx)
+    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(length):
@@ -66,7 +65,7 @@ def run_elementwise[
                 "values did not match at position ", i, " for dtype=", dtype
             )
 
-            comptime if dtype == DType.float32:
+            comptime if dtype == .float32:
                 assert_almost_equal(
                     out_host[i],
                     rsqrt(in_host[i]),
@@ -86,12 +85,12 @@ def run_elementwise[
 
 def test_rsqrt() raises:
     with DeviceContext() as ctx:
-        run_elementwise[DType.float16, sqrt](ctx)
-        run_elementwise[DType.float32, sqrt](ctx)
-        run_elementwise[DType.float64, sqrt](ctx)
-        run_elementwise[DType.float16, rsqrt](ctx)
-        run_elementwise[DType.float32, rsqrt](ctx)
-        run_elementwise[DType.float64, rsqrt](ctx)
+        run_elementwise[.float16, sqrt](ctx)
+        run_elementwise[.float32, sqrt](ctx)
+        run_elementwise[.float64, sqrt](ctx)
+        run_elementwise[.float16, rsqrt](ctx)
+        run_elementwise[.float32, rsqrt](ctx)
+        run_elementwise[.float64, rsqrt](ctx)
 
 
 def main() raises:

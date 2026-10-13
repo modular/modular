@@ -16,6 +16,7 @@ import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from functools import wraps
+from pathlib import Path
 from typing import Any, TypeVar
 from unittest.mock import MagicMock, patch
 
@@ -34,10 +35,10 @@ from max.pipelines.weights.hf_utils import (
 from max.pipelines.weights.hf_utils import (
     generate_local_model_path as _real_generate_local_model_path,
 )
-from transformers import AutoConfig
+from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import ParamSpec
 
-from .memory_estimation import mock_estimate_memory_footprint
+from .memory_estimation import mock_plan_from_sizes
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -63,7 +64,9 @@ class DummyMAXModelConfig(MAXModelConfig):
     def weights_size(self) -> int:
         return 1000
 
-    def _validate_final_architecture_model_path_weight_path(self) -> None:
+    def _validate_final_architecture_model_path_weight_path(
+        self, weight_path: list[Path]
+    ) -> None:
         pass
 
 
@@ -75,6 +78,10 @@ class DummyPipelineConfig(PipelineConfig):
         max_batch_size: int | None,
         max_length: int | None,
         device_specs: list[DeviceSpec] | None = None,
+        max_batch_total_tokens: int | None = None,
+        device_graph_capture: bool | None = None,
+        weight_path: list[Path] | None = None,
+        huggingface_config: PretrainedConfig | None = None,
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
         eos_prob: float | None = None,
@@ -100,9 +107,12 @@ class DummyPipelineConfig(PipelineConfig):
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
             max_length=max_length,
-            weight_path=[],
+            weight_path=weight_path if weight_path is not None else [],
+            kv_cache=KVCacheConfig(),
         )
-        model_config.kv_cache = KVCacheConfig()
+        # model_construct bypasses __init__, where user intent for max_length
+        # is captured; mirror the capture so planning sees the same bit.
+        model_config._max_length_user_provided = max_length is not None
 
         # `ArchConfig.initialize` resolves the encoding via
         # `_select_quantization_encoding`, which reads the HF weight repo's
@@ -118,17 +128,18 @@ class DummyPipelineConfig(PipelineConfig):
         weight_repo_stub.files_for_encoding.return_value = {}
         weight_repo_stub.encoding_for_file.return_value = None
         model_config._cached_weight_repo = weight_repo_stub
-        # NOTE: Using MagicMock without spec here because HuggingFace configs
-        # vary by model type (LlamaConfig, Qwen2Config, etc.). Tests that need
-        # strict type checking should pass a model-specific huggingface_config
-        # parameter to DummyPipelineConfig or use the real AutoConfig.
-        # TODO: Consider accepting huggingface_config as an optional parameter
-        # to allow tests to provide model-specific spec'd mocks.
-        model_config._huggingface_config = MagicMock()
+        # Tests that assert on config contents pass their own.
+        model_config._huggingface_config = (
+            huggingface_config
+            if huggingface_config is not None
+            else MagicMock()
+        )
 
         manifest = ModelManifest({"main": model_config})
         runtime = PipelineRuntimeConfig.model_construct(
             max_batch_size=max_batch_size,
+            max_batch_total_tokens=max_batch_total_tokens,
+            device_graph_capture=device_graph_capture,
         )
         base = PipelineConfig.model_construct(
             runtime=runtime,
@@ -320,12 +331,12 @@ def mock_pipeline_config_hf_dependencies(
     - mock_huggingface_hub_repo_exists_with_retry
     - mock_huggingface_hub_file_exists
     - mock_huggingface_config
-    - mock_estimate_memory_footprint
+    - mock_plan_from_sizes
     """
     return mock_generate_local_model_path(
         mock_huggingface_hub_repo_exists_with_retry(
             mock_huggingface_hub_file_exists(
-                mock_huggingface_config(mock_estimate_memory_footprint(func))
+                mock_huggingface_config(mock_plan_from_sizes(func))
             )
         )
     )
@@ -398,14 +409,15 @@ def mock_hf_repo_access(func: Callable[_P, _R]) -> Callable[_P, _R]:
 def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        from max.pipelines.lib.memory_estimation import _MemoryPlan
+        from max.pipelines.lib.memory_estimation import MemoryPlan
 
         with (
             patch(
-                "max.pipelines.lib.registry._run_memory_planning",
-                side_effect=lambda config, *a, **kw: _MemoryPlan(
-                    max_batch_size=1,
+                "max.pipelines.lib.memory_estimation.MemoryEstimator.plan",
+                side_effect=lambda config, *a, **kw: MemoryPlan(
+                    planned_max_batch_size=1,
                     footprint=0,
+                    planned_max_length=config.model.max_length,
                     device_specs=tuple(config.model.device_specs),
                 ),
             ),

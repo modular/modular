@@ -15,9 +15,11 @@ MOJO_DEPS = [
     # packages; the OSS `mef` wrapper in //oss/modular/bazel:api.bzl rewrites
     # them to their prebuilt @modular_wheel equivalents.
     "//Kernels/lib/attn_res",
+    "//Kernels/lib/kda",
     "//Kernels/lib/matmul_rs",
+    "//Kernels/lib/mega_ffn",
     "//Kernels/lib/msa",
-    "//Kernels/src/mega_ffn",
+    "//Kernels/lib/qsa",
     "//max:algorithm",
     "//max:builtin_kernels",
     "//max:builtin_primitives",

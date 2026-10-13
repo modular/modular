@@ -21,14 +21,13 @@ from max.algorithm import elementwise
 
 from max._plugin import MaxPluginForTarget
 from std.collections.string.string_span import get_static_string
-from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.sys.info import CompilationTarget, _accelerator_arch
 
 from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 # Re-export CPU implementations.
 from .backend.cpu import (
@@ -53,7 +52,7 @@ from .backend.gpu import (
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _get_start_indices_of_nth_subvolume[
     rank: Int, //, subvolume_rank: Int = 1
 ](n: Int, shape: IndexList[rank, element_type=_], out res: type_of(shape)):
@@ -122,7 +121,7 @@ def _get_start_indices_of_nth_subvolume[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def elementwise[
     func: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
     simd_width: Int,
@@ -156,7 +155,7 @@ def elementwise[
     ](Coord(shape), context)
 
 
-@always_inline
+@inline(.always)
 def elementwise[
     func: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
     simd_width: Int,
@@ -192,7 +191,7 @@ def elementwise[
     ](func_unified, shape, context)
 
 
-@always_inline
+@inline(.always)
 def elementwise[
     FuncType: ImplicitlyCopyable
     & RegisterPassable
@@ -262,7 +261,7 @@ struct _IndexListToCoordAdapter[
 
     var func: Self.FuncType
 
-    @always_inline
+    @inline(.always)
     def __call__[width: Int, alignment: Int = 1](self, coords: Coord):
         self.func[width, Self.rank, alignment](
             rebind[IndexList[Self.rank]](coord_to_index_list(coords))
@@ -297,7 +296,7 @@ struct _CoordToIndexListAdapter[
 
     var func: Self.FuncType
 
-    @always_inline
+    @inline(.always)
     def __call__[
         width: Int, call_rank: Int, alignment: Int = 1
     ](self, indices: IndexList[call_rank]):
@@ -305,7 +304,7 @@ struct _CoordToIndexListAdapter[
         self.func[width, alignment](Coord(indices))
 
 
-@always_inline
+@inline(.always)
 def _elementwise_impl[
     simd_width: Int,
     FuncType: ImplicitlyCopyable
@@ -316,9 +315,8 @@ def _elementwise_impl[
     target: StaticString = "cpu",
     trace_description: StaticString,
 ](func: FuncType, shape: Coord, context: DeviceContext) raises:
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
+    @inline(.always)
+    def description_fn() {imm} -> String:
         var shape_str = trace_arg("shape", coord_to_index_list(shape))
         var vector_width_str = String(t"vector_width={simd_width}")
         return ";".join([shape_str^, vector_width_str^])
@@ -330,7 +328,7 @@ def _elementwise_impl[
 
     with Trace[TraceLevel.OP, target=target](
         kind,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         # Check the host (CPU) path first: a CPU-targeted op must run on the
@@ -341,7 +339,7 @@ def _elementwise_impl[
         # Should not need to additionally check accelerator arch here
         comptime if is_cpu[target]():
 
-            @always_inline
+            @inline(.always)
             def func_wrap_cpu[
                 width: Int, alignment: Int = 1
             ](coords: Coord) {imm}:
@@ -350,13 +348,15 @@ def _elementwise_impl[
             _elementwise_impl_cpu[
                 simd_width=simd_width,
                 trace_description=trace_description,
-            ](func_wrap_cpu, shape=shape, ctx=Optional(context))
+            ](
+                func_wrap_cpu,
+                shape=shape,
+                ctx=Optional(context.assert_cpu_target()),
+            )
         elif _accelerator_arch() != "" and MaxPluginForTarget[
-            context.default_device_info.target()
+            context.target
         ]._handles_elementwise:
-            comptime plugin = MaxPluginForTarget[
-                context.default_device_info.target()
-            ]
+            comptime plugin = MaxPluginForTarget[context.target]
             return plugin.elementwise_fn[shape.rank, simd_width](
                 _CoordToIndexListAdapter[shape.rank, FuncType](func),
                 coord_to_index_list(shape),
@@ -382,22 +382,32 @@ def _elementwise_impl[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def dual_elementwise[
-    func_0: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
-    func_1: def[width: Int, alignment: Int = 1](Coord) capturing[_] -> None,
     simd_width: Int,
     *,
     target: StaticString = "gpu",
     _trace_description: StaticString = "dual_elementwise",
-](shape_0: Coord, shape_1: Coord, context: DeviceContext,) raises:
+](
+    shape_0: Coord,
+    shape_1: Coord,
+    context: DeviceContext,
+    func_0: Some[
+        ImplicitlyCopyable
+        & RegisterPassable
+        & (def[width: Int, alignment: Int = 1](Coord) -> None)
+    ],
+    func_1: Some[
+        ImplicitlyCopyable
+        & RegisterPassable
+        & (def[width: Int, alignment: Int = 1](Coord) -> None)
+    ],
+) raises:
     """Executes two elementwise functions over their respective shapes in a
     single GPU kernel launch. Each thread processes elements from both shapes,
     fusing two independent elementwise passes into one.
 
     Parameters:
-        func_0: The first body function.
-        func_1: The second body function.
         simd_width: The SIMD vector width to use.
         target: The target to run on (must be GPU).
         _trace_description: Description of the trace.
@@ -406,25 +416,21 @@ def dual_elementwise[
         shape_0: The shape for the first function.
         shape_1: The shape for the second function.
         context: The device context to use.
+        func_0: The first body function.
+        func_1: The second body function.
 
     Raises:
         If the operation fails.
     """
 
-    def func_0_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
-        func_0[width, alignment](indices)
-
-    def func_1_unified[width: Int, alignment: Int = 1](indices: Coord) {}:
-        func_1[width, alignment](indices)
-
     _dual_elementwise_impl[
         simd_width,
         target=target,
         trace_description=_trace_description,
-    ](func_0_unified, func_1_unified, shape_0, shape_1, context)
+    ](func_0, func_1, shape_0, shape_1, context)
 
 
-@always_inline
+@inline(.always)
 def _dual_elementwise_impl[
     simd_width: Int,
     Func0Type: ImplicitlyCopyable
@@ -444,9 +450,8 @@ def _dual_elementwise_impl[
     shape_1: Coord,
     context: DeviceContext,
 ) raises:
-    @always_inline
-    @__parameter
-    def description_fn() -> String:
+    @inline(.always)
+    def description_fn() {imm} -> String:
         var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
         var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))
         var vw = String(t"vector_width={simd_width}")
@@ -458,7 +463,7 @@ def _dual_elementwise_impl[
 
     with Trace[TraceLevel.OP, target=target](
         kind,
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
         comptime assert is_gpu[

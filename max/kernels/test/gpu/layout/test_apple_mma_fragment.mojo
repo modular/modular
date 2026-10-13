@@ -27,7 +27,7 @@ from std.memory import AddressSpace, unsafe_stack_allocation
 from std.random import random_si64
 from std.sys.info import _accelerator_arch
 
-from std.gpu import WARP_SIZE, lane_id
+from max.gpu import WARP_SIZE, lane_id
 from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _apple_frag_layout
 from max.gpu.host import DeviceContext
@@ -49,8 +49,8 @@ comptime _FRAG_SIZE = 8  # 8 elements per thread
 def _host_matmul_ref[
     ta: Bool, tb: Bool
 ](
-    a: UnsafePointer[Scalar[DType.float16], ...],
-    b: UnsafePointer[Scalar[DType.float16], ...],
+    a: ImmPointer[Float16, _],
+    b: ImmPointer[Float16, _],
     M: Int,
     N: Int,
     K: Int,
@@ -81,7 +81,7 @@ def _host_matmul_ref[
 
 
 def _verify_fragments(
-    out_ptr: UnsafePointer[mut=True, Scalar[DType.float32], _],
+    out_ptr: MutPointer[Float32, _],
 ) -> Bool:
     """Verify 32 threads' fragment outputs against the canonical layout.
 
@@ -136,8 +136,8 @@ def _verify_fragments(
 
 
 def fragment_load_kernel(
-    input_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    output_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    input_ptr: MutPointer[Float32, MutAnyOrigin],
+    output_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Each thread loads its 8-element fragment and writes to output.
 
@@ -170,16 +170,16 @@ def fragment_load_kernel(
 
 
 def mma_1x1_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """1x1 MMA: 16x16 @ 16x16 -> 16x16 (NN, F16 -> F32)."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -189,16 +189,16 @@ comptime _K_2x2 = 64
 
 
 def mma_2x2_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """2x2 MMA: A[32,64] @ B[64,32] -> D[32,32], K-loop with 4 iters."""
     var a_mat = TileTensor(a_ptr, row_major[32, _K_2x2]())
     var b_mat = TileTensor(b_ptr, row_major[_K_2x2, 32]())
     var d_mat = TileTensor(d_ptr, row_major[32, 32]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 2, 2]()
+    var mma_op = MmaOpApple[.float32, .float16, 2, 2]()
     var accum = type_of(mma_op).zero_accum()
 
     for k16 in range(_K_2x2 // 16):
@@ -211,9 +211,9 @@ def mma_2x2_kernel(
 
 # Transpose kernels: each needs its own comptime transpose_a/transpose_b.
 def mma_tn_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """TN: transpose_a=True, transpose_b=False."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -229,9 +229,9 @@ def mma_tn_kernel(
 
 
 def mma_nt_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """NT: transpose_a=False, transpose_b=True."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -248,9 +248,9 @@ def mma_nt_kernel(
 
 
 def mma_tt_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """TT: transpose_a=True, transpose_b=True."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
@@ -267,9 +267,9 @@ def mma_tt_kernel(
 
 # Parent stride kernel: operates on a 16x16 subtile of a 256x256 matrix.
 def mma_parent_stride_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """MMA on subtile at (1,2) of a 256x256 parent matrix.
 
@@ -284,7 +284,7 @@ def mma_parent_stride_kernel(
     var a_sub = a_mat.tile[16, 16](1, 2)
     var b_sub = b_mat.tile[16, 16](2, 1)
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_sub, b_sub)
     mma_op.store(accum, d_mat)
@@ -292,10 +292,10 @@ def mma_parent_stride_kernel(
 
 # zero_accum kernel: two matmuls with reset between them.
 def zero_accum_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d1_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    d2_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d1_ptr: MutPointer[Float32, MutAnyOrigin],
+    d2_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Two successive matmuls with zero_accum between them.
 
@@ -307,7 +307,7 @@ def zero_accum_kernel(
     var d1_tile = TileTensor(d1_ptr, row_major[16, 16]())
     var d2_tile = TileTensor(d2_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d1_tile)
@@ -325,24 +325,20 @@ def test_fragment_load_layout(ctx: DeviceContext) raises:
     print("== test_fragment_load_layout")
 
     # Fill 16x16 tile with tile[r][c] = r * 16 + c
-    var input_host = ctx.enqueue_create_host_buffer[DType.float32](
-        _NUM_ELEMENTS
-    )
+    var input_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     for r in range(_N):
         for c in range(_N):
             input_host[r * _N + c] = Float32(r * _N + c)
 
-    var input_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
-    var output_dev = ctx.enqueue_create_buffer[DType.float32](
-        WARP_SIZE * _FRAG_SIZE
-    )
+    var input_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
+    var output_dev = ctx.enqueue_create_buffer[.float32](WARP_SIZE * _FRAG_SIZE)
     ctx.enqueue_copy(input_dev, input_host)
 
     ctx.enqueue_function[fragment_load_kernel](
         input_dev, output_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var output_host = ctx.enqueue_create_host_buffer[DType.float32](
+    var output_host = ctx.enqueue_create_host_buffer[.float32](
         WARP_SIZE * _FRAG_SIZE
     )
     ctx.enqueue_copy(output_host, output_dev)
@@ -374,20 +370,16 @@ def test_mma_2x2(ctx: DeviceContext) raises:
     comptime K = _K_2x2  # 64
 
     # Fill with small integers [-2, 2]
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](
-            random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
-        )
+        a_host[i] = Float16(random_si64(Int64(-2), Int64(2)).cast[.float16]())
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](
-            random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
-        )
+        b_host[i] = Float16(random_si64(Int64(-2), Int64(2)).cast[.float16]())
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](M * K)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](K * N)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_dev = ctx.enqueue_create_buffer[.float16](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.float16](K * N)
+    var d_dev = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -395,7 +387,7 @@ def test_mma_2x2(ctx: DeviceContext) raises:
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -421,9 +413,9 @@ def _check_matmul_result[
     ta: Bool, tb: Bool
 ](
     name: String,
-    a_ptr: UnsafePointer[Scalar[DType.float16], ...],
-    b_ptr: UnsafePointer[Scalar[DType.float16], ...],
-    d_ptr: UnsafePointer[Scalar[DType.float32], ...],
+    a_ptr: ImmPointer[Float16, _],
+    b_ptr: ImmPointer[Float16, _],
+    d_ptr: ImmPointer[Float32, _],
     M: Int,
     N: Int,
     K: Int,
@@ -464,16 +456,16 @@ def _check_matmul_result[
 
 
 def mma_k32_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """16x16 matmul with K=32: single mma() call handles two K steps."""
     var a_tile = TileTensor(a_ptr, row_major[16, 32]())
     var b_tile = TileTensor(b_ptr, row_major[32, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -487,16 +479,16 @@ def test_mma_k32(ctx: DeviceContext) raises:
     comptime N = 16
     comptime K = 32
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](M * K)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](K * N)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.float16](Int(random_si64(-2, 2)))
+        a_host[i] = Float16(Int(random_si64(-2, 2)))
     for i in range(K * N):
-        b_host[i] = Scalar[DType.float16](Int(random_si64(-2, 2)))
+        b_host[i] = Float16(Int(random_si64(-2, 2)))
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](M * K)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](K * N)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](M * N)
+    var a_dev = ctx.enqueue_create_buffer[.float16](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.float16](K * N)
+    var d_dev = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -504,7 +496,7 @@ def test_mma_k32(ctx: DeviceContext) raises:
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -522,9 +514,9 @@ def test_mma_k32(ctx: DeviceContext) raises:
 
 
 def mma_shared_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """1x1 MMA with operands staged through threadgroup shared memory.
 
@@ -533,10 +525,10 @@ def mma_shared_kernel(
     from an `AddressSpace.SHARED` TileTensor.
     """
     var a_shared = unsafe_stack_allocation[
-        _NUM_ELEMENTS, DType.float16, address_space=AddressSpace.SHARED
+        _NUM_ELEMENTS, DType.float16, address_space=.SHARED
     ]()
     var b_shared = unsafe_stack_allocation[
-        _NUM_ELEMENTS, DType.float16, address_space=AddressSpace.SHARED
+        _NUM_ELEMENTS, DType.float16, address_space=.SHARED
     ]()
 
     # 32 threads cooperatively copy 256 elements (8 per lane, strided).
@@ -550,7 +542,7 @@ def mma_shared_kernel(
     var b_tile = TileTensor(b_shared, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -563,9 +555,9 @@ def test_mma_shared_mem(ctx: DeviceContext) raises:
 
 
 def mma_i8_k32_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.int8], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.int8], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
+    a_ptr: MutPointer[Int8, MutAnyOrigin],
+    b_ptr: MutPointer[Int8, MutAnyOrigin],
+    d_ptr: MutPointer[Int32, MutAnyOrigin],
 ):
     """16x16 matmul with K=32 and i8 inputs, i32 accumulator.
 
@@ -576,7 +568,7 @@ def mma_i8_k32_kernel(
     var b_tile = TileTensor(b_ptr, row_major[32, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.int32, DType.int8, 1, 1]()
+    var mma_op = MmaOpApple[.int32, .int8, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
@@ -590,16 +582,16 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
     comptime N = 16
     comptime K = 32
 
-    var a_host = ctx.enqueue_create_host_buffer[DType.int8](M * K)
-    var b_host = ctx.enqueue_create_host_buffer[DType.int8](K * N)
+    var a_host = ctx.enqueue_create_host_buffer[.int8](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.int8](K * N)
     for i in range(M * K):
-        a_host[i] = Scalar[DType.int8](Int(random_si64(-5, 5)))
+        a_host[i] = Int8(Int(random_si64(-5, 5)))
     for i in range(K * N):
-        b_host[i] = Scalar[DType.int8](Int(random_si64(-5, 5)))
+        b_host[i] = Int8(Int(random_si64(-5, 5)))
 
-    var a_dev = ctx.enqueue_create_buffer[DType.int8](M * K)
-    var b_dev = ctx.enqueue_create_buffer[DType.int8](K * N)
-    var d_dev = ctx.enqueue_create_buffer[DType.int32](M * N)
+    var a_dev = ctx.enqueue_create_buffer[.int8](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.int8](K * N)
+    var d_dev = ctx.enqueue_create_buffer[.int32](M * N)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -607,7 +599,7 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.int32](M * N)
+    var d_host = ctx.enqueue_create_host_buffer[.int32](M * N)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -660,19 +652,15 @@ def test_parent_stride(ctx: DeviceContext) raises:
     comptime _P = 256  # parent matrix is 256x256
 
     # Fill two 256x256 F16 matrices with small integers
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](_P * _P)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](_P * _P)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](_P * _P)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](_P * _P)
     for i in range(_P * _P):
-        a_host[i] = Scalar[DType.float16](
-            random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
-        )
-        b_host[i] = Scalar[DType.float16](
-            random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
-        )
+        a_host[i] = Float16(random_si64(Int64(-2), Int64(2)).cast[.float16]())
+        b_host[i] = Float16(random_si64(Int64(-2), Int64(2)).cast[.float16]())
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_P * _P)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_P * _P)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_P * _P)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_P * _P)
+    var d_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -680,7 +668,7 @@ def test_parent_stride(ctx: DeviceContext) raises:
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -725,18 +713,18 @@ def test_zero_accum(ctx: DeviceContext) raises:
     print("== test_zero_accum")
 
     # Fill A and B with small integers
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
-            a_host[idx] = Scalar[DType.float16]((i * 3 + j * 7) % 5 - 2)
-            b_host[idx] = Scalar[DType.float16]((i * 11 + j * 5) % 5 - 2)
+            a_host[idx] = Float16((i * 3 + j * 7) % 5 - 2)
+            b_host[idx] = Float16((i * 11 + j * 5) % 5 - 2)
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var d1_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
-    var d2_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var d1_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
+    var d2_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -744,8 +732,8 @@ def test_zero_accum(ctx: DeviceContext) raises:
         a_dev, b_dev, d1_dev, d2_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d1_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
-    var d2_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d1_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
+    var d2_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d1_host, d1_dev)
     ctx.enqueue_copy(d2_host, d2_dev)
     ctx.synchronize()
@@ -776,9 +764,9 @@ def test_zero_accum(ctx: DeviceContext) raises:
 
 
 def bounded_mma_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
     m_valid_dev: Int32,
     k_valid_dev: Int32,
 ):
@@ -789,7 +777,7 @@ def bounded_mma_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma[bounded=True](
         accum,
@@ -802,9 +790,9 @@ def bounded_mma_kernel(
 
 
 def bounded_store_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
     m_valid_dev: Int32,
     n_valid_dev: Int32,
 ):
@@ -815,7 +803,7 @@ def bounded_store_kernel(
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma[bounded=True](
         accum,
@@ -839,21 +827,21 @@ def test_bounded_mma(ctx: DeviceContext) raises:
     comptime K_VALID = 10
 
     # Fill full 16x16 A and B with small integers in [-2, 2]
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
-            a_host[idx] = Scalar[DType.float16](
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+            a_host[idx] = Float16(
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
-            b_host[idx] = Scalar[DType.float16](
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+            b_host[idx] = Float16(
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var d_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
@@ -867,7 +855,7 @@ def test_bounded_mma(ctx: DeviceContext) raises:
         block_dim=(WARP_SIZE),
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -919,28 +907,26 @@ def test_store_bounded(ctx: DeviceContext) raises:
     comptime N_VALID = 14
 
     # Fill full 16x16 A and B with small integers in [-2, 2]
-    var a_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_host = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_host = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
             var idx = i * _N + j
-            a_host[idx] = Scalar[DType.float16](
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+            a_host[idx] = Float16(
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
-            b_host[idx] = Scalar[DType.float16](
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+            b_host[idx] = Float16(
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
 
     # Initialize output to -1.0 sentinel
-    var d_host_init = ctx.enqueue_create_host_buffer[DType.float32](
-        _NUM_ELEMENTS
-    )
+    var d_host_init = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     for i in range(_NUM_ELEMENTS):
         d_host_init[i] = Float32(-1.0)
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var d_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(d_dev, d_host_init)
@@ -955,7 +941,7 @@ def test_store_bounded(ctx: DeviceContext) raises:
         block_dim=(WARP_SIZE),
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 
@@ -1013,57 +999,57 @@ def test_store_bounded(ctx: DeviceContext) raises:
 
 
 def mma_col_major_a_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """A stored col-major, B stored row-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, col_major[16, 16]())
     var b_tile = TileTensor(b_ptr, row_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
 
 
 def mma_col_major_b_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """A stored row-major, B stored col-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, row_major[16, 16]())
     var b_tile = TileTensor(b_ptr, col_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
 
 
 def mma_col_major_ab_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """Both A and B stored col-major. D = A @ B."""
     var a_tile = TileTensor(a_ptr, col_major[16, 16]())
     var b_tile = TileTensor(b_ptr, col_major[16, 16]())
     var d_tile = TileTensor(d_ptr, row_major[16, 16]())
 
-    var mma_op = MmaOpApple[DType.float32, DType.float16, 1, 1]()
+    var mma_op = MmaOpApple[.float32, .float16, 1, 1]()
     var accum = type_of(mma_op).zero_accum()
     mma_op.mma(accum, a_tile, b_tile)
     mma_op.store(accum, d_tile)
 
 
 def mma_col_major_a_transpose_a_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """A col-major + transpose_a=True. XOR cancels: hw_flag=False.
 
@@ -1085,9 +1071,9 @@ def mma_col_major_a_transpose_a_kernel(
 
 
 def mma_col_major_b_transpose_b_kernel(
-    a_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    b_ptr: UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-    d_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    a_ptr: MutPointer[Float16, MutAnyOrigin],
+    b_ptr: MutPointer[Float16, MutAnyOrigin],
+    d_ptr: MutPointer[Float32, MutAnyOrigin],
 ):
     """B col-major + transpose_b=True. XOR cancels: hw_flag=False.
 
@@ -1108,9 +1094,9 @@ def mma_col_major_b_transpose_b_kernel(
 
 def _run_16x16_mma_test[
     kernel_fn: def(
-        UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        UnsafePointer[Scalar[DType.float16], MutAnyOrigin],
-        UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+        MutPointer[Float16, MutAnyOrigin],
+        MutPointer[Float16, MutAnyOrigin],
+        MutPointer[Float32, MutAnyOrigin],
     ) thin -> None,
     a_col_major: Bool = False,
     b_col_major: Bool = False,
@@ -1125,20 +1111,20 @@ def _run_16x16_mma_test[
     """
     print("==", name)
 
-    var a_logical = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_logical = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_logical = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_logical = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for i in range(_N):
         for j in range(_N):
-            a_logical[i * _N + j] = Scalar[DType.float16](
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+            a_logical[i * _N + j] = Float16(
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
-            b_logical[i * _N + j] = Scalar[DType.float16](
-                random_si64(Int64(-2), Int64(2)).cast[DType.float16]()
+            b_logical[i * _N + j] = Float16(
+                random_si64(Int64(-2), Int64(2)).cast[.float16]()
             )
 
     # Store each input in the requested physical layout.
-    var a_phys = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_phys = ctx.enqueue_create_host_buffer[DType.float16](_NUM_ELEMENTS)
+    var a_phys = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
+    var b_phys = ctx.enqueue_create_host_buffer[.float16](_NUM_ELEMENTS)
     for r in range(_N):
         for c in range(_N):
             var val_a = a_logical[r * _N + c]
@@ -1154,9 +1140,9 @@ def _run_16x16_mma_test[
             else:
                 b_phys[r * _N + c] = val_b
 
-    var a_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var b_dev = ctx.enqueue_create_buffer[DType.float16](_NUM_ELEMENTS)
-    var d_dev = ctx.enqueue_create_buffer[DType.float32](_NUM_ELEMENTS)
+    var a_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var b_dev = ctx.enqueue_create_buffer[.float16](_NUM_ELEMENTS)
+    var d_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(a_dev, a_phys)
     ctx.enqueue_copy(b_dev, b_phys)
 
@@ -1164,7 +1150,7 @@ def _run_16x16_mma_test[
         a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
     )
 
-    var d_host = ctx.enqueue_create_host_buffer[DType.float32](_NUM_ELEMENTS)
+    var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
     ctx.synchronize()
 

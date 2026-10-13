@@ -49,14 +49,14 @@ from layout.tensor_core_async import (
 from linalg.arch.sm100.mma import smem_descriptor
 
 from max.gpu.host.info import B200
-from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from max.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
 )
-import std.gpu.primitives.warp as warp
+import max.gpu.primitives.warp as warp
 from max.gpu.sync import named_barrier
 
 from std.utils.index import Index
@@ -214,11 +214,11 @@ struct MLAConfig[
         self.TMEM_P0 = self.fa4_config.TMEM_P0
         self.TMEM_P1 = self.fa4_config.TMEM_P1
 
-    @always_inline
+    @inline(.always)
     def num_q(self) -> Int:
         return self.fa4_config.num_q
 
-    @always_inline
+    @inline(.always)
     def q_tile_rows(self) -> Int:
         """Rows per Q TMA tile / per-half MMA — `BM // num_q`.
 
@@ -229,7 +229,7 @@ struct MLAConfig[
         """
         return self.BM // self.fa4_config.num_q
 
-    @always_inline
+    @inline(.always)
     def with_num_q(self, num_q: Int) -> Self:
         """Reconstruct this config with a different `num_q` (single-CTA).
 
@@ -254,7 +254,7 @@ struct MLAConfig[
             single_o=self.fa4_config.single_o and num_q == 1,
         )
 
-    @always_inline
+    @inline(.always)
     def switch_1q_config(self) -> Self:
         """The 1Q variant used by the in-kernel per-sequence 1Q/2Q switch.
 
@@ -263,7 +263,7 @@ struct MLAConfig[
         """
         return self.with_num_q(1)
 
-    @always_inline
+    @inline(.always)
     def can_switch_to_1q(self) -> Bool:
         """Whether a 2Q-launched kernel may dispatch to the 1Q body at
         runtime.
@@ -279,7 +279,7 @@ struct MLAConfig[
         var cfg1 = self.switch_1q_config()
         return cfg1.supported() and cfg1.fa4_config.supported()
 
-    @always_inline
+    @inline(.always)
     def launch_smem_used(self) -> Int:
         """Dynamic smem to reserve when launching this config's kernel.
 
@@ -292,7 +292,7 @@ struct MLAConfig[
             return max(self.smem_used, self.switch_1q_config().smem_used)
         return self.smem_used
 
-    @always_inline
+    @inline(.always)
     def launch_num_threads(self) -> Int:
         """Threads to launch for this config's kernel.
 
@@ -309,7 +309,7 @@ struct MLAConfig[
             return 3 * WARPGROUP_SIZE
         return self.num_threads
 
-    @always_inline
+    @inline(.always)
     def prefer_1q(
         self,
         max_prompt_len: UInt32,
@@ -331,7 +331,7 @@ struct MLAConfig[
             self.q_tile_rows()
         ) or raw_grid_2q <= UInt32(sm_count // 2)
 
-    @always_inline
+    @inline(.always)
     def num_rope_buffers(self) -> Int:
         return self.fa4_config.num_rope_buffers()
 
@@ -348,7 +348,7 @@ struct MLAConfig[
         return self.BM * Self.num_correction_cols
 
 
-@always_inline
+@inline(.always)
 def select_mla_prefill_config[
     qkv_dtype: DType,
     *,
@@ -425,21 +425,21 @@ def select_mla_prefill_config[
     )
 
 
-@always_inline
+@inline(.always)
 def split_smem[
     first_size: Int, second_size: Int, first_dtype: DType, second_dtype: DType
-](tensor: TileTensor[address_space=AddressSpace.SHARED, ...]) -> Tuple[
+](tensor: TileTensor[address_space=.SHARED, ...]) -> Tuple[
     TileTensor[
         first_dtype,
         type_of(tt_row_major[first_size]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ],
     TileTensor[
         second_dtype,
         type_of(tt_row_major[second_size]()),
         MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ],
 ]:
     """Split a shared memory tensor into two TileTensors at the boundary
@@ -449,7 +449,7 @@ def split_smem[
     InternalLayout equivalents of swizzled layouts.
     """
     comptime SmemPtr[dt: DType] = UnsafePointer[
-        Scalar[dt], MutAnyOrigin, address_space=AddressSpace.SHARED
+        Scalar[dt], MutAnyOrigin, address_space=.SHARED
     ]
     var ptr = rebind[SmemPtr[first_dtype]](tensor.ptr)
     comptime first_layout = tt_row_major[first_size]()
@@ -459,13 +459,13 @@ def split_smem[
             first_dtype,
             type_of(first_layout),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](ptr, first_layout),
         TileTensor[
             second_dtype,
             type_of(second_layout),
             MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            address_space=.SHARED,
         ](
             rebind[SmemPtr[second_dtype]](ptr + first_size),
             second_layout,
@@ -477,13 +477,13 @@ struct MLAPositionSummary(TrivialRegisterPassable):
     var num_keys: UInt32
     var score_row: UInt32
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, num_keys: UInt32, score_row: UInt32):
         self.num_keys = num_keys
         self.score_row = score_row
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_num_keys_and_start_pos[
         KRopeType: MHAOperand,
         //,
@@ -508,12 +508,12 @@ struct MLAPositionSummary(TrivialRegisterPassable):
         return {num_keys, start_pos}
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_score_row(seq_info: SeqInfo, start_pos: UInt32) -> UInt32:
         return start_pos + warp.broadcast(seq_info.prompt_offset)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def create[
         KRopeType: MHAOperand,
         //,
@@ -588,47 +588,47 @@ struct TMAtoCvtPipeline[
     var producer_mbars: MBarType
     var state: PipelineState[Self.num_kv_stages]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, consumer_mbars: MBarType, producer_mbars: MBarType):
         self.consumer_mbars = consumer_mbars
         self.producer_mbars = producer_mbars
         self.state = {}
 
-    @always_inline
+    @inline(.always)
     def init(self):
         comptime for i in range(Self.num_kv_stages):
             self.consumer_mbars[i].init(Int32(Self.num_consumer))
             self.producer_mbars[i].init(Int32(Self.num_producer))
 
-    @always_inline
+    @inline(.always)
     def producer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.producer_mbars + idx
 
-    @always_inline
+    @inline(.always)
     def consumer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.consumer_mbars + idx
 
-    @always_inline
+    @inline(.always)
     def producer_acquire(self):
         self.consumer_mbar()[].wait(self.state.phase())
 
-    @always_inline
+    @inline(.always)
     def consumer_wait(self):
         self.producer_mbar()[].wait(self.state.phase())
 
-    @always_inline
+    @inline(.always)
     def producer_commit(mut self):
         _ = self.producer_mbar()[].arrive()
         self.step()
 
-    @always_inline
+    @inline(.always)
     def consumer_release(mut self):
         _ = self.consumer_mbar()[].arrive()
         self.step()
 
-    @always_inline
+    @inline(.always)
     def step(mut self):
         self.state.step()
 
@@ -645,52 +645,52 @@ struct CvtToMMAPipeline[
     var consumer_mbars: MBarType
     var state: PipelineState[Self.num_stages]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, producer_mbars: MBarType, consumer_mbars: MBarType):
         self.producer_mbars = producer_mbars
         self.consumer_mbars = consumer_mbars
         self.state = {}
 
-    @always_inline
+    @inline(.always)
     def init(self):
         comptime for i in range(Self.num_stages):
             self.producer_mbars[i].init(Int32(Self.num_producer))
             self.consumer_mbars[i].init(Int32(Self.num_consumer))
 
-    @always_inline
+    @inline(.always)
     def producer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.producer_mbars + idx
 
-    @always_inline
+    @inline(.always)
     def consumer_mbar(self) -> MBarType:
         var idx: UInt32 = self.state.index()
         return self.consumer_mbars + idx
 
-    @always_inline
+    @inline(.always)
     def producer_acquire(self):
         self.consumer_mbar()[].wait(self.state.phase())
 
-    @always_inline
+    @inline(.always)
     def consumer_wait(self):
         self.producer_mbar()[].wait(self.state.phase())
 
-    @always_inline
+    @inline(.always)
     def producer_commit(mut self):
         _ = self.producer_mbar()[].arrive()
         self.step()
 
-    @always_inline
+    @inline(.always)
     def consumer_release(mut self, elect: Int32):
         elect_mma_arrive(self.consumer_mbar(), elect)
         self.step()
 
-    @always_inline
+    @inline(.always)
     def step(mut self):
         self.state.step()
 
 
-@always_inline
+@inline(.always)
 def cvt_block_fp8_to_bf16_with_scale[
     input_type: DType,
     output_dtype: DType,
@@ -699,9 +699,9 @@ def cvt_block_fp8_to_bf16_with_scale[
     swizzle_fp8: Swizzle,
     swizzle_bf16: Swizzle,
 ](
-    input: TileTensor[input_type, _, address_space=AddressSpace.SHARED, ...],
+    input: TileTensor[input_type, _, address_space=.SHARED, ...],
     mut output: TileTensor[
-        mut=True, output_dtype, _, address_space=AddressSpace.SHARED, ...
+        mut=True, output_dtype, _, address_space=.SHARED, ...
     ],
     k_rope_lut: KRopeType,
     seq_info: SeqInfo,
@@ -712,7 +712,7 @@ def cvt_block_fp8_to_bf16_with_scale[
     """TileTensor overload — standalone implementation using `.ptr` and
     comptime `static_shape`/`static_stride` directly."""
     comptime assert (
-        input_type == DType.float8_e4m3fn and output_dtype == DType.bfloat16
+        input_type == .float8_e4m3fn and output_dtype == .bfloat16
     ), "Only support float8_e4m3fn to bfloat16 conversion"
 
     comptime num_regs = (
@@ -918,7 +918,7 @@ struct SM100MLA[
     ]
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mask_status(
         mask: Self.MaskType,
         seq_id: UInt32,
@@ -935,7 +935,7 @@ struct SM100MLA[
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def descriptor_q(
         q_smem: SharedMemPointer[Scalar[Self.qkv_dtype]],
     ) -> MMASmemDescriptorPair:
@@ -948,7 +948,7 @@ struct SM100MLA[
             is_k_major=True,
         ](q_smem)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def descriptor_q_rope(
         q_smem: SharedMemPointer[Scalar[Self.rope_mma_dtype]],

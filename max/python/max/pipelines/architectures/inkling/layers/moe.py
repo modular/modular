@@ -26,21 +26,33 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.nn.kernels import moe_finalize, moe_sink_gate_router
 from max.nn.layer import LayerList
-from max.nn.moe import MoE, MoEGate, MoEQuantized
+from max.nn.moe import MoEGate, MoEQuantized
 from max.nn.quant_config import fp4_packed_k
+from max.support.math import ceildiv
 from typing_extensions import Self
 
-_ROUTER_DTYPE = DType.float32
+# Inkling's 256 routed + 2 sink rows are the router GEMM's N, 2 short of the
+# 16-byte alignment a bf16 TMA epilogue needs. Padding to 264 costs 2.3% of
+# this narrow projection and keeps every batch size on the aligned path.
+_ROUTER_ROW_ALIGN = 8
 
 
-def _log_sigmoid(x: TensorValue) -> TensorValue:
-    zero = ops.constant(0.0, x.dtype, device=x.device)
-    return ops.min(x, zero) - ops.log1p(ops.exp(-ops.abs(x)))
+def padded_router_rows(num_rows: int) -> int:
+    """Returns the gate's row count, aligned for the router GEMM.
+
+    The padded rows hold no expert: the router reads only the leading
+    ``n_routed_experts + n_shared_experts`` logits.
+    """
+    return ceildiv(num_rows, _ROUTER_ROW_ALIGN) * _ROUTER_ROW_ALIGN
 
 
 class InklingRouting(NamedTuple):
-    """One token batch's routing decision, including the sink weights."""
+    """One token batch's routing decision, including the sink weights.
+
+    Sinks are shared experts the router weights, not attention sinks.
+    """
 
     expert_ids: TensorValue
     expert_weights: TensorValue
@@ -51,7 +63,7 @@ class InklingGate(MoEGate):
     """Sigmoid gate with a selection bias, sink lanes, and a global scale.
 
     ``num_experts`` counts routed experts only; ``weight`` covers
-    ``num_experts + n_shared_experts`` rows, ``bias`` the routed range alone.
+    ``router_dim`` rows, ``bias`` the routed range alone.
     """
 
     def __init__(
@@ -78,74 +90,48 @@ class InklingGate(MoEGate):
         self.n_routed_experts = num_experts
         self.n_shared_experts = n_shared_experts
         self.route_scale = route_scale
+        self.router_dim = padded_router_rows(num_experts + n_shared_experts)
 
         if not is_sharding:
             self.weight = Weight(
                 "weight",
                 dtype,
-                [num_experts + n_shared_experts, hidden_dim],
+                [self.router_dim, hidden_dim],
                 device=devices[0],
             )
+            # The router scores in float32 and reads both of these directly.
             self.bias = Weight(
-                "bias",
-                _ROUTER_DTYPE,
-                [num_experts],
-                device=devices[0],
+                "bias", DType.float32, [num_experts], device=devices[0]
             )
             self.global_scale = Weight(
-                "global_scale",
-                _ROUTER_DTYPE,
-                [1],
-                device=devices[0],
+                "global_scale", DType.float32, [1], device=devices[0]
             )
 
     def route(self, hidden_states: TensorValue) -> InklingRouting:
         """Routes one ragged batch of tokens."""
         device = hidden_states.device
-        # Only the score math needs float32; the GEMM runs in the activation
-        # dtype, as in the minimax/deepseek gate pattern.
+        # The GEMM and the router's weights stay in the activation dtype; the
+        # kernel scores in float32 internally.
         weight = ops.cast(self.weight, hidden_states.dtype).to(device)
-        logits = ops.cast(hidden_states @ weight.T, _ROUTER_DTYPE)
+        # The router reads only the routed and sink columns, so the padded
+        # tail needs no slice to trim it.
+        logits = hidden_states @ weight.T
 
-        routed = logits[:, : self.n_routed_experts]
-        _, expert_ids = ops.top_k(
-            ops.sigmoid(routed) + self.bias.to(device),
-            k=self.num_experts_per_token,
-            axis=-1,
-        )
-
-        # Weights renormalize the raw logits: the selection bias must not
-        # leak into them.
-        selected = ops.gather_nd(
-            routed, ops.unsqueeze(expert_ids, axis=-1), batch_dims=1
-        )
-        sinks = logits[:, self.n_routed_experts :]
-
-        # Softmax over log-sigmoids = sigmoid(z_i) / sum_j sigmoid(z_j),
-        # stable where the sigmoids themselves would underflow.
-        selected_log = _log_sigmoid(selected)
-        sinks_log = _log_sigmoid(sinks)
-        shift = ops.max(
-            ops.max(selected_log, axis=-1), ops.max(sinks_log, axis=-1)
-        )
-        selected_exp = ops.exp(selected_log - shift)
-        sinks_exp = ops.exp(sinks_log - shift)
-        factor = (
-            ops.constant(self.route_scale, _ROUTER_DTYPE, device=device)
-            * self.global_scale.to(device)
-        ) / (ops.sum(selected_exp, axis=-1) + ops.sum(sinks_exp, axis=-1))
         return InklingRouting(
-            expert_ids=expert_ids,
-            expert_weights=selected_exp * factor,
-            sink_weights=sinks_exp * factor,
+            *moe_sink_gate_router(
+                logits,
+                self.bias.to(device),
+                self.global_scale.to(device),
+                n_routed_experts=self.n_routed_experts,
+                n_experts_per_tok=self.num_experts_per_token,
+                n_shared_experts=self.n_shared_experts,
+                route_scale=self.route_scale,
+            )
         )
 
-    @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        return self._sharding_strategy
-
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+    def _set_sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        # Deliberately no super() call: this gate skips MoEGate's gate_score
+        # Linear, which the base implementation would try to shard.
         if not strategy.is_replicate:
             raise ValueError(
                 "Only replicate sharding strategy is supported for InklingGate."
@@ -305,23 +291,14 @@ class InklingMoE(MoEQuantized):
             }
         return axes
 
-    @property
-    def sharding_strategy(self) -> ShardingStrategy | None:
-        return self._sharding_strategy
-
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+    def _set_sharding_strategy(self, strategy: ShardingStrategy) -> None:
         """Splits the expert intermediate: an equal split of ``w13``'s
         interleaved output axis keeps each rank's gate/up rows paired."""
         if not strategy.is_tensor_parallel:
             raise ValueError(
                 "Only tensor parallel sharding is supported for InklingMoE."
             )
-        # Class-dict lookup: attribute access would run the getter, not
-        # yield the property.
-        base_property: property = MoE.__dict__["sharding_strategy"]
-        assert base_property.fset is not None
-        base_property.fset(self, strategy)
+        super()._set_sharding_strategy(strategy)
         for name, axis in self._routed_weight_axes().items():
             weight: Weight = getattr(self, name)
             weight.sharding_strategy = (
@@ -348,21 +325,24 @@ class InklingMoE(MoEQuantized):
     def __call__(self, x: TensorValue) -> TensorValue:
         assert isinstance(self.gate, InklingGate)
         routing = self.gate.route(x)
-        return self._routed_experts(x, routing) + self._sink_experts(
-            x, routing.sink_weights
+        routed = self._routed_experts(x, routing)
+        # Side_stream is a perf-optimization, after we noticed under
+        # profiling that these two computations could be overlapped
+        (sink,) = ops.side_stream(
+            [x, routing.sink_weights],
+            self._sink_experts,
+            result_types=[x.type],
         )
+        return routed + sink
 
     def _routed_experts(
         self, x: TensorValue, routing: InklingRouting
     ) -> TensorValue:
-        down_projs = self._expert_matmuls(
+        down, restore_order = self._expert_matmuls(
             x, ops.reshape(routing.expert_ids, [-1])
         )
-
-        weights = ops.cast(routing.expert_weights, down_projs.dtype)
-        return ops.squeeze(
-            ops.sum(ops.unsqueeze(weights, axis=-1) * down_projs, axis=1),
-            axis=1,
+        return moe_finalize(
+            down, restore_order, routing.expert_weights, x.dtype
         )
 
     def _sink_experts(
@@ -371,15 +351,25 @@ class InklingMoE(MoEQuantized):
         """Runs every sink expert on every token, weighted by its gate value,
         applied to the intermediate as the reference fuses it."""
         mlp = self.shared_experts
-        hidden = ops.silu(mlp.gate_proj(x)) * mlp.up_proj(x)
+        ffl = mlp.gate_proj.weight.shape[0]
+        gate_up = ops.concat((mlp.gate_proj.weight, mlp.up_proj.weight))
+        gate, up = ops.split(x @ gate_up.T, [ffl, ffl], axis=-1)
+        hidden = ops.silu(gate) * up
         sinks_here = self._sink_ids_on_this_shard()
         if len(sinks_here) != int(sink_weights.shape[1]):
             # A TP shard sees only the sinks its column range falls in.
             sink_weights = sink_weights[:, sinks_here.start : sinks_here.stop]
-        weighted = ops.reshape(
-            hidden, [hidden.shape[0], len(sinks_here), -1]
-        ) * ops.unsqueeze(ops.cast(sink_weights, hidden.dtype), axis=-1)
-        return mlp.down_proj(ops.reshape(weighted, hidden.shape))
+        if len(sinks_here) == 1:
+            # Rank-2 saves a kernel launch here: the rank-3 reshape stops
+            # folding once the intermediate comes from split slices.
+            weighted = hidden * sink_weights
+        else:
+            weighted = ops.reshape(
+                ops.reshape(hidden, [hidden.shape[0], len(sinks_here), -1])
+                * ops.unsqueeze(sink_weights, axis=-1),
+                hidden.shape,
+            )
+        return mlp.down_proj(weighted)
 
     def _sink_ids_on_this_shard(self) -> range:
         """Which sink experts this shard's intermediate columns belong to."""

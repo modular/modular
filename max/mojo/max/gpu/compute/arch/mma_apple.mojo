@@ -28,13 +28,13 @@ Supported operations:
 
 from std.sys import llvm_intrinsic
 
-from std.gpu import lane_id
+from std._gpu import lane_id
 
 # Import helper functions from parent module
 from ..mma import _has_shape, _unsupported_mma_op
 
 
-@always_inline
+@inline(.always)
 def _apple_frag_layout(tid: Int) -> Tuple[Int, Int]:
     """Returns (row_lo, col_base) for the given simdgroup thread."""
     return (
@@ -43,7 +43,7 @@ def _apple_frag_layout(tid: Int) -> Tuple[Int, Int]:
     )
 
 
-@always_inline
+@inline(.always)
 def _apple_frag_layout_8x8(tid: Int) -> Tuple[Int, Int]:
     """Returns (row_lo, col_base) for the given simdgroup thread (8x8).
 
@@ -57,7 +57,7 @@ def _apple_frag_layout_8x8(tid: Int) -> Tuple[Int, Int]:
     )
 
 
-@always_inline
+@inline(.always)
 def apple_mma_load[
     dtype: DType,
 ](
@@ -101,7 +101,7 @@ def apple_mma_load[
         return frag
 
 
-@always_inline
+@inline(.always)
 def apple_mma_store[
     dtype: DType,
 ](
@@ -141,7 +141,7 @@ def apple_mma_store[
             ptr[unsafe_offset=row * row_stride + col * col_stride] = frag[el]
 
 
-@always_inline
+@inline(.always)
 def apple_mma_load_8x8[
     dtype: DType,
 ](
@@ -179,7 +179,7 @@ def apple_mma_load_8x8[
         return frag
 
 
-@always_inline
+@inline(.always)
 def apple_mma_store_8x8[
     dtype: DType,
 ](
@@ -212,12 +212,12 @@ def apple_mma_store_8x8[
             ptr[unsafe_offset=row_lo * row_stride + col * col_stride] = frag[el]
 
 
-@always_inline
+@inline(.always)
 def _mma_apple(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     _mma_apple_transposable(d, a, b, c, False, False)
 
 
-@always_inline
+@inline(.always)
 def _mma_apple_transposable(
     mut d: SIMD,
     a: SIMD,
@@ -261,11 +261,11 @@ def _mma_apple_transposable(
         and b.dtype in (DType.int8, DType.uint8)
     )
 
-    comptime if _valid_float_input and d.dtype == DType.float32:
+    comptime if _valid_float_input and d.dtype == .float32:
         d = rebind[type_of(d)](
             llvm_intrinsic[
                 "llvm.air.simdgroup_matrix_16x16x16_multiply_accumulate",
-                SIMD[DType.float32, 8],
+                SIMD[.float32, 8],
             ](a, transpose_a, b, transpose_b, c)
         )
 
@@ -278,10 +278,19 @@ def _mma_apple_transposable(
         )
 
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()
 
 
-@always_inline
+@inline(.always)
 def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs an 8x8 simdgroup_matrix multiply-accumulate: D = A @ B + C.
 
@@ -294,7 +303,7 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ), "Apple 8x8 MMA requires 2-element fragments (8x8 / 32 threads)"
 
     comptime assert (
-        c.dtype == DType.float32 and d.dtype == DType.float32
+        c.dtype == .float32 and d.dtype == .float32
     ), "Apple 8x8 MMA accumulator (C and D) must be F32"
 
     comptime _valid_float_input = (
@@ -310,19 +319,28 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         # sparse `<64x>` back to the per-lane fragment, so this is perf-neutral.
         var a_wide = SIMD[a.dtype, 64](0)
         var b_wide = SIMD[b.dtype, 64](0)
-        var c_wide = SIMD[DType.float32, 64](0)
+        var c_wide = SIMD[.float32, 64](0)
 
         comptime for s in range(2):
             a_wide[s] = a[s]
             b_wide[s] = b[s]
-            c_wide[s] = rebind[Scalar[DType.float32]](c[s])
+            c_wide[s] = rebind[Float32](c[s])
 
         var d_wide = llvm_intrinsic[
             "llvm.air.simdgroup_matrix_8x8_multiply_accumulate",
-            SIMD[DType.float32, 64],
+            SIMD[.float32, 64],
         ](a_wide, b_wide, c_wide)
 
         comptime for s in range(2):
             d[s] = rebind[Scalar[d.dtype]](d_wide[s])
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()

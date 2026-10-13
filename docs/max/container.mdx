@@ -1,7 +1,7 @@
 ---
 title: MAX container
 sidebar_label: Container
-description: Learn more about the provided Docker container for MAX deployment
+description: Learn more about the provided Docker container for MAX deployment.
 ---
 
 import Tabs from '@theme/Tabs';
@@ -22,7 +22,7 @@ API](/rest-api/).
 
 :::note Linux only
 
-The MAX container is currently not compatible with macOS.
+The MAX container isn't currently compatible with macOS.
 
 :::
 
@@ -31,7 +31,7 @@ The MAX container is currently not compatible with macOS.
 First, make sure you're on a system with the following requirements:
 
 <Requirements requirementsData={requirementsNoMacWithGPU}
-url="/max/packages#system-requirements" />
+url="/packages#system-requirements" />
 
 Then start an endpoint with the MAX container:
 
@@ -196,32 +196,32 @@ to control features of the endpoint.
 ### Docker options
 
 - `--gpus`: If your system includes a compatible NVIDIA GPU, you must add the
-[`--gpus`
-option](https://docs.docker.com/reference/cli/docker/container/run/#gpus) in
-order for the container to access it. It doesn't hurt to include this even if
-your system doesn't have a [GPU compatible with
-MAX](/packages#gpu-compatibility).
+  [`--gpus`
+  option](https://docs.docker.com/reference/cli/docker/container/run/#gpus) in
+  order for the container to access it. It doesn't hurt to include this even if
+  your system doesn't have a [GPU compatible with
+  MAX](/packages#gpu-compatibility).
 
 - `--devices`: When deploying MAX on multiple GPUs, you must specify the ID of
-the GPUs to use. For example, to use four available GPUs, you should include the
-following: `--devices gpu:0,1,2,3`. You can also use `--devices gpu:all` to use
-every visible GPU, or `--devices cpu` to run on CPU. If you omit `--devices`,
-MAX uses the model or config default.
+  the GPUs to use. For example, to use four available GPUs, include the
+  following: `--devices gpu:0,1,2,3`. You can also use `--devices gpu:all`
+  to use every visible GPU, or `--devices cpu` to run on CPU. If you omit
+  `--devices`, MAX uses the model or config default.
 
 - `-v`: We use the [`-v`
-option](https://docs.docker.com/reference/cli/docker/container/run/#volume) to
-save a cache of Hugging Face and MAX models to your local disk that we can
-reuse across containers. You can optionally export a `MODULAR_MAX_CACHE_DIR`
-environment variable to change the MAX cache directory location.
+  option](https://docs.docker.com/reference/cli/docker/container/run/#volume)
+  to save a cache of Hugging Face and MAX models to your local disk that we can
+  reuse across containers. You can optionally export a `MODULAR_MAX_CACHE_DIR`
+  environment variable to change the MAX cache directory location.
 
 - `-p`: We use the [`-p`
-option](https://docs.docker.com/reference/cli/docker/container/run/#publish) to
-specify the exposed port for the endpoint.
+  option](https://docs.docker.com/reference/cli/docker/container/run/#publish)
+  to specify the exposed port for the endpoint.
 
 You also might need some environment variables (set with `--env`):
 
 - `HF_TOKEN`: This is required to access gated models on Hugging Face
-(after your account is granted access). For example:
+  (after your account is granted access). For example:
 
   ```sh
   docker run \
@@ -253,13 +253,13 @@ page](/cli/serve), because the MAX container is basically a
 wrapper around that tool.
 
 - `--model`: This is required to specify the model you want to
-deploy. To find other GenAI models that are compatible with MAX, check out
-our [supported models](/models/).
+  deploy. To find other GenAI models that are compatible with MAX, check out
+  our [supported models](/models/).
 
 - `--max-length`: Specifies the maximum length of the text sequence (including
-the input tokens). We mention this one here because it's often necessary to
-adjust the max length when you have trouble running a large model on a machine
-with limited memory.
+  the input tokens). We mention this one here because it's often necessary to
+  adjust the max length when you have trouble running a large model on a machine
+  with limited memory.
 
 For the rest of the `max serve` options, see the [`max` CLI
 page](/cli/serve).
@@ -276,8 +276,8 @@ There are multiple MAX container options, including:
 
 ### Full container
 
-The full MAX container (`max-full`) is a hardware-agnostic container that's
-built to deploy the latest version of MAX on both AMD and NVIDIA GPUs.
+The full MAX container (`max-full`) is a hardware-agnostic container that
+deploys the latest version of MAX on both AMD and NVIDIA GPUs.
 
 You can run the container on either NVIDIA or AMD as follows:
 
@@ -317,7 +317,7 @@ The `max-full` container includes the following:
 
 - Ubuntu 22.04
 - Python 3.12
-- MAX 25.4
+- MAX
 - PyTorch (GPU) 2.6.0
 - ROCm
 - cuDNN
@@ -334,8 +334,8 @@ The AMD MAX container (`max-amd`) is great if you want an AMD-specific
 deployment without NVIDIA or CUDA dependencies. The AMD MAX container is
 available in two flavors:
 
-- `max-amd` includes all ROCm and PyTorch GPU dependencies
-- `max-amd-base` includes minimal dependencies, ROCm, and the AMD Driver
+- `max-amd` includes all ROCm and PyTorch GPU dependencies.
+- `max-amd-base` includes minimal dependencies, ROCm, and the AMD Driver.
 
 You can run the AMD container as follows:
 
@@ -364,9 +364,9 @@ Hub.
 
 The NVIDIA MAX container is available in two flavors:
 
-- `max-nvidia-full` includes all CUDA and PyTorch GPU dependencies
+- `max-nvidia-full` includes all CUDA and PyTorch GPU dependencies.
 - `max-nvidia-base` includes minimal dependencies, PyTorch CPU, and the NVIDIA
-Driver (excludes CUDA)
+  Driver (excludes CUDA).
 
 You can run the NVIDIA container as follows:
 
@@ -475,90 +475,13 @@ docker run --gpus=1 \
 
 ## Metrics
 
-The MAX container exposes a `/metrics` endpoint that follows the
-[Prometheus](https://prometheus.io/docs/introduction/overview/) text format.
-You can scrape the metrics listed below using Prometheus or another collection
-service.
-
-These are raw metrics and it's up to you to compute the desired time series and
-aggregations. For example, we provide a count for output tokens
-(`maxserve_num_output_tokens_total`), which you can use to calculate the output
-tokens per second (OTP/s).
-
-Here are all the available metrics:
-
-- `maxserve_request_time_milliseconds`: Histogram of time spent handling each
-  request (total inference time, or TIT), in milliseconds.
-- `maxserve_input_processing_time_milliseconds`: Histogram of input processing
-  time (IPT), in milliseconds.
-- `maxserve_output_processing_time_milliseconds`: Histogram of output
-  generation time (OGT), in milliseconds.
-- `maxserve_time_to_first_token_milliseconds`: Histogram of time to first
-  token (TTFT), in milliseconds. Measured from when the server received the
-  request, so it includes request parsing and validation.
-- `maxserve_time_per_output_token_milliseconds`: Histogram of mean
-  decode-phase latency per generated token (TPOT), in milliseconds.
-- `maxserve_num_input_tokens_total`: Total number of input tokens processed
-  so far.
-- `maxserve_num_output_tokens_total`: Total number of output tokens processed
-  so far.
-- `maxserve_input_tokens_per_request`: Histogram of input tokens per request.
-- `maxserve_output_tokens_per_request`: Histogram of output tokens per request.
-- `maxserve_request_count_total`: Total requests since start.
-- `maxserve_num_requests_running`: Number of requests currently running.
-- `maxserve_model_load_time_milliseconds`: Histogram of model-worker startup
-  duration, in milliseconds.
-
-### Telemetry
-
-In addition to sharing these metrics via the `/metrics` endpoint, the MAX
-container actively sends the metrics to Modular via push telemetry (using
-OpenTelemetry).
-
-:::note
-
-None of the telemetry includes personally identifiable information (PII).
-
-:::
-
-This telemetry is anonymous and helps us quickly identify problems and build
-better products for you. Without this telemetry, we would rely solely on
-user-submitted bug reports, which are limited and would severely limit our
-performance insights.
-
-However, if you don't want to share this data with Modular, you can disable
-telemetry in your container. To disable telemetry, enable the
-`MAX_SERVE_DISABLE_TELEMETRY` environment variable when you start your MAX
-container. For example:
-
-```bash
-docker run modular/max-nvidia-full:latest \
-    -env MAX_SERVE_DISABLE_TELEMETRY=1 \
-    ...
-```
-
-#### Deployment and user ID
-
-Again, the telemetry is completely anonymous by default. But if you'd like to
-share some information to help our team assist you in understanding your
-deployment performance, you can add some identity information to the telemetry
-with these environment variables:
-
-- `MAX_SERVE_DEPLOYMENT_ID`: Your application name.
-- `MODULAR_USER_ID`: Your company name.
-
-For example:
-
-```bash
-docker run modular/max-nvidia-full:latest \
-    -env MAX_SERVE_DEPLOYMENT_ID='Project name' \
-    -env MODULAR_USER_ID='Example Inc.' \
-    ...
-```
+MAX exposes a Prometheus-compatible `/metrics` endpoint for monitoring
+performance. For the full metrics reference and telemetry configuration, see
+[Serving metrics](/serve/metrics).
 
 ## License
 
-The NVIDIA MAX container is released under the
+The NVIDIA MAX container uses the
 [NVIDIA Deep Learning Container license](https://developer.download.nvidia.com/licenses/NVIDIA_Deep_Learning_Container_License.pdf).
 
 ## Next steps

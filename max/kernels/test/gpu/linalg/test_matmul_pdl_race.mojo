@@ -29,7 +29,7 @@ This is currently only checking via `_matmul_gpu` dispatch for a single shape
 and only for bfloat16.
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -37,7 +37,7 @@ from max.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.math import ceildiv
 from std.sys import get_defined_int
@@ -46,8 +46,8 @@ from std.sys import get_defined_int
 def consumer_kernel[
     dtype: DType,
 ](
-    input: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: MutPointer[Scalar[dtype], MutAnyOrigin],
+    output: MutPointer[Scalar[dtype], MutAnyOrigin],
     length_dev: Int32,
 ):
     """Consumer kernel that reads matmul output after PDL wait.
@@ -115,15 +115,15 @@ def run_pdl_race_test[
     # Create TileTensors for matmul
     var a_tensor = TileTensor(
         a_device,
-        row_major(Coord(Idx[M], Idx[K])),
+        row_major(Idx[M], Idx[K]),
     )
     var b_tensor = TileTensor(
         b_device,
-        row_major(Coord(Idx[N], Idx[K])),
+        row_major(Idx[N], Idx[K]),
     )
     var c_tensor = TileTensor(
         c_device,
-        row_major(Coord(Idx[M], Idx[N])),
+        row_major(Idx[M], Idx[N]),
     )
 
     # Run multiple iterations to increase chance of catching race
@@ -137,7 +137,7 @@ def run_pdl_race_test[
             use_tensor_core=True,
             transpose_b=True,
             pdl_level=PDLLevel.OVERLAP_AT_END,
-        ](c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx)
+        ](c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), ctx)
         #
         # Launch consumer kernel - waits for matmul via PDL
         var num_threads = 256
@@ -226,6 +226,6 @@ def main() raises:
         var iters = get_defined_int["ITERS", 100]()
 
         # Test with bfloat16 (common for SM90 matmul)
-        run_pdl_race_test[DType.bfloat16, M, N, K](ctx, iters)
+        run_pdl_race_test[.bfloat16, M, N, K](ctx, iters)
 
         print("All PDL race tests passed!")

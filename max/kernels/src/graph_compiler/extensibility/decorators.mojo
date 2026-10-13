@@ -23,8 +23,8 @@ def register_internal(name: StaticString):
     `mo.custom` op. Used by built-in
     [MAX Graph operations](/api/python/graph.ops).
 
-    For registering [custom operations](/max/develop/custom-ops/), use the
-    [@extensibility.register](/mojo/manual/decorators/extensibility-register) decorator,
+    For registering [custom operations](/develop/custom-ops/), use the
+    [@extensibility.register](/api/mojo/extensibility/decorators/register/) decorator,
     instead.
 
     For instance:
@@ -137,13 +137,3 @@ def register_shape_function(name: StaticString):
         name: The name of the op whose output shapes the function computes.
     """
     pass
-
-
-def view_kernel():
-    """Marks a DPS kernel as a view operation that aliases its input memory.
-
-    Decorated kernels return a tensor that shares storage with one of their
-    inputs rather than allocating new memory, so the Graph Compiler can preserve
-    aliasing relationships across the operation.
-    """
-    return

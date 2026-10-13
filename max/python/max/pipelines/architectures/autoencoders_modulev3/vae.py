@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -380,19 +379,6 @@ class MidBlock2D(Module[[Tensor, Tensor | None], Tensor]):
         return hidden_states
 
 
-@dataclass
-class DecoderOutput:
-    r"""Output of decoding method.
-
-    Args:
-        sample (`Tensor` of shape `(batch_size, num_channels, height, width)`):
-            The decoded output sample from the last layer of the model.
-    """
-
-    sample: Tensor
-    commit_loss: Tensor | None = None
-
-
 class Encoder(Module[[Tensor], Tensor]):
     r"""The `Encoder` layer of a variational autoencoder that encodes its input into a latent representation.
 
@@ -406,7 +392,7 @@ class Encoder(Module[[Tensor], Tensor]):
         block_out_channels: The number of output channels for each block.
         layers_per_block: The number of layers per block.
         norm_num_groups: The number of groups for normalization.
-        act_fn: The activation function to use (e.g., "silu").
+        act_fn: The activation function to use (such as "silu").
         double_z: Whether to double the number of output channels for the last block.
         mid_block_add_attention: Whether to add attention in the middle block.
         device: Device reference for module placement.
@@ -437,7 +423,7 @@ class Encoder(Module[[Tensor], Tensor]):
             block_out_channels: Tuple of block output channels.
             layers_per_block: Number of layers per block.
             norm_num_groups: Number of groups for normalization.
-            act_fn: Activation function name (e.g., "silu").
+            act_fn: Activation function name (such as "silu").
             double_z: Whether to double output channels for the last block.
             mid_block_add_attention: Whether to add attention in the middle block.
             use_quant_conv: Whether to add 1x1 conv after conv_out (encoder output -> latent moments).
@@ -632,7 +618,7 @@ class Decoder(Module[[Tensor, Tensor | None], Tensor]):
             block_out_channels: Tuple of channel counts for each decoder block.
             layers_per_block: Number of ResNet layers per decoder block.
             norm_num_groups: Number of groups for GroupNorm layers.
-            act_fn: Activation function name (e.g., "silu").
+            act_fn: Activation function name (such as "silu").
             norm_type: Normalization type ("group" or "spatial").
             mid_block_add_attention: Whether to add attention in middle block.
             use_post_quant_conv: Whether to use post-quantization convolution.

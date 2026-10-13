@@ -619,6 +619,7 @@ class Kimi3am(BaseScenario):
                     "required": ["code"],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             resp = await loop.run_in_executor(
                 None,
@@ -691,6 +692,7 @@ class Kimi3am(BaseScenario):
                     "required": ["value"],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             resp = await loop.run_in_executor(
                 None,

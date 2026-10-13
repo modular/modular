@@ -19,9 +19,9 @@ from typing import Any
 import numpy as np
 from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Placement,
-    PlacementMapping,
     Replicated,
 )
 from max.experimental.tensor import Tensor
@@ -37,11 +37,38 @@ def make_partial(
     Distributes with Replicated placement (full copy on each device),
     then re-labels as the requested Partial placement.
     """
-    replicated = PlacementMapping(mesh, tuple(Replicated() for _ in placements))
+    replicated = DeviceMapping(mesh, tuple(Replicated() for _ in placements))
     t = transfer_to(Tensor(data), replicated)
     return Tensor._from_shards(
         tuple(s.driver_tensor for s in t.local_shards),
-        mesh,
-        placements,
-        data.shape,
+        DeviceMapping(mesh, placements),
+    )
+
+
+def assert_no_shadowed_tests(cls: type) -> None:
+    """Fails if a ``test_*`` name is defined by more than one class in ``cls``.
+
+    Aggregators such as ``ReductionTests`` inherit one mixin per op. Python
+    keeps only the first definition of a name along the MRO, so a second mixin
+    that reuses ``test_non_sharded_axis`` is silently never run. This reads each
+    class's own namespace instead of ``getattr``, which only sees the winner.
+
+    Args:
+        cls: The aggregator class to check.
+
+    Raises:
+        AssertionError: If any test name has more than one defining class.
+    """
+    owners: dict[str, list[str]] = {}
+    for klass in cls.__mro__:
+        for name in vars(klass):
+            if name.startswith("test_"):
+                owners.setdefault(name, []).append(klass.__name__)
+    hidden = {name: who for name, who in owners.items() if len(who) > 1}
+    assert not hidden, (
+        f"{cls.__name__}: these tests are defined in more than one base, so"
+        " only the first (listed first) runs; give each a unique name: "
+        + "; ".join(
+            f"{name} in {', '.join(who)}" for name, who in hidden.items()
+        )
     )

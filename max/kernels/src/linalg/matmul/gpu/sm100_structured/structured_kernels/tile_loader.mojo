@@ -32,21 +32,19 @@ Usage:
 from layout import (
     TensorLayout,
     TileTensor,
+    Coord,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
 # Import TileTensor types for overloaded load methods
 from structured_kernels.tile_types import SMemTile2D, TmaOpType
 
-from std.utils.index import IndexList
-
 
 struct TileLoaderTMA[
     tma_origin: ImmOrigin,
     dtype: DType,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     /,
     *,
     cta_group: Int,
@@ -59,15 +57,12 @@ struct TileLoaderTMA[
     Parameters:
         tma_origin: Origin of the TMA descriptor pointer.
         dtype: Element data type.
-        tma_rank: Rank of the TMA tile/descriptor shapes.
-        tile_shape: TMA tile shape as IndexList.
-        desc_shape: TMA descriptor shape as IndexList.
+        tile_shape: TMA tile shape as Coord.
+        desc_shape: TMA descriptor shape as Coord.
         cta_group: CTA group size (1 or 2 for SM100 2-SM MMA).
     """
 
-    comptime TmaOp = TMATensorTile[
-        Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
-    ]
+    comptime TmaOp = TMATensorTile[Self.dtype, Self.tile_shape, Self.desc_shape]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
     # TMA descriptor pointer (referencing grid constant)
@@ -75,7 +70,7 @@ struct TileLoaderTMA[
     # Multicast mask for cluster distribution
     var multicast_mask: UInt16
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, tma_op: Self.TmaOpPtr, multicast_mask: UInt16):
         """Initialize the TMA tile loader.
 
@@ -86,7 +81,7 @@ struct TileLoaderTMA[
         self.tma_op = tma_op
         self.multicast_mask = multicast_mask
 
-    @always_inline
+    @inline(.always)
     def load[
         dim0: Int,
         dim1: Int,
@@ -94,7 +89,7 @@ struct TileLoaderTMA[
         alignment: Int = 128,
     ](
         self,
-        dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment],
+        dest: SMemTile2D[Self.dtype, dim0, dim1, alignment=alignment, Engine=_],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,
         row_coord: Int,
@@ -120,16 +115,13 @@ struct TileLoaderTMA[
             dest, barrier, (k_coord, row_coord), self.multicast_mask
         )
 
-    @always_inline
+    @inline(.always)
     def load[
         LayoutType: TensorLayout
     ](
         self,
         dest: TileTensor[
-            Self.dtype,
-            LayoutType,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.dtype, LayoutType, MutAnyOrigin, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,
@@ -187,7 +179,7 @@ struct TileLoader[
     var tma_op: Self.TmaOpPtr
     var multicast_mask: UInt16
 
-    @always_inline
+    @inline(.always)
     def __init__[
         tma_op_type: AnyType
     ](
@@ -207,16 +199,13 @@ struct TileLoader[
         self.tma_op = rebind[Self.TmaOpPtr](tma_op)
         self.multicast_mask = multicast_mask
 
-    @always_inline
+    @inline(.always)
     def load[
         LayoutType: TensorLayout
     ](
         self,
         dest: TileTensor[
-            Self.dtype,
-            LayoutType,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.dtype, LayoutType, MutAnyOrigin, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         k_coord: Int,
@@ -271,7 +260,7 @@ struct ScalesLoader[
 
     var tma_op: Self.TmaOpPtr
 
-    @always_inline
+    @inline(.always)
     def __init__[
         tma_op_type: AnyType
     ](out self, tma_op: Pointer[tma_op_type, Self.tma_origin]):
@@ -285,16 +274,13 @@ struct ScalesLoader[
         """
         self.tma_op = rebind[Self.TmaOpPtr](tma_op)
 
-    @always_inline
+    @inline(.always)
     def load[
         LayoutType: TensorLayout
     ](
         self,
         dest: TileTensor[
-            Self.dtype,
-            LayoutType,
-            MutAnyOrigin,
-            address_space=AddressSpace.SHARED,
+            Self.dtype, LayoutType, MutAnyOrigin, address_space=.SHARED
         ],
         ref[AddressSpace.SHARED] barrier: SharedMemBarrier,
         row_coord: Int,

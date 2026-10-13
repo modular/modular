@@ -10,14 +10,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(MSTDL-2788): Placeholder package docstring. Without a package index here,
-# the API reference publishes no page for this package and lists its subpackages
-# as though they were top-level. Replace this docstring with the one from
-# `std/gpu/__init__.mojo` once the rest of that package moves, repointing its
-# `/docs/std/...` links and `from std.gpu import ...` example.
-"""Provides GPU programming primitives for hardware-accelerated Mojo code."""
+"""GPU programming primitives.
+
+These low level constructs allow you to write code that runs on the GPU with
+traditional programming style--partitioning work across threads that are mapped
+onto 1-, 2-, or 3-dimensional blocks. The thread blocks can subsequently be
+grouped into a grid of thread blocks.
+
+A _kernel_ is a function that runs on the GPU in parallel across many threads.
+Currently, the
+[`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/) struct
+provides the interface for compiling and launching GPU kernels inside MAX
+[custom operations](https://max.modular.com/develop/custom-ops/).
+
+The [`gpu.host`](/api/mojo/max/gpu/host/) package includes APIs to manage
+interaction between the _host_ (that is, the CPU) and _device_ (that is, the GPU
+or accelerator).
+
+The `gpu` package exports aliases you can use to access information about the
+grid and the current thread, including block dimensions, block index in the grid,
+and thread index. Import these directly from `gpu`:
+
+```mojo
+from max.gpu import block_dim, block_idx, thread_idx, global_idx
+```
+
+For an example of launching a GPU kernel from a MAX custom operation, see the
+[vector addition example](https://github.com/modular/modular/blob/main/max/examples/custom_ops/kernels/vector_addition.mojo)
+in the MAX repo.
+"""
+
+from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
+
+
+@__doc_inline
+from std._gpu import (
+    block_dim,
+    block_id_in_cluster,
+    block_idx,
+    cluster_dim,
+    cluster_idx,
+    global_idx,
+    grid_dim,
+    lane_id,
+    thread_idx,
+)
 
 from .primitives import (
+    sm_id,
+    warp_id,
     block_rank_in_cluster,
     cluster_arrive,
     cluster_arrive_relaxed,

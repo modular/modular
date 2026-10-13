@@ -14,7 +14,7 @@
 from std.math import ceildiv
 
 from max.gpu.host import DeviceContext
-from std.gpu import block_idx
+from max.gpu import block_idx
 from nn.attention.gpu.nvidia.sm90.attention import NullPointer
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHASchedule,
@@ -26,11 +26,11 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
 def test_kernel[schedule: MHASchedule]():
     comptime scheduler_t = TileScheduler[32, 3, num_ctas=8, schedule=schedule]
     var scheduler = scheduler_t()
-    var valid_length = NullPointer[DType.uint32]()
+    var valid_length = NullPointer[.uint32]()
     var tile_summary = MHATileSummary(1, ceildiv(100, 32), valid_length, 0)
     var state = scheduler.initial_state(
-        UnsafePointer[
-            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
+        MutPointer[
+            UInt32, MutAnyOrigin, address_space=.SHARED
         ].unsafe_dangling(),
         tile_summary,
     )

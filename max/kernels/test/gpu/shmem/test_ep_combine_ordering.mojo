@@ -27,7 +27,7 @@ MI355X (gfx950) only.
 """
 
 from std.atomic import Atomic, Ordering, fence
-from std.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
@@ -43,15 +43,15 @@ comptime MSG_ELEMS = 256
 
 
 def ordering_guard_kernel(
-    payload: UnsafePointer[Float32, MutAnyOrigin],
-    flags: UnsafePointer[Int32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    scratch: UnsafePointer[Float32, MutAnyOrigin],
+    payload: MutPointer[Float32, MutAnyOrigin],
+    flags: MutPointer[Int32, MutAnyOrigin],
+    output: MutPointer[Float32, MutAnyOrigin],
+    scratch: MutPointer[Float32, MutAnyOrigin],
 ):
     """Block 0 is the producer (~ wait SM); blocks 1.. are consumers (~ reduce
     SMs), one payload slot each."""
-    var tid = Int(thread_idx.x)
-    var nthreads = Int(block_dim.x)
+    var tid = thread_idx.x
+    var nthreads = block_dim.x
 
     if block_idx.x == 0:
         for c in range(N_CONSUMERS):
@@ -64,7 +64,7 @@ def ordering_guard_kernel(
                     flags + c, DATA_READY
                 )
     else:
-        var c = Int(block_idx.x) - 1
+        var c = block_idx.x - 1
         if c >= N_CONSUMERS:
             return
         var base = c * MSG_ELEMS
@@ -89,16 +89,16 @@ def ordering_guard_kernel(
 def main() raises:
     var ctx = DeviceContext()
     comptime total_elems = N_CONSUMERS * MSG_ELEMS
-    var payload = ctx.enqueue_create_buffer[DType.float32](total_elems)
-    var flags = ctx.enqueue_create_buffer[DType.int32](N_CONSUMERS)
-    var output = ctx.enqueue_create_buffer[DType.float32](total_elems)
-    var scratch = ctx.enqueue_create_buffer[DType.float32](N_CONSUMERS)
+    var payload = ctx.enqueue_create_buffer[.float32](total_elems)
+    var flags = ctx.enqueue_create_buffer[.int32](N_CONSUMERS)
+    var output = ctx.enqueue_create_buffer[.float32](total_elems)
+    var scratch = ctx.enqueue_create_buffer[.float32](N_CONSUMERS)
     var host_output = alloc[Float32](total_elems)
 
     var stale: Int = 0
     for _it in range(N_ITERS):
         # NaN so a stale read is detectable.
-        ctx.enqueue_memset(payload, nan[DType.float32]())
+        ctx.enqueue_memset(payload, nan[.float32]())
         ctx.enqueue_memset(flags, Int32(0))
         ctx.enqueue_memset(output, Float32(0))
 

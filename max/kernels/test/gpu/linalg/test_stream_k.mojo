@@ -14,10 +14,10 @@
 from std.math import ceildiv
 from std.math.uutils import umod
 
-from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import Semaphore
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import PointerStorage, TileTensor, row_major
+from layout import DefaultEngine, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import alloc
 from std.testing import assert_almost_equal
@@ -35,8 +35,8 @@ def swizzle_tile(
     BLOCK_K: Int,
     GROUP_M: Int,
 ) -> IndexList[2]:
-    var grid_m = (M + BLOCK_M - 1) // BLOCK_M
-    var grid_n = (N + BLOCK_N - 1) // BLOCK_N
+    var grid_m = ceildiv(M, BLOCK_M)
+    var grid_n = ceildiv(N, BLOCK_N)
     var width = GROUP_M * grid_n
     var group_id, tile_id_rem = divmod(tile_id, width)
     var group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
@@ -55,7 +55,7 @@ def linear_tile(
     BLOCK_K: Int,
     GROUP_M: Int,
 ) -> IndexList[2]:
-    var pid_m, pid_n = divmod(tile_id, ((N + BLOCK_N - 1) // BLOCK_N))
+    var pid_m, pid_n = divmod(tile_id, (ceildiv(N, BLOCK_N)))
     return IndexList[2](pid_m, pid_n)
 
 
@@ -64,13 +64,13 @@ def mac_loop[
     a_type: DType,
     b_type: DType,
 ](
-    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], MutAnyOrigin],
+    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     M: Int,
     N: Int,
     K: Int,
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
     stride_am: Int,
     stride_ak: Int,
     stride_bk: Int,
@@ -143,13 +143,13 @@ def first_wave_kernel[
     BLOCK_K: Int,
     GROUP_M: Int,
 ](
-    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], MutAnyOrigin],
+    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
-    locks: UnsafePointer[Int32, MutAnyOrigin],
+    locks: MutPointer[Int32, MutAnyOrigin],
     stride_am_dev: Int32,
     stride_ak_dev: Int32,
     stride_bk_dev: Int32,
@@ -227,13 +227,13 @@ def full_tiles_kernel[
     BLOCK_K: Int,
     GROUP_M: Int,
 ](
-    C: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    A: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
-    B: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
+    C: MutPointer[Scalar[c_type], MutAnyOrigin],
+    A: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
+    B: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
-    locks: UnsafePointer[Int32, ImmutAnyOrigin],
+    locks: ImmPointer[Int32, ImmutAnyOrigin],
     stride_am_dev: Int32,
     stride_ak_dev: Int32,
     stride_bk_dev: Int32,
@@ -269,7 +269,7 @@ def full_tiles_kernel[
     var global_c = rn_base + tx
     var accum = Scalar[c_type](0)
 
-    var steps = (K + BLOCK_K - 1) // BLOCK_K
+    var steps = ceildiv(K, BLOCK_K)
     for s in range(steps):
         var k_offset = s * BLOCK_K
         for kk in range(BLOCK_K):
@@ -320,21 +320,21 @@ def matmul_stream_k[
     c: TileTensor[
         mut=True,
         c_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
     ],
     a: TileTensor[
         a_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
     ],
     b: TileTensor[
         b_type,
-        address_space=AddressSpace.GENERIC,
+        address_space=.GENERIC,
         ...,
-        Storage=PointerStorage[element_width=1],
+        Engine=DefaultEngine[element_width=1],
     ],
     M: Int,
     N: Int,
@@ -345,9 +345,9 @@ def matmul_stream_k[
     comptime BLK_N = 16
     comptime BLK_K = 16
 
-    var total_blocks_M = (M + BLK_M - 1) // BLK_M
-    var total_blocks_N = (N + BLK_N - 1) // BLK_N
-    var iters_per_tile = (K + BLK_K - 1) // BLK_K
+    var total_blocks_M = ceildiv(M, BLK_M)
+    var total_blocks_N = ceildiv(N, BLK_N)
+    var iters_per_tile = ceildiv(K, BLK_K)
     comptime GROUP_M = 8
 
     var total_tiles = total_blocks_M * total_blocks_N
@@ -364,7 +364,7 @@ def matmul_stream_k[
             total_iters_streamk, total_programs_streamk
         )
 
-    var locks_data = ctx.enqueue_create_buffer[DType.int32](total_tiles_streamk)
+    var locks_data = ctx.enqueue_create_buffer[.int32](total_tiles_streamk)
     ctx.enqueue_memset(locks_data, 0)
 
     print("M=", M, ", N=", N, ", K=", K)
@@ -542,8 +542,8 @@ def run_matmul_stream_k[
 
     ctx.enqueue_function[kernel](
         c_buf_n,
-        a_buf.as_immut(),
-        b_buf.as_immut(),
+        a_buf.as_imm(),
+        b_buf.as_imm(),
         Int32(M),
         Int32(N),
         Int32(K),
@@ -564,7 +564,7 @@ def run_matmul_stream_k[
 
 def main() raises:
     with DeviceContext() as ctx:
-        run_matmul_stream_k[DType.float32, 128, 128, 128](ctx)
-        run_matmul_stream_k[DType.float32, 512, 2560, 8192](ctx)
-        run_matmul_stream_k[DType.float32, 256, 256, 1024](ctx)
-        run_matmul_stream_k[DType.float32, 128, 128, 1024](ctx)
+        run_matmul_stream_k[.float32, 128, 128, 128](ctx)
+        run_matmul_stream_k[.float32, 512, 2560, 8192](ctx)
+        run_matmul_stream_k[.float32, 256, 256, 1024](ctx)
+        run_matmul_stream_k[.float32, 128, 128, 1024](ctx)

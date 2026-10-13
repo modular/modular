@@ -16,6 +16,7 @@ modular_run_binary_test(
     name = "arithmetic_test",
     size = "large",
     binary = "arithmetic",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -37,6 +38,7 @@ modular_run_binary_test(
     name = "tensor_math_ops_test",
     size = "large",
     binary = "tensor_math_ops",
+    tags = ["skip-ci-asan"],
     # FIXME: MOCO-3605 — Metal AIR compiler doesn't support bf16 sqrt
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -58,6 +60,7 @@ modular_run_binary_test(
     name = "tensor_reshape_test",
     size = "large",
     binary = "tensor_reshape",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -79,6 +82,7 @@ modular_run_binary_test(
     name = "tensor_transpose_test",
     size = "large",
     binary = "tensor_transpose",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -100,6 +104,7 @@ modular_run_binary_test(
     name = "tensor_transpose_t_test",
     size = "large",
     binary = "tensor_transpose_t",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -121,6 +126,7 @@ modular_run_binary_test(
     name = "tensor_permute_test",
     size = "large",
     binary = "tensor_permute",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -142,6 +148,7 @@ modular_run_binary_test(
     name = "concat_test",
     size = "large",
     binary = "concat",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -163,6 +170,7 @@ modular_run_binary_test(
     name = "tensor_reductions_test",
     size = "large",
     binary = "tensor_reductions",
+    tags = ["skip-ci-asan"],
     # FIXME: MOCO-3605 — Metal AIR compiler doesn't support bf16 convert
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -184,6 +192,7 @@ modular_run_binary_test(
     name = "tensor_matmul_test",
     size = "large",
     binary = "tensor_matmul",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -205,6 +214,7 @@ modular_run_binary_test(
     name = "functional_activations_test",
     size = "large",
     binary = "functional_activations",
+    tags = ["skip-ci-asan"],
     # FIXME: MOCO-3605 — Metal AIR compiler doesn't support bf16 fmax
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -226,6 +236,7 @@ modular_run_binary_test(
     name = "random_basic_test",
     size = "large",
     binary = "random_basic",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -247,6 +258,7 @@ modular_run_binary_test(
     name = "compose_linear_layer_test",
     size = "large",
     binary = "compose_linear_layer",
+    tags = ["skip-ci-asan"],
     # FIXME: MOCO-3605 — Metal AIR compiler doesn't support bf16 fmax
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],

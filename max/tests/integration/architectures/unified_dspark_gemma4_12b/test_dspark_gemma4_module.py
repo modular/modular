@@ -33,12 +33,12 @@ from dataclasses import replace
 from types import SimpleNamespace
 from typing import NamedTuple
 
-import hf_repo_lock
 import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
 from huggingface_hub import hf_hub_download
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -57,8 +57,6 @@ from torch import nn
 from torch.utils.dlpack import from_dlpack
 
 HF_REPO_ID = "deepseek-ai/dspark_gemma4_12b_block7"
-HF_REVISION = hf_repo_lock.revision_for_hf_repo(HF_REPO_ID)
-
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
 
@@ -420,12 +418,7 @@ def session(device: Device) -> InferenceSession:
 def draft_config() -> DSparkGemma4DraftConfig:
     if os.environ.get("HF_HUB_OFFLINE", "0") == "1":
         pytest.skip("HF Hub offline mode is enabled")
-    assert HF_REVISION is not None, (
-        f"{HF_REPO_ID} must be present in hf-repo-lock.tsv"
-    )
-    config_path = hf_hub_download(
-        HF_REPO_ID, "config.json", revision=HF_REVISION
-    )
+    config_path = hf_hub_download(HF_REPO_ID, "config.json")
     with open(config_path) as f:
         config_json = json.load(f)
     # Attribute-style access mirrors the transformers PretrainedConfig the
@@ -437,10 +430,7 @@ def draft_config() -> DSparkGemma4DraftConfig:
 
 @pytest.fixture(scope="module")
 def checkpoint_weights() -> dict[str, torch.Tensor]:
-    assert HF_REVISION is not None
-    path = hf_hub_download(
-        HF_REPO_ID, "model.safetensors", revision=HF_REVISION
-    )
+    path = hf_hub_download(HF_REPO_ID, "model.safetensors")
     return load_file(path)
 
 
@@ -615,7 +605,7 @@ def compiled_draft(
             block_offsets,
             *kv_inputs,
         ) = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
 
         ctx_hidden = harness.draft.project_target_hidden(ctx_features.tensor)
         harness.draft.materialize_kv(
@@ -682,7 +672,7 @@ def _execute_max_draft(
             Buffer.from_numpy(np.array([0, block_len], dtype=np.uint32)).to(
                 device
             ),
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
         )
     finally:
         kv_manager.release(context)

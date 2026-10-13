@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import functools
 
+from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
@@ -30,10 +31,10 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
+from max.graph import ops
 from max.nn.kernels import scatter_nd_skip_oob_indices as _scatter_nd
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
@@ -198,9 +199,7 @@ class Idefics3TextModel(
         )
 
         if self.embedding_multiplier != 1.0:
-            h = h * F.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         # Run through transformer layers.
         for idx, layer in enumerate(self.layers):
@@ -237,7 +236,7 @@ class Idefics3TextModel(
             logits = self._compute_logits(self.norm(last_tokens))
             offsets = ops.range(
                 0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
                 device=h.device,
@@ -289,8 +288,9 @@ class Idefics3Language(Module[..., tuple[Tensor, ...]]):
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(
             iter(variadic_args)
         )
-        assert isinstance(symbolic_inputs, KVCacheInputs)
-        kv_collections = symbolic_inputs.inputs
+        kv_collections = tree.leaves(
+            symbolic_inputs, leaf=KVCacheInputsPerDevice
+        )
 
         return self.language_model(
             tokens,

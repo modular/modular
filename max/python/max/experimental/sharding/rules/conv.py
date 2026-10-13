@@ -19,11 +19,11 @@ from max.experimental.sharding.placements import Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.graph.type import ConvInputLayout, FilterLayout
 
-from ..action import ActionSet, AxisAssignment
-from ..cost import P, R, build_action_set
+from ..action import AxisAssignment
+from ..cost import P, R
 
 
-def _conv_action_set(
+def _conv_rows(
     spatial: int,
     transpose: bool,
     x: TensorLayout,
@@ -31,8 +31,8 @@ def _conv_action_set(
     groups: int,
     input_layout: ConvInputLayout,
     filter_layout: FilterLayout,
-    extras: tuple[object, ...],
-) -> ActionSet:
+    bias: TensorLayout | None,
+) -> list[AxisAssignment]:
     expected_filter = FilterLayout.RSCF if spatial == 2 else FilterLayout.QRSCF
     if filter_layout != expected_filter:
         raise ValueError(
@@ -60,16 +60,32 @@ def _conv_action_set(
         cout_axis_filt = filter.rank - 1
 
     rows = [
-        AxisAssignment((R, R), R),
-        AxisAssignment((Sharded(n_axis_x), R), Sharded(n_axis_x)),
-        AxisAssignment((R, Sharded(cout_axis_filt)), Sharded(cout_axis_out)),
+        AxisAssignment((R, R), (R,)),
+        AxisAssignment((Sharded(n_axis_x), R), (Sharded(n_axis_x),)),
+        AxisAssignment((R, Sharded(cout_axis_filt)), (Sharded(cout_axis_out),)),
     ]
     if groups == 1:
         rows.append(
-            AxisAssignment((Sharded(cin_axis_x), Sharded(cin_axis_filt)), P)
+            AxisAssignment((Sharded(cin_axis_x), Sharded(cin_axis_filt)), (P,))
         )
-    rows.extend([AxisAssignment((P, R), P), AxisAssignment((R, P), P)])
-    return build_action_set(rows, layouts=(x, filter), extras=extras)
+    rows.extend([AxisAssignment((P, R), (P,)), AxisAssignment((R, P), (P,))])
+    if bias is not None:
+        # The bias follows the output channels. Each device adds it, so a
+        # partial-sum row would add it once per device.
+        rows = [
+            AxisAssignment(
+                row.needed_inputs
+                + (
+                    Sharded(0)
+                    if row.outputs[0] == Sharded(cout_axis_out)
+                    else R,
+                ),
+                row.outputs,
+            )
+            for row in rows
+            if row.outputs != (P,)
+        ]
+    return rows
 
 
 def conv2d_rule(
@@ -82,9 +98,9 @@ def conv2d_rule(
     bias: TensorLayout | None = None,
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.RSCF,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``conv2d``: data-parallel on N + channel-parallel on C."""
-    return _conv_action_set(
+    return _conv_rows(
         2,
         False,
         x,
@@ -92,15 +108,7 @@ def conv2d_rule(
         groups,
         input_layout,
         filter_layout,
-        extras=(
-            stride,
-            dilation,
-            padding,
-            groups,
-            bias,
-            input_layout,
-            filter_layout,
-        ),
+        bias,
     )
 
 
@@ -114,9 +122,9 @@ def conv3d_rule(
     bias: TensorLayout | None = None,
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.QRSCF,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``conv3d``: same DP/channel-TP family as ``conv2d``."""
-    return _conv_action_set(
+    return _conv_rows(
         3,
         False,
         x,
@@ -124,15 +132,7 @@ def conv3d_rule(
         groups,
         input_layout,
         filter_layout,
-        extras=(
-            stride,
-            dilation,
-            padding,
-            groups,
-            bias,
-            input_layout,
-            filter_layout,
-        ),
+        bias,
     )
 
 
@@ -146,9 +146,9 @@ def conv2d_transpose_rule(
     bias: TensorLayout | None = None,
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.RSCF,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``conv2d_transpose``: transpose-conv variant of ``conv2d``."""
-    return _conv_action_set(
+    return _conv_rows(
         2,
         True,
         x,
@@ -156,13 +156,5 @@ def conv2d_transpose_rule(
         1,
         input_layout,
         filter_layout,
-        extras=(
-            stride,
-            dilation,
-            padding,
-            output_paddings,
-            bias,
-            input_layout,
-            filter_layout,
-        ),
+        bias,
     )

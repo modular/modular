@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.gpu import thread_idx
+from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -37,7 +37,7 @@ def shared_memory_sum_reduction_kernel(
     var input_s = unsafe_stack_allocation[
         BLOCK_DIM,
         Float32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     var t = UInt32(thread_idx.x)
@@ -87,7 +87,7 @@ def main() raises:
 
     # Initialize input with random values
     for i in range(N):
-        h_input[i] = random_float64().cast[DType.float32]()
+        h_input[i] = random_float64().cast[.float32]()
 
     print(
         (
@@ -101,8 +101,8 @@ def main() raises:
 
     with DeviceContext() as ctx:
         # Device memory allocation
-        var d_input = ctx.enqueue_create_buffer[DType.float32](N)
-        var d_output = ctx.enqueue_create_buffer[DType.float32](1)
+        var d_input = ctx.enqueue_create_buffer[.float32](N)
+        var d_output = ctx.enqueue_create_buffer[.float32](1)
 
         # Copy data to device
         ctx.enqueue_copy(d_input, h_input)

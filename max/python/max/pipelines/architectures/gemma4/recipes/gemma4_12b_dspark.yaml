@@ -25,7 +25,7 @@ draft_model:
 # DSpark drafts a full 7-token block per step (block_size in the draft
 # checkpoint config); num_speculative_tokens must match it.
 speculative:
-  speculative_method: dflash
+  speculative_method: dspark
   num_speculative_tokens: 7
 
 runtime:

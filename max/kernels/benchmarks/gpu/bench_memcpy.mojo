@@ -95,7 +95,7 @@ struct Config(ImplicitlyCopyable, Writable):
             writer.write("_to_device")
 
 
-@no_inline
+@inline(.never)
 def bench_memcpy(
     mut b: Bench,
     length_in_bytes: Int,
@@ -125,10 +125,9 @@ def bench_memcpy(
         length_in_elements if config.direction == Config.DToD else 0
     )
 
-    @__parameter
-    @always_inline
-    def bench_func(mut b: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_func(mut b: Bencher) {imm}:
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             if config.direction == Config.DToH:
                 context.enqueue_copy(mem_host, mem_device)
@@ -149,7 +148,8 @@ def bench_memcpy(
     if config.direction == Config.DToD:
         transferred_size_in_bytes *= 2
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(
             String(t"memcpy_{config}"),
             input_id="length=" + human_readable_size(length_in_bytes),
@@ -164,7 +164,7 @@ def bench_memcpy(
     _ = mem2_device
 
 
-@no_inline
+@inline(.never)
 def bench_p2p(
     mut b: Bench,
     length_in_bytes: Int,
@@ -189,10 +189,9 @@ def bench_p2p(
     ctx1.enqueue_copy(src_buf, host_ptr)
     ctx1.synchronize()
 
-    @__parameter
-    @always_inline
-    def bench_func(mut b: Bencher):
-        @always_inline
+    @inline(.always)
+    def bench_func(mut b: Bencher) {imm}:
+        @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             ctx2.enqueue_copy(dst_buf, src_buf)
 
@@ -204,7 +203,8 @@ def bench_p2p(
         ThroughputMeasure(BenchMetric.bytes, length_in_bytes),
     ]
 
-    b.bench_function[bench_func](
+    b.bench_function(
+        bench_func,
         BenchId(
             "memcpy_p2p",
             input_id="length=" + human_readable_size(length_in_bytes),
@@ -217,8 +217,7 @@ def bench_p2p(
     ctx2.synchronize()
 
     # Parallel verification
-    @__parameter
-    def verify_chunk(start: Int, end: Int):
+    def verify_chunk(start: Int, end: Int) {imm}:
         for i in range(start, end):
             try:
                 assert_almost_equal(host_ptr[i], Float32(i))
@@ -231,7 +230,7 @@ def bench_p2p(
     var shape = IndexList[1](
         length_in_elements,
     )
-    parallelize_over_rows[verify_chunk](shape, 0, 256)
+    parallelize_over_rows(verify_chunk, shape, 0, 256)
 
     # Cleanup
     _ = src_buf

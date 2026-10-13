@@ -30,7 +30,12 @@ except ImportError:
 import numpy as np
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets import ChatSession
-from max.benchmark.benchmark_shared.datasets.types import TextContentBlock
+from max.benchmark.benchmark_shared.datasets.types import (
+    ImageContentBlock,
+    ImageURLDetail,
+    OpenAIImage,
+    TextContentBlock,
+)
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
@@ -44,6 +49,8 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncOutput,
     mark_cancelled_if_past_deadline,
     progressbar_request_driver,
+    tag_lora_route,
+    tag_response_format_outcome,
 )
 from max.benchmark.benchmark_shared.utils import (
     deadline_passed,
@@ -53,6 +60,15 @@ from max.benchmark.benchmark_shared.utils import (
 from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
+
+
+def _image_content_blocks(
+    images: Sequence[OpenAIImage],
+) -> list[ImageContentBlock]:
+    return [
+        ImageContentBlock(image_url=ImageURLDetail(url=img["image_url"]["url"]))
+        for img in images
+    ]
 
 
 def _poisson_interval(request_rate: float, burstiness: float) -> float:
@@ -76,6 +92,8 @@ async def chat_session_driver(
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
+    lora_id: str | None = None,
+    disable_ignore_eos: bool = False,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
@@ -90,6 +108,7 @@ async def chat_session_driver(
         prompt_len=0,
         max_tokens=0,
         ignore_eos=True,
+        lora_id=lora_id,
     )
     content_idx = 0  # Assume user initiates the conversation
 
@@ -117,7 +136,10 @@ async def chat_session_driver(
         message_history.append(
             ChatMessage(
                 role="user",
-                content=[TextContentBlock(text=user_prompt)],
+                content=[
+                    TextContentBlock(text=user_prompt),
+                    *_image_content_blocks(messages[content_idx].images),
+                ],
             )
         )
         # Synthetic placeholder for the assistant response.
@@ -158,12 +180,31 @@ async def chat_session_driver(
         message_history.append(
             ChatMessage(
                 role="user",
-                content=[TextContentBlock(text=user_prompt)],
+                content=[
+                    TextContentBlock(text=user_prompt),
+                    *_image_content_blocks(messages[content_idx].images),
+                ],
             )
         )
         request_func_input.prompt = message_history
         request_func_input.prompt_len = chat_len
         request_func_input.max_tokens = output_len
+        # Reassigned every turn, not just when set: one RequestFuncInput is
+        # reused for the whole session, so a constrained turn would otherwise
+        # constrain every turn after it.
+        turn_response_format = messages[content_idx].response_format
+        request_func_input.response_format = turn_response_format
+        # A constrained turn must let the grammar's stop token end it.
+        # Generating past a satisfied grammar makes the matcher reject the next
+        # token, and the server then disables enforcement for the rest of the
+        # request -- the turn would be reported as constrained while running
+        # mostly unconstrained. A schema-shaped response ends when the schema is
+        # satisfied anyway, so its length is the schema's to decide rather than
+        # the workload's output-length distribution. Ref DISTINF-499.
+        request_func_input.ignore_eos = (
+            turn_response_format is None and not disable_ignore_eos
+        )
+        request_func_input.tools = messages[content_idx].tools
 
         if not applied_initial_sleep:
             applied_initial_sleep = True
@@ -217,6 +258,8 @@ async def chat_session_driver(
             # compare each measured turn against the previous one in-session.
             response.session_id = str(chat_session.id)
             response.turn_index = len(session_outputs)
+            tag_response_format_outcome(response, request_func_input)
+            tag_lora_route(response, request_func_input)
             session_outputs.append(response)
 
         if not response.success:
@@ -233,7 +276,12 @@ async def chat_session_driver(
                 content=[TextContentBlock(text=response.generated_text)],
             )
         )
-        chat_len += output_len
+        # What the turn actually produced, not what it drew: a constrained turn
+        # stops at schema completion, so charging the drawn length would report
+        # a prompt_len the next turn never sends and compound it down the
+        # session. Falls back to the draw when the server reports no usage,
+        # which is exact for an ignore_eos turn.
+        chat_len += response.server_token_stats.completion_tokens or output_len
 
         if next_delay_ms := messages[content_idx + 1].delay_until_next_message:
             sleep_s = next_delay_ms / 1000
@@ -291,7 +339,8 @@ async def prerun_warmup_turns(
                 ChatMessage(
                     role="user",
                     content=[
-                        TextContentBlock(text=messages[content_idx].content)
+                        TextContentBlock(text=messages[content_idx].content),
+                        *_image_content_blocks(messages[content_idx].images),
                     ],
                 )
             )
@@ -390,6 +439,7 @@ async def run_multiturn_benchmark(
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
+    disable_ignore_eos: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run multi-turn chat benchmark scenario.
 
@@ -431,6 +481,8 @@ async def run_multiturn_benchmark(
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
+                lora_id=lora_id,
+                disable_ignore_eos=disable_ignore_eos,
             )
         session_id = (
             str(chat_session.id)
@@ -495,7 +547,7 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
     """Wraps a RequestDriver to cap the number of concurrent in-flight turns.
 
     Acquires a semaphore slot before issuing each turn request and releases it
-    as soon as the response returns. Inter-turn delays (e.g. delay_until_next_message)
+    as soon as the response returns. Inter-turn delays (such as delay_until_next_message)
     fall outside the slot's hold window, so idle user-think-time does not consume
     concurrency capacity.
 
@@ -559,6 +611,7 @@ async def run_kv_cache_stress_benchmark(
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
+    disable_ignore_eos: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
 
@@ -673,6 +726,8 @@ async def run_kv_cache_stress_benchmark(
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
+                lora_id=lora_id,
+                disable_ignore_eos=disable_ignore_eos,
             )
             session_id = (
                 str(chat_session.id)

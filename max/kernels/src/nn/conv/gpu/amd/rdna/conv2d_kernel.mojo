@@ -22,7 +22,7 @@ position. This enables vectorized 8-wide loads from the NHWC input: the same
 load width as the standard matmul kernel's A-tile loader.
 """
 
-from std.gpu import (
+from max.gpu import (
     WARP_SIZE,
     block_idx,
     thread_idx,
@@ -31,10 +31,10 @@ from std.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.compute.mma import mma as _mma_intrinsic
-from layout import TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
-from std.utils import Index, IndexList
+from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from linalg.utils import elementwise_epilogue_type
@@ -56,7 +56,7 @@ comptime SMEM_PAD = 8
 # =========================================================================
 
 
-@always_inline
+@inline(.always)
 def _load_im2col_a_tile[
     dtype: DType,
     BLOCK_M: Int,
@@ -64,9 +64,7 @@ def _load_im2col_a_tile[
     SMEM_STRIDE: Int,
     NUM_THREADS: Int,
 ](
-    smem: UnsafePointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
+    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
     input_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     block_m_offset: Int,
     k_offset: Int,
@@ -100,8 +98,7 @@ def _load_im2col_a_tile[
         var vec_idx = i * NUM_THREADS + tid
         if vec_idx < total_vectors:
             var elem_idx = vec_idx * VECTOR_WIDTH
-            var row = elem_idx // BLOCK_K
-            var col = elem_idx % BLOCK_K
+            var row, col = divmod(elem_idx, BLOCK_K)
             var global_m = block_m_offset + row
             var global_k = k_offset + col
 
@@ -139,7 +136,7 @@ def _load_im2col_a_tile[
 # =========================================================================
 
 
-@always_inline
+@inline(.always)
 def _load_b_tile_to_smem[
     dtype: DType,
     tile_layout: TensorLayout,
@@ -147,11 +144,10 @@ def _load_b_tile_to_smem[
     BLOCK_K: Int,
     SMEM_STRIDE: Int,
     NUM_THREADS: Int,
+    tile_engine: TensorEngine,
 ](
-    smem: UnsafePointer[
-        mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
-    ],
-    tile: TileTensor[mut=True, dtype, tile_layout, _],
+    smem: UnsafePointer[mut=True, Scalar[dtype], _, address_space=.SHARED],
+    tile: TileTensor[mut=True, dtype, tile_layout, _, Engine=tile_engine],
     block_n_offset: Int,
     k_offset: Int,
     max_n: Int,
@@ -170,8 +166,7 @@ def _load_b_tile_to_smem[
         var vec_idx = i * NUM_THREADS + tid
         if vec_idx < total_vectors:
             var elem_idx = vec_idx * VECTOR_WIDTH
-            var row = elem_idx // BLOCK_K
-            var col = elem_idx % BLOCK_K
+            var row, col = divmod(elem_idx, BLOCK_K)
             var global_row = block_n_offset + row
 
             if global_row < max_n:
@@ -198,6 +193,8 @@ def conv2d_kernel_rdna[
     filter_type: DType,
     out_layout: TensorLayout,
     filter_nk_layout: TensorLayout,
+    out_engine: TensorEngine,
+    filter_nk_engine: TensorEngine,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[out_type](),
     BLOCK_K: Int = 32,
@@ -208,9 +205,11 @@ def conv2d_kernel_rdna[
     WARP_TILE_M: Int = 1,
     WARP_TILE_N: Int = 4,
 ](
-    output: TileTensor[out_type, out_layout, MutAnyOrigin],
+    output: TileTensor[out_type, out_layout, MutAnyOrigin, Engine=out_engine],
     input_ptr: UnsafePointer[Scalar[in_type], ImmutAnyOrigin],
-    filter_nk: TileTensor[filter_type, filter_nk_layout, MutAnyOrigin],
+    filter_nk: TileTensor[
+        filter_type, filter_nk_layout, MutAnyOrigin, Engine=filter_nk_engine
+    ],
     # GEMM dimensions
     M: Int32,
     N: Int32,
@@ -247,6 +246,9 @@ def conv2d_kernel_rdna[
         filter_type: `DType` of the filter tensor.
         out_layout: `TensorLayout` of the output `TileTensor`.
         filter_nk_layout: `TensorLayout` of the pre-transposed [N, K] filter
+            `TileTensor`.
+        out_engine: `TensorEngine` of the output `TileTensor`.
+        filter_nk_engine: `TensorEngine` of the pre-transposed [N, K] filter
             `TileTensor`.
         elementwise_lambda_fn: Optional fused epilogue lambda applied per
             output element (defaults to `None`).
@@ -306,9 +308,7 @@ def conv2d_kernel_rdna[
 
     # Block coordinates with swizzle for L2 locality
     var grid_dim = IndexList[2](ceildiv(_N, BLOCK_N), ceildiv(_M, BLOCK_M))
-    var swizzled = block_swizzle(
-        IndexList[2](block_idx.x, block_idx.y), grid_dim
-    )
+    var swizzled = block_swizzle((block_idx.x, block_idx.y), grid_dim)
     var block_n = swizzled[0]
     var block_m = swizzled[1]
 
@@ -329,22 +329,22 @@ def conv2d_kernel_rdna[
     var a_smem_0 = unsafe_stack_allocation[
         BLOCK_M * SMEM_STRIDE,
         in_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var a_smem_1 = unsafe_stack_allocation[
         BLOCK_M * SMEM_STRIDE,
         in_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_smem_0 = unsafe_stack_allocation[
         BLOCK_N * SMEM_STRIDE,
         filter_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var b_smem_1 = unsafe_stack_allocation[
         BLOCK_N * SMEM_STRIDE,
         filter_type,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     # Initialize C accumulators
@@ -379,6 +379,7 @@ def conv2d_kernel_rdna[
         BLOCK_K,
         SMEM_STRIDE,
         NUM_THREADS,
+        tile_engine=filter_nk_engine,
     ](b_smem_0, filter_nk, block_n_offset, 0, _N, tid)
     barrier()
 
@@ -454,6 +455,7 @@ def conv2d_kernel_rdna[
                 BLOCK_K,
                 SMEM_STRIDE,
                 NUM_THREADS,
+                tile_engine=filter_nk_engine,
             ](b_next, filter_nk, block_n_offset, next_k_offset, _N, tid)
 
         barrier()
@@ -481,12 +483,12 @@ def conv2d_kernel_rdna[
                 )
 
                 if global_row < _M and global_col < _N:
-                    comptime if elementwise_lambda_fn:
+                    comptime if case .Some(epilogue) = elementwise_lambda_fn:
                         comptime elementwise_lambda = (
                             elementwise_lambda_fn.value()
                         )
                         elementwise_lambda[out_type, 1](
-                            Index(global_row, global_col),
+                            (global_row, global_col),
                             c_accum[c_idx][v].cast[out_type](),
                         )
                     else:

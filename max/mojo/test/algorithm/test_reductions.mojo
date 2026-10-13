@@ -22,7 +22,7 @@ from max.algorithm.reduction import _reduce_generator, max, min
 from std.math.math import max as _max, min as _min
 from std.testing import TestSuite
 
-from std.utils.index import IndexList, StaticTuple
+from std.utils.index import StaticTuple
 from std.utils.coord import Coord
 
 
@@ -73,34 +73,31 @@ def test_fused_reductions_inner() raises:
     for i in range(size):
         vector[i] = Float32(i + 1)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(vector)
     @__parameter
     def input_fn[
-        dtype: DType, width: Int, rank: Int
-    ](indices: IndexList[rank]) -> SIMD[dtype, width]:
+        dtype: DType, width: Int
+    ](indices: Coord) -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().unsafe_load[width=width](
-            indices[0]
+            Int(indices[0].value())
         )
         return loaded_val._refine[dtype]()
 
     var out = StaticTuple[Scalar[test_type], num_reductions]()
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def output_fn[
-        dtype: DType, width: SIMDLength, rank: Int
-    ](
-        indices: IndexList[rank],
-        val: StaticTuple[SIMD[dtype, width], num_reductions],
-    ):
+        dtype: DType, width: SIMDLength
+    ](indices: Coord, val: StaticTuple[SIMD[dtype, width], num_reductions],):
         comptime assert (
             width == 1
         ), "Cannot write output if width is not equal to 1"
 
         out = rebind[StaticTuple[Scalar[test_type], num_reductions]](val)
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def reduce_fn[
         ty: DType,
@@ -157,18 +154,18 @@ def test_fused_reductions_outer() raises:
     for i in range(size):
         vector[i] = Float32(i + 1)
 
-    @always_inline
+    @inline(.always)
     @__copy_capture(vector)
     @__parameter
     def input_fn[
-        dtype: DType, width: Int, rank: Int
-    ](indices: IndexList[rank]) -> SIMD[dtype, width]:
+        dtype: DType, width: Int
+    ](indices: Coord) -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().unsafe_load[width=width](
-            indices[0] * 2 + indices[1]
+            Int(indices[0].value()) * 2 + Int(indices[1].value())
         )
         return loaded_val._refine[dtype]()
 
-    @always_inline
+    @inline(.always)
     @__parameter
     def reduce_fn[
         ty: DType,
@@ -191,19 +188,15 @@ def test_fused_reductions_outer() raises:
     )
     var shape = Coord((50, 2))
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def output_fn[
-        dtype: DType, width: SIMDLength, rank: Int
-    ](
-        indices: IndexList[rank],
-        val: StaticTuple[SIMD[dtype, width], num_reductions],
-    ):
+        dtype: DType, width: SIMDLength
+    ](indices: Coord, val: StaticTuple[SIMD[dtype, width], num_reductions],):
         # CHECK: Column: 0  min:  1.0  max:  99.0  sum:  2500.0
         # CHECK: Column: 1  min:  2.0  max:  100.0  sum:  2550.0
         print(
             "Column:",
-            indices[1],
+            indices[1].value(),
             " min: ",
             val[0],
             " max: ",
@@ -229,10 +222,9 @@ def test_product() raises:
     comptime size = 10
 
     # Create a mem of size size
-    var vector = Array[Float32, size](uninitialized=True)
-
-    for i in range(size):
-        vector[i] = Float32(i + 1)
+    var vector = Array[Float32, size](
+        fill_with=lambda (i: Int) -> Float32: Float32(i + 1)
+    )
 
     # CHECK: 3628800.0
     print(product(vector))

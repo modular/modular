@@ -15,14 +15,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -38,14 +38,12 @@ from max.pipelines.lib.vision_batching import (
     create_empty_image_token_indices_single,
 )
 
+from .inputs import Gemma3MultiModalModelInputs
 from .model_config import Gemma3ForConditionalGenerationConfig
-
-if TYPE_CHECKING:
-    from .model import Gemma3MultiModalModelInputs
 
 
 class Gemma3MultiModalModuleV3BatchProcessor(
-    BatchProcessor[TextAndVisionContext, "Gemma3MultiModalModelInputs"]
+    BatchProcessor[TextAndVisionContext, Gemma3MultiModalModelInputs]
 ):
     """Ragged batching with vision support for Gemma3 multimodal ModuleV3 models."""
 
@@ -157,11 +155,9 @@ class Gemma3MultiModalModuleV3BatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Gemma3MultiModalModelInputs:
-        from .model import Gemma3MultiModalModelInputs
-
         if len(replica_batches) > 1:
             raise ValueError(
                 "Gemma3MultiModalModuleV3BatchProcessor does not support DP>1"

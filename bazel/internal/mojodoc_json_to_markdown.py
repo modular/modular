@@ -16,10 +16,11 @@ import argparse
 import json
 import os
 import sys
+from functools import partial
 from pathlib import Path
 
 import jinja2
-from mojodoc_api_href import resolve_api_href
+from mojodoc_api_href import create_api_link, pad_backticks
 
 
 def _configure_jinja_env(
@@ -27,14 +28,13 @@ def _configure_jinja_env(
     hosted_on_mojolang: bool,
     stability_doc_url: str,
 ) -> None:
-    """Attach filters and ``api_href`` used by mojodoc templates."""
+    """Attach filters and ``api_link`` used by mojodoc templates."""
 
     environment.filters["pad_backticks"] = pad_backticks
-
-    def api_href(path: str | None) -> str:
-        return resolve_api_href(path, hosted_on_mojolang=hosted_on_mojolang)
-
-    environment.globals["api_href"] = api_href
+    environment.globals["api_link"] = partial(
+        create_api_link,
+        hosted_on_mojolang=hosted_on_mojolang,
+    )
     # A global, not a render variable: templates import macros.jinja without
     # context, so only globals are visible inside the stability_marker macro.
     environment.globals["stability_doc_url"] = stability_doc_url
@@ -99,7 +99,7 @@ def addImplicitConversionDecorator(mojo_json) -> None:  # noqa: ANN001
                             + "declared with @implicit but is not a constructor.",
                             file=sys.stderr,
                         )
-                        exit(1)
+                        sys.exit(1)
 
 
 def copyFieldTypesToValue(mojo_json) -> None:  # noqa: ANN001
@@ -417,9 +417,7 @@ def generateMarkdown(
         else:
             output = output / Path("index.md")
         mojo_json["slug"] = " "
-    elif mojo_json["kind"] == "struct":
-        output = output / Path(name + ".md")
-    elif mojo_json["kind"] == "trait":
+    elif mojo_json["kind"] in ("struct", "trait"):
         output = output / Path(name + ".md")
     elif mojo_json["kind"] == "function":
         # Account for function names that match sibling struct names
@@ -435,16 +433,6 @@ def generateMarkdown(
         if lines and "rumdl-disable" in lines[0]:
             lines.pop(0)
         output_file.write("\n".join(lines))
-
-
-def pad_backticks(value: str) -> str:
-    """Jinja2 filter for Markdown backticks, adds space around strings that
-    start or end with backticks so they do not interfere with the enclosing
-    backtick delimiters."""
-    if value.startswith("`") or value.endswith("`"):
-        return " " + value + " "
-    else:
-        return value
 
 
 def main() -> None:

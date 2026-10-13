@@ -14,7 +14,6 @@
 import logging
 import os
 
-import hf_repo_lock
 import pytest
 from _cli_pipeline_flags import pipeline_flags
 from max._entrypoints import pipelines
@@ -26,9 +25,6 @@ from test_common.lora_utils import (
 
 # Keep original constants for non-LoRA tests
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
-
-
 logger = logging.getLogger("max.pipelines")
 
 
@@ -67,6 +63,35 @@ def test_pipelines_cli__smollm_bfloat16(
     ), captured.out
 
 
+@pytest.mark.skipif(is_h100_h200(), reason="AITLIB-342: Failing on H100")
+@pytest.mark.parametrize("capture_flags", [[], ["--device-graph-capture"]])
+def test_pipelines_cli__graph_capture_is_opt_in_and_warmed_up(
+    capsys: pytest.CaptureFixture[str],
+    capture_flags: list[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        pipelines.main(
+            [
+                "generate",
+                "--prompt",
+                "Why is the sky blue",
+                "--top-k=1",
+                *capture_flags,
+                *pipeline_flags("smollm"),
+            ]
+        )
+    captured = capsys.readouterr()
+    assert "Output size:" in captured.out
+    # The CLI replaces the root log handlers, so its logs reach stderr and
+    # never caplog. Off by default, and warmed up when asked for, so the
+    # not-warmed-up warning never fires.
+    assert "warmup_graph_capture() has not run" not in captured.err, (
+        captured.err[-4000:]
+    )
+    warmed_up = "Warming up device graph capture" in captured.err
+    assert warmed_up == bool(capture_flags), captured.err[-4000:]
+
+
 @pytest.mark.skip("LoRA doesn't work with generate entrypoint. E2EOPT-457")
 def test_pipelines_cli__smollm_with_lora(
     capsys: pytest.CaptureFixture[str],
@@ -87,10 +112,6 @@ def test_pipelines_cli__smollm_with_lora(
                 "--device-memory-utilization=0.1",
                 "--quantization-encoding=bfloat16",
                 "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
                 "--enable-lora",
                 "-max-num-loras=2",
                 "--max-lora-rank=16",
@@ -140,10 +161,6 @@ def test_pipelines_cli__smollm_with_multiple_loras(
                 "--device-memory-utilization=0.1",
                 "--quantization-encoding=bfloat16",
                 "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
                 "--enable-lora",
                 "--max-num-loras=3",
                 "--max-lora-rank=16",

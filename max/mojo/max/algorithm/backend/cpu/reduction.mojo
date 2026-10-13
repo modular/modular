@@ -32,15 +32,15 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _reduce_generator_cpu[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_0_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -111,11 +111,11 @@ def _reduce_generator_cpu[
 def _reduce_along_inner_dimension[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_0_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -124,7 +124,7 @@ def _reduce_along_inner_dimension[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape: IndexList[_, element_type=.int64],
     init_value: StaticTuple[Scalar[init_type], num_reductions],
 ):
     """Reduces the innermost (or specified) dimension of a tensor using SIMD-
@@ -163,8 +163,7 @@ def _reduce_along_inner_dimension[
     )
     var simd_compatible_size = align_down(reduce_dim_size, simd_width)
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def simd_reduce_helper_fn[
         in_width: SIMDLength,
         out_width: Int,
@@ -176,36 +175,43 @@ def _reduce_along_inner_dimension[
         ]()
 
         comptime for i in range(num_reductions):
-            out_acc_tup[i] = in_acc_tup[i].reduce[
-                reduce_function[init_type, reduction_idx=i, ...], out_width
-            ]()
+
+            @inline(.always)
+            def reduce_wrapper[
+                width: SIMDLength
+            ](lhs: SIMD[init_type, width], rhs: SIMD[init_type, width]) -> SIMD[
+                init_type, width
+            ]:
+                return reduce_function[init_type, width, i](lhs, rhs)
+
+            out_acc_tup[i] = in_acc_tup[i].reduce[out_width](reduce_wrapper)
 
         return out_acc_tup
 
-    @always_inline
-    @__parameter
-    def reduce_rows_unrolled(start_row: Int, end_row: Int):
+    @inline(.always)
+    def reduce_rows_unrolled(start_row: Int, end_row: Int) {imm}:
         # Iterate over the non reduced dimensions.
         for flat_index in range(start_row, end_row):
             # In normal elementwise get_nd_indices skips the last dimension as
             # it is the dimension being iterated over. In our case we don't know
             # this yet so we do have to calculate the extra one.
             var indices = _get_nd_indices_from_flat_index(
-                flat_index, shape, reduce_dim
+                flat_index, Coord(shape), reduce_dim
             )
 
-            @always_inline
-            @__parameter
+            @inline(.always)
             def unrolled_reduce_helper_fn[
                 width: SIMDLength,
             ](
                 start: Int,
                 finish: Int,
                 init: StaticTuple[SIMD[init_type, width], num_reductions],
-            ) -> StaticTuple[SIMD[init_type, width], num_reductions]:
+            ) {mut indices, imm} -> StaticTuple[
+                SIMD[init_type, width], num_reductions
+            ]:
                 var acc = init
                 for idx in range(start, finish, width):
-                    indices[reduce_dim] = idx
+                    indices.replace_dynamic[reduce_dim](idx)
                     var load_value = input_0_fn[init_type, width](indices)
 
                     comptime for i in range(num_reductions):
@@ -260,12 +266,11 @@ def _reduce_along_inner_dimension[
             )
 
             # Store the result back to the output.
-            indices[reduce_dim] = 0
+            indices.replace_dynamic[reduce_dim](0)
             output_0_fn(indices, acc_scalar_tup)
 
-    @always_inline
-    @__parameter
-    def reduce_rows(i: Int):
+    @inline(.always)
+    def reduce_rows(i: Int) {imm}:
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
 
@@ -275,7 +280,7 @@ def _reduce_along_inner_dimension[
 
         reduce_rows_unrolled(start_parallel_offset, end_parallel_offset)
 
-    sync_parallelize[reduce_rows](num_workers)
+    sync_parallelize(reduce_rows, num_workers)
     _ = reduce_dim_size
     _ = parallelism_size
     _ = chunk_size
@@ -286,11 +291,11 @@ def _reduce_along_inner_dimension[
 def _reduce_along_outer_dimension[
     num_reductions: Int,
     init_type: DType,
-    input_0_fn: def[dtype: DType, width: Int, rank: Int](
-        IndexList[rank]
-    ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
-        IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+    input_0_fn: def[dtype: DType, width: Int](Coord) capturing[_] -> SIMD[
+        dtype, width
+    ],
+    output_0_fn: def[dtype: DType, width: SIMDLength](
+        Coord, StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
     reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
@@ -299,7 +304,7 @@ def _reduce_along_outer_dimension[
     *,
     reduce_dim: Int,
 ](
-    shape: IndexList[_, element_type=DType.int64],
+    shape: IndexList[_, element_type=.int64],
     init: StaticTuple[Scalar[init_type], num_reductions],
 ):
     """Reduce the given tensor using the given reduction function. The
@@ -343,8 +348,7 @@ def _reduce_along_outer_dimension[
 
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    @__parameter
-    def reduce_slices(i: Int):
+    def reduce_slices(i: Int) {imm}:
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
 
@@ -355,7 +359,7 @@ def _reduce_along_outer_dimension[
 
         for var slice_idx in range(start_parallel_offset, end_parallel_offset):
 
-            @always_inline
+            @inline(.always)
             def reduce_chunk[simd_width: Int](inner_dim_idx: Int) {imm}:
                 var acc_simd_tup = StaticTuple[
                     SIMD[init_type, simd_width], num_reductions
@@ -366,24 +370,20 @@ def _reduce_along_outer_dimension[
 
                 var reduce_vector_idx = slice_idx * inner_dim + inner_dim_idx
                 var indices = _get_nd_indices_from_flat_index(
-                    reduce_vector_idx, shape, reduce_dim
+                    reduce_vector_idx, Coord(shape), reduce_dim
                 )
                 for reduce_dim_idx in range(reduce_dim_size):
-                    indices[reduce_dim] = reduce_dim_idx
-                    var load_value = input_0_fn[
-                        init_type, simd_width, shape.size
-                    ](indices)
+                    indices.replace_dynamic[reduce_dim](reduce_dim_idx)
+                    var load_value = input_0_fn[init_type, simd_width](indices)
 
                     comptime for i in range(num_reductions):
                         acc_simd_tup[i] = reduce_function[
                             init_type, simd_width, i
                         ](load_value, acc_simd_tup[i])
 
-                indices[reduce_dim] = 0
-                output_0_fn[init_type, simd_width, indices.size](
-                    indices, acc_simd_tup
-                )
+                indices.replace_dynamic[reduce_dim](0)
+                output_0_fn[init_type, simd_width](indices, acc_simd_tup)
 
             vectorize[simd_width](inner_dim, reduce_chunk)
 
-    sync_parallelize[reduce_slices](num_workers)
+    sync_parallelize(reduce_slices, num_workers)

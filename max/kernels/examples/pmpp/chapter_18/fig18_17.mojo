@@ -16,7 +16,7 @@
 Note: Original CUDA uses grid sync; this uses multi-launch instead.
 """
 
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -50,12 +50,12 @@ def bfs_kernel(
     var curr_frontier_s = unsafe_stack_allocation[
         PRIVATE_FRONTIER_CAPACITY,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     var num_curr_frontier_s = unsafe_stack_allocation[
         1,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
 
     if thread_idx.x == 0:
@@ -103,7 +103,7 @@ def bfs_kernel(
     var start_idx_ptr = unsafe_stack_allocation[
         1,
         UInt32,
-        address_space=AddressSpace.SHARED,
+        address_space=.SHARED,
     ]()
     if thread_idx.x == 0:
         var local_count = Int(num_curr_frontier_s[0])
@@ -145,16 +145,12 @@ def main() raises:
     var start_vertex = 0
     h_level[start_vertex] = 0
 
-    var d_src_ptrs = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES + 1)
-    var d_dst = ctx.enqueue_create_buffer[DType.uint32](num_edges)
-    var d_level = ctx.enqueue_create_buffer[DType.uint32](NUM_VERTICES)
-    var d_prev_frontier = ctx.enqueue_create_buffer[DType.uint32](
-        NUM_VERTICES * 2
-    )
-    var d_curr_frontier = ctx.enqueue_create_buffer[DType.uint32](
-        NUM_VERTICES * 2
-    )
-    var d_num_curr_frontier = ctx.enqueue_create_buffer[DType.uint32](1)
+    var d_src_ptrs = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES + 1)
+    var d_dst = ctx.enqueue_create_buffer[.uint32](num_edges)
+    var d_level = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES)
+    var d_prev_frontier = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES * 2)
+    var d_curr_frontier = ctx.enqueue_create_buffer[.uint32](NUM_VERTICES * 2)
+    var d_num_curr_frontier = ctx.enqueue_create_buffer[.uint32](1)
 
     var h_src_ptrs = alloc[UInt32](NUM_VERTICES + 1)
     var h_dst = alloc[UInt32](num_edges)

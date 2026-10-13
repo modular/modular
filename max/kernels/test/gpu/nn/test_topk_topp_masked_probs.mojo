@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Correctness tests for `nn.topk_fi.topk_topp_masked_probs`.
+"""Correctness tests for `nn.sampling.topk_topp_masked_probs`.
 
 The kernel writes, per row, the joint top-k/top-p masked renormalized
 softmax: a token survives iff its weight `e_i = exp((logit_i - row_max) /
@@ -30,9 +30,9 @@ by the mask-disabled identity (the row is its plain softmax).
 from std.math import exp
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from nn.topk_fi import topk_topp_masked_probs
+from nn.sampling import topk_topp_masked_probs
 
 
 def scrambled_logit(row: Int, col: Int, d: Int) -> Float64:
@@ -140,7 +140,7 @@ def reference_masked_probs_topk_only(
 
 
 def run_probs[
-    dtype: DType = DType.float32
+    dtype: DType = .float32
 ](
     ctx: DeviceContext,
     rows: Int,
@@ -160,18 +160,18 @@ def run_probs[
     var logits_dev = ctx.enqueue_create_buffer[dtype](rows * d)
     ctx.enqueue_copy(logits_dev, logits_host)
 
-    var probs_dev = ctx.enqueue_create_buffer[DType.float32](rows * d)
+    var probs_dev = ctx.enqueue_create_buffer[.float32](rows * d)
 
-    var temp_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var top_p_host = ctx.enqueue_create_host_buffer[DType.float32](rows)
-    var top_k_host = ctx.enqueue_create_host_buffer[DType.int64](rows)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var top_p_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var top_k_host = ctx.enqueue_create_host_buffer[.int64](rows)
     for row in range(rows):
         temp_host[row] = Float32(temperature)
         top_p_host[row] = Float32(top_p)
         top_k_host[row] = Int64(k)
-    var temp_dev = ctx.enqueue_create_buffer[DType.float32](rows)
-    var top_p_dev = ctx.enqueue_create_buffer[DType.float32](rows)
-    var top_k_dev = ctx.enqueue_create_buffer[DType.int64](rows)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var top_p_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var top_k_dev = ctx.enqueue_create_buffer[.int64](rows)
     ctx.enqueue_copy(temp_dev, temp_host)
     ctx.enqueue_copy(top_p_dev, top_p_host)
     ctx.enqueue_copy(top_k_dev, top_k_host)
@@ -184,16 +184,16 @@ def run_probs[
         top_p_val=1.0,
         top_k_arr=TileTensor(top_k_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         top_p_arr=TileTensor(top_p_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         temperature=TileTensor(temp_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
     )
 
-    var probs_host = ctx.enqueue_create_host_buffer[DType.float32](rows * d)
+    var probs_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
     ctx.enqueue_copy(probs_host, probs_dev)
     ctx.synchronize()
 
@@ -240,8 +240,8 @@ def test_empty_batch(ctx: DeviceContext, d: Int) raises:
     drafts to verify (any prefill-only step), so the empty batch is a normal
     input rather than an edge case.
     """
-    var logits = ctx.enqueue_create_buffer[DType.float32](0)
-    var probs = ctx.enqueue_create_buffer[DType.float32](0)
+    var logits = ctx.enqueue_create_buffer[.float32](0)
+    var probs = ctx.enqueue_create_buffer[.float32](0)
 
     topk_topp_masked_probs(
         ctx,
@@ -256,9 +256,100 @@ def test_empty_batch(ctx: DeviceContext, d: Int) raises:
     _ = probs^
 
 
+def test_narrow_cluster_brackets(
+    ctx: DeviceContext, rows: Int, d: Int, k: Int
+) raises:
+    var logits_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
+    for row in range(rows):
+        for col in range(d):
+            logits_host[row * d + col] = Float32(-Float64(col + row) * 8.94e-8)
+    var logits_dev = ctx.enqueue_create_buffer[.float32](rows * d)
+    ctx.enqueue_copy(logits_dev, logits_host)
+    var probs_dev = ctx.enqueue_create_buffer[.float32](rows * d)
+
+    var top_p_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var top_k_host = ctx.enqueue_create_host_buffer[.int64](rows)
+    for row in range(rows):
+        top_p_host[row] = 1.0
+        top_k_host[row] = Int64(k)
+    var top_p_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var top_k_dev = ctx.enqueue_create_buffer[.int64](rows)
+    ctx.enqueue_copy(top_p_dev, top_p_host)
+    ctx.enqueue_copy(top_k_dev, top_k_host)
+
+    topk_topp_masked_probs(
+        ctx,
+        TileTensor(logits_dev, row_major(rows, d)),
+        TileTensor(probs_dev, row_major(rows, d)).as_unsafe_any_origin(),
+        top_k_val=d,
+        top_p_val=1.0,
+        top_k_arr=TileTensor(top_k_dev, row_major(rows))
+        .as_unsafe_any_origin()
+        .as_imm(),
+        top_p_arr=TileTensor(top_p_dev, row_major(rows))
+        .as_unsafe_any_origin()
+        .as_imm(),
+    )
+
+    var probs_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
+    ctx.enqueue_copy(probs_host, probs_dev)
+    ctx.synchronize()
+
+    for row in range(rows):
+        for col in range(d):
+            assert_equal(
+                probs_host[row * d + col] != 0.0,
+                col < k,
+                msg=String(t"narrow bracket d={d} k={k} row={row} col={col}"),
+            )
+
+    _ = logits_dev^
+    _ = probs_dev^
+    _ = top_p_dev^
+    _ = top_k_dev^
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        for k in [32, 45, 51, 61, 63]:
+            test_narrow_cluster_brackets(ctx, rows=2, d=4096, k=k)
+
         test_empty_batch(ctx, d=1024)
+        # Vocabularies far narrower than one cluster's thread count. At these
+        # widths a row does not even fill one block, so under a cluster most
+        # CTAs own no elements at all and contribute only reduction
+        # identities -- the shape `rejection_sampler.py` reaches with
+        # `vocab_size` 6 and 8.
+        run_probs(
+            ctx,
+            rows=4,
+            d=6,
+            filler=scrambled_logit,
+            k=-1,
+            top_p=0.9,
+            temperature=1.0,
+            exact_reference=True,
+        )
+        run_probs(
+            ctx,
+            rows=4,
+            d=8,
+            filler=scrambled_logit,
+            k=3,
+            top_p=1.0,
+            temperature=1.0,
+            exact_reference=True,
+        )
+        run_probs(
+            ctx,
+            rows=6,
+            d=8,
+            filler=ascending_logit,
+            k=-1,
+            top_p=0.5,
+            temperature=1.0,
+            exact_reference=True,
+        )
         # Mask disabled: the row is its plain softmax.
         run_probs(
             ctx,
@@ -341,6 +432,74 @@ def main() raises:
             filler=scrambled_logit,
             k=40,
             top_p=1.0,
+            temperature=1.0,
+            exact_reference=False,
+        )
+        # A batch wider than the SM count: the grid runs multiple waves of
+        # clusters.
+        run_probs(
+            ctx,
+            rows=200,
+            d=257,
+            filler=scrambled_logit,
+            k=-1,
+            top_p=0.9,
+            temperature=1.0,
+            exact_reference=True,
+        )
+        run_probs(
+            ctx,
+            rows=200,
+            d=8,
+            filler=ascending_logit,
+            k=-1,
+            top_p=0.5,
+            temperature=1.0,
+            exact_reference=True,
+        )
+        # A vocabulary in the two-CTA window: too wide for one CTA's staging
+        # budget, narrow enough to split across two.
+        run_probs(
+            ctx,
+            rows=2,
+            d=98304,
+            filler=scrambled_logit,
+            k=40,
+            top_p=0.95,
+            temperature=1.0,
+            exact_reference=False,
+        )
+        # A vocabulary whose per-CTA slice does not fit the shared-memory
+        # budget: the launcher falls back to the single-block kernel, which
+        # is otherwise unexercised on cluster devices.
+        run_probs(
+            ctx,
+            rows=2,
+            d=249856,
+            filler=scrambled_logit,
+            k=40,
+            top_p=1.0,
+            temperature=1.0,
+            exact_reference=False,
+        )
+        # Exercise two- and four-block row groups.
+        run_probs(
+            ctx,
+            rows=100,
+            d=16384,
+            filler=scrambled_logit,
+            k=40,
+            top_p=0.95,
+            temperature=1.0,
+            exact_reference=False,
+        )
+        run_probs(
+            ctx,
+            rows=50,
+            d=32768,
+            filler=scrambled_logit,
+            k=40,
+            top_p=0.95,
             temperature=1.0,
             exact_reference=False,
         )

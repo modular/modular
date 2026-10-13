@@ -128,6 +128,42 @@ def test_string_facet_only_schema_coerces_bare_value_to_string() -> None:
     assert coerced == {"value": "1"}
 
 
+@pytest.mark.parametrize(
+    ("value_schema", "decoded", "expected"),
+    [
+        ({"const": "2.0"}, 2.0, "2.0"),
+        ({"enum": ["1", "2.0", "on"]}, 2.0, "2.0"),
+        ({"enum": ["true", "false"]}, True, "true"),
+        # A literal set that really does admit the decoded type is left alone,
+        # so the inference cannot turn a legal non-string literal into a string.
+        ({"enum": ["a", 1, None]}, 1, 1),
+        ({"const": 2}, 2, 2),
+    ],
+    ids=["const", "enum", "bool_enum", "mixed_enum", "int_const"],
+)
+def test_const_and_enum_pin_the_value_type_without_a_type_keyword(
+    value_schema: dict[str, Any], decoded: object, expected: object
+) -> None:
+    """``const``/``enum`` declare the type as firmly as ``type`` does.
+
+    GLM emits values bare, so ``<arg_value>2.0</arg_value>`` decodes to the
+    number 2.0 even where the grammar only ever admitted the string "2.0".
+    Neither keyword usually carries a sibling ``type``, so without inferring
+    from the literals the round-tripped arguments contradict the grammar that
+    produced them and a conforming tool call reads as a schema violation.
+    """
+    parser = GlmToolParser()
+    schema = {
+        "type": "object",
+        "properties": {"value": value_schema},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    assert parser.coerce_arguments({"value": decoded}, schema) == {
+        "value": expected
+    }
+
+
 def test_plain_text_has_no_tool_calls() -> None:
     parser = GlmToolParser()
     result = parser.parse_complete("just a normal answer")
@@ -173,6 +209,70 @@ def test_streaming_reassembles_call() -> None:
     assert content.strip() == "hi"
     assert name == "get_weather"
     assert json.loads(args) == {"location": "Paris"}
+
+
+def _string_arg_schema(prop: str = "expression") -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {prop: {"type": "string"}},
+        "required": [prop],
+    }
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [("2", "2"), ("null", "null"), ("true", "true"), ("3.14", "3.14")],
+)
+def test_streaming_coerces_bare_scalar_to_string(
+    raw: str, expected: str
+) -> None:
+    # A bare value whose text is a JSON scalar must be coerced back to the
+    # schema's string type, mirroring the non-streaming coerce_arguments path.
+    parser = GlmToolParser()
+    parser.set_streaming_tool_schemas({"calc": _string_arg_schema()})
+    chunks = [
+        f"<tool_call>calc<arg_key>expression</arg_key><arg_value>{raw}",
+        "</arg_value></tool_call>",
+    ]
+    _, name, args = _collect_stream(parser, chunks)
+    assert name == "calc"
+    assert json.loads(args) == {"expression": expected}
+
+
+def test_streaming_leaves_non_json_string_untouched() -> None:
+    parser = GlmToolParser()
+    parser.set_streaming_tool_schemas({"calc": _string_arg_schema()})
+    chunks = [
+        "<tool_call>calc<arg_key>expression</arg_key><arg_value>2 + 2",
+        "</arg_value></tool_call>",
+    ]
+    _, _, args = _collect_stream(parser, chunks)
+    assert json.loads(args) == {"expression": "2 + 2"}
+
+
+def test_streaming_without_schema_does_not_coerce() -> None:
+    # No set_streaming_tool_schemas: bare scalars decode as JSON (unchanged).
+    parser = GlmToolParser()
+    chunks = [
+        "<tool_call>calc<arg_key>expression</arg_key><arg_value>2",
+        "</arg_value></tool_call>",
+    ]
+    _, _, args = _collect_stream(parser, chunks)
+    assert json.loads(args) == {"expression": 2}
+
+
+def test_streaming_coercion_is_prefix_stable_across_deltas() -> None:
+    # The value's tokens straddle deltas; the emitted diffs must still
+    # concatenate into valid JSON carrying the coerced string.
+    parser = GlmToolParser()
+    parser.set_streaming_tool_schemas({"calc": _string_arg_schema()})
+    chunks = [
+        "<tool_call>calc<arg_key>expr",
+        "ession</arg_key><arg_value>2",
+        "</arg_value></tool_call>",
+    ]
+    _, _, args = _collect_stream(parser, chunks)
+    assert json.loads(args) == {"expression": "2"}
 
 
 # ---------------------------------------------------------------------------

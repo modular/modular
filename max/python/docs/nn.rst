@@ -14,12 +14,26 @@ max.nn
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.nn.attention
+   max.nn.kernels
+   max.nn.kv_cache
+   max.nn.moe
+   max.nn.sampling
+   max.nn.state_space
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    nn.attention
    nn.kernels
    nn.kv_cache
+   nn.moe
+   nn.sampling
+   nn.state_space
 
 Base classes
 ------------
@@ -94,6 +108,7 @@ Transformer
 
    DistributedTransformer
    DistributedTransformerBlock
+   HyperConnection
    ReturnHiddenStates
    ReturnLogits
    Transformer

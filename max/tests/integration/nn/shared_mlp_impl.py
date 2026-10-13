@@ -19,7 +19,6 @@ from typing import Any
 
 import pytest
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
@@ -35,6 +34,7 @@ from max.graph import (
 )
 from max.nn import MLP, Allreduce, Module, Signals
 from test_common.graph_utils import are_all_buffer_values_sequence
+from torch import nn
 
 DTYPE = DType.float32
 TORCH_DTYPE = torch.float32

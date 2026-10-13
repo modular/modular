@@ -56,22 +56,17 @@ modular_py_binary(
         requirement("pydantic"),
         requirement("pyyaml"),
         "//max/python/max/_entrypoints:pipelines",
-        "//max/tests/integration:hf_repo_lock",
     ],
 )
 
 modular_py_binary(
-    name = "di_smoke_test",
+    name = "endpoint_smoke_test",
     testonly = True,
-    srcs = ["di_smoke_test.py"],
+    srcs = ["endpoint_smoke_test.py"],
     imports = [".."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":eval_runner",
-        ":inference_server_harness",
         requirement("click"),
-        requirement("pyyaml"),
-        requirement("requests"),
     ],
 )
 

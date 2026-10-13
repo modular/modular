@@ -16,11 +16,11 @@
 travels in a 32-byte fragment despite carrying only 24 payload bytes. One FP6
 MFMA (`cbsz:2 blgp:2`, accumulator width 16) on gfx950 measures:
 
-    operand     wrapper         A/B span  VGPRs  bytes
-    <6 x i32>   @always_inline   6         17     48
-    <8 x i32>   @always_inline   6         17     48
-    <6 x i32>   @no_inline       6         31     48
-    <8 x i32>   @no_inline       6         33     64
+    operand     wrapper           A/B span  VGPRs  bytes
+    <6 x i32>   @inline(.always)  6         17     48
+    <8 x i32>   @inline(.always)  6         17     48
+    <6 x i32>   @inline(.never)   6         31     48
+    <8 x i32>   @inline(.never)   6         33     64
 
 The padding is free only while InstCombine narrows the operand and the wrapper
 stays inlined. The span reads 6 in every row, so the tests also pin whole-kernel
@@ -29,7 +29,7 @@ counts and require no call.
 Cross-compiles to gfx950, so it needs no AMD GPU.
 """
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, lane_id
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, lane_id
 from std.testing import assert_equal, assert_true
 from std.utils import StaticTuple
 
@@ -48,17 +48,17 @@ def _single_mfma_kernel[
     matrix_format: CDNA4F8F6F4MatrixFormat,
     accum_width: Int,
 ](
-    a_in: UnsafePointer[UInt8, ImmutAnyOrigin],
-    b_in: UnsafePointer[UInt8, ImmutAnyOrigin],
-    scales: UnsafePointer[Int32, ImmutAnyOrigin],
-    dst: UnsafePointer[Float32, MutAnyOrigin],
+    a_in: ImmPointer[UInt8, ImmutAnyOrigin],
+    b_in: ImmPointer[UInt8, ImmutAnyOrigin],
+    scales: ImmPointer[Int32, ImmutAnyOrigin],
+    dst: MutPointer[Float32, MutAnyOrigin],
 ):
     comptime fragment_width = matrix_format.simd_width()
     var lane = Int(lane_id())
 
     var a_frag = a_in.load[width=fragment_width](lane * fragment_width)
     var b_frag = b_in.load[width=fragment_width](lane * fragment_width)
-    var acc = SIMD[DType.float32, accum_width](0.0)
+    var acc = SIMD[.float32, accum_width](0.0)
 
     cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
         acc, a_frag, b_frag, scales[0], scales[1]

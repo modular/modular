@@ -63,6 +63,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     # The full unified-graph compile takes ~7 min on CI — too heavy for
     # presubmit (the unified dflash arches ship no presubmit compile test
     # at all). Run explicitly / from scheduled jobs only.
@@ -105,6 +106,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -112,7 +114,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
         "//max/python/max/pipelines/kv_cache",
-        "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:context_utils",
         requirement("huggingface-hub"),
         requirement("numpy"),

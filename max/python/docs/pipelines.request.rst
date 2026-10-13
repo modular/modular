@@ -14,8 +14,14 @@ max.pipelines.request
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.request.provider_options
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    pipelines.request.provider_options
 
@@ -91,6 +97,7 @@ Output content
    :toctree: generated
    :template: autosummary/class.rst
 
+   OutputAudioContent
    OutputContent
    OutputImageContent
    OutputTextContent
@@ -157,6 +164,7 @@ Usage and tokens
    :toctree: generated
    :template: autosummary/class.rst
 
+   AudioGenerationDetails
    Error
    IncludeEnum
    IncompleteDetails

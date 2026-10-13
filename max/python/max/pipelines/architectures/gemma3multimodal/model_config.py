@@ -19,12 +19,13 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import Gemma3Config
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
+    KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
@@ -147,7 +148,7 @@ class Gemma3ForConditionalGenerationConfig(
     dtype: DType
     """DType of the model weights and input."""
 
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     """KV cache parameters."""
 
     image_token_index: int
@@ -200,12 +201,37 @@ class Gemma3ForConditionalGenerationConfig(
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         return huggingface_config.text_config.num_hidden_layers
 
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> MultiKVCacheParams:
+        # ArchVLConfigWithTextSubconfig reads text_config from annotations,
+        # which stay strings under from __future__ import annotations, so it
+        # would otherwise build a single full-attention leaf.
+        return Gemma3Config.construct_kv_params(
+            huggingface_config=huggingface_config.text_config,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
+        )
+
     @override
     @classmethod
     def initialize(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Gemma3ForConditionalGenerationConfig instance from pipeline configuration.
 
@@ -223,13 +249,17 @@ class Gemma3ForConditionalGenerationConfig(
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, max_seq_len=max_seq_len
+        )
 
     @classmethod
     def initialize_from_config(
         cls,
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a Gemma3ForConditionalGenerationConfig from pipeline and HuggingFace configs.
 
@@ -283,6 +313,7 @@ class Gemma3ForConditionalGenerationConfig(
         text_config = Gemma3Config.initialize_from_config(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,
+            max_seq_len=max_seq_len,
         )
 
         kv_params = cls.construct_kv_params(

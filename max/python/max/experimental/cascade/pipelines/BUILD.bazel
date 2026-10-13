@@ -11,19 +11,24 @@ modular_py_library(
     name = "pipelines",
     srcs = [
         "__init__.py",
+        "chat_parser.py",
         "common_textgen.py",
         "dummy_imgen.py",
         "dummy_textgen.py",
         "echo_textgen.py",
+        "echo_tool_parser.py",
+        "text_echo.py",
     ],
     deps = [
         requirement("numpy"),
         requirement("pillow"),
+        requirement("pydantic"),
         requirement("scipy"),
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/interfaces",
         "//max/python/max/experimental/cascade/workers",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 

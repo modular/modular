@@ -29,11 +29,7 @@ from max.graph import (
     ops,
 )
 from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
-    flash_attention_ragged,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
-)
+from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
@@ -41,7 +37,10 @@ from max.nn.norm import RMSNorm
 from max.nn.stacked_linear import StackedLinear
 
 from ..model_config import InklingTextConfig
-from .short_convolution import ShortConvolution
+from .short_convolution import (
+    ShortConvolution,
+    fused_qk_rms_norm_short_conv_ragged,
+)
 
 _TAU_DTYPE = DType.float32
 
@@ -55,7 +54,11 @@ def log_scaling_tau(
 
 
 class InklingAttention(Module, Shardable):
-    """One decoder layer's attention block, unfused."""
+    """One decoder layer's attention block.
+
+    The prologue (K/V short conv with its ring commit, Q/K norms, KV-cache
+    stores) is one fused launch for any chunk length.
+    """
 
     def __init__(
         self,
@@ -67,28 +70,29 @@ class InklingAttention(Module, Shardable):
         devices: list[DeviceRef],
         tp_size: int = 1,
         is_sharding: bool = False,
+        is_local: bool | None = None,
+        commit_conv_state: bool = True,
     ) -> None:
         super().__init__()
         device = devices[0]
         self.text_config = text_config
+        self.commit_conv_state = commit_conv_state
         self.layer_idx = layer_idx
         self.kv_params = kv_params
         self.dtype = dtype
+        if is_local is None:
+            is_local = text_config.is_local_attention(layer_idx)
+        self._is_local = is_local
         self._sharding_strategy: ShardingStrategy | None = None
-        full_num_heads = text_config.num_heads_for_layer(layer_idx)
-        full_num_kv_heads = text_config.num_kv_heads_for_layer(layer_idx)
-        self.num_heads = full_num_heads // tp_size
-        self.num_kv_heads = full_num_kv_heads // tp_size
-        self.head_dim = text_config.head_dim_for_layer(layer_idx)
-        self.local_window_size = text_config.attention_window_for_layer(
-            layer_idx
-        )
-        self.applies_log_scaling = text_config.applies_log_scaling(layer_idx)
+        self.num_heads = text_config.num_heads(is_local) // tp_size
+        self.num_kv_heads = text_config.num_kv_heads(is_local) // tp_size
+        self.head_dim = text_config.head_dim_for(is_local)
+        self.local_window_size = text_config.attention_window(is_local)
+        self.applies_log_scaling = text_config.applies_log_scaling(is_local)
         # muP scales attention logits by 1/d, not the usual 1/sqrt(d).
         self.scale = 1.0 / self.head_dim
         self.out_dims = tuple(
-            dim // tp_size
-            for dim in text_config.qkvr_out_dims_for_layer(layer_idx)
+            dim // tp_size for dim in text_config.qkvr_out_dims(is_local)
         )
 
         if tp_size > 1 and kv_params.n_kv_heads_per_device != self.num_kv_heads:
@@ -108,7 +112,7 @@ class InklingAttention(Module, Shardable):
             has_bias=text_config.q_bias,
             _is_sharding=is_sharding,
         )
-        kv_conv_dim = text_config.kv_conv_dim_for_layer(layer_idx) // tp_size
+        kv_conv_dim = text_config.kv_conv_dim(is_local) // tp_size
         if not is_sharding:
             self.k_sconv = ShortConvolution(
                 channels=kv_conv_dim,
@@ -128,10 +132,15 @@ class InklingAttention(Module, Shardable):
         self.k_norm = RMSNorm(
             self.head_dim, dtype, eps=text_config.rms_norm_eps
         )
+        # The fused prologue applies one norm config to both Q and K.
+        assert self.q_norm.eps == self.k_norm.eps
+        assert (
+            self.q_norm.multiply_before_cast == self.k_norm.multiply_before_cast
+        )
         # A plain weight rather than a submodule so its name can carry the
         # checkpoint's own rel_logits_proj.proj spelling.
         self.d_rel = text_config.d_rel
-        self.rel_extent = text_config.rel_extent_for_layer(layer_idx)
+        self.rel_extent = text_config.rel_extent_for(is_local)
         if not is_sharding:
             self.rel_logits_proj = Weight(
                 "rel_logits_proj.proj",
@@ -154,44 +163,52 @@ class InklingAttention(Module, Shardable):
         *,
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
+        positions: TensorValue,
         log_scaling: TensorValue,
-        k_conv_pool: BufferValue,
-        v_conv_pool: BufferValue,
-        slot_idx: TensorValue,
+        k_conv_ring: BufferValue,
+        k_conv_rows: TensorValue,
+        k_layer_row: TensorValue,
+        v_conv_ring: BufferValue,
+        v_conv_rows: TensorValue,
+        v_layer_row: TensorValue,
         cache_layer_idx: TensorValue,
     ) -> TensorValue:
         """Runs the block over one ragged batch. ``cache_layer_idx`` is an
         operand, not a folded constant, so every layer of one attention flavor
-        can share a compiled subgraph."""
-        total_tokens = x.shape[0]
-        q_dim, k_dim, v_dim, r_dim = self.out_dims
+        can share a compiled subgraph.
+        """
+        q_dim, k_dim, v_dim, _ = self.out_dims
 
         qkvr = self.qkvr_proj(x)
-        q, k, v, r = ops.split(qkvr, [q_dim, k_dim, v_dim, r_dim], axis=-1)
-
-        k = self.k_sconv(k, k_conv_pool, slot_idx, input_row_offsets)
-        v = self.v_sconv(v, v_conv_pool, slot_idx, input_row_offsets)
-
-        q = self.q_norm(
-            q.reshape([total_tokens, self.num_heads, self.head_dim])
-        )
-        k = self.k_norm(
-            k.reshape([total_tokens, self.num_kv_heads, self.head_dim])
+        r = qkvr[:, q_dim + k_dim + v_dim :]
+        q = fused_qk_rms_norm_short_conv_ragged(
+            self.kv_params,
+            qkvr,
+            input_row_offsets,
+            positions,
+            kv_collection,
+            self.q_norm.weight.cast(qkvr.dtype).to(qkvr.device),
+            self.k_norm.weight.cast(qkvr.dtype).to(qkvr.device),
+            self.k_sconv.taps,
+            self.v_sconv.taps,
+            k_conv_ring,
+            v_conv_ring,
+            k_conv_rows,
+            v_conv_rows,
+            k_layer_row,
+            v_layer_row,
+            log_scaling,
+            self.q_norm.eps,
+            cache_layer_idx,
+            q_num_heads=self.num_heads,
+            apply_log_scaling=self.applies_log_scaling,
+            commit=self.commit_conv_state,
+            multiply_before_cast=self.q_norm.multiply_before_cast,
         )
         bias = self._relative_bias(r)
         if self.applies_log_scaling:
-            q = _scale_rows(q, log_scaling)
             bias = _scale_rows(bias, log_scaling)
 
-        store_k_cache_ragged(
-            kv_collection, k, input_row_offsets, cache_layer_idx
-        )
-        store_v_cache_ragged(
-            kv_collection,
-            v.reshape([total_tokens, self.num_kv_heads, self.head_dim]),
-            input_row_offsets,
-            cache_layer_idx,
-        )
         mask_variant = (
             MHAMaskVariant.CAUSAL_MASK
             if self.local_window_size is None
@@ -210,7 +227,7 @@ class InklingAttention(Module, Shardable):
             ),
             rel_logits=bias,
         )
-        return self.wo_ud(attn_out.reshape([total_tokens, q_dim]))
+        return self.wo_ud(attn_out.reshape([x.shape[0], q_dim]))
 
     def _relative_bias(self, r: TensorValue) -> TensorValue:
         """Maps the head-major relative branch to
@@ -288,6 +305,8 @@ class InklingAttention(Module, Shardable):
                 devices=[device],
                 tp_size=len(devices),
                 is_sharding=True,
+                is_local=self._is_local,
+                commit_conv_state=self.commit_conv_state,
             )
             for name, per_device in part_shards.items():
                 setattr(sharded, name, per_device[shard_idx])

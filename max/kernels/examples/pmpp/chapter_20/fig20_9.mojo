@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import exp, sqrt
+from std.math import ceildiv, exp, sqrt
 from std.random import rand
 from std.collections import Array
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
-from std.gpu.primitives.warp import (
+from max.gpu.primitives.warp import (
     shuffle_idx,
     lane_group_max,
     lane_group_sum,
 )
-from std.gpu.primitives.id import (
+from max.gpu.primitives.id import (
     lane_id,
     warp_id,
 )
@@ -46,13 +46,13 @@ comptime d_size = D_MODEL // WARP_SIZE  # 4
 
 
 def flashattention_forward_kernel(
-    Q: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    K: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    V: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    Q: UnsafePointer[Float32, MutAnyOrigin],
+    K: UnsafePointer[Float32, MutAnyOrigin],
+    V: UnsafePointer[Float32, MutAnyOrigin],
     N_dev: Int32,
     scaling: Float32,
-    out_D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    out_O: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    out_D: UnsafePointer[Float32, MutAnyOrigin],
+    out_O: UnsafePointer[Float32, MutAnyOrigin],
 ):
     # Int is not device-passable; widen the fixed-width arg.
     var N = Int(N_dev)
@@ -61,18 +61,18 @@ def flashattention_forward_kernel(
 
     var KT_j = unsafe_stack_allocation[
         B_c * D_MODEL,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var S_i = unsafe_stack_allocation[
         B_r * B_c,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var V_j = unsafe_stack_allocation[
         B_c * D_MODEL,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     # Per-thread register storage (like CUDA)
@@ -295,17 +295,17 @@ def main() raises:
         h_K[k] -= 0.5
         h_V[k] -= 0.5
 
-    var d_Q = device.enqueue_create_buffer[DType.float32](size_mat)
-    var d_K = device.enqueue_create_buffer[DType.float32](size_mat)
-    var d_V = device.enqueue_create_buffer[DType.float32](size_mat)
-    var d_O = device.enqueue_create_buffer[DType.float32](size_mat)
-    var d_D_out = device.enqueue_create_buffer[DType.float32](N)
+    var d_Q = device.enqueue_create_buffer[.float32](size_mat)
+    var d_K = device.enqueue_create_buffer[.float32](size_mat)
+    var d_V = device.enqueue_create_buffer[.float32](size_mat)
+    var d_O = device.enqueue_create_buffer[.float32](size_mat)
+    var d_D_out = device.enqueue_create_buffer[.float32](N)
 
     device.enqueue_copy(d_Q, h_Q)
     device.enqueue_copy(d_K, h_K)
     device.enqueue_copy(d_V, h_V)
 
-    var grid_size = (N + B_r - 1) // B_r
+    var grid_size = ceildiv(N, B_r)
     var scaling = 1.0 / sqrt(Float32(D_MODEL))
 
     print("Launching kernel with grid=", grid_size, "block=", BLOCK_SIZE, "...")

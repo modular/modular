@@ -29,10 +29,7 @@ from std.utils import IndexList
 from layout import Coord, TileTensor, row_major
 
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
-
-
-def _round_up(x: Int, mod: Int) -> Int:
-    return ((x + mod - 1) // mod) * mod
+from std.math import align_up
 
 
 def _run[
@@ -55,7 +52,7 @@ def _run[
     comptime W_out = (W + 2 * pad_w - S) // stride_w + 1
     comptime M_total = N * H_out * W_out
     comptime K_real = R * S * C_in
-    comptime K_padded = _round_up(K_real, 256)
+    comptime K_padded = align_up(K_real, 256)
 
     print(
         "== rt-hw conv:",

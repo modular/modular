@@ -35,7 +35,7 @@ PIPELINES: Final[list[PipelineEntry]] = [
     PipelineEntry(
         pipeline="nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash",
         model_path="nvidia/Kimi-K2.7-Code-NVFP4",
-        runner="modrunner-b200-8x",
+        runner="modrunner-b200-efa-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=90,
@@ -49,9 +49,17 @@ PIPELINES: Final[list[PipelineEntry]] = [
         timeout=60,
     ),
     PipelineEntry(
+        pipeline="meta-models/Muse-Glimmer-30B",
+        model_path="meta-models/Muse-Glimmer-30B",
+        runner="modrunner-b200",
+        gpu_flag="--devices gpu:0",
+        instance_type="bm.gpu.b200.1",
+        timeout=60,
+    ),
+    PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",
         model_path="MiniMaxAI/MiniMax-M3-MXFP8",
-        runner="modrunner-b200-8x",
+        runner="modrunner-b200-efa-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=90,
@@ -62,7 +70,7 @@ PIPELINES: Final[list[PipelineEntry]] = [
     PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-dp",
         model_path="MiniMaxAI/MiniMax-M3-MXFP8",
-        runner="modrunner-b200-8x",
+        runner="modrunner-b200-efa-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=90,
@@ -91,10 +99,25 @@ PIPELINES: Final[list[PipelineEntry]] = [
     PipelineEntry(
         pipeline="nvidia/GLM-5.2-NVFP4-ep-tp-mtp",
         model_path="nvidia/GLM-5.2-NVFP4",
-        runner="modrunner-b200-8x",
+        runner="modrunner-b200-efa-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=90,
+    ),
+    # Tiny model on CPU: a cheap end-to-end check of the fuzz harness and the
+    # serve path without occupying an accelerator at all. 135M params in FP32
+    # is ~540MB of weights, so there is nothing a GPU buys here. The CPU
+    # runner is why llmFuzzAdHoc.yaml's GPU-info step is conditional -- see
+    # that step for the coupling.
+    PipelineEntry(
+        pipeline="modularai/SmolLM-135M-Instruct-FP32",
+        model_path="modularai/SmolLM-135M-Instruct-FP32",
+        runner="modrunner-m7i-normal",
+        gpu_flag="--devices cpu",
+        # No bm.gpu.* equivalent for a CPU runner, and the workflow never
+        # reads this field; it exists for the matrix schema.
+        instance_type="cpu",
+        timeout=30,
     ),
 ]
 

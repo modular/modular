@@ -21,7 +21,7 @@ from typing import ClassVar, Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -121,7 +121,7 @@ class Olmo2Config(
     return_logits: ReturnLogits
     """Whether to return the last token, all logits, or a variable number of logits."""
 
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     """KV cache parameters."""
 
     @classmethod
@@ -132,7 +132,9 @@ class Olmo2Config(
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> KVCacheParamInterface:
         """Olmo2 does not support data parallelism; use default grouped KV (no EAGLE)."""
         if pipeline_config.model.data_parallel_degree > 1:
             raise ValueError(
@@ -144,6 +146,7 @@ class Olmo2Config(
             devices,
             kv_cache_config,
             cache_dtype,
+            allow_kv_head_replication=allow_kv_head_replication,
         )
 
     @staticmethod
@@ -166,6 +169,8 @@ class Olmo2Config(
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
@@ -201,7 +206,7 @@ class Olmo2Config(
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
             head_dim=Olmo2Config.get_head_dim(huggingface_config),
-            max_position_embeddings=huggingface_config.max_position_embeddings,
+            max_position_embeddings=max_seq_len,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_theta=get_rope_theta(huggingface_config),
             attention_bias=getattr(huggingface_config, "attention_bias", False),
@@ -231,7 +236,7 @@ class Olmo2Config(
         state_dict: dict[str, WeightData],
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm",
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> None:
         """Define parameters that can't be determined just from the pipeline config."""

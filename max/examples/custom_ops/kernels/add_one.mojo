@@ -35,12 +35,13 @@ struct AddOne:
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
-        @__parameter
-        @always_inline
-        def elementwise_add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
+        @inline(.always)
+        def elementwise_add_one[
+            width: Int
+        ](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[elementwise_add_one, target=target](output, ctx)
+        foreach[target=target](elementwise_add_one, output, ctx)
 
 
 # You only need to implement this if you do not manually annotate

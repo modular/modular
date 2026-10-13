@@ -15,7 +15,7 @@
 # Handles matrix dimensions that are not divisible by tile width
 
 from std.math import ceildiv
-from std.gpu import block_idx, thread_idx
+from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
@@ -46,13 +46,13 @@ def matrix_mul_tiled_boundary_kernel(
     # Allocate shared memory tiles
     var Mds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
     var Nds = unsafe_stack_allocation[
         TILE_WIDTH * TILE_WIDTH,
-        Scalar[DType.float32],
-        address_space=AddressSpace.SHARED,
+        Float32,
+        address_space=.SHARED,
     ]()
 
     var tx = thread_idx.x
@@ -68,18 +68,18 @@ def matrix_mul_tiled_boundary_kernel(
     for ph in range(num_phases):
         # Collaborative loading of M and N tiles into shared memory with boundary checks
         if Row < Width and (ph * TILE_WIDTH + tx) < Width:
-            Mds[ty * TILE_WIDTH + tx] = Scalar[DType.float32](
+            Mds[ty * TILE_WIDTH + tx] = Float32(
                 M[Row * Width + ph * TILE_WIDTH + tx]
             )
         else:
-            Mds[ty * TILE_WIDTH + tx] = Scalar[DType.float32](0.0)
+            Mds[ty * TILE_WIDTH + tx] = Float32(0.0)
 
         if (ph * TILE_WIDTH + ty) < Width and Col < Width:
-            Nds[ty * TILE_WIDTH + tx] = Scalar[DType.float32](
+            Nds[ty * TILE_WIDTH + tx] = Float32(
                 N[(ph * TILE_WIDTH + ty) * Width + Col]
             )
         else:
-            Nds[ty * TILE_WIDTH + tx] = Scalar[DType.float32](0.0)
+            Nds[ty * TILE_WIDTH + tx] = Float32(0.0)
 
         barrier()
 

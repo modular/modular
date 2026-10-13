@@ -18,7 +18,6 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from max.driver import Device
-from max.dtype import DType
 from max.nn.kv_cache import KVCacheParamInterface
 
 
@@ -57,8 +56,8 @@ class MemoryPlanner:
     override the methods that require architecture-specific logic:
 
     - Estimating KV cache memory requirements.
-    - Estimating activation, weight, signal-buffer, and vision-cache memory
-      overheads specific to the model.
+    - Estimating activation, weight, and signal-buffer memory overheads
+      specific to the model.
 
     A ``MemoryPlanner`` is constructed from a ``ModelConfig`` alone (not from a
     full ``PipelineConfig``) so that it can be used independently of the
@@ -88,7 +87,7 @@ class MemoryPlanner:
 
         The default implementation delegates to
         ``pipeline_config.model.weights_size()``.  Override in subclasses that
-        need architecture-specific weight accounting (e.g. expert-parallel
+        need architecture-specific weight accounting (such as expert-parallel
         sharding adjustments).
 
         Args:
@@ -107,7 +106,7 @@ class MemoryPlanner:
         """Estimates activation memory beyond model weights.
 
         The default implementation returns ``0``.  Override in subclasses that
-        require temporary buffers for large intermediate tensors (e.g. MLA
+        require temporary buffers for large intermediate tensors (such as MLA
         up-projection during prefill, expert-parallel routing buffers).
 
         Args:
@@ -132,7 +131,7 @@ class MemoryPlanner:
         The default returns ``None``, deferring to the framework-wide
         inference in memory estimation.  Override in planners for
         architectures with per-request device memory beyond the KV cache
-        (e.g. recurrent-state pools) that need a tighter default.
+        (such as recurrent-state pools) that need a tighter default.
 
         Args:
             pipeline_config: Pipeline configuration.
@@ -157,7 +156,7 @@ class MemoryPlanner:
         delegates to ``pipeline_config.estimate_signal_buffer_memory`` for
         multi-device.
 
-        Models that perform allreduce unconditionally (e.g. via
+        Models that perform allreduce unconditionally (such as via
         ``VocabParallelEmbedding``) need signal buffers even on a single device.
         Set ``always_signal_buffers=True`` on the planner class to enable this.
 
@@ -179,46 +178,6 @@ class MemoryPlanner:
             return Signals.NUM_BYTES
         return pipeline_config.estimate_signal_buffer_memory(arch_config)
 
-    def estimate_vision_cache_entry_bytes(
-        self,
-        huggingface_config: Any,
-    ) -> int:
-        """Estimates bytes for one vision encoder cache entry.
-
-        The default implementation returns ``0``.  Override in VLM planners to
-        return the worst-case memory for a single max-resolution image after the
-        vision encoder's spatial merge / patch merge step.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Returns:
-            Estimated bytes per vision cache entry, or ``0`` for text-only
-            models.
-        """
-        return 0
-
-    def get_vision_cache_row_spec(
-        self,
-        huggingface_config: Any,
-    ) -> tuple[int, DType] | None:
-        """Describes one merged vision token's embedding row in the cache.
-
-        A non-None spec opts the architecture into the vision encoder
-        cache and lets the cache's block pool allocate at startup: the
-        reservation is a byte budget carved into fixed-size blocks of
-        ``(hidden_size, dtype)`` rows, so one large video no longer
-        collapses the cache's capacity for images.
-
-        Args:
-            huggingface_config: HuggingFace model configuration.
-
-        Returns:
-            ``(hidden_size, dtype)`` of one embedding row per device, or
-            ``None`` for architectures without a vision cache.
-        """
-        return None
-
 
 class PagedMemoryPlanner(MemoryPlanner):
     """Memory planner for models that use a paged KV cache.
@@ -227,7 +186,7 @@ class PagedMemoryPlanner(MemoryPlanner):
     It delegates KV-parameter queries to the model config via the
     ``ModelConfigWithKVCache`` protocol.
 
-    For models that require a fixed activation-memory reservation (e.g. VLMs
+    For models that require a fixed activation-memory reservation (such as VLMs
     that need headroom for vision processing), use
     :meth:`with_activation_reservation` to create a pre-configured subclass
     instead of writing a custom ``MemoryPlanner``::
@@ -238,7 +197,7 @@ class PagedMemoryPlanner(MemoryPlanner):
 
     Args:
         config: Model configuration that implements
-            :class:`ModelConfigWithKVCache` (i.e. exposes both ``devices``
+            :class:`ModelConfigWithKVCache` (that is, exposes both ``devices``
             and ``get_kv_params``).
 
     Raises:
@@ -280,13 +239,13 @@ class PagedMemoryPlanner(MemoryPlanner):
 
         Use this instead of writing a custom ``MemoryPlanner`` subclass for
         architectures that simply need to reserve a fixed chunk of GPU memory
-        before KV cache allocation (e.g. for vision processing headroom)::
+        before KV cache allocation (such as for vision processing headroom)::
 
             memory_planner=PagedMemoryPlanner.with_activation_reservation(
                 15 * 1024**3  # 15 GiB
             )
 
-        For models that perform allreduce unconditionally (e.g. VLMs using
+        For models that perform allreduce unconditionally (such as VLMs using
         ``VocabParallelEmbedding``), pass ``always_signal_buffers=True`` so
         signal-buffer memory is reserved even on single-GPU::
 

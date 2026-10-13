@@ -68,6 +68,7 @@ _COMPARE_TOOL = make_tool(
         "additionalProperties": False,
     },
     description="Search for results by query with a count limit",
+    strict=True,
 )
 
 _LOOKUP_A = make_tool(

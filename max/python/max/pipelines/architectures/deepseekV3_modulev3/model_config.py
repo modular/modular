@@ -26,7 +26,9 @@ from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+)
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
@@ -122,6 +124,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     mla_o_proj_quantized: bool = True
     """Whether the MLA output projection is quantized."""
 
+    dense_mlp_layers_without_quant: frozenset[int] = frozenset()
+    """Dense prefix layers (indices ``< first_k_dense_replace``) that skip MLP quant."""
+
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
             raise ValueError(
@@ -145,6 +150,17 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
 
+    @classmethod
+    def calculate_max_seq_len(
+        cls,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig,
+    ) -> int:
+        return upper_bounded_default(
+            upper_bound=huggingface_config.max_position_embeddings,
+            default=model_config.max_length,
+        )
+
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
@@ -165,6 +181,16 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            # A V3.2 indexer cache paired with this one carries these too, and
+            # the pair must agree.
+            speculative_method=pipeline_config.speculative.speculative_method
+            if pipeline_config.speculative
+            else None,
+            num_draft_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
+            if pipeline_config.speculative
+            else 0,
         )
 
     @staticmethod
@@ -177,6 +203,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         cls,
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
     ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration."""
         model_config = model_config or pipeline_config.model
@@ -216,11 +244,6 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             graph_mode = "decode"
         else:
             graph_mode = "auto"
-
-        max_seq_len = upper_bounded_default(
-            upper_bound=config.max_position_embeddings,
-            default=model_config.max_length,
-        )
 
         return cls(
             dtype=dtype,

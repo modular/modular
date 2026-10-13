@@ -508,12 +508,24 @@ def test_block_level_metrics_are_gauges() -> None:
         )
 
 
-def test_disk_block_counters_record() -> None:
+def test_disk_byte_counters_record() -> None:
     """The disk-tier block transfer counters exist and record without raising."""
     common.configure_metrics(Settings())
     for name in (
-        "maxserve.cache.disk_blocks_read",
-        "maxserve.cache.disk_blocks_written",
+        "maxserve.cache.disk_bytes_read",
+        "maxserve.cache.disk_bytes_written",
+    ):
+        assert name in metrics.SERVE_METRICS
+        metrics.MaxMeasurement(name, 7).commit()  # Should not raise
+
+
+def test_connector_refusal_counters_record() -> None:
+    """The connector refusal and failure counters exist and record."""
+    common.configure_metrics(Settings())
+    for name in (
+        "maxserve.cache.connector_loads_refused",
+        "maxserve.cache.connector_load_failures",
+        "maxserve.cache.connector_offload_blocks_dropped",
     ):
         assert name in metrics.SERVE_METRICS
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
@@ -549,6 +561,37 @@ def test_structured_output_grammar_rejection_counter() -> None:
         metrics.METRICS.structured_output_grammar_rejection(
             kind
         )  # Should not raise
+
+
+def test_tool_call_requests_counter() -> None:
+    """The tool-call usage counter records with a bounded 'choice' tag."""
+    common.configure_metrics(Settings())
+    assert "maxserve.tool_call.requests" in metrics.SERVE_METRICS
+    for choice in ("auto", "required", "named", "none", "other"):
+        metrics.METRICS.tool_call_requests(choice)  # Should not raise
+
+
+def test_tool_call_responses_counter() -> None:
+    """The emitted-tool-call counter records once per request, untagged."""
+    common.configure_metrics(Settings())
+    assert "maxserve.tool_call.responses" in metrics.SERVE_METRICS
+    metrics.METRICS.tool_call_responses()  # Should not raise
+
+
+def test_tool_call_tools_per_request_histogram() -> None:
+    """The declared-tool-count histogram records an untagged distribution."""
+    common.configure_metrics(Settings())
+    assert "maxserve.tool_call.tools_per_request" in metrics.SERVE_METRICS
+    for count in (1, 8, 64):
+        metrics.METRICS.tool_call_tools_per_request(count)  # Should not raise
+
+
+def test_structured_output_requests_counter() -> None:
+    """The structured-output usage counter records with a bounded 'kind' tag."""
+    common.configure_metrics(Settings())
+    assert "maxserve.structured_output.requests" in metrics.SERVE_METRICS
+    for kind in ("json_object", "json_schema"):
+        metrics.METRICS.structured_output_requests(kind)  # Should not raise
 
 
 def test_batch_metrics_with_batch_type_attribute() -> None:

@@ -33,7 +33,7 @@ from std.sys import argv
 from max.gpu.host import DeviceContext
 
 
-def bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i_dev: Int32):
+def bad_func(ptr: MutPointer[Int32, MutAnyOrigin], i_dev: Int32):
     # `Int` is not device-passable; widen the fixed-width arg.
     var i = Int(i_dev)
     # Potential out of bounds access
@@ -42,7 +42,7 @@ def bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i_dev: Int32):
 
 def test(ctx: DeviceContext, i: Int) raises:
     comptime n = 4
-    var buf = ctx.enqueue_create_buffer[DType.int32](n)
+    var buf = ctx.enqueue_create_buffer[.int32](n)
 
     comptime kernel = bad_func
     ctx.enqueue_function[kernel](buf, Int32(i), grid_dim=(1), block_dim=(1))

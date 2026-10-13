@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
@@ -131,7 +130,11 @@ Examples:
         help="Comma-separated tags to filter scenarios (runs scenarios matching ANY tag)",
     )
     p.add_argument(
-        "--exclude", help="Comma-separated scenario names to exclude"
+        "--exclude",
+        help=(
+            "Comma-separated scenarios to exclude. Use scenario:test to "
+            "exclude a single test instead of the whole scenario."
+        ),
     )
 
     p.add_argument(
@@ -226,10 +229,66 @@ Examples:
         help="Activate model-specific test scenarios (e.g. kimi-k2.5, glm-5.1, gemma4)",
     )
     profile_group.add_argument(
+        "--image-stress-nodes",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Scale image_stress concurrency for an N-node deployment (default: 1)",
+    )
+    profile_group.add_argument(
         "--k2vv-mode",
         choices=["quick", "full"],
         default="quick",
         help="K2VV benchmark mode: quick=500 samples, full=2000 (default: quick)",
+    )
+
+    needle_group = p.add_argument_group(
+        "needle prefix cache",
+        "Size of the needle_prefix_cache scenario (defaults run in minutes; "
+        "raise them to exercise eviction and long prompts)",
+    )
+    needle_group.add_argument(
+        "--needle-conversations",
+        type=int,
+        default=8,
+        metavar="N",
+        help="Conversations advanced side by side (default: 8)",
+    )
+    needle_group.add_argument(
+        "--needle-long-conversations",
+        type=int,
+        default=2,
+        metavar="N",
+        help=(
+            "Conversations with a haystack of half the context window, up to "
+            "128K tokens, run alongside the short ones (default: 2, 0 to skip)"
+        ),
+    )
+    needle_group.add_argument(
+        "--needle-turns",
+        type=int,
+        default=3,
+        metavar="N",
+        help="Recall turns after the cold prefill (default: 3)",
+    )
+    needle_group.add_argument(
+        "--needle-strict-cache-hits",
+        action="store_true",
+        help=(
+            "Fail when any follow-up turn reuses less than its whole previous "
+            "prompt, for a deployment expected to serve every reload (a KV "
+            "connector behind a GPU pool sized to evict)"
+        ),
+    )
+    needle_group.add_argument(
+        "--needle-context-tokens",
+        type=int,
+        default=None,
+        metavar="TOKENS",
+        help=(
+            "Approximate haystack size per conversation (default: a quarter "
+            "of the context window, at most 2048)"
+        ),
     )
 
     # Circuit breaker
@@ -314,7 +373,22 @@ def list_scenarios() -> None:
     print()
 
 
-def select_scenarios(args: argparse.Namespace) -> list[Any]:
+def parse_exclude(spec: str | None) -> tuple[set[str], set[str]]:
+    """Split an --exclude value into whole-scenario names and scenario:test
+    names (the tokens containing a ":")."""
+    exclude_groups: set[str] = set()
+    exclude_tests: set[str] = set()
+    for token in (spec or "").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        (exclude_tests if ":" in token else exclude_groups).add(token)
+    return exclude_groups, exclude_tests
+
+
+def select_scenarios(
+    args: argparse.Namespace, exclude_groups: set[str]
+) -> list[Any]:
     """Select which scenarios to run based on CLI args."""
     all_scenarios = get_all_scenarios()
 
@@ -338,9 +412,8 @@ def select_scenarios(args: argparse.Namespace) -> list[Any]:
             print(f"{RED}No scenarios match tags: {args.tags}{RESET}")
             sys.exit(1)
 
-    if args.exclude:
-        exclude = {n.strip() for n in args.exclude.split(",")}
-        selected = [s for s in selected if s.name not in exclude]
+    if exclude_groups:
+        selected = [s for s in selected if s.name not in exclude_groups]
 
     # Filter by scenario type
     if args.fuzz_only:
@@ -363,6 +436,21 @@ def select_scenarios(args: argparse.Namespace) -> list[Any]:
 
 
 async def run(args: argparse.Namespace) -> int:
+    for flag in (
+        "needle_conversations",
+        "needle_turns",
+        "needle_context_tokens",
+    ):
+        value = getattr(args, flag)
+        if value is not None and value < 1:
+            print(
+                f"{RED}--{flag.replace('_', '-')} must be >= 1, got {value}{RESET}"
+            )
+            return 1
+    if args.needle_long_conversations < 0:
+        print(f"{RED}--needle-long-conversations must be >= 0{RESET}")
+        return 1
+
     model_config = build_model_config(
         args.model,
         no_hf_fetch=args.no_hf_fetch,
@@ -380,9 +468,20 @@ async def run(args: argparse.Namespace) -> int:
         endurance_intensity=args.endurance_intensity,
         model_config=model_config,
         verbose=args.verbose,
+        image_stress_nodes=args.image_stress_nodes,
+        needle_conversations=args.needle_conversations,
+        needle_long_conversations=args.needle_long_conversations,
+        needle_turns=args.needle_turns,
+        needle_context_tokens=args.needle_context_tokens,
+        needle_strict_cache_hits=args.needle_strict_cache_hits,
     )
 
-    scenario_classes = select_scenarios(args)
+    exclude_groups: set[str] = set()
+    exclude_tests: set[str] = set()
+    if args.exclude:
+        exclude_groups, exclude_tests = parse_exclude(args.exclude)
+
+    scenario_classes = select_scenarios(args, exclude_groups)
 
     # In endurance mode, only run scenarios tagged with "endurance"
     if args.endurance:
@@ -428,7 +527,7 @@ async def run(args: argparse.Namespace) -> int:
 
     try:
         return await _run_body(
-            args, config, scenario_classes, run_log, validator
+            args, config, scenario_classes, run_log, validator, exclude_tests
         )
     finally:
         if run_log:
@@ -466,6 +565,7 @@ async def _run_body(
     scenario_classes: list[Any],
     run_log: RunLog | None,
     validator: ValidatorClient | None,
+    exclude_tests: set[str],
 ) -> int:
     print(f"  Target:       {BOLD}{config.base_url}{RESET}")
     print(f"  Model:        {config.model}")
@@ -613,6 +713,13 @@ async def _run_body(
                                 error=health.error or "",
                             )
                         )
+                    if exclude_tests:
+                        scenario_results = [
+                            r
+                            for r in scenario_results
+                            if f"{r.scenario_name}:{r.test_name}"
+                            not in exclude_tests
+                        ]
                     all_results.extend(scenario_results)
                     s_pass = s_fail = 0
                     for r in scenario_results:
