@@ -13,7 +13,11 @@
 """Provides test utility types and functions for the Mojo standard library tests."""
 
 from .hash import assert_dif_hashes, assert_fill_factor, dif_bits
-from .test_utils import check_write_to
+from .test_utils import (
+    check_write_to,
+    check_convertible_to_python,
+    check_python_object,
+)
 from .types import (
     AbortOnCopy,
     AbortOnDel,

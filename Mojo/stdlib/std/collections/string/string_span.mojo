@@ -48,7 +48,7 @@ from std.sys.intrinsics import likely, unlikely
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
 from std.memory import unsafe_memcmp, pack_bits
-from std.python import Python, PythonObject
+from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
 
@@ -95,6 +95,7 @@ print(format_string.format("bats", 6))     # => bats: 6
 
 struct StringSpan[origin: ImmOrigin](
     Boolable,
+    ConvertibleToPython,
     Defaultable,
     Equatable,
     FloatableRaising,
@@ -513,6 +514,25 @@ struct StringSpan[origin: ImmOrigin](
             )[]
         except:
             raise cpython.get_error()
+
+    comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
+
+    def to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a `PythonObject`.
+
+        Returns:
+            A `PythonObject` representing this value.
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
+        """
+        ref cpy = Python().cpython()
+        # TODO: This should not be necessary, as `StringSlice` is guaranteed to
+        # be valid UTF-8.
+        var unicode = cpy.PyUnicode_DecodeUTF8(self)
+        if not unicode:
+            raise cpy.unsafe_get_error()
+        return PythonObject(from_owned=unicode)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
