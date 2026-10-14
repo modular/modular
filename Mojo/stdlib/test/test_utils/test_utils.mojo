@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides general test utility functions for the Mojo standard library tests."""
 
+from std.python import ConvertibleToPython, PythonObject
 from std.testing import assert_equal, assert_true
 
 
@@ -56,3 +57,39 @@ def check_write_to(
     else:
         value.write_to(string)
     assert_true(contains in string)
+
+
+def check_convertible_to_python(
+    var value: Some[ConvertibleToPython], expected: String
+) raises:
+    """Check that the value can be converted to a Python object.
+    Tests for equality with the expected string.
+
+    Args:
+        value: The value to check.
+        expected: The expected string representation of the Python object.
+
+    Raises:
+        Error: if the converted Python object does not equal `expected`.
+    """
+    var py_obj: PythonObject
+    try:
+        py_obj = value^.to_python_object()
+    except:
+        raise Error("Failed to convert value to PythonObject")
+
+    assert_equal(String(py_obj), expected)
+
+
+def check_python_object(var value: PythonObject, expected: String) raises:
+    """Check that the value can be implicitly converted to a Python object.
+    Tests for equality with the expected string.
+
+    Args:
+        value: The value to check.
+        expected: The expected string representation of the Python object.
+
+    Raises:
+        Error: if the converted Python object does not equal `expected`.
+    """
+    assert_equal(String(value), expected)

@@ -28,6 +28,7 @@ from std.testing import (
     assert_true,
 )
 from std.testing import TestSuite
+from test_utils import check_convertible_to_python, check_python_object
 
 
 def test_constructors() raises:
@@ -1844,6 +1845,17 @@ def test_string_zero_init() raises:
     assert_equal(Int(s._ptr_or_data), 0)
     assert_equal(s._len_or_data, 0)
     assert_equal(s._capacity_or_data, String.FLAG_IS_INLINE)
+
+
+def test_convertible_to_Python() raises:
+    check_convertible_to_python(StringSlice("Foo"), "Foo")
+    check_convertible_to_python(String("Bar"), "Bar")
+    check_convertible_to_python("Baz", "Baz")
+
+    # test implicit conversions
+    check_python_object(StringSlice("Foo"), "Foo")
+    check_python_object(String("Bar"), "Bar")
+    check_python_object("Baz", "Baz")
 
 
 def main() raises:
