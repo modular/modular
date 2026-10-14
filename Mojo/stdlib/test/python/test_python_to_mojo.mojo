@@ -59,6 +59,11 @@ def test_bool() raises:
     assert_equal_pyobj(Bool(True), PythonObject(True))
     assert_equal_pyobj(Bool(False), PythonObject(False))
 
+    # Cover the Scalar[DType.bool] constructor branch, which shares the
+    # cached-singleton fast path with PythonObject(value: Bool).
+    assert_equal_pyobj(Scalar[DType.bool](True), PythonObject(True))
+    assert_equal_pyobj(Scalar[DType.bool](False), PythonObject(False))
+
 
 def test_numpy_int() raises:
     var np = Python.import_module("numpy")
