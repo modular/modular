@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Swiss Table core for hash-based collections.
+"""SwissTable core for hash-based collections.
 
-Provides the low-level Swiss Table implementation shared by `Dict` (ordered)
+Provides the low-level SwissTable implementation shared by `Dict` (ordered)
 and `HashMap` (unordered). This module is internal and not part of the public
 API.
 
-The Swiss Table design uses SIMD group probing on 16-byte control byte groups
+The SwissTable design uses SIMD group probing on 16-byte control byte groups
 for fast lookups. Each slot has a 1-byte control: EMPTY (0xFF), DELETED (0x80),
 or an h2 fingerprint (0x00-0x7F) derived from the top 7 bits of the hash.
 """
@@ -38,7 +38,7 @@ from std.traits import IsTriviallyDeinitable
 from std.sys.intrinsics import likely
 
 # ===-----------------------------------------------------------------------===#
-# Swiss Table constants and helpers
+# SwissTable constants and helpers
 # ===-----------------------------------------------------------------------===#
 
 comptime CTRL_EMPTY: UInt8 = 0xFF
@@ -220,7 +220,7 @@ struct SwissTableEntry[
     Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
     Movable,
 ):
-    """Store a key-value pair entry inside a Swiss Table-based collection.
+    """Store a key-value pair entry inside a SwissTable-based collection.
 
     Parameters:
         K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
@@ -322,7 +322,7 @@ struct SwissTable[
     Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
     Movable,
 ):
-    """Raw Swiss Table providing the hash table core for Dict and HashMap.
+    """Raw SwissTable providing the hash table core for Dict and HashMap.
 
     This struct manages the control byte array, slot array, probing, and
     resize logic. Higher-level types (`Dict`, `HashMap`) compose this with
@@ -365,7 +365,7 @@ struct SwissTable[
 
     @inline(.always)
     def __init__(out self):
-        """Initialize an empty Swiss Table."""
+        """Initialize an empty SwissTable."""
         self._capacity = 0
         self._ctrl = type_of(self._ctrl).unsafe_dangling()
         self._slots = type_of(self._slots).unsafe_dangling()
@@ -374,7 +374,7 @@ struct SwissTable[
 
     @inline(.always)
     def __init__(out self, *, capacity: Int):
-        """Initialize an empty Swiss Table with a pre-reserved capacity.
+        """Initialize an empty SwissTable with a pre-reserved capacity.
 
         The capacity is defined by `next_power_of_two(ceildiv(capacity * 8, 7))`
         (minimum 16) to satisfy internal layout requirements.
@@ -404,7 +404,7 @@ struct SwissTable[
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.K, Copyable) and conforms_to(Self.V, Copyable):
-        """Copy an existing Swiss Table.
+        """Copy an existing SwissTable.
 
         Args:
             copy: The existing table to copy.
