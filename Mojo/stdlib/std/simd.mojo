@@ -2024,7 +2024,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         Returns:
             A Python object representing this SIMD vector.
         """
-        comptime assert Self.size == 1, "only work with scalar values"
+        comptime assert Self.length == 1, "only work with scalar values"
         var scalar = self._refine[new_size=1]()
         ref cpy = Python().cpython()
 

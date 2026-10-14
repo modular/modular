@@ -26,7 +26,7 @@ trait ConvertibleToPython(Deinitable):
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
-    comptime ConversionToPythonErrorType: Movable & ImplicitlyDeletable = Never
+    comptime ConversionToPythonErrorType: Movable & Deinitable = Never
     """The error type raised if conversion to a PythonObject fails."""
 
     def to_python_object(

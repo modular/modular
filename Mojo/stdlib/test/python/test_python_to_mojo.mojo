@@ -39,7 +39,7 @@ def test_int() raises:
     assert_equal(Int(py=PythonObject(-1)), -1)
 
     # Test error trying conversion from Python '"str"'
-    py_obj = PythonObject("str")
+    var py_obj = PythonObject("str")
     with assert_raises(contains="invalid literal for int()"):
         _ = Int(py=py_obj)
 

@@ -522,6 +522,16 @@ This version is still a work in progress.
   on GPU as well as CPU. On CPU their results come from the same Mojo
   implementations, so they can differ from the system libm in the last ulp.
 
+- `Bool`, `Scalar` (including `Int`), `String`, `StringSpan`, and
+  `StringLiteral` now conform to `ConvertibleToPython`, so they can be passed
+  to generic code bounded on that trait. The dedicated `PythonObject`
+  constructors for these types are removed; implicit conversion still works
+  through the single `ConvertibleToPython` constructor.
+  `ConvertibleToPython` gains an associated `ConversionToPythonErrorType`
+  (default `Never`), so conversions that cannot fail, such as `Bool` and
+  `Scalar`, stay non-raising, while `String` conversions keep raising
+  `Error`.
+
 ## Tooling changes
 
 - The `mojo` compiler now uses jemalloc as its allocator on Linux. Compiling
