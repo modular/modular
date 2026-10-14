@@ -152,8 +152,8 @@ def run_gemm_mma_cpasync_residual[
 ](gemm_m: Int, gemm_k: Int, gemm_n: Int, *, ctx: DeviceContext) raises:
     """Run GEMM TC kernel with residual epilogue: D = matmul(A,B) + residual.
 
-    Also exercises the elementwise-lambda epilogue under `swapAB`: the lambda
-    must receive the true row-major `[M, N]` index so the residual is added at
+    Also exercises the epilogue closure under `swapAB`: the closure must
+    receive the true row-major `[M, N]` index so the residual is added at
     the correct location even when the kernel tiles the transposed problem.
     """
     print(
@@ -209,21 +209,16 @@ def run_gemm_mma_cpasync_residual[
     var c_tensor = TileTensor(out_dev, c_shape)
     var residual_tensor = TileTensor(residual_dev, c_shape)
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor, residual_tensor)
     def residual_epilogue[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width]):
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var residual_tensor} -> SIMD[
+        dtype, width
+    ]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        var res = residual_tensor.load[width=width](idx).cast[dtype]()
-        c_tensor.store[width=width](idx, (val + res).cast[c_type]())
+        return val + residual_tensor.load[width=width](idx).cast[dtype]()
 
-    gemm_mma_cpasync[
-        tile_k=tile_k,
-        elementwise_lambda_fn=residual_epilogue,
-        swapAB=swapAB,
-    ](
+    gemm_mma_cpasync[tile_k=tile_k, swapAB=swapAB](
         c_tensor,
         a_tensor,
         w_tensor,
@@ -231,6 +226,7 @@ def run_gemm_mma_cpasync_residual[
         gemm_k,
         gemm_n,
         1,
+        residual_epilogue,
         ctx,
     )
     ctx.synchronize()

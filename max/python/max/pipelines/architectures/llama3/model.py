@@ -241,7 +241,9 @@ class LlamaModelBase(
 
         with Graph(
             getattr(self.huggingface_config, "model_type", "llama3"),
-            input_types=dist_model.input_types(self.kv_params),
+            input_types=self._bind_graph_inputs(
+                dist_model.input_tree(self.kv_params)
+            ),
         ) as graph:
             tokens, input_row_offsets, return_n_logits, *variadic_args = (
                 graph.inputs
@@ -284,7 +286,9 @@ class LlamaModelBase(
 
         with Graph(
             "llama3",
-            input_types=single_model.input_types(self.kv_params),
+            input_types=self._bind_graph_inputs(
+                single_model.input_tree(self.kv_params)
+            ),
         ) as graph:
             (
                 tokens,

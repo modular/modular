@@ -515,8 +515,8 @@ modular_cc_library(
         "//Mojo:__pkg__",
         "//mach/crates/max-sys-internal:__pkg__",
         "//max/internal/profiler:__pkg__",
-        "//max/lib/mcl:__pkg__",
-        "//max/python/max/_core/mcl:__subpackages__",
+        "//max/lib/max_license:__pkg__",
+        "//max/python/max/_core/max_license:__subpackages__",
         "//max/tests/internal/profiler:__pkg__",
         "//plugins:device_backend_plugins",
     ],
@@ -1230,7 +1230,7 @@ modular_cc_library(
 mlir_nanobind(
     name = "MDialectNanobindInc",
     srcs = glob(["include/Support/MDialect/*.td"]),
-    allowlist = "//max/python/max/_core/mcl/modules/dialects:allowlist.txt",
+    allowlist = "//max/python/max/_core/max_license/modules/dialects:allowlist.txt",
     output_dir = "include/Support/MDialect/Nanobind",
     deps = [
         ":MTdFiles",

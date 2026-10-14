@@ -35,7 +35,7 @@ from max.nn.kv_cache.cache_params import (
 from max.pipelines.kv_cache.paged_kv_cache._seed_helpers import (
     resolve_kv_hash_seed,
 )
-from pydantic import ConfigDict, Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 if TYPE_CHECKING:
     from max.pipelines.modeling.config_enums import SupportedEncoding
@@ -148,11 +148,21 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Type of KV cache connector to use."""
 
+    @field_validator("type", mode="before")
+    @classmethod
+    def _resolve_type(cls, value: object) -> object:
+        # Pydantic's enum validator never calls `KVConnectorType._missing_`,
+        # so raise the removed-type error here. Every other value passes
+        # through, so pydantic's own enum error lists the valid choices.
+        if value == "mojo_tiered":
+            KVConnectorType(value)
+        return value
+
     host_offload_max_gb: float | None = Field(
         default=None,
         description=(
             "Maximum host memory (GiB) for KV cache offloading, used by the "
-            "tiered connectors. When unset, sized to hold 1.5 times the device "
+            "tiered connector. When unset, sized to hold 1.5 times the device "
             "page pool."
         ),
     )
@@ -182,8 +192,7 @@ class KVConnectorConfig(ConfigFileModel):
     allocations with movable user pages unless ``HSA_USERPTR_FOR_PAGED_MEM=0``
     is set before it initializes; with it set they are driver-owned and count
     against the driver's system memory limit, which every process on the node
-    shares. Only the tiered connectors (``rust_tiered`` / ``mojo_tiered``) read
-    this.
+    shares. Only the tiered connector (``rust_tiered``) reads this.
     """
 
     host_staging_mlock: bool = Field(
@@ -233,7 +242,7 @@ class KVConnectorConfig(ConfigFileModel):
             "queue faster under load; returns diminish past ~32."
         ),
     )
-    """Number of disk I/O worker threads for the tiered connectors."""
+    """Number of disk I/O worker threads for the tiered connector."""
 
     num_h2d_onload_lanes: int = Field(
         default=1,

@@ -456,7 +456,9 @@ struct MmaOpSM100_BlockScaled_SS[
     Parameters:
         c_type: Output accumulator element type.
         a_type: A operand element type (float8_e4m3fn or uint8 for FP4).
-        b_type: B operand element type; must match `a_type`.
+        b_type: B operand element type; matches `a_type`, except for the
+            W4A8 pair under `kind::mxf8f6f4`, where one operand is E4M3 and
+            the other nibble-packed E2M1 (`uint8`).
         sfa_dtype: Scale factor dtype for A; must match `sfb_dtype`.
         sfb_dtype: Scale factor dtype for B.
         scaling_kind: UMMA scaling kind (MXF8F6F4, MXF4, or MXF4NVF4).

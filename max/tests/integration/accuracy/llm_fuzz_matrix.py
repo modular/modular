@@ -28,18 +28,12 @@ import click
 from pipeline_matrix import PipelineEntry, entries_to_matrix, filter_entries
 
 CONFIGS_DIR = Path("max/tests/integration/accuracy/llm_fuzz/configs")
-SMOKE_TEST_PIPELINE = "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash"
+# The PR fallback when no config changed: the CPU entry, so a pull request
+# exercises the harness end to end without taking an accelerator.
+SMOKE_TEST_PIPELINE = "modularai/SmolLM-135M-Instruct-FP32"
 
 
 PIPELINES: Final[list[PipelineEntry]] = [
-    PipelineEntry(
-        pipeline="nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash",
-        model_path="nvidia/Kimi-K2.7-Code-NVFP4",
-        runner="modrunner-b200-efa-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
-        timeout=90,
-    ),
     PipelineEntry(
         pipeline="google/gemma-4-31B-it",
         model_path="google/gemma-4-31B-it",
@@ -47,6 +41,14 @@ PIPELINES: Final[list[PipelineEntry]] = [
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",
         timeout=60,
+    ),
+    PipelineEntry(
+        pipeline="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        model_path="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+        runner="modrunner-b200",
+        gpu_flag="--devices gpu:0",
+        instance_type="bm.gpu.b200.1",
+        timeout=90,
     ),
     PipelineEntry(
         pipeline="meta-models/Muse-Glimmer-30B",
@@ -94,14 +96,6 @@ PIPELINES: Final[list[PipelineEntry]] = [
         runner="modrunner-mi355-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.mi355x.8",
-        timeout=90,
-    ),
-    PipelineEntry(
-        pipeline="nvidia/GLM-5.2-NVFP4-ep-tp-mtp",
-        model_path="nvidia/GLM-5.2-NVFP4",
-        runner="modrunner-b200-efa-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
         timeout=90,
     ),
     # Tiny model on CPU: a cheap end-to-end check of the fuzz harness and the

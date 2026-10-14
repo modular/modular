@@ -412,7 +412,7 @@ llvm.func @ret_sse_pair() {
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_sret
 llvm.func @ret_sret() {
-  // CHECK: llvm.call @c_d4(%{{.*}}) : (!llvm.ptr) -> ()
+  // CHECK: llvm.call @c_d4(%{{.*}}) : (!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}) -> ()
   // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i64, i64, i64)>
   %r = pop.external_call @c_d4() : () -> !llvm.struct<(i64, i64, i64)>
   llvm.return

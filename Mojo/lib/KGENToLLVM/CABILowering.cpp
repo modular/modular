@@ -15,6 +15,7 @@
 #include "CABIAAPCS.h"
 #include "CABISystemV.h"
 #include "LLVMLoweringUtils.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "llvm/ADT/STLExtras.h"
@@ -52,6 +53,79 @@ CABIInfo::computeSignatureInfo(mlir::TypeRange argTypes, mlir::Type retType,
     result.args.push_back(classifyArgumentType(type, loc, isVariadicArg));
   }
   return result;
+}
+
+//===----------------------------------------------------------------------===//
+// SignatureClassification
+//===----------------------------------------------------------------------===//
+
+unsigned SignatureClassification::getLLVMParamIndex(size_t argIdx) const {
+  assert(argIdx <= args.size() && "argument index out of range");
+  unsigned paramIdx = ret.useSRet ? 1 : 0;
+  for (const CoercionInfo &coercion : llvm::ArrayRef(args).take_front(argIdx))
+    paramIdx += coercion.getNumLLVMParams();
+  return paramIdx;
+}
+
+mlir::LLVM::LLVMFunctionType SignatureClassification::getFunctionType(
+    mlir::MLIRContext *ctx, mlir::TypeRange argTypes, mlir::Type retType,
+    bool isVarArg, size_t numFixedArgs) const {
+  auto ptrType = mlir::LLVM::LLVMPointerType::get(ctx);
+  llvm::SmallVector<mlir::Type> paramTypes;
+  if (ret.useSRet)
+    paramTypes.push_back(ptrType);
+  for (auto [coercion, type] :
+       llvm::zip(llvm::ArrayRef(args).take_front(numFixedArgs), argTypes)) {
+    if (coercion.isIdentity()) {
+      paramTypes.push_back(type);
+    } else if (coercion.useIndirect) {
+      paramTypes.push_back(ptrType);
+    } else {
+      assert(coercion.coercedType &&
+             "non-identity, non-indirect coercion must have a coercedType");
+      paramTypes.push_back(coercion.coercedType);
+      if (coercion.isTwoRegister()) {
+        assert(coercion.coercedSecondType &&
+               "two-register classification must have coercedSecondType");
+        paramTypes.push_back(coercion.coercedSecondType);
+      }
+    }
+  }
+
+  mlir::Type resultType;
+  if (ret.useSRet) {
+    resultType = mlir::LLVM::LLVMVoidType::get(ctx);
+  } else if (ret.isTwoRegister()) {
+    assert(ret.coercedType && ret.coercedSecondType &&
+           "two-register classification must have both coerced types");
+    resultType = mlir::LLVM::LLVMStructType::getLiteral(
+        ctx, {ret.coercedType, ret.coercedSecondType});
+  } else if (ret.coercedType) {
+    resultType = ret.coercedType;
+  } else if (retType) {
+    resultType = retType;
+  } else {
+    resultType = mlir::LLVM::LLVMVoidType::get(ctx);
+  }
+  return mlir::LLVM::LLVMFunctionType::get(resultType, paramTypes, isVarArg);
+}
+
+llvm::SmallVector<mlir::NamedAttrList> SignatureClassification::getParamAttrs(
+    mlir::TypeRange argTypes, mlir::Type retType, size_t numArgs) const {
+  numArgs = std::min(numArgs, args.size());
+  llvm::SmallVector<mlir::NamedAttrList> attrs(getLLVMParamIndex(numArgs));
+  if (ret.useSRet)
+    attrs[0].set(mlir::LLVM::LLVMDialect::getStructRetAttrName(),
+                 mlir::TypeAttr::get(retType));
+  unsigned paramIdx = getLLVMParamIndex(0);
+  for (auto [coercion, type] :
+       llvm::zip(llvm::ArrayRef(args).take_front(numArgs), argTypes)) {
+    if (coercion.useIndirect && coercion.useByval)
+      attrs[paramIdx].set(mlir::LLVM::LLVMDialect::getByValAttrName(),
+                          mlir::TypeAttr::get(type));
+    paramIdx += coercion.getNumLLVMParams();
+  }
+  return attrs;
 }
 
 //===----------------------------------------------------------------------===//

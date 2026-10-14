@@ -349,6 +349,7 @@ def grouped_matmul_mma_kernel[
         log2_grid_m,
         log2_grid_n,
         epilogue_fn=group_epilogue_fn,
+        compute_fn=no_compute_fn,
     )
 
 

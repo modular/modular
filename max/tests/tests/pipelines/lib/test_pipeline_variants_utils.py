@@ -191,6 +191,20 @@ class _ToEosParser(_SectionParser):
     ENFORCE_TOOL_REGION_TO_EOS = True
 
 
+# Deliberately not a ToolParser: these model a standalone parser class.
+@register("_test_standalone_flat_parser")  # type: ignore[arg-type]
+class _StandaloneFlatParser:
+    """Not a ``StructuralTagToolParser``; declares only a flat ``CALL_BEGIN``."""
+
+    CALL_BEGIN = "<call>"
+
+
+# Deliberately not a ToolParser: these model a standalone parser class.
+@register("_test_standalone_no_markers_parser")  # type: ignore[arg-type]
+class _StandaloneNoMarkersParser:
+    """Not a ``StructuralTagToolParser`` and declares no markers at all."""
+
+
 class TestGetToolRegionTags:
     """``StructuredOutputHelper._get_tool_region_tags``."""
 
@@ -208,6 +222,30 @@ class TestGetToolRegionTags:
             "_test_to_eos_parser"
         )
         assert tags == ("<sec>", None)
+
+    def test_standalone_parser_with_flat_call_begin_is_a_start_tag(
+        self,
+    ) -> None:
+        """A parser that is not a ``StructuralTagToolParser`` but declares a
+        flat ``CALL_BEGIN`` still gets a start tag. Without one, a
+        ``tool_choice=auto`` grammar is never enforced (Qwen 3.5)."""
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_standalone_flat_parser"
+        )
+        assert tags == ("<call>", None)
+
+    def test_qwen3_5_parser_is_enforced_in_auto_mode(self) -> None:
+        # Importing the module registers the parser.
+        import max.pipelines.architectures.qwen3_5.tool_parser  # noqa: F401
+
+        tags = StructuredOutputHelper._get_tool_region_tags("qwen3_5")
+        assert tags == ("<tool_call>", None)
+
+    def test_standalone_parser_without_call_begin_has_no_tags(self) -> None:
+        tags = StructuredOutputHelper._get_tool_region_tags(
+            "_test_standalone_no_markers_parser"
+        )
+        assert tags == (None, None)
 
 
 class TestBuildResponse:

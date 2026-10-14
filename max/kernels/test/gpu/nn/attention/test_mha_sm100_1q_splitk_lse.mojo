@@ -528,14 +528,21 @@ def execute_combine_test[
     print("test_mha_sm100_1q_splitk_combine: PASSED")
 
 
-def _auto_p[sm_count: Int](by_cache: Int, raw_grid: Int) -> Int:
+def _auto_p[
+    sm_count: Int, oversubscribe: Bool = True
+](by_cache: Int, raw_grid: Int) -> Int:
     """Buckets `by_cache` at `raw_grid` with that grid's real ceiling.
 
     Every `raw_grid` asserted below has a ceiling of 2 or more. A result of 1
     thus shows the saturation guard, not the ceiling.
+
+    `oversubscribe` mirrors the mask gate in `mha_sm100_dispatch`: `True` is
+    an unbounded mask, `False` a sliding window.
     """
     return _bucket_ws[sm_count](
-        by_cache, Int(ws_p_ceiling[sm_count](UInt32(raw_grid))), raw_grid
+        by_cache,
+        Int(ws_p_ceiling[sm_count, oversubscribe](UInt32(raw_grid))),
+        raw_grid,
     )
 
 
@@ -543,17 +550,26 @@ def main() raises:
     comptime MASK = get_defined_int["FA4_1Q_SPLITK_MASK", 0]()
     comptime DEPTH = get_defined_int["FA4_1Q_SPLITK_DEPTH", 64]()
 
-    assert_equal(ws_p_ceiling[148](24), UInt32(37))
-    assert_equal(ws_p_ceiling[148](25), UInt32(35))
+    assert_equal(ws_p_ceiling[148, True](24), UInt32(37))
+    assert_equal(ws_p_ceiling[148, True](25), UInt32(35))
+
+    # A sliding-window mask drops the over-subscription, so the ceiling
+    # targets `sm_count` CTAs rather than `6 * sm_count`.
+    assert_equal(ws_p_ceiling[148, False](1), UInt32(148))
+    assert_equal(ws_p_ceiling[148, False](12), UInt32(12))
+    assert_equal(ws_p_ceiling[148, False](24), UInt32(6))
+    assert_equal(ws_p_ceiling[148, False](48), UInt32(3))
+    assert_equal(ws_p_ceiling[148, False](96), UInt32(1))
+    assert_equal(ws_p_ceiling[148, False](149), UInt32(1))
 
     # The WS-G ceiling matches `ws_p_ceiling` inside the one-wave sweep and
     # follows the one-wave split past it. Raw grids 128 and 256 are Inkling
     # decode at batch 32 and 64 with 4 KV heads.
-    assert_equal(_ws_g_p_ceiling[148](24), UInt32(37))
-    assert_equal(_ws_g_p_ceiling[148](32), UInt32(4))
-    assert_equal(_ws_g_p_ceiling[148](64), UInt32(2))
-    assert_equal(_ws_g_p_ceiling[148](128), UInt32(1))
-    assert_equal(_ws_g_p_ceiling[148](256), UInt32(1))
+    assert_equal(_ws_g_p_ceiling[148, True](24), UInt32(37))
+    assert_equal(_ws_g_p_ceiling[148, True](32), UInt32(4))
+    assert_equal(_ws_g_p_ceiling[148, True](64), UInt32(2))
+    assert_equal(_ws_g_p_ceiling[148, True](128), UInt32(1))
+    assert_equal(_ws_g_p_ceiling[148, True](256), UInt32(1))
 
     # The `_bucket_ws` saturation guard. A `by_cache` of 0 is a cache too short
     # for a rung, which is the only cache the guard applies to.
@@ -572,6 +588,18 @@ def main() raises:
     # A cache long enough for a rung does not meet the guard. It splits even at
     # an exact multiple: rung 4, capped by the ceiling.
     assert_equal(_auto_p[SM_COUNT](4, 2 * SM_COUNT), 3)
+
+    # Without over-subscription the ceiling binds where the key-count ramp
+    # used to win. `by_cache` is 8 throughout: the 4096 visible keys of the
+    # measured sliding-window model over the 1Q 512-key divisor, which is what
+    # split every one of these shapes into 8 partitions before the mask gate.
+    assert_equal(_auto_p[SM_COUNT, False](8, 12), 8)
+    assert_equal(_auto_p[SM_COUNT, False](8, 24), 6)
+    assert_equal(_auto_p[SM_COUNT, False](8, 48), 3)
+    assert_equal(_auto_p[SM_COUNT, False](8, 96), 1)
+    # An unbounded mask keeps the 8 the ramp asks for at every one of them.
+    comptime for rg in [12, 24, 48, 96]:
+        assert_equal(_auto_p[SM_COUNT, True](8, rg), 8)
 
     with DeviceContext() as ctx:
         comptime if MASK == 0:

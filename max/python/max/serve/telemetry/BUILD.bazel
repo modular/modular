@@ -17,7 +17,7 @@ modular_py_library(
         "//max/python/max/serve:config",
         "//max/python/max/serve:process_control",
         requirement("grpcio"),
-        requirement("numpy"),
+        "//max/python/max/support:telemetry",
         requirement("opentelemetry-sdk"),
         requirement("opentelemetry-exporter-otlp-proto-grpc"),
         requirement("opentelemetry-exporter-otlp-proto-http"),

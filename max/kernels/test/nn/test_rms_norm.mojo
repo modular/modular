@@ -62,21 +62,21 @@ def run_rms_norm_cpu[
 
     @__copy_capture(input_buf)
     @inline(.always)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def input_fn[width: Int](coords: Coord) {imm} -> SIMD[dtype, width]:
         var idx = input_buf.layout(coords)
         return input_buf.raw_load[width=width](idx)
 
     @inline(.always)
     @__copy_capture(output_buf)
-    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {imm} -> None:
         var idx = output_buf.layout(coords)
         output_buf.raw_store[width=width, alignment=alignment](idx, val)
 
-    rms_norm_cpu[input_fn, identity_output_fn, multiply_before_cast=True](
+    rms_norm_cpu[multiply_before_cast=True](
+        input_fn,
+        identity_output_fn,
         Coord(shape),
         gamma,
         epsilon,

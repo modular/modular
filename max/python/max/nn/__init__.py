@@ -66,7 +66,7 @@ from .kv_cache import (
     KVCacheParams,
     build_max_lengths_tensors,
 )
-from .layer import Layer, LayerList, Module, Shardable
+from .layer import Layer, LayerList, MissingLayer, Module, Shardable
 from .linear import MLP, ColumnParallelLinear, FusedMLP, GPTQLinear, Linear
 from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
@@ -142,6 +142,7 @@ __all__ = [
     "LongRoPERotaryEmbedding",
     "LongRoPEScalingParams",
     "MinPSampler",
+    "MissingLayer",
     "MoE",
     "MoEGate",
     "MoEQuantized",

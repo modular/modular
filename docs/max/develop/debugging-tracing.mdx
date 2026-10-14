@@ -26,13 +26,13 @@ event when it finishes. Each event carries a unique op ID and the target
 device, so you can correlate a launch with its completion and see which device
 handled each op.
 
-The option accepts the standard log levels (`trace`, `debug`, `info`,
-`warning`, `error`, `critical`), where `trace` is the most verbose. Because
-the output can be significant, you'll usually want to redirect it to a file
-for later inspection.
+The option accepts the standard log levels in uppercase (`TRACE`, `DEBUG`,
+`INFO`, `WARNING`, `ERROR`, `CRITICAL`), where `TRACE` is the most verbose.
+Because the output can be significant, you'll usually want to redirect it to a
+file for later inspection.
 
 ```bash
-MODULAR_DEBUG=op-log-level=trace max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+MODULAR_DEBUG=op-log-level=TRACE max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
 ```
 
 This outputs detailed information about each operation's launch and completion

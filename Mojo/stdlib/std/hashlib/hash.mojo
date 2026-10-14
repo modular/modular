@@ -25,6 +25,7 @@ There are a few main tools in this module:
 """
 
 from std.builtin.constrained import _field_conforms_to_error
+from std.builtin._enum import __Enum
 from std.collections import Span
 from std.reflection import reflect
 
@@ -86,6 +87,14 @@ trait Hashable:
         comptime r = reflect[Self]
         comptime names = r.field_names()
         comptime types = r.field_types()
+
+        # Just so we have a better error message: the assert on `Hashable`
+        # below also rejects an enum's hidden storage field, but reports that
+        # field instead of the enum itself.
+        comptime assert not conforms_to(Self, __Enum), (
+            "deriving `__hash__` is not yet supported for enums; write"
+            " `__hash__`"
+        )
 
         comptime for i in range(names.length):
             comptime T = types[i]

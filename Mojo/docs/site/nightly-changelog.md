@@ -279,10 +279,11 @@ This version is still a work in progress.
   `MutStringSlice` have been removed, and the `mut` parameter on `StringSpan`
   has been removed.
 
-- `FileDescriptor` now stores its underlying descriptor as a `c_int`, matching
-  the C `int` type that the underlying descriptor APIs take. Integer literals
-  keep constructing one unchanged, but passing an `Int` variable now requires
-  an explicit `c_int()` conversion, and `.value` is a `c_int`.
+- `FileDescriptor` is now `RawFileDescriptor`, and it stores its underlying
+  descriptor as a `c_int`, matching the C `int` type that the underlying
+  descriptor APIs take. Integer literals keep constructing one unchanged, but
+  passing an `Int` variable now requires an explicit `c_int()` conversion,
+  and `.value` is a `c_int`.
 
 - Introduced a new `CompilationTarget` public type, which is now used in
   most APIs that are parameterized on compilation target, such as `size_of()`,

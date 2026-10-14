@@ -32,60 +32,6 @@ std::unique_ptr<CABIInfo> CABICallHelper::createABIHandler() const {
   return M::KGEN::createCABIInfo(triple, ctx, dataLayout);
 }
 
-std::pair<LLVMFunctionType, bool>
-CABICallHelper::buildFunctionType(const SignatureClassification &sigClass,
-                                  ValueRange originalArgs, Type origRetTy,
-                                  size_t numFixedArgs, bool isVariadic) const {
-  ArrayRef<CoercionInfo> argClass = sigClass.args;
-  const CoercionInfo &retClass = sigClass.ret;
-  SmallVector<Type> paramTypes;
-  Type resultType;
-  bool usesSRet = retClass.useSRet;
-
-  // Add sret parameter if needed
-  if (usesSRet) {
-    paramTypes.push_back(LLVMPointerType::get(ctx));
-  }
-
-  // Build parameter types (only fixed params for variadic functions)
-  size_t numParams = isVariadic ? numFixedArgs : argClass.size();
-  for (size_t idx = 0; idx < numParams; ++idx) {
-    const auto &coercion = argClass[idx];
-    if (coercion.isIdentity()) {
-      paramTypes.push_back(originalArgs[idx].getType());
-    } else if (coercion.useIndirect) {
-      paramTypes.push_back(LLVMPointerType::get(ctx));
-    } else if (coercion.coercedType) {
-      paramTypes.push_back(coercion.coercedType);
-      if (coercion.isTwoRegister()) {
-        assert(coercion.coercedSecondType &&
-               "two-register classification must have coercedSecondType");
-        paramTypes.push_back(coercion.coercedSecondType);
-      }
-    }
-  }
-
-  // Build result type
-  if (usesSRet) {
-    resultType = LLVMVoidType::get(ctx);
-  } else if (retClass.isTwoRegister()) {
-    // Two-register return: use LLVM struct {firstType, secondType}
-    assert(retClass.coercedType && retClass.coercedSecondType &&
-           "two-register classification must have both coerced types");
-    resultType = LLVMStructType::getLiteral(
-        ctx, {retClass.coercedType, retClass.coercedSecondType});
-  } else if (retClass.coercedType) {
-    resultType = retClass.coercedType;
-  } else if (origRetTy) {
-    resultType = origRetTy;
-  } else {
-    resultType = LLVMVoidType::get(ctx);
-  }
-
-  auto funcType = LLVMFunctionType::get(resultType, paramTypes, isVariadic);
-  return {funcType, usesSRet};
-}
-
 Value CABICallHelper::createEntryBlockAlloca(
     ConversionPatternRewriter &rewriter, Location loc, Type elemType) const {
   auto ptrType = LLVMPointerType::get(ctx);
@@ -288,13 +234,12 @@ CABICallPrep CABICallHelper::prepareCall(TypeRange argTypes,
   SignatureClassification sigClass =
       handler->computeSignatureInfo(llvmArgTypes, llvmRetTy, loc, numFixedArgs);
 
-  auto [sig, usesSRet] = buildFunctionType(sigClass, argValues, origRetTy,
-                                           numFixedArgs, isVariadic);
+  LLVMFunctionType sig = sigClass.getFunctionType(
+      ctx, argValues.getTypes(), origRetTy, isVariadic, numFixedArgs);
   auto [callArgs, sretPtr] = buildCallArgs(sigClass.args, sigClass.ret,
                                            argValues, origRetTy, loc, rewriter);
-  return {sig,          std::move(sigClass.args),
-          sigClass.ret, std::move(callArgs),
-          sretPtr,      usesSRet};
+  return {sig,       std::move(sigClass), std::move(llvmArgTypes),
+          llvmRetTy, std::move(callArgs), sretPtr};
 }
 
 /// Return the number of operands `call` passes to its callee, including the
@@ -310,65 +255,38 @@ static size_t getNumCallArgs(CallOp call) {
   return call.getCalleeOperands().size() - numConsumed;
 }
 
-void CABICallHelper::applySRetAttrIfNeeded(CallOp call, Type origRetTy,
-                                           bool usesSRet, OpBuilder &builder) {
-  if (!usesSRet)
-    return;
-  size_t numArgAttrs = getNumCallArgs(call);
-  SmallVector<Attribute> argAttrs(numArgAttrs, builder.getDictionaryAttr({}));
-  argAttrs[0] = builder.getDictionaryAttr({builder.getNamedAttr(
-      LLVMDialect::getStructRetAttrName(), TypeAttr::get(origRetTy))});
-  call.setArgAttrsAttr(builder.getArrayAttr(argAttrs));
-}
+Value CABICallHelper::finishCall(CallOp call, const CABICallPrep &prep,
+                                 TailKind tailKind, Location loc,
+                                 ConversionPatternRewriter &rewriter) const {
+  const SignatureClassification &sigClass = prep.classification;
 
-void CABICallHelper::applyByvalAttrsToCall(CallOp call,
-                                           ArrayRef<CoercionInfo> argClass,
-                                           TypeRange origArgTypes,
-                                           bool usesSRet, OpBuilder &builder,
-                                           size_t startArgIdx) const {
-  // Fast path: nothing to do when no argument in range needs indirect passing.
-  bool hasIndirectByval = false;
-  for (size_t i = startArgIdx; i < argClass.size(); ++i)
-    if (argClass[i].useIndirect && argClass[i].useByval) {
-      hasIndirectByval = true;
-      break;
-    }
-  if (!hasIndirectByval)
-    return;
+  // A direct call lowers from the call-site attributes, so they must be set
+  // even when the declaration has them. The variadic tail is included: a
+  // by-memory variadic argument needs its byval copy too.
+  SmallVector<NamedAttrList> paramAttrs =
+      sigClass.getParamAttrs(prep.argTypes, prep.retType);
+  assert(paramAttrs.size() == getNumCallArgs(call) &&
+         "C ABI classification and call operands disagree");
+  if (llvm::any_of(paramAttrs,
+                   [](const NamedAttrList &attrs) { return !attrs.empty(); }))
+    call.setArgAttrsAttr(rewriter.getArrayAttr(llvm::map_to_vector(
+        paramAttrs, [&](const NamedAttrList &attrs) -> Attribute {
+          return attrs.getDictionary(ctx);
+        })));
 
-  // Retrieve or create the per-argument attribute array.
-  size_t numArgAttrs = getNumCallArgs(call);
-  SmallVector<Attribute> attrs;
-  if (auto existing = call.getArgAttrsAttr())
-    attrs.assign(existing.begin(), existing.end());
-  else
-    attrs.assign(numArgAttrs, builder.getDictionaryAttr({}));
+  // A tail call is only safe when the callee does not write through any
+  // pointer that lives in the caller's stack frame.  The sret alloca
+  // created by prepareCall lives in the caller's frame, so a tail call
+  // would free that frame before the callee stores its return value,
+  // producing a silent memory corruption (MOCO-3841).  Suppress the tail
+  // marker whenever sret is in use; non-sret returns are register-passed
+  // and remain eligible for tail-call optimization.
+  if (!sigClass.ret.useSRet)
+    applyTailKind(call, tailKind);
 
-  assert(origArgTypes.size() >= argClass.size() &&
-         "origArgTypes must cover all argClass entries");
-
-  // Compute the call-arg index where startArgIdx begins: advance past sret
-  // and past any fixed args that precede startArgIdx (respecting two-register
-  // expansion).
-  unsigned paramIdx = usesSRet ? 1 : 0;
-  for (size_t i = 0; i < startArgIdx; ++i)
-    paramIdx += argClass[i].isTwoRegister() ? 2 : 1;
-
-  for (size_t idx = startArgIdx; idx < argClass.size(); ++idx) {
-    const auto &coercion = argClass[idx];
-    if (coercion.useIndirect && coercion.useByval) {
-      // paramIdx must be in bounds: prepareArg emits exactly one call arg per
-      // classification entry, so the sizes must agree.
-      assert(paramIdx < numArgAttrs &&
-             "paramIdx out of range — classifier/coercion mismatch");
-      auto byvalAttr = builder.getNamedAttr(LLVMDialect::getByValAttrName(),
-                                            TypeAttr::get(origArgTypes[idx]));
-      auto existing = cast<DictionaryAttr>(attrs[paramIdx]);
-      SmallVector<NamedAttribute> merged(existing.begin(), existing.end());
-      merged.push_back(byvalAttr);
-      attrs[paramIdx] = builder.getDictionaryAttr(merged);
-    }
-    paramIdx += coercion.isTwoRegister() ? 2 : 1;
-  }
-  call.setArgAttrsAttr(builder.getArrayAttr(attrs));
+  if (!prep.retType)
+    return {};
+  Value callResult = sigClass.ret.useSRet ? Value() : call.getResult();
+  return extractReturn(sigClass.ret, callResult, prep.sretPtr, prep.retType,
+                       loc, rewriter);
 }

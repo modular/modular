@@ -38,6 +38,7 @@ from max.pipelines.lib.device_specs import (
     _default_device_specs,
     coerce_device_specs_input,
 )
+from max.pipelines.lib.pipeline_stage import PipelineStage
 from max.pipelines.lib.weight_loader import (
     WeightLoader,
     _loader_over_weights,
@@ -767,6 +768,11 @@ class MAXModelConfig(MAXModelConfigBase):
         return v
 
     @property
+    def pipeline_stage(self) -> PipelineStage | None:
+        """The pipeline stage this config builds, or ``None`` if every layer."""
+        return self._pipeline_stage
+
+    @property
     def max_length_is_user_provided(self) -> bool:
         """Whether the user set ``max_length``, rather than the architecture.
 
@@ -969,6 +975,13 @@ class MAXModelConfig(MAXModelConfigBase):
     cast. Persisted because re-deriving against the populated
     ``weight_path`` gives a different answer for casted checkpoints."""
 
+    _pipeline_stage: PipelineStage | None = PrivateAttr(default=None)
+    """The pipeline stage of the main model this config builds, or ``None``
+    for the whole model. A private attr (not a field) because only
+    :func:`~max.pipelines.lib.pipeline_parallel.stage_pipeline_config` sets
+    it, for an exporter that builds one stage, so it never surfaces as a CLI
+    flag or a config-file key."""
+
     _max_length_user_provided: bool | None = PrivateAttr(default=None)
     """Whether ``max_length`` was explicitly supplied, captured before the
     architecture's sequence-length policy overwrites the field at
@@ -1025,6 +1038,7 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_cached_model_repo", None)
         private_state.setdefault("_generation_config", None)
         private_state.setdefault("_resolved_dtype_cast", None)
+        private_state.setdefault("_pipeline_stage", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
@@ -1633,12 +1647,13 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         return self.device_specs[0]
 
-    def log_model_info(self, role: str) -> None:
+    def log_model_info(self, role: str, *, uses_kv_cache: bool = True) -> None:
         """Logs model configuration information for this config.
 
         Args:
             role: The semantic role of this model (such as ``"main"``,
                 ``"draft"``, ``"vae"``).
+            uses_kv_cache: Whether the pipeline uses a KV cache.
         """
         logger.info("")
         logger.info("  Model: %s", role)
@@ -1677,8 +1692,8 @@ class MAXModelConfig(MAXModelConfigBase):
         for line in _format_config_entries(entries, indent="    "):
             logger.info(line)
 
-        # KVCache configuration
-        self._log_kvcache_info()
+        if uses_kv_cache:
+            self._log_kvcache_info()
 
     def _log_kvcache_info(self) -> None:
         """Logs KV cache configuration details for this model config."""

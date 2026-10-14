@@ -92,6 +92,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/unified_dspark_deepseekV4",
     "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
     "//max/python/max/pipelines/architectures/unified_dspark_gemma4_31b",
+    "//max/python/max/pipelines/architectures/unified_dspark_nemotron_h",
     "//max/python/max/pipelines/architectures/unified_eagle_llama3",
     "//max/python/max/pipelines/architectures/unified_mtp_deepseekV3",
     "//max/python/max/pipelines/architectures/unified_mtp_gemma4",

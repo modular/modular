@@ -16,9 +16,10 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
-from extensibility import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor, Tensor
 
 from layout import Coord
+from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 from state_space.rms_norm_fused_residual import (
@@ -192,16 +193,18 @@ struct RMSNormFusedResidual:
 @extensibility.register_shape_function("rms_norm_fused_residual")
 def rms_norm_fused_residual_shape[
     dtype: DType,
-    rank: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    residual_input: InputTensor[dtype=dtype, rank=rank, ...],
-    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    input: Some[Tensor],
+    residual_input: Some[Tensor],
+    gamma: Some[Tensor],
     epsilon: Float32,
+    # The scalars bind their own `dtype` parameter. The graph compiler's
+    # scalar-attribute binding cannot resolve a trait projection like
+    # `type_of(input).dtype`. The `comptime assert`s below restore the tie.
     weight_offset: Scalar[dtype=dtype],
     dropout_p: Scalar[dtype=dtype],
     seed: Scalar[dtype=DType.uint64],
-) -> IndexList[rank]:
+) -> IndexList[type_of(input).rank]:
     """Returns the output shape for the `rms_norm_fused_residual` op.
 
     The fused RMS-norm-plus-residual op preserves the input shape; both the
@@ -220,4 +223,19 @@ def rms_norm_fused_residual_shape[
     Returns:
         The output shape, equal to `input.shape()`.
     """
-    return input.shape()
+    comptime assert (
+        type_of(input).dtype == dtype
+    ), "input dtype must match the scalar dtype"
+    comptime assert (
+        type_of(residual_input).rank == type_of(input).rank
+    ), "residual_input rank must match input rank"
+    comptime assert (
+        type_of(residual_input).dtype == dtype
+    ), "residual_input dtype must match the scalar dtype"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert (
+        type_of(gamma).dtype == dtype
+    ), "gamma dtype must match the scalar dtype"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )

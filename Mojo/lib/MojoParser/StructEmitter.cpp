@@ -201,7 +201,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
   return fnOp;
 }
 
-std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
+std::pair<FnOp, DefASTDecl *> FunctionEmitter::synthesizeFunction(
     ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
     PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
@@ -218,9 +218,9 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
     return {nullptr, nullptr};
 
   // Register the method in the struct.
-  ASTDecl &funcDecl = shared.declResolver->addFullyResolvedDecl(
+  auto &funcDecl = cast<DefASTDecl>(shared.declResolver->addFullyResolvedDecl(
       funcOp.getOperation(), StringAttr::get(shared.getContext(), name), loc,
-      &parent);
+      &parent));
 
   // Synthesized functions skip DeclResolution's insertKnownAssumptions, so
   // inject the fn's where-clause constraints as known assumptions here,
@@ -236,9 +236,10 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
 }
 
 FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
-    ASTDecl &existingDecl, StringRef name, FnTypeGeneratorType wrapperSignature,
-    FnOp traitFn, ASTDecl *traitFnDecl, ImplicitLocOpBuilder &builder,
-    StringRef suffix, ConstraintAttr conformanceConstraint) {
+    DefASTDecl &existingDecl, StringRef name,
+    FnTypeGeneratorType wrapperSignature, FnOp traitFn, ASTDecl *traitFnDecl,
+    ImplicitLocOpBuilder &builder, StringRef suffix,
+    ConstraintAttr conformanceConstraint) {
 
   assert(existingDecl.resolvedness <= DeclResolvedness::signature &&
          "synthesizeMethodInStruct is only valid on non-body resolved Fn "
@@ -382,10 +383,11 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
 /// created during synthesizeDefaultTraitMethodWrapper and forwards all the
 /// arguments of the FnOp created there to the call op on the actual defaulted
 /// trait method.
-LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
-  auto fn = cast<FnOp>(fnDecl.getIfOperation());
-  ASTDecl &structDecl = *fnDecl.getParentDecl();
-  ASTType structSelfType = structDecl.getTypeDeclSelf();
+LogicalResult
+StructEmitter::populateDefaultedTraitFunction(DefASTDecl &fnDecl) {
+  auto fn = fnDecl.getOp();
+  auto &structDecl = cast<StructASTDecl>(*fnDecl.getParentDecl());
+  ASTType structSelfType = structDecl.getSelfType();
 
   IREmitter emitter(fnDecl, EC_Trait);
   fn.getBody()->clear(); // Remove the lit.end_fn
@@ -398,7 +400,7 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
          " default-method stub");
 
   // Look up the trait's default implementation function
-  ASTDecl *traitDefaultMethodDecl =
+  DefASTDecl *traitDefaultMethodDecl =
       shared.declResolver->getDeclForFuncSymbol(*defaultFnRefAttr);
   assert(traitDefaultMethodDecl &&
          "Could not find trait default method implementation");
@@ -426,8 +428,7 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
     return failure();
   }
 
-  FnOp traitDefaultMethodOp =
-      cast<FnOp>(traitDefaultMethodDecl->getIfOperation());
+  FnOp traitDefaultMethodOp = traitDefaultMethodDecl->getOp();
   auto fnTypeGen = traitDefaultMethodOp.getFullSignature();
 
   auto &builder = *emitter.builder;
@@ -486,9 +487,9 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
 // StructEmitter
 //===----------------------------------------------------------------------===//
 
-StructEmitter::StructEmitter(ASTDecl &structDecl)
+StructEmitter::StructEmitter(StructASTDecl &structDecl)
     : FunctionEmitter(structDecl.getShared()), structDecl(structDecl) {
-  structDeclOp = cast<StructDeclOp>(*structDecl.getIfOperation());
+  structDeclOp = structDecl.getOp();
 }
 
 std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
@@ -537,7 +538,7 @@ static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
 
 /// Add a attribute initializer method for this struct with a body.
 FnOp StructEmitter::synthesizeFieldwiseInit() {
-  ASTType selfType = structDecl.getTypeDeclSelf();
+  ASTType selfType = structDecl.getSelfType();
 
   SmallVector<Type> argTypes;
   SmallVector<ArgConvention> argConventions;
@@ -687,7 +688,7 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
 
   // Figure out the type of the 'self' argument, which is always indirect since
   // it is owned.
-  ASTType selfType = structDecl.getTypeDeclSelf();
+  ASTType selfType = structDecl.getSelfType();
   if (!selfType)
     return {};
 
@@ -754,7 +755,7 @@ FnOp StructEmitter::synthesizeEmptyDtor(ConstraintAttr conformanceConstraint) {
 
 FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
     bool isMove, ConstraintAttr conformanceConstraint) {
-  ASTType selfType = structDecl.getTypeDeclSelf();
+  ASTType selfType = structDecl.getSelfType();
   MLIRContext *ctx = shared.getContext();
   Builder b(ctx);
   StringAttr srcName = b.getStringAttr(isMove ? "move" : "copy");
@@ -818,13 +819,13 @@ static Value rebindRefForTrait(Value fieldRef, Type fieldMLIRType,
 ///   %targetField0Ptr = lit.ref.struct.ger %self[field0]
 ///   %sourceField0Ptr = lit.ref.struct.ger %copy[field0]
 ///   copyinit_of_type_of_field0(%targetField0, %field)
-LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
+LogicalResult StructEmitter::populateMoveCopy(DefASTDecl &fnDecl, bool isMove) {
   // This method body resolves the decl.
   // TODO: This is because clients are directly calling this instead of having
   // declresolution do it.
   fnDecl.resolvedness = DeclResolvedness::body;
 
-  auto fn = cast<FnOp>(fnDecl.getIfOperation());
+  auto fn = fnDecl.getOp();
 
   // We want to populate a move but the move/copy should be a method!
   SMLoc location = fnDecl.getLoc();
@@ -864,8 +865,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &fnDecl, bool isMove) {
 
   // Otherwise, invoke the copy/move ctors fieldwise as appropriate.
   bool isImplicitlyCopyableStruct =
-      structDecl.getTypeDeclSelf().isImplicitlyCopyable(structDecl.getLoc(),
-                                                        shared, fnDecl);
+      structDecl.getSelfType().isImplicitlyCopyable(structDecl.getLoc(), shared,
+                                                    fnDecl);
   ArrayRef<ConstraintAttr> bodyConstraints =
       fn.getFuncTypeGenerator().getParamListAttrs().getBodyConstraints();
 
@@ -1000,9 +1001,10 @@ std::optional<ValueInfo> ValueInfo::lookupExisting(ASTDecl &structDecl) {
     if (!lookupResult.isSuccess())
       return success();
     for (ASTDecl *decl : lookupResult.getIfSuccess()) {
-      if (auto func = dyn_cast_or_null<FnOp>(decl->getIfOperation()))
-        if (SpecialFunctionKind(func.getSpecialFnKind()) == kind)
-          member = func;
+      if (auto *fnDecl = dyn_cast<DefASTDecl>(decl))
+        if (fnDecl->getOp() &&
+            SpecialFunctionKind(fnDecl->getOp().getSpecialFnKind()) == kind)
+          member = fnDecl->getOp();
     }
 
     return success();
@@ -1095,9 +1097,10 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   if (spDecls.isErroneous())
     return nullptr;
   for (ASTDecl *decl : spDecls.getIfSuccess()) {
-    auto fnOp = dyn_cast<FnOp>(decl->getIfOperation());
-    if (!fnOp)
+    auto *fnDecl = dyn_cast<DefASTDecl>(decl);
+    if (!fnDecl || !fnDecl->getOp())
       continue;
+    auto fnOp = fnDecl->getOp();
     if (fnOp.getSpecialFunctionKind() == kind) {
       // If has a user provided implementation, consider them as non-trivial.
       if (!decl->getCursor().isInvalid())
@@ -1143,4 +1146,520 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   }
   // convert from scalar<bool> to Bool.
   return emitBoolAttr(ret);
+}
+
+//===----------------------------------------------------------------------===//
+// Enum Synthesis
+//===----------------------------------------------------------------------===//
+//
+// The compiler declares an `__enum`'s members; the actual implementations of
+// their bodies are Mojo code in `std.builtin._enum`. The compiler finds that
+// module's declarations by path (`lookupEnumSupportDecl`) and the enum's
+// inherited `__Enum` members in the enum's own scope, whose names
+// `checkEnumMemberNames` keeps free, so user code cannot shadow either. For
+//
+//     __enum Token(Copyable):
+//         case eof
+//         case ident(String)
+//         case span(Int, Int)
+//
+// the generated members are, written as Mojo:
+//
+//     comptime _enum_case_names = ["eof", "ident", "span"]
+//     comptime _enum_case_types = [NoneType, String, Tuple[Int, Int]]
+//     var __enum_storage: __EnumStorage[NoneType, String, Tuple[Int, Int]]
+//
+//     comptime eof: Token = Token.__enum_init[0, NoneType]()
+//
+//     @staticmethod
+//     def ident(var payload: String) -> Token:
+//         return Token.__enum_init[1, String](payload^)
+//
+//     @staticmethod
+//     def span(var payload0: Int, var payload1: Int) -> Token:
+//         return Token.__enum_init[2, Tuple[Int, Int]](payload0^, payload1^)
+//
+// and `Token` conforms to `__Enum`, which supplies `__get_enum_storage`,
+// `__enum_init`, `_get_enum_discriminant` and `_unsafe_get_enum_payload`.
+// The parts:
+//
+// - Storage. `__enum_storage` is the enum's only field. `__EnumStorage` is a
+//   `!kgen.variant` over the case types, addressed by case index, so it holds
+//   the active case's payload and that case's index
+//   (`__enum_discriminant_dtype` sizes the index to the case count). `NoneType`
+//   stands for no payload, the marker `EnumLike` imposes (MOCO-5080).
+//   `__EnumStorage` copies, moves and destroys the
+//   active payload and carries the conditional conformances (`Copyable` where
+//   every case type is, and so on). The enum's own copy, move and destructor
+//   are nothing enum-specific: the struct machinery synthesizes them
+//   field-wise from the enum's declared conformances, and there is one field.
+//
+// - Construction. `__enum_init[id, Case, *Ts](*payload)`, a static method of
+//   `__Enum` with `id` the case index, `Case` its payload type and `Ts` the
+//   payload's element types, builds the value of that case, writing each
+//   element straight into the storage; it is one ordinary function, and whether
+//   a call of it runs in the comptime interpreter or at run time depends only
+//   on where the call is written. A case without a payload gets a `comptime`
+//   member initialized by a call with no arguments, as `eof` above. A case with
+//   a payload gets a static method that takes the payload's elements as
+//   positional arguments and tail-calls it with them.
+//
+// - Access. `__get_enum_storage` returns the storage field. The enum's
+//   `EnumLike` methods are the other two defaults of `__Enum`, a trait
+//   refining `EnumLike` that every enum conforms to; they read the index and
+//   the active payload from that field.
+//
+// - Case lists. `_enum_case_names` and `_enum_case_types` are `comptime`
+//   members the compiler computes from the `lit.enum.case` ops. Everything
+//   above, and `match`, reads them through `EnumLike`.
+
+static constexpr StringLiteral kEnumStorageFieldName = "__enum_storage";
+static constexpr StringLiteral kEnumCaseNamesName = "_enum_case_names";
+static constexpr StringLiteral kEnumCaseTypesName = "_enum_case_types";
+static constexpr StringLiteral kEnumDiscriminantName = "_get_enum_discriminant";
+static constexpr StringLiteral kEnumPayloadName = "_unsafe_get_enum_payload";
+static constexpr StringLiteral kEnumEltTypeName = "_enum_elt_type_for_case";
+static constexpr StringLiteral kEnumInitName = "__enum_init";
+static constexpr StringLiteral kEnumStorageGetterName = "__get_enum_storage";
+
+ASTDecl *LIT::lookupEnumSupportDecl(SharedState &shared, StringRef name,
+                                    SMLoc loc) {
+  if (shared.hasBuiltinModule()) {
+    ASTDecl &module = shared.importModule({"std", "builtin", "_enum"},
+                                          /*currentPackage=*/nullptr, loc);
+    LookupResult result = shared.lookupAndResolveDecl(
+        name, loc, module, /*searchParentScopes=*/false);
+    if (result.isSuccess() && result.getIfSuccess().size() == 1)
+      return result.getIfSuccess().front();
+  }
+  shared.emitError(loc) << "internal error: enums require '" << name
+                        << "' from 'std.builtin._enum'";
+  return nullptr;
+}
+
+/// Return the `EnumLike` trait, emitting an error if it is missing.
+static ASTDecl *lookupEnumLikeTrait(SharedState &shared, SMLoc loc) {
+  ASTDecl *traitDecl = shared.lookupBuiltinTrait("EnumLike", loc);
+  if (!traitDecl)
+    shared.emitError(loc) << "internal error: enums require 'EnumLike'";
+  return traitDecl;
+}
+
+/// Return the cases of `structOp`, in declaration order.
+static auto getEnumCases(StructDeclOp structOp) {
+  return structOp.getFields().getOps<EnumCaseOp>();
+}
+
+/// Return the index of the case of `structOp` named `name` and its op, if any.
+static std::optional<std::pair<size_t, EnumCaseOp>>
+lookupEnumCase(StructDeclOp structOp, StringRef name) {
+  for (auto [idx, caseOp] : llvm::enumerate(getEnumCases(structOp)))
+    if (caseOp.getName() == name)
+      return std::make_pair(idx, caseOp);
+  return std::nullopt;
+}
+
+/// Return the types listed in the declaration of `caseOp`: `[Int, Int]` for
+/// `case span(Int, Int)`, where `_enum_case_types` has `Tuple[Int, Int]`.
+static SmallVector<Type> getEnumCasePayload(EnumCaseOp caseOp) {
+  assert(caseOp.getPayloadTypesAttr() &&
+         "an enum is synthesized only once every case has resolved");
+  auto types = caseOp.getPayloadTypesAttr().getAsValueRange<TypeAttr>();
+  return SmallVector<Type>(types.begin(), types.end());
+}
+
+LogicalResult StructEmitter::synthesizeEnumCaseConstructor(
+    StringRef caseName, ArrayRef<Type> payload, SMLoc caseLoc) {
+  MLIRContext *ctx = getContext();
+  SMLoc loc = structDecl.getLoc();
+  ASTType selfType = structDecl.getSelfType();
+  SmallVector<Type> argTypes;
+  SmallVector<ArgConvention> argConventions;
+  SmallVector<StringAttr> argNames;
+  SmallVector<PassingKind> argPassingKinds;
+  for (auto [eltIndex, eltType] : llvm::enumerate(payload)) {
+    std::string argName = payload.size() == 1
+                              ? std::string("payload")
+                              : ("payload" + Twine(eltIndex)).str();
+    argTypes.push_back(
+        ASTType(eltType).getRefForArgument(argName, /*isMut=*/true));
+    argConventions.push_back(ArgConvention::OwnedMem);
+    argNames.push_back(StringAttr::get(ctx, argName));
+    argPassingKinds.push_back(PassingKind::PosOnly);
+  }
+  Type resultType = selfType;
+  if (!selfType.isRegisterPassable(loc, shared)) {
+    resultType = shared.getNoneType();
+    argTypes.push_back(
+        selfType.getRefForArgument("__result__", /*isMut=*/true));
+    argConventions.push_back(ArgConvention::ByRefResult);
+    argNames.push_back(StringAttr::get(ctx, "__result__"));
+    argPassingKinds.push_back(PassingKind::Implicit);
+  }
+  // Located at the case, for diagnostics, debug info and doc strings.
+  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
+      shared.translateLocation(caseLoc), &structDeclOp.getFields().front());
+  auto [fn, fnDecl] = synthesizeFunction(
+      structDecl, caseName, /*params=*/{}, PogListAttr::get(ctx), argTypes,
+      argConventions, PogListAttr::get(ctx, argNames, argPassingKinds),
+      resultType, SpecialFunctionKind::kNormal, caseLoc, builder, FnEffects(),
+      /*suffix=*/"", /*synthetic=*/true, InlineLevel::AlwaysNoDebug);
+  if (!fn)
+    return emitError(caseLoc)
+           << "internal error: could not synthesize enum case '" << caseName
+           << "'";
+  fn.setIsStatic(true);
+  fnDecl->resolvedness = DeclResolvedness::signature;
+  auto atEnd = OpBuilder::atBlockEnd(fn.getBody());
+  EndFnOp::create(atEnd, fn.getLoc(), /*unresolved=*/true);
+  return success();
+}
+
+/// Report every clash between the members an `__enum` gets and the members
+/// written in it; failure if there was one.
+static LogicalResult checkEnumMemberNames(ASTDecl &enumDecl,
+                                          ArrayRef<EnumCaseOp> cases,
+                                          ArrayRef<SMLoc> caseLocs,
+                                          ASTDecl &enumLikeDecl) {
+  SharedState &shared = enumDecl.getShared();
+  // Every synthesized or `__Enum`-provided name must be free: the members a
+  // user writes live in the same scope. `_enum_elt_type_for_case` is derived
+  // from the case types; `_enum_is_exhaustive` may be declared to open the
+  // enum.
+  constexpr StringLiteral synthesizedNames[] = {
+      kEnumStorageFieldName, kEnumCaseNamesName, kEnumCaseTypesName,
+      kEnumDiscriminantName, kEnumPayloadName,   kEnumInitName,
+      kEnumStorageGetterName};
+  constexpr StringLiteral undeclarableNames[] = {
+      kEnumStorageFieldName, kEnumCaseNamesName,    kEnumCaseTypesName,
+      kEnumDiscriminantName, kEnumPayloadName,      kEnumEltTypeName,
+      kEnumInitName,         kEnumStorageGetterName};
+  bool hasConflict = false;
+  for (StringRef name : undeclarableNames) {
+    for (ASTDecl *existing : enumDecl.lookupInCurrentScope(name)) {
+      shared.emitError(existing->getLoc())
+          << "'" << name << "' is synthesized for enums and cannot be declared";
+      hasConflict = true;
+    }
+  }
+  for (auto [constCaseOp, caseLoc] : llvm::zip_equal(cases, caseLocs)) {
+    EnumCaseOp caseOp = constCaseOp; // op accessors are not const
+    StringRef caseName = caseOp.getName();
+    // The member a case generates must not collide with a synthesized or
+    // `EnumLike` member either.
+    if (llvm::is_contained(synthesizedNames, caseName) ||
+        !enumLikeDecl.lookupInCurrentScope(caseName).empty()) {
+      shared.emitError(caseLoc)
+          << "invalid redefinition of '" << caseName << "'";
+      hasConflict = true;
+      continue;
+    }
+    ArrayRef<ASTDecl *> existing = enumDecl.lookupInCurrentScope(caseName);
+    if (existing.empty())
+      continue;
+    auto diag = shared.emitError(caseLoc)
+                << "enum case '" << caseName
+                << "' conflicts with a member of the same name";
+    diag.attachNote(existing.front()->getLoc()) << "member declared here";
+    hasConflict = true;
+  }
+  return failure(hasConflict);
+}
+
+/// Compute the values of `enumDecl`'s `_enum_case_names` and
+/// `_enum_case_types`, in that order, from its case ops: `noneType` for a case
+/// without a payload, a `Tuple` for a case with several payload types.
+static FailureOr<std::pair<ParamListAttr, ParamListAttr>>
+computeEnumCaseNamesAndTypes(ASTDecl &enumDecl, ArrayRef<EnumCaseOp> cases,
+                             TraitType anyTypeTrait, ASTType noneType) {
+  MLIRContext *ctx = enumDecl.getShared().getContext();
+  SMLoc loc = enumDecl.getLoc();
+  // `EnumLike` lists each case's name and payload type: `NoneType` for a case
+  // without a payload, a `Tuple` for a case with several.
+  // TODO(MOCO-5080): `NoneType` is the marker `EnumLike` imposes; it cannot
+  // tell such a case from a payload of type `NoneType`. Every payload becomes
+  // a `Tuple`, `Tuple[]` for none.
+  IREmitter emitter(enumDecl, EC_Type);
+  SyntheticNode node(loc);
+  SmallVector<TypedAttr> nameValues, typeValues;
+  for (EnumCaseOp caseOp : cases) {
+    nameValues.push_back(
+        StringAttr::get(caseOp.getName(), StringType::get(ctx)));
+    SmallVector<Type> payload = getEnumCasePayload(caseOp);
+    ASTType payloadType;
+    if (payload.empty())
+      payloadType = noneType;
+    else if (payload.size() == 1)
+      payloadType = payload.front();
+    else
+      payloadType = emitter.getBuiltinTupleInstantiation(loc, payload);
+    if (!payloadType)
+      return failure();
+    PValue asAnyType = emitter.emitMetaTypeToTraitConversion(
+        {CValue(payloadType.mlirType), &node}, anyTypeTrait);
+    if (!asAnyType)
+      return failure();
+    typeValues.push_back(asAnyType.get());
+  }
+  return std::make_pair(
+      ParamListAttr::get(nameValues, ParamListType::get(StringType::get(ctx))),
+      ParamListAttr::get(typeValues, ParamListType::get(anyTypeTrait)));
+}
+
+void StructEmitter::synthesizeEnumCaseListsAndStorage(
+    StructDeclOp enumStorageDeclOp, ParamListAttr caseNames,
+    ParamListAttr caseTypes) {
+  SMLoc loc = structDecl.getLoc();
+  ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
+      structDeclOp.getLoc(), &structDeclOp.getFields().front());
+  auto addAlias = [&](StringRef name, TypedAttr value) {
+    auto aliasOp =
+        AliasDeclOp::create(builder, ParamDeclAttr::get(name, value.getType()));
+    aliasOp.setValueAttr(value);
+    aliasOp.setHasDocHiddenDecorator(true);
+    getDeclResolver().addFullyResolvedDecl(aliasOp.getOperation(), name, loc,
+                                           &structDecl);
+  };
+  addAlias(kEnumCaseNamesName, caseNames);
+  addAlias(kEnumCaseTypesName, caseTypes);
+
+  // The storage is the only field: `std.builtin._enum` reads it as field 0.
+  StructType storageType = enumStorageDeclOp.bindReference({caseTypes});
+  auto storageField =
+      StructFieldOp::create(builder, kEnumStorageFieldName, storageType);
+  storageField.setIsDocHidden(true);
+  getDeclResolver().addFullyResolvedDecl(
+      storageField.getOperation(), kEnumStorageFieldName, loc, &structDecl);
+}
+
+LogicalResult StructEmitter::synthesizeEnumMembers() {
+  SMLoc loc = structDecl.getLoc();
+  SmallVector<EnumCaseOp> cases = llvm::to_vector(getEnumCases(structDeclOp));
+  // An enum with errors gets no members: a case that failed to resolve has no
+  // payload types, and the members would only add follow-on errors.
+  if (structDecl.isErroneous() || llvm::any_of(cases, [](EnumCaseOp caseOp) {
+        return !caseOp.getPayloadTypesAttr();
+      }))
+    return failure();
+  // A case's members are located at the case.
+  SmallVector<SMLoc> caseLocs = llvm::map_to_vector(cases, [&](EnumCaseOp op) {
+    return shared.diags.convertLocToSMLoc(op.getLoc());
+  });
+
+  ASTDecl *enumLikeDecl = lookupEnumLikeTrait(shared, loc);
+  if (!enumLikeDecl ||
+      failed(getDeclResolver().resolveBody(*enumLikeDecl, loc)))
+    return failure();
+  if (failed(checkEnumMemberNames(structDecl, cases, caseLocs, *enumLikeDecl)))
+    return failure();
+
+  ASTDecl *enumStorageDecl =
+      lookupEnumSupportDecl(shared, "__EnumStorage", loc);
+  TraitType anyTypeTrait = shared.lookupBuiltinTraitType("AnyType", loc);
+  // TODO(MOCO-5080): `NoneType` is the "no payload" marker; it becomes
+  // `Tuple[]`.
+  ASTType noneType = shared.lookupBuiltinType("NoneType", structDecl, loc);
+  if (!enumStorageDecl || !anyTypeTrait || noneType.isTypeCheckErrorType())
+    return failure();
+  auto enumStorageDeclOp =
+      dyn_cast_or_null<StructDeclOp>(enumStorageDecl->getIfOperation());
+  if (!enumStorageDeclOp) {
+    emitError(loc) << "internal error: '__EnumStorage' in "
+                      "'std.builtin._enum' is not a struct";
+    return failure();
+  }
+
+  FailureOr<std::pair<ParamListAttr, ParamListAttr>> lists =
+      computeEnumCaseNamesAndTypes(structDecl, cases, anyTypeTrait, noneType);
+  if (failed(lists))
+    return failure();
+  auto [caseNames, caseTypes] = *lists;
+  synthesizeEnumCaseListsAndStorage(enumStorageDeclOp, caseNames, caseTypes);
+  for (auto [caseOp, caseLoc] : llvm::zip_equal(cases, caseLocs)) {
+    StringRef caseName = caseOp.getName();
+    SmallVector<Type> payload = getEnumCasePayload(caseOp);
+    if (payload.empty()) {
+      // TODO: the member is a `comptime` value, and one whose type is not
+      // `ImplicitlyCopyable` does not materialize at run time, although a case
+      // without a payload owns nothing.
+      ASTDecl *aliasDecl = synthesizeUnresolvedAlias(caseName);
+      aliasDecl->setLoc(caseLoc);
+      auto aliasOp = cast<AliasDeclOp>(aliasDecl->getIfOperation());
+      aliasOp->setLoc(caseOp.getLoc());
+      continue;
+    }
+    if (failed(synthesizeEnumCaseConstructor(caseName, payload, caseLoc)))
+      return failure();
+  }
+  return success();
+}
+
+/// Return `caseIndex` as a compile-time `Int`, the value for the `id`
+/// parameter of `__enum_init`.
+static TypedAttr getEnumCaseIndexValue(IREmitter &emitter, size_t caseIndex,
+                                       const ExprNode *node) {
+  TypedAttr indexAttr =
+      IntegerAttr::get(IndexType::get(emitter.getContext()), caseIndex);
+  CValue index = emitter.emitInt(ASTExprAnd<PValue>{PValue(indexAttr), node},
+                                 EC_CallParamValue);
+  if (!index || !index.getIfPValue())
+    return {};
+  return index.getIfPValue().get();
+}
+
+/// Return the payload type of case `caseIndex` as the `AnyType` value the
+/// enum's `_enum_case_types` member lists for it.
+static TypedAttr getEnumCaseTypeValue(ASTDecl &enumDecl, size_t caseIndex) {
+  ArrayRef<ASTDecl *> decls = enumDecl.lookupInCurrentScope(kEnumCaseTypesName);
+  auto aliasOp =
+      decls.size() == 1
+          ? dyn_cast_or_null<AliasDeclOp>(decls.front()->getIfOperation())
+          : AliasDeclOp();
+  auto types = aliasOp ? dyn_cast_or_null<ParamListAttr>(aliasOp.getValueAttr())
+                       : ParamListAttr();
+  if (!types || caseIndex >= types.getValues().size())
+    return {};
+  return types.getValues()[caseIndex];
+}
+
+/// Emit the call `Self.__enum_init[caseIndex, Case](operands...)`, the
+/// constructor of case `caseIndex` taking the payload's elements, with `Case`
+/// the case's payload type. As for the same call written in Mojo, the enum's
+/// own parameters come from `selfType`, and the element types and the pack's
+/// origins are inferred from the operands.
+static CValue emitEnumInitCall(IREmitter &emitter, ASTDecl &enumDecl,
+                               ASTType selfType, size_t caseIndex,
+                               CallOperands &&operands, const ExprNode *node) {
+  auto fail = [&]() -> CValue {
+    operands.dest.resetForError(emitter);
+    return {};
+  };
+  TypedAttr indexValue = getEnumCaseIndexValue(emitter, caseIndex, node);
+  TypedAttr caseType = getEnumCaseTypeValue(enumDecl, caseIndex);
+  if (!indexValue || !caseType)
+    return fail();
+  OverloadSet overloads =
+      OverloadSet::lookup(enumDecl, selfType, kEnumInitName, node,
+                          CallSyntax::kMethodCallSynthetic);
+  if (!overloads) {
+    emitter.shared.emitError(node->getLoc())
+        << "internal error: enum has no '" << kEnumInitName
+        << "' member from '__Enum'";
+    return fail();
+  }
+  overloads.paramBindings =
+      ParamBindings::getForDeclaredType(enumDecl, selfType, node);
+  overloads.paramBindings.relaxBindingKindTo(ParamBindings::kWithEllipsis);
+  overloads.paramBindings.add(node, PValue(indexValue));
+  overloads.paramBindings.add(node, PValue(caseType));
+  auto callee = overloads.filterOverloadSet(
+      operands, /*emitDiagnosticOnFailure=*/true, emitter);
+  if (!callee.isYes())
+    return fail();
+  return emitter.emitIndirectCall(callee.getYes(), std::move(operands));
+}
+
+/// Whether a written `_enum_is_exhaustive` of `enumDecl` fails conformance
+/// to `EnumLike` (e.g. it is not a `Bool`); it is the only member of that
+/// conformance a user can write. The conformance reports the error.
+static bool enumExhaustiveDeclFailedConformance(ASTDecl &enumDecl, SMLoc loc) {
+  SharedState &shared = enumDecl.getShared();
+  ASTDecl *enumLikeDecl = lookupEnumLikeTrait(shared, loc);
+  if (!enumLikeDecl)
+    return false;
+  ArrayRef<ASTDecl *> conformanceDecls = enumDecl.lookupInCurrentScope(
+      TraitSymbolAttr::get(enumLikeDecl->getSymbolRef()).getFlattenedName());
+  if (conformanceDecls.empty())
+    return false;
+  // The enum's body resolution has checked the conformance by now, so this
+  // reads the result.
+  ASTDecl &conformanceDecl = *conformanceDecls.front();
+  return failed(shared.getDeclResolver().resolveBody(conformanceDecl, loc)) ||
+         conformanceDecl.isErroneous();
+}
+
+LogicalResult StructEmitter::populateEnumCaseConstructor(ASTDecl &fnDecl) {
+  auto fn = cast<FnOp>(fnDecl.getIfOperation());
+  // The enum's own errors are already diagnosed, and the `EnumLike`
+  // conformance reports a wrong `_enum_is_exhaustive`.
+  if (structDecl.isErroneous() ||
+      enumExhaustiveDeclFailedConformance(structDecl, fnDecl.getLoc()))
+    return failure();
+  StringRef name = fn.getDeclName().getValue();
+  auto enumCase = lookupEnumCase(structDeclOp, name);
+  if (!enumCase)
+    return emitError(fn.getLoc())
+           << "internal error: '" << name << "' is not an enum case";
+
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(fn.getLocScope());
+  Block *body = fn.getBody();
+  body->clear(); // Remove the unresolved lit.end_fn.
+  ImplicitLocOpBuilder builder =
+      ImplicitLocOpBuilder::atBlockBegin(fn.getLoc(), body);
+  IREmitter emitter(fnDecl, builder);
+  SyntheticNode node(fnDecl.getLoc());
+
+  // The arguments are the payload's elements, then the result slot when the
+  // enum is not register passable; the elements are passed on to
+  // `Self.__enum_init[case, Case]`.
+  auto argConventions = fn.getFuncTypeGenerator().getArgConventions();
+  bool hasResultSlot = !argConventions.empty() &&
+                       argConventions.back() == ArgConvention::ByRefResult;
+  ExprDest dest = hasResultSlot ? ExprDest(MLValue(body->getArguments().back()),
+                                           EC_ReturnValue)
+                                : ExprDest(EC_ReturnValue);
+  CallOperands operands(CallSyntax::kMethodCallSynthetic, &node,
+                        std::move(dest));
+  for (Value arg : body->getArguments().drop_back(hasResultSlot))
+    operands.add({MRValue(arg), &node});
+  CValue result =
+      emitEnumInitCall(emitter, structDecl, structDecl.getSelfType(),
+                       enumCase->first, std::move(operands), &node);
+  if (!result)
+    return failure();
+  Value returnValue;
+  if (!hasResultSlot) {
+    SRValue regResult = emitter.emitSRValue({result, &node}, EC_ReturnValue);
+    if (!regResult)
+      return failure();
+    returnValue = regResult;
+  }
+  emitter.emitNormalReturn(fn.getLoc(), returnValue);
+  return success();
+}
+
+LogicalResult StructEmitter::resolveEnumCaseAlias(ASTDecl &aliasDecl) {
+  auto aliasOp = cast<AliasDeclOp>(aliasDecl.getIfOperation());
+  StringRef name = aliasOp.getDeclName();
+  auto enumCase = lookupEnumCase(structDeclOp, name);
+  if (!enumCase || !getEnumCasePayload(enumCase->second).empty())
+    return emitError(aliasDecl.getLoc())
+           << "internal error: '" << name
+           << "' is not an enum case without a payload";
+
+  aliasDecl.resolvedness = DeclResolvedness::body;
+  if (structDecl.isErroneous() ||
+      enumExhaustiveDeclFailedConformance(structDecl, aliasDecl.getLoc())) {
+    aliasDecl.setErroneous();
+    return success();
+  }
+
+  // The value is `Self.__enum_init[case, NoneType]()`, evaluated at compile
+  // time.
+  ASTType selfType = structDecl.getSelfType();
+  IREmitter emitter(structDecl, EC_AliasValue);
+  SyntheticNode node(aliasDecl.getLoc());
+  CallOperands operands(CallSyntax::kMethodCallSynthetic, &node,
+                        ExprDest(EC_AliasValue));
+  CValue value = emitEnumInitCall(emitter, structDecl, selfType,
+                                  enumCase->first, std::move(operands), &node);
+  if (!value || !value.getIfPValue()) {
+    aliasDecl.setErroneous();
+    return success();
+  }
+  aliasOp.setParamDeclAttr(ParamDeclAttr::get(name, selfType.mlirType));
+  aliasOp.setValueAttr(value.getIfPValue().get());
+  return success();
 }

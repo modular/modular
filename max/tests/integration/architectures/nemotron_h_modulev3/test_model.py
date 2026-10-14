@@ -44,6 +44,7 @@ from max.experimental.sharding import (
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef
 from max.nn import kernels
+from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )
@@ -690,3 +691,10 @@ def test_weights_are_planned_as_the_modules_place_them(
     placed = _bytes_on_devices(_model_on_devices(config), n)
     assert planned - one == placed - _bytes_on_devices(_model(one_config), 1)
     assert planned > one
+
+
+def test_per_device_hidden_states_are_refused() -> None:
+    config = model_config(TINY_LAYERS, TINY)
+    config.return_hidden_states = ReturnHiddenStates.LAST_PER_DEVICE
+    with pytest.raises(ValueError, match="per-device hidden states"):
+        _model(config)

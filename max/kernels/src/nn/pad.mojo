@@ -27,6 +27,7 @@ from layout import (
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
+from std.math import clamp
 from std.memory import unsafe_memcpy
 
 
@@ -340,6 +341,46 @@ def _do_pad[
     )
 
 
+@inline(.always)
+def _pad_reflect_repeat_src_index[
+    mode: StaticString
+](p: Int, in_len: Int, pre: Int) -> Int:
+    """Map output position `p` along one axis to the input index to read,
+    shared by the reflect and repeat (edge) pad modes on both the CPU and
+    GPU paths.
+
+    "reflect" folds `p - pre` into a period of `2 * (in_len - 1)` and
+    mirrors it back, so positions in `[0, in_len)` map to themselves and
+    positions beyond the input are reflected at the boundary. When
+    `in_len == 1` the period is zero, so the source is always 0.
+
+    "repeat" clamps `p - pre` to `[0, in_len)`, repeating the boundary
+    value outside the input.
+
+    Args:
+        p: The output position along the axis.
+        in_len: The input length along the axis.
+        pre: The pre-padding amount along the axis.
+
+    Returns:
+        The input index to read for output position `p`.
+    """
+    var src = p - pre
+    comptime if mode == "reflect":
+        if in_len == 1:
+            return 0
+        var period = 2 * (in_len - 1)
+        var r = src % period
+        if r < 0:
+            r += period
+        if r < in_len:
+            return r
+        return period - r
+    else:
+        comptime assert mode == "repeat", t"unknown pad mode {mode}"
+        return clamp(src, 0, in_len - 1)
+
+
 struct _PadAxis[rank: Int, paddings_type: DType](TrivialRegisterPassable):
     """Per-axis padding geometry and the shared output-to-input coordinate
     mapping used by all pad modes.
@@ -393,7 +434,8 @@ struct _PadAxis[rank: Int, paddings_type: DType](TrivialRegisterPassable):
 
     @inline(.always)
     def map_index[mode: StaticString](self, p: Int) -> Int:
-        """Map output position `p` on this axis to the input index to read.
+        """Map output position `p` on this axis to the input index to
+        read, via the shared `_pad_reflect_repeat_src_index` mapping.
 
         - `mode == "reflect"`: folds `p - pre_pad` into a period of
           `2 * (non_pad - 1)` and mirrors it back at the boundaries; when
@@ -401,24 +443,9 @@ struct _PadAxis[rank: Int, paddings_type: DType](TrivialRegisterPassable):
         - `mode == "repeat"`: clamps `p - pre_pad` to `[0, non_pad)`,
           repeating the boundary value outside the input.
         """
-        var src = p - self.pre_pad
-        comptime if mode == "reflect":
-            if self.non_pad == 1:
-                return 0
-            var period = 2 * (self.non_pad - 1)
-            var r = src % period
-            if r < 0:
-                r += period
-            if r < self.non_pad:
-                return r
-            return period - r
-        else:
-            comptime assert mode == "repeat", "unknown pad mode " + mode
-            if src < 0:
-                return 0
-            if src >= self.non_pad:
-                return self.non_pad - 1
-            return src
+        return _pad_reflect_repeat_src_index[mode](
+            p, self.non_pad, self.pre_pad
+        )
 
 
 struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](

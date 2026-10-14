@@ -342,6 +342,8 @@ def _fp8_index_score_amd_kernel[
     depth: Int,
     _is_cache_length_accurate: Bool,
     causal: Bool,
+    kpool: Int,
+    pool_row_tokens: Int,
     *,
     OutputEngine: TensorEngine = DefaultEngine[element_width=1],
     QEngine: TensorEngine = DefaultEngine[element_width=1],
@@ -407,6 +409,13 @@ def _fp8_index_score_amd_kernel[
             when False, `num_keys = cache_length + seq_len`.
         causal: Restrict token `t` to keys `[0, cache_len + t + 1)` in the
             store guard (fused mask; NULL mask callers pass False).
+        kpool: Tokens per scored key. With `kpool > 1` a key is a pool of
+            `kpool` tokens, so the candidate count and the causal bound are
+            floored to whole pools and an output column is a pool id.
+        pool_row_tokens: Cache rows a pooled key spans. 1 when the cache holds
+            one `depth`-wide row per key; `kpool` when it is declared
+            `depth / kpool` wide, one row per token, with each pool's key
+            spread over the rows of the tokens it covers.
         OutputEngine: Engine of the `output_tt` tile.
         QEngine: Engine of the `q_tt` tile.
         QSEngine: Engine of the `q_s_tt` tile.
@@ -454,7 +463,10 @@ def _fp8_index_score_amd_kernel[
     var num_keys = k_operand.cache_length(b)
     comptime if not _is_cache_length_accurate:
         num_keys += Int(seq_len)
-    if key_start >= num_keys:
+    # `num_keys` counts tokens, because the causal bound is in tokens; the
+    # scored candidates are whole pools.
+    var num_rows = num_keys // kpool
+    if key_start >= num_rows:
         return
 
     var lid = Int(lane_id())
@@ -465,15 +477,17 @@ def _fp8_index_score_amd_kernel[
     var key = key_start + key_local
     # Ragged tail: clamp the K-row load to the entry's last valid row so it can't
     # fault or read the next entry's data into a live path; the store guard drops these.
-    var key_clamped = min(key, num_keys - 1)
+    var key_clamped = min(key, num_rows - 1)
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq + UInt32(seq), 0, 0))
     var qs_ptr = q_s.ptr_at_offset(Index(start_of_seq + UInt32(seq), 0))
     var o_ptr = output.ptr_at_offset(
         Index(start_of_seq + UInt32(seq), UInt32(key_start))
     )
+    # A pooled key's `depth` values sit contiguously from its first row:
+    # pages hold a whole number of pools, so the rows never straddle a page.
     var k_row_ptr = k_operand.block_paged_ptr[1](
-        UInt32(b), UInt32(key_clamped), UInt32(0), UInt32(0)
+        UInt32(b), UInt32(key_clamped * pool_row_tokens), UInt32(0), UInt32(0)
     )
 
     # Per-key column sum over all heads, across M-tiles. Each of the two half-warps
@@ -511,15 +525,16 @@ def _fp8_index_score_amd_kernel[
         var swapped = permlane_swap[32](partial, partial)
         col_sum += swapped[0] + swapped[1]
 
-    var key_bound = num_keys
+    var key_bound = num_rows
     comptime if causal:
-        key_bound = num_keys - (Int(seq_len) - 1 - seq)
+        # A pool is visible only once its last token is.
+        key_bound = (num_keys - (Int(seq_len) - 1 - seq)) // kpool
 
     # Lanes L and L + 32 share column L & 31 and both hold the combined sum after
     # the swap, so only the low half-warp stores (one coalesced 128 B txn per wave).
     if key < key_bound and lid < 32:
         var ks_ptr = ks_operand.block_paged_ptr[1](
-            UInt32(b), UInt32(key), UInt32(0), UInt32(0)
+            UInt32(b), UInt32(key * pool_row_tokens), UInt32(0), UInt32(0)
         )
         o_ptr[key_local] = ks_ptr[0].cast[.float32]() * col_sum
 
@@ -533,6 +548,8 @@ def fp8_index_score_amd[
     depth: Int,
     _is_cache_length_accurate: Bool,
     causal: Bool = False,
+    kpool: Int = 1,
+    pool_row_tokens: Int = 1,
 ](
     output: TileTensor[.float32, ...],
     q: TileTensor[mut=False, dtype, ...],
@@ -562,6 +579,9 @@ def fp8_index_score_amd[
             when True, `cache_length` already includes the new tokens.
         causal: Fuse the causal bound into the store guard (token t sees keys
             up to cache_len + t + 1); forbidden slots are never written.
+        kpool: Tokens per scored key; see `_fp8_index_score_amd_kernel`.
+        pool_row_tokens: Cache rows a pooled key spans; see
+            `_fp8_index_score_amd_kernel`.
 
     Args:
         output: Score buffer `[total_seq, max_num_keys]`, f32.
@@ -575,6 +595,19 @@ def fp8_index_score_amd[
         max_num_keys: Row stride of `output` (>= every per-batch key count).
         ctx: Device context used to enqueue the kernel.
     """
+    comptime assert (
+        KOperand.page_size % pool_row_tokens == 0
+        and KSOperand.page_size % pool_row_tokens == 0
+    ), (
+        "the kernel reads a pooled key's rows as one run, so no pool may"
+        " straddle a page"
+    )
+
+    # Fewer tokens than one pool leaves no candidate, and a zero-wide grid is
+    # a launch error rather than a no-op.
+    if max_num_keys == 0:
+        return
+
     comptime kernel = _fp8_index_score_amd_kernel[
         dtype,
         type_of(output).LayoutType,
@@ -587,6 +620,8 @@ def fp8_index_score_amd[
         depth,
         _is_cache_length_accurate,
         causal,
+        kpool,
+        pool_row_tokens,
         OutputEngine=output.Engine,
         QEngine=q.Engine,
         QSEngine=q_s.Engine,

@@ -20,8 +20,10 @@
 //! It starts with the rules that were already engine-agnostic, in
 //! [`prefix_hit`], the Jenga block pool that every flat KV cache draws its
 //! blocks from, in [`pool`], and the geometry math that sizes and tiles the
-//! Jenga slab, in [`geometry`].
+//! Jenga slab, in [`geometry`]. The chained block hashes that key the prefix
+//! cache are in [`hash`].
 
 pub mod geometry;
+pub mod hash;
 pub mod pool;
 pub mod prefix_hit;

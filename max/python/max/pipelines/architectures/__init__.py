@@ -180,6 +180,11 @@ def register_all_models() -> None:
             "gemma4_dspark_draft_arch",
         ),
         _LazyArch(
+            "Qwen3DSparkModel",
+            ".unified_dspark_nemotron_h",
+            "qwen3_dspark_draft_arch",
+        ),
+        _LazyArch(
             "Gemma4ForConditionalGeneration_ModuleV3",
             ".gemma4_modulev3",
             "gemma4_modulev3_arch",
@@ -405,6 +410,11 @@ def register_all_models() -> None:
             "UnifiedDSparkGemma4_31BForCausalLM",
             ".unified_dspark_gemma4_31b",
             "unified_dspark_gemma4_31b_arch",
+        ),
+        _LazyArch(
+            "UnifiedDSparkNemotronHForCausalLM_ModuleV3",
+            ".unified_dspark_nemotron_h",
+            "unified_dspark_nemotron_h_arch",
         ),
         _LazyArch(
             "UnifiedEagleLlama3ForCausalLM",

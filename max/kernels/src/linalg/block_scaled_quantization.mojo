@@ -33,6 +33,7 @@ from layout import (
     Idx,
     RowMajorLayout,
     DefaultEngine,
+    ImmTileTensor,
     TensorEngine,
     TileTensor,
     row_major,
@@ -1289,6 +1290,99 @@ def quantize_dynamic_scaled_fp4_async[
     )
 
 
+@inline(.always)
+def _scale_tile_expert[
+    num_experts: Int
+](
+    row_offsets: ImmTileTensor[.uint32, ...],
+    scales_offsets: ImmTileTensor[.uint32, ...],
+    scale_tile_idx: Int,
+) -> Int:
+    """Returns the last expert whose scale tiles start at or before
+    `scale_tile_idx`.
+
+    The tiles of expert `e` start at
+    `row_offsets[e] // SF_MN_GROUP_SIZE + scales_offsets[e]`, and these
+    starts never decrease. A padding tile, between two experts' tiles or
+    past the last expert's, has no owner: this returns the expert before
+    it. Callers must check that the tile falls inside the returned expert's
+    `ceildiv(row_offsets[e + 1] - row_offsets[e], SF_MN_GROUP_SIZE)` tiles
+    before using it.
+
+    One warp does the search in two rounds and puts the result in shared
+    memory. Call this from all threads of the block, because it contains a
+    barrier.
+
+    Parameters:
+        num_experts: Number of experts in `scales_offsets`.
+
+    Args:
+        row_offsets: Row boundaries per expert, `[num_experts + 1]`.
+        scales_offsets: Per-expert offset into the scales tiles.
+        scale_tile_idx: The scale tile to find the expert of.
+
+    Returns:
+        The index of that expert.
+
+    Constraints:
+        `row_offsets` and `scales_offsets` must be rank 1, and
+        `ceildiv(num_experts, WARP_SIZE)` must not exceed `WARP_SIZE`.
+    """
+    comptime assert row_offsets.flat_rank == 1, "row_offsets must be rank 1"
+    comptime assert (
+        scales_offsets.flat_rank == 1
+    ), "scales_offsets must be rank 1"
+    comptime probe_stride = uceildiv(num_experts, WARP_SIZE)
+    # The second round gives one lane to each expert in a stride. A wider
+    # stride skips experts and returns the wrong one.
+    comptime assert probe_stride <= WARP_SIZE, (
+        "expert count exceeds what a two-round warp search covers; add a"
+        " round or widen the stride handling"
+    )
+    # Keep this slot in its own 16 bytes. No barrier separates its read from
+    # the next shared-memory write of the caller.
+    var search_smem = unsafe_stack_allocation[
+        1, Int32, alignment=16, address_space=.SHARED
+    ]()
+    if thread_idx.x < WARP_SIZE:
+        var lane = thread_idx.x
+        var target = scale_tile_idx
+
+        var coarse = lane * probe_stride
+        # Expert 0 always qualifies. This keeps the span at zero or more when
+        # the offsets do not start at zero.
+        var best = 0 if lane == 0 else -1
+        if coarse < num_experts:
+            if (
+                ufloordiv(
+                    Int(row_offsets.load[width=1]((coarse,))),
+                    SF_MN_GROUP_SIZE,
+                )
+                + Int(scales_offsets.load[width=1]((coarse,)))
+            ) <= target:
+                best = coarse
+        var span = Int(lane_group_max[WARP_SIZE](Int32(best)))
+
+        comptime if probe_stride > 1:
+            var fine = span + lane
+            var refined = span
+            if lane < probe_stride and fine < num_experts:
+                if (
+                    ufloordiv(
+                        Int(row_offsets.load[width=1]((fine,))),
+                        SF_MN_GROUP_SIZE,
+                    )
+                    + Int(scales_offsets.load[width=1]((fine,)))
+                ) <= target:
+                    refined = fine
+            span = Int(lane_group_max[WARP_SIZE](Int32(refined)))
+
+        if thread_idx.x == 0:
+            search_smem.store(0, Int32(span))
+    barrier()
+    return Int(search_smem.load(0))
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
@@ -1317,6 +1411,8 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         *Coord[Int64].element_types
     ],
     RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    row_indices_dtype: DType = .uint32,
+    row_index_divisor: Int = 1,
     num_threads: Int = 128,
     k_tiles_per_block: Int = 1,
 ](
@@ -1346,7 +1442,10 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     ],  # tensor-wise scale factor
     row_indices: OptionalReg[
         TileTensor[
-            .int32, row_indices_layout, ImmutAnyOrigin, Engine=RowIndicesEngine
+            row_indices_dtype,
+            row_indices_layout,
+            ImmutAnyOrigin,
+            Engine=RowIndicesEngine,
         ]
     ] = None,
 ):
@@ -1391,6 +1490,9 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_indices_layout: TileTensor layout of the optional source row
             indices tensor.
         RowIndicesEngine: Engine policy of the `row_indices` tensor.
+        row_indices_dtype: Integer element type of the `row_indices` tensor.
+        row_index_divisor: Divisor applied to each `row_indices` entry to get
+            the source row.
         num_threads: Number of threads per block in the launch grid
             (defaults to 128).
         k_tiles_per_block: Column tiles handled by one block. Batching them
@@ -1405,12 +1507,12 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_offsets: Contiguous row boundaries per expert of shape
             `[num_experts + 1]` as `uint32`, where range `i` spans
             rows `row_offsets[i]` through `row_offsets[i + 1]`.
-        row_indices: Optional source row indices of shape `[padded_rows]` as
-            `int32`. When present, permuted output row `i` reads input row
-            `row_indices[i]`, fusing the MoE expert permutation gather into
-            the quantize loads. The output layout and scale tiles are
-            unchanged; absent means the input is already in permuted row
-            order.
+        row_indices: Optional source row indices of shape `[padded_rows]`.
+            When present, permuted output row `i` reads input row
+            `row_indices[i] // row_index_divisor`, fusing the MoE expert
+            permutation gather into the quantize loads. The output layout and
+            scale tiles are unchanged; absent means the input is already in
+            permuted row order.
         scales_offsets: Per-expert offset into the scales tensor of
             shape `[num_experts]` as `uint32`.
         expert_ids: Expert ID for each active range of shape
@@ -1438,72 +1540,9 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
 
     var scale_tile_idx = block_idx.x
-
-    # Finds the expert id for the current block.
-    # row_offsets is of size num_experts + 1, scales_offsets is of size num_experts
-    # For a given expert_idx, it's corresponding scales tiles start at:
-    # row_offsets[expert_idx] // SF_MN_GROUP_SIZE + scales_offsets[expert_idx]
-    # and there will be ceildiv(row_offsets[expert_idx + 1] -
-    # row_offsets[expert_idx], SF_MN_GROUP_SIZE) scales tiles for this expert.
-    #
-    # The result is the same for every thread in the block, so one warp
-    # computes it and the rest read it from shared memory. The warp probes 32
-    # evenly spaced entries at once, then refines within the chosen span. Tile
-    # starts are non-decreasing, so the answer is the largest probed expert
-    # whose first tile is at or before this one.
-    comptime probe_stride = uceildiv(num_experts, WARP_SIZE)
-    # Refinement gives one lane to each entry of a probe stride. A stride
-    # wider than the warp leaves part of every span unsearched and returns a
-    # too-small expert, whose tile is then never written.
-    comptime assert probe_stride <= WARP_SIZE, (
-        "expert count exceeds what a two-round warp search covers; add a"
-        " round or widen the stride handling"
+    var expert_idx = _scale_tile_expert[num_experts](
+        row_offsets, scales_offsets, scale_tile_idx
     )
-    # A separate allocation from the scale tiles below, and given its own
-    # alignment so the two cannot share a 16-byte region. The read of this
-    # slot is not barrier-separated from the scale-tile zero-fill, so an
-    # overlap would hand a late-arriving thread a zeroed expert index.
-    var search_smem = unsafe_stack_allocation[
-        1, Int32, alignment=16, address_space=.SHARED
-    ]()
-    if thread_idx.x < WARP_SIZE:
-        var lane = thread_idx.x
-        var target = Int(scale_tile_idx)
-
-        var coarse = lane * probe_stride
-        # Expert 0 always qualifies. Seeding lane 0 with it keeps the span
-        # non-negative for an offset table that does not start at zero; a
-        # negative span would index the offset arrays out of bounds.
-        var best = 0 if lane == 0 else -1
-        if coarse < num_experts:
-            if (
-                ufloordiv(
-                    Int(row_offsets.load[width=1](Coord(coarse))[0]),
-                    SF_MN_GROUP_SIZE,
-                )
-                + Int(scales_offsets.load[width=1](Coord(coarse))[0])
-            ) <= target:
-                best = coarse
-        var span = Int(lane_group_max[WARP_SIZE](Int32(best)))
-
-        comptime if probe_stride > 1:
-            var fine = span + lane
-            var refined = span
-            if lane < probe_stride and fine < num_experts:
-                if (
-                    ufloordiv(
-                        Int(row_offsets.load[width=1](Coord(fine))[0]),
-                        SF_MN_GROUP_SIZE,
-                    )
-                    + Int(scales_offsets.load[width=1](Coord(fine))[0])
-                ) <= target:
-                    refined = fine
-            span = Int(lane_group_max[WARP_SIZE](Int32(refined)))
-
-        if thread_idx.x == 0:
-            search_smem.store(0, Int32(span))
-    barrier()
-    var expert_idx = Int(search_smem.load(0))
 
     var curr_expert_start = Int(row_offsets.load[width=1](Coord(expert_idx))[0])
     var curr_expert_end = Int(
@@ -1627,7 +1666,9 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             if is_valid:
                 var source_row = token_start + local_row
                 if case .Some(row_indices) = row_indices:
-                    source_row = Int(row_indices[source_row])
+                    source_row = (
+                        Int(row_indices[source_row]) // row_index_divisor
+                    )
                 input_vector = input_tensor.load[width=ELEMENTS_PER_THREAD](
                     (source_row, input_col)
                 )
@@ -1692,7 +1733,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
                         smem_ptr.unsafe_offset(kt * scales_smem_tile_size),
                         row_major(scales_tile_shape),
                     ),
-                    (0, 0, store_k_idx, Int(scale_tile_idx)),
+                    (0, 0, store_k_idx, scale_tile_idx),
                 )
             scales_tma_op.commit_group()
             scales_tma_op.wait_group[0]()
@@ -1714,6 +1755,8 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         *Coord[Int64].element_types
     ],
     RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
+    row_indices_dtype: DType = .uint32,
+    row_index_divisor: Int = 1,
 ](
     output_tensor: TileTensor[
         mut=True, output_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
@@ -1748,7 +1791,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     row_indices: OptionalReg[
         TileTensor[
             mut=False,
-            .int32,
+            row_indices_dtype,
             RowIndicesLayoutType,
             ImmutAnyOrigin,
             Engine=RowIndicesEngine,
@@ -1777,6 +1820,9 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         SfEngine: Engine policy of the `sf_tensor`.
         RowIndicesLayoutType: Layout of the optional `row_indices` tensor.
         RowIndicesEngine: Engine policy of the `row_indices` tensor.
+        row_indices_dtype: Integer element type of the `row_indices` tensor.
+        row_index_divisor: Divisor applied to each `row_indices` entry to get
+            the source row.
     Args:
         output_tensor: Output quantized tensor of packed FP4 `uint8`
             or `float8_e4m3fn` for MXFP8.
@@ -1793,11 +1839,17 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         sf_tensor: Per-expert tensor-wise scale factor of shape
             `[num_experts]` as `float32`.
         ctx: Device context used to enqueue the kernel.
-        row_indices: Optional source row indices of shape `[padded_rows]`
-            as `int32`. When present, permuted output row `i` reads input row
-            `row_indices[i]`, fusing the MoE expert permutation gather into
-            the quantize loads; the output stays in permuted row order.
+        row_indices: Optional source row indices of shape `[padded_rows]`.
+            When present, permuted output row `i` reads input row
+            `row_indices[i] // row_index_divisor`, fusing the MoE expert
+            permutation gather into the quantize loads; the output stays in
+            permuted row order.
     """
+    comptime assert (
+        row_indices_dtype.is_integral()
+    ), "row_indices must hold integers"
+    comptime assert row_index_divisor > 0, "row_index_divisor must be positive"
+
     # The kernel masks columns at 8-element lane granularity, so a column
     # count that is not a multiple of 8 would still load and store partially
     # out of bounds within the straddling lane.
@@ -1883,6 +1935,8 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             SfEngine,
             RowIndicesLayoutType,
             RowIndicesEngine,
+            row_indices_dtype,
+            row_index_divisor,
             num_threads=BLOCK_THREADS,
             k_tiles_per_block=k_tiles_per_block,
         ]
@@ -2289,6 +2343,11 @@ def block_scaled_matmul[
         comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
         comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
         comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
+        # Two stages of an MMA_N = 256 accumulator fill all 512 TMEM columns
+        # before the scale factors, so N = 256 tiles need 1.
+        comptime NUM_ACCUM_STAGES = get_defined_int[
+            "TUNE_NUM_ACCUM_STAGES", 2
+        ]()
 
         comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
@@ -2305,6 +2364,7 @@ def block_scaled_matmul[
             cta_group=CTA_GROUP,
             AB_swapped=AB_SWAPPED,
             k_group_size=K_GROUP_SIZE,
+            num_accum_pipeline_stages=NUM_ACCUM_STAGES,
         )
 
         return blackwell_block_scaled_matmul_tma_umma_warp_specialized[

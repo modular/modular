@@ -19,62 +19,76 @@ from smoke_tests import smoke_test, smoke_test_github_matrix
 
 
 def _is_valid_matrix_entry(line: str) -> bool:
-    """Checks a line like `"org/model": NIGHTLY | _1xB200,`."""
+    """Checks a line like `"org/model__variant": NIGHTLY | VARIANT | _1xB200,`."""
     code = line.split("#")[0].rstrip()
     if not (code.startswith('    "') and code.endswith(",") and '": ' in code):
         return False
     tags = code.split('": ', 1)[1].removesuffix(",").split(" | ")
-    return "NIGHTLY" not in tags[1:]
+    leading = [t for t in ("NIGHTLY", "VARIANT", "PRIVATE") if t in tags]
+    return tags[: len(leading)] == leading
 
 
-def test_custom_model_keys_have_dunder() -> None:
-    bad = [k for k in smoke_test_github_matrix.CUSTOM_MODELS if "__" not in k]
+def test_variant_tag_iff_dunder_key() -> None:
+    bad = [
+        m
+        for m, tags in smoke_test_github_matrix.MODELS.items()
+        if ("__" in m) != ("VARIANT" in tags)
+    ]
     assert not bad, (
-        f"CUSTOM_MODELS keys must contain '__' to separate the base model "
-        f"from the alias suffix: {bad}"
+        f"Keys with '__' must carry the VARIANT tag, and only they may: {bad}"
     )
 
 
-def test_matrix_entries_are_one_line_with_nightly_first() -> None:
+def test_models_are_sorted() -> None:
+    models = list(smoke_test_github_matrix.MODELS)
+    expected = sorted(models, key=str.casefold)
+    assert models == expected, (
+        "MODELS must be sorted by key, ignoring case. First out of place: "
+        + next(m for m, e in zip(models, expected, strict=True) if m != e)
+    )
+
+
+def test_matrix_entries_are_one_line_with_tags_in_order() -> None:
     source = inspect.getsource(smoke_test_github_matrix).splitlines()
     bad = []
-    for name in ("HF_MODELS", "CUSTOM_MODELS"):
-        start = next(
-            i for i, line in enumerate(source) if line.startswith(f"{name}:")
-        )
-        for line in source[start + 1 :]:
-            if line == "}":
-                break
-            if not _is_valid_matrix_entry(line):
-                bad.append(line)
+    start = next(
+        i for i, line in enumerate(source) if line.startswith("MODELS:")
+    )
+    for line in source[start + 1 :]:
+        if line == "}":
+            break
+        if not _is_valid_matrix_entry(line):
+            bad.append(line)
     assert not bad, (
-        "Matrix entries must be exactly one line, with NIGHTLY, if present, "
-        "as the first tag:\n" + "\n".join(bad)
+        "Matrix entries must be exactly one line, with NIGHTLY, VARIANT and "
+        "PRIVATE, if present, in that order before the HW tags:\n"
+        + "\n".join(bad)
     )
 
 
-def test_custom_models_defined_in_model_aliases() -> None:
+def test_variants_have_recipes() -> None:
     missing = [
         k
-        for k in smoke_test_github_matrix.CUSTOM_MODELS
-        if k not in smoke_test.MODEL_RECIPES
-        and k not in smoke_test_github_matrix.PRIVATE_RECIPE_MODELS
+        for k, tags in smoke_test_github_matrix.MODELS.items()
+        if "VARIANT" in tags
+        and "PRIVATE" not in tags
+        and k not in smoke_test.MODEL_RECIPES
     ]
     assert not missing, (
-        f"CUSTOM_MODELS keys must have a corresponding entry in "
+        f"VARIANT models must have a corresponding entry in "
         f"smoke_test.MODEL_RECIPES: {missing}"
     )
 
 
-def test_model_aliases_in_custom_models() -> None:
+def test_recipes_are_variants_in_matrix() -> None:
     missing = [
         k
         for k in smoke_test.MODEL_RECIPES
-        if "__" in k and k not in smoke_test_github_matrix.CUSTOM_MODELS
+        if "__" in k and k not in smoke_test_github_matrix.MODELS
     ]
     assert not missing, (
-        f"Custom MODEL_RECIPES keys must have a corresponding entry in "
-        f"smoke_test_github_matrix.CUSTOM_MODELS: {missing}"
+        f"MODEL_RECIPES keys with '__' must have a VARIANT entry in "
+        f"smoke_test_github_matrix.MODELS: {missing}"
     )
 
 
@@ -87,23 +101,6 @@ def test_nightly_models_list_hw() -> None:
         and "NIGHTLY" in tags
     )
     assert not bare, f"NIGHTLY models must also list the HW they run on: {bare}"
-
-
-def test_nightly_tier_is_a_subset_of_all() -> None:
-    """The nightly tier narrows the full matrix; it never adds to it."""
-    for gpu in smoke_test_github_matrix.RUNNERS:
-        flag = f"--run-on-{gpu.lower()}"
-        tiers: dict[str, set[str]] = {}
-        for tier in smoke_test_github_matrix.TIERS:
-            result = CliRunner().invoke(
-                smoke_test_github_matrix.main,
-                ["--framework", "max-ci", "--tier", tier, flag],
-            )
-            assert result.exit_code == 0
-            tiers[tier] = {
-                job["model"] for job in json.loads(result.output)["include"]
-            }
-        assert tiers["nightly"] <= tiers["all"], gpu
 
 
 def test_nightly_8xb200_pinned() -> None:
@@ -143,16 +140,3 @@ def test_8xmi355_stays_opt_in() -> None:
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
         }, f"{framework} on 8xMI355"
-
-
-def test_smoke_test_github_matrix_b200_max_ci() -> None:
-    runner = CliRunner()
-    result = runner.invoke(
-        smoke_test_github_matrix.main,
-        ["--framework", "max-ci", "--run-on-b200"],
-    )
-
-    assert result.exit_code == 0
-    output = json.loads(result.output)
-    assert "include" in output
-    assert len(output["include"]) > 0

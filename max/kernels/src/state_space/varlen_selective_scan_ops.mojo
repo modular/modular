@@ -23,7 +23,8 @@ import extensibility
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 
-from extensibility import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor, Tensor
+from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 from state_space.varlen_selective_scan import (
@@ -340,27 +341,22 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
 
 
 @extensibility.register_shape_function("varlen_selective_scan_fwd")
-def varlen_selective_scan_fwd_shape[
-    dtype: DType,
-](
-    u: InputTensor[dtype=dtype, rank=2, ...],
-    delta: InputTensor[dtype=dtype, rank=2, ...],
-    A: InputTensor[dtype=dtype, rank=2, ...],
-    B: InputTensor[dtype=dtype, rank=3, ...],
-    C: InputTensor[dtype=dtype, rank=3, ...],
-    D: InputTensor[dtype=dtype, rank=1, ...],
-    delta_bias: InputTensor[dtype=dtype, rank=1, ...],
-    query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
-    cache_indices: InputTensor[dtype=.int32, rank=1, ...],
-    has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
+def varlen_selective_scan_fwd_shape(
+    u: Some[Tensor],
+    delta: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
+    D: Some[Tensor],
+    delta_bias: Some[Tensor],
+    query_start_loc: Some[Tensor],
+    cache_indices: Some[Tensor],
+    has_initial_state: Some[Tensor],
 ) -> IndexList[2]:
     """Returns the output shape for the `varlen_selective_scan_fwd` op.
 
     The variable-length selective scan output has the same shape as the
     packed input `u`: `(dim, total_length)`.
-
-    Parameters:
-        dtype: Element type of the scan input and output tensors.
 
     Args:
         u: Packed input tensor with shape `(dim, total_length)`.
@@ -377,7 +373,50 @@ def varlen_selective_scan_fwd_shape[
     Returns:
         The output tensor shape `(dim, total_length)`.
     """
-    return u.shape()
+    comptime assert type_of(u).rank == 2, "u must be rank 2"
+    comptime assert type_of(delta).rank == 2, "delta must be rank 2"
+    comptime assert (
+        type_of(delta).dtype == type_of(u).dtype
+    ), "delta dtype must match u dtype"
+    comptime assert type_of(A).rank == 2, "A must be rank 2"
+    comptime assert (
+        type_of(A).dtype == type_of(u).dtype
+    ), "A dtype must match u dtype"
+    comptime assert type_of(B).rank == 3, "B must be rank 3"
+    comptime assert (
+        type_of(B).dtype == type_of(u).dtype
+    ), "B dtype must match u dtype"
+    comptime assert type_of(C).rank == 3, "C must be rank 3"
+    comptime assert (
+        type_of(C).dtype == type_of(u).dtype
+    ), "C dtype must match u dtype"
+    comptime assert type_of(D).rank == 1, "D must be rank 1"
+    comptime assert (
+        type_of(D).dtype == type_of(u).dtype
+    ), "D dtype must match u dtype"
+    comptime assert type_of(delta_bias).rank == 1, "delta_bias must be rank 1"
+    comptime assert (
+        type_of(delta_bias).dtype == type_of(u).dtype
+    ), "delta_bias dtype must match u dtype"
+    comptime assert (
+        type_of(query_start_loc).rank == 1
+    ), "query_start_loc must be rank 1"
+    comptime assert (
+        type_of(query_start_loc).dtype == .int32
+    ), "query_start_loc dtype must be int32"
+    comptime assert (
+        type_of(cache_indices).rank == 1
+    ), "cache_indices must be rank 1"
+    comptime assert (
+        type_of(cache_indices).dtype == .int32
+    ), "cache_indices dtype must be int32"
+    comptime assert (
+        type_of(has_initial_state).rank == 1
+    ), "has_initial_state must be rank 1"
+    comptime assert (
+        type_of(has_initial_state).dtype == .bool
+    ), "has_initial_state dtype must be bool"
+    return rebind[IndexList[2]](coord_to_index_list(u.shape().tuple()))
 
 
 # ============================================================================
@@ -680,25 +719,20 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
 
 
 @extensibility.register_shape_function("varlen_selective_state_update")
-def varlen_selective_state_update_shape[
-    dtype: DType,
-](
-    x: InputTensor[dtype=dtype, rank=3, ...],
-    dt: InputTensor[dtype=dtype, rank=3, ...],
-    A: InputTensor[dtype=dtype, rank=3, ...],
-    B: InputTensor[dtype=dtype, rank=3, ...],
-    C: InputTensor[dtype=dtype, rank=3, ...],
-    D: InputTensor[dtype=dtype, rank=2, ...],
-    z: InputTensor[dtype=dtype, rank=3, ...],
-    dt_bias: InputTensor[dtype=dtype, rank=2, ...],
-    state_batch_indices: InputTensor[dtype=.int32, rank=1, ...],
+def varlen_selective_state_update_shape(
+    x: Some[Tensor],
+    dt: Some[Tensor],
+    A: Some[Tensor],
+    B: Some[Tensor],
+    C: Some[Tensor],
+    D: Some[Tensor],
+    z: Some[Tensor],
+    dt_bias: Some[Tensor],
+    state_batch_indices: Some[Tensor],
 ) -> Tuple[IndexList[4], IndexList[3]]:
     """Returns the output shapes for the `varlen_selective_state_update` op.
 
     The update produces the updated SSM state and the single-step output.
-
-    Parameters:
-        dtype: Element type of the state update input and output tensors.
 
     Args:
         x: Input tensor with shape `(batch, nheads, dim)`.
@@ -716,8 +750,41 @@ def varlen_selective_state_update_shape[
         A tuple `(state_shape, output_shape)` where `state_shape` is
         `(batch, nheads, dim, dstate)` and `output_shape` matches `x.shape()`.
     """
-    var batch = x.dim_size(0)
-    var nheads = x.dim_size(1)
-    var dim = x.dim_size(2)
-    var dstate = A.dim_size(2)
-    return ((batch, nheads, dim, dstate), x.shape())
+    comptime assert type_of(x).rank == 3, "x must be rank 3"
+    comptime assert type_of(dt).rank == 3, "dt must be rank 3"
+    comptime assert (
+        type_of(dt).dtype == type_of(x).dtype
+    ), "dt dtype must match x dtype"
+    comptime assert type_of(A).rank == 3, "A must be rank 3"
+    comptime assert (
+        type_of(A).dtype == type_of(x).dtype
+    ), "A dtype must match x dtype"
+    comptime assert type_of(B).rank == 3, "B must be rank 3"
+    comptime assert (
+        type_of(B).dtype == type_of(x).dtype
+    ), "B dtype must match x dtype"
+    comptime assert type_of(C).rank == 3, "C must be rank 3"
+    comptime assert (
+        type_of(C).dtype == type_of(x).dtype
+    ), "C dtype must match x dtype"
+    comptime assert type_of(D).rank == 2, "D must be rank 2"
+    comptime assert (
+        type_of(D).dtype == type_of(x).dtype
+    ), "D dtype must match x dtype"
+    comptime assert type_of(z).rank == 3, "z must be rank 3"
+    comptime assert (
+        type_of(z).dtype == type_of(x).dtype
+    ), "z dtype must match x dtype"
+    comptime assert type_of(dt_bias).rank == 2, "dt_bias must be rank 2"
+    comptime assert (
+        type_of(dt_bias).dtype == type_of(x).dtype
+    ), "dt_bias dtype must match x dtype"
+    comptime assert (
+        type_of(state_batch_indices).rank == 1
+    ), "state_batch_indices must be rank 1"
+    comptime assert (
+        type_of(state_batch_indices).dtype == .int32
+    ), "state_batch_indices dtype must be int32"
+    var x_shape = rebind[IndexList[3]](coord_to_index_list(x.shape().tuple()))
+    var dstate = coord_to_index_list(A.shape().tuple())[2]
+    return ((x_shape[0], x_shape[1], x_shape[2], dstate), x_shape)

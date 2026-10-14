@@ -147,13 +147,12 @@ from max.runtime.tracing import trace_arg
 from extensibility import (
     InputTensor,
     InputVariadicTensors,
-    IOSpec,
     ManagedTensorSlice,
     OutputTensor,
     StableInputVariadicTensors,
     Tensor,
+    TensorTuple,
     TileTensorable,
-    VariadicTensors,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
 )
@@ -612,7 +611,8 @@ struct NonMaximumSuppression:
 
     @staticmethod
     def execute[
-        dtype: DType
+        dtype: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=.int64, rank=2, ...],
         boxes: InputTensor[dtype=dtype, rank=3, ...],
@@ -620,18 +620,20 @@ struct NonMaximumSuppression:
         max_output_boxes_per_class: Int64,
         iou_threshold: Float32,
         score_threshold: Float32,
-    ):
+        ctx: DeviceContext,
+    ) raises:
         var max_output_boxes_int = Int(max_output_boxes_per_class)
         var iou_threshold_float = iou_threshold
         var score_threshold_float = score_threshold
 
-        non_max_suppression(
+        non_max_suppression[target=target,](
             boxes.to_tile_tensor[.int64](),
             scores.to_tile_tensor[.int64](),
             output.to_tile_tensor[.int64](),
             max_output_boxes_int,
             iou_threshold_float,
             score_threshold_float,
+            ctx,
         )
 
 
@@ -1000,29 +1002,24 @@ def random_uniform_shape[
 
 
 def concat_shape_impl[
-    dtype: DType, rank: Int, size: Int, io_spec: IOSpec
-](
-    axis0: Int,
-    inputs: VariadicTensors[dtype=dtype, rank=rank, size, io_spec=io_spec, ...],
-) raises -> IndexList[rank]:
+    Ins: TypeList[Trait=Tensor, ...], //
+](axis0: Int, inputs: TensorTuple[*Ins]) raises -> IndexList[Ins[0].rank]:
     """Computes the concatenated output shape from the input tensor shapes.
 
     Parameters:
-        dtype: Element type of the input tensors.
-        rank: Number of dimensions in each input tensor.
-        size: Number of variadic input tensors.
-        io_spec: Input/output specification for the variadic tensors.
+        Ins: Types of the input tensors, which must share a rank.
 
     Args:
         axis0: Axis along which to concatenate; negative values index
             from the last dimension.
-        inputs: Variadic input tensors to concatenate, all matching in
-            shape except along the concat axis.
+        inputs: Input tensors to concatenate, all matching in shape except
+            along the concat axis.
 
     Returns:
         The output shape with the concat axis dimension summed across
         all inputs.
     """
+    comptime rank = Ins[0].rank
     var axis = normalize_neg_index(axis0, rank)
 
     @inline(.always)
@@ -1035,19 +1032,22 @@ def concat_shape_impl[
         return True
 
     var concat_axis_dim_sum = 0
+    var output_shape = rebind[IndexList[rank]](
+        coord_to_index_list(inputs[0].shape().tuple())
+    )
 
-    comptime for i in range(inputs.size):
-        concat_axis_dim_sum += inputs[i].dim_size(axis)
-        if not shape_equal_ignore_axis(
-            inputs[0].shape(),
-            inputs[i].shape(),
-        ):
+    comptime for i in range(len(Ins)):
+        comptime assert Ins[i].rank == rank, "inputs must share a rank"
+        var input_shape = rebind[IndexList[rank]](
+            coord_to_index_list(inputs[i].shape().tuple())
+        )
+        concat_axis_dim_sum += input_shape[axis]
+        if not shape_equal_ignore_axis(output_shape, input_shape):
             raise Error(
                 "[concat] input shapes must match except at concat axis"
             )
 
     # compute and return the output shape
-    var output_shape = inputs[0].shape()
     output_shape[axis] = concat_axis_dim_sum
     return output_shape
 
@@ -5263,6 +5263,81 @@ struct Sleep:
 # ===-----------------------------------------------------------------------===#
 # In-place memcpy kernel
 # ===-----------------------------------------------------------------------===#
+
+
+@extensibility.register("state_space_copy_rows")
+struct StateSpaceCopyRows:
+    """Copies selected state rows into a separately addressed scratch pool.
+
+    Only the active batch's rows move; the pool may be much larger. Both
+    operands are mutable to order this snapshot with the verify and replay.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType, rank: Int, target: StaticString
+    ](
+        dst: MutableInputTensor[dtype=dtype, rank=rank, ...],
+        src: MutableInputTensor[dtype=dtype, rank=rank, ...],
+        dst_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        src_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        from max.gpu import global_idx
+
+        if dst_rows.dim_size(0) != src_rows.dim_size(0) or (
+            dst_rows.dim_size(1) != src_rows.dim_size(1)
+        ):
+            raise Error("state_space_copy_rows: row tables must match")
+        var row_size = 1
+        comptime for axis in range(1, rank):
+            if dst.dim_size(axis) != src.dim_size(axis):
+                raise Error("state_space_copy_rows: row shapes must match")
+            row_size *= src.dim_size(axis)
+        var rows = src_rows.size()
+        if rows == 0:
+            return
+
+        @__name("state_space_copy_rows")
+        def copy_rows_kernel(
+            dst_ptr: Pointer[Scalar[dtype], MutAnyOrigin],
+            src_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+            dst_ids: Pointer[UInt32, ImmutAnyOrigin],
+            src_ids: Pointer[UInt32, ImmutAnyOrigin],
+            count: Int64,
+            width: Int64,
+        ):
+            var index = global_idx.x
+            var row_width = Int(width)
+            if index < Int(count) * row_width:
+                var row, col = divmod(index, row_width)
+                dst_ptr[Int(dst_ids[row]) * row_width + col] = src_ptr[
+                    Int(src_ids[row]) * row_width + col
+                ]
+
+        comptime if is_gpu[target]():
+            ctx.enqueue_function[copy_rows_kernel](
+                dst.unsafe_ptr(),
+                # `src` is only read. Its tensor stays mutable to order the
+                # snapshot in the graph.
+                rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                    src.unsafe_ptr()
+                ),
+                dst_rows.unsafe_ptr(),
+                src_rows.unsafe_ptr(),
+                Int64(rows),
+                Int64(row_size),
+                grid_dim=(ceildiv(rows * row_size, 256),),
+                block_dim=(256,),
+            )
+        else:
+            for row in range(rows):
+                var dst_row = Int(dst_rows.unsafe_ptr()[row])
+                var src_row = Int(src_rows.unsafe_ptr()[row])
+                for col in range(row_size):
+                    dst.unsafe_ptr()[
+                        dst_row * row_size + col
+                    ] = src.unsafe_ptr()[src_row * row_size + col]
 
 
 @extensibility.register("mo.inplace_memcpy")

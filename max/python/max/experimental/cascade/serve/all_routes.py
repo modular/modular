@@ -17,6 +17,10 @@ from fastapi.responses import PlainTextResponse
 from max.experimental.cascade.core import Runtime
 from max.experimental.cascade.interfaces.gen_ai import GenAIInterface, Modality
 from max.experimental.cascade.serve import chat_completions, open_responses
+from max.experimental.cascade.telemetry import (
+    METRICS_PATH,
+    generate_latest,
+)
 
 
 async def build_router(
@@ -38,6 +42,11 @@ async def build_router(
     @router.get("/health", response_class=PlainTextResponse)
     async def health() -> str:
         return "OK"
+
+    @router.get(METRICS_PATH, response_class=PlainTextResponse)
+    async def get_metrics() -> str:
+        """Expose this process's Prometheus metrics."""
+        return generate_latest().decode("utf-8")
 
     output_modalities = pipeline.supported_output_modalities()
 

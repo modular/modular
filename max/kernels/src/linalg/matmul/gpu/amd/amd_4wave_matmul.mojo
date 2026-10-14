@@ -2040,7 +2040,6 @@ def structured_4wave_matmul[
     block_n_override: Int = 0,
     block_k_override: Int = 0,
     dump_asm_path: StaticString = "",
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
@@ -2077,8 +2076,8 @@ def structured_4wave_matmul[
 
     These were chosen on raw matmul throughput. The dispatcher may
     legitimately route through 4-wave even when raw matmul is a bit
-    slower than a non-fusable vendor BLAS, because
-    `elementwise_lambda_fn` can fuse epilogues (bias, GELU, scale,
+    slower than a non-fusable vendor BLAS, because the `epilogue_fn`
+    and `compute_fn` overloads can fuse epilogues (bias, GELU, scale,
     residual) and save a separate elementwise kernel launch.
 
     FP8 keeps the original auto-pick (BM=64 for M ≤ 512, BM=128
@@ -2101,10 +2100,6 @@ def structured_4wave_matmul[
         dump_asm_path: If non-empty, dumps the compiled GCN assembly
             to the given file path. Only used for ASM-level
             diff-debugging.
-        elementwise_lambda_fn: Optional fused epilogue. When set, the
-            kernel's output store calls the lambda with global
-            `(m_global, n_global)` coords and a SIMD-of-`c_frag_size`
-            instead of writing to `c` directly.
 
     Args:
         a: Input tile-tensor for A.
@@ -2121,7 +2116,6 @@ def structured_4wave_matmul[
         block_n_override=block_n_override,
         block_k_override=block_k_override,
         dump_asm_path=dump_asm_path,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](a, b, c, no_epilogue_fn, no_compute_fn, ctx)
@@ -2174,7 +2168,6 @@ def structured_4wave_matmul[
         block_n_override=block_n_override,
         block_k_override=block_k_override,
         dump_asm_path="",
-        elementwise_lambda_fn=None,
         has_epilogue_fn=True,
         has_compute_fn=False,
     ](a, b, c, epilogue_fn, no_compute_fn, ctx)
@@ -2227,7 +2220,6 @@ def structured_4wave_matmul[
         block_n_override=block_n_override,
         block_k_override=block_k_override,
         dump_asm_path="",
-        elementwise_lambda_fn=None,
         has_epilogue_fn=False,
         has_compute_fn=True,
     ](a, b, c, no_epilogue_fn, compute_fn, ctx)
@@ -2247,7 +2239,6 @@ def _structured_4wave_matmul_impl[
     block_n_override: Int,
     block_k_override: Int,
     dump_asm_path: StaticString,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
@@ -2296,7 +2287,6 @@ def _structured_4wave_matmul_impl[
             c_type,
             config,
             enable_swizzle,
-            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         comptime kernel = kernel_type.run[
             type_of(a).LayoutType,

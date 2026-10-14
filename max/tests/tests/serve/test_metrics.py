@@ -17,6 +17,7 @@ from unittest import mock
 import pytest
 from max.serve.config import Settings
 from max.serve.telemetry import common, metrics
+from max.support._telemetry import drop_metrics_matching
 from opentelemetry.metrics import get_meter_provider
 from opentelemetry.metrics._internal.instrument import (
     _ProxyGauge,
@@ -358,7 +359,7 @@ def _synthetic_metrics_data(
 ) -> MetricsData:
     """Builds a minimal MetricsData tree wrapping the given data payloads.
 
-    Exercises common._drop_metrics_matching (shared by both reader guards)
+    Exercises drop_metrics_matching (shared by both reader guards)
     directly, without needing a real MeterProvider/exporter -- these are
     frozen dataclasses, cheap to construct by hand.
     """
@@ -454,8 +455,8 @@ def _metric_data_types(filtered: MetricsData | None) -> list[type]:
 
 
 def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
-    """common._drop_metrics_matching is the shared primitive behind both
-    reader guards: _SkipExponentialHistogramsPrometheusReader filters out
+    """drop_metrics_matching is the shared primitive behind both reader
+    guards: SkipExponentialHistogramsPrometheusReader filters out
     ExponentialHistogram data (so Prometheus never sees a shape it can't
     render), and _ExponentialShadowOnlyReader filters out the classic
     Histogram data (so the OTLP endpoint carries only the shadow metric,
@@ -468,8 +469,8 @@ def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
         _exponential_histogram_payload(),
     )
 
-    # Mirrors _SkipExponentialHistogramsPrometheusReader's filter.
-    prometheus_bound = common._drop_metrics_matching(
+    # Mirrors SkipExponentialHistogramsPrometheusReader's filter.
+    prometheus_bound = drop_metrics_matching(
         data, lambda m: isinstance(m.data, ExponentialHistogram)
     )
     assert set(_metric_data_types(prometheus_bound)) == {
@@ -478,7 +479,7 @@ def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
     }
 
     # Mirrors _ExponentialShadowOnlyReader's filter.
-    otlp_bound = common._drop_metrics_matching(
+    otlp_bound = drop_metrics_matching(
         data, lambda m: isinstance(m.data, ExplicitHistogramData)
     )
     assert set(_metric_data_types(otlp_bound)) == {
@@ -489,7 +490,7 @@ def test_drop_metrics_matching_keeps_and_drops_by_data_type() -> None:
     # Neither guard drops everything, and a None input passes through as
     # None (both readers' _receive_metrics skip the export call in that
     # case, matching the base SDK's own no-op-on-None convention).
-    assert common._drop_metrics_matching(None, lambda m: True) is None
+    assert drop_metrics_matching(None, lambda m: True) is None
 
 
 def test_block_level_metrics_are_gauges() -> None:

@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -517,6 +518,21 @@ class PipelineModel(
     def batch_processor(self) -> BatchProcessor[Any, Any] | None:
         """Returns the batch processor when configured."""
         return self._batch_processor
+
+    def _bind_graph_inputs(
+        self, input_tree: OrderedDict[str, object]
+    ) -> tuple[Any, ...]:
+        """Binds a graph's named inputs to the batch processor.
+
+        Args:
+            input_tree: The named inputs the graph is about to be built from.
+
+        Returns:
+            The tree's leaves, the graph's input types in declaration order.
+        """
+        if self._batch_processor is not None:
+            self._batch_processor.bind_input_tree(input_tree)
+        return tuple(tree.leaves(input_tree))
 
     def arch_config_as(self, cls: type[ArchConfigT]) -> ArchConfigT:
         """Returns the built-once arch config, narrowed to ``cls``."""

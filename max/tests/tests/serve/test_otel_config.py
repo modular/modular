@@ -443,7 +443,7 @@ def test_configure_metrics_keeps_prometheus_live_when_sdk_disabled(
     monkeypatch.setattr(common, "set_meter_provider", captured.append)
     monkeypatch.setattr(
         common,
-        "_SkipExponentialHistogramsPrometheusReader",
+        "SkipExponentialHistogramsPrometheusReader",
         lambda *a, **k: InMemoryMetricReader(),
     )
     monkeypatch.setenv("OTEL_SDK_DISABLED", "true")

@@ -32,8 +32,9 @@ from state_space.causal_conv1d import (
     causal_conv1d_update_gpu,
 )
 
+from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
-from extensibility import InputTensor, OutputTensor
+from extensibility import InputTensor, OutputTensor, Tensor
 
 
 # ============================================================================
@@ -283,22 +284,15 @@ struct CausalConv1D[activation: StaticString]:
 
 
 @extensibility.register_shape_function("causal_conv1d")
-def causal_conv1d_shape[
-    dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    weight: InputTensor[dtype=dtype, rank=2, ...],
-    bias: InputTensor[dtype=dtype, rank=1, ...],
-) -> IndexList[rank]:
+def causal_conv1d_shape(
+    input: Some[Tensor],
+    weight: Some[Tensor],
+    bias: Some[Tensor],
+) -> IndexList[type_of(input).rank]:
     """Returns the output shape for the `causal_conv1d` op.
 
     Causal 1D convolution preserves the input shape: output has the same
     `(batch, channels, seqlen)` as `input`.
-
-    Parameters:
-        dtype: Element type of the input, weight, and bias tensors.
-        rank: Tensor rank of the input and output, expected to be 3.
 
     Args:
         input: Input tensor with shape `(batch, channels, seqlen)`.
@@ -308,7 +302,17 @@ def causal_conv1d_shape[
     Returns:
         The output tensor shape, equal to `input.shape()`.
     """
-    return input.shape()
+    comptime assert type_of(weight).rank == 2, "weight must be rank 2"
+    comptime assert (
+        type_of(weight).dtype == type_of(input).dtype
+    ), "weight dtype must match input dtype"
+    comptime assert type_of(bias).rank == 1, "bias must be rank 1"
+    comptime assert (
+        type_of(bias).dtype == type_of(input).dtype
+    ), "bias dtype must match input dtype"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape().tuple())
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -451,24 +455,16 @@ struct CausalConv1DUpdate[activation: StaticString]:
 
 
 @extensibility.register_shape_function("causal_conv1d_update")
-def causal_conv1d_update_shape[
-    dtype: DType,
-    rank: Int,
-](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
-    weight: InputTensor[dtype=dtype, rank=2, ...],
-    bias: InputTensor[dtype=dtype, rank=1, ...],
-) -> Tuple[IndexList[rank], IndexList[rank]]:
+def causal_conv1d_update_shape(
+    input: Some[Tensor],
+    conv_state_in: Some[Tensor],
+    weight: Some[Tensor],
+    bias: Some[Tensor],
+) -> Tuple[IndexList[type_of(input).rank], IndexList[type_of(input).rank]]:
     """Returns the output shapes for the `causal_conv1d_update` op.
 
     The update produces two tensors: the convolution output for the new
     token(s) and the updated convolution state.
-
-    Parameters:
-        dtype: Element type of the input, conv state, weight, and bias
-            tensors.
-        rank: Tensor rank of the input and conv state, expected to be 3.
 
     Args:
         input: New input tokens with shape `(batch, channels, seqlen)`.
@@ -482,4 +478,25 @@ def causal_conv1d_update_shape[
         matches `input.shape()` and `conv_state_shape` matches
         `conv_state_in.shape()`.
     """
-    return (input.shape(), conv_state_in.shape())
+    comptime assert (
+        type_of(conv_state_in).rank == type_of(input).rank
+    ), "conv_state_in rank must match input rank"
+    comptime assert (
+        type_of(conv_state_in).dtype == type_of(input).dtype
+    ), "conv_state_in dtype must match input dtype"
+    comptime assert type_of(weight).rank == 2, "weight must be rank 2"
+    comptime assert (
+        type_of(weight).dtype == type_of(input).dtype
+    ), "weight dtype must match input dtype"
+    comptime assert type_of(bias).rank == 1, "bias must be rank 1"
+    comptime assert (
+        type_of(bias).dtype == type_of(input).dtype
+    ), "bias dtype must match input dtype"
+    return (
+        rebind[IndexList[type_of(input).rank]](
+            coord_to_index_list(input.shape().tuple())
+        ),
+        rebind[IndexList[type_of(input).rank]](
+            coord_to_index_list(conv_state_in.shape().tuple())
+        ),
+    )

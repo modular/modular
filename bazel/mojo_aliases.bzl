@@ -45,8 +45,8 @@ INTERNAL_PACKAGES = [
     "//Kernels/lib/mega_ffn",
     "//Kernels/lib/msa",
     "//Kernels/lib/qsa",
-    "//max/driver/src/mcl/_hal",
-    "//max/driver/src/mcl/machine",
+    "//max/driver/src/max_license/_hal",
+    "//max/driver/src/max_license/machine",
 ]
 
 # Packages that are marked testonly and cannot be used by production targets

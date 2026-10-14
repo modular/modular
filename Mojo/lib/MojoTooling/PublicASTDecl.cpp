@@ -1102,7 +1102,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   std::optional<ASTType> selfType;
   if (declRef.getParent() &&
       isa_and_nonnull<StructDeclOp>(declRef.getParent().getIfOperation()))
-    selfType = declRef->getParentDecl()->getTypeDeclSelf();
+    selfType = cast<StructASTDecl>(declRef->getParentDecl())->getSelfType();
 
   // Populate parameter infos (with per-param `conforms_to` merging applied
   // internally), then fold in function-level constraints. After this block

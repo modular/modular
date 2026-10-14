@@ -1274,13 +1274,15 @@ def _sum_to_mean[
 
 def rms_norm_cpu[
     dtype: DType,
-    //,
-    input_fn: def[width: Int](Int, Int) capturing -> SIMD[dtype, width],
-    output_fn: def[width: SIMDLength, alignment: Int](
+    InputFnType: def[width: Int](Int, Int) -> SIMD[dtype, width],
+    OutputFnType: def[width: SIMDLength, alignment: Int](
         Int, Int, SIMD[dtype, width]
-    ) capturing -> None,
+    ) -> None,
+    //,
     multiply_before_cast: Bool,
 ](
+    input_fn: InputFnType,
+    output_fn: OutputFnType,
     gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[dtype],
@@ -1314,7 +1316,9 @@ def rms_norm_cpu[
         var mean_val = _sum_to_mean(sum_val, num_cols)
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
-        def _normalize[simd_width: Int](col: Int) {gamma, weight_offset, mut}:
+        def _normalize[
+            simd_width: Int
+        ](col: Int) {gamma, weight_offset, imm input_fn, imm output_fn, mut}:
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
@@ -1340,13 +1344,15 @@ def rms_norm_cpu[
 
 def rms_norm_cpu[
     dtype: DType,
-    //,
-    input_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    output_fn: def[width: SIMDLength, alignment: Int](
+    InputFnType: def[width: Int](Coord) -> SIMD[dtype, width],
+    OutputFnType: def[width: SIMDLength, alignment: Int](
         Coord, SIMD[dtype, width]
-    ) capturing -> None,
+    ) -> None,
+    //,
     multiply_before_cast: Bool,
 ](
+    input_fn: InputFnType,
+    output_fn: OutputFnType,
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
     epsilon: Float32,
@@ -1377,12 +1383,12 @@ def rms_norm_cpu[
         )
         var row_idx = thread_id * chunk_size
 
-        @__copy_capture(row_idx)
-        @__parameter
         @inline(.always)
         def output_fn_2d[
             simd_width: SIMDLength, alignment: Int
-        ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
+        ](row: Int, col: Int, val: SIMD[dtype, simd_width]) {
+            var row_idx, imm
+        } -> None:
             # Translate a given 2D index back to the original n-D tensor.
             var indices = _get_start_indices_of_nth_subvolume_static(
                 row_idx + row, shape
@@ -1390,12 +1396,10 @@ def rms_norm_cpu[
             indices[rank - 1] = col
             output_fn[simd_width, alignment](Coord(indices), val)
 
-        @__copy_capture(row_idx)
-        @__parameter
         @inline(.always)
         def input_fn_2d[
             simd_width: Int
-        ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
+        ](row: Int, col: Int) {var row_idx, imm} -> SIMD[dtype, simd_width]:
             # Translate a given 2D index back to the original n-D tensor.
             var indices = _get_start_indices_of_nth_subvolume_static(
                 row_idx + row, shape
@@ -1403,11 +1407,9 @@ def rms_norm_cpu[
             indices[rank - 1] = col
             return input_fn[simd_width](Coord(indices))
 
-        rms_norm_cpu[
+        rms_norm_cpu[multiply_before_cast=multiply_before_cast](
             input_fn_2d,
             output_fn_2d,
-            multiply_before_cast=multiply_before_cast,
-        ](
             gamma,
             epsilon,
             weight_offset,
@@ -1415,6 +1417,42 @@ def rms_norm_cpu[
         )
 
     sync_parallelize(task_func, num_workers, ctx)
+
+
+def rms_norm_cpu[
+    dtype: DType,
+    //,
+    input_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    output_fn: def[width: SIMDLength, alignment: Int](
+        Coord, SIMD[dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    shape: Coord,
+    gamma: TileTensor[mut=False, dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    ctx: Optional[DeviceContext.CPU] = None,
+):
+    @inline(.always)
+    def input_fn_value[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        return input_fn[width](coords)
+
+    @inline(.always)
+    def output_fn_value[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]):
+        output_fn[width, alignment](coords, val)
+
+    rms_norm_cpu[multiply_before_cast=multiply_before_cast](
+        input_fn_value,
+        output_fn_value,
+        shape,
+        gamma,
+        epsilon,
+        weight_offset,
+        ctx,
+    )
 
 
 @inline(.always)

@@ -36,6 +36,7 @@ from nn.attention.mha_operand import (
     KVCacheScalesMHAOperand,
 )
 from nn.attention.mha_mask import MaskName
+from nn.index_fp8 import _has_gfx950_accelerator
 from nn.topk_bitonic import _elems_per_16b
 from std.math import align_up, ceildiv, clamp, log
 from std.sys import size_of
@@ -2767,8 +2768,8 @@ def main() raises:
         # ===== Pooled candidates (kpool > 1) =====
         # A cache row is one pooled key per `kpool` tokens, so each token's
         # candidate count is its visible-token count floored by `kpool`.
-        # kpool > 1 requires the SM100 tensor-core scorer, so B200 only.
-        comptime if _has_blackwell_tcgen05():
+        # kpool > 1 requires a tensor-core scorer: SM100 or gfx950.
+        comptime if _has_blackwell_tcgen05() or _has_gfx950_accelerator():
             print("\n--- pooled candidates (kpool=4) ---")
 
             # GLM indexer geometry. `nh=32` routes to the warp-specialized

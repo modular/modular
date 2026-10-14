@@ -80,6 +80,7 @@ family.
    pipelines.architectures.unified_dspark_deepseekV4
    pipelines.architectures.unified_dspark_gemma4_12b
    pipelines.architectures.unified_dspark_gemma4_31b
+   pipelines.architectures.unified_dspark_nemotron_h
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.unified_mtp_gemma4
@@ -148,6 +149,7 @@ Text generation
    ~max.pipelines.architectures.unified_dspark_deepseekV4
    ~max.pipelines.architectures.unified_dspark_gemma4_12b
    ~max.pipelines.architectures.unified_dspark_gemma4_31b
+   ~max.pipelines.architectures.unified_dspark_nemotron_h
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
    ~max.pipelines.architectures.unified_mtp_gemma4

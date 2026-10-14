@@ -581,7 +581,7 @@ struct NamedTemporaryFile(Movable):
             )
         ```
         """
-        var file = FileDescriptor(self._file_handle)
+        var file = RawFileDescriptor(self._file_handle)
         var buffer = _FlushingWriteBuffer(file)
 
         comptime for i in range(args.__len__()):

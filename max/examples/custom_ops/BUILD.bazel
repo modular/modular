@@ -16,6 +16,11 @@ custom_op_example_py_binary(
 )
 
 custom_op_example_py_binary(
+    name = "elementwise_addition",
+    srcs = ["elementwise_addition.py"],
+)
+
+custom_op_example_py_binary(
     name = "parametric_addition",
     srcs = ["parametric_addition.py"],
 )

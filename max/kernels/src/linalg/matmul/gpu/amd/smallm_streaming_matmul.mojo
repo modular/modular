@@ -44,7 +44,6 @@ from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 
 from layout import TensorLayout, TensorEngine, TileTensor
-from linalg.utils import elementwise_epilogue_type
 
 comptime _MFMA_K = 32
 comptime _TILE_N = 16
@@ -158,7 +157,6 @@ def _gemm_smallm_streaming_kernel[
     m_tiles: Int,
     a_in_regs: Bool,
     col_tiles: Int = 1,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],  # m * n
     a_shuffled: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
@@ -282,15 +280,7 @@ def _gemm_smallm_streaming_kernel[
                         comptime for r4 in range(4):
                             var row = t * _TILE_N + (lane // _TILE_N) * 4 + r4
                             if row < _m:
-                                comptime if case .Some(
-                                    elementwise_lambda
-                                ) = elementwise_lambda_fn:
-                                    elementwise_lambda(
-                                        (row, out_col),
-                                        acc[t][r4].cast[c_type](),
-                                    )
-                                else:
-                                    c[row, out_col] = acc[t][r4].cast[c_type]()
+                                c[row, out_col] = acc[t][r4].cast[c_type]()
             # The LDS scratch is reused by the next column tile.
             barrier()
     else:
@@ -358,17 +348,9 @@ def _gemm_smallm_streaming_kernel[
                         comptime for r4 in range(4):
                             var row = t * _TILE_N + (lane // _TILE_N) * 4 + r4
                             if row < _m:
-                                comptime if case .Some(
-                                    elementwise_lambda
-                                ) = elementwise_lambda_fn:
-                                    elementwise_lambda(
-                                        (row, out_col),
-                                        acc[u * m_tiles + t][r4].cast[c_type](),
-                                    )
-                                else:
-                                    c[row, out_col] = acc[u * m_tiles + t][
-                                        r4
-                                    ].cast[c_type]()
+                                c[row, out_col] = acc[u * m_tiles + t][r4].cast[
+                                    c_type
+                                ]()
 
 
 def smallm_preshuffle_b[
@@ -414,7 +396,6 @@ def smallm_streaming_matmul[
     k_static: Int,
     warps_per_block: Int = 8,
     max_grid_blocks: Int = 512,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
@@ -470,7 +451,6 @@ def smallm_streaming_matmul[
             m_tiles=m_tiles,
             a_in_regs=a_in_regs,
             col_tiles=col_tiles,
-            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
         var a_src = UnsafePointer[Scalar[a_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_scratch)

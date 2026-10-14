@@ -18,7 +18,7 @@ For example, here's how to print to a file
 
 ```mojo
 var f = open("my_file.txt", "w")
-var fd = FileDescriptor(f)
+var fd = RawFileDescriptor(f)
 print("hello", file=fd)
 f.close()
 ```
@@ -35,7 +35,7 @@ from std.ffi import (
 from std.collections import Span
 
 
-struct FileDescriptor(TrivialRegisterPassable, Writer):
+struct RawFileDescriptor(TrivialRegisterPassable, Writer):
     """File descriptor of a file."""
 
     var value: c_int
@@ -82,12 +82,12 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
     def write_string(mut self, string: StringSlice):
         """
-        Write a `StringSlice` to this `FileDescriptor`.
+        Write a `StringSlice` to this `RawFileDescriptor`.
 
         This method is required by the `Writer` trait.
 
         Args:
-            string: The `StringSlice` to write to this `FileDescriptor`.
+            string: The `StringSlice` to write to this `RawFileDescriptor`.
         """
         self.write_bytes(string.as_bytes())
 

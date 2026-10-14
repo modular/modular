@@ -16,8 +16,9 @@
 Two compile modes, selected by ``MAX_EAGER_OP_PRECOMPILE`` (see
 :func:`gc_compile.should_precompile`). Must not import from ``handlers.py``.
 
-CPU only: ``mo.non_maximum_suppression`` carries the ``MO_HostOnly`` trait, so
-the handler never receives a device buffer.
+CPU only by handler policy: the op itself may execute on the device in
+compiled graphs, but the interpreter's handler transfers any device
+buffers to CPU before invoking this model.
 
 The selected-box count is data-dependent, and the op's registered shape function
 runs the real suppression to get it (``builtin_kernels/kernels.mojo``), so the
@@ -104,8 +105,10 @@ class _NmsFamily(gc_compile.GCFamilySpec):
     name = "nms"
 
     def sweep_devices(self) -> list[Device]:
-        # MO_HostOnly: sweeping accelerators would make the warm producer
-        # (xarch_warm/warm_lib.py export_slots) export a useless MEF per GPU.
+        # CPU-only by handler policy (see the module docstring): sweeping
+        # accelerators would make the warm producer
+        # (xarch_warm/warm_lib.py export_slots) export a useless MEF per
+        # GPU.
         return list(_CPU_DEVICES)
 
     def build_module(self) -> Module:

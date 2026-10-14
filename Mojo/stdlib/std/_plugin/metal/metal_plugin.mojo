@@ -20,11 +20,11 @@ from std.collections import OptionalReg
 from std.sys.info import CompilationTarget
 from std.collections.string.string_span import _get_kgen_string
 from std.ffi import CStringSpan
-from std.io.file_descriptor import FileDescriptor
+from std.io.file_descriptor import RawFileDescriptor
 from std.sys._metal_print import _metal_print_write
 
 
-def _print_emit[O: Origin](cstr: CStringSpan[O], file: FileDescriptor):
+def _print_emit[O: Origin](cstr: CStringSpan[O], file: RawFileDescriptor):
     """Writes `print()` output from a Metal kernel to the os_log stream.
 
     Metal kernels have a single os_log stream, so `file` is ignored.

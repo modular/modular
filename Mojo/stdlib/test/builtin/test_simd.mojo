@@ -15,7 +15,7 @@ from std.sys import size_of
 from std.sys.info import Endian, is_64bit
 
 from std.bit import count_leading_zeros
-from std.memory import alloc, dealloc, ThinAllocation, Layout
+from std.memory import alloc, Layout
 from std.memory.unsafe import bitcast
 from std.builtin._format_float import _write_float
 from std.simd import _modf
@@ -429,16 +429,14 @@ def test_issue_1625() raises:
 
 def test_issue_20421() raises:
     var a_layout = Layout[UInt8, alignment=.of_bytes[64]()](count=16 * 64)
-    var ptr = alloc(a_layout).unsafe_leak()
+    var allocation = alloc(a_layout).into_managed()
+    var ptr = allocation.unsafe_ptr()
     for i in range(16 * 64):
         ptr[unsafe_offset=i] = UInt8(i & 255)
     var av16 = (
         ptr.unsafe_offset(128 + 64 + 4)
         .unsafe_bitcast[Int32]()
         .unsafe_load[width=4, alignment=1]()
-    )
-    dealloc(
-        ThinAllocation[UInt8](unsafe_owned_ptr=ptr).unsafe_with_layout(a_layout)
     )
     assert_equal(
         av16,

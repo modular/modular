@@ -27,6 +27,9 @@ Two gates per case, because neither alone is sufficient:
    a sentinel beforehand and must still hold it afterwards. Gate 1 alone would
    pass if the kernel wrote BOTH the lambda destination and C.
 
+Each case runs the gates for the legacy lambda, the epilogue closure, and the
+compute closure (whose output is `c` itself, so only gate 1 applies).
+
 Run:
   ./bazelw test //max/kernels/test/gpu/linalg:test_mxfp6_matmul_amd_preb_epilogue.mojo.test
 """
@@ -44,6 +47,7 @@ from linalg.matmul.gpu.amd import Shuffler
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     mxfp6_block_scaled_matmul_amd,
 )
+from linalg.utils import _as_compute_fn
 
 comptime FP6_LANE_BYTES = 24
 
@@ -163,14 +167,12 @@ def _run_case[
             idx, rebind[SIMD[DType.float32, width]](val)
         )
 
-    comptime if preshuffled_b:
-        mxfp6_block_scaled_matmul_amd[
-            preshuffled_b=True, elementwise_lambda_fn=epilogue_fn
-        ](c_sentinel_tt, a_tt, b_pre_tt, sfa_tt, sfb_pre_tt, ctx)
-    else:
-        mxfp6_block_scaled_matmul_amd[
-            preshuffled_b=False, elementwise_lambda_fn=epilogue_fn
-        ](c_sentinel_tt, a_tt, b_row_tt, sfa_tt, sfb_raw_tt, ctx)
+    @inline(.always)
+    def store_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var out_tt}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        out_tt.store[width=width](idx, rebind[SIMD[DType.float32, width]](val))
 
     var direct_h = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
     var out_host = ctx.enqueue_create_host_buffer[.float32](M_static * N_static)
@@ -178,10 +180,98 @@ def _run_case[
         M_static * N_static
     )
     ctx.enqueue_copy(direct_h, c_direct_d)
+
+    comptime for use_closure in [False, True]:
+        out_d.enqueue_fill(Float32(0.0))
+        comptime if use_closure:
+            comptime if preshuffled_b:
+                mxfp6_block_scaled_matmul_amd[preshuffled_b=True](
+                    c_sentinel_tt,
+                    a_tt,
+                    b_pre_tt,
+                    sfa_tt,
+                    sfb_pre_tt,
+                    store_fn,
+                    ctx,
+                )
+            else:
+                mxfp6_block_scaled_matmul_amd[preshuffled_b=False](
+                    c_sentinel_tt,
+                    a_tt,
+                    b_row_tt,
+                    sfa_tt,
+                    sfb_raw_tt,
+                    store_fn,
+                    ctx,
+                )
+        else:
+            comptime if preshuffled_b:
+                mxfp6_block_scaled_matmul_amd[
+                    preshuffled_b=True, elementwise_lambda_fn=epilogue_fn
+                ](c_sentinel_tt, a_tt, b_pre_tt, sfa_tt, sfb_pre_tt, ctx)
+            else:
+                mxfp6_block_scaled_matmul_amd[
+                    preshuffled_b=False, elementwise_lambda_fn=epilogue_fn
+                ](c_sentinel_tt, a_tt, b_row_tt, sfa_tt, sfb_raw_tt, ctx)
+        ctx.enqueue_copy(out_host, out_d)
+        ctx.enqueue_copy(sentinel_h, c_sentinel_d)
+        ctx.synchronize()
+        _assert_matches_direct[M_static, N_static](
+            direct_h, out_host, sentinel_h, SENTINEL
+        )
+
+    # The compute closure stores into `c` itself, so `out_d` is its `c`.
+    @inline(.always)
+    def identity_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val
+
+    var compute_fn = _as_compute_fn(identity_fn)
+    out_d.enqueue_fill(Float32(0.0))
+    comptime if preshuffled_b:
+        mxfp6_block_scaled_matmul_amd[preshuffled_b=True](
+            out_tt, a_tt, b_pre_tt, sfa_tt, sfb_pre_tt, compute_fn, ctx
+        )
+    else:
+        mxfp6_block_scaled_matmul_amd[preshuffled_b=False](
+            out_tt, a_tt, b_row_tt, sfa_tt, sfb_raw_tt, compute_fn, ctx
+        )
     ctx.enqueue_copy(out_host, out_d)
     ctx.enqueue_copy(sentinel_h, c_sentinel_d)
     ctx.synchronize()
+    _assert_matches_direct[M_static, N_static](
+        direct_h, out_host, sentinel_h, SENTINEL
+    )
 
+    print(
+        "    OK: ",
+        M_static * N_static,
+        " elements match for the lambda and both closures; C untouched",
+    )
+
+    _ = a_d^
+    _ = b_d^
+    _ = b_pre_d^
+    _ = sfa_d^
+    _ = sfb_pre_d^
+    _ = sfb_raw_d^
+    _ = c_direct_d^
+    _ = c_sentinel_d^
+    _ = out_d^
+
+
+def _assert_matches_direct[
+    M_static: Int, N_static: Int
+](
+    direct_h: HostBuffer[.float32],
+    out_host: HostBuffer[.float32],
+    sentinel_h: HostBuffer[.float32],
+    sentinel: Float32,
+) raises:
+    """Applies both gates: the epilogue output equals the direct store, and
+    the sentinel-filled C was never written."""
     var mismatches = 0
     var saw_nonzero = False
     for i in range(M_static * N_static):
@@ -205,21 +295,9 @@ def _run_case[
 
     var clobbered = 0
     for i in range(M_static * N_static):
-        if sentinel_h[i] != SENTINEL:
+        if sentinel_h[i] != sentinel:
             clobbered += 1
     assert_equal(clobbered, 0)
-
-    print("    OK: ", M_static * N_static, " elements match; C untouched")
-
-    _ = a_d^
-    _ = b_d^
-    _ = b_pre_d^
-    _ = sfa_d^
-    _ = sfb_pre_d^
-    _ = sfb_raw_d^
-    _ = c_direct_d^
-    _ = c_sentinel_d^
-    _ = out_d^
 
 
 def main() raises:

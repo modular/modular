@@ -116,16 +116,14 @@ class DeepseekV3_2MoE(MoEQuantized):
         )
         scales_offset = create_indices_result[5] if nvfp4 else None
 
-        gather_indices = ops.cast(
-            token_order // self.num_experts_per_token, DType.int32
-        )
         total_m = ops.shape_to_tensor(token_order.shape)[0].cast(DType.uint32)
 
         if nvfp4:
             assert scales_offset is not None
             assert isinstance(strategy, NvMxf4f8Strategy)
-            # The grouped quantize gathers rows through the permutation
-            # indices itself, so the permuted activations never materialize.
+            # The grouped quantize gathers rows through the slot order itself,
+            # dividing by the top-k in its loads, so neither the token indices
+            # nor the permuted activations materialize.
             permuted_quant, permuted_scales = strategy.grouped_quantize(
                 x,
                 self._token_group_size,
@@ -133,9 +131,13 @@ class DeepseekV3_2MoE(MoEQuantized):
                 expert_start,
                 scales_offset,
                 expert_ids,
-                indices=gather_indices,
+                indices=token_order,
+                indices_divisor=self.num_experts_per_token,
             )
         else:
+            gather_indices = ops.cast(
+                token_order // self.num_experts_per_token, DType.int32
+            )
             permuted_quant, permuted_scales = strategy.quantize(
                 ops.gather(x, gather_indices, axis=0),
                 self._token_group_size,

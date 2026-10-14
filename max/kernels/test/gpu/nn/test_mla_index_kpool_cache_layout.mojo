@@ -29,7 +29,7 @@ stride, so some cases score a later layer of a padded cache whose other layers
 and padding hold random bytes.
 """
 
-from std.math import log
+from std.math import ceildiv, log1p
 from std.random import rand, random_ui64, seed
 
 from max.gpu.host import DeviceContext
@@ -89,7 +89,7 @@ def run_case[
         max_cache_len = max(max_cache_len, cache_lens[b])
 
     var max_tokens = max_cache_len + max_seq_len
-    var pages_per_seq = (max_tokens + page_size - 1) // page_size
+    var pages_per_seq = ceildiv(max_tokens, page_size)
     var num_blocks = batch_size * pages_per_seq + 4
     var max_pools = max_tokens // KPOOL
 
@@ -116,7 +116,7 @@ def run_case[
     # scale packs the top-k within a hair of the peak, where fp8 ties decide.
     for i in range(batch_size * max_pools):
         var u = Float64(pool_scale[i])
-        pool_scale[i] = Float32(-log(1.0 - min(u, 0.999999)))
+        pool_scale[i] = Float32(-log1p(-min(u, 0.999999)))
 
     var q_host = ctx.enqueue_create_host_buffer[DType.float8_e4m3fn](
         total_seq_len * num_heads * DEPTH
@@ -159,8 +159,8 @@ def run_case[
         var num_pools = (cache_lens[b] + seq_lens[b]) // KPOOL
         for p in range(num_pools):
             comptime if one_row_per_pool:
-                var blk = Int(lut_host[b * pages_per_seq + p // page_size])
-                var row = p % page_size
+                var page, row = divmod(p, page_size)
+                var blk = Int(lut_host[b * pages_per_seq + page])
                 for j in range(DEPTH):
                     k_host[
                         blk * page_stride + k_layer_base + row * DEPTH + j
@@ -171,10 +171,8 @@ def run_case[
             else:
                 for member in range(KPOOL):
                     var tok = p * KPOOL + member
-                    var blk = Int(
-                        lut_host[b * pages_per_seq + tok // page_size]
-                    )
-                    var row = tok % page_size
+                    var page, row = divmod(tok, page_size)
+                    var blk = Int(lut_host[b * pages_per_seq + page])
                     for j in range(ROW_WIDTH):
                         k_host[
                             blk * page_stride

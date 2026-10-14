@@ -15,7 +15,7 @@
 Two cases exercised from `main()`:
 
   - **plain**: standard split-K (no lambda), output written to `c`.
-  - **epilogue**: split-K with `elementwise_lambda_fn`. Each output
+  - **epilogue**: split-K with an `epilogue_fn` value. Each output
     cell is reduced from `num_splits` f32 partials, then the lambda
     fires ONCE on the final reduced value (not per partial). Verifies
     both lambda accuracy vs vendor BLAS and lambda exclusivity (`c`

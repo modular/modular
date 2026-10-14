@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
@@ -27,6 +28,7 @@ from typing import (
 )
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
@@ -176,6 +178,9 @@ def ragged_token_descriptors(
 class BatchProcessor(ABC, Generic[ContextT, InputsT, ArchConfigT_co]):
     """Batches pipeline contexts into model inputs and parses execution outputs."""
 
+    input_tree: OrderedDict[str, object] | None = None
+    """The graph's named inputs, or ``None`` until the model binds them."""
+
     def __init__(
         self,
         config: ArchConfigT_co,
@@ -196,6 +201,18 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT, ArchConfigT_co]):
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
         """Returns non-KV graph input types in execution order."""
+
+    def bind_input_tree(self, input_tree: OrderedDict[str, object]) -> None:
+        """Receives the named inputs of the graph this processor feeds.
+
+        The model owns the tree and builds its graph from it, so the tree
+        cannot describe a different graph than the one the processor feeds.
+
+        Args:
+            input_tree: The graph's inputs keyed by name, whose leaves are the
+                graph's input types in declaration order.
+        """
+        self.input_tree = input_tree
 
     @abstractmethod
     def prepare_initial_token_inputs(
@@ -454,6 +471,149 @@ def process_ragged_kv_outputs(
     )
 
 
+def ragged_batch_inputs(
+    device_ref: DeviceRef,
+    fields: Sequence[str] = ("tokens", "row_offsets", "return_n_logits"),
+    *,
+    data_parallel_degree: int = 1,
+    hidden_states: tuple[DType, int] | None = None,
+) -> OrderedDict[str, TensorType]:
+    """Returns the named per-batch graph inputs, in the order ``fields`` gives.
+
+    The result is an ``OrderedDict``, not a ``dict``: ``tree.flatten`` sorts a
+    plain dict's keys, and the graph declares its inputs in insertion order.
+
+    Args:
+        device_ref: The device that holds the token and row-offset tensors.
+        fields: The inputs to include, in graph order. Any of ``tokens``,
+            ``row_offsets``, ``host_row_offsets``, ``return_n_logits``,
+            ``data_parallel_splits`` and ``hidden_states``.
+        data_parallel_degree: The number of replicas, which sizes
+            ``data_parallel_splits``.
+        hidden_states: The ``(dtype, hidden_size)`` of the EAGLE draft's
+            hidden-state input. Required when ``fields`` names
+            ``hidden_states``.
+
+    Returns:
+        The input types keyed by field name.
+    """
+    available = {
+        "tokens": TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        ),
+        "row_offsets": TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        ),
+        "host_row_offsets": TensorType(
+            DType.uint32,
+            shape=["input_row_offsets_len"],
+            device=DeviceRef.CPU(),
+        ),
+        "return_n_logits": TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        ),
+        "data_parallel_splits": TensorType(
+            DType.int64,
+            shape=[data_parallel_degree + 1],
+            device=DeviceRef.CPU(),
+        ),
+    }
+    if hidden_states is not None:
+        dtype, hidden_size = hidden_states
+        available["hidden_states"] = TensorType(
+            dtype, shape=["total_seq_len", hidden_size], device=device_ref
+        )
+    return OrderedDict((name, available[name]) for name in fields)
+
+
+def signal_inputs(
+    device_refs: list[DeviceRef],
+) -> OrderedDict[str, tuple[BufferType, ...]]:
+    """Returns the named per-device allreduce signal buffers.
+
+    Args:
+        device_refs: The devices that take part in the allreduce.
+
+    Returns:
+        The signal buffer types, one per device, under ``signal``.
+    """
+    return OrderedDict(signal=tuple(Signals(devices=device_refs).input_types()))
+
+
+def vision_merge_inputs(
+    device_refs: Sequence[DeviceRef],
+    dtype: DType,
+    hidden_size: int,
+    *,
+    rows_dim: str,
+) -> OrderedDict[str, tuple[TensorType, ...]]:
+    """Returns the per-device vision embeddings and where they merge.
+
+    Args:
+        device_refs: The devices that each take a copy of the embeddings.
+        dtype: The dtype of the embeddings.
+        hidden_size: The width of each embedding row.
+        rows_dim: The name of the embeddings' row dimension, which each
+            architecture spells its own way.
+
+    Returns:
+        The embedding types under ``image_embeddings`` and the positions in the
+        token stream that their rows replace under ``image_token_indices``,
+        one of each per device.
+    """
+    return OrderedDict(
+        image_embeddings=tuple(
+            TensorType(dtype, shape=[rows_dim, hidden_size], device=device)
+            for device in device_refs
+        ),
+        image_token_indices=tuple(
+            TensorType(DType.int32, shape=["total_image_tokens"], device=device)
+            for device in device_refs
+        ),
+    )
+
+
+def ragged_kv_symbolic_input_tree(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_refs: list[DeviceRef],
+    include_signal_buffers: bool,
+    batch_order: Sequence[str] = ("tokens", "row_offsets", "return_n_logits"),
+    hidden_states: tuple[DType, int] | None = None,
+) -> OrderedDict[str, object]:
+    """Returns the named graph input types of a standard ragged KV text model.
+
+    The tree's leaves are the inputs in execution order (``batch_order``
+    fields, signal buffers, KV leaves), and its paths name each one, so a
+    consumer that needs to know what a graph slot holds reads the tree rather
+    than re-deriving the order.
+
+    Args:
+        kv_params: The KV cache parameters that supply the ``kv`` subtree.
+        device_refs: The devices the model runs on. The first holds the batch
+            tensors.
+        include_signal_buffers: Whether to add the allreduce ``signals``.
+        batch_order: The per-batch inputs to include, in graph order. See
+            :func:`ragged_batch_inputs`.
+        hidden_states: The ``(dtype, hidden_size)`` of the EAGLE draft's
+            hidden-state input, appended to ``batch_order`` when given.
+
+    Returns:
+        The tree of input types, keyed ``batch``, ``signals`` and ``kv``.
+    """
+    inputs: OrderedDict[str, object] = OrderedDict(
+        batch=ragged_batch_inputs(
+            device_refs[0],
+            (*batch_order, "hidden_states") if hidden_states else batch_order,
+            hidden_states=hidden_states,
+        )
+    )
+    if include_signal_buffers:
+        inputs["signals"] = signal_inputs(device_refs)
+    inputs["kv"] = kv_params.get_symbolic_inputs()
+    return inputs
+
+
 def ragged_kv_symbolic_inputs(
     *,
     kv_params: KVCacheParamInterface,
@@ -461,32 +621,39 @@ def ragged_kv_symbolic_inputs(
     include_signal_buffers: bool,
 ) -> list[TensorType | BufferType]:
     """Returns symbolic graph inputs for a standard ragged KV text model."""
-    device_ref = device_refs[0]
-    return_n_logits_type = TensorType(
-        DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+    return tree.leaves(
+        ragged_kv_symbolic_input_tree(
+            kv_params=kv_params,
+            device_refs=device_refs,
+            include_signal_buffers=include_signal_buffers,
+        )
     )
-    tokens_type = TensorType(
-        DType.int64, shape=["total_seq_len"], device=device_ref
+
+
+def modulev3_ragged_kv_symbolic_input_tree(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_refs: list[DeviceRef],
+) -> OrderedDict[str, object]:
+    """Returns the named inputs of a ModuleV3 ragged KV model.
+
+    ModuleV3 ``forward`` expects ``(tokens, return_n_logits,
+    input_row_offsets, *kv)``, a different order than
+    :func:`ragged_kv_symbolic_input_tree`.
+
+    Args:
+        kv_params: The KV cache parameters that supply the ``kv`` subtree.
+        device_refs: The devices the model runs on.
+
+    Returns:
+        The tree of input types, keyed ``batch`` and ``kv``.
+    """
+    return ragged_kv_symbolic_input_tree(
+        kv_params=kv_params,
+        device_refs=device_refs,
+        include_signal_buffers=False,
+        batch_order=("tokens", "return_n_logits", "row_offsets"),
     )
-    input_row_offsets_type = TensorType(
-        DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-    )
-    kv_inputs = kv_params.flattened_kv_inputs()
-    if include_signal_buffers:
-        signals = Signals(devices=device_refs)
-        return [
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *signals.input_types(),
-            *kv_inputs,
-        ]
-    return [
-        tokens_type,
-        input_row_offsets_type,
-        return_n_logits_type,
-        *kv_inputs,
-    ]
 
 
 def modulev3_ragged_kv_symbolic_inputs(
@@ -500,23 +667,11 @@ def modulev3_ragged_kv_symbolic_inputs(
     *kv)`` — a different argument order than the Graph-path
     :func:`ragged_kv_symbolic_inputs`.
     """
-    device_ref = device_refs[0]
-    return_n_logits_type = TensorType(
-        DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+    return tree.leaves(
+        modulev3_ragged_kv_symbolic_input_tree(
+            kv_params=kv_params, device_refs=device_refs
+        )
     )
-    tokens_type = TensorType(
-        DType.int64, shape=["total_seq_len"], device=device_ref
-    )
-    input_row_offsets_type = TensorType(
-        DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-    )
-    kv_inputs = kv_params.flattened_kv_inputs()
-    return [
-        tokens_type,
-        return_n_logits_type,
-        input_row_offsets_type,
-        *kv_inputs,
-    ]
 
 
 class UnifiedSpecDecodeBatchProcessor(

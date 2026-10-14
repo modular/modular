@@ -16,6 +16,8 @@ import os
 
 import pytest
 from max._entrypoints import pipelines
+from max._entrypoints.cli import generate as cli_generate
+from max.pipelines import PipelineArgs
 
 logger = logging.getLogger("max.pipelines")
 
@@ -170,3 +172,40 @@ def test_pipelines_cli__set_kv_cache_dtype(
     # Two 128-token pages (incl null page)
     # 2x (8 KiB of float32 values) = 16 KiB
     assert "cache_memory" in captured.err and ": 16.00 KiB" in captured.err
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [([], True), (["--no-disable-vendor-blas-fallback"], False)],
+)
+def test_pipelines_cli__generate_turns_the_vendor_blas_fallback_off_on_amd(
+    tiny_llama_local_path: str,
+    custom_architecture_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    flags: list[str],
+    expected: bool,
+) -> None:
+    monkeypatch.delenv("MODULAR_DISABLE_VENDOR_FALLBACK", raising=False)
+    monkeypatch.setattr(cli_generate, "accelerator_api", lambda: "hip")
+    seen: list[PipelineArgs] = []
+
+    def record(pipeline_args: PipelineArgs, **kwargs: object) -> None:
+        seen.append(pipeline_args)
+
+    monkeypatch.setattr(cli_generate, "generate_text_for_pipeline", record)
+    with pytest.raises(SystemExit):
+        pipelines.main(
+            [
+                "generate",
+                "--model-path",
+                tiny_llama_local_path,
+                f"--custom-architectures={custom_architecture_path}",
+                "--devices=cpu",
+                "--quantization-encoding=float32",
+                "--max-length=128",
+                *flags,
+            ]
+        )
+    [pipeline_args] = seen
+    runtime = cli_generate._with_debug_defaults(pipeline_args).runtime
+    assert runtime.disable_vendor_blas_fallback is expected

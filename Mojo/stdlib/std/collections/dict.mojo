@@ -44,7 +44,7 @@ from std.builtin.rebind import downcast
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
 
-from std.memory import alloc, dealloc, ThinAllocation, unsafe_memset
+from std.memory import alloc, dealloc, unsafe_memset
 from std.memory.alloc import Layout
 
 from ._swisstable import (
@@ -1953,10 +1953,10 @@ struct Dict[
         # Build old_slot -> new_slot mapping and a set of relocated old slots
         # so we can filter stale _order entries (DELETED slots won't appear
         # in relocations since resize only moves occupied entries).
-        var slot_map = alloc(Layout[Int32](count=old_capacity)).unsafe_leak()
-        var relocated_set = alloc(
-            Layout[UInt8](count=old_capacity)
-        ).unsafe_leak()
+        var slot_map_alloc = alloc(Layout[Int32](count=old_capacity))
+        var slot_map = slot_map_alloc.unsafe_ptr()
+        var relocated_set_alloc = alloc(Layout[UInt8](count=old_capacity))
+        var relocated_set = relocated_set_alloc.unsafe_ptr()
         unsafe_memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):
             slot_map.unsafe_store(relocations[i][0], Int32(relocations[i][1]))
@@ -1973,16 +1973,8 @@ struct Dict[
             len(self._order) == self._table._len
         ), "order length doesn't match _len after resize"
 
-        dealloc(
-            ThinAllocation(unsafe_owned_ptr=slot_map).unsafe_with_layout(
-                {count = old_capacity}
-            )
-        )
-        dealloc(
-            ThinAllocation(unsafe_owned_ptr=relocated_set).unsafe_with_layout(
-                {count = old_capacity}
-            )
-        )
+        dealloc(slot_map_alloc^)
+        dealloc(relocated_set_alloc^)
 
     @inline(.never)
     def _rehash_in_place(mut self):
@@ -1997,7 +1989,8 @@ struct Dict[
         self._order = compacted^
 
         # Delegate the actual rehash to the table, get slot mapping back
-        var slot_map = self._table.rehash_in_place()
+        var slot_map_alloc = self._table.rehash_in_place()
+        var slot_map = slot_map_alloc.unsafe_ptr()
 
         # Update _order with new slot indices
         for j in range(len(self._order)):
@@ -2007,11 +2000,7 @@ struct Dict[
             len(self._order) == self._table._len
         ), "order length doesn't match _len after in-place rehash"
 
-        dealloc(
-            ThinAllocation(unsafe_owned_ptr=slot_map).unsafe_with_layout(
-                {count = self._table._capacity}
-            )
-        )
+        dealloc(slot_map_alloc^)
 
     def _maybe_compact_order(mut self):
         """Compact the order array if it has too many stale entries."""

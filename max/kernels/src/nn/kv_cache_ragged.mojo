@@ -3560,21 +3560,18 @@ def _qmatmul_gguf_quantized_alloc_output[
     var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
     comptime N = weight.static_shape[0]
     # CPU matmul needs workspace even when an epilogue writes the output.
-    var c_ptr = alloc(
+    # Managed so the workspace is also released when the matmul raises.
+    var c_alloc = alloc(
         AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
-    ).unsafe_leak()
+    ).into_managed()
 
-    var c_nd = TileTensor(c_ptr, row_major((TOTAL_SEQ_LEN, Idx[N])))
+    var c_nd = TileTensor(
+        c_alloc.unsafe_ptr(), row_major((TOTAL_SEQ_LEN, Idx[N]))
+    )
 
     _qmatmul_gguf_quantized_common[
         quantization_encoding, elementwise_lambda_fn
     ](hidden_state, weight, c_nd)
-
-    dealloc(
-        ThinAllocation(unsafe_owned_ptr=c_ptr).unsafe_with_layout(
-            AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
-        )
-    )
 
 
 @inline(.always)

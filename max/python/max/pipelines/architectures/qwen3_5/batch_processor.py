@@ -19,8 +19,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import Buffer
+from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputs
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
 )
@@ -72,6 +75,15 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
 
     vision_enabled: bool = True
     """Whether the compiled graph takes vision-merge inputs. Set by the model."""
+
+    def get_symbolic_inputs(
+        self,
+        *,
+        kv_params: KVCacheParamInterface,
+        device_refs: list[DeviceRef],
+    ) -> list[TensorType | BufferType]:
+        assert self.input_tree is not None, "the model binds its inputs first"
+        return tree.leaves(self.input_tree)
 
     def _decoder_position_ids(self, contexts: Sequence[TextContext]) -> Buffer:
         """Returns this step's ``[3, total_seq_len]`` M-RoPE positions."""

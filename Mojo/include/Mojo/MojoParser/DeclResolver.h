@@ -318,23 +318,23 @@ public:
   /// it.  This doesn't allow null symbols, so it always succeeds.
   ASTDecl &getDeclForTypeSymbol(SymbolRefAttr symbol) const;
   ASTDecl *getDeclForTypeSymbolIfExists(SymbolRefAttr symbol) const;
-  ASTDecl *getDeclForFuncSymbol(SymbolRefAttr attr) const;
+  DefASTDecl *getDeclForFuncSymbol(SymbolRefAttr attr) const;
 
   /// This registers the finalized function with the DeclResolver after its
   /// signature has been resolved and its mangled name is available.  This
   /// returns an existing function if there is a redefinition problem.
-  Operation *finalizeFuncSignature(FnOp funcOp, ASTDecl &decl);
+  Operation *finalizeFuncSignature(FnOp funcOp, DefASTDecl &decl);
 
-  /// Return the trait composition decl for the given trait type. If no decl
-  /// exists for this trait composition, null is returned.
-  ASTDecl *getTraitDecl(TraitType trait);
+  /// Return the synthetic declaration for the given canonical trait
+  /// composition, creating it if needed.
+  ASTDecl *getTraitCompositionDecl(TraitType trait);
 
   //===--------------------------------------------------------------------===//
   // Export Handling
   //===--------------------------------------------------------------------===//
 
   void registerAndCheckExport(StringRef aliasName, SMLoc loc);
-  void exportMain(ASTDecl &funcDecl);
+  void exportMain(DefASTDecl &funcDecl);
 
   //===--------------------------------------------------------------------===//
   // Decl Helpers
@@ -373,7 +373,7 @@ public:
   ///
   /// trait @vanilla<?, *"_Self`": !lit.trait<@vanilla>>(!lit.trait<@AnyType,
   /// @Movable>) attributes {immediateParents = #M<symbols[@AnyType]>}
-  LogicalResult addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
+  LogicalResult addSelfTypeToTrait(TraitDeclOp traitOp, TraitASTDecl &decl,
                                    SmallVector<TraitSymbolAttr> &parentTraits,
                                    DenseSet<TraitSymbolAttr> &immediateParents,
                                    ArrayRef<ParamDeclAttr> parameters = {},
@@ -408,11 +408,11 @@ private:
   /// check the signature for the operation.  On parse failure, these should
   /// return a failure, which will cause the driver to mark the decl as invalid
   /// for further references.
-  LogicalResult resolveSignature(FnOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(FnOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSyntheticBody(FnOp op, ASTDecl &decl);
-  LogicalResult resolveSyntheticSignature(FnOp op, ASTDecl &decl);
-  LogicalResult resolveSyntheticSignature(AliasDeclOp op, ASTDecl &decl);
+  LogicalResult resolveSignature(FnOp op, Lexer &lexer, DefASTDecl &decl);
+  ParseResult resolveBody(FnOp op, Lexer &lexer, DefASTDecl &decl);
+  LogicalResult resolveSyntheticBody(FnOp op, DefASTDecl &decl);
+  LogicalResult resolveSyntheticSignature(FnOp op, DefASTDecl &decl);
+  LogicalResult resolveSyntheticSignature(AliasDeclOp op, AliasASTDecl &decl);
 
   ParseResult resolveBody(LIT::FileModuleOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(PackageOp op, ASTDecl &decl);
@@ -422,21 +422,27 @@ private:
   ParseResult resolveSignature(LIT::UnresolvedImportOp op, ASTDecl &decl,
                                bool resolveTarget = true);
 
-  LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
-  /// Resolve the cases parsed in the body of an enum, given in declaration
-  /// order.
-  void resolveEnumCases(ASTDecl &decl, ArrayRef<ASTDecl *> caseDecls);
+  LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer,
+                                 StructASTDecl &decl);
+  ParseResult resolveBody(StructDeclOp op, Lexer &lexer, StructASTDecl &decl);
+  /// Resolve one case of an enum. `firstByName` maps each case name resolved
+  /// so far to its case; a repeated name is reported and the case removed.
+  LogicalResult
+  resolveEnumCase(ASTDecl &caseDecl,
+                  llvm::SmallDenseMap<StringAttr, ASTDecl *, 8> &firstByName);
   LogicalResult resolveSignature(EnumCaseOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
-  LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
-  ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, ASTDecl &decl);
+  LogicalResult resolveSignature(TraitDeclOp op, Lexer &lexer,
+                                 TraitASTDecl &decl);
+  ParseResult resolveBody(TraitDeclOp op, Lexer &lexer, TraitASTDecl &decl);
+  LogicalResult resolveSignature(AliasDeclOp op, Lexer &lexer,
+                                 AliasASTDecl &decl);
+  ParseResult resolveBody(AliasDeclOp op, Lexer &lexer, AliasASTDecl &decl);
   LogicalResult resolveSignature(ExtensionDeclOp op, Lexer &lexer,
-                                 ASTDecl &decl);
-  ParseResult resolveBody(ExtensionDeclOp op, Lexer &lexer, ASTDecl &decl);
+                                 ExtensionASTDecl &decl);
+  ParseResult resolveBody(ExtensionDeclOp op, Lexer &lexer,
+                          ExtensionASTDecl &decl);
 
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
@@ -453,7 +459,7 @@ private:
   /// This map tracks the ASTDecl for every FnOp, allowing clients to map
   /// from MLIR symbol references to their body and AST information.  This is
   /// populated during signature resolution, since the symbol will be mangled.
-  DenseMap<SymbolRefAttr, ASTDecl *> declForFuncSymbol;
+  DenseMap<SymbolRefAttr, DefASTDecl *> declForFuncSymbol;
 
   /// This map tracks the synthetic, unlisted ASTDecls for trait compositions.
   /// Their IRValue is the canonical trait type-value. For details, see STCASTD.

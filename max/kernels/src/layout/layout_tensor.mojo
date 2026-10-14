@@ -1170,8 +1170,8 @@ struct LayoutTensor[
 
     @inline(.always)
     def _elementwise_unary[
-        func: def(Self.element_type) capturing -> (Self.element_type),
-    ](self) -> Self:
+        FuncType: def(Self.element_type) -> Self.element_type,
+    ](self, func: FuncType) -> Self:
         """Apply an elementwise unary operation to all elements in the tensor.
 
         This is an internal method that applies the provided function to each
@@ -1179,6 +1179,9 @@ struct LayoutTensor[
         for the tensor's memory layout.
 
         Parameters:
+            FuncType: The type of `func`.
+
+        Args:
             func: A function that takes a single element and returns a
                 transformed element. The function should be pure with no side
                 effects for predictable results.
@@ -1343,11 +1346,10 @@ struct LayoutTensor[
             operator).
         """
 
-        @__parameter
-        def add_val(val: Self.element_type) -> Self.element_type:
+        def add_val(val: Self.element_type) {imm} -> Self.element_type:
             return Self.element_type(other) + val
 
-        return self._stack_copy()._elementwise_unary[add_val]()
+        return self._stack_copy()._elementwise_unary(add_val)
 
     @inline(.always)
     def __iadd__(self, other: Scalar[Self.dtype]):
@@ -1364,11 +1366,10 @@ struct LayoutTensor[
         - This operation modifies the tensor directly without creating a copy.
         """
 
-        @__parameter
-        def add_val(val: Self.element_type) -> Self.element_type:
+        def add_val(val: Self.element_type) {imm} -> Self.element_type:
             return Self.element_type(other) + val
 
-        _ = self._elementwise_unary[add_val]()
+        _ = self._elementwise_unary(add_val)
 
     @inline(.always)
     def __add__[
@@ -1485,11 +1486,10 @@ struct LayoutTensor[
             (`*=` operator).
         """
 
-        @__parameter
-        def mul_val(val: Self.element_type) -> Self.element_type:
+        def mul_val(val: Self.element_type) {imm} -> Self.element_type:
             return Self.element_type(other) * val
 
-        return self._stack_copy()._elementwise_unary[mul_val]()
+        return self._stack_copy()._elementwise_unary(mul_val)
 
     @inline(.always)
     def __mul__[
@@ -1560,11 +1560,10 @@ struct LayoutTensor[
         - This operation modifies the tensor directly without creating a copy.
         """
 
-        @__parameter
-        def mul_val(val: Self.element_type) -> Self.element_type:
+        def mul_val(val: Self.element_type) {imm} -> Self.element_type:
             return Self.element_type(other) * val
 
-        _ = self._elementwise_unary[mul_val]()
+        _ = self._elementwise_unary(mul_val)
 
     @inline(.always)
     def __imul__[
@@ -1634,11 +1633,10 @@ struct LayoutTensor[
             operator).
         """
 
-        @__parameter
-        def sub_val(val: Self.element_type) -> Self.element_type:
+        def sub_val(val: Self.element_type) {imm} -> Self.element_type:
             return val - Self.element_type(other)
 
-        return self._stack_copy()._elementwise_unary[sub_val]()
+        return self._stack_copy()._elementwise_unary(sub_val)
 
     @inline(.always)
     def __sub__[
@@ -1705,11 +1703,10 @@ struct LayoutTensor[
         - This operation modifies the tensor directly without creating a copy.
         """
 
-        @__parameter
-        def sub_val(val: Self.element_type) -> Self.element_type:
+        def sub_val(val: Self.element_type) {imm} -> Self.element_type:
             return val - Self.element_type(other)
 
-        _ = self._elementwise_unary[sub_val]()
+        _ = self._elementwise_unary(sub_val)
 
     @inline(.always)
     def __isub__[
@@ -1782,11 +1779,10 @@ struct LayoutTensor[
         - For integer dtypes, this performs integer division.
         """
 
-        @__parameter
-        def div_val(val: Self.element_type) -> Self.element_type:
+        def div_val(val: Self.element_type) {imm} -> Self.element_type:
             return val / Self.element_type(other)
 
-        return self._stack_copy()._elementwise_unary[div_val]()
+        return self._stack_copy()._elementwise_unary(div_val)
 
     @inline(.always)
     def __truediv__[
@@ -1861,11 +1857,10 @@ struct LayoutTensor[
         - For integer dtypes, this performs integer division.
         """
 
-        @__parameter
-        def div_val(val: Self.element_type) -> Self.element_type:
+        def div_val(val: Self.element_type) {imm} -> Self.element_type:
             return val / Self.element_type(other)
 
-        _ = self._elementwise_unary[div_val]()
+        _ = self._elementwise_unary(div_val)
 
     @inline(.always)
     def __itruediv__[
@@ -1932,7 +1927,7 @@ struct LayoutTensor[
 
         return {
             self._stack_copy()
-            ._elementwise_unary[exp_func]()
+            ._elementwise_unary(exp_func)
             .ptr.unsafe_mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin](),
             self.runtime_layout,

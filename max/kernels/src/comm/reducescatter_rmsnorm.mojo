@@ -22,8 +22,8 @@ stream) and `normed_out` (its RMSNorm). Inherently `multiply_before_cast=True`.
 
 Factored from the 2-stage AR kernel (`allreduce_residual_rmsnorm.mojo`); keep
 the reduce/norm math in sync with it -- but NOT the barrier structure: this
-kernel closes with an end barrier, which the AR+norm kernels do not (their
-`is_start=False` barrier is an intermediate stage fence).
+kernel closes with an end barrier, whereas the 2-stage AR+norm kernel's
+`is_start=False` barrier is an intermediate stage fence.
 """
 
 from std.collections import Array

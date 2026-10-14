@@ -82,7 +82,7 @@ def _metrics_url(framework: str) -> str:
     return f"http://127.0.0.1:{port}/metrics"
 
 
-# Maps alias model names to reusable MAX recipe configs. Aliases let the same
+# Maps model variants to reusable MAX recipe configs. Variants let the same
 # weights be tested under different configurations while keeping results
 # separate in dashboards. Paths use the portable ``max/pipelines/architectures/``
 # prefix (same convention as the MAX CLI config loader). The smoke driver
@@ -109,7 +109,6 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_rust_tiered_kvconnector.yaml",
-    "meta-llama/Llama-3.1-8B-Instruct__mojo_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_mojo_tiered_kvconnector.yaml",
     "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
     "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
@@ -126,6 +125,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": "max/pipelines/architectures/kimik2_5_modulev3/recipes/nvfp4_kimi_k2_7_code_b200.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16_dspark.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/unified_mtp_qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
@@ -269,7 +269,7 @@ def _load_recipe(recipe_path: str) -> RecipeConfig:
 def resolve_model_path(
     model: str, recipe_path: str | None = None
 ) -> tuple[str, str | None]:
-    """Resolve a model alias to a canonical HF repo id and its recipe path."""
+    """Resolve a model variant to a canonical HF repo id and its recipe path."""
     if recipe_path is None:
         recipe_path = MODEL_RECIPES.get(model)
     if recipe_path:
@@ -285,8 +285,8 @@ def resolve_model_path(
 def hf_repos_for_model(model: str) -> list[str]:
     """Return the repos to pre-cache for the given model.
 
-    Always includes the base repo (alias prefix before __), plus the
-    draft_model.model_path when the alias maps to a recipe with one.
+    Always includes the base repo (variant prefix before __), plus the
+    draft_model.model_path when the variant maps to a recipe with one.
     """
     repos: list[str] = []
     seen: set[str] = set()
@@ -308,14 +308,14 @@ def hf_repos_for_model(model: str) -> list[str]:
         if recipe.draft_model and recipe.draft_model.model_path:
             add(recipe.draft_model.model_path)
 
-    # Recipe-derived paths win the casefold dedup, so a lowercased alias
+    # Recipe-derived paths win the casefold dedup, so a lowercased variant
     # input still resolves to the canonical casing the cache expects.
     recipe_path = MODEL_RECIPES.get(model)
     if recipe_path is not None:
         add_recipe_repos(recipe_path)
     add(model.split("__", 1)[0])
-    # A private recipe can serve a different repo than the alias; adding its
-    # repos after the alias keeps the alias as the base repo callers get back.
+    # A private recipe can serve a different repo than the variant; adding its
+    # repos after the variant keeps it as the base repo callers get back.
     if recipe_path is None:
         for private_path in _private_recipe_paths_for_model(model):
             add_recipe_repos(private_path)

@@ -397,15 +397,47 @@ def stack_bf16_experts(
     return weights
 
 
+def prepare_nvfp4_module(
+    weights: dict[str, WeightData],
+    module: str,
+    parallelism: Parallelism,
+    n: int,
+) -> None:
+    """Lays out one dense NVFP4 module's scales as its layer reads them.
+
+    The weight's block scales are split into one share per device and each
+    share is interleaved for the block-scaled matmul (see
+    :func:`~.layers.quantized.nvfp4_block_scale_shape`). Its
+    ``weight_scale_2`` becomes a one-element float32 vector. Replaces the
+    module's tensors in ``weights``.
+
+    Args:
+        weights: The tensors, edited in place.
+        module: The module's checkpoint path.
+        parallelism: How the module's weight is split across devices.
+        n: The number of devices.
+    """
+    scales = _bytes(weights[f"{module}.weight_scale"])
+    if parallelism is Parallelism.COLUMN:
+        shares = np.split(scales, n, axis=0)
+    elif parallelism is Parallelism.ROW:
+        shares = np.split(scales, n, axis=1)
+    else:
+        shares = [scales]
+    block = np.stack([interleave_nvfp4_scales(s) for s in shares])
+    name = f"{module}.weight_scale"
+    weights[name] = _weight(name, block, DType.float8_e4m3fn)
+    name = f"{module}.weight_scale_2"
+    global_scale = np.array([_scalar(weights[name])], dtype=np.float32)
+    weights[name] = _weight(name, global_scale, DType.float32)
+
+
 def prepare_nvfp4_linears(
     state_dict: Mapping[str, WeightData], config: NemotronHConfig, n: int
 ) -> dict[str, WeightData]:
     """Lays out the dense NVFP4 modules' scales as their layers read them.
 
-    Each weight's block scales are split into one share per device and each
-    share is interleaved for the block-scaled matmul (see
-    :func:`~.layers.quantized.nvfp4_block_scale_shape`). Its
-    ``weight_scale_2`` becomes a one-element float32 vector.
+    See :func:`prepare_nvfp4_module`.
 
     Args:
         state_dict: The checkpoint's tensors.
@@ -423,20 +455,7 @@ def prepare_nvfp4_linears(
             or config.runs_as_routed_experts(module)
         ):
             continue
-        parallelism = linear_parallelism(module)
-        scales = _bytes(weights[f"{module}.weight_scale"])
-        if parallelism is Parallelism.COLUMN:
-            shares = np.split(scales, n, axis=0)
-        elif parallelism is Parallelism.ROW:
-            shares = np.split(scales, n, axis=1)
-        else:
-            shares = [scales]
-        block = np.stack([interleave_nvfp4_scales(s) for s in shares])
-        name = f"{module}.weight_scale"
-        weights[name] = _weight(name, block, DType.float8_e4m3fn)
-        name = f"{module}.weight_scale_2"
-        global_scale = np.array([_scalar(weights[name])], dtype=np.float32)
-        weights[name] = _weight(name, global_scale, DType.float32)
+        prepare_nvfp4_module(weights, module, linear_parallelism(module), n)
     return weights
 
 

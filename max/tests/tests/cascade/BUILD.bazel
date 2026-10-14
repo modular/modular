@@ -21,6 +21,21 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_metrics",
+    size = "small",
+    srcs = ["test_metrics.py"],
+    deps = [
+        "//max/python/max/experimental/cascade/serve",
+        "//max/python/max/experimental/cascade/telemetry",
+        requirement("fastapi"),
+        requirement("httpx"),
+        requirement("prometheus-client"),
+        requirement("pytest-asyncio"),
+        requirement("starlette"),
+    ],
+)
+
+modular_py_test(
     name = "test_local_runtime",
     size = "small",
     srcs = ["test_local_runtime.py"],

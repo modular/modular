@@ -74,6 +74,8 @@ _U64_MASK = (1 << 64) - 1
 
 _logger = logging.getLogger("max.pipelines")
 
+_warned_unwarmed_pipelines: weakref.WeakSet[BatchPipeline] = weakref.WeakSet()
+
 
 class _KVCacheParams(Protocol):
     @property
@@ -498,7 +500,7 @@ def _lora_unsupported(
 
 
 def _check_adapters_active(
-    pipeline: BatchPipeline, contexts: Sequence[TextContext]
+    pipeline: BatchPipeline, contexts: Sequence[TextContext], caller: str
 ) -> None:
     """Raises if a context names a loaded LoRA adapter that is not active.
 
@@ -514,8 +516,9 @@ def _check_adapters_active(
             raise _lora_unsupported(
                 pipeline.pipeline_config,
                 f'Row {row} names the adapter "{name}", which is loaded but '
-                "not active, and generate() never activates an adapter",
+                f"not active, and {caller} never activates an adapter",
                 feature="inactive LoRA adapters",
+                caller=caller,
                 local_note=(
                     "To run it here, activate it first with "
                     "max.pipelines.lora.get_lora_manager(pipeline)"
@@ -524,11 +527,14 @@ def _check_adapters_active(
             )
 
 
-def _check_graph_capture(pipeline: BatchPipeline, dp_degree: int) -> None:
+def _check_graph_capture(
+    pipeline: BatchPipeline, dp_degree: int, caller: str = "generate()"
+) -> None:
     """Checks Batch against the pipeline's graph capture state.
 
-    Raises if replay needs replica padding, and warns if capture is on but
-    the pipeline is not warmed up. Reads whether the pipeline captured its
+    Raises if replay needs replica padding, and warns once per pipeline if
+    capture is on but the pipeline is not warmed up, so a caller that opens
+    many batches logs it once. Reads whether the pipeline captured its
     graphs, not the config flag, so a pipeline warmed up by hand gets the
     same check.
     """
@@ -538,7 +544,11 @@ def _check_graph_capture(pipeline: BatchPipeline, dp_degree: int) -> None:
         and pipeline.graph_capture_ready
     )
     if not ready:
-        if pipeline_config.runtime.device_graph_capture:
+        if (
+            pipeline_config.runtime.device_graph_capture
+            and pipeline not in _warned_unwarmed_pipelines
+        ):
+            _warned_unwarmed_pipelines.add(pipeline)
             _logger.warning(
                 "Device graph capture is on, but warmup_graph_capture() has "
                 "not run on this pipeline, so every step runs eagerly. To "
@@ -552,9 +562,10 @@ def _check_graph_capture(pipeline: BatchPipeline, dp_degree: int) -> None:
             pipeline_config,
             "device graph capture with data parallelism",
             "Replay needs every replica to step the same number of rows. "
-            "Serve pads the replicas to keep them equal, and generate() does "
+            f"Serve pads the replicas to keep them equal, and {caller} does "
             "not pad",
             ["--device-graph-capture"],
+            caller=caller,
             note=(
                 "To run this here, load the model without device graph capture."
             ),
@@ -625,6 +636,7 @@ def _check_batch_fits(
     pipeline: BatchPipeline,
     prompt_lengths: Sequence[int],
     dp_degree: int,
+    caller: str = "generate()",
 ) -> None:
     """Raises if the batch needs more rows or tokens than the plan allows."""
     pipeline_config = pipeline.pipeline_config
@@ -641,8 +653,9 @@ def _check_batch_fits(
                 if dp_degree > 1
                 else ""
             )
-            + ", and generate() never splits its prompts",
+            + f", and {caller} never splits its prompts",
             ["--max-batch-size", str(pipeline.max_batch_size)],
+            caller=caller,
             note="To run this batch here, raise max_batch_size.",
         )
     model = pipeline._pipeline_model
@@ -671,6 +684,7 @@ def _check_batch_fits(
                     "--max-batch-input-tokens",
                     str(pipeline_config.runtime.max_batch_input_tokens),
                 ],
+                caller=caller,
                 note=(
                     "To run this batch here, raise max_batch_input_tokens or "
                     "turn chunked prefill off."
@@ -695,6 +709,7 @@ def _check_batch_fits(
                 f"{page_size}-token page, but the plan caps a replica's "
                 f"resident context at {total_tokens_cap} tokens",
                 ["--max-batch-total-tokens", str(total_tokens_cap)],
+                caller=caller,
                 note="To run this batch here, raise max_batch_total_tokens.",
             )
 
@@ -929,7 +944,11 @@ class Batch:
 
     @classmethod
     def from_contexts(
-        cls, pipeline: BatchPipeline, contexts: Iterable[TextContext]
+        cls,
+        pipeline: BatchPipeline,
+        contexts: Iterable[TextContext],
+        *,
+        caller: str = "Batch.from_contexts()",
     ) -> Batch:
         """Claims a batch over contexts already built, one row per context.
 
@@ -944,6 +963,8 @@ class Batch:
             pipeline: The pipeline to run.
             contexts: One built context per row, for example from
                 ``tokenizer.new_context``, claimed in order.
+            caller: What the user called, which errors name, such as
+                ``"max generate"``.
 
         Returns:
             A batch with every row claimed.
@@ -958,12 +979,15 @@ class Batch:
                 batch on it is still open.
         """
         contexts = list(contexts)
-        _check_adapters_active(pipeline, contexts)
+        _check_adapters_active(pipeline, contexts, caller)
         dp_degree = pipeline.pipeline_config.model.data_parallel_degree
         _check_batch_fits(
-            pipeline, [len(context.tokens) for context in contexts], dp_degree
+            pipeline,
+            [len(context.tokens) for context in contexts],
+            dp_degree,
+            caller,
         )
-        _check_graph_capture(pipeline, dp_degree)
+        _check_graph_capture(pipeline, dp_degree, caller)
         batch = cls.__new__(cls)
         batch._start(pipeline, contexts, dp_degree)
         batch._claim_rows()

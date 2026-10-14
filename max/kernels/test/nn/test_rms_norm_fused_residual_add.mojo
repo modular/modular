@@ -141,10 +141,9 @@ def run_rms_norm_fused_residual_add_gpu[
     # Test unfused operations for comparison
     @inline(.always)
     @__copy_capture(unfused_intermediate_buf)
-    @__parameter
     def unfused_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {imm} -> None:
         var idx = unfused_intermediate_buf.layout(coords)
         unfused_intermediate_buf.raw_store[width=width, alignment=alignment](
             idx, val
@@ -154,15 +153,20 @@ def run_rms_norm_fused_residual_add_gpu[
     # unfused reference uses its own comptime input loader (the fused kernel's
     # `input_fn` is now a value closure and cannot bind a comptime parameter).
     @inline(.always)
-    @__parameter
-    @__copy_capture(data_buf)
-    def rms_input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def rms_input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     # Step 1: First RMS norm
-    rms_norm_cpu[rms_input_fn, unfused_output_fn, multiply_before_cast=True](
-        Coord(shape), gamma1, epsilon1, weight_offset1
+    rms_norm_cpu[multiply_before_cast=True](
+        rms_input_fn,
+        unfused_output_fn,
+        Coord(shape),
+        gamma1,
+        epsilon1,
+        weight_offset1,
     )
 
     @inline(.always)
@@ -187,28 +191,30 @@ def run_rms_norm_fused_residual_add_gpu[
         DeviceContext(api="cpu"),
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(unfused_intermediate_buf)
-    def unfused_input2_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def unfused_input2_fn[
+        width: Int
+    ](coords: Coord) {var unfused_intermediate_buf} -> SIMD[dtype, width]:
         var idx = unfused_intermediate_buf.layout(coords)
         return unfused_intermediate_buf.raw_load[width=width](idx)
 
     # Test unfused operations for comparison
     @inline(.always)
     @__copy_capture(result_unfused_buf)
-    @__parameter
     def unfused_output2_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+    ](coords: Coord, val: SIMD[dtype, width]) {imm} -> None:
         var idx = result_unfused_buf.layout(coords)
         result_unfused_buf.raw_store[width=width, alignment=alignment](idx, val)
 
-    rms_norm_cpu[
+    rms_norm_cpu[multiply_before_cast=True](
         unfused_input2_fn,
         unfused_output2_fn,
-        multiply_before_cast=True,
-    ](Coord(shape), gamma2, epsilon2, weight_offset2)
+        Coord(shape),
+        gamma2,
+        epsilon2,
+        weight_offset2,
+    )
 
     var flattened_size = rows * cols
     for i in range(flattened_size):

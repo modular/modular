@@ -26,5 +26,5 @@ implement `Writable` to enable their types to work with any `Writer`.
 
 from std.format import Writable, Writer
 from .file import FileHandle
-from .file_descriptor import FileDescriptor
+from .file_descriptor import RawFileDescriptor
 from .io import input, print

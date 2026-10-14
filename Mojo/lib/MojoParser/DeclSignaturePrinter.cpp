@@ -73,9 +73,9 @@ void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
   // compiler-synthesized closure `__call__` requirements on closures.`
   std::optional<ASTType> selfType;
   if (auto parentStruct = dyn_cast<StructDeclOp>(parentOp))
-    selfType = ASTType(ASTDecl::computeSelfTypeForStruct(parentStruct));
+    selfType = ASTType(StructASTDecl::computeSelfType(parentStruct));
   else if (auto parentTrait = dyn_cast<TraitDeclOp>(parentOp))
-    selfType = ASTType(ASTDecl::computeSelfTypeForTrait(parentTrait));
+    selfType = ASTType(TraitASTDecl::computeSelfType(parentTrait));
 
   SmallVector<ParameterInfo, 2> params;
   ParameterEvaluator evaluator =

@@ -49,6 +49,9 @@ _EXTRA_CONSTRAINTS = {
 } | {
     # Experimental SWIZZLE_NONE uint32 TMA store, validated on B200.
     "test_tma_swizzle_none_uint32_store.mojo": ["//:b200_gpu"],
+    # Packed FP4 (`16U4_ALIGN16B`) TMA loads for the W4A8 block-scaled matmul.
+    "test_tma_packed_fp4_async_copy.mojo": ["//:b200_gpu"],
+    "test_tma_packed_fp4_3d_async_copy.mojo": ["//:b200_gpu"],
     # TMA load from a TileTensor source; runs wherever TMA is supported.
     "test_tma_async_tile_tensor.mojo": select({
         "//:h100_gpu": [],

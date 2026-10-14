@@ -134,7 +134,9 @@ comptime WS_SWEEP_MAX_RAW_GRID: UInt32 = 24
 
 
 @inline(.always)
-def ws_p_ceiling[sm_count: Int](raw_grid: UInt32) -> UInt32:
+def ws_p_ceiling[
+    sm_count: Int, oversubscribe: Bool
+](raw_grid: UInt32) -> UInt32:
     """Capture-invariant partition-count ceiling for the split-K crossover:
     follows one GPC wave's SM-fill, holds the plateau through
     `WS_SWEEP_MAX_RAW_GRID`, then decays toward one partition.
@@ -148,11 +150,24 @@ def ws_p_ceiling[sm_count: Int](raw_grid: UInt32) -> UInt32:
     leaves small grids untouched while lifting a small one-wave toward the
     plateau. Beyond the sweep, the inverse target keeps the split grid near a
     fixed wave budget rather than growing with `raw_grid`.
+
+    `oversubscribe` targets `oversub` CTAs per SM rather than one. The factor
+    comes from the ragged (roughly exponential) cache-length distributions the
+    constants were swept on, where most CTAs early-return with no work and
+    over-splitting is what fills the SMs. A sliding-window mask caps the cache
+    length, so its distribution is near-uniform, every CTA gets work, and the
+    ceiling should target `sm_count` directly -- pass `False` there. Measured
+    2026-10-07 and 2026-10-09 on B200 (`sm_count` 148) over eleven shapes of a
+    12-head sliding-window-4096 model, the best `P x raw_grid` is about
+    `sm_count`: `raw_grid` 24 wants 6, 48 wants 2 to 3, and 96 and above want
+    1.
     """
     comptime assert (
         WS_SWEEP_MAX_RAW_GRID % WS_RAW_GRID_CLAMP == 0
     ), "WS_RAW_GRID_CLAMP must divide WS_SWEEP_MAX_RAW_GRID exactly"
-    comptime oversub = WS_SWEEP_MAX_RAW_GRID // WS_RAW_GRID_CLAMP
+    comptime oversub = (
+        WS_SWEEP_MAX_RAW_GRID // WS_RAW_GRID_CLAMP if oversubscribe else 1
+    )
     var g = max(raw_grid, 1)
     return clamp(
         UInt32(sm_count) * oversub // g,
@@ -162,7 +177,9 @@ def ws_p_ceiling[sm_count: Int](raw_grid: UInt32) -> UInt32:
 
 
 @inline(.always)
-def _ws_g_p_ceiling[sm_count: Int](raw_grid: UInt32) -> UInt32:
+def _ws_g_p_ceiling[
+    sm_count: Int, oversubscribe: Bool
+](raw_grid: UInt32) -> UInt32:
     """Partition-count ceiling for the WS-G decode route.
 
     Past the one-wave sweep a split only helps while the split grid still fits
@@ -170,8 +187,10 @@ def _ws_g_p_ceiling[sm_count: Int](raw_grid: UInt32) -> UInt32:
     cost, so the ceiling follows sm_count // raw_grid there. The decode graph of
     a batch that fills the GPU is captured at the longest cache, so this ceiling
     is the only bound that also holds for the short caches replayed on it.
+
+    `oversubscribe` passes straight through to `ws_p_ceiling`.
     """
-    var p = ws_p_ceiling[sm_count](raw_grid)
+    var p = ws_p_ceiling[sm_count, oversubscribe](raw_grid)
     if raw_grid > WS_SWEEP_MAX_RAW_GRID:
         p = clamp(p, UInt32(1), UInt32(sm_count) // raw_grid)
     return p
@@ -475,6 +494,10 @@ def mha_sm100_dispatch[
     comptime deep_ws_shared_key = config.depth in (256, 512)
     comptime if not deep_ws_shared_key:
         comptime assert fa4_config_2q.supported(), fa4_config_2q.description()
+
+    # A windowed mask caps the cache length, so the distribution is not the
+    # ragged one `ws_p_ceiling`'s over-subscription was tuned for.
+    comptime splitk_oversubscribe = MaskType.sliding_window_size() == 0
 
     var q = q_arg.bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
         q_arg.origin
@@ -1353,7 +1376,8 @@ def mha_sm100_dispatch[
                             512 * config.depth // 128
                         )
                         var p_ceiling_ws: UInt32 = _ws_g_p_ceiling[
-                            ctx.default_device_info.sm_count
+                            ctx.default_device_info.sm_count,
+                            splitk_oversubscribe,
                         ](raw_grid_ws)
                         # `_bucket_ws` buckets UP then caps at the ceiling,
                         # so handing it `by_cache` directly is identical to
@@ -1434,9 +1458,10 @@ def mha_sm100_dispatch[
                             512 * config.depth // 128
                         )
                         var p_ceiling_ws_e: UInt32 = min(
-                            ws_p_ceiling[ctx.default_device_info.sm_count](
-                                raw_grid_ws_e
-                            ),
+                            ws_p_ceiling[
+                                ctx.default_device_info.sm_count,
+                                splitk_oversubscribe,
+                            ](raw_grid_ws_e),
                             ws_e_p_cap,
                         )
                         p_bucket_ws_e = UInt32(
@@ -1579,7 +1604,8 @@ def mha_sm100_dispatch[
                         KVType.page_size,
                     ](mask, max_cache_valid_length) // UInt32(one_q_min_kpp)
                     var p_ceiling: UInt32 = ws_p_ceiling[
-                        ctx.default_device_info.sm_count
+                        ctx.default_device_info.sm_count,
+                        splitk_oversubscribe,
                     ](raw_grid_1q)
                     p_bucket = UInt32(
                         _bucket_ws[ctx.default_device_info.sm_count](

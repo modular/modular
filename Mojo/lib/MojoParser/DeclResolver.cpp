@@ -153,13 +153,24 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
                                           LexerCursor endCursor,
                                           ssize_t indentation) {
   ASTDecl *decl;
-  if (auto aliasOp =
-          dyn_cast_if_present<AliasDeclOp>(dyn_cast<Operation *>(irValue))) {
-    decl = new (shared.persistentAllocator.allocate<AliasASTDecl>())
-        AliasASTDecl(shared, aliasOp, loc, parentDecl, cursor, endCursor,
-                     indentation);
+  Operation *op = dyn_cast<Operation *>(irValue);
+  if (auto structOp = dyn_cast_if_present<StructDeclOp>(op)) {
+    decl = shared.persistentAllocator.create<StructASTDecl>(
+        shared, structOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto traitOp = dyn_cast_if_present<TraitDeclOp>(op)) {
+    decl = shared.persistentAllocator.create<TraitASTDecl>(
+        shared, traitOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto extensionOp = dyn_cast_if_present<ExtensionDeclOp>(op)) {
+    decl = shared.persistentAllocator.create<ExtensionASTDecl>(
+        shared, extensionOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto aliasOp = dyn_cast_if_present<AliasDeclOp>(op)) {
+    decl = shared.persistentAllocator.create<AliasASTDecl>(
+        shared, aliasOp, loc, parentDecl, cursor, endCursor, indentation);
+  } else if (auto fnOp = dyn_cast_if_present<FnOp>(op)) {
+    decl = shared.persistentAllocator.create<DefASTDecl>(
+        shared, fnOp, loc, parentDecl, cursor, endCursor, indentation);
   } else {
-    decl = new (shared.persistentAllocator.allocate<ASTDecl>()) ASTDecl(
+    decl = shared.persistentAllocator.create<ASTDecl>(
         shared, irValue, loc, parentDecl, cursor, endCursor, indentation);
   }
   parsedDeclList.push_back(decl);
@@ -189,10 +200,9 @@ DeclResolver::createWitnessDecl(WitnessASTDecl::UnresolvedDecls unresolvedDecls,
   if (!traitDecl.declsInScope)
     traitDecl.declsInScope.reset(new ASTDecl::DeclInScopeType());
 
-  auto *decl = new (shared.persistentAllocator.allocate<WitnessASTDecl>())
-      WitnessASTDecl(shared, std::move(unresolvedDecls), traitSymbol, loc,
-                     &traitDecl, LexerCursor(), LexerCursor(),
-                     /*indentation=*/-1);
+  auto *decl = shared.persistentAllocator.create<WitnessASTDecl>(
+      shared, std::move(unresolvedDecls), traitSymbol, loc, &traitDecl,
+      LexerCursor(), LexerCursor(), /*indentation=*/-1);
   parsedDeclList.push_back(decl);
   (*traitDecl.declsInScope)[name].push_back(decl);
   return *decl;
@@ -255,12 +265,13 @@ void DeclResolver::attachDeclToParentNameTable(ASTDecl *decl, StringAttr name) {
   // actually allow type overloading on parameters theoretically to support
   // T[4] and T[1,7] as different things, but let's no proactively add
   // complexity.
-  if (isa_and_nonnull<FnOp>(decl->getIfOperation())) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(decl); defDecl && defDecl->getOp()) {
     // Verify that all previous entries are also functions.  Note that we can't
     // check the overload set is compatible with each other because the
     // signatures aren't all resolved.
     for (ASTDecl *previous : entries) {
-      if (!isa_and_nonnull<FnOp>(previous->getIfOperation())) {
+      auto *previousFunction = dyn_cast<DefASTDecl>(previous);
+      if (!previousFunction || !previousFunction->getOp()) {
         auto diag = emitError(decl->getLoc(), "invalid redefinition of ")
                     << name;
         diag.attachNote(*previous)
@@ -544,7 +555,8 @@ LogicalResult DeclResolver::checkImportNamingConflict(
         continue;
       if (d == skip)
         continue;
-      if (isa_and_nonnull<FnOp>(d->getIfOperation())) {
+      if (auto *defDecl = dyn_cast<DefASTDecl>(d);
+          defDecl && defDecl->getOp()) {
         if (!result
                  .fn) // any representative def suffices for conflict detection
           result.fn = d;
@@ -716,15 +728,17 @@ LogicalResult DeclResolver::aliasDeclsImpl(
   ASTDecl *existing = entries.back();
 
   // If the decls are functions, try to merge them into the existing set.
-  if (isa_and_nonnull<FnOp>(frontDecl->getIfOperation()) &&
-      isa_and_nonnull<FnOp>(existing->getIfOperation())) {
+  auto *frontFunction = dyn_cast<DefASTDecl>(frontDecl);
+  auto *existingFunction = dyn_cast<DefASTDecl>(existing);
+  if (frontFunction && frontFunction->getOp() && existingFunction &&
+      existingFunction->getOp()) {
     // Check that none of the decls are already in the set.
     auto canMergeDecl = [&](ASTDecl *decl) {
-      FnOp declOp = cast<FnOp>(decl->getIfOperation());
+      FnOp declOp = cast<DefASTDecl>(decl)->getOp();
       return llvm::all_of(entries, [&](ASTDecl *existing) {
         if (failed(resolve(*existing, DeclResolvedness::signature, aliasLoc)))
           return false;
-        FnOp existingOp = cast<FnOp>(existing->getIfOperation());
+        FnOp existingOp = cast<DefASTDecl>(existing)->getOp();
 
         FnTypeGeneratorType declSignature = declOp.getFullSignature();
         FnTypeGeneratorType existingSignature = existingOp.getFullSignature();
@@ -1523,12 +1537,14 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             // If this is a synthetic decl, resolve it specially.
             if (decl.getCursor().isInvalid()) {
               if constexpr (std::is_same_v<FnOp, decltype(op)>) {
-                if (failed(resolveSyntheticSignature(op, decl)))
+                if (failed(
+                        resolveSyntheticSignature(op, cast<DefASTDecl>(decl))))
                   decl.setErroneous();
                 return;
               }
               if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>) {
-                if (failed(resolveSyntheticSignature(op, decl)))
+                if (failed(resolveSyntheticSignature(op,
+                                                     cast<AliasASTDecl>(decl))))
                   decl.setErroneous();
                 return;
               }
@@ -1542,8 +1558,24 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             // decl is malformed and should not be referenced to silence
             // downstream errors.
             Lexer lexer(shared.diags, decl.getCursor());
-            if (failed(resolveSignature(op, lexer, decl)))
-              decl.setErroneous();
+            auto resolveTypedSignature = [&](auto &typedDecl) {
+              if (failed(resolveSignature(op, lexer, typedDecl)))
+                decl.setErroneous();
+            };
+            if constexpr (std::is_same_v<FnOp, decltype(op)>) {
+              resolveTypedSignature(cast<DefASTDecl>(decl));
+            } else if constexpr (std::is_same_v<StructDeclOp, decltype(op)>) {
+              resolveTypedSignature(cast<StructASTDecl>(decl));
+            } else if constexpr (std::is_same_v<TraitDeclOp, decltype(op)>) {
+              resolveTypedSignature(cast<TraitASTDecl>(decl));
+            } else if constexpr (std::is_same_v<ExtensionDeclOp,
+                                                decltype(op)>) {
+              resolveTypedSignature(cast<ExtensionASTDecl>(decl));
+            } else if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>) {
+              resolveTypedSignature(cast<AliasASTDecl>(decl));
+            } else {
+              resolveTypedSignature(decl);
+            }
             decl.getCursor() = lexer.getCursor();
           })
           .Case<UnresolvedImportOp>([&](auto op) {
@@ -1631,7 +1663,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
             // If this is a synthetic decl, complete it specially.
             if (decl.getCursor().isInvalid()) {
               if constexpr (std::is_same_v<FnOp, decltype(op)>) {
-                if (op.isSynthetic() && failed(resolveSyntheticBody(op, decl)))
+                if (op.isSynthetic() &&
+                    failed(resolveSyntheticBody(op, cast<DefASTDecl>(decl))))
                   decl.setErroneous();
                 return;
               }
@@ -1643,7 +1676,22 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
             // Parse the body of the declaration from the correct point.
             Lexer lexer(shared.diags, decl.getCursor());
-            if (resolveBody(op, lexer, decl))
+            bool bodyFailed = [&] {
+              if constexpr (std::is_same_v<FnOp, decltype(op)>)
+                return bool(resolveBody(op, lexer, cast<DefASTDecl>(decl)));
+              else if constexpr (std::is_same_v<StructDeclOp, decltype(op)>)
+                return bool(resolveBody(op, lexer, cast<StructASTDecl>(decl)));
+              else if constexpr (std::is_same_v<TraitDeclOp, decltype(op)>)
+                return bool(resolveBody(op, lexer, cast<TraitASTDecl>(decl)));
+              else if constexpr (std::is_same_v<ExtensionDeclOp, decltype(op)>)
+                return bool(
+                    resolveBody(op, lexer, cast<ExtensionASTDecl>(decl)));
+              else if constexpr (std::is_same_v<AliasDeclOp, decltype(op)>)
+                return bool(resolveBody(op, lexer, cast<AliasASTDecl>(decl)));
+              else
+                return bool(resolveBody(op, lexer, decl));
+            }();
+            if (bodyFailed)
               return;
 
             checkEndOfBodyCursor(lexer);
@@ -1976,12 +2024,12 @@ DeclResolver::getDeclForTypeSymbolIfExists(SymbolRefAttr symbol) const {
   return it != declForTypeSymbol.end() ? it->second : nullptr;
 }
 
-ASTDecl *DeclResolver::getDeclForFuncSymbol(SymbolRefAttr attr) const {
+DefASTDecl *DeclResolver::getDeclForFuncSymbol(SymbolRefAttr attr) const {
   auto it = declForFuncSymbol.find(attr);
   return it != declForFuncSymbol.end() ? it->second : nullptr;
 }
 
-Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
+Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, DefASTDecl &decl) {
   // Install it in the symbol table and check for redefinition while doing so.
   Operation *existing = shared.uniquifyNameAndAddToParentSymbolTable(funcOp);
   // Remember the mapping from its fully mangled symbol so we can find its AST
@@ -1992,7 +2040,7 @@ Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
   return existing;
 }
 
-ASTDecl *DeclResolver::getTraitDecl(TraitType trait) {
+ASTDecl *DeclResolver::getTraitCompositionDecl(TraitType trait) {
   // This is the invariant that we want to enforce, if the assertion triggered,
   // there must be something wrong elsewhere.
   assert(getCanonicalTrait(trait) == trait &&
@@ -2029,8 +2077,8 @@ void DeclResolver::registerAndCheckExport(StringRef aliasName, SMLoc loc) {
   }
 }
 
-void DeclResolver::exportMain(ASTDecl &funcDecl) {
-  FnOp userMainFn = cast_or_null<FnOp>(funcDecl.getIfOperation());
+void DeclResolver::exportMain(DefASTDecl &funcDecl) {
+  FnOp userMainFn = funcDecl.getOp();
   FnTypeGeneratorType userMainSignature = userMainFn.getFuncTypeGenerator();
   ASTDecl *containingDecl = funcDecl.getParentDecl();
   SMLoc loc = funcDecl.getLoc();
@@ -2091,7 +2139,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   ASTDecl &startupModule = shared.importModule(
       {"std", "builtin", "_startup"}, /*currentPackage=*/nullptr,
       funcDecl.getLoc(), /*importer=*/&funcDecl);
-  auto resolveStartDecl = [&](StringRef name) -> ASTDecl * {
+  auto resolveStartDecl = [&](StringRef name) -> DefASTDecl * {
     auto result = shared.lookupAndResolveDecl(
         name, funcDecl.getLoc(), startupModule, /*searchParentScopes=*/false);
     if (result.getIfSuccess().empty()) {
@@ -2105,7 +2153,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     ASTDecl *decl = result.getIfSuccess().front();
     if (failed(resolveBody(*decl, decl->getLoc())))
       return nullptr;
-    return result.getIfSuccess().front();
+    return dyn_cast<DefASTDecl>(result.getIfSuccess().front());
   };
 
   // Generate a shim for main that handles parsing command line arguments,
@@ -2115,11 +2163,10 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
   // The Startup module provides a stubbed out shim for us to use, so pull that
   // in.
-  ASTDecl *mainShimProtoDecl = resolveStartDecl("__mojo_main_prototype");
+  DefASTDecl *mainShimProtoDecl = resolveStartDecl("__mojo_main_prototype");
   if (!mainShimProtoDecl)
     return;
-  FnOp mainShimProtoFn =
-      cast_or_null<FnOp>(mainShimProtoDecl->getIfOperation());
+  FnOp mainShimProtoFn = mainShimProtoDecl->getOp();
 
   // Builder function.
   StringAttr mainAttr = StringAttr::get(getContext(), "main");
@@ -2148,10 +2195,10 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     mainWrapperName = "__wrap_and_execute_raising_main";
     break;
   }
-  ASTDecl *mainWrapperDecl = resolveStartDecl(mainWrapperName);
+  DefASTDecl *mainWrapperDecl = resolveStartDecl(mainWrapperName);
   if (!mainWrapperDecl)
     return;
-  FnOp mainWrapperFn = cast_or_null<FnOp>(mainWrapperDecl->getIfOperation());
+  FnOp mainWrapperFn = mainWrapperDecl->getOp();
   FnTypeGeneratorType mainWrapperSigGen = mainWrapperFn.getFuncTypeGenerator();
 
   // Generate a reference to the main wrapper function, which expects the user

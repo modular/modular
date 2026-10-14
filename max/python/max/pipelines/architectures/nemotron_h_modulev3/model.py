@@ -49,6 +49,7 @@ class NemotronHModel(
     ) -> NemotronHConfig:
         config = self.arch_config_as(NemotronHConfig)
         config.return_logits = self.return_logits
+        config.return_hidden_states = self.return_hidden_states
         config.quant_scheme.check_weights(state_dict.keys())
         return config
 

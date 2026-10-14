@@ -312,7 +312,6 @@ test_suite(
         ":test_interpreter_ops",
         ":test_mojo_runtime_background_thread_import",
         ":test_mojo_runtime_foreign_thread",
-        "//max/tests/tests/_core_mojo:tests",
         "//max/tests/tests/benchmark:tests",
         "//max/tests/tests/driver:tests",
         "//max/tests/tests/graph:multi_version_tests",

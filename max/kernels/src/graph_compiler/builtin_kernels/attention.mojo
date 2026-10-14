@@ -1168,20 +1168,18 @@ struct NoMaskFlashAttentionCPU:
     ) capturing raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
-        @__parameter
         @inline(.always)
         def k_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[k.dtype, width]:
             return k._lambda_load[width=width](
                 rebind[IndexList[k.rank]](coords)
             )
 
-        @__parameter
         @inline(.always)
         def v_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[v.dtype, width]:
             return v._lambda_load[width=width](
                 rebind[IndexList[v.rank]](coords)
             )
@@ -1192,7 +1190,10 @@ struct NoMaskFlashAttentionCPU:
         ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
             return SIMD[dtype, width](0)
 
-        nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
+        nn_flash_attention(
+            k_input_fn,
+            v_input_fn,
+            mask_input_fn,
             q.to_tile_tensor[.int64](),
             k.shape(),
             v.shape(),
@@ -1226,58 +1227,52 @@ struct WithMaskFlashAttentionSplitKVCPU:
     ) capturing raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
-        @__parameter
         @inline(.always)
         def k_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[k.dtype, width]:
             return k._lambda_load[width=width](
                 rebind[IndexList[k.rank]](coords)
             )
 
-        @__parameter
         @inline(.always)
         def v_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[v.dtype, width]:
             return v._lambda_load[width=width](
                 rebind[IndexList[v.rank]](coords)
             )
 
-        @__parameter
         @inline(.always)
         def k_cache_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[k_cache.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[k_cache.dtype, width]:
             return k_cache._lambda_load[width=width](
                 rebind[IndexList[k_cache.rank]](coords)
             )
 
-        @__parameter
         @inline(.always)
         def v_cache_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[v_cache.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[v_cache.dtype, width]:
             return v_cache._lambda_load[width=width](
                 rebind[IndexList[v_cache.rank]](coords)
             )
 
-        @__parameter
         @inline(.always)
         def mask_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[mask.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[mask.dtype, width]:
             return mask._lambda_load[width=width](
                 rebind[IndexList[mask.rank]](coords)
             )
 
-        flash_attention_split_kv[
+        flash_attention_split_kv(
             k_input_fn,
             v_input_fn,
             k_cache_input_fn,
             v_cache_input_fn,
             mask_input_fn,
-        ](
             q.to_tile_tensor[.int64](),
             k.shape(),
             v.shape(),
@@ -1355,34 +1350,34 @@ struct WithMaskFlashAttentionCPU:
     ) capturing raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
-        @__parameter
         @inline(.always)
         def k_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[k.dtype, width]:
             return k._lambda_load[width=width](
                 rebind[IndexList[k.rank]](coords)
             )
 
-        @__parameter
         @inline(.always)
         def v_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[v.dtype, width]:
             return v._lambda_load[width=width](
                 rebind[IndexList[v.rank]](coords)
             )
 
-        @__parameter
         @inline(.always)
         def mask_input_fn[
             width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[mask.dtype, width]:
+        ](coords: IndexList[rank]) {imm} -> SIMD[mask.dtype, width]:
             return mask._lambda_load[width=width](
                 rebind[IndexList[mask.rank]](coords)
             )
 
-        nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
+        nn_flash_attention(
+            k_input_fn,
+            v_input_fn,
+            mask_input_fn,
             q.to_tile_tensor[.int64](),
             k.shape(),
             v.shape(),
@@ -3395,6 +3390,52 @@ def _sparse_gather_indices[
 
 
 @inline(.always)
+def _sparse_decode_indices[
+    target: StaticString,
+    page_size: Int,
+    indices_stride: Int,
+    cache_dtype: DType,
+    physical_indices: Bool,
+](
+    mut scratch: Optional[DeviceBuffer[DType.int32]],
+    sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
+    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    num_tokens: Int,
+    ctx: DeviceContext,
+) raises -> UnsafePointer[Int32, MutAnyOrigin]:
+    """Returns the sparse indices the decode branch reads.
+
+    The AMD sparse MLA arm gathers paged physical rows, so logical indices are
+    remapped for it here; the SM100 kernels look logical indices up
+    themselves. Pair with `_sparse_decode_physical`.
+    """
+    var indices = _sparse_indices_ptr[indices_stride](
+        sparse_indices, num_tokens
+    )
+    comptime if DeviceContext.target.is_amd_gpu() and not physical_indices:
+        return _sparse_gather_indices[
+            target, page_size, indices_stride, cache_dtype
+        ](
+            scratch,
+            sparse_indices,
+            input_row_offsets,
+            kv_lookup_table,
+            kv_blocks,
+            ctx,
+        )
+    return indices
+
+
+@inline(.always)
+def _sparse_decode_physical[physical_indices: Bool]() -> Bool:
+    """Returns whether the indices from `_sparse_decode_indices` are physical.
+    """
+    return physical_indices or DeviceContext.target.is_amd_gpu()
+
+
+@inline(.always)
 def _sparse_prefill_indices[
     target: StaticString,
     page_size: Int,
@@ -3853,19 +3894,34 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
             attn_sink.unsafe_ptr()
         )
 
+        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.sparse",
             task_id=get_safe_task_id(context),
         ):
-            var gather_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices, q.dim_size(0)
+            var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
+            var gather_indices = _sparse_decode_indices[
+                target,
+                mla_page_size,
+                indices_stride,
+                kv_dtype,
+                physical_indices,
+            ](
+                scratch_sparse_indices,
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                q.dim_size(0),
+                context,
             )
             mla_decode_branch_bf16[
                 mask_str=mask_str,
                 kv_input_fn=kv_input_fn,
                 target=target,
                 sparse_mla=True,
-                physical_indices=physical_indices,
+                physical_indices=_sparse_decode_physical[physical_indices](),
                 sparse_row=SparseRowLayout(
                     kpool=index_kpool,
                     pool_topk=index_pool_topk,
@@ -3892,6 +3948,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
                 num_partitions_in=None,
                 selection_lag=Int(selection_lag),
             )
+            _ = scratch_sparse_indices^
 
 
 @extensibility.register("mo.mla.graph.prefill.decode.paged.fp8")
@@ -4586,8 +4643,24 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
             "mo.mla.graph.prefill.decode.paged.sparse",
             task_id=get_safe_task_id(context),
         ):
-            var decode_indices = _sparse_indices_ptr[indices_stride](
-                sparse_indices, q.dim_size(0)
+            comptime decode_physical = _sparse_decode_physical[
+                physical_indices
+            ]()
+            var scratch_decode_indices = Optional[DeviceBuffer[DType.int32]]()
+            var decode_indices = _sparse_decode_indices[
+                target,
+                mla_page_size,
+                indices_stride,
+                cache_dtype,
+                physical_indices,
+            ](
+                scratch_decode_indices,
+                sparse_indices,
+                input_row_offsets,
+                kv_lookup_table,
+                kv_blocks,
+                q.dim_size(0),
+                context,
             )
             var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
             var prefill_indices = _sparse_prefill_indices[
@@ -4596,7 +4669,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
                 indices_stride,
                 cache_dtype,
                 Int(q.static_spec.shape_tuple[1]),
-                physical_indices,
+                decode_physical,
             ](
                 scratch_sparse_indices,
                 sparse_indices,
@@ -4613,7 +4686,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
                 target=target,
                 sparse_mla=True,
                 sparse_indices_stride=indices_stride,
-                physical_indices=physical_indices,
+                physical_indices=decode_physical,
                 sparse_row=SparseRowLayout(
                     kpool=index_kpool,
                     pool_topk=index_pool_topk,
@@ -4647,6 +4720,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
                 prefill_d_indices=prefill_indices,
                 selection_lag=Int(selection_lag),
             )
+            _ = scratch_decode_indices^
             _ = scratch_sparse_indices^
 
 

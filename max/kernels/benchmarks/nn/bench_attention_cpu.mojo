@@ -104,21 +104,21 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     @inline(.always)
     def input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         comptime assert _rank == 3
         return k.load[width=simd_width, alignment=align_of[dtype]()](Coord(idx))
 
     @inline(.always)
     def input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         comptime assert _rank == 3
         return v.load[width=simd_width, alignment=align_of[dtype]()](Coord(idx))
 
     @inline(.always)
     def mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) capturing -> SIMD[dtype, simd_width]:
+    ](idx: IndexList[_rank]) {imm} -> SIMD[dtype, simd_width]:
         comptime assert _rank == 3
         return mask.load[width=simd_width, alignment=align_of[dtype]()](
             Coord(idx)
@@ -130,7 +130,10 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     def flash_bench_fn(mut b: Bencher) {imm}:
         @inline(.always)
         def iter_fn[depth_static_dim: Int]() {imm}:
-            flash_attention[input_k_fn, input_v_fn, mask_fn](
+            flash_attention(
+                input_k_fn,
+                input_v_fn,
+                mask_fn,
                 q,
                 kv_shape,
                 kv_shape,

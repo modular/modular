@@ -70,6 +70,11 @@ def test_cpu_id() -> None:
     assert 0 == cpu.id
 
 
+def test_cpu_default_id_shares_context() -> None:
+    assert CPU() == CPU(0)
+    assert CPU()._device_context_ptr() == CPU(0)._device_context_ptr()
+
+
 def test_cpu_architecture_name() -> None:
     cpu = CPU()
     with pytest.raises(

@@ -26,7 +26,7 @@ from typing import Any, Protocol, cast
 
 import numpy as np
 import numpy.typing as npt
-from max import _core, graph
+from max import _core, _eager_policy, graph
 from max._core.dialects import builtin, kgen, mo, mosh
 from max._interpreter_ops import (
     band_part_gc,
@@ -1875,6 +1875,8 @@ def _handle_conv(
         List containing the convolution output buffer.
 
     Raises:
+        UnsupportedOpVariant: If the input or filter rank is not 4, allowing
+            the eager executor to compile an unsupported convolution instead.
         NotImplementedError: If groups != 1 -- grouped conv needs a
             pre-packed filter layout, and there's no Python-exposed op to
             produce one (the packing kernel is only invoked by an internal
@@ -1889,6 +1891,14 @@ def _handle_conv(
     assert isinstance(dilations, Buffer)
     assert isinstance(paddings, Buffer)
     assert isinstance(num_groups, Buffer)
+
+    if len(input_buffer.shape) != 4 or len(filter_buffer.shape) != 4:
+        raise _eager_policy.UnsupportedOpVariant(
+            "Unsupported conv rank: the eager interpreter only supports "
+            "2-D convolution with rank-4 NHWC inputs and rank-4 RSCF "
+            f"filters, got input rank {len(input_buffer.shape)} and filter "
+            f"rank {len(filter_buffer.shape)}."
+        )
 
     groups = int(num_groups.to_numpy().item())
     if groups != 1:
@@ -2584,9 +2594,10 @@ def _handle_non_maximum_suppression(
 ) -> Sequence[Buffer]:
     """Dispatches eager non-maximum suppression to its GC model.
 
-    ``MO_HostOnly`` keeps every operand on CPU. The op's shape function runs the
-    real suppression to size the output, so the handler no longer allocates an
-    upper-bound buffer or truncates the result.
+    The interpreter executes this op on the host; any device-resident
+    ``boxes``/``scores`` transfer to CPU here (compiled graphs run the
+    op on-device). The op's shape function runs the real suppression to
+    size the output, so the handler allocates no upper-bound buffer.
 
     Args:
         op: The non-maximum suppression operation.
@@ -2609,6 +2620,12 @@ def _handle_non_maximum_suppression(
     assert isinstance(max_output, Buffer)
     assert isinstance(iou_threshold, Buffer)
     assert isinstance(score_threshold, Buffer)
+
+    # The interpreter path runs NMS on the host: device-resident
+    # operands transfer to CPU (the compiled-graph path executes
+    # on-device via the op's device support).
+    boxes = boxes.to(CPU())
+    scores = scores.to(CPU())
 
     if boxes.dtype != scores.dtype:
         raise ValueError(

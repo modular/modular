@@ -1,0 +1,39 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+load("//rust_kv:test_compat.bzl", "TEST_COMPATIBLE_WITH")
+
+# Open source and consumed by //mach and kv-tier-connector, so public; the
+# directive overrides the //rust_kv default for gazelle.
+# gazelle:default_visibility //visibility:public
+
+package(default_visibility = ["//visibility:public"])
+
+# Re-export non-bazel sources (Cargo.toml, tests/) so the
+# find_unreferenced_files lint sees them; the cargo builds of the mach
+# workspace consume them directly.
+exports_files(glob(["**/*"]))
+
+# Zero-dependency by design, so it adds nothing to @rust_kv_crates'
+# third-party set. The mach workspace consumes the same sources via cargo as a
+# cross-workspace path dependency. Marked `top-level` because those production
+# consumers are invisible to bazel; the other bazel dependents are the tests,
+# so the find-unused-targets lint would flag it otherwise.
+rust_library(
+    name = "max-profiler",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+    tags = ["top-level"],
+)
+
+# Tests are Linux-only like the rest of the in-tree Rust test targets (the
+# macOS bazel Rust toolchain has no Xcode SDK for binary links); macOS
+# developers run them through cargo. They are also skipped under sanitizer
+# configs: rules_rust doesn't stage `libclang_rt.<san>.so` into the test
+# runfiles, so the binaries fail to load (same quirk //tokenizer's rust_test
+# wrapper works around). The plain Linux test jobs exercise them.
+rust_test(
+    name = "no_op_test",
+    srcs = ["tests/no_op.rs"],
+    edition = "2024",
+    target_compatible_with = TEST_COMPATIBLE_WITH,
+    deps = [":max-profiler"],
+)

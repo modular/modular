@@ -77,6 +77,7 @@ from ..model_config import DeepseekV4Config
 from .cache import (
     KEY,
     DeepseekV4Cache,
+    LayerIndex,
     arange,
     scalar,
 )
@@ -84,7 +85,7 @@ from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .indexer import DeepseekV4Indexer
 from .quantization import fp8_qat_quantize, linear_for
-from .ragged import RaggedRows, WindowRows
+from .ragged import RaggedRows
 from .rope import apply_rope_tail, rope_for_layer
 from .sparse_attention import sparse_attention
 
@@ -125,6 +126,7 @@ class PendingAttention:
     indexer; the caller sets ``candidates`` from the scores' top-k.
     """
 
+    index: LayerIndex
     q: TensorValue
     kv: TensorValue
     freqs_cis: TensorValue
@@ -246,6 +248,14 @@ class DeepseekV4Attention(Module):
         if self.indexer is not None:
             self.indexer.keep_local_heads(num_devices)
 
+    def layer_index(self, device: DeviceRef) -> LayerIndex:
+        """This layer's place in the leaves, as constants."""
+        return LayerIndex.constant(
+            self.swa_layer,
+            self.zone_layer if self.compress_ratio else None,
+            device,
+        )
+
     def _output_projection(self, o: TensorValue) -> TensorValue:
         """``[b, s, heads, head_dim]`` -> ``[b, s, hidden_size]``.
 
@@ -299,6 +309,7 @@ class DeepseekV4Attention(Module):
         x: TensorValue,
         rows: RaggedRows,
         cache: DeepseekV4Cache | None = None,
+        index: LayerIndex | None = None,
     ) -> TensorValue:
         """Attention for a ragged batch of ``T`` tokens.
 
@@ -309,8 +320,10 @@ class DeepseekV4Attention(Module):
             cache: The paged leaves the chunks are read from and appended to.
                 ``None`` runs fresh sequences from position 0 without storing
                 anything (``rows.starts`` must then be zero).
+            index: Where this layer lives in the leaves; ``None`` is
+                :meth:`layer_index`.
         """
-        state = self.begin(x, rows, cache)
+        state = self.begin(x, rows, cache, index)
         if state.index_score is not None:
             assert self.indexer is not None
             assert state.valid is not None
@@ -324,6 +337,7 @@ class DeepseekV4Attention(Module):
         x: TensorValue,
         rows: RaggedRows,
         cache: DeepseekV4Cache | None = None,
+        index: LayerIndex | None = None,
     ) -> PendingAttention:
         """:meth:`__call__` up to the indexer's top-k.
 
@@ -335,6 +349,8 @@ class DeepseekV4Attention(Module):
         device = x.device
         rd = self.rope_head_dim
         positions = rows.positions
+        if index is None:
+            index = self.layer_index(device)
         freqs_table = self.rope.freqs_cis_base()
         freqs_cis = ops.gather(freqs_table, positions, axis=0)
 
@@ -347,7 +363,7 @@ class DeepseekV4Attention(Module):
         kv = self.latent(x, freqs_cis)
         if cache is not None:
             cache.swa.store(
-                self.swa_layer,
+                index.swa,
                 KEY,
                 ops.reshape(kv, [t, self.head_dim]),
                 rows.offsets,
@@ -360,7 +376,7 @@ class DeepseekV4Attention(Module):
         if self.compressor is not None:
             ratio = self.compress_ratio
             x32 = ops.cast(ops.reshape(x, [t, x.shape[2]]), DType.float32)
-            windows = WindowRows.build(rows, ratio, self.compressor.coff)
+            windows = rows.windows[ratio]
             stream = compressed_stream(
                 self.compressor,
                 x32,
@@ -370,7 +386,7 @@ class DeepseekV4Attention(Module):
                 self.max_seq_len,
                 cache.state.get(ratio) if cache is not None else None,
                 cache.comp.get(ratio) if cache is not None else None,
-                self.zone_layer,
+                index,
             )
             # Query at position ``p`` sees entries below ``(p + 1) // ratio``:
             # every window that closed strictly before it.
@@ -386,7 +402,7 @@ class DeepseekV4Attention(Module):
                     self.max_seq_len,
                     cache.idx_state if cache is not None else None,
                     cache.idx_comp if cache is not None else None,
-                    self.zone_layer,
+                    index,
                 )
                 x2 = ops.reshape(x, [t, x.shape[2]])
                 qr2 = ops.reshape(qr, [t, qr.shape[2]])
@@ -406,7 +422,7 @@ class DeepseekV4Attention(Module):
                     scalar(-1, device),
                 )
         return PendingAttention(
-            q, kv, freqs_cis, stream, valid, index_score, candidates
+            index, q, kv, freqs_cis, stream, valid, index_score, candidates
         )
 
     def end(
@@ -420,7 +436,9 @@ class DeepseekV4Attention(Module):
         if cache is None:
             o = self._attend_table(state.q, state.kv, rows, stream, candidates)
         else:
-            o = self._attend_leaves(state.q, rows, cache, stream, candidates)
+            o = self._attend_leaves(
+                state.q, rows, cache, state.index, stream, candidates
+            )
         o = apply_rope_tail(
             o, state.freqs_cis, self.rope_head_dim, inverse=True
         )
@@ -431,6 +449,7 @@ class DeepseekV4Attention(Module):
         q: TensorValue,
         rows: RaggedRows,
         cache: DeepseekV4Cache,
+        index: LayerIndex,
         stream: CompressedStream | None,
         candidates: TensorValue | None,
     ) -> TensorValue:
@@ -448,7 +467,7 @@ class DeepseekV4Attention(Module):
             assert candidates is not None
             comp_leaf = cache.comp[self.compress_ratio]
             entries = stream.entries(candidates)
-            layer_comp = self.zone_layer
+            layer_comp = stream.layer
         else:
             # A window-only layer has no zone leaf; the kernel still takes a
             # compressed operand, so it gets the window leaf and one entry per
@@ -462,7 +481,7 @@ class DeepseekV4Attention(Module):
                 ),
                 [t, 1],
             )
-            layer_comp = self.swa_layer
+            layer_comp = index.swa
         o = latent_sparse_attention_ragged(
             ops.reshape(q, [t, h, d]),
             rows.offsets,
@@ -470,8 +489,8 @@ class DeepseekV4Attention(Module):
             self.attn_sink,
             cache.swa.values,
             comp_leaf.values,
-            ops.constant(self.swa_layer, DType.uint32, DeviceRef.CPU()),
-            ops.constant(layer_comp, DType.uint32, DeviceRef.CPU()),
+            index.swa,
+            layer_comp,
             scale=self.softmax_scale,
             window=self.window,
             split_k=_LATENT_ATTN_SPLIT_K,

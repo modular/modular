@@ -108,7 +108,6 @@ _EXTRA_DEPS = {
                 "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention_causal_mask.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
-                "test_mha_gemma4_sink_repro.mojo",  # gfx950: ASSERT=all inflates VGPR pressure enough to re-trip the AGPR-Copy-MFMA pass that this test reproduces (commit 0da7baf2baf already chunks the K reg tile down to BK)
                 # test_mha_gemma4_shapes.mojo: split into per-(page_size, mask_kind) targets below; assertions handled per-target.
             ],
         }),
@@ -172,6 +171,7 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
         ],
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS + copts,
         enable_assertions = select({
+            "//:amd_gpu": True,
             "//:b200_gpu": True,
             "//conditions:default": False,  # KERN-2339: bounds check reveals flash attention kernel bug
         }),
@@ -211,8 +211,9 @@ _RAGGED_CAUSAL_MASK_DTYPES = [
             "test_kernel={}".format(test_kernel),
         ],
         enable_assertions = select({
+            "//:amd_gpu": True,
             "//:b200_gpu": True,
-            "//conditions:default": False,  # MSTDL-1147: fails with asserts on H100/AMD
+            "//conditions:default": False,  # MOCO-1593: fails with asserts on H100
         }),
         exec_properties = {
             "test.resources:gpu-memory": "5",
@@ -521,7 +522,7 @@ _GEMMA4_SHAPES_CONFIGS = [
         "256",
         "0",
         ["//:amd_gpu"],
-        False,
+        True,
     ),
     ("ps64_causal", "64", "0", _GEMMA4_SHAPES_B200_ONLY, True),
     ("ps64_sliding_1024", "64", "1", _GEMMA4_SHAPES_B200_ONLY, True),

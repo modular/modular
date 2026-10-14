@@ -121,6 +121,7 @@ def stage_config(
         config,
         vision_config=None,
         kv_params=MultiKVCacheParams.from_params(children),
+        layer_ids=range(start, end),
     )
 
 
@@ -182,7 +183,7 @@ def build_stage_graph(
         *config.kv_params.flattened_kv_inputs(),
     ]
     with Graph(f"gemma4_stage_{start}_{end}", input_types=input_types) as graph:
-        model = Gemma4TextModel(config, layer_range=(start, end))
+        model = Gemma4TextModel(config)
         selected = stage_weights(
             weights,
             start=start,
@@ -228,19 +229,15 @@ def build_stage_graph(
             else [payload_value.tensor]
         )
         captured = None
-        for local_id, layer in enumerate(model.layers):
-            hidden = layer(
-                ops.constant(
-                    model.global_layer_ids[local_id],
-                    DType.uint32,
-                    device=device,
-                ),
+        for layer_id in model.layer_ids:
+            hidden = model.layers[layer_id](
+                ops.constant(layer_id, DType.uint32, device=device),
                 hidden,
                 signals,
-                caches[model._layer_kv_key[local_id]],
+                caches[model._layer_kv_key[layer_id]],
                 input_row_offsets=[row_offsets.tensor],
             )
-            if model.global_layer_ids[local_id] == capture_layer:
+            if layer_id == capture_layer:
                 captured = hidden[0]
         if capture_layer is not None and captured is None:
             raise ValueError("Capture layer is outside this stage")

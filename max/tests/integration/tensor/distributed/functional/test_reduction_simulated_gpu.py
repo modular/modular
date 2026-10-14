@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Reduction tests on simulated GPU mesh (single GPU, 4 virtual devices)."""
 
-from _test_helpers import make_partial
+from _test_helpers import make_partial, make_partial_distinct
 from max.driver import Accelerator
 from max.experimental.sharding import DeviceMesh
 
@@ -38,3 +38,4 @@ class TestReduction(ReductionTests):
         axis_names=("tp",),
     )
     partial_fn = staticmethod(make_partial)
+    partial_distinct_fn = staticmethod(make_partial_distinct)

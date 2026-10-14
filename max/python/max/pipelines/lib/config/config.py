@@ -769,6 +769,17 @@ def _apply_speculative_target_architecture(
         if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
             _require_dspark(speculative, draft_archs[0])
             target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
+    # Nemotron-H's DSpark block drafter declares architectures:
+    # ["Qwen3DSparkModel"], the dense Qwen3-style DSpark draft.
+    if target_archs[0] == "NemotronHForCausalLM":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if draft_archs and draft_archs[0] == "Qwen3DSparkModel":
+            _require_dspark(speculative, draft_archs[0])
+            target_archs[0] = "UnifiedDSparkNemotronHForCausalLM"
     # Kimi K3's speculators-format DSpark drafter (
     # RedHatAI/Kimi-K3-speculator.dspark) declares the same generic
     # architectures: ["DSparkDraftModel"] the Gemma4 arm keys on; the

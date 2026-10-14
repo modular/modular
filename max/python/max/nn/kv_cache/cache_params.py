@@ -295,17 +295,6 @@ class KVConnectorType(str, Enum):
     non-CUDA/HIP devices.
     """
 
-    mojo_tiered = "mojo_tiered"
-    """Tiers evicted pages across host memory and disk, backed by the Mojo
-    ``kv_tier_mojo`` extension.
-
-    MAX currently doesn't support this connector type.
-
-    The same host and disk tiers as :attr:`rust_tiered`, behind the same
-    connector, and available only in builds that ship the extension.
-    Requires ``enable_prefix_caching``. Raises on non-CUDA/HIP devices.
-    """
-
     dkv = "dkv"
     """Routes pages through a distributed KV block store.
 
@@ -313,6 +302,27 @@ class KVConnectorType(str, Enum):
 
     Requires a ``block_store_endpoint`` on the connector config.
     """
+
+    @classmethod
+    def _missing_(cls, value: object) -> KVConnectorType | None:
+        if value == "mojo_tiered":
+            raise ValueError(
+                "The 'mojo_tiered' KV connector was removed. Use "
+                "'rust_tiered' instead."
+            )
+        return None
+
+
+TIERED_CONNECTOR_TYPES = frozenset(
+    {KVConnectorType.tiered, KVConnectorType.rust_tiered}
+)
+"""The host/disk tiered connector types: :attr:`KVConnectorType.rust_tiered`
+and its deprecated alias :attr:`KVConnectorType.tiered`.
+
+Test membership with ``in``: it also accepts the plain strings that
+structural-protocol configs, ``model_copy(update=...)`` and
+``model_construct`` leave in ``type``, since the enum subclasses ``str``.
+"""
 
 
 @runtime_checkable
@@ -358,7 +368,7 @@ class KVConnectorConfigInterface(Protocol):
 
     @property
     def num_disk_workers(self) -> int:
-        """Disk I/O worker threads for the tiered connectors."""
+        """Disk I/O worker threads for the tiered connector."""
         ...
 
     @property
@@ -375,6 +385,26 @@ class KVConnectorConfigInterface(Protocol):
     def block_store_endpoint(self) -> str | None:
         """Endpoint for the co-located dKV service."""
         ...
+
+
+def connector_type(cfg: KVConnectorConfigInterface) -> KVConnectorType:
+    """Returns ``cfg.type`` as a :class:`KVConnectorType`.
+
+    Structural-protocol configs, ``model_copy(update=...)`` and
+    ``model_construct`` can leave a plain string in ``type``. Coercing through
+    the enum gives every reader one type, and routes a removed value such as
+    ``'mojo_tiered'`` to its error instead of a silent fall-through.
+
+    Args:
+        cfg: The connector config to read.
+
+    Returns:
+        The connector type as an enum member.
+
+    Raises:
+        ValueError: If ``cfg.type`` is not a valid connector type.
+    """
+    return KVConnectorType(cfg.type)
 
 
 @dataclass(frozen=True)
@@ -1600,12 +1630,8 @@ class KVCacheParams(KVCacheParamInterface):
             )
 
         # Validate connector configuration
-        connector = self.kv_connector_config.type
-        if connector in (
-            KVConnectorType.tiered,
-            KVConnectorType.rust_tiered,
-            KVConnectorType.mojo_tiered,
-        ):
+        connector = connector_type(self.kv_connector_config)
+        if connector in TIERED_CONNECTOR_TYPES:
             if not self.enable_prefix_caching:
                 raise ValueError(
                     f"KV connector '{connector.value}' requires prefix"
@@ -1962,12 +1988,10 @@ class KVCacheParams(KVCacheParamInterface):
                 raise ValueError(
                     f"per_layer_buffers requires num_layers >= 1, got {self.num_layers}"
                 )
-            connector = self.kv_connector_config.type
-            if connector in (
-                KVConnectorType.tiered,
-                KVConnectorType.rust_tiered,
-                KVConnectorType.mojo_tiered,
-                KVConnectorType.dkv,
+            connector = connector_type(self.kv_connector_config)
+            if (
+                connector in TIERED_CONNECTOR_TYPES
+                or connector == KVConnectorType.dkv
             ):
                 # KVCacheBuffer.all_buffers / to_memory enumerate only the
                 # layer-0 alias, so an off-device connector would move layers

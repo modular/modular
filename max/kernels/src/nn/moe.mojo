@@ -1029,9 +1029,12 @@ def single_group_router_kernel[
         expert_indices.static_shape[1] == n_experts_per_tok
     ), "expert_indices.static_shape[1] must be equal to n_experts_per_tok"
 
+    # One thread per expert, rounded up to whole warps: 288 experts is nine
+    # 32-lane warps but four and a half 64-lane wavefronts.
     comptime assert (
-        num_threads == n_routed_experts
-    ), "num_threads must be equal to n_routed_experts"
+        num_threads >= n_routed_experts
+        and num_threads - n_routed_experts < WARP_SIZE
+    ), "num_threads must be n_routed_experts rounded up to whole warps"
 
     # Lanes past n_experts_per_tok hold zero weight, so the sum can span the
     # next power of two.
@@ -1043,12 +1046,15 @@ def single_group_router_kernel[
     var lane_id = lane_id()
 
     with PDL():
-        var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
-            scores_type
-        ]()
+        # Padding threads carry the dead value, so they never rank.
+        var biased_score = TopK_2[scores_type]().u
+        if tid < n_routed_experts:
+            var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
+                scores_type
+            ]()
 
-        var thread_expert_score = scores_input_fn[width=1]((token_idx, tid))
-        var biased_score = thread_expert_score + thread_expert_bias
+            var thread_expert_score = scores_input_fn[width=1]((token_idx, tid))
+            biased_score = thread_expert_score + thread_expert_bias
 
         var sorted_val3 = _block_top_k[n_experts_per_tok, num_threads](
             biased_score
@@ -1376,7 +1382,9 @@ def single_group_router[
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.router_single_group", task_id=Int(gpu_ctx.id())
     ):
-        comptime num_threads = n_routed_experts
+        comptime num_threads = align_up(
+            n_routed_experts, gpu_ctx.default_device_info.warp_size
+        )
         comptime hw_info = gpu_ctx.default_device_info
         comptime blocks_per_sm = hw_info.threads_per_multiprocessor // num_threads
 

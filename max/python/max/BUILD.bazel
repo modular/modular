@@ -20,15 +20,15 @@ filegroup(
 
 modular_nanobind_extension(
     name = "_core.bindings",
-    srcs = ["//max/python/max/_core/mcl:_core.cpp"],
+    srcs = ["//max/python/max/_core/max_license:_core.cpp"],
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [
         "//Support:BazelRunfiles",
         "//Support:NanobindUtils",
         "//Support:NixlPluginDir",
-        "//max/python/max/_core/mcl:AsyncRTPython",
-        "//max/python/max/_core/mcl/modules",
+        "//max/python/max/_core/max_license:AsyncRTPython",
+        "//max/python/max/_core/max_license/modules",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -120,8 +120,8 @@ write_source_files(
     }),
 )
 
-# kv-core, the KV cache bookkeeping shared with Mach, built from closed Rust
-# sources like _core is from closed C++. Its stub is written by hand.
+# kv-core, the KV cache bookkeeping shared with Mach, built from the open-source
+# Rust sources under //rust_kv. Its stub is written by hand.
 modular_pyo3_extension(
     name = "_kv_core.bindings",
     srcs = ["//rust_kv/kv-core-pyo3:srcs"],

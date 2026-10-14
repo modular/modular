@@ -69,6 +69,9 @@ COMMON=(
   # runner ("lost communication"). `opt` also matches the "keep ptxas -O
   # optimizations" intent noted above.
   --config=ci-local-gpu
+  # ci-local-gpu sets ROLE=CI, so BuildBuddy counts tests failed by sanitizer
+  # findings as flakes on main. The last --build_metadata for a key wins.
+  --build_metadata=ROLE=COMPUTE_SANITIZER
   --test_output=errors --curses=no --noshow_progress
   --nocache_test_results --keep_going
   "--test_timeout=900,2400,5400,10800"

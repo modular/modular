@@ -516,6 +516,10 @@ class Gemma4ForConditionalGenerationConfig(
     quantization_encoding: SupportedEncoding | None = None
     """The resolved quantization encoding the model runs with."""
 
+    layer_ids: range | None = None
+    """The decoder layers this config builds, a pipeline stage's. ``None``
+    means every layer."""
+
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
         return self.kv_params

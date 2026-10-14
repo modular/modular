@@ -106,9 +106,9 @@ struct Pipe:
     ```
     """
 
-    var fd_in: Optional[FileDescriptor]
+    var fd_in: Optional[RawFileDescriptor]
     """File descriptor for pipe input."""
-    var fd_out: Optional[FileDescriptor]
+    var fd_out: Optional[RawFileDescriptor]
     """File descriptor for pipe output."""
 
     def __init__(
@@ -143,8 +143,8 @@ struct Pipe:
                 _ = close(pipe_fds[1])
                 raise Error("Failed to configure output pipe close on exec")
 
-        self.fd_in = FileDescriptor(pipe_fds[0])
-        self.fd_out = FileDescriptor(pipe_fds[1])
+        self.fd_in = RawFileDescriptor(pipe_fds[0])
+        self.fd_out = RawFileDescriptor(pipe_fds[1])
 
     def __deinit__(deinit self):
         """Ensures pipes input and output file descriptors are closed, when the object is destroyed.

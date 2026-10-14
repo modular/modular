@@ -53,10 +53,6 @@ struct _CTimeSpec(Defaultable, TrivialRegisterPassable, Writable):
     var tv_sec: Int  # Seconds
     var tv_nsec: Int  # Nanoseconds
 
-    def __init__(out self):
-        self.tv_sec = 0
-        self.tv_nsec = 0
-
     def as_nanoseconds(self) -> Int:
         return self.tv_sec * _NSEC_PER_SEC + self.tv_nsec
 

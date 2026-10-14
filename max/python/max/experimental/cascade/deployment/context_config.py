@@ -24,6 +24,7 @@ selected ``transport``.
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -40,6 +41,9 @@ from max.experimental.cascade.grpc_runtime import (
 from max.experimental.cascade.http_runtime import (
     HttpRuntimeProxy,
     SubprocHttpRuntime,
+)
+from max.experimental.cascade.telemetry import (
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
 )
 from pydantic import BaseModel, Field
 
@@ -108,6 +112,33 @@ class ContextConfig(BaseModel):
     local_gpu_workers: int = 0
     remote_cpu_workers: tuple[str, ...] = Field(default_factory=tuple)
     remote_gpu_workers: tuple[str, ...] = Field(default_factory=tuple)
+    otlp_metrics_endpoint: str | None = Field(
+        default=None,
+        description=(
+            "OTLP endpoint to export metrics to, for example a Datadog Agent "
+            "OTLP receiver. Overrides the standard "
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT / "
+            "OTEL_EXPORTER_OTLP_ENDPOINT variables, which are used when this "
+            "is unset. Metrics are always served on /metrics; they are also "
+            "exported over OTLP when one of these resolves."
+        ),
+    )
+
+    def export_otlp_endpoint(self) -> None:
+        """Publishes ``otlp_metrics_endpoint`` into the environment.
+
+        The OTLP exporters resolve their endpoint from the standard
+        OpenTelemetry variables, so a setting given on the command line has to
+        reach them that way. A no-op when the field is unset, leaving any
+        variable already set in place.
+
+        Call before :py:func:`~..telemetry.configure_telemetry`, which
+        reads the result.
+        """
+        if self.otlp_metrics_endpoint:
+            os.environ[OTEL_EXPORTER_OTLP_METRICS_ENDPOINT] = (
+                self.otlp_metrics_endpoint
+            )
 
     def build_context(self) -> Runtime:
         """Build the configured device-routed hybrid runtime.

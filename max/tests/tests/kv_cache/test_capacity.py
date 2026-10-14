@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -249,13 +249,16 @@ def _create_with_driver_staging_on_hip(
     check with ``host_staging_alloc='driver'`` on a stubbed HIP device.
 
     An empty ``replica_kv_memory`` skips the preceding CPU-device check, and
-    a stubbed ``_native_connector_class`` skips importing the real
-    `kv_tier_connector`/`kv_tier_mojo` extension this CPU-only test target
-    doesn't depend on, so this never needs a GPU.
+    ``create`` resolves the native class before any other check, so the
+    stubbed ``_native_connector_class`` stands in for the `kv_tier_connector`
+    extension this CPU-only test target doesn't depend on, and this never
+    needs a GPU.
     """
     monkeypatch.setattr(tier_connector, "accelerator_api", lambda: "hip")
     monkeypatch.setattr(
-        tier_connector, "_native_connector_class", lambda connector_type: object
+        tier_connector,
+        "_native_connector_class",
+        lambda: object,
     )
     cfg = SimpleNamespace(
         type=KVConnectorType.rust_tiered,
@@ -344,7 +347,9 @@ def test_create_refuses_direct_io_with_unaligned_leaf_sizes(
     to take the direct path."""
     monkeypatch.setattr(tier_connector, "accelerator_api", lambda: "cuda")
     monkeypatch.setattr(
-        tier_connector, "_native_connector_class", lambda connector_type: object
+        tier_connector,
+        "_native_connector_class",
+        lambda: object,
     )
     # A leaf of 4096+16 bytes: a token-scaled geometry can produce this with
     # a small page size; the check must fire before the staging region.
@@ -453,3 +458,67 @@ def test_compact_unevictable_allowed_is_unknown_when_unreadable(
     missing = str(tmp_path / "missing")
 
     assert tier_connector._compact_unevictable_allowed(missing) is None
+
+
+@pytest.fixture
+def fresh_native_class_cache() -> Iterator[None]:
+    """Clears the cached native-class lookup around a test that stubs the import."""
+    tier_connector._native_connector_class.cache_clear()
+    yield
+    tier_connector._native_connector_class.cache_clear()
+
+
+def _stub_import_module(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    def import_module(name: str) -> object:
+        raise error
+
+    monkeypatch.setattr(
+        tier_connector.importlib, "import_module", import_module
+    )
+
+
+@pytest.mark.usefixtures("fresh_native_class_cache")
+def test_create_fails_on_missing_extension_before_acquiring_anything(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A build without the extension must fail before the offload directory is
+    acquired or any capacity is checked, so nothing is left to release."""
+    _stub_import_module(
+        monkeypatch,
+        ModuleNotFoundError(
+            "No module named 'kv_tier_connector'", name="kv_tier_connector"
+        ),
+    )
+
+    def acquire_offload_dir(*args: object, **kwargs: object) -> None:
+        raise AssertionError("acquire_offload_dir ran before the class check")
+
+    monkeypatch.setattr(
+        tier_connector, "acquire_offload_dir", acquire_offload_dir
+    )
+    cfg = SimpleNamespace(type=KVConnectorType.rust_tiered)
+
+    with pytest.raises(ValueError, match="does not ship") as exc_info:
+        tier_connector.TierConnector.create(
+            leaves={"full": KVCacheGroupId.full()},
+            replica_kv_memory=[],
+            params=SimpleNamespace(kv_connector_config=cfg),
+            device_memory_bytes=0,
+        )
+    assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)
+
+
+@pytest.mark.usefixtures("fresh_native_class_cache")
+def test_native_class_propagates_a_broken_extension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the extension itself being absent is the "not shipped" error; a
+    missing dependency inside it is a broken install and must surface."""
+    _stub_import_module(
+        monkeypatch, ModuleNotFoundError("No module named 'dep'", name="dep")
+    )
+
+    with pytest.raises(ModuleNotFoundError, match="dep"):
+        tier_connector._native_connector_class()

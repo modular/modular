@@ -733,6 +733,10 @@ def main() raises:
         # Nemotron-H: a top-k that is not a power of two.
         test_single_group_router_raw_score_used_for_weights[128, 6](ctx)
         test_single_group_router_scores_from_layout_and_lambda[384, 8](ctx)
+        # GLM-5.3-Flash: 288 experts is not a whole number of 64-lane
+        # wavefronts, so the launch pads to the next one.
+        test_single_group_router[288, 8, 1.0, 2.5](ctx)
+        test_single_group_router_raw_score_used_for_weights[288, 8](ctx)
 
         # Fused `scores_input_fn` branch of each router that offers one.
         test_router_group_limited_fused_scores[64, 8, 8, 4](ctx)

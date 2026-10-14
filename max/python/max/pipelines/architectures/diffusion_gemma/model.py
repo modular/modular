@@ -142,7 +142,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
         }
         with Graph(
             "diffusiongemma_encoder",
-            input_types=self._language_model_input_types(config),
+            input_types=tree.leaves(self._language_model_input_tree(config)),
             module=module,
         ) as graph:
             encoder = DiffusionGemmaEncoderTextModel(config)

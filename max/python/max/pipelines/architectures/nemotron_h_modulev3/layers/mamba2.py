@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from typing import Generic, TypeVar
+
 from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
@@ -118,6 +120,45 @@ class MambaStateAccess:
     """The int64 CPU scalar selecting this layer's rows."""
 
 
+_ReplayTensor = TypeVar("_ReplayTensor", Tensor, TensorValue)
+
+
+@tree.dataclass(frozen=True)
+class MambaReplayInputs(Generic[_ReplayTensor]):
+    """The verify pass's causal inputs to the two state updates.
+
+    Stores token activations, never a full SSM state per verified token.
+    The original pre-verify state remains in the live Jenga leaves.
+    """
+
+    conv_input: _ReplayTensor
+    conv_weight: _ReplayTensor
+    conv_bias: _ReplayTensor
+    x: _ReplayTensor
+    dt: _ReplayTensor
+    A: _ReplayTensor
+    B: _ReplayTensor
+    C: _ReplayTensor
+    D: _ReplayTensor
+    dt_bias: _ReplayTensor
+
+
+@tree.dataclass(frozen=True)
+class MambaReplayRows(Generic[_ReplayTensor]):
+    """The per-token inputs of one Mamba layer's two state updates.
+
+    The other inputs of a replay are the layer's weights, which
+    :meth:`NemotronHMamba2Mixer.replay_statics` returns, so a verify pass
+    carries only what depends on its tokens.
+    """
+
+    conv_input: _ReplayTensor
+    x: _ReplayTensor
+    dt: _ReplayTensor
+    B: _ReplayTensor
+    C: _ReplayTensor
+
+
 class CausalConv1d(
     Module[[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]
 ):
@@ -219,11 +260,64 @@ class NemotronHMamba2Mixer(
         query_start_loc: Tensor,
         has_initial_state: Tensor,
     ) -> Tensor:
+        output, _ = self.forward_with_replay(
+            x, state, query_start_loc, has_initial_state
+        )
+        return output
+
+    def _decay(self, dtype: DType) -> Tensor:
+        """The per-head ``A``, ``-exp(A_log)``, in the activation dtype.
+
+        The verify and its replay must read the same ``A``, so both take it
+        from here.
+        """
+        return F.cast(F.negate(F.exp(F.cast(self.A_log, DType.float32))), dtype)
+
+    def replay_statics(
+        self, dtype: DType
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        """Returns the layer weights a replay of its state updates reads.
+
+        Args:
+            dtype: The activation dtype, which ``A`` is cast to.
+
+        Returns:
+            ``(conv_weight, conv_bias, A, D, dt_bias)``, as the verify's
+            kernels read them.
+        """
+        A = self._decay(dtype)
+        return (
+            self.conv1d.weight,
+            self.conv1d.bias,
+            A,
+            self.D,
+            self.dt_bias,
+        )
+
+    def forward_with_replay(
+        self,
+        x: Tensor,
+        state: MambaStateAccess,
+        query_start_loc: Tensor,
+        has_initial_state: Tensor,
+        capture_rows: Tensor | None = None,
+    ) -> tuple[Tensor, MambaReplayRows[Tensor] | None]:
+        """Returns the mixer output and the inputs needed to replay its state.
+
+        Args:
+            x: The normalized layer input, ``[tokens, hidden]``.
+            state: This layer's view of the state pools.
+            query_start_loc: The ragged offsets of the sequences.
+            has_initial_state: Whether each sequence resumes from its rows.
+            capture_rows: The ``[captured]`` token rows to return the replay
+                inputs of, or ``None`` to return none.
+        """
         gate, xbc, dt = F.split(
             self.in_proj(x),
             [self.intermediate, self.conv_dim, self.num_heads],
             axis=1,
         )
+        conv_input = xbc
         xbc = self.conv1d(
             xbc,
             state.conv_pool,
@@ -241,13 +335,16 @@ class NemotronHMamba2Mixer(
             xbc, [self.intermediate, group_dim, group_dim], axis=1
         )
         # The kernel applies softplus to dt + dt_bias itself.
-        A = F.cast(F.negate(F.exp(F.cast(self.A_log, DType.float32))), x.dtype)
+        A = self._decay(x.dtype)
+        hidden = hidden.reshape([-1, self.num_heads, self.head_dim])
+        B = B.reshape([-1, self.n_groups, self.state_size])
+        C = C.reshape([-1, self.n_groups, self.state_size])
         y = ssd_scan(
-            hidden.reshape([-1, self.num_heads, self.head_dim]),
+            hidden,
             dt,
             A,
-            B.reshape([-1, self.n_groups, self.state_size]),
-            C.reshape([-1, self.n_groups, self.state_size]),
+            B,
+            C,
             self.D,
             self.dt_bias,
             state.ssm_pool,
@@ -259,4 +356,18 @@ class NemotronHMamba2Mixer(
         y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP, None)))
         y = self.norm(y.reshape([-1, self.intermediate]), gate)
         y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP)))
-        return self.out_proj(y)
+        replay: MambaReplayRows[Tensor] | None = None
+        if capture_rows is not None:
+
+            def rows(t: Tensor) -> Tensor:
+                # Only the captured rows survive the layer, not every token's.
+                return F.gather(t, capture_rows, axis=0)
+
+            replay = MambaReplayRows(
+                conv_input=rows(conv_input),
+                x=rows(hidden),
+                dt=rows(dt),
+                B=rows(B),
+                C=rows(C),
+            )
+        return self.out_proj(y), replay

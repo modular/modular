@@ -486,6 +486,7 @@ def _get_dtype_name(dtype: DType) -> String:
 
 def _get_common_config_string[
     a_type: DType,
+    b_type: DType,
     c_type: DType,
     transpose_b: Bool,
 ](
@@ -512,7 +513,7 @@ def _get_common_config_string[
     return String(
         _get_dtype_name(a_type)
         + "_"
-        + _get_dtype_name(a_type)
+        + _get_dtype_name(b_type)
         + "_"
         + _get_dtype_name(c_type)
         + "_"
@@ -850,7 +851,7 @@ struct MatmulConfig[
             + String(self.gemm_kind)
             + "_"
             + _get_common_config_string[
-                Self.a_type, Self.c_type, Self.transpose_b
+                Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
             ](
                 self.cta_group,
                 self.mma_shape,
@@ -1448,7 +1449,7 @@ struct BlockScaledMatmulConfig[
         var name = String("SM100_block_scaled_" + String(self.gemm_kind) + "_")
         name += String(self.scaling_kind) + "_"
         name += _get_common_config_string[
-            Self.a_type, Self.c_type, Self.transpose_b
+            Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
         ](
             self.cta_group,
             self.mma_shape,

@@ -1001,12 +1001,14 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
     """Registers the `mo.grouped.quantize.dynamic.block.scaled.with_row_indices` graph op with the graph compiler.
 
     Row-gather variant of `mo.grouped.quantize.dynamic.block.scaled`: output
-    row `i` quantizes input row `row_indices[i]`, which fuses the MoE expert
-    permutation gather into the quantize loads. A separate op carries the
-    extra operand because graph ops have no optional inputs, and the fusion
-    lives in the kernel because prologue fusion absorbs only elementwise and
-    view producers, not gathers. Fold it back into the base op once the
-    graph compiler fuses gathers generically.
+    row `i` quantizes input row `row_indices[i] // row_index_divisor`, which
+    fuses the MoE expert permutation gather into the quantize loads. MoE
+    passes the routing slot order straight from `mo.moe.create.indices` with
+    the top-k as the divisor, so no kernel runs between the two to map slots
+    to tokens. A separate op carries the extra operand because graph ops have
+    no optional inputs, and the fusion lives in the kernel because prologue
+    fusion absorbs only elementwise and view producers, not gathers. Fold it
+    back into the base op once the graph compiler fuses gathers generically.
     """
 
     @inline(.always)
@@ -1015,8 +1017,10 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
         out_dtype: DType,
         scales_type: DType,
         in_dtype: DType,
+        row_indices_dtype: DType,
         //,
         scales_rank: Int,
+        row_index_divisor: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=out_dtype, rank=2, ...],
@@ -1026,14 +1030,17 @@ struct Struct_grouped_quantize_dynamic_block_scaled_with_row_indices:
         scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         expert_ids: InputTensor[dtype=.int32, rank=1, ...],
         sf_tensor: InputTensor[dtype=.float32, rank=1, ...],
-        row_indices: InputTensor[dtype=.int32, rank=1, ...],
+        row_indices: InputTensor[dtype=row_indices_dtype, rank=1, ...],
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[
             target
         ](), "grouped quantize dynamic block scaled only supports GPUs"
 
-        grouped_quantize_dynamic_scaled_fp4_async(
+        grouped_quantize_dynamic_scaled_fp4_async[
+            row_indices_dtype=row_indices_dtype,
+            row_index_divisor=row_index_divisor,
+        ](
             output.to_tile_tensor[.int64](),
             scales.to_tile_tensor[.int64](),
             input.to_tile_tensor[.int64](),

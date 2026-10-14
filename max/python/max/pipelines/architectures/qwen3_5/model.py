@@ -509,7 +509,9 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
         nn_model = Qwen3_5(model_config)
 
-        graph_inputs = nn_model.input_types(self.kv_params)
+        graph_inputs = self._bind_graph_inputs(
+            nn_model.input_tree(self.kv_params)
+        )
 
         _check_weights_match(
             expected=set(nn_model.raw_state_dict().keys()),

@@ -49,3 +49,8 @@ Functions
    :template: autosummary/function.rst
 
    arch_has_vision_tower
+   modulev3_ragged_kv_symbolic_input_tree
+   ragged_batch_inputs
+   ragged_kv_symbolic_input_tree
+   signal_inputs
+   vision_merge_inputs

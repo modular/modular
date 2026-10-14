@@ -90,7 +90,7 @@ g = Graph("my_model")
 
 # Set before session.compile() compiles the graph
 InferenceSession.debug.nan_check = True
-InferenceSession.debug.op_log_level = "trace"
+InferenceSession.debug.op_log_level = "TRACE"
 
 session = InferenceSession()
 compiled = session.compile(g)

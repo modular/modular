@@ -58,6 +58,7 @@ from max.experimental.cascade.pipelines.all_pipelines import (
 )
 from max.experimental.cascade.serve.all_routes import build_router
 from max.experimental.cascade.serve.cascade_fastapi import CascadeFastAPI
+from max.experimental.cascade.telemetry import configure_telemetry
 from max.pipelines.lib import PipelineArgs
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,10 @@ async def serve(
             update={"local_gpu_workers": n_gpu_workers}
         )
 
+    # Before any worker subprocess inherits the environment: the OTLP
+    # exporters read the endpoint from it themselves, in every process.
+    context_config.export_otlp_endpoint()
+
     logger.info("Building cascade pipeline ...")
     pipeline = await build_pipeline(pipeline_args)
 
@@ -130,5 +135,6 @@ async def serve(
                 pipeline_args.runtime.emit_reasoning_content,
             )
         )
+        configure_telemetry("cascade.frontend", f"{host}:{port}")
 
         await app.serve(host, port)

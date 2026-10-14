@@ -315,7 +315,7 @@ class Device:
         """Gets the device context pointer."""
 
     @staticmethod
-    def cpu(id: int = -1) -> CPU:
+    def cpu(id: int = 0) -> CPU:
         """Creates a CPU device. The id is ignored currently."""
 
 class Accelerator(Device):
@@ -355,7 +355,7 @@ class Accelerator(Device):
         """
 
 class CPU(Device):
-    def __init__(self, id: int = -1) -> None:
+    def __init__(self, id: int = 0) -> None:
         """
         Creates a CPU device.
 
@@ -369,7 +369,7 @@ class CPU(Device):
 
         Args:
             id (int, optional): The device ID to use.
-                Defaults to -1.
+                Defaults to 0.
 
         Returns:
             CPU: A new CPU device object.
@@ -1266,19 +1266,6 @@ class Buffer:
     def contiguous(self) -> Buffer:
         """Creates a contiguous copy of the buffer."""
 
-    @overload
-    def copy(self, stream: DeviceQueue) -> Buffer:
-        """
-        Creates a deep copy on the device associated with the queue.
-
-        Args:
-            stream (DeviceQueue): The queue to associate the new buffer with.
-
-        Returns:
-            Buffer: A new buffer that is a copy of this buffer.
-        """
-
-    @overload
     def copy(self, device: Device | None = None) -> Buffer:
         """
         Creates a deep copy on an optionally given device.
@@ -1387,32 +1374,12 @@ class Buffer:
         """
 
     @overload
-    def to(self, stream: DeviceQueue) -> Buffer:
-        """
-        Returns a buffer that's guaranteed to be on the given device and associated with the given queue.
-
-        The buffer is only copied if the requested device is different from the
-        device upon which the buffer is already resident. If the destination
-        queue is on the same device, then a new reference to the same buffer is
-        returned.
-        """
-
-    @overload
     def to(self, devices: Sequence[Device]) -> list[Buffer]:
         """
         Returns a list of buffers that are guaranteed to be on the given devices.
 
         The buffers are only copied if the requested devices are different from the
         device upon which the buffer is already resident.
-        """
-
-    @overload
-    def to(self, streams: Sequence[DeviceQueue]) -> list[Buffer]:
-        """
-        Returns a list of buffers that are guaranteed to be on the given queues.
-
-        The buffers are only copied if the requested queues are different from the
-        queue upon which the buffer is already resident.
         """
 
     def to_numpy(self) -> numpy.ndarray:

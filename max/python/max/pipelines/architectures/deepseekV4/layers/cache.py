@@ -48,7 +48,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.kernels import store_k_cache_ragged, store_v_cache_ragged
@@ -86,12 +88,57 @@ def row_offsets(
     )
 
 
+@tree.dataclass
+class LayerIndex:
+    """Where one block's rows live in the leaves, as graph values.
+
+    The kernels take a layer as a uint32 host scalar; the open-state gather
+    indexes the block buffer on the device, so the zone layer also comes as
+    an int32 device scalar. A block called directly builds these as
+    constants. A subgraph shared by several blocks takes them as inputs
+    instead, so one body serves every layer of its group.
+    """
+
+    swa: TensorValue
+    """The window leaf's layer, host uint32."""
+    zone: TensorValue | None = None
+    """The compressed and state leaves' layer, host uint32; ``None`` on a
+    window-only layer."""
+    zone_rows: TensorValue | None = None
+    """``zone`` as an int32 scalar on the block's device."""
+
+    @classmethod
+    def constant(
+        cls, swa: int, zone: int | None, device: DeviceRef
+    ) -> LayerIndex:
+        """The index of a block whose layers are fixed at graph build."""
+
+        def host(layer: int) -> TensorValue:
+            return ops.constant(layer, DType.uint32, DeviceRef.CPU())
+
+        if zone is None:
+            return cls(swa=host(swa))
+        return cls(
+            swa=host(swa), zone=host(zone), zone_rows=scalar(zone, device)
+        )
+
+
 @dataclass
 class CacheLeaf:
     """One leaf's graph inputs plus the slot geometry the kernels infer."""
 
     values: PagedCacheValues
     slots_per_page: int
+
+    def __tree_flatten__(self) -> tuple[tuple[PagedCacheValues], int]:
+        return (self.values,), self.slots_per_page
+
+    @classmethod
+    def __tree_unflatten__(
+        cls, slots_per_page: int, children: Sequence[Any]
+    ) -> CacheLeaf:
+        (values,) = children
+        return cls(values=values, slots_per_page=slots_per_page)
 
     @property
     def cache_lengths(self) -> TensorValue:
@@ -100,7 +147,7 @@ class CacheLeaf:
 
     def gather(
         self,
-        layer: int,
+        layer: int | TensorValue,
         kv_idx: int,
         slots: TensorValue,
         lut_rows: TensorValue | None = None,
@@ -111,7 +158,8 @@ class CacheLeaf:
         ``slots`` addresses; without it the rows are the batch itself. Every
         slot must be non-negative and inside that request's allocated pages;
         callers clamp dead slots onto a live one and mask them out afterwards.
-        Heads are always 1 on these leaves.
+        Heads are always 1 on these leaves. A tensor ``layer`` is an int32
+        scalar on the slots' device (:attr:`LayerIndex.zone_rows`).
         """
         blocks = ops.buffer_load(self.values.kv_blocks)
         b, n = slots.shape[0], slots.shape[1]
@@ -126,8 +174,10 @@ class CacheLeaf:
             lut = ops.rebind(lut, [b, lut.shape[1]])
         pages = ops.gather_nd(lut, ops.unsqueeze(page_col, -1), batch_dims=1)
 
-        def const(v: int) -> TensorValue:
-            return ops.broadcast_to(scalar(v, slots.device), [b, n])
+        def const(v: int | TensorValue) -> TensorValue:
+            if not isinstance(v, TensorValue):
+                v = scalar(v, slots.device)
+            return ops.broadcast_to(v, [b, n])
 
         idx = ops.stack(
             [pages, const(kv_idx), const(layer), in_page, const(0)], axis=-1
@@ -136,7 +186,7 @@ class CacheLeaf:
 
     def store(
         self,
-        layer: int,
+        layer: TensorValue,
         kv_idx: int,
         rows: TensorValue,
         offsets: TensorValue,
@@ -151,7 +201,8 @@ class CacheLeaf:
         A compressed leaf passes its own ``cache_lengths`` (the token count
         divided by ``ratio``) so the slots count entries, not tokens; the
         bound inputs are rescaled the same way, ``rows_per_seq`` being an
-        upper bound on the rows any one request stores.
+        upper bound on the rows any one request stores. ``layer`` is a
+        uint32 host scalar (:class:`LayerIndex`).
         """
         values = self.values
         if cache_lengths is not None:
@@ -172,14 +223,13 @@ class CacheLeaf:
                 ),
             )
         x = ops.unsqueeze(rows, 1)
-        layer_idx = ops.constant(layer, DType.uint32, DeviceRef.CPU())
         if kv_idx == KEY:
-            store_k_cache_ragged(values, x, offsets, layer_idx)
+            store_k_cache_ragged(values, x, offsets, layer)
         else:
-            store_v_cache_ragged(values, x, offsets, layer_idx)
+            store_v_cache_ragged(values, x, offsets, layer)
 
 
-@dataclass
+@tree.dataclass
 class DeepseekV4Cache:
     """Every leaf one device's forward reads and writes.
 

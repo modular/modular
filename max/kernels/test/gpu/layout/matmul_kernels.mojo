@@ -56,8 +56,14 @@ comptime NRUN = 1
 
 
 def time_kernel[
-    func: def(DeviceContext) raises capturing -> None
-](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
+    FuncType: def(DeviceContext) raises -> None
+](
+    mut m: Bench,
+    func: FuncType,
+    ctx: DeviceContext,
+    size: Int,
+    kernel_name: String,
+) raises:
     @inline(.always)
     def bench_func(mut m: Bencher) {imm}:
         @inline(.always)
@@ -218,8 +224,7 @@ def run_gemm_kernel_1[
     ]
 
     @inline(.always)
-    @__parameter
-    def run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[func](
             a.as_imm().as_unsafe_any_origin(),
             b.as_imm().as_unsafe_any_origin(),
@@ -228,7 +233,7 @@ def run_gemm_kernel_1[
             block_dim=(BN, BM),
         )
 
-    time_kernel[run_func](m, ctx, M * N * K, "naive")
+    time_kernel(m, run_func, ctx, M * N * K, "naive")
 
     # Do one iteration for verification
     ctx.enqueue_memset(
@@ -339,8 +344,7 @@ def run_gemm_kernel_2[
     ]
 
     @inline(.always)
-    @__parameter
-    def run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm().as_unsafe_any_origin(),
             b.as_imm().as_unsafe_any_origin(),
@@ -349,7 +353,7 @@ def run_gemm_kernel_2[
             block_dim=(BN, BM),
         )
 
-    time_kernel[run_func](m, ctx, M * N * K, "mem_coalesce")
+    time_kernel(m, run_func, ctx, M * N * K, "mem_coalesce")
 
     # Do one iteration for verification
     ctx.enqueue_memset(
@@ -495,8 +499,7 @@ def run_gemm_kernel_3[
     ]
 
     @inline(.always)
-    @__parameter
-    def run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm().as_unsafe_any_origin(),
             b.as_imm().as_unsafe_any_origin(),
@@ -505,7 +508,7 @@ def run_gemm_kernel_3[
             block_dim=(BM * BN),
         )
 
-    time_kernel[run_func](m, ctx, M * N * K, "shared_mem")
+    time_kernel(m, run_func, ctx, M * N * K, "shared_mem")
 
     # Do one iteration for verification
     ctx.enqueue_memset(
@@ -669,8 +672,7 @@ def run_gemm_kernel_4[
     ]
 
     @inline(.always)
-    @__parameter
-    def run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm().as_unsafe_any_origin(),
             b.as_imm().as_unsafe_any_origin(),
@@ -679,7 +681,7 @@ def run_gemm_kernel_4[
             block_dim=(NUM_THREADS),
         )
 
-    time_kernel[run_func](m, ctx, M * N * K, "1d_blocktiling")
+    time_kernel(m, run_func, ctx, M * N * K, "1d_blocktiling")
 
     # Do one iteration for verification
     ctx.enqueue_memset(
@@ -850,8 +852,7 @@ def run_gemm_kernel_5[
     ]
 
     @inline(.always)
-    @__parameter
-    def run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm().as_unsafe_any_origin(),
             b.as_imm().as_unsafe_any_origin(),
@@ -860,7 +861,7 @@ def run_gemm_kernel_5[
             block_dim=(NUM_THREADS),
         )
 
-    time_kernel[run_func](m, ctx, M * N * K, "2d_blocktiling")
+    time_kernel(m, run_func, ctx, M * N * K, "2d_blocktiling")
     # Do one iteration for verification
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
@@ -1046,8 +1047,7 @@ def run_gemm_kernel_6[
     ]
 
     @inline(.always)
-    @__parameter
-    def run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm().as_unsafe_any_origin(),
             b.as_imm().as_unsafe_any_origin(),
@@ -1056,7 +1056,7 @@ def run_gemm_kernel_6[
             block_dim=(NUM_THREADS),
         )
 
-    time_kernel[run_func](m, ctx, M * N * K, "vectorized_mem_access")
+    time_kernel(m, run_func, ctx, M * N * K, "vectorized_mem_access")
     # Do one iteration for verification
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
@@ -1282,8 +1282,7 @@ def run_gemm_kernel_tc[
     ]
 
     @inline(.always)
-    @__parameter
-    def run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_function[kernel](
             a.as_imm().as_unsafe_any_origin(),
             b.as_imm().as_unsafe_any_origin(),
@@ -1292,7 +1291,7 @@ def run_gemm_kernel_tc[
             block_dim=(NUM_WARPS * WARP_SIZE),
         )
 
-    time_kernel[run_func](m, ctx, M * N * K, "tensor_core")
+    time_kernel(m, run_func, ctx, M * N * K, "tensor_core")
     # Do one iteration for verification
     ctx.enqueue_memset(
         DeviceBuffer[dtype](

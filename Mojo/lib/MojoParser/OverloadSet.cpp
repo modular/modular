@@ -583,7 +583,8 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
 }
 
 bool LIT::isNeverCallableSynthesizedCandidate(ASTDecl *candidate) {
-  auto func = cast_or_null<FnOp>(candidate->getIfOperation());
+  auto *defDecl = dyn_cast<DefASTDecl>(candidate);
+  FnOp func = defDecl ? defDecl->getOp() : nullptr;
   if (!func || !func.isSynthetic())
     return false;
   for (ConstraintAttr constraint :
@@ -1016,7 +1017,8 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
   for (ASTDecl *candidate : fnDecls) {
     // A trait member reached through a composition has no `FnOp` to form a
     // function literal from, so it cannot be referenced as a function value.
-    auto candidateFn = dyn_cast_or_null<FnOp>(candidate->getIfOperation());
+    auto *candidateFnDecl = dyn_cast<DefASTDecl>(candidate);
+    FnOp candidateFn = candidateFnDecl ? candidateFnDecl->getOp() : nullptr;
     if (!candidateFn)
       continue;
     Type candidateType =

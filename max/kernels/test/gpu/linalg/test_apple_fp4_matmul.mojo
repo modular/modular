@@ -472,7 +472,6 @@ def _run_stage4_dispatch_paths(
     var out_fused_tt = TileTensor(out_fused_dev, row_major(M, N))
     _launch_apple_fp4_matmul[
         c_type=.float32,
-        elementwise_lambda_fn=None,
         BM=128,
         BK=64,
         coalesce_scales=True,

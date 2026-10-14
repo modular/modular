@@ -1942,7 +1942,7 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
 /// their type+default value expressions as PValues, so we need to ensure that
 /// they are emitted and have declarations registered in the scope so that later
 /// lookups can find them.
-static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
+static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
                                  TypeCheckedFnSignature &tcSignature) {
   ParsedArgument &arg = tcSignature.argList.parsedArgs[idx];
 
@@ -1953,7 +1953,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   FnOp fnOp; // Null if type checking a function type.
   if (fnDecl)
-    fnOp = cast<FnOp>(*fnDecl->getIfOperation());
+    fnOp = fnDecl->getOp();
 
   // True if this is a static method.
   // FIXME: This is completely wrong, @static_method decorator hasn't been
@@ -2270,7 +2270,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 /// Type check the result type for the function.  `resultTypeExpr` will be
 /// non-null if explicitly specified in source code, and the `resultLoc` will
 /// always be valid point for end of the argument list.
-static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
+static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
                             TypeCheckedFnSignature &tcSignature) {
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = tcSignature.paramList.shared;
@@ -2471,7 +2471,7 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
     // If this is for a lit.fn declaration (as opposed to a function type),
     // add a block argument for this.
     if (fnDecl) {
-      Block &body = *cast<FnOp>(*fnDecl->getIfOperation()).getBody();
+      Block &body = *fnDecl->getOp().getBody();
       (void)body.addArgument(refType, shared.translateLocation(resultArg.loc));
     }
 
@@ -2523,7 +2523,7 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
     // though, we don't want it to conflict with user identifiers, and it is
     // never looked up directly.
     if (fnDecl) {
-      Block &body = *cast<FnOp>(*fnDecl->getIfOperation()).getBody();
+      Block &body = *fnDecl->getOp().getBody();
       auto bbArg =
           body.addArgument(refType, shared.translateLocation(resultArg.loc));
 
@@ -2548,7 +2548,7 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
 TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                ParsedArgumentList &argList,
                                                const ExprNode *originExpr,
-                                               ASTDecl *fnDecl,
+                                               DefASTDecl *fnDecl,
                                                StringAttr baseName)
     : paramList(paramList), argList(argList) {
 
@@ -2572,11 +2572,11 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // If this definition is a struct/class member, compute the self type.
   if (fnDecl) {
-    if (ASTDecl *parent = fnDecl->tryGetMethodParentDecl()) {
+    if (TypeScopeASTDecl *parent = fnDecl->tryGetMethodParentDecl()) {
       // The parent decl must be fully resolved in order to resolve any of its
       // members.
       assert(parent->resolvedness == DeclResolvedness::body);
-      selfType = parent->getTypeDeclSelf();
+      selfType = parent->getSelfType();
     }
   }
 
@@ -2645,7 +2645,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // __new__ and __init__ are implicitly static.
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
-    cast<FnOp>(*fnDecl->getIfOperation()).setIsStatic(true);
+    fnDecl->getOp().setIsStatic(true);
 
   if (fnInfo.isInstMethod() && !selfType) {
     shared.emitError(fnDecl->getLoc())
@@ -2700,9 +2700,9 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 ///
 /// If this function detects a problem, it marks the decl as erroneous and
 /// resets fnInfo.
-void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
+void TypeCheckedFnSignature::verifyFunctionNameBinding(DefASTDecl &decl,
                                                        StringAttr &name) {
-  FnOp funcOp = cast<FnOp>(*decl.getIfOperation());
+  FnOp funcOp = decl.getOp();
 
   MutableArrayRef<ParsedArgument> parsedArgs = argList.parsedArgs;
   ArrayRef<Type> argTypes = this->argTypes;
@@ -2751,7 +2751,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
     // The parent decl must be fully resolved in order to resolve any of its
     // members.
     assert(parent->resolvedness == DeclResolvedness::body);
-    selfType = parent->getTypeDeclSelf();
+    selfType = cast<TypeASTDecl>(parent)->getSelfType();
   }
 
   // Check any special function information.

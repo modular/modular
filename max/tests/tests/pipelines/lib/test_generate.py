@@ -37,7 +37,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max._entrypoints.cli.generate import stream_context
+from max._entrypoints.cli.generate import _with_debug_defaults, stream_context
 from max.driver import Buffer, DeviceSpec
 from max.pipelines.context import (
     EOSTracker,
@@ -55,6 +55,7 @@ from max.pipelines.context import (
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.generate import Batch, generate
 from max.pipelines.lib.log_probabilities import _MAX_TOP_LOGPROBS
+from max.pipelines.lib.pipeline_args import PipelineArgs
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.lora import LoRAConfig
@@ -383,12 +384,15 @@ def _new_tokens(sequences: list[list[int]]) -> list[list[int]]:
 
 
 def _assert_points_to_serve(
-    error: pytest.ExceptionInfo[ValueError], feature: str, flags: str = ""
+    error: pytest.ExceptionInfo[ValueError],
+    feature: str,
+    flags: str = "",
+    caller: str = "generate()",
 ) -> None:
     lines = str(error.value).splitlines()
-    assert lines[0].startswith(f"generate() does not support {feature}. ")
+    assert lines[0].startswith(f"{caller} does not support {feature}. ")
     assert lines[1] == (
-        "generate() runs the pipeline directly, outside max serve. "
+        f"{caller} runs the pipeline directly, outside max serve. "
         f"Test {feature} with this max serve command instead."
     )
     assert lines[2] == f"  max serve --model-path {MODEL_PATH}{flags}"
@@ -1640,6 +1644,25 @@ def test_from_contexts_oversize_batch_raises_before_claiming() -> None:
     assert pipeline.kv_manager.contexts == []
 
 
+def test_from_contexts_errors_name_the_caller() -> None:
+    pipeline = FakePipeline(max_batch_size=1)
+    with pytest.raises(ValueError) as error:
+        Batch.from_contexts(
+            pipeline, _built_contexts(1, 1), caller="max generate"
+        )
+    _assert_points_to_serve(
+        error,
+        "scheduling across batches",
+        " --max-batch-size 1",
+        caller="max generate",
+    )
+    assert (
+        str(error.value)
+        .splitlines()[0]
+        .endswith(", and max generate never splits its prompts.")
+    )
+
+
 def test_from_contexts_runs_a_speculative_pipeline() -> None:
     pipeline = FakePipeline(
         speculative=SpeculativeConfig(
@@ -1666,6 +1689,21 @@ def test_from_contexts_graph_capture_without_warmup_warns(
     assert len(_graph_capture_warnings(caplog)) == 1
 
 
+def test_graph_capture_without_warmup_warns_once_per_pipeline(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    pipeline = FakePipeline(device_graph_capture=True)
+    generate(pipeline, _prompts(1), max_new_tokens=5)
+    with Batch.from_contexts(pipeline, _built_contexts(2)) as batch:
+        while not batch.done:
+            batch.step()
+    assert len(_graph_capture_warnings(caplog)) == 1
+
+    other = FakePipeline(device_graph_capture=True)
+    generate(other, _prompts(1), max_new_tokens=5)
+    assert len(_graph_capture_warnings(caplog)) == 2
+
+
 def test_from_contexts_warmed_up_with_data_parallelism_points_to_serve() -> (
     None
 ):
@@ -1678,6 +1716,7 @@ def test_from_contexts_warmed_up_with_data_parallelism_points_to_serve() -> (
         error,
         "device graph capture with data parallelism",
         " --data-parallel-degree 2 --device-graph-capture",
+        caller="Batch.from_contexts()",
     )
     assert pipeline.kv_manager.contexts == []
 
@@ -1700,12 +1739,13 @@ def test_from_contexts_rejects_an_inactive_adapter() -> None:
         "inactive LoRA adapters",
         " --enable-lora --no-enable-prefix-caching --lora-paths"
         " sql=/adapters/sql --max-lora-rank 16 --max-num-loras 1",
+        caller="Batch.from_contexts()",
     )
     lines = str(error.value).splitlines()
     assert lines[0] == (
-        "generate() does not support inactive LoRA adapters. Row 1 names "
-        'the adapter "sql", which is loaded but not active, and generate() '
-        "never activates an adapter."
+        "Batch.from_contexts() does not support inactive LoRA adapters. Row 1 "
+        'names the adapter "sql", which is loaded but not active, and '
+        "Batch.from_contexts() never activates an adapter."
     )
     assert lines[-1] == (
         "To run it here, activate it first with "
@@ -1761,6 +1801,32 @@ def test_from_contexts_batch_records_no_logits_or_log_probs() -> None:
             RuntimeError, match="from_contexts records no log probabilities"
         ):
             _ = batch.log_probs
+
+
+@pytest.mark.parametrize(
+    ("api", "runtime_fields", "expected"),
+    [
+        ("hip", {}, True),
+        ("hip", {"disable_vendor_blas_fallback": False}, False),
+        ("hip", {"device_graph_capture": False}, False),
+        ("cuda", {}, False),
+    ],
+)
+def test_cli_turns_the_vendor_blas_fallback_off_on_amd(
+    monkeypatch: pytest.MonkeyPatch,
+    api: str,
+    runtime_fields: dict[str, bool],
+    expected: bool,
+) -> None:
+    monkeypatch.delenv("MODULAR_DISABLE_VENDOR_FALLBACK", raising=False)
+    monkeypatch.setattr(
+        "max._entrypoints.cli.generate.accelerator_api", lambda: api
+    )
+    args = PipelineArgs(
+        runtime=PipelineRuntimeConfig.model_validate(runtime_fields)
+    )
+    runtime = _with_debug_defaults(args).runtime
+    assert runtime.disable_vendor_blas_fallback is expected
 
 
 def test_cli_stream_cancelled_between_steps_releases_the_row() -> None:

@@ -830,28 +830,11 @@ struct ConvertKGENCall : public ConvertPOPToLLVMPattern<CallOp> {
                            filteredOperands, origRetTy, loc, rewriter);
       LLVM::CallOp llvmCall = LLVM::CallOp::create(
           rewriter, loc, prep.signature, flatSymbol, prep.callArgs);
-      CABICallHelper::applySRetAttrIfNeeded(llvmCall, origRetTy, prep.usesSRet,
-                                            rewriter);
-      cabi.applyByvalAttrsToCall(llvmCall, prep.argClass,
-                                 mlir::ValueRange(filteredOperands).getTypes(),
-                                 prep.usesSRet, rewriter);
-      // A tail call is only safe when the callee does not write through any
-      // pointer that lives in the caller's stack frame.  The sret alloca
-      // created by prepareCall lives in the caller's frame, so a tail call
-      // would free that frame before the callee stores its return value,
-      // producing a silent memory corruption (MOCO-3841).  Suppress the tail
-      // marker whenever sret is in use; non-sret returns are register-passed
-      // and remain eligible for tail-call optimization.
-      if (!prep.usesSRet)
-        applyTailKind(llvmCall, op.getTailKind());
-      if (op.getNumResults() == 0) {
+      if (Value result =
+              cabi.finishCall(llvmCall, prep, op.getTailKind(), loc, rewriter))
+        rewriter.replaceOp(op, result);
+      else
         rewriter.eraseOp(op);
-        return success();
-      }
-      Value rawResult = prep.usesSRet ? Value{} : llvmCall.getResult();
-      rewriter.replaceOp(op, cabi.extractReturn(prep.retClass, rawResult,
-                                                prep.sretPtr, origRetTy, loc,
-                                                rewriter));
       return success();
     }
 

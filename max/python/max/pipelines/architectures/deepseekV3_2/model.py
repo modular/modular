@@ -199,7 +199,9 @@ class DeepseekV3_2Model(DeepseekV3Model):
 
         with Graph(
             "deepseekV3_2_graph",
-            input_types=nn_model.input_types(self.kv_params),
+            input_types=self._bind_graph_inputs(
+                nn_model.input_tree(self.kv_params)
+            ),
         ) as graph:
             (
                 tokens,

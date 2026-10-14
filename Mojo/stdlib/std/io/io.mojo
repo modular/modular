@@ -46,13 +46,13 @@ from std.sys.info import CompilationTarget
 
 from std.memory import bitcast
 
-from .file_descriptor import FileDescriptor
+from .file_descriptor import RawFileDescriptor
 
 
 # FIXME(MOCO-3871): Alias is to workaround function type comparison bug.
 comptime _PrintEmitPluginHookFnType = def[O: Origin](
     cstr: CStringSpan[O],
-    file_value: FileDescriptor,
+    file_value: RawFileDescriptor,
 ) thin -> None
 """Plugin-hook signature for `PluginHooks.print_emit_fn`; keep in sync with the `print` emit path."""
 
@@ -66,7 +66,7 @@ comptime _PrintEmitPluginHookFnType = def[O: Origin](
 struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
     var handle: FILE_ptr
 
-    def __init__(out self, stream_id: FileDescriptor):
+    def __init__(out self, stream_id: RawFileDescriptor):
         """Creates a file handle to the stdout/stderr stream.
 
         Args:
@@ -180,7 +180,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
 
 
 @inline(.never)
-def _flush(file: FileDescriptor = stdout):
+def _flush(file: RawFileDescriptor = stdout):
     with _fdopen(file) as fd:
         _ = fflush(fd.handle)
 
@@ -192,7 +192,7 @@ def _flush(file: FileDescriptor = stdout):
 
 def _printf_cpu[
     fmt: StaticString, *types: AnyType
-](*args: *types, file: FileDescriptor = stdout):
+](*args: *types, file: RawFileDescriptor = stdout):
     with _fdopen(file) as fd:
         # int fprintf(FILE *restrict stream, const char *restrict fmt, ...);
         # The pack is loaded so the variadic arguments are the values
@@ -207,7 +207,7 @@ def _printf_cpu[
 @inline(.never)
 def _printf[
     fmt: StaticString, *types: AnyType
-](*args: *types, file: FileDescriptor = stdout):
+](*args: *types, file: RawFileDescriptor = stdout):
     if __is_run_in_comptime_interpreter:
         _printf_cpu[fmt](*args, file=file)
         return
@@ -363,7 +363,7 @@ def print[
     sep: StringSlice = " ",
     end: StringSlice = "\n",
     flush: Bool = False,
-    var file: FileDescriptor = stdout,
+    var file: RawFileDescriptor = stdout,
 ):
     """Prints elements to the text stream. Each element is separated by `sep`
     and followed by `end`.

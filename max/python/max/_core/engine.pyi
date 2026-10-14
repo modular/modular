@@ -497,7 +497,7 @@ class DebugConfig:
     @property
     def op_log_level(self) -> str:
         r"""
-        A string that sets the log level for per-op tracing. One of ``\'\'``, ``'notset'``, ``'trace'``, ``'debug'``, ``'info'``, ``'warning'``, ``'error'``, ``'critical'``. Takes effect at model build time.
+        A string that sets the log level for per-op tracing. One of ``\'\'``, ``'NOTSET'``, ``'TRACE'``, ``'DEBUG'``, ``'INFO'``, ``'WARNING'``, ``'ERROR'``, ``'CRITICAL'``. Takes effect at model build time.
         """
 
     @op_log_level.setter

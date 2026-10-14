@@ -3680,13 +3680,14 @@ def create_tensor_tile[
         )
 
     comptime assert (
-        tile_shape.rank == 2 or not unpack_fp4
-    ), "packed FP4 TMA is only wired for rank 2"
+        tile_shape.rank in (2, 3) or not unpack_fp4
+    ), "packed FP4 TMA is only wired for rank 2 and 3"
 
+    # With `unpack_fp4`, the innermost extent reaches the descriptor in FP4
+    # elements, which is twice what the `uint8` view spells. Strides stay in
+    # `uint8`.
     comptime match tile_shape.rank:
         case 2:
-            # The innermost extent reaches the descriptor in FP4 elements, which
-            # is twice what the `uint8` view spells. Strides stay in `uint8`.
             return create_tma_descriptor[
                 dtype, 2, swizzle_mode, unpack_fp4=unpack_fp4
             ](
@@ -3709,7 +3710,9 @@ def create_tensor_tile[
             )
 
         case 3:
-            return create_tma_descriptor[dtype, 3, swizzle_mode](
+            return create_tma_descriptor[
+                dtype, 3, swizzle_mode, unpack_fp4=unpack_fp4
+            ](
                 DeviceBuffer(
                     ctx,
                     tensor.ptr.address_space_cast[.GENERIC](),
@@ -3719,7 +3722,8 @@ def create_tensor_tile[
                 IndexList[3](
                     Int(tensor.layout.shape[0]().value()),
                     Int(tensor.layout.shape[1]().value()),
-                    Int(tensor.layout.shape[2]().value()),
+                    Int(tensor.layout.shape[2]().value())
+                    * (2 if unpack_fp4 else 1),
                 ),
                 IndexList[3](
                     Int(tensor.layout.stride[0]().value()),

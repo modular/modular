@@ -322,6 +322,9 @@ def test_rejects_zero_chunk_bytes() -> None:
         )
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="reads VmLck from /proc/self/status"
+)
 def test_mlock_pages_locks_the_registered_mapping() -> None:
     soft, _ = resource.getrlimit(resource.RLIMIT_MEMLOCK)
     if soft != resource.RLIM_INFINITY and soft < 8 * BLOCK_BYTES:

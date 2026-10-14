@@ -595,15 +595,13 @@ def dispatch_fused_im2col_conv2d_apple[
     comptime if case .Some(epilogue_4d) = maybe_epilogue_func:
         var HW_out = _H_out * _W_out
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(HW_out, _W_out)
         def _gemm_epilogue[
             _dtype: DType,
             _width: SIMDLength,
             *,
-            alignment: Int = 1,
-        ](coords_2d: Coord, val: SIMD[_dtype, _width]):
+            alignment: Int,
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]) {var HW_out, var _W_out}:
             comptime assert (
                 coords_2d.rank == 2
             ), "the matmul epilogue contract is rank 2"
@@ -621,10 +619,8 @@ def dispatch_fused_im2col_conv2d_apple[
         enqueue_apple_conv2d[
             in_type=input_type,
             c_type=output_type,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                _gemm_epilogue
-            ),
-        ](c_tt, input, filter_nk, conv, ctx)
+            has_epilogue_fn=True,
+        ](c_tt, input, filter_nk, conv, ctx, _gemm_epilogue)
     else:
         enqueue_apple_conv2d[
             in_type=input_type,

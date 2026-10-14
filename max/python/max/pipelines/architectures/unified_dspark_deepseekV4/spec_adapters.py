@@ -52,7 +52,7 @@ WINDOW_LEAF = "swa"
 
 VERIFY_WINDOWS = "verify_windows"
 """The :attr:`BlockBatch.extra` key of the verify forward's per-ratio window
-counts (:attr:`RaggedRows.windows`)."""
+counts (the ``windows`` of :meth:`RaggedRows.from_offsets`)."""
 
 TrunkHidden = tuple[list[TensorValue], list[RaggedRows]]
 """Per device: the trunk states DSpark reads, ``[1, T, d * n_targets]``, and

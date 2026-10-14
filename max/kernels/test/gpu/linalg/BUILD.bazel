@@ -568,6 +568,53 @@ _GPU_MEMORY = {
     for src in _AMD_GENERIC_FALLBACK_TESTS
 ]
 
+# W4A8 (E4M3 x E2M1) SM100 block-scaled matmul tests, sharing one harness
+# with an exact host reference. A wrong TMA transaction count hangs rather
+# than fails, so these are `size = "medium"` (300 s) instead of this file's
+# usual `large` (900 s); each finishes in under 30 s on B200. `mojo_test`
+# cannot set `timeout` itself: it forwards the attribute to its `.debug`
+# `mojo_binary`, which rejects it.
+_W4A8_BLOCK_SCALED_HARNESS = "w4a8_block_scaled_matmul_harness.mojo"
+
+_W4A8_BLOCK_SCALED_B200_TESTS = [
+    "test_w4a8_block_scaled_reference.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_minimal.mojo",
+    "test_matmul_sm100_block_scaled_w4a8.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_swapab.mojo",
+    "test_matmul_sm100_block_scaled_w4a8_with_weight_prefetch.mojo",
+    "test_matmul_sm100_batched_block_scaled_w4a8.mojo",
+]
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "medium",
+        srcs = [
+            src,
+            _W4A8_BLOCK_SCALED_HARNESS,
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:b200_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:max_mojo",
+            "//max:structured_kernels",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _W4A8_BLOCK_SCALED_B200_TESTS
+]
+
 # B200 smoke tests - tagged manual for local-only execution, not run in CI
 [
     mojo_test(
@@ -781,7 +828,8 @@ mojo_test(
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + _AMD_GENERIC_FALLBACK_TESTS + [
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + _AMD_GENERIC_FALLBACK_TESTS + _W4A8_BLOCK_SCALED_B200_TESTS + [
+            _W4A8_BLOCK_SCALED_HARNESS,
             "test_w4a8_grouped_shapes.mojo",
             "test_matmul_pdl_race.mojo",
             "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",

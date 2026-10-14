@@ -86,7 +86,6 @@ struct TopK:
         var out_idxs_tensor = out_idxs.to_tile_tensor()
         var in_vals_tensor = in_vals.to_tile_tensor().as_imm()
 
-        @__parameter
         def top_k_gpu[
             K: Int,
         ](

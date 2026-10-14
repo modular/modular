@@ -71,6 +71,7 @@ from ..sharding.rules import (
     conv2d_rule,
     conv2d_transpose_rule,
     conv3d_rule,
+    cumsum_rule,
     dequantize_rule,
     div_rule,
     flatten_rule,
@@ -3082,7 +3083,7 @@ softmax = functional(ops.softmax, rule=softmax_rule)
 logsoftmax = functional(ops.logsoftmax, rule=softmax_rule)
 #: Computes the cumulative sum along an axis. Distributed via SPMD.
 #: See :func:`max.graph.ops.cumsum` for details.
-cumsum = functional(ops.cumsum, rule=reduce_rule)
+cumsum = functional(ops.cumsum, rule=cumsum_rule)
 cumsum.__doc__ = """Computes the cumulative sum of a tensor along an axis.
 
 Args:

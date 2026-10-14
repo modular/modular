@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import enum
 import functools
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.dtype import DType
 from max.graph import (
@@ -40,8 +42,7 @@ from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
     TensorParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
+from max.nn.comm.ep import EPBatchManager, EPConfig
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
@@ -63,6 +64,10 @@ from max.nn.transformer import (
 from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
 )
 from max.tree import Tree
 
@@ -681,6 +686,57 @@ class DeepseekV3DecoderLayer(Module):
                 raise ValueError(f"Unsupported parallelism mode: {self.mode}")
 
 
+def deepseekV3_input_tree(
+    *,
+    kv_params: KVCacheParamInterface,
+    device_refs: list[DeviceRef],
+    data_parallel_degree: int,
+    ep_config: EPConfig | None,
+    eplb_profile: tuple[int, int] | None = None,
+) -> OrderedDict[str, object]:
+    """Names the graph's inputs; its leaves are the graph's inputs.
+
+    ``host_row_offsets`` and ``data_parallel_splits`` are always inputs, even
+    at DP=1: MLA latent decode reads the host offsets. ``batch_context`` is
+    one host scalar per device, after the KV leaves. ``ep`` and
+    ``eplb_profile`` are present only when the graph is built for them;
+    ``eplb_profile`` is ``(num_hidden_layers, n_routed_experts)``.
+    """
+    inputs: OrderedDict[str, object] = OrderedDict(
+        batch=ragged_batch_inputs(
+            device_refs[0],
+            (
+                "tokens",
+                "row_offsets",
+                "host_row_offsets",
+                "return_n_logits",
+                "data_parallel_splits",
+            ),
+            data_parallel_degree=data_parallel_degree,
+        ),
+        signals=signal_inputs(device_refs),
+        kv=kv_params.get_symbolic_inputs(),
+        batch_context=OrderedDict(
+            length=tuple(
+                TensorType(DType.int32, shape=[1], device=DeviceRef.CPU())
+                for _ in device_refs
+            )
+        ),
+    )
+    if ep_config is not None:
+        inputs["ep"] = EPBatchManager(ep_config).input_tree()
+    if eplb_profile is not None:
+        num_layers, n_experts = eplb_profile
+        inputs["eplb_profile"] = OrderedDict(
+            expert_counts=tuple(
+                BufferType(DType.int64, shape=[n_experts], device=device)
+                for _ in range(num_layers)
+                for device in device_refs
+            )
+        )
+    return inputs
+
+
 class DeepseekV3(Module):
     """Defines the DeepseekV3 transformer model.
 
@@ -958,73 +1014,24 @@ class DeepseekV3(Module):
             capture_hidden_states=eagle3_captured or None,
         )
 
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the graph's inputs; its leaves are the graph's inputs."""
+        return deepseekV3_input_tree(
+            kv_params=kv_params,
+            device_refs=list(self.config.devices),
+            data_parallel_degree=self.config.data_parallel_degree,
+            ep_config=self.config.ep_config,
+            eplb_profile=(
+                (self.config.num_hidden_layers, self.config.n_routed_experts)
+                if self.config.eplb_profile_enabled
+                else None
+            ),
+        )
+
     def input_types(
         self,
         kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
-        # TODO: Move input symbol computation from the manager classes.
-        # It should be possible to compute the input symbols from the model
-        # config.
-        device_ref = self.config.devices[0]
-
-        # Construct Graph Inputs
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        device_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device_ref,
-        )
-
-        # Add host input row offsets type, this is used to split the
-        # concatenated DP inputs.
-        host_input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=DeviceRef.CPU(),
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-        data_parallel_splits_type = TensorType(
-            DType.int64,
-            shape=[self.config.data_parallel_degree + 1],
-            device=DeviceRef.CPU(),
-        )
-
-        signals = Signals(devices=self.config.devices)
-        signal_buffer_types: list[BufferType] = signals.input_types()
-
-        all_input_types: list[TensorType | BufferType] = [
-            tokens_type,
-            device_input_row_offsets_type,
-            host_input_row_offsets_type,
-            return_n_logits_type,
-            data_parallel_splits_type,
-        ]
-        all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_params.flattened_kv_inputs())
-
-        # Add batch context lengths
-        batch_context_length_type = TensorType(
-            DType.int32, shape=[1], device=DeviceRef.CPU()
-        )
-        all_input_types.extend(
-            [batch_context_length_type for _ in range(len(self.config.devices))]
-        )
-
-        if self.ep_manager is not None:
-            all_input_types.extend(self.ep_manager.input_types())
-
-        if self.config.eplb_profile_enabled:
-            for _layer_idx in range(self.config.num_hidden_layers):
-                for device in self.config.devices:
-                    all_input_types.append(
-                        BufferType(
-                            DType.int64,
-                            shape=[self.config.n_routed_experts],
-                            device=device,
-                        )
-                    )
-        return tuple(all_input_types)
+        return tuple(tree.leaves(self.input_tree(kv_params)))

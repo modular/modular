@@ -609,6 +609,10 @@ def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
     case's payload types as written, empty for a case without a payload; it
     is absent until the payload is resolved.
 
+    Of the code that consumes an enum, only the generation of its members
+    reads these ops; everything else, pattern matching included, reads the
+    generated `EnumLike` members such as `_enum_case_names`.
+
     Example:
 
     ```mlir

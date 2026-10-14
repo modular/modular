@@ -231,7 +231,7 @@ class DeepseekV4Indexer(Module):
             stream.windows.base,
             cutoff,
             stream.zone_leaf.values,
-            ops.constant(stream.layer, DType.uint32, DeviceRef.CPU()),
+            stream.layer,
             num_candidates=stream.n_cand,
         )
 

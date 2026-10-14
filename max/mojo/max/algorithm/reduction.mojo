@@ -742,59 +742,71 @@ def map_reduce[
     """
 
     @inline(.always)
-    @__parameter
+    def input_gen_value[
+        _dtype: DType, width: Int
+    ](idx: Int) -> SIMD[_dtype, width]:
+        return input_gen_fn[_dtype, width](idx)
+
+    @inline(.always)
+    def reduce_vec_to_vec_value[
+        _acc_type: DType, _dtype: DType, width: SIMDLength
+    ](acc: SIMD[_acc_type, width], val: SIMD[_dtype, width]) -> SIMD[
+        _acc_type, width
+    ]:
+        return reduce_vec_to_vec_fn(acc, val)
+
+    @inline(.always)
     def output_fn[
         _dtype: DType, width: SIMDLength, rank: Int
-    ](idx: Int, val: SIMD[_dtype, width]):
+    ](idx: Int, val: SIMD[_dtype, width]) {imm}:
         dst.unsafe_ptr().unsafe_store(idx, rebind[SIMD[dtype, width]](val))
 
-    return map_reduce[
-        simd_width,
-        dtype,
-        acc_type,
-        origins_gen,
-        input_gen_fn,
-        origins_vec,
-        reduce_vec_to_vec_fn,
-        reduce_vec_to_scalar_fn,
-        output_fn,
-    ](len(dst), init)
+    return map_reduce[simd_width, dtype, acc_type, reduce_vec_to_scalar_fn](
+        input_gen_value, reduce_vec_to_vec_value, output_fn, len(dst), init
+    )
 
 
+# `input_gen_fn` and `output_fn` may read and write the same buffer, which
+# is safe and the expected pattern here.
 @inline(.always)
+@__unsafe_nested_origins_read_only
 def map_reduce[
+    InputGenFnType: def[dtype: DType, width: Int](Int) -> SIMD[dtype, width],
+    ReduceVecToVecFnType: def[acc_type: DType, dtype: DType, width: SIMDLength](
+        SIMD[acc_type, width], SIMD[dtype, width]
+    ) -> SIMD[acc_type, width],
+    OutputFnType: def[dtype_: DType, width: SIMDLength, alignment: Int](
+        Int, SIMD[dtype_, width]
+    ) -> None,
+    //,
     simd_width: SIMDLength,
     dtype: DType,
     acc_type: DType,
-    origins_gen: OriginSet,
-    input_gen_fn: def[dtype: DType, width: Int](Int) capturing[
-        origins_gen
-    ] -> SIMD[dtype, width],
-    origins_vec: OriginSet,
-    reduce_vec_to_vec_fn: def[acc_type: DType, dtype: DType, width: SIMDLength](
-        SIMD[acc_type, width], SIMD[dtype, width]
-    ) capturing[origins_vec] -> SIMD[acc_type, width],
     reduce_vec_to_scalar_fn: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> Scalar[dtype],
-    output_fn: def[dtype_: DType, width: SIMDLength, alignment: Int](
-        idx: Int, val: SIMD[dtype_, width]
-    ) capturing -> None,
-](length: Int, init: Scalar[acc_type]) -> Scalar[acc_type]:
+](
+    input_gen_fn: InputGenFnType,
+    reduce_vec_to_vec_fn: ReduceVecToVecFnType,
+    output_fn: OutputFnType,
+    length: Int,
+    init: Scalar[acc_type],
+) -> Scalar[acc_type]:
     """Performs a vectorized map-reduce operation over a sequence.
 
     Parameters:
+        InputGenFnType: The type of `input_gen_fn` (inferred).
+        ReduceVecToVecFnType: The type of `reduce_vec_to_vec_fn` (inferred).
+        OutputFnType: The type of `output_fn` (inferred).
         simd_width: The SIMD vector width to use.
         dtype: The data type of the input elements.
         acc_type: The data type of the accumulator.
-        origins_gen: Origin set for the input generation function.
-        input_gen_fn: Function that generates input values at each index.
-        origins_vec: Origin set for the reduction function.
-        reduce_vec_to_vec_fn: Function that reduces a vector into the accumulator.
         reduce_vec_to_scalar_fn: Function that reduces a final vector to a scalar.
-        output_fn: Function to output intermediate results.
 
     Args:
+        input_gen_fn: Function that generates input values at each index.
+        reduce_vec_to_vec_fn: Function that reduces a vector into the accumulator.
+        output_fn: Function to output intermediate results.
         length: The number of elements to process.
         init: The initial accumulator value.
 

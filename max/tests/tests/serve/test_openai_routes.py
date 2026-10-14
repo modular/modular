@@ -2252,6 +2252,141 @@ async def test_tool_call_finish_reason_reports_length_truncation(
     assert len(choice.message.tool_calls) == 2
 
 
+_QWEN_LOOKUP_CALL = (
+    "<tool_call>\n<function=lookup>\n"
+    "<parameter=zip_code>\n10001\n</parameter>\n"
+    "<parameter=count>\n7\n</parameter>\n"
+    "</function>\n</tool_call>\n"
+)
+
+
+def _lookup_tools() -> list[TextGenerationRequestTool]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Look something up",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "zip_code": {"type": "string"},
+                        "count": {"type": "integer"},
+                    },
+                },
+            },
+        }
+    ]
+
+
+async def _complete_with_qwen_parser(
+    parser: Qwen3_5ToolParser,
+    tools: list[TextGenerationRequestTool] | None,
+) -> dict[str, Any]:
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=GenerationStatus.END_OF_SEQUENCE,
+                decoded_tokens=_QWEN_LOOKUP_CALL,
+                token_count=24,
+                prompt_token_count=5,
+            )
+        ]
+    )
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline, parser=parser, parse_tool_calls=True, tools=tools
+    )
+    response = await generator.complete([_make_mock_request()])
+    tool_calls = response.choices[0].message.tool_calls
+    assert tool_calls is not None and len(tool_calls) == 1
+    tool_call = tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageToolCall)
+    args = json.loads(tool_call.function.arguments)
+    assert isinstance(args, dict)
+    return args
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_tool_arguments_follow_the_tool_schema(
+    patch_openai_metrics: None,
+) -> None:
+    """A string-typed argument that looks like a number stays a string."""
+    args = await _complete_with_qwen_parser(
+        Qwen3_5ToolParser(), _lookup_tools()
+    )
+
+    assert args == {"zip_code": "10001", "count": 7}
+
+
+@pytest.mark.asyncio
+async def test_tool_schemas_do_not_leak_into_the_next_request(
+    patch_openai_metrics: None,
+) -> None:
+    """A reused parser must not decode a later request by an earlier schema."""
+    parser = Qwen3_5ToolParser()
+    with_schema = await _complete_with_qwen_parser(parser, _lookup_tools())
+    without_schema = await _complete_with_qwen_parser(parser, None)
+
+    assert with_schema["zip_code"] == "10001"
+    assert without_schema["zip_code"] == 10001  # schema-blind best effort
+
+
+@pytest.mark.asyncio
+async def test_streaming_tool_arguments_follow_the_tool_schema(
+    patch_openai_metrics: None,
+) -> None:
+    pieces = [
+        _QWEN_LOOKUP_CALL[i : i + 5]
+        for i in range(0, len(_QWEN_LOOKUP_CALL), 5)
+    ]
+    chunks = [
+        TokenGeneratorOutput(
+            status=(
+                GenerationStatus.END_OF_SEQUENCE
+                if i == len(pieces) - 1
+                else GenerationStatus.ACTIVE
+            ),
+            decoded_tokens=piece,
+            token_count=1,
+            prompt_token_count=5,
+        )
+        for i, piece in enumerate(pieces)
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        async def _gen() -> Any:
+            for chunk in chunks:
+                yield chunk
+
+        return _gen()
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=Qwen3_5ToolParser(),
+        parse_tool_calls=True,
+        tools=_lookup_tools(),
+    )
+    responses = [
+        CreateChatCompletionStreamResponse.model_validate_json(p)
+        async for p in await generator.stream(_make_mock_request())
+        if isinstance(p, str) and p != "[DONE]"
+    ]
+
+    arguments = "".join(
+        tool_call.function.arguments or ""
+        for response in responses
+        for choice in response.choices
+        for tool_call in choice.delta.tool_calls or []
+        if tool_call.function is not None
+    )
+    assert json.loads(arguments) == {"zip_code": "10001", "count": 7}
+
+
 async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,

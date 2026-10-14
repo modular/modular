@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from max.dtype import DType
 from max.graph import BufferValue, ShardingStrategy, TensorValue, ops
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
+from max.nn.layer import LayerList, MissingLayer, Module
 from max.nn.linear import MLP, ColumnParallelLinear, FusedMLP
 from max.nn.moe import GatedActivation, MoE, MoEQuantized
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
@@ -46,21 +46,18 @@ from .weight_adapters import gemma4_uses_fused_projections
 class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
     """The Gemma 4 language model."""
 
-    def __init__(
-        self,
-        config: Gemma4ForConditionalGenerationConfig,
-        *,
-        layer_range: tuple[int, int] | None = None,
-    ) -> None:
+    def __init__(self, config: Gemma4ForConditionalGenerationConfig) -> None:
         super().__init__()
         text_config = config.text_config
         self.devices = config.devices
-        start, end = layer_range or (0, text_config.num_hidden_layers)
-        if not 0 <= start < end <= text_config.num_hidden_layers:
-            raise ValueError("Invalid Gemma4 pipeline layer range")
-        self.global_layer_ids = list(range(start, end))
-        self.is_pipeline_head = start == 0
-        self.is_pipeline_tail = end == text_config.num_hidden_layers
+        # The decoder layers this instance builds, all of them unless it is a
+        # pipeline stage. self.layers holds a MissingLayer at every other
+        # position, so weight names and layer indices stay global.
+        self.layer_ids = config.layer_ids or range(
+            text_config.num_hidden_layers
+        )
+        holds_first = self.layer_ids.start == 0
+        holds_last = self.layer_ids.stop == text_config.num_hidden_layers
 
         # Build per-layer-type rotary embeddings.
         # sliding_attention uses default rope, full_attention uses proportional.
@@ -98,9 +95,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # predicate keeps layer selection and adapter key fusion in lockstep.
         use_fused_projections = gemma4_uses_fused_projections(config)
 
-        if self.is_pipeline_head or (
-            self.is_pipeline_tail and config.tie_word_embeddings
-        ):
+        if holds_first or (holds_last and config.tie_word_embeddings):
             self.embed_tokens = ScaledWordEmbedding(
                 text_config.vocab_size,
                 text_config.hidden_size,
@@ -109,7 +104,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 embed_scale=text_config.hidden_size**0.5,
             )
 
-        if self.is_pipeline_tail:
+        if holds_last:
             self.norm = Gemma4RMSNorm(
                 text_config.hidden_size,
                 unquantized_dtype,
@@ -144,8 +139,8 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             "sliding_attention": 0,
             "full_attention": 0,
         }
-        layers = []
-        for i in self.global_layer_ids:
+        layers: dict[int, Gemma4TextDecoderLayer] = {}
+        for i in self.layer_ids:
             layer_type = text_config.layer_types[i]
             kv_params = kv_params_by_layer_type[layer_type]
 
@@ -204,75 +199,72 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         dtype=config.dtype,
                     )
 
-            layers.append(
-                Gemma4TextDecoderLayer(
-                    attention=Gemma4Attention(
-                        rope_global=rope_global,
-                        rope_local=rope_sliding,
-                        num_attention_heads=text_config.num_attention_heads,
-                        num_key_value_heads=text_config.num_key_value_heads,
-                        num_global_key_value_heads=text_config.num_global_key_value_heads,
-                        attention_k_eq_v=text_config.attention_k_eq_v,
-                        hidden_size=text_config.hidden_size,
-                        kv_params=kv_params,
-                        global_head_dim=text_config.global_head_dim,
-                        layer_idx=i,
-                        layer_idx_in_cache=layer_idx_in_cache,
-                        is_sliding=is_sliding,
-                        dtype=unquantized_dtype
-                        if (is_nvfp4 and not attn_quantized)
-                        else config.dtype,
-                        devices=config.devices,
-                        qk_norm_eps=text_config.rms_norm_eps,
-                        local_window_size=text_config.sliding_window,
-                        quant_config=None
-                        if (is_nvfp4 and not attn_quantized)
-                        else quant_config,
-                        fused_qkv=use_fused_projections,
-                    ),
-                    mlp=FusedMLP(
-                        dtype=config.dtype,
-                        hidden_dim=text_config.hidden_size,
-                        feed_forward_length=text_config.intermediate_size,
-                        devices=config.devices,
-                        activation_function=text_config.hidden_activation,
-                    )
-                    if use_fused_projections
-                    else MLP(
-                        dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
-                        quantization_encoding=None,
-                        hidden_dim=text_config.hidden_size,
-                        feed_forward_length=text_config.intermediate_size,
-                        devices=config.devices,
-                        activation_function=text_config.hidden_activation,
-                        quant_config=None if moe_nvfp4 else quant_config,
-                    ),
+            layers[i] = Gemma4TextDecoderLayer(
+                attention=Gemma4Attention(
+                    rope_global=rope_global,
+                    rope_local=rope_sliding,
+                    num_attention_heads=text_config.num_attention_heads,
+                    num_key_value_heads=text_config.num_key_value_heads,
+                    num_global_key_value_heads=text_config.num_global_key_value_heads,
+                    attention_k_eq_v=text_config.attention_k_eq_v,
                     hidden_size=text_config.hidden_size,
-                    rms_norm_eps=text_config.rms_norm_eps,
+                    kv_params=kv_params,
+                    global_head_dim=text_config.global_head_dim,
+                    layer_idx=i,
+                    layer_idx_in_cache=layer_idx_in_cache,
+                    is_sliding=is_sliding,
+                    dtype=unquantized_dtype
+                    if (is_nvfp4 and not attn_quantized)
+                    else config.dtype,
                     devices=config.devices,
-                    unquantized_dtype=unquantized_dtype,
-                    enable_moe_block=text_config.enable_moe_block,
-                    moe_block=moe_block,
+                    qk_norm_eps=text_config.rms_norm_eps,
+                    local_window_size=text_config.sliding_window,
+                    quant_config=None
+                    if (is_nvfp4 and not attn_quantized)
+                    else quant_config,
+                    fused_qkv=use_fused_projections,
+                ),
+                mlp=FusedMLP(
+                    dtype=config.dtype,
+                    hidden_dim=text_config.hidden_size,
+                    feed_forward_length=text_config.intermediate_size,
+                    devices=config.devices,
+                    activation_function=text_config.hidden_activation,
                 )
+                if use_fused_projections
+                else MLP(
+                    dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
+                    quantization_encoding=None,
+                    hidden_dim=text_config.hidden_size,
+                    feed_forward_length=text_config.intermediate_size,
+                    devices=config.devices,
+                    activation_function=text_config.hidden_activation,
+                    quant_config=None if moe_nvfp4 else quant_config,
+                ),
+                hidden_size=text_config.hidden_size,
+                rms_norm_eps=text_config.rms_norm_eps,
+                devices=config.devices,
+                unquantized_dtype=unquantized_dtype,
+                enable_moe_block=text_config.enable_moe_block,
+                moe_block=moe_block,
             )
 
         # Store the per-layer cache-tree key ("sliding_attention" /
         # "full_attention") so __call__ can route the correct cache to each
         # layer.
         self._layer_kv_key = [
-            text_config.layer_types[i] for i in self.global_layer_ids
+            text_config.layer_types[i]
+            for i in range(text_config.num_hidden_layers)
         ]
 
         self.dim = text_config.hidden_size
         self.n_heads = text_config.num_attention_heads
-        self.layers = LayerList(layers)
-        # The checkpoint identity survives slicing; cache indices are local.
-        self.layers._sublayers = {
-            str(global_id): layer
-            for global_id, layer in zip(
-                self.global_layer_ids, layers, strict=True
-            )
-        }
+        self.layers = LayerList(
+            [
+                layers[i] if i in self.layer_ids else MissingLayer(i)
+                for i in range(text_config.num_hidden_layers)
+            ]
+        )
         self.kv_params = config.kv_params
         self.return_logits = text_config.return_logits
         self.return_hidden_states = text_config.return_hidden_states
@@ -333,12 +325,12 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             capture_hidden_states = []
 
         # Run through transformer layers
-        for idx, layer in enumerate(self.layers):
+        for idx in self.layer_ids:
             layer_idx_tensor = ops.constant(
-                self.global_layer_ids[idx], DType.uint32, device=self.devices[0]
+                idx, DType.uint32, device=self.devices[0]
             )
             kv_collections = kv_collections_by_type[self._layer_kv_key[idx]]
-            h = layer(
+            h = self.layers[idx](
                 layer_idx_tensor,
                 h,
                 signal_buffers,

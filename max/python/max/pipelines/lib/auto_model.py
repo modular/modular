@@ -27,6 +27,7 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from types import TracebackType
 
+from max.driver import accelerator_api
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import PipelineTask
 from pydantic import BaseModel
@@ -122,6 +123,10 @@ def _build_config(
         # Capture turns the overlap scheduler on, so this keeps each step
         # synchronous unless the caller asks for overlap.
         flat["disable_overlap"] = True
+    if accelerator_api() == "hip":
+        # Serve turns the vendor BLAS fallback off whenever it turns capture
+        # on, so this compiles the AMD matmul kernels serve would.
+        flat["disable_vendor_blas_fallback"] = True
     flat.update(config_overrides)
     pipeline_config = PipelineConfig.from_args(
         PipelineArgs.from_flat_kwargs(model_path=model_path, **flat)
@@ -236,11 +241,13 @@ class AutoModel:
     tested through ``max serve``.
 
     The config turns off the overlap scheduler, device graph capture, prefix
-    caching and chunked prefill. Where an architecture turns overlap on by
-    itself, the caller passes no ``force``, and ``enable_overlap_scheduler``
-    is unset or ``False``, AutoModel rebuilds the config with ``force=True``
-    and passes the architecture's ``required_arguments`` explicitly. As in
-    serve, these required arguments win over flat overrides.
+    caching and chunked prefill. On AMD it also turns off the vendor BLAS
+    fallback, as serve does with capture on, so matmuls compile to serve's
+    kernels. Where an architecture turns overlap on by itself, the caller
+    passes no ``force``, and ``enable_overlap_scheduler`` is unset or
+    ``False``, AutoModel rebuilds the config with ``force=True`` and passes
+    the architecture's ``required_arguments`` explicitly. As in serve, these
+    required arguments win over flat overrides.
 
     References to the pipeline, its KV cache manager, an open
     :class:`~max.pipelines.lib.generate.Batch`, or a live traceback from

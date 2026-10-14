@@ -682,6 +682,16 @@ def cli_pipeline(
     from max.pipelines import PipelineArgs
     from max.pipelines.lib import MAXModelConfig
 
+    # Leaves the field unset unless the user passed the flag, so the AMD
+    # default in _with_debug_defaults can apply.
+    if (
+        click.get_current_context().get_parameter_source(
+            "disable_vendor_blas_fallback"
+        )
+        is click.core.ParameterSource.DEFAULT
+    ):
+        config_kwargs.pop("disable_vendor_blas_fallback", None)
+
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
     model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     generate_text_for_pipeline(

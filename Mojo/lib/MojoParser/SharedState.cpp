@@ -1145,7 +1145,8 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &module,
     return {};
   }
   ArrayRef<ASTDecl *> decls = result.getIfSuccess();
-  if (!isa_and_nonnull<FnOp>(decls.front()->getIfOperation())) {
+  auto *defDecl = dyn_cast<DefASTDecl>(decls.front());
+  if (!defDecl || !defDecl->getOp()) {
     emitError(loc, "internal error: builtin '")
         << fnName << "' does not refer to a function";
     return {};
@@ -1422,7 +1423,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
     LogicalResult result =
         llvm::TypeSwitch<Operation *, LogicalResult>(declOp)
             .Case([&](FnOp funcOp) {
-              declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
+              declResolver->declForFuncSymbol[decl.getSymbolRef()] =
+                  &cast<DefASTDecl>(decl);
 
               // Resolve the references from the signature.
               refWalker.walk(declOp->getAttrDictionary());
@@ -1456,7 +1458,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               auto structOp = dyn_cast_or_null<StructDeclOp>(
                   structAstDecl.getIfOperation());
               assert(structOp && "extension target is not a struct");
-              decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structOp));
+              cast<ExtensionASTDecl>(decl).setSelfType(
+                  StructASTDecl::computeSelfType(structOp));
               return success();
             })
             .Case([&](ImportOp) {
@@ -1605,8 +1608,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                 op.getModulePathAttr(), decl.getLoc()});
           })
           .Case([&](StructDeclOp op) {
-            ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
-            structDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(op));
+            auto &structDecl =
+                cast<StructASTDecl>(addDeclForOp(op, op.getSymNameAttr()));
+            structDecl.setSelfType(StructASTDecl::computeSelfType(op));
             for (ParamDeclAttr param : op.getParams()) {
               // Add the parameters as accessible member decls. Make sure
               // to only demangle user-visible names. Synthetic closure structs
@@ -1620,8 +1624,9 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
             }
           })
           .Case([&](TraitDeclOp op) {
-            ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());
-            traitDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(op));
+            auto &traitDecl =
+                cast<TraitASTDecl>(addDeclForOp(op, op.getSymNameAttr()));
+            traitDecl.setSelfType(TraitASTDecl::computeSelfType(op));
             // TODO(traits): Add decls for parameters, when they exist.
           })
           .Case([&](ExtensionDeclOp op) {
@@ -2859,10 +2864,8 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
   operands = operands.drop_front();
 
   auto &resolver = getDeclResolver();
-  ASTDecl *calleeDecl = resolver.getDeclForFuncSymbol(symCst.getSymbol());
-  assert(llvm::isa_and_present<FnOp>(calleeDecl->getIfOperation()) &&
-         "callee isn't known?");
-  auto fnOp = cast_or_null<FnOp>(calleeDecl->getIfOperation());
+  DefASTDecl *calleeDecl = resolver.getDeclForFuncSymbol(symCst.getSymbol());
+  auto fnOp = calleeDecl->getOp();
   if (inlineLevelOrAutomatic(fnOp.getInlineLevel()) !=
       InlineLevel::AlwaysBuiltin) {
     folder.emitError(callLoc) << "only supports calls to other "

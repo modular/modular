@@ -880,8 +880,9 @@ def get_scaling_kind[
     """Selects the UMMA kind for a same-format block-scaled matmul.
 
     `block_scaled_umma_kind` plus the scale-factor vector-size check. Rejects
-    the mixed W4A8 pair: only the grouped 1D-1D kernel implements the padded FP4
-    TMA copy that mixed operands need, and it infers its kind directly.
+    the mixed W4A8 pair, since the dispatch paths that call this are
+    same-format only. The kernels that accept W4A8 (the grouped 1D-1D kernel
+    and the dense SM100 entry point) take `kind::mxf8f6f4` directly.
 
     Parameters:
         a_type: A operand element type (`uint8` for MXFP4/NVFP4,
@@ -894,8 +895,10 @@ def get_scaling_kind[
         The `UMMAKind` matching the provided type combination.
     """
     comptime assert a_type == b_type, (
-        "this path requires both operands in the same format; the mixed W4A8"
-        " pair is only supported by the grouped block-scaled matmul"
+        "this path requires both operands in the same format; for the mixed"
+        " W4A8 pair, call the grouped block-scaled matmul or"
+        " blackwell_block_scaled_matmul_tma_umma_warp_specialized with"
+        " kind::mxf8f6f4"
     )
     # The scale dtype fixes the group size: NVFP4's E4M3 scales cover 16
     # elements, and MXFP4 and MXFP8 share E8M0 scales over 32.

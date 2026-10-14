@@ -13,13 +13,11 @@
 
 """KVConnector shim over a native host/disk tiered connector extension.
 
-The only host/disk tiered connector: it backs the ``rust_tiered`` and
-``mojo_tiered`` connector types, as well as the retired ``tiered`` alias for
-``rust_tiered``, whose Python implementation it replaced. The type picks the
-extension, the Rust ``kv_tier_connector`` or the Mojo ``kv_tier_mojo``, which
-take the same arguments and implement the same tiers. Either way the host
-block pool, disk tier, and copy engine run on native OS threads with the GIL
-released, so the connector never contends for the GIL on the hot path (the
+The only host/disk tiered connector: it backs the ``rust_tiered`` connector
+type, as well as the retired ``tiered`` alias for ``rust_tiered``, whose Python
+implementation it replaced. The host block pool, disk tier, and copy engine run
+on native OS threads inside the Rust ``kv_tier_connector`` extension with the
+GIL released, so the connector never contends for the GIL on the hot path (the
 Python lanes' GIL contention was starving GPU utilization).
 
 How it works:
@@ -51,6 +49,7 @@ device buffer pointers and compute queues to the native connector.
 
 from __future__ import annotations
 
+import functools
 import glob
 import importlib
 import logging
@@ -62,7 +61,6 @@ from typing import NamedTuple, Protocol
 import psutil
 from max.driver import (
     Device,
-    DeviceQueue,
     _ChunkedStagingRegion,
     accelerator_api,
 )
@@ -72,7 +70,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVConnectorType,
 )
-from max.nn.kv_cache.cache_params import HostStagingAlloc
+from max.nn.kv_cache.cache_params import HostStagingAlloc, connector_type
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
@@ -103,35 +101,33 @@ _HOST_OFFLOAD_MAX_FRACTION_OF_AVAILABLE = 0.9
 _DRIVER_STAGING_CHUNK_BYTES = 4 * 1024**3
 
 # O_DIRECT requires the buffer address and length aligned to the device's
-# logical block size; 4 KiB covers the devices MAX runs on and matches the
-# native connectors' DIRECT_IO_ALIGN.
+# logical block size; 4 KiB covers the devices MAX runs on and matches
+# `DIRECT_IO_ALIGN` in rust_kv/kv-tier-connector/src/disk_tier.rs.
 _DIRECT_IO_ALIGN_BYTES = 1 << 12
 
 
-# The extension module behind each connector type. Both are runtime-provided
-# rather than build deps, so OSS MAX imports this module without either.
-_NATIVE_MODULES = {
-    KVConnectorType.tiered: "kv_tier_connector",
-    KVConnectorType.rust_tiered: "kv_tier_connector",
-    KVConnectorType.mojo_tiered: "kv_tier_mojo",
-}
+@functools.cache
+def _native_connector_class() -> type:
+    """Returns the native ``TierConnector`` class from the Rust extension.
 
+    The extension is a private, optional module that is not on mypy's path,
+    so it is imported lazily and dynamically: OSS MAX imports this module
+    without it, and importing this module never loads it.
 
-def _native_connector_class(connector_type: KVConnectorType) -> type:
-    """Imports the native ``TierConnector`` class behind ``connector_type``.
-
-    Called from :meth:`TierConnector.create` before it acquires anything, so a
-    build that lacks the extension fails before pinning the host staging
-    region or claiming the offload directory.
+    Raises:
+        ValueError: If this build does not ship the ``kv_tier_connector``
+            extension. Any other import failure, such as a broken extension,
+            propagates unchanged.
     """
-    module_name = _NATIVE_MODULES[connector_type]
     try:
-        module = importlib.import_module(module_name)
-    except ModuleNotFoundError as error:
+        module = importlib.import_module("kv_tier_connector")
+    except ModuleNotFoundError as e:
+        if e.name != "kv_tier_connector":
+            raise
         raise ValueError(
-            f"kv_connector '{connector_type.value}' needs the {module_name} "
-            "extension, which this build does not ship"
-        ) from error
+            "the tiered KV connector needs the kv_tier_connector extension, "
+            "which this build does not ship"
+        ) from e
     native_class = module.TierConnector
     assert isinstance(native_class, type)
     return native_class
@@ -484,18 +480,19 @@ class TierConnector(KVConnector):
         disk_offload_max_bytes: int,
         num_disk_workers: int = 32,
         num_h2d_onload_lanes: int = 1,
-        connector_type: KVConnectorType = KVConnectorType.rust_tiered,
         host_staging_alloc: HostStagingAlloc = "registered",
         use_disk_direct_io: bool = False,
         host_staging_mlock: bool = False,
+        *,
+        native_class: type,
     ) -> None:
         """Initializes the connector over ``replica_kv_memory``'s device buffers.
 
         Takes ownership of ``disk_dir``, releasing it in :py:meth:`shutdown`.
         It is ``None`` for a host-only connector with no disk last level.
+        ``native_class`` is the extension's ``TierConnector``, which
+        :meth:`create` has already resolved.
         """
-        native_class = _native_connector_class(connector_type)
-
         leaf0 = next(iter(leaves.keys()))
         gpu0 = replica_kv_memory[0][leaf0].buffers[0].device
         self._host_region = _alloc_chunked_staging_region(
@@ -523,15 +520,16 @@ class TierConnector(KVConnector):
             ]
             replica_memories.append(replica_leaves)
 
-        # The queue the model runs on, which every copy orders against. Both
-        # backends take it from here so they cannot disagree about it.
-        devices: dict[int, Device] = {}
-        for memories in replica_kv_memory:
-            for mem in memories.values():
-                for b in mem.buffers:
-                    devices[b.device.id] = b.device
-        compute_queues: dict[int, DeviceQueue] = {
-            device_id: device.default_queue
+        # The queue the model runs on, which every copy orders against.
+        # Rust records its gate events on the raw driver stream.
+        devices = {
+            b.device.id: b.device
+            for memories in replica_kv_memory
+            for mem in memories.values()
+            for b in mem.buffers
+        }
+        compute_stream_handles = {
+            device_id: device.default_queue.native_stream_handle
             for device_id, device in devices.items()
         }
 
@@ -557,45 +555,21 @@ class TierConnector(KVConnector):
             )
 
         disk_path = disk_dir.path if disk_dir is not None else None
-        # The two extensions take the same positional arguments except for the
-        # compute stream: Rust records its gate events on the raw driver
-        # stream, while the Mojo copy engine needs the queue itself and the
-        # devices to create its own copy queues on.
-        if connector_type == KVConnectorType.mojo_tiered:
-            self._native = native_class(
-                bytes_per_leaf,
-                host_offload_num_huge_blocks,
-                cache_ratios,
-                host_chunk_bases,
-                host_rows_per_chunk,
-                replica_memories,
-                compute_queues,
-                only_last_level,
-                disk_path,
-                disk_offload_max_bytes,
-                num_disk_workers,
-                use_disk_direct_io,
-                devices=devices,
-            )
-        else:
-            self._native = native_class(
-                bytes_per_leaf,
-                host_offload_num_huge_blocks,
-                cache_ratios,
-                host_chunk_bases,
-                host_rows_per_chunk,
-                replica_memories,
-                {
-                    device_id: queue.native_stream_handle
-                    for device_id, queue in compute_queues.items()
-                },
-                only_last_level,
-                disk_path,
-                disk_offload_max_bytes,
-                num_disk_workers,
-                num_h2d_onload_lanes,
-                use_disk_direct_io,
-            )
+        self._native = native_class(
+            bytes_per_leaf,
+            host_offload_num_huge_blocks,
+            cache_ratios,
+            host_chunk_bases,
+            host_rows_per_chunk,
+            replica_memories,
+            compute_stream_handles,
+            only_last_level,
+            disk_path,
+            disk_offload_max_bytes,
+            num_disk_workers,
+            num_h2d_onload_lanes,
+            use_disk_direct_io,
+        )
         # Set only once the native connector exists, so `__del__` on a
         # half-built instance has nothing to stop.
         self._shutdown = False
@@ -618,6 +592,10 @@ class TierConnector(KVConnector):
         _validate_leaves(leaves)
         leaf0 = next(iter(leaves.keys()))
         cfg = params.kv_connector_config
+        connector = connector_type(cfg)
+        # Resolve the extension before anything is checked or acquired, so a
+        # build without it fails before the offload directory is taken.
+        native_class = _native_connector_class()
 
         # Check the KV memory's own device before the build's accelerator API,
         # so a CPU-device pipeline fails the same way on every host rather than
@@ -633,13 +611,9 @@ class TierConnector(KVConnector):
         api = accelerator_api()
         if api not in ("cuda", "hip"):
             raise ValueError(
-                f"kv_connector '{cfg.type.value}' requires a CUDA or HIP GPU, "
+                f"kv_connector '{connector.value}' requires a CUDA or HIP GPU, "
                 f"found incompatible accelerator API: '{api}'."
             )
-
-        # After the device checks, so a CPU pipeline reports its device
-        # rather than the missing extension, and before anything is acquired.
-        _native_connector_class(cfg.type)
 
         if (
             cfg.host_staging_alloc == "driver"
@@ -715,13 +689,13 @@ class TierConnector(KVConnector):
                 "I/O should work. The startup probe will confirm it."
             )
 
-        if cfg.type == KVConnectorType.tiered:
+        if connector == KVConnectorType.tiered:
             logger.warning(
                 "kv_connector '%s' is deprecated: its Python implementation "
                 "was removed and it now runs the Rust 'rust_tiered' connector. "
                 'Pass --kv-connector-config \'{"type": "rust_tiered"}\' '
                 "instead.",
-                cfg.type.value,
+                connector.value,
             )
 
         # A driver allocation draws from the node's shared GTT pool, not this
@@ -785,7 +759,7 @@ class TierConnector(KVConnector):
                 _check_disk_capacity(disk_dir.path, disk_offload_max_bytes)
             logger.info(
                 "Creating TierConnector: "
-                f"type={cfg.type.value}, "
+                f"type={connector.value}, "
                 f"host_offload_max_bytes={to_human_readable_bytes(host_offload_max_bytes)}, "
                 f"disk_cache_dir={disk_dir.path if disk_dir else 'disabled (host-only)'}, "
                 f"disk_offload_max_bytes={to_human_readable_bytes(disk_offload_max_bytes)}, "
@@ -816,10 +790,10 @@ class TierConnector(KVConnector):
                 disk_offload_max_bytes=disk_offload_max_bytes,
                 num_disk_workers=cfg.num_disk_workers,
                 num_h2d_onload_lanes=cfg.num_h2d_onload_lanes,
-                connector_type=cfg.type,
                 host_staging_alloc=cfg.host_staging_alloc,
                 use_disk_direct_io=use_disk_direct_io,
                 host_staging_mlock=cfg.host_staging_mlock,
+                native_class=native_class,
             )
         except BaseException:
             if disk_dir is not None:

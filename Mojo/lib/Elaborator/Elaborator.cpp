@@ -2525,14 +2525,29 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
   // These are the nodes we are going to reschedule at the end.
   std::vector<ImplNode *> reschedule;
 
+  // A set of ParamNode that is waiting on a blocker.
+  DenseSet<ParamNode *> waitingOnBlocker;
+  auto isBlocking = [&](GraphEdge edge) {
+    // If the edge src has a blocker or its dst has a blocker, then the edge is
+    // blocked.
+    return edge.pnode->impl.blocker.has_value() ||
+           waitingOnBlocker.contains(edge.getPointee());
+  };
+
   // Early increment since we will modify the graph as we go.
   for (auto sccIt = llvm::scc_begin(graph); !sccIt.isAtEnd();) {
-    if (!sccIt.hasCycle()) {
-      ++sccIt;
-      continue;
-    }
+    bool hasCycle = sccIt.hasCycle();
     std::vector<GraphEdge> scc = *sccIt;
     ++sccIt;
+
+    // Classify before breaking, also run this before hasCycle check.
+    bool blocking = llvm::any_of(scc, isBlocking);
+    if (blocking)
+      for (GraphEdge edge : scc)
+        waitingOnBlocker.insert(edge.pnode);
+
+    if (!hasCycle)
+      continue;
 
     // First build a set of edges in the SCC for convenient lookup.
     inSCC.clear();
@@ -2555,14 +2570,12 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       break;
     }
 
-    // We can not re-schedule a scc if any of its node has a blocker, in that
-    // case, the scc must have been blocked by another scc, and can only be
-    // waken up indirectly through the blocker.
-    if (llvm::any_of(sccNodes, [](ParamNode *node) {
-          return node->impl.blocker.has_value();
-        })) {
+    // If this SCC is waiting on a blocker, don't schedule it.
+    if (blocking) {
+      sccNodes.clear();
       continue;
     }
+
     // Now, we break all the edges in the SCC for each node in the SCC.
     for (ParamNode *node : sccNodes) {
       ImplNode *inode = &node->impl;

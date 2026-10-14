@@ -314,11 +314,12 @@ modular_cc_library(
 )
 
 # pyo3 for the max._kv_core extension (//max/python/max:_kv_core.bindings).
-# Bound to the kv-core crate universe (//rust_kv/kv-core-pyo3).
+# Bound to the //rust_kv crate universe. It also serves the tiered connector
+# extension (//rust_kv/kv-tier-connector-pyo3).
 rust_pyo3_toolchain(
     name = "pyo3_toolchain_target",
-    pyo3 = "@kv_core_crates//:pyo3",
-    pyo3_introspection = "@kv_core_crates//:pyo3-introspection",
+    pyo3 = "@rust_kv_crates//:pyo3",
+    pyo3_introspection = "@rust_kv_crates//:pyo3-introspection",
     tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
 )
 

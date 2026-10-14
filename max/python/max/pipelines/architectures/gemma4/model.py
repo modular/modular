@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
@@ -22,18 +23,14 @@ import numpy as np
 import numpy.typing as npt
 from max import tree
 from max.driver import Buffer, Device, DLPackArray
-from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
-    BufferType,
     DeviceRef,
     Graph,
     Module,
-    TensorType,
     ops,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.comm import Signals
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import ImageMetadata
@@ -44,6 +41,11 @@ from max.pipelines.lib import (
     ModelOutputs,
     MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+    vision_merge_inputs,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
@@ -289,57 +291,26 @@ class Gemma3_MultiModalModel(
     ) -> bool:
         return model_config.vision_config is not None
 
-    def _language_model_input_types(
+    def _language_model_input_tree(
         self, config: Gemma4ForConditionalGenerationConfig
-    ) -> Sequence[TensorType | BufferType]:
-        """Prepare the Tensor input types that our language graph will work with"""
-        device_ref = DeviceRef.from_device(self.devices[0])
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
+    ) -> OrderedDict[str, object]:
+        """Names the language graph's inputs; its leaves are its inputs.
 
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-
-        image_embeddings_types = [
-            TensorType(
-                # Match the vision tower's output dtype.
+        Image embeddings are always inputs: a text-only batch feeds zero rows.
+        """
+        device_refs = [DeviceRef.from_device(d) for d in self.devices]
+        return OrderedDict(
+            batch=ragged_batch_inputs(
+                device_refs[0], ("tokens", "return_n_logits", "row_offsets")
+            ),
+            vision=vision_merge_inputs(
+                device_refs,
                 config.unquantized_dtype,
-                shape=[
-                    "num_image_tokens",
-                    config.text_config.hidden_size,
-                ],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        image_token_indices_types = [
-            TensorType(
-                DType.int32,
-                shape=["total_image_tokens"],
-                device=DeviceRef.from_device(dev),
-            )
-            for dev in self.devices
-        ]
-
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        signals = Signals(
-            devices=(DeviceRef(d.label, d.id) for d in self.devices)
-        )
-
-        return (
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *image_embeddings_types,
-            *image_token_indices_types,
-            *signals.input_types(),
-            *self.kv_params.flattened_kv_inputs(),
+                config.text_config.hidden_size,
+                rows_dim="num_image_tokens",
+            ),
+            signals=signal_inputs(device_refs),
+            kv=self.kv_params.get_symbolic_inputs(),
         )
 
     def _build_language_graph(
@@ -351,7 +322,9 @@ class Gemma3_MultiModalModel(
         """Build the language model with our input types and graph"""
         with Graph(
             "gemma4_language",
-            input_types=self._language_model_input_types(config),
+            input_types=self._bind_graph_inputs(
+                self._language_model_input_tree(config)
+            ),
             module=module,
             is_device_graph=(
                 self.pipeline_config.runtime.experimental_device_graph_synthesis

@@ -13,7 +13,7 @@
 """Layers specific to the DeepSeek-V4-Flash architecture."""
 
 from .attention import DeepseekV4Attention
-from .cache import CacheLeaf, DeepseekV4Cache
+from .cache import CacheLeaf, DeepseekV4Cache, LayerIndex
 from .compressor import DeepseekV4Compressor
 from .csa import CompressedStream, compressed_stream
 from .dspark import (
@@ -51,6 +51,7 @@ __all__ = [
     "DeepseekV4Indexer",
     "DeepseekV4MoE",
     "DeepseekV4RotaryEmbedding",
+    "LayerIndex",
     "RaggedRows",
     "WindowRows",
     "apply_rope_tail",

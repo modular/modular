@@ -1294,6 +1294,11 @@ class OpenAIChatResponseGenerator(
             # (see openai_create_chat_completion).
             if self.parse_tool_calls:
                 try:
+                    # Parsers that decode arguments by schema (Qwen 3.5) need
+                    # the schemas for complete responses too.
+                    set_schemas = getattr(self.parser, "set_tool_schemas", None)
+                    if set_schemas is not None:
+                        set_schemas(self._tool_schemas)
                     parsed = self.parser.parse_complete(response_message)
                     # Schema-aware argument coercion (parsers that opt in, e.g.
                     # MiniMax-M3, whose bare-text XML loses scalar types).

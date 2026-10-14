@@ -22,6 +22,7 @@ from std.sys.info import align_of
 from std.collections import Array
 from std.utils import StaticTuple
 from std.utils.index import IndexList
+from nn.pad import _pad_reflect_repeat_src_index
 
 
 def _fill_strides_indexlist[
@@ -326,47 +327,7 @@ def get_padding_output_shape[
     return output_shape
 
 
-@inline(.always)
-def _pad_src_index[mode: StaticString](p: Int, in_len: Int, pre: Int) -> Int:
-    """Shared output-to-input index map for the non-constant pad modes.
-
-    For output position `p` along an axis with input length `in_len` and
-    pre-padding `pre`, return the input index to source from:
-
-    - `mode == "reflect"`: folds `p - pre` into a period of
-      `2 * (in_len - 1)` and mirrors it back, so positions in
-      `[0, in_len)` map to themselves and positions beyond the input are
-      reflected at the boundary. When `in_len == 1` the period is zero, so
-      the source is always 0.
-    - `mode == "repeat"`: clamps `p - pre` to `[0, in_len)`, repeating the
-      boundary value outside the input.
-
-    Args:
-        p: The output position along the axis.
-        in_len: The input length along the axis.
-        pre: The pre-padding amount along the axis.
-
-    Returns:
-        The input index to read for output position `p`.
-    """
-    var src = p - pre
-    comptime if mode == "reflect":
-        if in_len == 1:
-            return 0
-        var period = 2 * (in_len - 1)
-        var r = src % period
-        if r < 0:
-            r += period
-        if r < in_len:
-            return r
-        return period - r
-    else:
-        comptime assert mode == "repeat", "unknown pad mode " + mode
-        if src < 0:
-            return 0
-        if src >= in_len:
-            return in_len - 1
-        return src
+comptime _pad_src_index = _pad_reflect_repeat_src_index
 
 
 @__name(t"padded_{mode}_{dtype}")

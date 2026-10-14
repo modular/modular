@@ -264,6 +264,7 @@ _EXTRA_CONSTRAINTS = {
     # k-pooled scorer over GLM-5.3-Flash's per-token pooled cache layout.
     "test_mla_index_kpool_cache_layout.mojo": select({
         "//:b200_gpu": [],
+        "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_rms_norm_fused_fp8.mojo": select({
@@ -294,6 +295,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2405
+    "test_nms_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2366
     "test_argsort.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -623,9 +628,7 @@ _FILECHECK_TESTS = [
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         # KERN-2339: Several tests disabled due to bounds check failures
         enable_assertions = select({
-            "//:amd_gpu": src not in [
-                "test_mha_sink_weights.mojo",  # KERN-2751: sink kernel triggers OOB on AMD
-            ],
+            "//:amd_gpu": True,
             # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
             # infrastructure on boundary tiles (num_keys not aligned to BN).
             # The H100 path uses a different code path (mla.mojo) where the
@@ -1487,10 +1490,6 @@ mojo_test(
         "-D",
         "page_size=128",
     ],
-    enable_assertions = select({
-        "//:amd_gpu": False,
-        "//conditions:default": True,
-    }),
     exec_properties = {
         "test.resources:gpu-memory": "6",
     },

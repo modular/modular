@@ -24,7 +24,7 @@ from std._plugin import CurrentPlugin
 from std.collections import Array, List
 from std.collections.string.string_span import _unsafe_strlen
 from std.format.tstring import TString
-from std.io import FileDescriptor
+from std.io import RawFileDescriptor
 from std.ffi import c_char, c_int, external_call, get_errno
 from std.reflection import SourceLocation, call_location
 from std._gpu import thread_idx, block_idx
@@ -648,7 +648,7 @@ def isatty(fd: Int) -> Bool:
         ```
     """
 
-    return FileDescriptor(c_int(fd)).isatty()
+    return RawFileDescriptor(c_int(fd)).isatty()
 
 
 # ===----------------------------------------------------------------------=== #

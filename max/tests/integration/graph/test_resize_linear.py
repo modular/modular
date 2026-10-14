@@ -19,11 +19,20 @@ from collections.abc import Sequence
 
 import numpy as np
 import pytest
+import torch
+from max._core.dialects import builtin, kgen, mo, rmo
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from numpy.typing import NDArray
+
+# bfloat16 has no numpy dtype, so 16-bit graph inputs go through torch.
+_DTYPE_TO_TORCH = {
+    DType.float32: torch.float32,
+    DType.float16: torch.float16,
+    DType.bfloat16: torch.bfloat16,
+}
 
 # Two axes change, so the GPU kernel runs two passes through a scratch buffer.
 INPUT_SHAPE = [1, 3, 5, 7]
@@ -225,4 +234,180 @@ def test_resize_linear_rank3_cpu(
     assert out.shape == (1, 4, 16)
     np.testing.assert_allclose(
         out, _reference(data, out_shape), rtol=1e-3, atol=1e-3
+    )
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")
+def test_resize_linear_gpu_rank3(session: InferenceSession) -> None:
+    """A rank-3 (NCW) input resizes on the GPU along its one spatial axis.
+
+    The accelerated eager warm builds only rank-4 graphs (MXF-841), so a
+    rank-3 graph also exercises the rank outside the warm set in a real
+    compiled graph.
+    """
+    rng = np.random.default_rng(5)
+    data = rng.standard_normal((1, 4, 8)).astype(np.float32)
+    out_shape = [1, 4, 16]
+
+    input_type = TensorType(DType.float32, [1, 4, 8], device=DeviceRef.GPU())
+    out = _execute(session, DeviceRef.GPU(), input_type, out_shape, data)
+
+    assert out.shape == (1, 4, 16)
+    np.testing.assert_allclose(
+        out, _reference(data, out_shape), rtol=1e-4, atol=1e-4
+    )
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")
+def test_resize_linear_gpu_dynamic_sizes(session: InferenceSession) -> None:
+    """One loaded model serves two different output spatial sizes.
+
+    `size` is a runtime operand (`MO_SingleDeviceWithHostOperands`), so the
+    graph takes it as a second input and the same compiled model resizes
+    5x7 to both 9x3 and 4x11 — the way the eager family cache reuses one
+    graph per (device, dtype, rank, variant) for every output size.
+    """
+    rng = np.random.default_rng(6)
+    data = rng.standard_normal((2, 3, 5, 7)).astype(np.float32)
+    input_type = TensorType(
+        DType.float32, ["batch", 3, 5, 7], device=DeviceRef.GPU()
+    )
+    size_type = TensorType(DType.int64, [4], device=DeviceRef.CPU())
+
+    with Graph(
+        "test_resize_linear_dynamic",
+        input_types=[input_type, size_type],
+    ) as graph:
+        x, size = (value.tensor for value in graph.inputs)
+        graph.output(
+            Graph.current._add_op_generated(
+                rmo.MoResizeLinearOp,
+                result=TensorType(
+                    DType.float32,
+                    ["batch", 3, "out_h", "out_w"],
+                    device=DeviceRef.GPU(),
+                ),
+                input=x,
+                size=size,
+                coordinate_transform_mode=mo.CoordinateTransformModeAttr(
+                    mo.CoordinateTransformMode(0)
+                ),
+                antialias=builtin.BoolAttr(False),
+                output_param_decls=kgen.ParamDeclArrayAttr([]),
+            )[0].tensor
+        )
+    model = session.load(graph)
+
+    for out_shape in ([2, 3, 9, 3], [2, 3, 4, 11]):
+        result = model.execute(
+            Buffer.from_numpy(data).to(model.input_devices[0]),
+            Buffer.from_numpy(np.array(out_shape, dtype=np.int64)),
+        )[0]
+        assert isinstance(result, Buffer)
+        assert result.shape == tuple(out_shape)
+        np.testing.assert_allclose(
+            result.to_numpy(),
+            _reference(data, out_shape),
+            rtol=1e-4,
+            atol=1e-4,
+        )
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")
+@pytest.mark.parametrize(
+    "dtype", [DType.float32, DType.float16, DType.bfloat16]
+)
+@pytest.mark.parametrize("coord_mode", range(4))
+@pytest.mark.parametrize("antialias", [False, True])
+def test_resize_linear_gpu_dtypes(
+    session: InferenceSession,
+    dtype: DType,
+    coord_mode: int,
+    antialias: bool,
+) -> None:
+    """GPU float dtypes match the float64 reference.
+
+    float64 is excluded: it is not a GPU float dtype (MSTDL-2711). The
+    kernel accumulates in float32 for every 16-bit input, so the
+    tolerance widens only as far as the final store rounds.
+    """
+    rng = np.random.default_rng(7)
+    data = rng.standard_normal(INPUT_SHAPE).astype(np.float32)
+
+    input_type = TensorType(dtype, INPUT_SHAPE, device=DeviceRef.GPU())
+    with Graph("test_resize_linear_dtype", input_types=[input_type]) as graph:
+        graph.output(
+            ops.resize_linear(
+                graph.inputs[0].tensor,
+                OUTPUT_SHAPE,
+                coordinate_transform_mode=coord_mode,
+                antialias=antialias,
+            )
+        )
+    model = session.load(graph)
+    # bfloat16 has no numpy dtype, so 16-bit inputs go through torch.
+    x_t = torch.from_numpy(data).to(_DTYPE_TO_TORCH[dtype])
+    result = model.execute(Buffer.from_dlpack(x_t).to(model.input_devices[0]))[
+        0
+    ]
+    assert isinstance(result, Buffer)
+
+    expected = _reference(data, OUTPUT_SHAPE, coord_mode, antialias)
+    if dtype == DType.float32:
+        np.testing.assert_allclose(
+            result.to_numpy(), expected, rtol=1e-5, atol=1e-5
+        )
+    else:
+        # The kernel accumulates in float32 and rounds once on store.
+        np.testing.assert_allclose(
+            torch.from_dlpack(result).float().cpu().numpy(),
+            expected,
+            rtol=2e-2,
+            atol=2e-2,
+        )
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")
+@pytest.mark.parametrize(
+    "in_shape, out_shape, antialias",
+    [
+        # Latent decode upsamples: (H, W) -> (4H, 4W), as VAE decoders do.
+        ([1, 8, 64, 64], [1, 8, 256, 256], False),
+        # Latent upsample: (H, W) -> (2H, 2W).
+        ([2, 4, 32, 32], [2, 4, 64, 64], False),
+        # A non-integer-scale downsample widens the tent filter (antialias).
+        ([1, 8, 64, 64], [1, 8, 50, 40], True),
+    ],
+)
+def test_resize_linear_gpu_upsample_shapes(
+    session: InferenceSession,
+    in_shape: Sequence[int],
+    out_shape: Sequence[int],
+    antialias: bool,
+) -> None:
+    """Representative latent/VAE-style shapes run on the GPU.
+
+    The in-repo VAE decoders upsample with `resize.nearest`, so `linear`
+    has no model-level consumer yet; these shapes pin the sizes a
+    diffusion/VAE pipeline would feed a bilinear upsample.
+    """
+    rng = np.random.default_rng(8)
+    data = rng.standard_normal(in_shape).astype(np.float32)
+
+    input_type = TensorType(DType.float32, in_shape, device=DeviceRef.GPU())
+    out = _execute(
+        session,
+        DeviceRef.GPU(),
+        input_type,
+        out_shape,
+        data,
+        antialias=antialias,
+    )
+
+    assert out.shape == tuple(out_shape)
+    np.testing.assert_allclose(
+        out,
+        _reference(data, out_shape, antialias=antialias),
+        rtol=1e-2,
+        atol=1e-2,
     )

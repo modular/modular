@@ -80,7 +80,7 @@ class DSparkAttention(DeepseekV4Attention):
         )
         kv = self.latent(main_x, freqs_cis)
         cache.swa.store(
-            self.swa_layer,
+            self.layer_index(main_x.device).swa,
             KEY,
             ops.reshape(kv, [rows.total, self.head_dim]),
             rows.offsets,
@@ -132,13 +132,14 @@ class DSparkAttention(DeepseekV4Attention):
         # Each request's live window, positions ``L - window .. L - 1``; the
         # slots below position 0 are clamped onto a live one and masked.
         back = ops.reshape(arange(window, device) - window, [1, window])
-        win_pos = ops.reshape(rows.starts, [rows.batch, 1]) + back
+        batch = rows.starts.shape[0]
+        win_pos = ops.reshape(rows.starts, [batch, 1]) + back
         zero = scalar(0, device)
         live = cache.swa.gather(self.swa_layer, KEY, ops.max(win_pos, zero))
         # Table: the block's rows first, so a token's block rows are addressed
         # by the batch's own row numbers, then ``window`` rows per request.
         table = ops.concat(
-            [kv, ops.reshape(live, [1, rows.batch * window, self.head_dim])],
+            [kv, ops.reshape(live, [1, batch * window, self.head_dim])],
             axis=1,
         )
         tok_win_pos = ops.gather(win_pos, rows.bid, axis=0)

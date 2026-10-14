@@ -342,6 +342,30 @@ def test_signature_defaults(
     assert config.runtime.force is True
 
 
+@pytest.mark.parametrize(
+    ("api", "overrides", "expected"),
+    [
+        ("hip", {}, True),
+        ("hip", {"disable_vendor_blas_fallback": False}, False),
+        ("cuda", {}, False),
+    ],
+)
+def test_vendor_blas_fallback_off_on_amd(
+    model_path: str,
+    built_configs: list[PipelineConfig],
+    monkeypatch: pytest.MonkeyPatch,
+    api: str,
+    overrides: Mapping[str, object],
+    expected: bool,
+) -> None:
+    monkeypatch.delenv("MODULAR_DISABLE_VENDOR_FALLBACK", raising=False)
+    monkeypatch.setattr(auto_model, "accelerator_api", lambda: api)
+    with pytest.raises(_StopBeforeBuild):
+        _load_accelerator(model_path, False, **overrides)
+    [config] = built_configs
+    assert config.runtime.disable_vendor_blas_fallback is expected
+
+
 @pytest.fixture
 def llama_arch_required(
     monkeypatch: pytest.MonkeyPatch,

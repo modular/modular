@@ -22,7 +22,7 @@ from std.python._cpython import (
     PyObject,
     PyObjectPtr,
 )
-from std.memory import alloc, dealloc, ThinAllocation, Layout
+from std.memory import alloc, Layout
 from std.testing import (
     assert_equal,
     assert_false,
@@ -359,8 +359,7 @@ def _test_capsule_api(cpy: CPython) raises:
     with assert_raises(contains="called with invalid PyCapsule object"):
         _ = cpy.PyCapsule_GetPointer(o, "some_name")
 
-    var capsule_impl_layout = Layout[UInt64].single()
-    var capsule_impl_ptr = alloc(capsule_impl_layout).unsafe_leak()
+    var capsule_impl = alloc(Layout[UInt64].single()).into_managed()
 
     def empty_dtor(capsule: PyObjectPtr) abi("C"):
         pass
@@ -371,25 +370,17 @@ def _test_capsule_api(cpy: CPython) raises:
     # lifetime, so the pointer remains valid for the `PyCapsule_GetPointer`
     # lookups after `PyCapsule_New` returns.
     var capsule = cpy.PyCapsule_New(
-        capsule_impl_ptr.unsafe_bitcast[NoneType]().unsafe_origin_cast[
-            MutUntrackedOrigin
-        ](),
+        capsule_impl.unsafe_ptr()
+        .unsafe_bitcast[NoneType]()
+        .unsafe_origin_cast[MutUntrackedOrigin](),
         "some_name",
         empty_dtor,
     )
     var capsule_pointer = cpy.PyCapsule_GetPointer(capsule, "some_name")
 
     # The capsule holds the raw pointer but never dereferences it (its
-    # destructor is a no-op and the lookups below fail before any deref), so it
-    # is safe to release the storage now. Capture the address first because
-    # `assert_equal` can raise, and the allocation must be freed on every path.
-    var capsule_impl_addr = Int(capsule_impl_ptr)
-    dealloc(
-        ThinAllocation(unsafe_owned_ptr=capsule_impl_ptr).unsafe_with_layout(
-            capsule_impl_layout
-        )
-    )
-    assert_equal(capsule_impl_addr, Int(capsule_pointer))
+    # destructor is a no-op).
+    assert_equal(Int(capsule_impl.unsafe_ptr()), Int(capsule_pointer))
     with assert_raises(contains="called with incorrect name"):
         _ = cpy.PyCapsule_GetPointer(capsule, "some_other_name")
 

@@ -66,6 +66,12 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   Native fp4 experts run `DeepseekV4RoutedExperts` (tokens sorted by expert);
   wide-dtype (dequantized) weights still take the dense every-expert path,
   42× the routed work at 256 experts, so do not size a deployment on it.
+- **A block's layer numbers are graph values, not constants.** With
+  `use_subgraphs` the trunk blocks of one compress ratio and routing kind
+  share one subgraph body (`subgraph_layer_groups`), so which window and zone
+  layer a block reads arrives as a `LayerIndex` operand. Baking
+  `self.swa_layer` / `self.zone_layer` into an op inside the block makes every
+  layer of the group read the first one's leaves, silently.
 - RoPE: no mscale, and two schedules — compressed layers use
   `compress_rope_theta` + YaRN, window-only layers base theta, YaRN off.
   `apply_rope_tail` takes a `[seq, ...]` or `[batch, seq, ...]` table.

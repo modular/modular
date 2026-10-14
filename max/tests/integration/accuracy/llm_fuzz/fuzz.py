@@ -37,6 +37,7 @@ from typing import Any
 
 from _version import __version__
 from client import FuzzClient, RunConfig
+from helpers import normalize_test_id, parse_exclude
 from model_config import MODEL_PROFILES, build_model_config
 from reporting import (
     BOLD,
@@ -373,19 +374,6 @@ def list_scenarios() -> None:
     print()
 
 
-def parse_exclude(spec: str | None) -> tuple[set[str], set[str]]:
-    """Split an --exclude value into whole-scenario names and scenario:test
-    names (the tokens containing a ":")."""
-    exclude_groups: set[str] = set()
-    exclude_tests: set[str] = set()
-    for token in (spec or "").split(","):
-        token = token.strip()
-        if not token:
-            continue
-        (exclude_tests if ":" in token else exclude_groups).add(token)
-    return exclude_groups, exclude_tests
-
-
 def select_scenarios(
     args: argparse.Namespace, exclude_groups: set[str]
 ) -> list[Any]:
@@ -479,7 +467,9 @@ async def run(args: argparse.Namespace) -> int:
     exclude_groups: set[str] = set()
     exclude_tests: set[str] = set()
     if args.exclude:
-        exclude_groups, exclude_tests = parse_exclude(args.exclude)
+        exclude_groups, exclude_tests = parse_exclude(
+            args.exclude, get_all_scenarios()
+        )
 
     scenario_classes = select_scenarios(args, exclude_groups)
 
@@ -714,10 +704,14 @@ async def _run_body(
                             )
                         )
                     if exclude_tests:
+                        # Entries may contain whitespace (the loaders strip it):
+                        # compare whitespace-free.
                         scenario_results = [
                             r
                             for r in scenario_results
-                            if f"{r.scenario_name}:{r.test_name}"
+                            if normalize_test_id(
+                                f"{r.scenario_name}:{r.test_name}"
+                            )
                             not in exclude_tests
                         ]
                     all_results.extend(scenario_results)

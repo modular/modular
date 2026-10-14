@@ -78,6 +78,37 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- `mo.non_maximum_suppression` now executes on GPU devices in compiled
+  graphs. Boxes and scores stay on the device through a single-CTA
+  greedy kernel (shared-memory bitonic order by score descending, box
+  index ascending); the three scalar thresholds remain host operands.
+  The output's row count is still sized by the host shape function,
+  which reads the operands, so data-dependent sizing cost is unchanged.
+  Float32 inputs with up to 4096 boxes per batch take the GPU path on
+  NVIDIA and AMD; Apple targets and other shapes fall back to the
+  existing host implementation on host copies (the kernel's
+  shared-memory candidate state exceeds Metal's 32 KiB threadgroup
+  limit). Tied scores now follow a pinned total order (score
+  descending, box index ascending) on both the GPU kernel and the host
+  path, so both -- and the shape function that sizes the output --
+  always agree on the selection. The eager interpreter keeps running
+  this op on the host, transferring device-resident operands to CPU.
+  Measured on one B200, compute-kernel time only: 60x faster than the
+  host compute path at 1024 boxes (0.7 ms vs 42 ms for 1 batch, 1
+  class) and 152x at 4096 boxes (1.3 ms vs 203 ms). The host shape
+  function that sizes the output still reads the operands on every
+  execution, so total graph latency improves by less than these
+  ratios.
+
+- `max.experimental.functional.cumsum` now has its own sharding rule,
+  `cumsum_rule`. A `Partial` input of an integral dtype passes through the
+  scan without an all-reduce (resolved results agree bit-for-bit with
+  resolve-first execution under the dtype's wrapping arithmetic); floating-
+  point dtypes still resolve first, because scanning each fragment and then
+  summing reassociates the sum. A `Sharded` scan axis still replicates
+  first. Previously every `Partial` input raised `ShardingError` under the
+  default reshard policy, whatever its dtype.
+
 - Fixed memory planning on Linux CUDA and HIP GPUs that share physical memory
   with the CPU. MAX now includes reclaimable filesystem cache in available
   memory and respects cgroup memory limits, preventing false out-of-memory
@@ -114,6 +145,14 @@ This version is still a work in progress.
   header instead of being downloaded, making a compile-only run independent of
   checkpoint size. It requires `--target` (compile-only mode) and a
   safetensors repo on HuggingFace.
+
+- Added `max.experimental.sharding.visualize`, which draws a `DeviceMesh`,
+  `TensorLayout` or `Tensor` twice over: as a grid of colored blocks sized in
+  proportion to the slice each device holds, and as a tree with one level per
+  mesh axis. A slice that is a partial sum, or whose relation to the others
+  is `Unknown`, is marked and drawn see-through. Pass `blocks=False` or
+  `tree=False` for one of the two, or a dict of values to draw them side by
+  side. It renders as SVG in a notebook and as Unicode text anywhere else.
 
 - Added the `uninitialized-read-mode` debug option
   (`MODULAR_DEBUG=uninitialized-read-mode=report`,
@@ -608,6 +647,15 @@ This version is still a work in progress.
   for a batch of one unless you pass `--max-batch-size`, since it runs one
   prompt.
 
+- `max generate` now raises an error that gives the `max serve` command to
+  use when you pass `--device-graph-capture` with `--data-parallel-degree`
+  above 1, or when the prompt is over a replica's prefill token budget.
+
+- On AMD GPUs, `max generate` and `AutoModel` now turn off the vendor BLAS
+  matmul fallback, as `max serve` does when it captures device graphs, so they
+  compile the same matmul kernels. Pass `--no-disable-vendor-blas-fallback` or
+  `disable_vendor_blas_fallback=False` to keep the fallback.
+
 ### Python API
 
 - Added `max.experimental.custom.declare`, which declares a custom op's
@@ -656,6 +704,9 @@ This version is still a work in progress.
   host metadata: the public API still accepts constant or symbolic repeat
   counts, and a data-dependent output size is computed from a host copy of
   the repeats, which blocks device-graph capture for such graphs.
+- `ops.tile` now accepts tensors of any rank on every device. It previously
+  supported at most 4 dimensions. Ranks beyond 5 compile on first use
+  rather than being precompiled.
 - `max.nn.moe.MoE` takes `interleaved_gate_up=True` for gate/up projections
   stored as `[gate_0, up_0, gate_1, up_1, ...]`, and runs its fused activation
   on them; `max.nn.comm.ep.ep_kernels.fused_silu` takes `interleaved=True` to
@@ -697,7 +748,6 @@ This version is still a work in progress.
 - Added GPU support for `ops.resize_nearest` / `mo.resize.nearest`. The op
   was host-only; its kernel is a pure gather, so it now launches on the
   input's device (the op is single-device with a host `size` operand, like
-HEAD
   bicubic). The eager resize family sweeps accelerators for all three
   modes; new Metal-verified GPU kernel tests cover up/downsampling and
   both coordinate modes, plus an eager GPU-residency test.
@@ -882,6 +932,10 @@ HEAD
   NVIDIA's PTX compiler.
 
 ## Breaking changes
+
+- Removed the `DeviceQueue` overloads of `max.driver.Buffer.to()` and
+  `Buffer.copy()`. Pass a `Device` (or, for `to()`, a sequence of devices)
+  instead: `buffer.to(device)` and `buffer.copy(device=device)`.
 
 - DSpark speculative decoding now has its own method: serve a DSpark draft
   with `--speculative-method dspark` instead of `dflash`. DSpark drafts a

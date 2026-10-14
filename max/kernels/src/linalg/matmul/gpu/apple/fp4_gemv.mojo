@@ -57,7 +57,6 @@ Two hard M5 constraints, both satisfied by the width-16 decode:
     fp32-vs-MMA reduction order and the final cast).
 """
 
-from std.collections import Optional
 from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
@@ -66,7 +65,6 @@ import max.gpu.primitives.warp as warp
 from layout import Coord, TensorEngine, TileTensor, TensorLayout
 
 from linalg.fp4_utils import decode_e2m1_to_f16, NVFP4_SF_VECTOR_SIZE
-from linalg.utils import elementwise_epilogue_type
 
 
 @__name(t"fp4_gemv_{c_type}")
@@ -80,7 +78,6 @@ def fp4_gemv_kernel[
     a_engine: TensorEngine,
     p_engine: TensorEngine,
     s_engine: TensorEngine,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],  # [1, N]
     a: TileTensor[
@@ -111,8 +108,6 @@ def fp4_gemv_kernel[
         a_engine: `TensorEngine` of the activation `a`.
         p_engine: `TensorEngine` of the packed FP4 weight.
         s_engine: `TensorEngine` of the FP8 block scales.
-        elementwise_lambda_fn: Optional fused epilogue applied on the
-            width-1 store.
 
     Args:
         c: Output tile tensor `[1, N]` receiving the GEMV result.
@@ -166,18 +161,12 @@ def fp4_gemv_kernel[
 
     var dot = warp.sum(acc)
     if lid == 0:
-        var y = dot.cast[c_type]()
-
-        comptime if case .Some(epilogue) = elementwise_lambda_fn:
-            epilogue[c_type, 1]((0, n_idx), y)
-        else:
-            c.store[width=1](Coord(0, n_idx), y)
+        c.store[width=1](Coord(0, n_idx), dot.cast[c_type]())
 
 
 @inline(.always)
 def enqueue_apple_fp4_gemv[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[.bfloat16, ...],
@@ -198,8 +187,6 @@ def enqueue_apple_fp4_gemv[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract), applied on the width-1 store.
 
     Args:
         c: Output tile tensor `[1, N]` receiving the GEMV result.
@@ -224,7 +211,6 @@ def enqueue_apple_fp4_gemv[
         type_of(a).Engine,
         type_of(packed).Engine,
         type_of(scales).Engine,
-        elementwise_lambda_fn,
     ]
     ctx.enqueue_function[kernel](
         c,

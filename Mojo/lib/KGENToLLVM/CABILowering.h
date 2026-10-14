@@ -16,6 +16,7 @@
 
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/SmallVector.h"
@@ -30,6 +31,7 @@ class MLIRContext;
 class Type;
 class Location;
 namespace LLVM {
+class LLVMFunctionType;
 class LLVMStructType;
 } // namespace LLVM
 } // namespace mlir
@@ -121,13 +123,39 @@ struct CoercionInfo {
     return argClass == ABIArgClass::IntegerPair ||
            argClass == ABIArgClass::SSEPair || argClass == ABIArgClass::Mixed;
   }
+
+  /// Get the number of LLVM parameters an argument with this classification
+  /// lowers to.
+  unsigned getNumLLVMParams() const { return isTwoRegister() ? 2 : 1; }
 };
 
 /// ABI classification for a whole call signature: one CoercionInfo per
 /// argument plus the return value.
+///
+/// The helpers below take the LLVM types the signature was classified with,
+/// and agree on how arguments map to LLVM parameters, so a call, a
+/// declaration and a definition of one signature lower the same way.
 struct SignatureClassification {
   llvm::SmallVector<CoercionInfo> args;
   CoercionInfo ret;
+
+  /// Get the index of the first LLVM parameter of argument `argIdx`. An
+  /// `argIdx` of `args.size()` gives the number of LLVM parameters.
+  unsigned getLLVMParamIndex(size_t argIdx) const;
+
+  /// Get the C ABI function type. `retType` is null or void for no result.
+  /// Only the first `numFixedArgs` arguments become parameters; the rest are
+  /// the variadic tail of an `isVarArg` function.
+  mlir::LLVM::LLVMFunctionType
+  getFunctionType(mlir::MLIRContext *ctx, mlir::TypeRange argTypes,
+                  mlir::Type retType, bool isVarArg,
+                  size_t numFixedArgs = SIZE_MAX) const;
+
+  /// Get the C ABI attributes (sret, byval) of the LLVM parameters of the
+  /// first `numArgs` arguments, one list per LLVM parameter.
+  llvm::SmallVector<mlir::NamedAttrList>
+  getParamAttrs(mlir::TypeRange argTypes, mlir::Type retType,
+                size_t numArgs = SIZE_MAX) const;
 };
 
 //===----------------------------------------------------------------------===//

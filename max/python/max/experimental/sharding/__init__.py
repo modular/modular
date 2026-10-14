@@ -84,6 +84,7 @@ from .placements import (
     Unknown,
 )
 from .types import BufferLayout, TensorLayout
+from .visualize import visualize
 
 __all__ = [
     "ALL_TRANSITIONS",
@@ -105,4 +106,5 @@ __all__ = [
     "auto_reshard",
     "match_operand_placement",
     "replicated_rows",
+    "visualize",
 ]

@@ -96,7 +96,11 @@ from .amd import (
     structured_4wave_matmul,
     SplitKWorkspace,
 )
-from .amd_rdna import gemm_kernel_rdna
+from .amd_rdna import (
+    gemm_kernel_rdna,
+    gemm_kernel_rdna_compute_fn,
+    gemm_kernel_rdna_epilogue_fn,
+)
 from .apple import enqueue_apple_matmul_8x8
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
@@ -700,10 +704,10 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
     return block_shape_list^
 
 
-# TODO(MOCO-4720): the Apple and RDNA kernels take only the legacy epilogue
-# lambda; `_matmul_gpu_impl` must not hand them a bare value.
+# TODO(MOCO-4720): the Apple kernels take only the legacy epilogue lambda;
+# `_matmul_gpu_impl` must not hand them a bare value.
 comptime _matmul_gpu_needs_legacy_epilogue = (
-    DeviceContext.target.is_apple_gpu() or has_amd_rdna_gpu_accelerator()
+    DeviceContext.target.is_apple_gpu()
 )
 
 
@@ -733,7 +737,7 @@ def _matmul_gpu[
     error otherwise).
     """
     # Kernels that take epilogue values get the lambda forwarded through a
-    # value; the lambda itself still reaches the Apple and RDNA ones.
+    # value; the lambda itself still reaches the Apple ones.
     comptime if case .Some(compute_lambda) = elementwise_compute_lambda_fn:
 
         def compute_fn[
@@ -798,9 +802,9 @@ def _matmul_gpu[
 ) raises:
     """GPU matmul dispatch that stores `compute_fn(idx, a @ b)` into `c`.
 
-    The kernels apply `compute_fn` in their epilogue, except on Apple and AMD
-    RDNA GPUs: those run the matmul into `c` and then apply `compute_fn` in
-    place in a separate elementwise pass.
+    The kernels apply `compute_fn` in their epilogue, except on Apple GPUs:
+    those run the matmul into `c` and then apply `compute_fn` in place in a
+    separate elementwise pass.
 
     Parameters:
         ComputeFnType: Type of `compute_fn` (inferred).
@@ -819,8 +823,7 @@ def _matmul_gpu[
     """
     comptime if _matmul_gpu_needs_legacy_epilogue:
         # TODO(MOCO-4720): the extra pass re-reads and re-writes `c`. Pass
-        # `compute_fn` to the Apple and RDNA kernels once they take epilogue
-        # values.
+        # `compute_fn` to the Apple kernels once they take epilogue values.
         _matmul_gpu[
             use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
@@ -872,7 +875,7 @@ def _matmul_gpu_impl[
         has_legacy_epilogue
         or not (has_epilogue_fn or has_compute_fn)
         or not _matmul_gpu_needs_legacy_epilogue
-    ), "the Apple and RDNA matmuls take only legacy epilogue lambdas"
+    ), "the Apple matmuls take only legacy epilogue lambdas"
     comptime assert not (
         has_epilogue_fn and has_compute_fn
     ), "pass either epilogue_fn or compute_fn, not both"
@@ -1070,8 +1073,16 @@ def _matmul_gpu_impl[
                 a_type,
                 c_type=c_type,
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](c, a, rebind[BAsAType](b), ctx)
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](
+                c,
+                a,
+                rebind[BAsAType](b),
+                ctx,
+                epilogue_fn=epilogue_fn,
+                compute_fn=compute_fn,
+            )
             return
 
         # 8x8 `simdgroup_matrix` GEMM:
@@ -1095,8 +1106,9 @@ def _matmul_gpu_impl[
                 logger.info("Executing: Apple GPU 8x8 simdgroup MATMUL kernel")
                 enqueue_apple_matmul_8x8[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                ](c, a, b, m, n, k, ctx)
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](c, a, b, m, n, k, ctx, epilogue_fn, compute_fn)
                 return
 
     @inline(.always)
@@ -1398,7 +1410,6 @@ def _matmul_gpu_impl[
                                 block_m_override=block_m,
                                 block_n_override=block_n,
                                 block_k_override=block_k,
-                                elementwise_lambda_fn=elementwise_lambda_wrapper,
                             ](a, b, c, ctx, workspace=workspace)
                         _ = workspace^
 
@@ -1430,7 +1441,6 @@ def _matmul_gpu_impl[
                                 block_m_override=block_m,
                                 block_n_override=block_n,
                                 block_k_override=block_k,
-                                elementwise_lambda_fn=elementwise_lambda_wrapper,
                             ](a, b, c, ctx)
 
                     comptime if (
@@ -1886,37 +1896,100 @@ def _matmul_gpu_impl[
             WARP_TILE_N: Int,
         ]() raises {imm}:
             comptime NUM_WARPS = WARPS_M * WARPS_N
-            comptime rdna_kernel = gemm_kernel_rdna[
-                c_type,
-                a_type,
-                b_type,
-                type_of(c).LayoutType,
-                type_of(a).LayoutType,
-                type_of(b).LayoutType,
-                type_of(c).Engine,
-                type_of(a).Engine,
-                type_of(b).Engine,
-                transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-                BLOCK_K=BLOCK_K,
-                BLOCK_M=BLOCK_M,
-                BLOCK_N=BLOCK_N,
-                WARPS_M=WARPS_M,
-                WARPS_N=WARPS_N,
-                WARP_TILE_M=WARP_TILE_M,
-                WARP_TILE_N=WARP_TILE_N,
-            ]
-
-            ctx.enqueue_function[rdna_kernel](
-                c,
-                a,
-                b,
-                Int32(m),
-                Int32(n),
-                Int32(k),
-                grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
-                block_dim=(NUM_WARPS * WARP_SIZE,),
-            )
+            comptime if has_epilogue_fn:
+                comptime rdna_kernel = gemm_kernel_rdna_epilogue_fn[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).Engine,
+                    type_of(a).Engine,
+                    type_of(b).Engine,
+                    EpilogueFnType,
+                    transpose_b,
+                    BLOCK_K=BLOCK_K,
+                    BLOCK_M=BLOCK_M,
+                    BLOCK_N=BLOCK_N,
+                    WARPS_M=WARPS_M,
+                    WARPS_N=WARPS_N,
+                    WARP_TILE_M=WARP_TILE_M,
+                    WARP_TILE_N=WARP_TILE_N,
+                ]
+                ctx.enqueue_function[rdna_kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    host_arg=epilogue_fn,
+                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                    block_dim=(NUM_WARPS * WARP_SIZE,),
+                )
+            elif has_compute_fn:
+                comptime rdna_kernel = gemm_kernel_rdna_compute_fn[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).Engine,
+                    type_of(a).Engine,
+                    type_of(b).Engine,
+                    ComputeFnType,
+                    transpose_b,
+                    BLOCK_K=BLOCK_K,
+                    BLOCK_M=BLOCK_M,
+                    BLOCK_N=BLOCK_N,
+                    WARPS_M=WARPS_M,
+                    WARPS_N=WARPS_N,
+                    WARP_TILE_M=WARP_TILE_M,
+                    WARP_TILE_N=WARP_TILE_N,
+                ]
+                ctx.enqueue_function[rdna_kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    host_arg=compute_fn,
+                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                    block_dim=(NUM_WARPS * WARP_SIZE,),
+                )
+            else:
+                comptime rdna_kernel = gemm_kernel_rdna[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).Engine,
+                    type_of(a).Engine,
+                    type_of(b).Engine,
+                    transpose_b,
+                    BLOCK_K=BLOCK_K,
+                    BLOCK_M=BLOCK_M,
+                    BLOCK_N=BLOCK_N,
+                    WARPS_M=WARPS_M,
+                    WARPS_N=WARPS_N,
+                    WARP_TILE_M=WARP_TILE_M,
+                    WARP_TILE_N=WARP_TILE_N,
+                ]
+                ctx.enqueue_function[rdna_kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
+                    block_dim=(NUM_WARPS * WARP_SIZE,),
+                )
 
         # Large transpose_b shapes with BK=64. Two A+B tiles don't fit LDS at
         # this size, so the kernel uses its single-buffer register-staged

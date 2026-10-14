@@ -22,6 +22,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
+from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from typing import Any, TypeVar, overload
 
@@ -408,84 +409,68 @@ class EPBatchManager:
             )
         return self._atomic_counters
 
-    def _atomic_counters_input_types(self) -> list[BufferType]:
-        """Generate input types for atomic counter buffers.
+    def input_tree(
+        self,
+    ) -> OrderedDict[str, tuple[TensorType | BufferType, ...]]:
+        """Names the EP graph inputs, in the order the graph declares them.
 
-        Returns:
-            list[BufferType]: List of buffer types for atomic counters.
+        ``atomic_counters`` is group-major (``[NUM_GROUPS][n_gpus_per_node]``);
+        the three pointer fields hold one host tensor per group. The EPLB
+        fields are present only when EPLB is enabled, one buffer per GPU.
         """
-        return [
+        n_gpus = self.config.n_gpus_per_node
+        counters = tuple(
             BufferType(
                 DType.int32,
                 [
                     _ep_counter_words(
                         self.config.n_experts,
-                        self.config.n_gpus_per_node,
+                        n_gpus,
                         self.config.use_allreduce,
                         self.config.moe_dim,
                     )
                 ],
-                device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
+                device=DeviceRef.GPU(i % n_gpus),
             )
-            for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
-        ]
-
-    def _dev_ptrs_input_types(self) -> list[TensorType]:
-        """Generate input types for device pointer tensors.
-
-        Returns:
-            list[TensorType]: List of tensor types for device pointers.
-        """
-        return (
-            [
-                TensorType(
-                    DType.uint64,
-                    [self.config.n_gpus_per_node],
-                    device=DeviceRef.CPU(),
-                ),
-            ]
-            * 3  # 3 buffer types: send, recv, recv_count
-            * NUM_GROUPS  # For double buffering
+            for i in range(NUM_GROUPS * n_gpus)
         )
+
+        def ptrs() -> tuple[TensorType, ...]:
+            return tuple(
+                TensorType(DType.uint64, [n_gpus], device=DeviceRef.CPU())
+                for _ in range(NUM_GROUPS)
+            )
+
+        inputs: OrderedDict[str, tuple[TensorType | BufferType, ...]] = (
+            OrderedDict(
+                atomic_counters=counters,
+                send_buf_ptrs=ptrs(),
+                recv_buf_ptrs=ptrs(),
+                recv_count_ptrs=ptrs(),
+            )
+        )
+        if self.config.eplb_enabled:
+            shape = [
+                self.config.num_moe_layers,
+                self.config.num_logical_experts,
+            ]
+            inputs["eplb_log2phy"] = tuple(
+                BufferType(
+                    DType.int32,
+                    [*shape, self.config.max_replicas],
+                    device=DeviceRef.GPU(i),
+                )
+                for i in range(n_gpus)
+            )
+            inputs["eplb_logcnt"] = tuple(
+                BufferType(DType.int32, shape, device=DeviceRef.GPU(i))
+                for i in range(n_gpus)
+            )
+        return inputs
 
     def input_types(self) -> list[TensorType | BufferType]:
-        """Get the input types for the MoE graph.
-
-        Returns:
-            list[TensorType | BufferType]: List of input types for atomic
-                                          counters and device pointers.
-        """
-        types: list[TensorType | BufferType] = (
-            self._atomic_counters_input_types() + self._dev_ptrs_input_types()
-        )
-
-        if self.config.eplb_enabled:
-            types += self._eplb_input_types()
-        return types
-
-    def _eplb_input_types(self) -> list[TensorType | BufferType]:
-        """Per-device log2phy + logcnt buffer types."""
-        num_moe_layers = self.config.num_moe_layers
-        num_experts_per_layer = self.config.num_logical_experts
-        max_replicas = self.config.max_replicas
-        n_gpus = self.config.n_gpus_per_node
-        log2phy: list[TensorType | BufferType] = [
-            BufferType(
-                DType.int32,
-                [num_moe_layers, num_experts_per_layer, max_replicas],
-                device=DeviceRef.GPU(i),
-            )
-            for i in range(n_gpus)
-        ]
-        logcnt: list[TensorType | BufferType] = [
-            BufferType(
-                DType.int32,
-                [num_moe_layers, num_experts_per_layer],
-                device=DeviceRef.GPU(i),
-            )
-            for i in range(n_gpus)
-        ]
-        return log2phy + logcnt
+        """Get the input types for the MoE graph."""
+        return tree.leaves(self.input_tree())
 
     def fetch_buffers(self, _input_vals: Iterable[Value[Any]]) -> None:
         """Extract and organize communication buffers from graph input values.

@@ -583,7 +583,6 @@ def fa4_load[
             depth_offset=UInt32(d_idx),
         )
 
-    @__parameter
     @inline(.always)
     def _produce_v[
         partial: Bool,
@@ -593,7 +592,7 @@ def fa4_load[
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
         v_num_valid_pages: UInt32,
-    ):
+    ) {imm}:
         # Shared-key uses `_produce_v_sk` instead; assert the prune rather than
         # trust it, so an instantiation here is a build error, not a rank-3
         # coord handed to a rank-4 descriptor.
@@ -882,7 +881,6 @@ def fa4_load[
                 )
                 kv_pipeline.state.step()
 
-        @__parameter
         @inline(.always)
         def _emit_v[
             partial: Bool, acquire: Bool = True
@@ -894,7 +892,7 @@ def fa4_load[
             # (dead) for Layout-G / non-WS / 2Q -- default keeps every
             # existing (2-arg) call site byte-identical.
             kv_row_base: UInt32 = 0,
-        ):
+        ) {mut kv_pipeline, imm}:
             # WS shared sub-tile ring: emit num_qk_stages V sub-tiles (each a
             # 32768-B ring slot with its own barrier). Folds to one slot for
             # non-WS shared (num_qk_stages==1). The ring scaffolding

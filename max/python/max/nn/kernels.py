@@ -10111,6 +10111,7 @@ def grouped_quantize_dynamic_block_scaled(
     scales_type: DType = DType.float8_e4m3fn,
     out_type: DType = DType.uint8,
     indices: TensorValue | None = None,
+    indices_divisor: int = 1,
 ) -> tuple[TensorValue, TensorValue]:
     """Grouped dynamic NVFP4/MXFP4/MXFP8 quantization for MoE experts.
 
@@ -10130,10 +10131,14 @@ def grouped_quantize_dynamic_block_scaled(
             Shape: ``[num_experts]``, dtype ``float32``.
         indices: Optional source row indices per permuted row, fusing the
             MoE expert permutation gather into the quantize loads.
-            Shape: ``[padded_rows]``, dtype ``int32``. When given, the input
-            is read at row ``indices[i]`` for permuted row ``i``, and the
-            output rows and scale tiles are sized by ``indices.shape[0]``
-            rather than ``input.shape[0]``.
+            Shape: ``[padded_rows]``, dtype ``int32`` or ``uint32``. When
+            given, the input is read at row ``indices[i] // indices_divisor``
+            for permuted row ``i``, and the output rows and scale tiles are
+            sized by ``indices.shape[0]`` rather than ``input.shape[0]``.
+        indices_divisor: The divisor applied to each entry of ``indices``.
+            Passing the routing slot order from
+            :func:`moe_create_indices` with the top-k as the divisor reads
+            each slot's token row without a separate division kernel.
         sf_vector_size: The block size for the scaling factors.
         scales_type: Scale factor dtype. ``float8_e4m3fn`` for NVFP4.
         out_type: Output dtype. ``uint8`` for packed FP4.
@@ -10151,6 +10156,12 @@ def grouped_quantize_dynamic_block_scaled(
 
     if out_type not in (DType.uint8, DType.float8_e4m3fn):
         raise ValueError("out_type must be uint8 (FP4x2) or float8_e4m3fn")
+
+    if indices is not None:
+        if indices.dtype not in (DType.int32, DType.uint32):
+            raise ValueError("indices dtype must be int32 or uint32")
+        if indices_divisor < 1:
+            raise ValueError("indices_divisor must be positive")
 
     if not _is_sm10x_gpu():
         # route to the fallback kernel
@@ -10182,14 +10193,17 @@ def grouped_quantize_dynamic_block_scaled(
 
     op_name = "mo.grouped.quantize.dynamic.block.scaled"
     values = [input, row_offsets, scales_offsets, expert_ids, sf_tensor]
+    parameters: dict[str, int] = {}
     if indices is not None:
         op_name = "mo.grouped.quantize.dynamic.block.scaled.with_row_indices"
         values.append(indices)
+        parameters["row_index_divisor"] = indices_divisor
 
     result = ops.custom(
         op_name,
         device=input.device,
         values=values,
+        parameters=parameters,
         out_types=[
             TensorType(
                 dtype=out_type,

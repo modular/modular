@@ -546,7 +546,7 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
         anyStruct.getSymbol());
 
   if (auto traitType = dyn_cast<TraitType>(strippedType))
-    return shared.declResolver->getTraitDecl(traitType);
+    return shared.declResolver->getTraitCompositionDecl(traitType);
 
   if (auto module = dyn_cast<ModuleType>(strippedType))
     return shared.declResolver->getDeclForTypeSymbolIfExists(

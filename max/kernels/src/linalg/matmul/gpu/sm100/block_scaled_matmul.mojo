@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implements the warp-specialized block-scaled matmul kernel for SM100 (B200) GPUs, supporting MXFP8, MXFP4, and NVFP4 block-scaled formats with TMA-based loads and UMMA tensor core operations."""
+"""Implements the warp-specialized block-scaled matmul kernel for SM100 (B200) GPUs, supporting MXFP8, MXFP4, NVFP4, and W4A8 (MXFP8 x MXFP4) block-scaled formats with TMA-based loads and UMMA tensor core operations."""
 
 from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
@@ -100,6 +100,8 @@ from linalg.fp4_utils import (
     SF_K_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
+    _is_packed_fp4,
+    is_w4a8_operand_pair,
 )
 from .matmul import (
     WarpRole,
@@ -193,6 +195,30 @@ struct B200BlockScaledMatmulSmem[
     # TMEM
     var tmem_dealloc_mbar: Array[SharedMemBarrier, 1]
     var tmem_addr: Array[UInt32, 1]
+
+
+def _tma_tile_gmem_bytes[
+    dtype: DType, other_dtype: DType, smem_elems: Int
+]() -> Int:
+    """Returns the global-memory bytes one TMA load of an operand tile reads.
+
+    An mbarrier transaction count is in global-memory bytes. A packed-FP4
+    operand fills `smem_elems` shared-memory bytes from half as many packed
+    ones, and a barrier told to expect the shared-memory figure never
+    completes.
+
+    Parameters:
+        dtype: The operand's element dtype.
+        other_dtype: The other operand's element dtype.
+        smem_elems: Elements in the operand's shared-memory tile.
+
+    Returns:
+        The tile's transaction size in bytes.
+    """
+    comptime smem_bytes = smem_elems * size_of[dtype]()
+    return (
+        smem_bytes // 2 if _is_packed_fp4[dtype, other_dtype]() else smem_bytes
+    )
 
 
 @inline(.always)
@@ -330,8 +356,12 @@ def load_AB_SFA_SFB[
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
 
-    comptime a_expected_bytes = a_dim0 * a_dim1 * size_of[a_type]()
-    comptime b_expected_bytes = b_dim0 * b_dim1 * size_of[b_type]()
+    comptime a_expected_bytes = _tma_tile_gmem_bytes[
+        a_type, b_type, a_dim0 * a_dim1
+    ]()
+    comptime b_expected_bytes = _tma_tile_gmem_bytes[
+        b_type, a_type, b_dim0 * b_dim1
+    ]()
     comptime sfa_expected_bytes = (
         type_of(sfa_smem_tiles).tile_size * size_of[sfa_dtype]()
     )
@@ -506,8 +536,12 @@ def _prefetch_weight_tiles[
     comptime BK = block_tile_shape[2]
     comptime MMA_N = mma_shape[1]
 
-    comptime a_expected_bytes = a_dim0 * a_dim1 * size_of[a_type]()
-    comptime b_expected_bytes = b_dim0 * b_dim1 * size_of[b_type]()
+    comptime a_expected_bytes = _tma_tile_gmem_bytes[
+        a_type, b_type, a_dim0 * a_dim1
+    ]()
+    comptime b_expected_bytes = _tma_tile_gmem_bytes[
+        b_type, a_type, b_dim0 * b_dim1
+    ]()
     comptime sfa_expected_bytes = (
         type_of(sfa_smem_tiles).tile_size * size_of[sfa_dtype]()
     )
@@ -1622,6 +1656,54 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 # =============================================================================
 
 
+def _check_operand_k_extent[
+    operand_name: StaticString, K: Int, packed_fp4: Bool
+](operand: TileTensor) raises:
+    """Checks that a `(batch, rows, K)` operand spans `K` elements.
+
+    A packed-FP4 operand holds two E2M1 values per `uint8`, so its row is
+    `K // 2` bytes; every other operand holds one element per stored value. A
+    static extent is checked at compile time. A dynamic one is checked before
+    launch, because a row in the wrong unit reads out of bounds or hangs the
+    load barrier instead of failing.
+
+    Parameters:
+        operand_name: Operand name for the error message.
+        K: Reduction extent in elements.
+        packed_fp4: Whether the operand is nibble-packed E2M1.
+
+    Args:
+        operand: The rank-3 operand.
+
+    Raises:
+        If a dynamic innermost extent does not span `K` elements.
+    """
+    comptime elems_per_value = 2 if packed_fp4 else 1
+    comptime static_extent = type_of(operand).static_shape[2]
+    comptime if static_extent > -1:
+        comptime assert static_extent * elems_per_value == K, String(
+            operand_name,
+            " spans ",
+            static_extent * elems_per_value,
+            " K elements (innermost extent ",
+            static_extent,
+            ") but K = ",
+            K,
+        )
+    else:
+        var extent = Int(operand.dim[2]())
+        if extent * elems_per_value != K:
+            raise Error(
+                operand_name,
+                " spans ",
+                extent * elems_per_value,
+                " K elements (innermost extent ",
+                extent,
+                ") but K = ",
+                K,
+            )
+
+
 def _create_tma_and_launch[
     transpose_b: Bool,
     *,
@@ -1675,10 +1757,44 @@ def _create_tma_and_launch[
     ), "K iterations must be a multiple of k_group_size"
 
     comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 bytes"
+        "Due to TMA limitations, K must be a multiple of 16 elements"
         + " but got K = "
         + String(K)
     )
+
+    # K counts elements. Under W4A8 the weights stay nibble-packed in global
+    # memory, K // 2 bytes per row, and the FP4 TMA copy pads them to one
+    # shared-memory byte per element. `AB_swapped` has already moved the
+    # weights into the A slot here, so either operand can be the packed one.
+    comptime a_packed_fp4 = _is_packed_fp4[a_type, b_type]()
+    comptime b_packed_fp4 = _is_packed_fp4[b_type, a_type]()
+    # The FP4-only kinds keep both operands packed, and their callers pass K
+    # in bytes or in elements alike (TMA zero-fills the K tiles past the row),
+    # so only `kind::mxf8f6f4` has a single K unit to check.
+    comptime if config.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+        _check_operand_k_extent["A", K, a_packed_fp4](a_3d)
+        _check_operand_k_extent["B", K, b_packed_fp4](b_3d)
+
+    # `cuTensorMapEncodeTiled` rejects a 16U4_ALIGN16B descriptor unless its
+    # innermost global extent is a multiple of 128 elements and its swizzle is
+    # NONE or 128B (the box check follows the descriptors). The descriptor
+    # helper only `debug_assert`s the extent, which compiles out by default.
+    comptime if a_packed_fp4 or b_packed_fp4:
+        comptime assert K % 128 == 0, (
+            "packed FP4 requires K to be a multiple of 128 elements but got"
+            " K = "
+            + String(K)
+        )
+        comptime packed_swizzle = (
+            config.a_swizzle if a_packed_fp4 else config.b_swizzle
+        )
+        comptime assert (
+            packed_swizzle == TensorMapSwizzle.SWIZZLE_NONE
+            or packed_swizzle == TensorMapSwizzle.SWIZZLE_128B
+        ), String(
+            "packed FP4 TMA requires SWIZZLE_NONE or SWIZZLE_128B but got ",
+            packed_swizzle,
+        )
 
     # A matrix TMA (from TileTensor)
     comptime a_tma_tile_shape = coord[1, BM // cluster_shape[1], BK]
@@ -1686,6 +1802,7 @@ def _create_tma_and_launch[
         a_tma_tile_shape,
         swizzle_mode=config.a_swizzle,
         __tile_shape=a_tma_tile_shape,
+        unpack_fp4=a_packed_fp4,
     ](ctx, a_3d)
 
     # fmt: off
@@ -1698,6 +1815,7 @@ def _create_tma_and_launch[
         b_tma_tile_shape,
         swizzle_mode = config.b_swizzle,
         __tile_shape = b_tma_tile_shape,
+        unpack_fp4 = b_packed_fp4,
     ](ctx, b_3d)
 
     # C matrix TMA (from TileTensor)
@@ -1733,6 +1851,14 @@ def _create_tma_and_launch[
         __tile_shape = c_tma_tile_shape_final,
     ](ctx, c_3d)
     # fmt: on
+
+    comptime assert (
+        not a_packed_fp4
+        or type_of(a_tma_op).desc_shape.element_types[2].static_value == 128
+    ) and (
+        not b_packed_fp4
+        or type_of(b_tma_op).desc_shape.element_types[2].static_value == 128
+    ), "packed FP4 TMA requires a box of exactly 128 K elements"
 
     # Scale factor TMAs — use flattened 4D uint16 to avoid TMA 2× overfetch.
     #
@@ -1949,6 +2075,30 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         or config.scaling_kind == UMMAKind.KIND_MXF4NVF4
     ), "Only support MXF8F6F4, MXF4, or MXF4NVF4 for scaling kind"
 
+    # Under `kind::mxf8f6f4` a `uint8` operand is read padded, and only the
+    # W4A8 pair gets the padded TMA copy that produces that layout. Two `uint8`
+    # operands would encode a legal descriptor under this kind but leave both
+    # copies dense, so the tensor cores would read one nibble-packed byte per
+    # element. The FP4-only kinds want exactly that dense layout.
+    comptime assert config.scaling_kind != UMMAKind.KIND_MXF8F6F4 or (
+        (
+            config.a_type != DType.uint8
+            or _is_packed_fp4[config.a_type, config.b_type]()
+        )
+        and (
+            config.b_type != DType.uint8
+            or _is_packed_fp4[config.b_type, config.a_type]()
+        )
+    ), String(
+        (
+            "kind::mxf8f6f4 accepts a nibble-packed operand only as the W4A8"
+            " pair (E4M3 activations, E2M1 weights), but got a="
+        ),
+        config.a_type,
+        " b=",
+        config.b_type,
+    )
+
     comptime assert config.cta_group in (
         1,
         2,
@@ -2118,7 +2268,39 @@ def blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     performance when M is small.
 
     When config.is_small_bn is True, use the small-BN kernel which is optimized for skinny GEMMs.
+
+    A and B share a dtype, except for W4A8: `float8_e4m3fn` activations in A
+    against nibble-packed E2M1 weights in B (`uint8`, `K // 2` bytes per row),
+    both on E8M0 scales over 32 elements, under `kind::mxf8f6f4`. Under that
+    kind `K` counts elements, so the W4A8 weight row is `K // 2` bytes.
     """
+    comptime a_type = config.a_type
+    comptime b_type = config.b_type
+    comptime if a_type != b_type:
+        comptime assert is_w4a8_operand_pair[a_type, b_type](), String(
+            (
+                "A and B must share a dtype, or be the W4A8 pair"
+                " (float8_e4m3fn activations, uint8 E2M1 weights), but got a="
+            ),
+            a_type,
+            " b=",
+            b_type,
+        )
+        comptime assert (
+            sfa_dtype == MXFP8_SF_DTYPE
+            and sfb_dtype == MXFP8_SF_DTYPE
+            and config.scaling_kind == UMMAKind.KIND_MXF8F6F4
+        ), (
+            "W4A8 requires E8M0 scales on both operands and kind::mxf8f6f4."
+            " NVFP4 (E4M3 scales over 16 elements) exists only under"
+            " kind::mxf4nvf4, which takes E2M1 on both operands, so it cannot"
+            " be mixed with E4M3 activations"
+        )
+        comptime assert not config.is_small_bn, (
+            "the small-BN block-scaled kernel does not support W4A8: it lacks"
+            " the padded FP4 TMA copy and its byte accounting"
+        )
+
     comptime if config.is_small_bn:
         blackwell_block_scaled_matmul_small_bn[
             K=K,

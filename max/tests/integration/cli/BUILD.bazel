@@ -32,7 +32,9 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max/_entrypoints",
         "//max/python/max/_entrypoints:pipelines",
+        "//max/python/max/pipelines",
     ],
 )
 

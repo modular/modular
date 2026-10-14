@@ -15,12 +15,13 @@
 //! The binding source stays closed; the public surface is the hand-written
 //! stub `max/python/max/_kv_core.pyi`, which must change with this file.
 //!
-//! The Jenga block pool is in [`pool`].
+//! The Jenga block pool is in [`pool`] and block hashing in [`hash`].
 //!
 //! A leaf's shape crosses the boundary as a [`PyLeafShape`] rather than as
 //! MAX's `KVCacheGroupId`, so the Rust side needs no MAX type and MAX keeps the
 //! window arithmetic (`KVCacheGroupId.blocks_in_window`) that builds it.
 
+mod hash;
 mod pool;
 
 use kv_core::prefix_hit::{self, LeafShape};
@@ -156,6 +157,7 @@ fn _kv_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyLeafShape>()?;
     m.add_function(wrap_pyfunction!(longest_joint_prefix_hit, m)?)?;
     m.add_function(wrap_pyfunction!(blocks_held_of_hit, m)?)?;
+    hash::register(m)?;
     pool::register(m)?;
     Ok(())
 }

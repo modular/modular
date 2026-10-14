@@ -76,7 +76,6 @@ from linalg.matmul.gpu.apple.matmul_kernel import AppleM5MatMul
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -85,7 +84,6 @@ from std.utils import IndexList
 
 struct Matmul2dFp8[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     block_m: Int = 64,
     block_n: Int = 64,
     block_k: Int = 16,
@@ -102,9 +100,6 @@ struct Matmul2dFp8[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract). Currently unused on the interior store; the launcher routes
-            fused-epilogue shapes elsewhere.
         block_m: Threadgroup block rows `BM` (multiple of `SG_M`).
         block_n: Threadgroup block cols `BN` (multiple of `SG_N`).
         block_k: K-strip depth `BK` per accumulate step (multiple of 16).
@@ -176,13 +171,6 @@ struct Matmul2dFp8[
         `(row, col)` in `c` instead of being stored; an inactive group passes
         it zeros.
         """
-        # The tiled store applies only an epilogue passed as a value. Fail loud
-        # so a caller wiring a lambda can't have it silently dropped.
-        comptime assert not Self.elementwise_lambda_fn, (
-            "matmul2d_fp8: elementwise_lambda_fn is not applied by the tiled"
-            " store; pass the epilogue as a value"
-        )
-
         comptime BM = Self.BM
         comptime BN = Self.BN
         comptime BK = Self.BK
@@ -469,7 +457,6 @@ def enqueue_matmul2d_fp8[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     //,
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     block_m: Int = 64,
     block_n: Int = 64,
     block_k: Int = 16,
@@ -514,7 +501,6 @@ def enqueue_matmul2d_fp8[
         DType.bfloat16,
         c_type,
         transpose_b=True,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         block_m=block_m,
         block_n=block_n,
         block_k=block_k,
@@ -645,7 +631,6 @@ def enqueue_grouped_matmul2d_fp8[
 
     comptime MM = Matmul2dFp8[
         c_type,
-        None,
         block_m,
         block_n,
         block_k,

@@ -1290,6 +1290,12 @@ def test_dispatch_common[
         ctx.enqueue_memset(atomic_counters_list[dev_idx], Int32(0))
         ctx.enqueue_memset(recv_count_bufs_list[dev_idx], UInt64.MAX_FINITE)
 
+    # Each device resets its own recv counts on its own stream, but peers
+    # write signals into them. Wait for all resets, or a late reset can erase
+    # a peer's signal and the wait kernel spins forever.
+    for dev_i in range(n_ranks):
+        list_of_ctx[dev_i].synchronize()
+
     # warm up by running once
     for dev_i in range(n_ranks):
         run_e2e(dev_i, 0)

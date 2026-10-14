@@ -474,6 +474,12 @@ def test_combine[
             combine_recv_count_bufs_list[dev_idx], UInt64.MAX_FINITE
         )
 
+    # Each device resets its own recv counts on its own stream, but peers
+    # write signals into them. Wait for all resets, or a late reset can erase
+    # a peer's signal and the wait kernel spins forever.
+    for dev_i in range(n_ranks):
+        list_of_ctx[dev_i].synchronize()
+
     # warm up by running once
     for dev_i in range(n_ranks):
         run_full_dispatch(dev_i, 0)

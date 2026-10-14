@@ -7,8 +7,9 @@ module(
 
 include("//bazel:common.MODULE.bazel")
 
-# Rust, for the kv-core pyo3 extension (max._kv_core). Declared here rather than
-# in common.MODULE.bazel because the internal MODULE.bazel declares its own.
+# Rust, for the kv-core pyo3 extension (max._kv_core) and the tiered KV
+# connector. Declared here rather than in common.MODULE.bazel because the
+# internal MODULE.bazel declares its own.
 bazel_dep(name = "rules_rust", version = "0.70.0")
 bazel_dep(name = "rules_rust_pyo3", version = "0.70.0")
 
@@ -38,22 +39,21 @@ rust.toolchain(
     versions = ["1.94.0"],
 )
 
-# The crate universe behind max._kv_core. kv-core and its bindings form their
-# own Cargo workspace (MXSERV-665) so they resolve without mach, which the
-# //rust_kv workspace reaches through kv-tier-connector. pyo3 is injected into
-# pyo3_extension targets by `//bazel/internal:pyo3_toolchain`.
+# The crate universe behind max._kv_core and the tiered KV connector: the
+# //rust_kv Cargo workspace. pyo3 is injected into pyo3_extension targets by
+# `//bazel/internal:pyo3_toolchain`.
 crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
 crate.from_cargo(
-    name = "kv_core_crates",
-    cargo_lock = "//rust_kv/kv-core-pyo3:Cargo.lock",
-    cargo_toml = "//rust_kv/kv-core-pyo3:Cargo.toml",
+    name = "rust_kv_crates",
+    cargo_lock = "//rust_kv:Cargo.lock",
+    cargo_toml = "//rust_kv:Cargo.toml",
     platform_triples = [
         "aarch64-apple-darwin",
         "aarch64-unknown-linux-gnu",
         "x86_64-unknown-linux-gnu",
     ],
 )
-use_repo(crate, "kv_core_crates")
+use_repo(crate, "rust_kv_crates")
 
 mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 

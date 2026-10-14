@@ -123,11 +123,11 @@ def _language_graph_input_types(n_devices: int) -> tuple[Any, ...]:
         devices=[DeviceRef("gpu", i) for i in range(n_devices)],
         hidden_size=_HIDDEN_SIZE,
         data_parallel_degree=n_devices,
+        ep_config=None,
         eplb_profile_enabled=False,
     )
-    decoder.ep_manager = None
     kv_params = MagicMock()
-    kv_params.flattened_kv_inputs.return_value = []
+    kv_params.get_symbolic_inputs.return_value = []
     return decoder.input_types(kv_params)
 
 

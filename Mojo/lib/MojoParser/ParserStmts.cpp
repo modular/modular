@@ -188,7 +188,8 @@ ParserBase::parseDecorators(ssize_t indentation) {
 static void initializeBuilderForFunctions(ASTDecl &curDeclScope,
                                           OpBuilder &builder) {
   // Special logic for functions.
-  if (auto funcOp = dyn_cast_or_null<FnOp>(curDeclScope.getIfOperation())) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&curDeclScope)) {
+    auto funcOp = defDecl->getOp();
     // The default of inserting at the end of the function isn't right,
     // because it will have an lit.endfn: insert before that instead.
     assert(isa<EndFnOp>(funcOp.getBody()->back()) &&
@@ -836,7 +837,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   case Token::kw_var:
     // In function bodies, we parse 'var' as expressions, part of the pattern
     // grammar.  TODO: extend this to other contexts.
-    if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()))
+    if (isa<DefASTDecl>(getParentDecl()))
       break;
     return parseVarStmt(startCursor, stmtIndent);
   case Token::kw_comptime:
@@ -1005,7 +1006,7 @@ ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
 
   // This is a comptime variable declaration (e.g., 'comptime x = 4').
   // Decorators on aliases are not allowed inside function bodies.
-  if (isa_and_present<FnOp>(getParentDecl().getIfOperation()))
+  if (isa<DefASTDecl>(getParentDecl()))
     rejectDecorator(/*inFunctionBody=*/true, /*isCompoundStmt=*/false);
   return parseAliasDeclStmtBody(startCursor, curIndent, kwLoc);
 }
@@ -1090,7 +1091,7 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis. First ensure we're in a function. This may be relaxed later.
-  if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+  if (!isa<DefASTDecl>(getParentDecl())) {
     emitError(kwLoc, "'comptime assert' must be inside a function; move this "
                      "into a function body");
     return success();
@@ -1159,8 +1160,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
   // analysis.  First ensure we're in a function.
-  auto func = dyn_cast_or_null<FnOp>(getParentDecl().getIfOperation());
-  if (!func) {
+  auto *defDecl = dyn_cast<DefASTDecl>(&getParentDecl());
+  if (!defDecl) {
     emitError(
         loc,
         "'return' must be inside a function; move this into a function body");
@@ -1168,6 +1169,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   auto emitter = getEmitter();
+  auto func = defDecl->getOp();
   FnTypeGeneratorType declSig = func.getFuncTypeGenerator();
 
   // Next check the forms: We may or may not have a result expression.  If the
@@ -1459,7 +1461,7 @@ ParseResult StmtParser::parseAssertStmt(size_t assertIndent) {
   SMLoc kwLoc = consumeToken(Token::kw_assert).getLoc();
 
   // Must be inside a function body.
-  if (!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+  if (!isa<DefASTDecl>(getParentDecl())) {
     emitError(
         kwLoc,
         "'assert' must be inside a function; move this into a function body");
@@ -4891,7 +4893,7 @@ void StmtParser::maybeMarkDefaultedTraitMethod(FnOp fnOp) {
 ///                 | "var" identifier "=" expression
 ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
                                      size_t stmtIndent) {
-  assert(!isa_and_nonnull<FnOp>(getParentDecl().getIfOperation()) &&
+  assert(!isa<DefASTDecl>(getParentDecl()) &&
          "var decls in functions are processed as expression statements");
 
   // Global var decls are allowed to have decorators, but nothing else.
@@ -5168,7 +5170,7 @@ ParseResult StmtParser::parseStructStmt(LexerCursor startCursor,
   } else if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
     emitTokenError("nested " + kind + " in a trait not supported here");
     nestFailure = true;
-  } else if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+  } else if (isa<DefASTDecl>(getParentDecl())) {
     emitTokenError(kind + " inside a function not supported here");
     nestFailure = true;
   }
@@ -5295,7 +5297,7 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
   } else if (isa_and_nonnull<TraitDeclOp>(getParentDecl().getIfOperation())) {
     emitTokenError("nested extension in a trait not supported here");
     nestFailure = true;
-  } else if (isa_and_nonnull<FnOp>(getParentDecl().getIfOperation())) {
+  } else if (isa<DefASTDecl>(getParentDecl())) {
     emitTokenError("extension inside a function not supported here");
     nestFailure = true;
   }

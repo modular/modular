@@ -226,7 +226,8 @@ void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
 }
 
 static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
-  auto funcOp = dyn_cast_or_null<FnOp>(fnDecl.getIfOperation());
+  auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl);
+  FnOp funcOp = defDecl ? defDecl->getOp() : nullptr;
   if (!funcOp || !isa_and_nonnull<FnOp>(funcOp->getParentOp()))
     return false;
 
@@ -243,8 +244,9 @@ static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                       const VerifiedParamBindings &verified,
                                       ASTDecl &useScope, SMLoc useLoc) {
-  auto funcOp = dyn_cast_or_null<FnOp>(fnDecl.getIfOperation());
-  if (funcOp) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl);
+      defDecl && defDecl->getOp()) {
+    FnOp funcOp = defDecl->getOp();
     if (isReferenceFromOwnFnBody(fnDecl, useScope)) {
       StringRef name = funcOp.getDeclName().getValue();
       auto diag = shared.emitError(

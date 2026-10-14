@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.os import chdir, mkdir, rmdir
-from std.io import FileDescriptor, FileHandle
+from std.io import RawFileDescriptor, FileHandle
 from std.pathlib import cwd
 from std.testing import TestSuite, assert_equal, assert_not_equal
 
@@ -36,7 +36,7 @@ def test_fchdir() raises:
     mkdir("test_fchdir")
     assert_not_equal(cwd().name(), "test_fchdir")
     var f = FileHandle("test_fchdir", "r")
-    FileDescriptor(f).fchdir()
+    RawFileDescriptor(f).fchdir()
     assert_equal(cwd().name(), "test_fchdir")
     chdir("..")
     _ = f

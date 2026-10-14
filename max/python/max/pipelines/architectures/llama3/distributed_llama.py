@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 
+from max import tree
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
 from max.nn.attention import TensorParallelAttentionWithRope
-from max.nn.comm import Signals
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
@@ -30,6 +30,9 @@ from max.nn.norm import RMSNorm
 from max.nn.transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
+)
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_kv_symbolic_input_tree,
 )
 
 logger = logging.getLogger("max.pipelines")
@@ -195,41 +198,17 @@ class DistributedLlama3(DistributedTransformer):
             logits_scaling=config.logits_scaling,
         )
 
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the graph's inputs; its leaves are the graph's inputs."""
+        return ragged_kv_symbolic_input_tree(
+            kv_params=kv_params,
+            device_refs=list(self.config.devices),
+            include_signal_buffers=True,
+        )
+
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
-        # TODO: Move input symbol computation from the manager classes.
-        # It should be possible to compute the input symbols from the model
-        # config.
-        device_ref = self.config.devices[0]
-
-        # Construct general input types
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = kv_params.flattened_kv_inputs()
-
-        # Construct Graph Inputs
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-
-        signals = Signals(devices=self.config.devices)
-
-        # Explicitly construct tuple with mixed types
-        signal_buffer_types: list[BufferType] = signals.input_types()
-
-        # Build the complete input types list
-        all_input_types: list[TensorType | BufferType] = [
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-        ]
-        all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(kv_inputs)
-
-        return tuple(all_input_types)
+        return tuple(tree.leaves(self.input_tree(kv_params)))

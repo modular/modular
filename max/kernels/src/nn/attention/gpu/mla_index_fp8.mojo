@@ -455,7 +455,6 @@ def mla_indexer_ragged_float8_paged[
         and depth % 64 == 0
         and dtype == .float8_e4m3fn
         and type_of(k_operand).dtype == .float8_e4m3fn
-        and kpool == 1
     )
 
     comptime assert (
@@ -464,14 +463,14 @@ def mla_indexer_ragged_float8_paged[
     comptime assert (
         write_logical or R.enabled
     ), "skipping the logical indices leaves only the remap to write"
-    comptime assert kpool == 1 or use_sm100_scorer, (
-        "pooled indexing (kpool > 1) is implemented only on the SM100"
-        " tensor-core scorer; the scalar fallback walks token rows"
+    comptime assert kpool == 1 or use_sm100_scorer or use_amd_scorer, (
+        "pooled indexing (kpool > 1) is implemented only on the SM100 and"
+        " gfx950 tensor-core scorers; the scalar fallback walks token rows"
     )
 
     # A pooled cache comes in two shapes: one `depth`-wide row per pool, or
     # (GLM-5.3-Flash) one `depth / kpool`-wide row per token with each pool's
-    # key spread over its tokens' rows. The SM100 scorer reads either.
+    # key spread over its tokens' rows. The SM100 and AMD scorers read either.
     comptime cache_row_width = CacheType.kv_params.head_size
     comptime assert (
         cache_row_width == depth or cache_row_width * kpool == depth
@@ -572,6 +571,8 @@ def mla_indexer_ragged_float8_paged[
                 depth,
                 _is_cache_length_accurate=False,
                 causal=mask_str == MaskName.CAUSAL.name,
+                kpool=kpool,
+                pool_row_tokens=pool_row_tokens,
             ](
                 scores_tile_f32,
                 q,

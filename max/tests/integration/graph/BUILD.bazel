@@ -47,6 +47,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_mega_ffn_nvfp4_fusion_ir.py",
     "test_rowwise_reductions.py",
     "test_runtime_source_notes.py",
+    "test_nms.py",
     "test_scatter.py",
     "test_tile_based_fusion.py",
     "test_typical_llm_snifftest.py",
@@ -223,6 +224,32 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_nms",
+    srcs = [
+        "conftest.py",
+        "test_nms.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 

@@ -18,7 +18,6 @@ from max.driver import (
     CPU,
     Accelerator,
     Buffer,
-    DeviceQueue,
     Usage,
     accelerator_api,
     batch_inplace_copy,
@@ -294,37 +293,6 @@ def test_pinned_concatenate() -> None:
     )
 
     assert np.array_equal(pinned.to_numpy(), expected)
-
-
-@pytest.mark.parametrize("is_pinned", [True, False])
-def test_zero_copy_on_to_stream_on_same_device(is_pinned: bool) -> None:
-    gpu = Accelerator()
-    data = np.arange(24).reshape(2, 3, 4).astype(np.int32)
-    tensor = Buffer(
-        shape=data.shape,
-        dtype=DType.int32,
-        device=gpu,
-        usage=Usage.STAGING if is_pinned else Usage.DEFAULT,
-    )
-    tensor.inplace_copy_from(Buffer.from_numpy(data))
-    stream1 = tensor.stream
-    tensor1 = tensor.to(stream1)
-    assert tensor1 is tensor
-    assert tensor1.stream is stream1
-    stream2 = DeviceQueue(gpu)
-    assert stream2 != stream1
-    tensor2 = tensor.to(stream2)
-    assert tensor2 is not tensor
-    assert tensor2.rank == tensor.rank
-    assert tensor2.shape == tensor.shape
-    assert tensor2.dtype == tensor.dtype
-    assert tensor2.element_size == tensor.element_size
-    assert tensor2.is_contiguous == tensor.is_contiguous
-    assert tensor2.is_host == tensor.is_host
-    assert tensor2.device is tensor.device
-    assert tensor2.stream is stream2
-    assert tensor2.stream is not stream1
-    assert (tensor2.to_numpy() == tensor.to_numpy()).all()
 
 
 def test_batch_inplace_copy_same_device_parity() -> None:

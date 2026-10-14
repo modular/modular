@@ -6,6 +6,13 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# Skip only in macOS CI, so the tests still run on a developer's Mac.
+config_setting(
+    name = "macos_ci",
+    constraint_values = ["@platforms//os:macos"],
+    flag_values = {"//:modular_config": "ci_build"},
+)
+
 modular_py_test(
     name = "pipelines",
     srcs = glob(
@@ -17,11 +24,12 @@ modular_py_test(
     ),
     data = glob(["testdata/*"]),
     target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
+        ":macos_ci": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -30,13 +38,17 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
         "//max/python/max/pipelines/architectures/eagle_common",
         "//max/python/max/pipelines/architectures/flux2",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
         "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
+        "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
         "//max/python/max/pipelines/architectures/step3p5",
         "//max/python/max/pipelines/lib",

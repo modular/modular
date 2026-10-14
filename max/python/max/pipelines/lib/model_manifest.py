@@ -300,17 +300,20 @@ class ModelManifest(dict[str, MAXModelConfig]):
     # Logging
     # ------------------------------------------------------------------
 
-    def log_model_info(self) -> None:
+    def log_model_info(self, *, uses_kv_cache: bool = True) -> None:
         """Logs model configuration information for every model in the manifest.
 
         Iterates over each role and delegates to
         ``MAXModelConfig.log_model_info()`` for per-model details.
+
+        Args:
+            uses_kv_cache: Whether the pipeline uses a KV cache.
         """
         logger.info("")
         logger.info("Model Information")
         logger.info("=" * 60)
         for role, config in self.items():
-            config.log_model_info(role=role)
+            config.log_model_info(role=role, uses_kv_cache=uses_kv_cache)
 
     # ------------------------------------------------------------------
     # Immutable update operations

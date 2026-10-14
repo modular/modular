@@ -296,10 +296,10 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
             if is_valid:
                 output_fn[simd_width](row, idx, normalized.cast[out_dtype]())
 
-    # NOTE: No end barrier needed. The FP8 output is consumed only by the
-    # local GPU, so stream ordering guarantees writes complete before the
-    # next kernel reads them. The start barrier of the NEXT allreduce call
-    # protects the input buffers (which ARE read by remote GPUs).
+    # Peers read this GPU's input over P2P, so hold it until they finish.
+    _multi_gpu_barrier[ngpus, is_start=False](
+        rank_sigs, rank_sigs[_my_rank], _my_rank
+    )
 
 
 @__llvm_metadata(
@@ -670,7 +670,10 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                         Coord(row, col_idx), bf16_val
                     )
 
-    # NOTE: No end barrier needed (same reasoning as 1-stage kernel).
+    # No end barrier. Every block waited at the mid barrier for its peer
+    # blocks to finish Stage 1, so all P2P reads of the inputs are done by
+    # the time this kernel exits. Stage 2 only reads peer scratch inside
+    # the Signal buffer, which the next collective's start barrier protects.
 
 
 # --- Launcher ---
@@ -1395,12 +1398,13 @@ def allreduce_rmsnorm[
         ctx: Device context for this GPU.
 
     Note:
-        This kernel does not issue an end barrier. The output and scale
-        buffers are safe to read only on the local GPU (stream ordering
-        guarantees visibility). If a remote GPU needs to read these outputs,
-        the caller must insert an explicit barrier. The start barrier of the
-        NEXT allreduce call protects the input buffers that are read by remote
-        GPUs.
+        Both kernels finish all P2P reads of the input buffers before they
+        exit (the 1-stage kernel with an end barrier, the 2-stage kernel
+        through its mid barrier), so the inputs are free to be reused once
+        this op retires. The output and scale buffers are safe to read only
+        on the local GPU (stream ordering guarantees visibility). If a
+        remote GPU needs to read these outputs, the caller must insert an
+        explicit barrier.
 
         Signal buffer sizing:
           1-stage path (payload < threshold): size_of[Signal]() only.

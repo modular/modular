@@ -50,6 +50,7 @@ from max.nn.norm.rms_norm import RMSNorm
 from ..model_config import DeepseekV4Config
 from .hadamard import hadamard_rotate
 from .quantization import fp4_qat_quantize, fp8_qat_quantize
+from .ragged import window_coff
 from .rope import apply_rope_tail
 
 
@@ -83,7 +84,7 @@ class DeepseekV4Compressor(Module):
         self.overlap = compress_ratio == 4
         # ``coff`` in the reference: the projections are doubled when
         # overlapping so one matmul produces both halves.
-        self.coff = 2 if self.overlap else 1
+        self.coff = window_coff(compress_ratio)
         self.proj_dim = self.coff * head_dim
 
         # Absolute positional embedding over the ``compress_ratio`` slots of a

@@ -72,7 +72,6 @@ from layout.coord import Coord
 from layout.tile_layout import Layout, TensorLayout
 
 from linalg.fp4_utils import decode_e2m1_to_f32, NVFP4_SF_VECTOR_SIZE
-from linalg.utils import elementwise_epilogue_type
 
 
 # ===----------------------------------------------------------------------=== #
@@ -539,7 +538,6 @@ struct Fp4WeightLoader[
 
 struct Matmul2dFp4[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_sg_m: Int = 2,
     num_sg_n: Int = 2,
     tm: Int = 2,
@@ -554,8 +552,6 @@ struct Matmul2dFp4[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract). Currently unused on the interior store; wired for parity.
         num_sg_m: Simdgroup rows per threadgroup.
         num_sg_n: Simdgroup cols per threadgroup.
         tm: Output 16x32 tiles per simdgroup along M (register-C accumulators).
@@ -953,7 +949,6 @@ struct Matmul2dFp4[
 @inline(.always)
 def enqueue_matmul2d_fp4[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     num_sg_m: Int = 2,
     num_sg_n: Int = 2,
     tm: Int = 2,
@@ -979,8 +974,6 @@ def enqueue_matmul2d_fp4[
     Parameters:
         c_type: Output element type; one of `fp16`, `bf16`, `fp32` (defaults
             to `float32`). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue applying a per-element
-            transform to the output (defaults to `None`).
         num_sg_m: Simdgroup rows per threadgroup (defaults to 2).
         num_sg_n: Simdgroup cols per threadgroup (defaults to 2).
         tm: Output 16x32 tiles per simdgroup along M (defaults to 2).
@@ -1003,7 +996,6 @@ def enqueue_matmul2d_fp4[
 
     comptime MM = Matmul2dFp4[
         c_type,
-        elementwise_lambda_fn,
         num_sg_m,
         num_sg_n,
         tm,
@@ -1062,7 +1054,6 @@ def enqueue_matmul2d_fp4[
 @inline(.always)
 def enqueue_matmul2d_fp4_smem[
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     # Production default = the M5-Max-tuned geometry: 16 simdgroups (512 threads)
     # sharing a NARROW BN=32 decoded B tile (tm=4, tn=1) with a DEEP smem_bk=256
     # strip. Amortizes the barrier + un-overlappable decode over 16 co-resident
@@ -1102,8 +1093,6 @@ def enqueue_matmul2d_fp4_smem[
     Parameters:
         c_type: Output element type; one of `fp16`, `bf16`, `fp32` (defaults
             to `float32`). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue applying a per-element
-            transform to the output (defaults to `None`).
         num_sg_m: Simdgroup rows per threadgroup (defaults to 16).
         num_sg_n: Simdgroup cols per threadgroup (defaults to 1).
         tm: Output 16x32 tiles per simdgroup along M (defaults to 4).
@@ -1127,7 +1116,6 @@ def enqueue_matmul2d_fp4_smem[
 
     comptime MM = Matmul2dFp4[
         c_type,
-        elementwise_lambda_fn,
         num_sg_m,
         num_sg_n,
         tm,

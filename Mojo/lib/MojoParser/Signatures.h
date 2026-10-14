@@ -35,6 +35,7 @@ class raw_indented_ostream;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class ASTType;
+class DefASTDecl;
 class IREmitter;
 class ExprNode;
 class FnTypeGeneratorType;
@@ -322,7 +323,7 @@ public:
   /// declaration.
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
-                         const ExprNode *originExpr, ASTDecl *fnDecl,
+                         const ExprNode *originExpr, DefASTDecl *fnDecl,
                          StringAttr baseName);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
@@ -372,7 +373,7 @@ public:
   /// the function's name (e.g. a deprecated '__del__' becomes '__deinit__'),
   /// so the caller's downstream use of the name (mangling, the symbol and
   /// source-name attributes) always sees the canonical form.
-  void verifyFunctionNameBinding(ASTDecl &decl, StringAttr &name);
+  void verifyFunctionNameBinding(DefASTDecl &decl, StringAttr &name);
 
   /// In a method with a self argument, check to make sure it has the correct
   /// type and invariants. "isSelfResult" is true for initializers that return

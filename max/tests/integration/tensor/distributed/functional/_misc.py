@@ -340,9 +340,8 @@ class _WhileLoop:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
-    @pytest.mark.skip(
-        reason="MXF-634: under MAX_EAGER_EXECUTOR=fallback-internal the loop "
-        "returns its input unchanged"
+    @pytest.mark.compile_on_gpu(
+        "interpreter has no control flow handlers (mo.if, ub.poison)"
     )
     def test_while_loop_non_distributed(self) -> None:
         """Happy path: while_loop using DF ops, adds 1.0 three times."""

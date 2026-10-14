@@ -135,6 +135,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:muse_glimmer"],
         description="Muse Glimmer model-specific tests",
     ),
+    "nemotron": ModelProfile(
+        name="nemotron",
+        default_port=8700,
+        tags=["model:nemotron"],
+        description="Nemotron model-specific tests",
+    ),
     "smollm": ModelProfile(
         name="smollm",
         default_port=8500,

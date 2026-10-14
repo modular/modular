@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
+from max import tree
 from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputs
@@ -29,7 +30,6 @@ from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
     BatchProcessorRuntime,
     process_ragged_kv_outputs,
-    ragged_kv_symbolic_inputs,
     ragged_token_descriptors,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
@@ -77,11 +77,8 @@ class Gemma4BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
-        return ragged_kv_symbolic_inputs(
-            kv_params=kv_params,
-            device_refs=device_refs,
-            include_signal_buffers=True,
-        )
+        assert self.input_tree is not None, "the model binds its inputs first"
+        return tree.leaves(self.input_tree)
 
     @traced
     def prepare_initial_token_inputs(

@@ -4696,6 +4696,60 @@ class TestResizeLinearGPU:
             atol=2e-2,
         )
 
+    def test_rank3_lazy_compile_matches_cpu(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A rank-3 input lazy-compiles on dispatch and matches the CPU path.
+
+        The accelerated warm builds only rank 4 (MXF-841), so rank 3 must
+        compile on demand; `modular_eager_py_test` forbids cold compiles, so
+        this test re-allows them like TestResizeLazyCompileGPU does.
+        """
+        monkeypatch.setenv("MAX_EAGER_ALLOW_LAZY_COMPILE", "1")
+
+        x_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        out_shape = [2, 6, 8]
+
+        x_gpu = Tensor.from_dlpack(torch.from_numpy(x_np).cuda())
+        assert x_gpu.storage is not None
+        device = x_gpu.storage.device
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            gpu_out = F.resize_linear(x_gpu, out_shape)
+        assert gpu_out.storage is not None
+        assert gpu_out.storage.device == device
+
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            cpu_out = F.resize_linear(Tensor.from_dlpack(x_np), out_shape)
+
+        np.testing.assert_allclose(
+            torch.from_dlpack(gpu_out).float().cpu().numpy(),
+            np.from_dlpack(cpu_out),
+            rtol=1e-5,
+        )
+
+    def test_same_shape_copies(self) -> None:
+        """An unchanged shape takes the copy path, which must still write."""
+        x_np = np.arange(60, dtype=np.float32).reshape(1, 3, 4, 5)
+
+        x_gpu = Tensor.from_dlpack(torch.from_numpy(x_np).cuda())
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            gpu_out = F.resize_linear(x_gpu, [1, 3, 4, 5])
+        assert gpu_out.storage is not None
+
+        np.testing.assert_array_equal(
+            torch.from_dlpack(gpu_out).float().cpu().numpy(), x_np
+        )
+
 
 class TestResizeLazyCompileGPU:
     """A rank the GPU warm skips lazy-compiles on dispatch and is reused.

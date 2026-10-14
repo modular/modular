@@ -281,7 +281,6 @@ def test_grouped_nvfp4_quantization[
     var dev_shuffled = ctx.enqueue_create_buffer[dtype](
         max(total_tokens * N, 1)
     )
-    var dev_indices = ctx.enqueue_create_buffer[.int32](max(total_tokens, 1))
     var dev_output2 = ctx.enqueue_create_buffer[out_dtype](
         max(total_tokens * output_N, 1) + output_N
     )
@@ -289,43 +288,65 @@ def test_grouped_nvfp4_quantization[
         max(total_scales, 1)
     )
     ctx.enqueue_copy(dev_shuffled, shuffled_host)
-    ctx.enqueue_copy(dev_indices, indices_host)
-    ctx.enqueue_copy(dev_output2, sentinel_host)
 
     var shuffled_tensor = TileTensor(dev_shuffled, row_major(input_shape))
     var output2_tensor = TileTensor(dev_output2, row_major(output_shape))
     var scales2_tensor = TileTensor(dev_scales2, row_major(scales_shape))
-    var indices_tensor = TileTensor(dev_indices, row_major(total_tokens))
-
-    grouped_quantize_dynamic_scaled_fp4_async(
-        output2_tensor,
-        scales2_tensor,
-        shuffled_tensor,
-        row_offsets_tensor,
-        scales_offsets_tensor,
-        expert_ids_tensor,
-        sf_tensor_device,
-        ctx,
-        row_indices=indices_tensor.as_unsafe_any_origin().as_imm(),
-    )
-
     var host_output2 = alloc[Scalar[out_dtype]](
         total_tokens * output_N + output_N
     )
     var host_scales2 = alloc[Scalar[scales_dtype]](max(total_scales, 1))
-    ctx.enqueue_copy(host_output2, dev_output2)
-    ctx.enqueue_copy(host_scales2, dev_scales2)
-    ctx.synchronize()
 
-    for i in range(output_N):
-        assert_equal(Int(host_output2[total_tokens * output_N + i]), SENTINEL)
-    for i in range(total_tokens * output_N):
-        assert_equal(host_output2[i], host_output[i])
-    for i in range(total_scales):
-        assert_equal(
-            host_scales2[i].cast[.float64](),
-            host_scales[i].cast[.float64](),
+    # MoE passes the uint32 slot order from moe_create_indices, where slot s
+    # belongs to token s // top_k. The remainder varies across slots, so a
+    # missing or wrong division reads the wrong rows. top_k 1 covers plain
+    # int32 token rows.
+    comptime for top_k in [1, 6]:
+        comptime idx_dtype = DType.int32 if top_k == 1 else DType.uint32
+        var slots_host = alloc[Scalar[idx_dtype]](total_tokens)
+        for i in range(total_tokens):
+            slots_host[i] = Scalar[idx_dtype](
+                Int(indices_host[i]) * top_k + i % top_k
+            )
+        var dev_slots = ctx.enqueue_create_buffer[idx_dtype](
+            max(total_tokens, 1)
         )
+        ctx.enqueue_copy(dev_slots, slots_host)
+        ctx.enqueue_copy(dev_output2, sentinel_host)
+        ctx.enqueue_memset(dev_scales2, Scalar[scales_dtype](0))
+
+        grouped_quantize_dynamic_scaled_fp4_async[
+            row_indices_dtype=idx_dtype, row_index_divisor=top_k
+        ](
+            output2_tensor,
+            scales2_tensor,
+            shuffled_tensor,
+            row_offsets_tensor,
+            scales_offsets_tensor,
+            expert_ids_tensor,
+            sf_tensor_device,
+            ctx,
+            row_indices=TileTensor(dev_slots, row_major(total_tokens))
+            .as_unsafe_any_origin()
+            .as_imm(),
+        )
+
+        ctx.enqueue_copy(host_output2, dev_output2)
+        ctx.enqueue_copy(host_scales2, dev_scales2)
+        ctx.synchronize()
+
+        for i in range(output_N):
+            assert_equal(
+                Int(host_output2[total_tokens * output_N + i]), SENTINEL
+            )
+        for i in range(total_tokens * output_N):
+            assert_equal(host_output2[i], host_output[i])
+        for i in range(total_scales):
+            assert_equal(
+                host_scales2[i].cast[.float64](),
+                host_scales[i].cast[.float64](),
+            )
+        slots_host.free()
 
     shuffled_host.free()
     indices_host.free()

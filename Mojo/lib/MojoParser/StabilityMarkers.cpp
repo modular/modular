@@ -281,9 +281,8 @@ void M::KGEN::LIT::checkStableTraitMemberImplementation(
   if (hasStableDecorator(structMemberDecl))
     return; // All good - stable implementation.
 
-  if (auto fnOp =
-          dyn_cast_if_present<FnOp>(structMemberDecl.getIfOperation())) {
-    if (fnOp.isSynthetic())
+  if (auto *fnDecl = dyn_cast<DefASTDecl>(&structMemberDecl)) {
+    if (fnDecl->getOp() && fnDecl->getOp().isSynthetic())
       return;
   }
   // Determine member kind from the trait member's operation type.

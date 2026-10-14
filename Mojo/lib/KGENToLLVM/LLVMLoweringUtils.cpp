@@ -90,7 +90,9 @@ LLVMDataLayout::getTypeABIAlignAndType(Type type) const {
   assert(LLVM::isCompatibleType(type) && "expected an LLVM type");
 
   if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type))
-    return {target.getDataLayout().getPointerABIAlign(), ptrType};
+    return {
+        target.getDataLayout().getPointerABIAlign(ptrType.getAddressSpace()),
+        ptrType};
   // Use the natural alignment for vector to be conservative
   if (auto vecType = dyn_cast<VectorType>(type))
     return getTypeABIAlignAndType(vecType.getElementType());

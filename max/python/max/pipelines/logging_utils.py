@@ -72,7 +72,9 @@ def log_pipeline_info(
     for line in _format_config_entries(arch_entries):
         _logger.info(line)
 
-    pipeline_config.models.log_model_info()
+    pipeline_config.models.log_model_info(
+        uses_kv_cache=arch.task == PipelineTask.TEXT_GENERATION
+    )
     pipeline_entries: list[tuple[str, Any]] = []
     if "main" in pipeline_config.models:
         pipeline_entries.append(("max_seq_len", memory_plan.planned_max_length))

@@ -44,8 +44,6 @@ from std.bit import log2_floor
 from ....utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
-    apply_elementwise_epilogue,
-    elementwise_epilogue_type,
     no_compute_fn,
     no_epilogue_fn,
 )
@@ -116,7 +114,6 @@ struct AMDPingPongMatmul[
     config: KernelConfig,
     /,
     enable_swizzle: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Structured ping-pong matmul for AMD MI355X.
 
@@ -128,7 +125,6 @@ struct AMDPingPongMatmul[
         c_type: Output C element type.
         config: KernelConfig with block/warp/mma shapes.
         enable_swizzle: Enable LDS bank conflict avoidance.
-        elementwise_lambda_fn: Optional epilogue.
     """
 
     comptime BM = Self.config.block_shape[0]
@@ -355,8 +351,7 @@ struct AMDPingPongMatmul[
     ):
         """Same as `run`, storing the output through `epilogue_fn`.
 
-        Launch with `host_arg=epilogue_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_arg=epilogue_fn`.
 
         Parameters:
             a_layout: Memory layout of the `a` input tile (inferred).
@@ -374,10 +369,6 @@ struct AMDPingPongMatmul[
                 read.
             epilogue_fn: Stores each output element.
         """
-        comptime assert not Self.elementwise_lambda_fn, (
-            "run_with_epilogue_fn takes the epilogue as a value; leave"
-            " elementwise_lambda_fn unset"
-        )
         Self._run_impl[has_epilogue_fn=True, has_compute_fn=False](
             a, b, c, epilogue_fn, no_compute_fn
         )
@@ -407,8 +398,7 @@ struct AMDPingPongMatmul[
     ):
         """Same as `run`, storing `compute_fn(idx, value)` into `c`.
 
-        Launch with `host_arg=compute_fn`. Requires
-        `elementwise_lambda_fn` to be unset.
+        Launch with `host_arg=compute_fn`.
 
         Parameters:
             a_layout: Memory layout of the `a` input tile (inferred).
@@ -426,10 +416,6 @@ struct AMDPingPongMatmul[
             compute_fn: Maps each output index and value to the value to
                 store.
         """
-        comptime assert not Self.elementwise_lambda_fn, (
-            "run_with_compute_fn takes the epilogue as a value; leave"
-            " elementwise_lambda_fn unset"
-        )
         Self._run_impl[has_epilogue_fn=False, has_compute_fn=True](
             a, b, c, no_epilogue_fn, compute_fn
         )
@@ -734,11 +720,7 @@ struct AMDPingPongMatmul[
         if warp_tile_m < M and warp_tile_n < N:
             var c_reg = mma_op.accum_tile()
 
-            comptime if (
-                Bool(Self.elementwise_lambda_fn)
-                or has_epilogue_fn
-                or has_compute_fn
-            ):
+            comptime if has_epilogue_fn or has_compute_fn:
                 # Rows are only scalar-aligned when N % BN != 0, so
                 # compute-mode stores use scalar alignment.
                 comptime scalar_align = align_of[Scalar[Self.c_type]]()
@@ -780,11 +762,11 @@ struct AMDPingPongMatmul[
                                                 ),
                                             )
                                         else:
-                                            apply_elementwise_epilogue[
-                                                Self.elementwise_lambda_fn,
+                                            epilogue_fn[
+                                                Self.c_type,
+                                                1,
                                                 alignment=scalar_align,
                                             ](
-                                                epilogue_fn,
                                                 (m, col),
                                                 SIMD[Self.c_type, 1](v[e]),
                                             )
@@ -805,12 +787,13 @@ struct AMDPingPongMatmul[
                                             ]((m, n), v),
                                         )
                                     else:
-                                        apply_elementwise_epilogue[
-                                            Self.elementwise_lambda_fn,
+                                        epilogue_fn[
+                                            Self.c_type,
+                                            c_frag_size,
                                             alignment=align_of[
                                                 SIMD[Self.c_type, c_frag_size]
                                             ](),
-                                        ](epilogue_fn, (m, n), v)
+                                        ]((m, n), v)
             else:
                 var c_block = c.tile[BM, BN](block_idx.y, block_idx.x)
                 var c_warp = c_block.tile[WM, WN](warp_id_m, warp_id_n)

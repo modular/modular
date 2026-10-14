@@ -127,9 +127,10 @@ class EagleLlama3Model(LlamaModelBase):
 
         with Graph(
             "eagle_llama3",
-            input_types=single_model.input_types(
-                self.kv_params,
-                needs_hidden_state_input=True,
+            input_types=self._bind_graph_inputs(
+                single_model.input_tree(
+                    self.kv_params, needs_hidden_state_input=True
+                )
             ),
         ) as graph:
             (

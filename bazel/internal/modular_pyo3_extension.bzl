@@ -8,6 +8,7 @@ def modular_pyo3_extension(
         crate_name,
         module_name,
         rustc_flags = [],
+        target_compatible_with = [],
         deps = [],
         **kwargs):
     """A Rust Python extension.
@@ -22,6 +23,7 @@ def modular_pyo3_extension(
         crate_name: The Rust crate name, since `name` need not be a valid one.
         module_name: The module name, which must match the `#[pymodule]` function.
         rustc_flags: Extra flags passed to rustc.
+        target_compatible_with: Platform constraints, added to the sanitizer gating below.
         deps: Rust crates the extension links. pyo3 itself is injected by the
             `rules_rust_pyo3` toolchain, so it must not be listed.
         **kwargs: Forwarded to `pyo3_extension`.
@@ -54,7 +56,7 @@ def modular_pyo3_extension(
         stubs = False,
         # Same gating as modular_nanobind_extension: these sanitizer runtimes
         # aren't available when Python loads the module.
-        target_compatible_with = select({
+        target_compatible_with = target_compatible_with + select({
             "//:asan_macos": ["@platforms//:incompatible"],
             "//:tsan": ["@platforms//:incompatible"],
             "//:ubsan": ["@platforms//:incompatible"],

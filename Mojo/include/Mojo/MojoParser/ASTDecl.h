@@ -38,12 +38,20 @@ namespace M::KGEN::LIT {
 class ASTDecl;
 class AliasASTDecl;
 class AliasDeclOp;
+class ExtensionASTDecl;
+class ExtensionDeclOp;
+class DefASTDecl;
+class StructASTDecl;
+class StructDeclOp;
+class TraitASTDecl;
 class WitnessASTDecl;
 class StructType;
 class DocStringAttr;
 class DocString;
 class TraitDeclOp;
 class TraitType;
+class TypeASTDecl;
+class TypeScopeASTDecl;
 
 using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
@@ -78,6 +86,10 @@ public:
   enum class Kind : uint8_t {
     Base,
     Alias,
+    Extension,
+    Def,
+    Struct,
+    Trait,
     Witness,
   };
 
@@ -171,24 +183,6 @@ public:
     return OpBuilder::atBlockEnd(&op->getRegion(0).front());
   }
 
-  /// This return the 'Self' type for a struct or trait, which includes
-  /// parameters bound to references to the struct parameter declarations.
-  ASTType getTypeDeclSelf() const {
-    assert(resolvedness != DeclResolvedness::unparsed &&
-           "signature must be resolved to get a resolved type");
-    return typeDeclSelf;
-  }
-  void setTypeDeclSelf(ASTType type) {
-    assert(type && "Cannot set null types");
-    typeDeclSelf = type;
-  }
-
-  /// Given an MLIR op for a struct declaration, return the self type.
-  static Type computeSelfTypeForStruct(StructDeclOp structOp);
-
-  /// Given an MLIR op for a trait declaration, return the self type.
-  static Type computeSelfTypeForTrait(TraitDeclOp traitOp);
-
   /// Add an unresolved wild card import into this scope.
   void addUnresolvedWildcardImport(UnresolvedWildcardImport unresolvedImport);
 
@@ -255,10 +249,6 @@ public:
   /// might be in any of those declarations.
   llvm::SmallVector<ASTDecl *, 4> collectTypeAndExtensions(ASTType type,
                                                            llvm::SMLoc callLoc);
-
-  /// If this is a method of a struct or trait, return the decl for the struct
-  /// or trait.
-  ASTDecl *tryGetMethodParentDecl() const;
 
   /// Whether this decl was loaded from bytecode.
   bool isLoadedFromBytecode() const { return loadedFromBytecode; }
@@ -346,11 +336,6 @@ public:
   void setExplicitParamScope() { isExplicitParamScope = true; }
   bool getIsExplicitParamScope() const { return isExplicitParamScope; }
 
-  /// Get the map of trait conformance lineage for this decl. This is lazily
-  /// initialized because it is only needed for structs.
-  DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *
-  getTraitConformanceLineage(bool createIfMissing = false);
-
   /// Get the set of assumptions for this decl and all its parent decls.
   void getKnownAssumptionsIncludingParents(
       SmallVectorImpl<ConstraintAttr> &assumptions) const;
@@ -374,6 +359,7 @@ public:
   }
 
 private:
+  friend class M::BumpAllocator;
   friend class DeclResolver;
   friend class ModuleLoader;
   friend class SharedState;
@@ -399,10 +385,6 @@ private:
   /// This is the source location of the declaration, used for diagnostics and
   /// debug information.
   llvm::SMLoc loc;
-
-  /// For a type declaration like a struct, this is the type of 'self' in a
-  /// member.  This is only valid after signature resolution.
-  ASTType typeDeclSelf;
 
   /// The parent scope that should continue name lookup, plus the declaration
   /// kind in the pointer's low bits.
@@ -501,18 +483,143 @@ private:
   /// @__doc_inline.
   std::unique_ptr<llvm::DenseSet<mlir::StringAttr>> docInlineNames;
 
-  /// A map from each trait symbol that a struct conforms to, to the first
-  /// symbol that explicitly inherits from it. This provides better diagnostics
-  /// when a struct does not conform to a trait. This is lazily initialized
-  /// because it is only needed for structs.
-  using TraitConformanceLineageType =
-      DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>>;
-  std::unique_ptr<TraitConformanceLineageType> traitConformanceLineage;
-
   /// This is the set of constraints that can be assumed to be true inside
   /// this declaration. It may reference parameter declarations from this
   /// ASTDecl or its parent ASTDecls.
   std::unique_ptr<llvm::SetVector<ConstraintAttr>> knownAssumptions;
+};
+
+/// The AST representation of a function declaration.
+class DefASTDecl final : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Def;
+  }
+
+  /// Return the function operation, or null after a nested function has been
+  /// replaced by its captured function value during closure lowering.
+  FnOp getOp() const;
+
+  /// If this is a method of a struct, trait, or extension, return its parent.
+  TypeScopeASTDecl *tryGetMethodParentDecl() const;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  DefASTDecl(SharedState &shared, FnOp fnOp, llvm::SMLoc loc,
+             ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+             ssize_t indentation);
+};
+
+/// An AST declaration that provides a `Self` type to its members.
+class TypeScopeASTDecl : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Extension ||
+           decl->getKind() == Kind::Struct || decl->getKind() == Kind::Trait;
+  }
+
+  /// Return the `Self` type in this declaration's member scope.
+  ASTType getSelfType() const {
+    assert(resolvedness != DeclResolvedness::unparsed &&
+           "signature must be resolved to get a resolved type");
+    return selfType;
+  }
+  void setSelfType(ASTType type) {
+    assert(type && "cannot set a null self type");
+    selfType = type;
+  }
+
+  /// Get the map from each conformed trait to the first symbol that explicitly
+  /// inherits from it.
+  DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *
+  getTraitConformanceLineage(bool createIfMissing = false);
+
+protected:
+  TypeScopeASTDecl(Kind kind, SharedState &shared, Operation *op,
+                   llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                   LexerCursor endCursor, ssize_t indentation);
+
+private:
+  ASTType selfType;
+
+  using TraitConformanceLineageType =
+      DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>>;
+  std::unique_ptr<TraitConformanceLineageType> traitConformanceLineage;
+};
+
+/// The common AST representation for struct and trait declarations.
+class TypeASTDecl : public TypeScopeASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Struct || decl->getKind() == Kind::Trait;
+  }
+
+protected:
+  TypeASTDecl(Kind kind, SharedState &shared, Operation *op, llvm::SMLoc loc,
+              ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+              ssize_t indentation);
+};
+
+/// The AST representation of an extension declaration.
+class ExtensionASTDecl final : public TypeScopeASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Extension;
+  }
+
+  ExtensionDeclOp getOp() const;
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  ExtensionASTDecl(SharedState &shared, ExtensionDeclOp extensionOp,
+                   llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                   LexerCursor endCursor, ssize_t indentation);
+};
+
+/// The AST representation of a struct declaration.
+class StructASTDecl final : public TypeASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Struct;
+  }
+
+  StructDeclOp getOp() const;
+
+  /// Compute the `Self` type represented by a struct declaration operation.
+  static Type computeSelfType(StructDeclOp structOp);
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  StructASTDecl(SharedState &shared, StructDeclOp structOp, llvm::SMLoc loc,
+                ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+                ssize_t indentation);
+};
+
+/// The AST representation of a trait declaration.
+class TraitASTDecl final : public TypeASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Trait;
+  }
+
+  TraitDeclOp getOp() const;
+
+  /// Compute the `Self` type represented by a trait declaration operation.
+  static Type computeSelfType(TraitDeclOp traitOp);
+
+private:
+  friend class M::BumpAllocator;
+  friend class DeclResolver;
+
+  TraitASTDecl(SharedState &shared, TraitDeclOp traitOp, llvm::SMLoc loc,
+               ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+               ssize_t indentation);
 };
 
 /// An AST declaration backed by an alias declaration operation.
@@ -526,6 +633,7 @@ public:
   AliasDeclOp getOp() const;
 
 private:
+  friend class M::BumpAllocator;
   friend class DeclResolver;
 
   AliasASTDecl(SharedState &shared, AliasDeclOp aliasOp, llvm::SMLoc loc,
@@ -566,6 +674,7 @@ public:
   TraitSymbolAttr traitSymbol;
 
 private:
+  friend class M::BumpAllocator;
   friend class DeclResolver;
 
   WitnessASTDecl(SharedState &shared, UnresolvedDecls unresolvedDecls,

@@ -374,12 +374,11 @@ def softmax_2_pass[
 
 
 def _softmax_3_pass_step_2[
+    dtype: DType,
+    InputFn1DType: def[_simd_width: Int](Int) -> SIMD[dtype, _simd_width],
+    //,
     simd_width: Int,
     unroll_factor: Int,
-    dtype: DType,
-    input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
-        dtype, _simd_width
-    ],
     pre_update_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
@@ -387,11 +386,10 @@ def _softmax_3_pass_step_2[
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](
+    input_fn_1d: InputFn1DType,
     output: TileTensor[mut=True, dtype, ...],
     max_val: Scalar[dtype],
-) -> Scalar[
-    dtype
-]:
+) -> Scalar[dtype]:
     comptime assert output.rank == 1
     # STEP 2: compute for each batch
     # for i = 0 to N do
@@ -404,7 +402,9 @@ def _softmax_3_pass_step_2[
     var accum_simd: SIMD[dtype, outer_simd_width] = 0
 
     @inline(.always)
-    def step_2[simd_width: Int](idx: Int) {max_val, output, mut}:
+    def step_2[
+        simd_width: Int
+    ](idx: Int) {max_val, output, imm input_fn_1d, mut}:
         var vin = input_fn_1d[simd_width](idx)
         var elem = vin - SIMD[dtype, simd_width](max_val)
 
@@ -460,11 +460,10 @@ def _softmax_3_pass_step_3[
 
 
 def _softmax_3_pass_base[
-    simd_width: Int,
     dtype: DType,
-    input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
-        dtype, _simd_width
-    ],
+    InputFn1DType: def[_simd_width: Int](Int) -> SIMD[dtype, _simd_width],
+    //,
+    simd_width: Int,
     step2_pre_update_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
@@ -477,20 +476,21 @@ def _softmax_3_pass_base[
     step3_accum_apply_func: def[dtype: DType, width: SIMDLength](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-](output: TileTensor[mut=True, dtype, ...]) raises:
+](input_fn_1d: InputFn1DType, output: TileTensor[mut=True, dtype, ...]) raises:
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
     Parameters:
+        dtype: The dtype of the input and output buffers (inferred).
+        InputFn1DType: The type of `input_fn_1d` (inferred).
         simd_width: The simd_width to use in vectorization.
-        dtype: The dtype of the input and output buffers.
-        input_fn_1d: The elementwise input lambda.
         step2_pre_update_func: Pre update function.
         step2_post_update_func: Post update function.
         step3_accum_proc_func: Pre accumulation function.
         step3_accum_apply_func: Post accumulation function.
 
     Args:
+        input_fn_1d: The elementwise input lambda.
         output: The output buffer in which to store the softmax values.
     """
     comptime assert output.rank == 1
@@ -512,7 +512,7 @@ def _softmax_3_pass_base[
     @inline(.always)
     def input_fn[
         _dtype: DType, _width: Int
-    ](coords: Coord) -> SIMD[_dtype, _width]:
+    ](coords: Coord) capturing -> SIMD[_dtype, _width]:
         comptime assert coords.rank == 1
         return rebind[SIMD[_dtype, _width]](
             input_fn_1d[_width](Int(coords[0].value()))
@@ -545,11 +545,9 @@ def _softmax_3_pass_base[
     var accum = _softmax_3_pass_step_2[
         simd_width,
         unroll_factor,
-        dtype,
-        input_fn_1d,
         step2_pre_update_func,
         step2_post_update_func,
-    ](output, max_val)
+    ](input_fn_1d, output, max_val)
 
     # STEP 3
     _softmax_3_pass_step_3[
@@ -562,14 +560,12 @@ def _softmax_3_pass_base[
 
 
 def softmax_3_pass[
-    simd_width: Int,
     dtype: DType,
-    origins: OriginSet,
-    input_fn_1d: def[_simd_width: Int](Int) capturing[origins] -> SIMD[
-        dtype, _simd_width
-    ],
+    InputFn1DType: def[_simd_width: Int](Int) -> SIMD[dtype, _simd_width],
+    //,
+    simd_width: Int,
     logsoftmax: Bool = False,
-](output: TileTensor[mut=True, dtype, ...]) raises:
+](input_fn_1d: InputFn1DType, output: TileTensor[mut=True, dtype, ...]) raises:
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -593,13 +589,13 @@ def softmax_3_pass[
           end for
 
     Parameters:
+        dtype: The dtype of the input and output buffers (inferred).
+        InputFn1DType: The type of `input_fn_1d` (inferred).
         simd_width: The simd_width to use in vectorization.
-        dtype: The dtype of the input and output buffers.
-        origins: The OriginSet of captured arguments by the input_fn_1d.
-        input_fn_1d: The elementwise input lambda.
         logsoftmax: Enable to apply elementwise log() to outputs after softmax.
 
     Args:
+        input_fn_1d: The elementwise input lambda.
         output: The output buffer in which to store the softmax values.
     """
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
@@ -608,23 +604,19 @@ def softmax_3_pass[
     comptime if logsoftmax:
         _softmax_3_pass_base[
             simd_width,
-            dtype,
-            input_fn_1d,
             identity,
             _exp_concrete,
             _log_concrete,
             sub,
-        ](output)
+        ](input_fn_1d, output)
     else:
         _softmax_3_pass_base[
             simd_width,
-            dtype,
-            input_fn_1d,
             _exp_concrete,
             identity,
             reciprocal,
             mul,
-        ](output)
+        ](input_fn_1d, output)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -728,12 +720,10 @@ def _softmax_cpu[
     dtype: DType,
     simd_width: Int,
     rank: Int,
-    origins: OriginSet,
-    input_fn: def[_simd_width: Int](Coord) capturing[origins] -> SIMD[
-        dtype, _simd_width
-    ],
+    InputFnType: def[_simd_width: Int](Coord) -> SIMD[dtype, _simd_width],
     logsoftmax: Bool = False,
 ](
+    input_fn: InputFnType,
     shape: Coord,
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
@@ -768,25 +758,48 @@ def _softmax_cpu[
             )
             var indices = _get_nd_indices_from_flat_index(i, shape_il, rank - 1)
 
-            @__parameter
             @inline(.always)
             # Given input lambda accepts N-dimensional coordinates, but the
             # softmax base routines operate on 1D buffers. Here we wrap the
             # given input lambda with some 1D-to-n-D translation logic.
-            def input_fn_1d[_width: Int](idx: Int) -> SIMD[dtype, _width]:
+            def input_fn_1d[
+                _width: Int
+            ](idx: Int) {mut indices, imm} -> SIMD[dtype, _width]:
                 indices[rank - 1] = idx
                 return input_fn[_width](Coord(indices))
 
-            softmax_3_pass[
-                simd_width,
-                dtype,
-                origin_of()._mlir_origin,
-                input_fn_1d,
-                logsoftmax=logsoftmax,
-            ](output_buffer_view)
+            softmax_3_pass[simd_width, logsoftmax=logsoftmax](
+                input_fn_1d, output_buffer_view
+            )
             _ = indices
 
     sync_parallelize(task_func, num_workers, ctx)
+
+
+def _softmax_cpu[
+    dtype: DType,
+    simd_width: Int,
+    rank: Int,
+    origins: OriginSet,
+    input_fn: def[_simd_width: Int](Coord) capturing[origins] -> SIMD[
+        dtype, _simd_width
+    ],
+    logsoftmax: Bool = False,
+](
+    shape: Coord,
+    output: TileTensor[mut=True, dtype, ...],
+    axis: Int,
+    ctx: Optional[DeviceContext.CPU] = None,
+) raises:
+    @inline(.always)
+    def input_fn_value[
+        _simd_width: Int
+    ](coords: Coord) -> SIMD[dtype, _simd_width]:
+        return input_fn[_simd_width](coords)
+
+    _softmax_cpu[dtype, simd_width, rank, logsoftmax=logsoftmax](
+        input_fn_value, shape, output, axis, ctx
+    )
 
 
 # Softmax (no input lambda)

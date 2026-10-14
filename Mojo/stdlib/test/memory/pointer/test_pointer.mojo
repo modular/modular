@@ -134,7 +134,8 @@ def test_unsafepointer_of_move_only_type() raises:
 
 
 def test_unsafepointer_move_pointee_move_count() raises:
-    var ptr = alloc[MoveCounter[Int]]({count = 1}).unsafe_leak()
+    var allocation = alloc[MoveCounter[Int]]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
 
     var value = MoveCounter(5)
     assert_equal(0, value.move_count)
@@ -146,7 +147,8 @@ def test_unsafepointer_move_pointee_move_count() raises:
 
     assert_equal(1, ptr[].move_count)
 
-    var ptr_2 = alloc[MoveCounter[Int]]({count = 1}).unsafe_leak()
+    var allocation_2 = alloc[MoveCounter[Int]]({count = 1}).into_managed()
+    var ptr_2 = allocation_2.unsafe_ptr()
     ptr_2.unsafe_write_move_from(ptr)
 
     assert_equal(2, ptr_2[].move_count)
@@ -164,7 +166,8 @@ def test_write() raises:
 
 
 def test_unsafepointer_unsafe_write() raises:
-    var ptr = alloc[ExplicitCopyOnly]({count = 1}).unsafe_leak()
+    var allocation = alloc[ExplicitCopyOnly]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
 
     var orig = ExplicitCopyOnly(5)
     assert_equal(orig.copy_count, 0)
@@ -291,19 +294,13 @@ def test_comparisons() raises:
 
 
 def test_unsafepointer_address_space() raises:
-    var p1 = (
-        alloc[Int]({count = 1})
-        .unsafe_leak()
-        .unsafe_address_space_cast[AddressSpace(0)]()
-    )
-    dealloc(Allocation(unsafe_owned_ptr=p1, layout={count = 1}))
+    var a1 = alloc[Int]({count = 1}).into_managed()
+    var p1 = a1.unsafe_ptr().unsafe_address_space_cast[AddressSpace(0)]()
+    assert_equal(Int(p1), Int(a1.unsafe_ptr()))
 
-    var p2 = (
-        alloc[Int]({count = 1})
-        .unsafe_leak()
-        .unsafe_address_space_cast[.GENERIC]()
-    )
-    dealloc(Allocation(unsafe_owned_ptr=p2, layout={count = 1}))
+    var a2 = alloc[Int]({count = 1}).into_managed()
+    var p2 = a2.unsafe_ptr().unsafe_address_space_cast[.GENERIC]()
+    assert_equal(Int(p2), Int(a2.unsafe_ptr()))
 
 
 def test_unsafepointer_aligned_alloc() raises:
@@ -449,7 +446,8 @@ def test_offset() raises:
     assert_equal(ptr.unsafe_offset(x)[], 3)
     assert_equal(ptr.unsafe_offset(y)[], 4)
 
-    var ptr2 = alloc[Int]({count = 5}).unsafe_leak()
+    var ptr2_allocation = alloc[Int]({count = 5}).into_managed()
+    var ptr2 = ptr2_allocation.unsafe_ptr().as_imm()
     var ptr3 = ptr2
     ptr2 = ptr2.unsafe_offset(UInt(3))
     assert_equal(ptr2, ptr3.unsafe_offset(3))
@@ -457,7 +455,6 @@ def test_offset() raises:
     assert_equal(ptr2, ptr3.unsafe_offset(-2))
     assert_equal(ptr2.unsafe_offset(UInt(1)), ptr3.unsafe_offset(-1))
     assert_equal(ptr2.unsafe_offset(-Int(UInt(4))), ptr3.unsafe_offset(-6))
-    dealloc(Allocation(unsafe_owned_ptr=ptr2, layout={count = 5}))
 
 
 def test_offset_from() raises:

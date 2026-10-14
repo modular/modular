@@ -17,8 +17,16 @@ from std.random import randn, seed, random_float64
 from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.sys import simd_width_of
-from linalg.gemv import gemv_kernel, gemv_split_k, gevm_kernel
-from linalg.matmul.gpu import matmul_kernel
+from linalg.gemv import (
+    gemv_kernel,
+    gemv_kernel_compute_fn,
+    gemv_split_k,
+    gemv_split_k_compute_fn,
+    gevm_kernel,
+    gevm_kernel_compute_fn,
+)
+from linalg.matmul.gpu import matmul_kernel_naive_compute_fn
+from linalg.utils import _as_compute_fn
 import linalg.matmul.vendor.blas as vendor_blas
 
 from internal_utils import assert_almost_equal
@@ -177,7 +185,6 @@ def run_matvec[
 def run_matvec_with_epilogue_fn(
     M: Int, N: Int, K: Int, *, ctx: DeviceContext
 ) raises:
-    comptime c_stride = 5
     comptime seed_val = 42
 
     var iterations = 100
@@ -186,84 +193,71 @@ def run_matvec_with_epilogue_fn(
 
     seed(seed_val)
 
-    # over-allocate C to simulate a view tensor
-    var c_host = alloc[Float32](M * N * c_stride)
-    var c_host_naive = alloc[Float32](M * N * c_stride)
+    var c_host = alloc[Float32](M * N)
+    var c_host_naive = alloc[Float32](M * N)
 
     randn(a_host, M * K)
     randn(b_host, K * N)
 
-    for i in range(M * N * c_stride):
+    for i in range(M * N):
         c_host[i] = 0
 
-    for i in range(M * N * c_stride):
+    for i in range(M * N):
         c_host_naive[i] = 0
 
     var a_device = ctx.enqueue_create_buffer[.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[.float32](K * N)
-    var c_device = ctx.enqueue_create_buffer[.float32](M * N * c_stride)
-
-    var c_device_nd = TileTensor(
-        c_device, Layout((M, N), (N * c_stride, c_stride))
-    )
+    var c_device = ctx.enqueue_create_buffer[.float32](M * N)
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
     var const_val: Float32 = 4.0
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_device_nd, const_val)
-    def epilogue_fn[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: Coord, val: SIMD[dtype, width]):
+    def compute_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var const_val} -> SIMD[
+        dtype, width
+    ]:
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
-        c_device_nd.store[width=width](
-            idx,
-            rebind[SIMD[.float32, width]](val + SIMD[dtype, width](const_val)),
-        )
+        return val + SIMD[dtype, width](const_val)
 
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @inline(.always)
     def run_func_gemv(ctx: DeviceContext) raises {mut c_device, imm}:
-        comptime kernel = gemv_kernel[
-            .float32,
-            .float32,
-            .float32,
-            elementwise_lambda_fn=epilogue_fn,
+        comptime kernel = gemv_kernel_compute_fn[
+            .float32, .float32, .float32, type_of(compute_fn)
         ]
-        var func = ctx.compile_function[kernel]()
-        ctx.enqueue_function(
-            func,
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
             Int32(M),
             Int32(N),
             Int32(K),
+            host_arg=compute_fn,
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
     @inline(.always)
     def run_func_gevm(ctx: DeviceContext) raises {mut c_device, imm}:
-        comptime kernel = gevm_kernel[
+        comptime kernel = gevm_kernel_compute_fn[
             .float32,
             .float32,
             .float32,
+            type_of(compute_fn),
             tile_size=WARP_SIZE * WARPS_PER_BLOCK,
-            elementwise_lambda_fn=epilogue_fn,
         ]
-        var func = ctx.compile_function[kernel]()
-        ctx.enqueue_function(
-            func,
+        ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
             Int32(M),
             Int32(N),
             Int32(K),
+            host_arg=compute_fn,
             grid_dim=ceildiv(N, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -299,25 +293,33 @@ def run_matvec_with_epilogue_fn(
     ctx.enqueue_copy(b_device, b_host)
 
     comptime BLOCK_DIM = 16
+    var c_nd = TileTensor(c_device, row_major(M, N))
+    var a_nd = TileTensor(a_device, row_major(M, K)).as_imm()
+    var b_nd = TileTensor(b_device, row_major(K, N)).as_imm()
 
     @inline(.always)
-    def run_func_naive(ctx: DeviceContext) raises {mut c_device, imm}:
-        comptime kernel = matmul_kernel[
+    def run_func_naive(ctx: DeviceContext) raises {imm}:
+        comptime kernel = matmul_kernel_naive_compute_fn[
             .float32,
             .float32,
             .float32,
+            type_of(c_nd).LayoutType,
+            type_of(a_nd).LayoutType,
+            type_of(b_nd).LayoutType,
+            type_of(compute_fn),
             BLOCK_DIM,
-            elementwise_lambda_fn=epilogue_fn,
+            c_engine=type_of(c_nd).Engine,
+            a_engine=type_of(a_nd).Engine,
+            b_engine=type_of(b_nd).Engine,
         ]
-        var func = ctx.compile_function[kernel]()
-        ctx.enqueue_function(
-            func,
-            c_device,
-            a_device,
-            b_device,
+        ctx.enqueue_function[kernel](
+            c_nd,
+            a_nd,
+            b_nd,
             Int32(M),
             Int32(N),
             Int32(K),
+            host_arg=compute_fn,
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -338,7 +340,7 @@ def run_matvec_with_epilogue_fn(
     assert_almost_equal(
         c_host,
         c_host_naive,
-        num_elements=M * N * c_stride,
+        num_elements=M * N,
         atol=1e-4,
         rtol=errorTolerance,
     )
@@ -403,23 +405,17 @@ def run_split_k_gemm[
 
     comptime if with_epilogue:
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(c_nd)
-        def epilogue_fn[
-            dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](idx: Coord, val: SIMD[dtype, width]):
+        def add_const[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[dtype, width]) -> SIMD[dtype, width]:
             comptime assert (
                 idx.rank == 2
             ), "the matmul epilogue contract is rank 2"
-            c_nd.store[width=width](
-                idx,
-                rebind[SIMD[c_type, width]](
-                    val + SIMD[dtype, width](const_val)
-                ),
-            )
+            return val + SIMD[dtype, width](const_val)
 
-        comptime kernel = gemv_split_k[
+        var compute_fn = _as_compute_fn(add_const)
+        comptime kernel = gemv_split_k_compute_fn[
             c_type,
             a_type,
             b_type,
@@ -429,24 +425,23 @@ def run_split_k_gemm[
             type_of(c_nd).Engine,
             type_of(a_nd).Engine,
             type_of(w_nd).Engine,
+            type_of(compute_fn),
             simd_width=simd_width,
             tile_m=tile_m,
             tile_n=tile_n,
             num_threads=num_threads,
             weight_non_temporal=weight_non_temporal,
-            elementwise_lambda_fn=epilogue_fn,
             check_bounds_m=check_bounds_m,
             check_bounds_n=check_bounds_n,
         ]
-        var func = ctx.compile_function[kernel]()
-        ctx.enqueue_function(
-            func,
+        ctx.enqueue_function[kernel](
             c_nd,
             a_nd,
             w_nd,
             Int32(M),
             Int32(N),
             Int32(K),
+            host_arg=compute_fn,
             grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )

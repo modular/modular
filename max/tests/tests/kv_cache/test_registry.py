@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -23,6 +25,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
+    KVCacheGroupId,
     KVCacheParams,
     KVConnectorType,
     MHAKVCacheParams,
@@ -32,6 +35,7 @@ from max.nn.kv_cache import (
     RecurrentStateRegion,
     estimated_memory_size,
 )
+from max.nn.kv_cache.cache_params import TIERED_CONNECTOR_TYPES
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,
     PagedKVCacheManager,
@@ -39,6 +43,8 @@ from max.pipelines.kv_cache import (
     kv_cache_memory_size,
     load_kv_manager,
 )
+from max.pipelines.kv_cache.config import KVConnectorConfig
+from max.pipelines.kv_cache.connectors import create_connector
 from max.pipelines.kv_cache.registry import (
     _use_jenga_kv_cache,
     jenga_supports_di,
@@ -554,4 +560,55 @@ def test_legacy_manager_rejects_kv_connector(
             session=MagicMock(),
             total_num_pages=8,
             max_batch_size=1,
+        )
+
+
+def test_tiered_connector_types() -> None:
+    assert TIERED_CONNECTOR_TYPES == {
+        KVConnectorType.tiered,
+        KVConnectorType.rust_tiered,
+    }
+    # Plain strings, as left by structural configs and `model_construct`.
+    assert "rust_tiered" in TIERED_CONNECTOR_TYPES
+    assert "tiered" in TIERED_CONNECTOR_TYPES
+    assert "null" not in TIERED_CONNECTOR_TYPES
+
+
+def test_kv_connector_type_rejects_removed_mojo_tiered() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"'mojo_tiered' KV connector was removed.*rust_tiered",
+    ):
+        KVConnectorType("mojo_tiered")
+    with pytest.raises(ValueError, match="not a valid KVConnectorType"):
+        KVConnectorType("bogus")
+
+
+def test_kv_connector_config_rejects_removed_mojo_tiered() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"'mojo_tiered' KV connector was removed.*rust_tiered",
+    ):
+        KVConnectorConfig.model_validate({"type": "mojo_tiered"})
+
+
+def test_kv_connector_config_typo_error_lists_the_choices() -> None:
+    with pytest.raises(ValueError, match=r"rust_tiered.*dkv"):
+        KVConnectorConfig.model_validate({"type": "rust_tierd"})
+
+
+def test_create_connector_rejects_plain_string_mojo_tiered() -> None:
+    """A plain string in ``type`` must not fall through to a NullConnector."""
+    params = SimpleNamespace(
+        kv_connector_config=SimpleNamespace(type="mojo_tiered")
+    )
+    with pytest.raises(
+        ValueError, match="'mojo_tiered' KV connector was removed"
+    ):
+        create_connector(
+            leaves={"full": KVCacheGroupId.full()},
+            replica_kv_memory=[],
+            params=cast("KVCacheParams", params),
+            devices=[],
+            device_memory_bytes=0,
         )

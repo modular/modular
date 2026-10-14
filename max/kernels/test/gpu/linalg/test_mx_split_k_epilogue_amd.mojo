@@ -21,6 +21,9 @@ Neither test needs a dequant reference. Each runs the launch twice over the
 same inputs, once plain and once with an epilogue, so the plain arm's stored
 output IS the value the epilogue must have seen; matmul correctness itself
 belongs to `test_mxfp{4,8}_matmul_amd.mojo`.
+
+Every epilogue check runs for the legacy lambda and for the epilogue and
+compute closure entry points.
 """
 
 from std.atomic import Atomic
@@ -31,11 +34,14 @@ from std.testing import assert_equal, assert_true
 
 from layout import Coord, TileTensor
 from layout.tile_layout import row_major
+from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE, MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     _launch_block_scaled_split_k,
+    _launch_block_scaled_split_k_impl,
     block_scaled_matmul_amd,
 )
+from linalg.utils import no_compute_fn
 
 comptime MXFP4_LANE_BYTES = 16
 comptime MXFP8_LANE_BYTES = 32
@@ -135,6 +141,9 @@ def test_split_k_epilogue[
     comptime K_BYTES = K_static // (2 if is_fp4 else 1)
     comptime K_SCALES = K_static // SF_VECTOR_SIZE
     comptime N_ELEMS = M_static * N_static
+    comptime _fmt = (
+        CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if is_fp4 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
+    )
 
     print(
         "   MXFP",
@@ -220,6 +229,31 @@ def test_split_k_epilogue[
             epi_ptr[base + w] = val[w].cast[.float32]() * 2.0 + 1.0
             _ = Atomic[Int32].fetch_add(fire_ptr + base + w, Int32(1))
 
+    @inline(.always)
+    def record_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {
+        var epi_ptr, var fire_ptr, var wide_ptr
+    }:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        comptime if width > 1:
+            wide_ptr[0] = Int32(1)
+        var base = Int(idx[0].value()) * N_static + Int(idx[1].value())
+        comptime for w in range(width):
+            epi_ptr[base + w] = val[w].cast[.float32]() * 2.0 + 1.0
+            _ = Atomic[Int32].fetch_add(fire_ptr + base + w, Int32(1))
+
+    @inline(.always)
+    def affine_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var wide_ptr} -> SIMD[
+        _dtype, width
+    ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        comptime if width > 1:
+            wide_ptr[0] = Int32(1)
+        return val * 2 + 1
+
     var c_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
     var reduced_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
     var epi_out_h = ctx.enqueue_create_host_buffer[.float32](N_ELEMS)
@@ -303,6 +337,114 @@ def test_split_k_epilogue[
         N_ELEMS,
         "dispatch",
     )
+
+    # The epilogue closure through the direct launch and the dispatcher.
+    ctx.enqueue_copy(c_d, c_init_h)
+    ctx.enqueue_copy(epi_d, epi_h)
+    ctx.enqueue_copy(fire_d, fire_h)
+    ctx.enqueue_copy(wide_d, wide_h)
+
+    _launch_block_scaled_split_k[
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+        num_splits=num_splits,
+        lane_bytes=lane_bytes,
+    ](reduced_tt, a_tt, b_tt, sfa_tt, sfb_tt, M_static, ctx)
+
+    _launch_block_scaled_split_k_impl[
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+        num_splits=num_splits,
+        matrix_format=_fmt,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](
+        c_tt,
+        a_tt,
+        b_tt,
+        sfa_tt,
+        sfb_tt,
+        M_static,
+        record_fn,
+        no_compute_fn,
+        ctx,
+    )
+
+    ctx.enqueue_copy(c_h, c_d)
+    ctx.enqueue_copy(reduced_h, reduced_d)
+    ctx.enqueue_copy(epi_out_h, epi_d)
+    ctx.enqueue_copy(fire_out_h, fire_d)
+    ctx.enqueue_copy(wide_out_h, wide_d)
+    ctx.synchronize()
+
+    _assert_epilogue_arm(
+        epi_out_h.unsafe_ptr(),
+        reduced_h.unsafe_ptr(),
+        fire_out_h.unsafe_ptr(),
+        c_h.unsafe_ptr(),
+        Int(wide_out_h[0]),
+        N_ELEMS,
+        "direct launch, epilogue closure",
+    )
+
+    ctx.enqueue_copy(c_d, c_init_h)
+    ctx.enqueue_copy(epi_d, epi_h)
+    ctx.enqueue_copy(fire_d, fire_h)
+    ctx.enqueue_copy(wide_d, wide_h)
+
+    block_scaled_matmul_amd[lane_bytes=lane_bytes](
+        reduced_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx
+    )
+    block_scaled_matmul_amd[lane_bytes=lane_bytes](
+        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, record_fn, ctx
+    )
+
+    ctx.enqueue_copy(c_h, c_d)
+    ctx.enqueue_copy(reduced_h, reduced_d)
+    ctx.enqueue_copy(epi_out_h, epi_d)
+    ctx.enqueue_copy(fire_out_h, fire_d)
+    ctx.enqueue_copy(wide_out_h, wide_d)
+    ctx.synchronize()
+
+    _assert_epilogue_arm(
+        epi_out_h.unsafe_ptr(),
+        reduced_h.unsafe_ptr(),
+        fire_out_h.unsafe_ptr(),
+        c_h.unsafe_ptr(),
+        Int(wide_out_h[0]),
+        N_ELEMS,
+        "dispatch, epilogue closure",
+    )
+
+    # The compute closure stores `2*sum + 1` into `c` itself.
+    ctx.enqueue_copy(c_d, c_init_h)
+    ctx.enqueue_copy(wide_d, wide_h)
+
+    block_scaled_matmul_amd[lane_bytes=lane_bytes](
+        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, affine_fn, ctx
+    )
+
+    ctx.enqueue_copy(c_h, c_d)
+    ctx.enqueue_copy(wide_out_h, wide_d)
+    ctx.synchronize()
+
+    assert_equal(
+        Int(wide_out_h[0]),
+        0,
+        msg="compute closure ran at width > 1, so split-K did not",
+    )
+    for i in range(N_ELEMS):
+        assert_equal(
+            c_h[i],
+            reduced_h[i] * 2.0 + 1.0,
+            msg=String("dispatch, compute closure: value mismatch at ", i),
+        )
     print("      OK")
 
 
@@ -397,24 +539,51 @@ def test_dispatch_workspace_cap[
         # absence of evidence -- an epilogue that never fired reads the same.
         _ = Atomic[Int32].fetch_add(seen_ptr, Int32(width))
 
-    block_scaled_matmul_amd[lane_bytes=lane_bytes, elementwise_lambda_fn=probe](
-        c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx
-    )
+    @inline(.always)
+    def probe_fn[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var seen_ptr, var wide_ptr}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        comptime if width > 1:
+            wide_ptr[0] = Int32(1)
+        _ = Atomic[Int32].fetch_add(seen_ptr, Int32(width))
 
     var wide_out_h = ctx.enqueue_create_host_buffer[.int32](1)
     var seen_out_h = ctx.enqueue_create_host_buffer[.int32](1)
-    ctx.enqueue_copy(wide_out_h, wide_d)
-    ctx.enqueue_copy(seen_out_h, seen_d)
-    ctx.synchronize()
+
+    comptime for use_closure in [False, True]:
+        ctx.enqueue_copy(wide_d, wide_h)
+        ctx.enqueue_copy(seen_d, wide_h)
+        comptime if use_closure:
+            block_scaled_matmul_amd[lane_bytes=lane_bytes](
+                c_tt, a_tt, b_tt, sfa_tt, sfb_tt, probe_fn, ctx
+            )
+        else:
+            block_scaled_matmul_amd[
+                lane_bytes=lane_bytes, elementwise_lambda_fn=probe
+            ](c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
+        ctx.enqueue_copy(wide_out_h, wide_d)
+        ctx.enqueue_copy(seen_out_h, seen_d)
+        ctx.synchronize()
+        _assert_routing[expect_split_k](
+            Int(seen_out_h[0]), Int(wide_out_h[0]), M_static, N_static
+        )
+    print("      OK")
+
+
+def _assert_routing[
+    expect_split_k: Bool
+](seen: Int, wide: Int, M_static: Int, N_static: Int) raises:
+    """Checks the routing probe's element count and call width."""
 
     # Liveness first: both M values here are multiples of their branch's BM, so
     # no OOB row fires and the count is exactly M*N.
     assert_equal(
-        Int(seen_out_h[0]),
+        seen,
         M_static * N_static,
         msg=String(
             "epilogue covered ",
-            Int(seen_out_h[0]),
+            seen,
             " of ",
             M_static * N_static,
             " elements at M=",
@@ -422,7 +591,7 @@ def test_dispatch_workspace_cap[
         ),
     )
     assert_equal(
-        Int(wide_out_h[0]),
+        wide,
         0 if expect_split_k else 1,
         msg=String(
             "routing changed: expected ",
@@ -431,7 +600,6 @@ def test_dispatch_workspace_cap[
             M_static,
         ),
     )
-    print("      OK")
 
 
 def main() raises:

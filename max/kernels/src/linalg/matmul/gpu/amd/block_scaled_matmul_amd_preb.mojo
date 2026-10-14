@@ -68,7 +68,13 @@ from structured_kernels.amd_tile_io import (
     TileLoaderLDS,
 )
 
-from ....utils import elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    elementwise_epilogue_type,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from linalg.swiglu_activation import swiglu, swiglu_activation_type
 
 from .block_scaled_matmul_amd import _smem_row_bytes
@@ -1076,6 +1082,224 @@ struct BlockScaledMatmulAMD_PreB[
         # Zero selects plain row-major over the 4D slot layout.
         sfc_max_padded_m: Int = 0,
     ):
+        Self._run_impl[
+            N=N, K_BYTES=K_BYTES, has_epilogue_fn=False, has_compute_fn=False
+        ](
+            c,
+            a,
+            b_pre,
+            sfa,
+            sfb,
+            n_tile_idx,
+            m_tile_idx,
+            no_epilogue_fn,
+            no_compute_fn,
+            sfc_ptr,
+            sfc_row_base,
+            sfc_expert_slot,
+            sfc_max_padded_m,
+        )
+
+    @staticmethod
+    def run_with_epilogue_fn[
+        out_dtype: DType,
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_pre_layout: TensorLayout,
+        sfa_layout: TensorLayout,
+        sfb_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_pre_engine: TensorEngine,
+        sfa_engine: TensorEngine,
+        sfb_engine: TensorEngine,
+        N: Int,
+        K_BYTES: Int,
+        EpilogueFnType: ElementwiseEpilogueFn,
+    ](
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b_pre: TileTensor[
+            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
+        ],
+        sfa: TileTensor[
+            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
+        ],
+        sfb: TileTensor[
+            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
+        ],
+        n_tile_idx: Int,
+        m_tile_idx: Int,
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Same as `run`, storing the output through `epilogue_fn`.
+
+        Requires `elementwise_lambda_fn` to be unset and
+        `fuse_swiglu_mxfp8=False`.
+
+        Parameters:
+            out_dtype: Element type of `c`.
+            c_layout: Layout of `c`.
+            a_layout: Layout of `a`.
+            b_pre_layout: Layout of `b_pre`.
+            sfa_layout: Layout of `sfa`.
+            sfb_layout: Layout of `sfb`.
+            c_engine: Engine of `c`.
+            a_engine: Engine of `a`.
+            b_pre_engine: Engine of `b_pre`.
+            sfa_engine: Engine of `sfa`.
+            sfb_engine: Engine of `sfb`.
+            N: Output columns.
+            K_BYTES: Packed K extent of `a` and `b_pre`.
+            EpilogueFnType: Type of `epilogue_fn`.
+
+        Args:
+            c: Output `[M, N]`. Only its shape is read.
+            a: Row-major A operand.
+            b_pre: Preshuffled B operand.
+            sfa: Preshuffled A scales.
+            sfb: Preshuffled B scales.
+            n_tile_idx: This CTA's tile index along N.
+            m_tile_idx: This CTA's tile index along M.
+            epilogue_fn: Stores each output fragment at its global `(m, n)`.
+        """
+        Self._run_impl[
+            N=N, K_BYTES=K_BYTES, has_epilogue_fn=True, has_compute_fn=False
+        ](
+            c,
+            a,
+            b_pre,
+            sfa,
+            sfb,
+            n_tile_idx,
+            m_tile_idx,
+            epilogue_fn,
+            no_compute_fn,
+        )
+
+    @staticmethod
+    def run_with_compute_fn[
+        out_dtype: DType,
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_pre_layout: TensorLayout,
+        sfa_layout: TensorLayout,
+        sfb_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_pre_engine: TensorEngine,
+        sfa_engine: TensorEngine,
+        sfb_engine: TensorEngine,
+        N: Int,
+        K_BYTES: Int,
+        ComputeFnType: ElementwiseComputeFn,
+    ](
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b_pre: TileTensor[
+            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
+        ],
+        sfa: TileTensor[
+            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
+        ],
+        sfb: TileTensor[
+            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
+        ],
+        n_tile_idx: Int,
+        m_tile_idx: Int,
+        compute_fn: ComputeFnType,
+    ):
+        """Same as `run`, storing `compute_fn(idx, value)` into `c`.
+
+        Requires `elementwise_lambda_fn` to be unset and
+        `fuse_swiglu_mxfp8=False`.
+
+        Parameters:
+            out_dtype: Element type of `c`.
+            c_layout: Layout of `c`.
+            a_layout: Layout of `a`.
+            b_pre_layout: Layout of `b_pre`.
+            sfa_layout: Layout of `sfa`.
+            sfb_layout: Layout of `sfb`.
+            c_engine: Engine of `c`.
+            a_engine: Engine of `a`.
+            b_pre_engine: Engine of `b_pre`.
+            sfa_engine: Engine of `sfa`.
+            sfb_engine: Engine of `sfb`.
+            N: Output columns.
+            K_BYTES: Packed K extent of `a` and `b_pre`.
+            ComputeFnType: Type of `compute_fn`.
+
+        Args:
+            c: Output `[M, N]`.
+            a: Row-major A operand.
+            b_pre: Preshuffled B operand.
+            sfa: Preshuffled A scales.
+            sfb: Preshuffled B scales.
+            n_tile_idx: This CTA's tile index along N.
+            m_tile_idx: This CTA's tile index along M.
+            compute_fn: Maps each output index and fragment to the value
+                to store.
+        """
+        Self._run_impl[
+            N=N, K_BYTES=K_BYTES, has_epilogue_fn=False, has_compute_fn=True
+        ](
+            c,
+            a,
+            b_pre,
+            sfa,
+            sfb,
+            n_tile_idx,
+            m_tile_idx,
+            no_epilogue_fn,
+            compute_fn,
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run_impl[
+        out_dtype: DType,
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_pre_layout: TensorLayout,
+        sfa_layout: TensorLayout,
+        sfb_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_pre_engine: TensorEngine,
+        sfa_engine: TensorEngine,
+        sfb_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        *,
+        N: Int,
+        K_BYTES: Int,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
+    ](
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b_pre: TileTensor[
+            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
+        ],
+        sfa: TileTensor[
+            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
+        ],
+        sfb: TileTensor[
+            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
+        ],
+        n_tile_idx: Int,
+        m_tile_idx: Int,
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
+        sfc_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[UInt8, MutAnyOrigin](
+            unsafe_from_address=16
+        ),
+        sfc_row_base: Int = 0,
+        sfc_expert_slot: Int = 0,
+        sfc_max_padded_m: Int = 0,
+    ):
         comptime A_K_BYTES = a_layout.static_shape[1]
         comptime assert (
             A_K_BYTES % Self.BK_BYTES == 0
@@ -1572,6 +1796,10 @@ struct BlockScaledMatmulAMD_PreB[
         var c_reg = mma_op.accum_tile()
 
         comptime if Self.fuse_swiglu_mxfp8:
+            comptime assert not (has_epilogue_fn or has_compute_fn), (
+                "fuse_swiglu_mxfp8 owns the store epilogue; it cannot also"
+                " take an epilogue or compute closure"
+            )
             # One E8M0 block spans 32 OUTPUT columns. A lane holds
             # `c_frag_size` consecutive matmul-N columns, which the sigma
             # permute pairs into `c_frag_size // 2` output columns, and the
@@ -1695,7 +1923,11 @@ struct BlockScaledMatmulAMD_PreB[
                         sfc_ptr[unsafe_offset=off] = bitcast[DType.uint8](
                             scale[0]
                         )
-        elif Bool(Self.elementwise_lambda_fn):
+        elif (
+            Bool(Self.elementwise_lambda_fn)
+            or has_epilogue_fn
+            or has_compute_fn
+        ):
             var c_epilogue = RegTileEpilogue[
                 out_dtype,
                 Self.c_frag_size,
@@ -1714,13 +1946,21 @@ struct BlockScaledMatmulAMD_PreB[
                             .raw_load[width=Self.c_frag_size](0)
                             .cast[out_dtype]()
                         )
-                        c_epilogue.store(
-                            v,
-                            m=m_global,
-                            n=n_warp_base
+                        var n_global = (
+                            n_warp_base
                             + n_mma * Self.MMA_N
-                            + Int(lane_group) * Self.c_frag_size,
+                            + Int(lane_group) * Self.c_frag_size
                         )
+                        comptime if has_epilogue_fn:
+                            c_epilogue.store_with_epilogue_fn(
+                                epilogue_fn, v, m=m_global, n=n_global
+                            )
+                        elif has_compute_fn:
+                            c_epilogue.store_with_compute_fn(
+                                compute_fn, v, m=m_global, n=n_global
+                            )
+                        else:
+                            c_epilogue.store(v, m=m_global, n=n_global)
         else:
             var c_block = c.tile[Self.BM, Self.BN](m_tile_idx, n_tile_idx)
             var c_warp = c_block.tile[Self.WM, Self.WN](warp_m, warp_n)

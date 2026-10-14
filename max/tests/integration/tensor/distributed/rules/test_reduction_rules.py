@@ -15,9 +15,13 @@
 
 from __future__ import annotations
 
+import pytest
 from max.dtype import DType
 from max.experimental.sharding import DeviceMapping, TensorLayout
+from max.experimental.sharding.action import AxisAssignment
+from max.experimental.sharding.placements import Partial, Sharded
 from max.experimental.sharding.rules import (
+    cumsum_rule,
     linear_reduce_rule,
     reduce_rule,
 )
@@ -92,7 +96,7 @@ class TestReduceRule:
 
 
 class TestLinearReduceRule:
-    """Tests for linear_reduce_rule (sum; cumsum uses reduce_rule)."""
+    """Tests for linear_reduce_rule (sum; cumsum uses cumsum_rule)."""
 
     def test_partial_passthrough(self) -> None:
         """Linear reduce: Partial passes through (not resolved)."""
@@ -168,6 +172,84 @@ class TestReduceWithSymbolicDims:
         layout = _layout(M(MESH_1D, S(0)), ("batch", "seq", 8))
         _, (out,) = pick(linear_reduce_rule, layout, axis=2)
         assert out.placements == (S(0),)
+
+
+class TestCumsumRule:
+    """Tests for cumsum_rule (dedicated; MXF-833)."""
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [
+            DType.int32,
+            DType.int64,
+            DType.uint8,
+            DType.uint64,
+        ],
+    )
+    def test_partial_row_present_for_integral(self, dtype: DType) -> None:
+        """Integral inputs keep Partial without a move (P -> P row)."""
+        layout = _layout(M(MESH_1D, P), (4, 8), dtype)
+        rows = cumsum_rule(layout, axis=0)
+        assert AxisAssignment((P,), (P,)) in rows
+        _, (out,) = pick(cumsum_rule, layout, axis=0)
+        assert out.placements == (P,)
+
+    @pytest.mark.parametrize(
+        "dtype",
+        [DType.float32, DType.bfloat16, DType.bool],
+    )
+    def test_partial_row_absent_for_float_and_bool(self, dtype: DType) -> None:
+        """Float/bool inputs get no Partial row: a scan reassociates a
+        floating-point sum, so resolve-first stays the only path."""
+        layout = _layout(M(MESH_1D, P), (4, 8), dtype)
+        rows = cumsum_rule(layout, axis=0)
+        assert AxisAssignment((P,), (P,)) not in rows
+        # No row keeps the Partial input where it is.
+        assert all(
+            not isinstance(p, Partial)
+            for row in rows
+            for p in row.needed_inputs
+        )
+
+    def test_sharded_non_scan_axis_preserved(self) -> None:
+        """S(d) -> S(d) rows cover every non-scan axis, like reduce_rule."""
+        layout = _layout(M(MESH_1D, S(0)), (4, 8))
+        _, (out,) = pick(cumsum_rule, layout, axis=1)
+        assert out.placements == (S(0),)
+
+    def test_sharded_scan_axis_still_resolves(self) -> None:
+        """S(scan axis) has no passthrough row: replicate first (MXF-834
+        boundary untouched)."""
+        layout = _layout(M(MESH_1D, S(0)), (4, 8), DType.int64)
+        rows = cumsum_rule(layout, axis=0)
+        assert AxisAssignment((Sharded(0),), (Sharded(0),)) not in rows
+        _, (out,) = pick(cumsum_rule, layout, axis=0)
+        assert out.placements == (R,)
+
+    def test_2d_mesh_partial_and_sharded_compose(self) -> None:
+        """2D mesh: P on one axis, S(non-scan) on the other composes."""
+        layout = _layout(M(MESH_2D, P, S(0)), (4, 8), DType.int32)
+        _, (out,) = pick(cumsum_rule, layout, axis=1)
+        assert out.placements[0] == P
+        assert out.placements[1] == S(0)
+
+    def test_exclusive_reverse_flags_do_not_change_placement(self) -> None:
+        """The flags are placement-neutral; every variant keeps P."""
+        layout = _layout(M(MESH_1D, P), (4, 8), DType.int64)
+        for exclusive, reverse in (
+            (False, False),
+            (False, True),
+            (True, False),
+            (True, True),
+        ):
+            _, (out,) = pick(
+                cumsum_rule,
+                layout,
+                axis=1,
+                exclusive=exclusive,
+                reverse=reverse,
+            )
+            assert out.placements == (P,)
 
 
 class TestScanAndMean:

@@ -268,7 +268,6 @@ def amd_4wave_split_k_matmul[
     block_m_override: Int = 0,
     block_n_override: Int = 0,
     block_k_override: Int = 0,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
@@ -290,21 +289,21 @@ def amd_4wave_split_k_matmul[
     `num_splits=4`, it beats hipBLASLt at M=64–256 by ~10–25%. Above
     M ≈ 256, the plain `structured_4wave_matmul` is faster.
 
-    Note: epilogue fusion via `elementwise_lambda_fn` may tip the
-    decision toward this kernel even when raw matmul is close to
-    vendor, since it saves a separate elementwise launch.
+    Note: epilogue fusion through the `epilogue_fn` or `compute_fn`
+    overloads may tip the decision toward this kernel even when raw
+    matmul is close to vendor, since it saves a separate elementwise
+    launch.
 
     Pre-allocate `workspace = SplitKWorkspace[num_splits](ctx, M*N)`
     and re-use across calls with the same shape. The workspace holds
     `num_splits * M * N` f32 partials; the final output (FP8 / bf16 /
     fp16, which matches `c_type`) is reduced into `c` by the reduce kernel.
 
-    When `elementwise_lambda_fn` is set, the reduce kernel fires the
-    lambda once per output cell on the reduced f32 sum and skips the
-    write to `c`. The matmul kernels themselves do not see the lambda
-    (they always write f32 partials to the workspace), which is the
-    correct semantics: the lambda must observe the FINAL value, not
-    the per-split partials.
+    The epilogue overloads apply their closure in the reduce kernel,
+    once per output cell on the reduced f32 sum. The matmul kernels
+    themselves do not see the closure (they always write f32 partials
+    to the workspace), which is the correct semantics: the closure must
+    observe the FINAL value, not the per-split partials.
 
     Parameters:
         a_type: Element type of `a`.
@@ -321,8 +320,6 @@ def amd_4wave_split_k_matmul[
             multiple of MMA_K and satisfy
             `(K / num_splits) % (2*BK) == 0`. Valid: 32, 64, 128 for
             bf16/fp16; 128 for FP8.
-        elementwise_lambda_fn: Optional fused epilogue applied once per
-            cell on the reduced f32 sum.
 
     Args:
         a: Input tile-tensor for A.
@@ -340,7 +337,6 @@ def amd_4wave_split_k_matmul[
         block_m_override=block_m_override,
         block_n_override=block_n_override,
         block_k_override=block_k_override,
-        elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=False,
         has_compute_fn=False,
     ](a, b, c, no_epilogue_fn, no_compute_fn, ctx, workspace=workspace)
@@ -397,7 +393,6 @@ def amd_4wave_split_k_matmul[
         block_m_override=block_m_override,
         block_n_override=block_n_override,
         block_k_override=block_k_override,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=True,
         has_compute_fn=False,
     ](a, b, c, epilogue_fn, no_compute_fn, ctx, workspace=workspace)
@@ -454,7 +449,6 @@ def amd_4wave_split_k_matmul[
         block_m_override=block_m_override,
         block_n_override=block_n_override,
         block_k_override=block_k_override,
-        elementwise_lambda_fn=None,
         has_epilogue_fn=False,
         has_compute_fn=True,
     ](a, b, c, no_epilogue_fn, compute_fn, ctx, workspace=workspace)
@@ -474,7 +468,6 @@ def _amd_4wave_split_k_matmul_impl[
     block_m_override: Int,
     block_n_override: Int,
     block_k_override: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
@@ -593,10 +586,9 @@ def _amd_4wave_split_k_matmul_impl[
             launch_split_k[config_128]()
 
     # Reduce + cast on the same (default) stream — naturally serialized
-    # after the split-K launch. When `elementwise_lambda_fn` is set,
-    # the reduce kernel fires the lambda per cell instead of writing
-    # to c — but c.ptr is still passed so the no-lambda branch can
-    # store there.
+    # after the split-K launch. With `epilogue_fn`, the reduce kernel
+    # fires it per cell instead of writing to c, but c.ptr is still
+    # passed so the other branches can store there.
     comptime block_dim_x: Int = 256
     var total_elems = M * N
     var num_blocks = ceildiv(total_elems, block_dim_x)
@@ -629,9 +621,7 @@ def _amd_4wave_split_k_matmul_impl[
             block_dim=(block_dim_x,),
         )
     else:
-        comptime reduce_kernel = _split_k_reduce_kernel[
-            num_splits, c_type, elementwise_lambda_fn=elementwise_lambda_fn
-        ]
+        comptime reduce_kernel = _split_k_reduce_kernel[num_splits, c_type]
         ctx.enqueue_function[reduce_kernel](
             workspace.scratch.unsafe_ptr(),
             c.ptr,

@@ -15,7 +15,7 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 
-from extensibility import InputTensor, OutputTensor, foreach
+from extensibility import InputTensor, OutputTensor, Tensor, foreach
 
 from std.utils.coord import Coord
 from std.utils.index import IndexList
@@ -44,6 +44,6 @@ struct AddConstant[value: Int]:
 # output shapes in the graph.
 @extensibility.register_shape_function("add_constant")
 def add_constant_shape(
-    x: InputTensor,
-) raises -> IndexList[x.rank]:
+    x: Some[Tensor],
+) raises -> IndexList[type_of(x).rank]:
     raise Error("NotImplemented")

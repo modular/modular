@@ -107,10 +107,10 @@ static void removeImplicitCtorCall(TypedAttr &value, SharedState *shared) {
     return;
 
   if (shared) {
-    ASTDecl *decl = shared->getDeclResolver().getDeclForFuncSymbol(nameAttr);
+    DefASTDecl *decl = shared->getDeclResolver().getDeclForFuncSymbol(nameAttr);
     if (!decl)
       return;
-    auto calleeFn = cast<FnOp>(decl->getIfOperation());
+    auto calleeFn = decl->getOp();
     if (!calleeFn.isImplicitConversion())
       return; // If it's not an implicit conversion, don't remove it.
   }
@@ -571,7 +571,9 @@ static void prettyPrintParamName(ParamDeclRefAttr declRef, SharedState &shared,
   }
 
   // If this is a function, it may be an auto-param for an argument type.
-  if (auto fnDecl = dyn_cast_if_present<LIT::FnOp>(curDecl->getIfOperation())) {
+  if (auto *defDecl = dyn_cast<DefASTDecl>(curDecl);
+      defDecl && defDecl->getOp()) {
+    auto fnDecl = defDecl->getOp();
     auto fnSig = fnDecl.getFuncTypeGenerator();
     for (auto [idx, argType] :
          llvm::enumerate(fnDecl.getFunctionType().getInputs())) {
@@ -936,9 +938,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       FnOp calleeFn;
       bool calleeIsMethod = false;
       if (diagShared) {
-        if (ASTDecl *decl =
+        if (DefASTDecl *decl =
                 diagShared->getDeclResolver().getDeclForFuncSymbol(nameAttr)) {
-          calleeFn = cast<FnOp>(decl->getIfOperation());
+          calleeFn = decl->getOp();
           calleeIsMethod = decl->tryGetMethodParentDecl() != nullptr;
         }
       }

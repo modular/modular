@@ -130,8 +130,8 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<Operation &, MojoASTTypeRef>(*decl->getIfOperation())
       .Case([&](VarDeclOp op) { return MojoASTTypeRef(op.getType()); })
       .Case([&](FnOp op) { return op.getFullSignature(); })
-      .Case([&](StructDeclOp op) { return decl->computeSelfTypeForStruct(op); })
-      .Case([&](TraitDeclOp op) { return decl->computeSelfTypeForTrait(op); })
+      .Case([&](StructDeclOp op) { return StructASTDecl::computeSelfType(op); })
+      .Case([&](TraitDeclOp op) { return TraitASTDecl::computeSelfType(op); })
       .Default({});
 }
 

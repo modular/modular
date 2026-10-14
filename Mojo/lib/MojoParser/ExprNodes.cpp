@@ -602,7 +602,8 @@ AnyValue SimpleLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     return {};
   }
 
-  ASTType selfType = astDecl->getTypeDeclSelf();
+  auto *typeScopeDecl = cast<TypeScopeASTDecl>(astDecl);
+  ASTType selfType = typeScopeDecl->getSelfType();
   if (!selfType) {
     // The user is attempting to use "Self" when the self type hasn't yet been
     // computed (e.g. inside a struct's parameter list). This is not allowed.
@@ -617,7 +618,7 @@ AnyValue SimpleLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   // Once we have the type in question we can just return its Self type as an
   // PValue.  This already includes bound parameters etc.
   assert(astDecl->resolvedness >= DeclResolvedness::signature);
-  return emitter.emitResult(astDecl->getTypeDeclSelf(), this, dest);
+  return emitter.emitResult(typeScopeDecl->getSelfType(), this, dest);
 }
 
 // Handle generation of a constructor call to one of::
@@ -1019,8 +1020,8 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
       }
 
       // References /from/ static methods can only use capital Self.
-      if (auto curFn = dyn_cast_or_null<FnOp>(lookupScope.getIfOperation()))
-        if (curFn.getIsStatic())
+      if (auto *curFn = dyn_cast<DefASTDecl>(&lookupScope))
+        if (curFn->getOp().getIsStatic())
           replacement = "Self.";
 
       emitter.emitError(loc, "cannot access ")
@@ -1466,8 +1467,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   }
 
   // Functions form an address, and may be overloaded.
-  if (auto firstCandidate =
-          dyn_cast_or_null<FnOp>(decls[0]->getIfOperation())) {
+  if (auto *fnDecl = dyn_cast<DefASTDecl>(decls[0]);
+      fnDecl && fnDecl->getOp()) {
     // Form an overload set value with all the candidates.
     auto result = OverloadSetUValue::create(
         spelling, decls, ParamBindings(emitter.getDeclScope(), expr),
@@ -1537,8 +1538,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       // being signature resolved (and the ASTDecl we're looking at is the
       // temporary one made for signature emission). In this case, we allow
       // unqualified access to parameters.
-      if (parentDecl && isa<StructDeclOp>(parentDecl->getIfOperation()) &&
-          parentDecl->getTypeDeclSelf()) {
+      if (auto *structDecl = dyn_cast_if_present<StructASTDecl>(parentDecl);
+          structDecl && structDecl->getSelfType()) {
         auto diag =
             emitter.emitError(loc, "unqualified access to struct parameter '")
             << spelling << "'; use 'Self." << spelling << "' instead";
@@ -1555,7 +1556,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
 
   // If this is a capture we need to emit a capture value.
   ASTDecl *declRef = nullptr;
-  if (decls.size() == 1 && !isa_and_nonnull<FnOp>(decls[0]->getIfOperation())) {
+  auto *defDecl = decls.size() == 1 ? dyn_cast<DefASTDecl>(decls[0]) : nullptr;
+  if (decls.size() == 1 && (!defDecl || !defDecl->getOp())) {
     assert(decls.size() == 1 && "Only functions may be overloaded");
     declRef = decls[0];
   }
@@ -1574,7 +1576,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     };
   }
   if (needsCapture) {
-    FnOp parent = cast<FnOp>(nearestEscapingFnOrNone->getIfOperation());
+    auto &nearestEscapingDef = cast<DefASTDecl>(*nearestEscapingFnOrNone);
+    FnOp parent = nearestEscapingDef.getOp();
     if (usesClosurePipeline(parent)) {
       if (!emitter.shared.captureInstanceExistsInScope(*nearestEscapingFnOrNone,
                                                        spelling)) {
@@ -1582,9 +1585,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
             emitter.shared.defaultCaptureConventionInScope(
                 *nearestEscapingFnOrNone);
         if (defaultConvention != CaptureConvention::kConventionUnspecified) {
-          decl = ClosureEmitter::addCaptureValue(emitter.shared,
-                                                 *nearestEscapingFnOrNone,
-                                                 spelling, expr->getLoc());
+          decl = ClosureEmitter::addCaptureValue(
+              emitter.shared, nearestEscapingDef, spelling, expr->getLoc());
           if (!decl)
             return {};
         } else if (emitter.builder && dest.getContext() != EC_TypeOf) {
@@ -5207,7 +5209,7 @@ MagicFunctionNode::emitGetCurrentFunctionName(ExprDest &dest,
   std::string funcName;
   ASTDecl *fnDecl = emitter.declScope.getNearestDeclOfType<FnOp>();
   if (fnDecl) {
-    FnOp fnOp = cast<FnOp>(fnDecl->getIfOperation());
+    FnOp fnOp = cast<DefASTDecl>(fnDecl)->getOp();
     // This implementation should be kept in sync with the
     // evaluation of KGEN_GetSourceNameAttr in
     // IREvaluatorContext::evaluateGetSourceNameAttr().
@@ -5253,8 +5255,8 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ExprDest &dest,
         if (decl->getParentDecl() != fileModuleDecl)
           continue;
 
-        auto fnOp = dyn_cast_or_null<FnOp>(decl->getIfOperation());
-        if (!fnOp || fnOp.isSynthetic())
+        auto *fnDecl = dyn_cast<DefASTDecl>(decl);
+        if (!fnDecl || !fnDecl->getOp() || fnDecl->getOp().isSynthetic())
           continue;
 
         // TODO(MOCO-2556): consistently allow recursive references.

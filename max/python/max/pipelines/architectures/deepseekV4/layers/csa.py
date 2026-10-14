@@ -54,7 +54,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import Dim, TensorValue, ops
 
-from .cache import KEY, VALUE, CacheLeaf, arange, ceildiv, scalar
+from .cache import KEY, VALUE, CacheLeaf, LayerIndex, arange, ceildiv, scalar
 from .compressor import DeepseekV4Compressor
 from .ragged import RaggedRows, WindowRows
 
@@ -77,7 +77,8 @@ class CompressedStream:
     cap: int
     """Zone slots a query may reach, ``ceil(max_seq_len / ratio)``."""
     zone_leaf: CacheLeaf | None
-    layer: int
+    layer: TensorValue
+    """This layer within the zone leaf, host uint32 (:class:`LayerIndex`)."""
 
     @property
     def n_cand(self) -> int:
@@ -178,7 +179,7 @@ def compressed_stream(
     max_seq_len: int,
     state_leaf: CacheLeaf | None,
     zone_leaf: CacheLeaf | None,
-    layer: int,
+    layer: LayerIndex,
 ) -> CompressedStream:
     """Run one compressed stream over a ragged batch.
 
@@ -192,18 +193,20 @@ def compressed_stream(
         state_leaf: The stream's open-state leaf, or ``None`` to run without
             a cache (a fresh batch, nothing stored).
         zone_leaf: The stream's compressed-zone leaf, or ``None`` likewise.
-        layer: Index of this layer within both leaves.
+        layer: Where this layer lives in the leaves; both leaves are
+            indexed by ``layer.zone``.
     """
     ratio = compressor.compress_ratio
     coff = compressor.coff
     proj = compressor.proj_dim
-    assert windows.ratio == ratio and windows.coff == coff
+    assert windows.ratio == ratio
     w = windows.total
+    assert layer.zone is not None and layer.zone_rows is not None
 
     kv_proj, score_proj = compressor.projections(x32)
     if state_leaf is not None:
-        state_leaf.store(layer, KEY, kv_proj, rows.offsets)
-        state_leaf.store(layer, VALUE, score_proj, rows.offsets)
+        state_leaf.store(layer.zone, KEY, kv_proj, rows.offsets)
+        state_leaf.store(layer.zone, VALUE, score_proj, rows.offsets)
 
     # Rows at or after the request's ``P`` come from the chunk (the index is
     # clamped so a not-yet-closed window reads a real, finite row); rows
@@ -215,14 +218,17 @@ def compressed_stream(
         kv_rows = ops.where(
             mask,
             state_leaf.gather(
-                layer, KEY, windows.cache_slot, lut_rows=windows.bid
+                layer.zone_rows, KEY, windows.cache_slot, lut_rows=windows.bid
             ),
             fresh_kv,
         )
         score_rows = ops.where(
             mask,
             state_leaf.gather(
-                layer, VALUE, windows.cache_slot, lut_rows=windows.bid
+                layer.zone_rows,
+                VALUE,
+                windows.cache_slot,
+                lut_rows=windows.bid,
             ),
             fresh_score,
         )
@@ -240,7 +246,7 @@ def compressed_stream(
     cap = ceildiv(max_seq_len, ratio)
     if zone_leaf is not None:
         zone_leaf.store(
-            layer,
+            layer.zone,
             KEY,
             fresh,
             ops.cast(windows.woff, DType.uint32),
@@ -254,5 +260,5 @@ def compressed_stream(
         rows=rows,
         cap=cap,
         zone_leaf=zone_leaf,
-        layer=layer,
+        layer=layer.zone,
     )

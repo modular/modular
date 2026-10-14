@@ -69,7 +69,6 @@ load is an inline TileTensor access (no special decode to own), matching
 `fp4_gemv.mojo`.
 """
 
-from std.collections import Optional
 from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
@@ -83,8 +82,7 @@ from linalg.matmul.gpu.apple.matmul_kernel import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.matmul2d_fp8 import enqueue_matmul2d_fp8
 from linalg.utils import (
     ElementwiseEpilogueFn,
-    apply_elementwise_epilogue,
-    elementwise_epilogue_type,
+    no_compute_fn,
     no_epilogue_fn,
 )
 
@@ -174,7 +172,6 @@ def fp8_gemv_kernel[
     c_layout: TensorLayout,
     a_layout: TensorLayout,
     w_layout: TensorLayout,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     c_engine: TensorEngine,
     a_engine: TensorEngine,
     w_engine: TensorEngine,
@@ -197,8 +194,8 @@ def fp8_gemv_kernel[
     `c` is `[1, N]`, `a` the bf16 activation `[1, K]`, `weight` the FP8-E4M3
     weight `[N, K]`. Accumulation is fp32. Produces the RAW `x @ W_fp8^T`; the
     per-tensor scalar `weight_scale` is folded post-matmul by the graph lowering.
-    With `has_epilogue_fn`, `epilogue_fn` stores each output in place of
-    `elementwise_lambda_fn`.
+    With `has_epilogue_fn`, `epilogue_fn` stores each output in place of the
+    plain store to `c`.
     """
     var n = Int(n_arg)
     var k = Int(k_arg)
@@ -241,10 +238,8 @@ def fp8_gemv_kernel[
     if lid == 0:
         var y = dot.cast[c_type]()
 
-        comptime if Bool(elementwise_lambda_fn) or has_epilogue_fn:
-            apply_elementwise_epilogue[elementwise_lambda_fn](
-                epilogue_fn, (0, n_idx), y
-            )
+        comptime if has_epilogue_fn:
+            epilogue_fn[c_type, 1, alignment=1]((0, n_idx), y)
         else:
             c.store(Coord(0, n_idx), y)
 
@@ -254,7 +249,6 @@ def enqueue_apple_fp8_gemv[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     //,
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_epilogue_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -275,10 +269,8 @@ def enqueue_apple_fp8_gemv[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract), applied on the width-1 store.
         has_epilogue_fn: Whether `epilogue_fn` stores each output at its
-            `(row, col)` in `c` in place of `elementwise_lambda_fn`.
+            `(row, col)` in `c` in place of the plain store.
     """
     comptime BLK = 256  # 8 warps / threadgroup
     var grid = ceildiv(n * WARP_SIZE, BLK)
@@ -288,7 +280,6 @@ def enqueue_apple_fp8_gemv[
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(weight).LayoutType,
-        elementwise_lambda_fn,
         type_of(c).Engine,
         type_of(a).Engine,
         type_of(weight).Engine,
@@ -385,7 +376,6 @@ def enqueue_fp8_materialize[
 @inline(.always)
 def _enqueue_apple_fp8_materialize_dense[
     c_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[.bfloat16, ...],
@@ -402,8 +392,7 @@ def _enqueue_apple_fp8_materialize_dense[
     weight into it (`enqueue_fp8_materialize`, the SAME E4M3 -> bf16 cast the GEMV
     uses -- bf16 is exact for E4M3, so this is bit-consistent with the GEMV
     weight values), then runs the stock dense bf16 MMA (`enqueue_apple_matmul`,
-    `transpose_b=True`) reading the materialized weight. The optional fused
-    epilogue threads straight through. The per-tensor `weight_scale` scalar is
+    `transpose_b=True`) reading the materialized weight. The per-tensor `weight_scale` scalar is
     applied OUTSIDE the kernel by the graph lowering (a post-matmul multiply),
     identically to the GEMV path. Slice 4 will replace this interim with a fused
     cooperative-SMEM FP8 matmul (mirroring the FP4 fused path).
@@ -424,7 +413,6 @@ def _enqueue_apple_fp8_materialize_dense[
             in_type=DType.bfloat16,
             c_type=c_type,
             transpose_b=True,
-            elementwise_lambda_fn=elementwise_lambda_fn,
         ](c, a, wdense_tt.as_imm(), ctx)
     else:
         comptime apple_kernel = gemm_kernel_apple_8x8[
@@ -438,7 +426,6 @@ def _enqueue_apple_fp8_materialize_dense[
             type_of(a).Engine,
             type_of(wdense_tt).Engine,
             transpose_b=True,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             BLOCK_M=64,
             BLOCK_N=64,
             BLOCK_K=16,
@@ -451,6 +438,8 @@ def _enqueue_apple_fp8_materialize_dense[
             Int32(m),
             Int32(n),
             Int32(k),
+            host_arg=no_epilogue_fn,
+            host_arg2=no_compute_fn,
             grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
             block_dim=(4 * WARP_SIZE,),
         )
@@ -465,7 +454,6 @@ def enqueue_apple_fp8_matmul[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     //,
     c_type: DType = .float32,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_epilogue_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -501,11 +489,8 @@ def enqueue_apple_fp8_matmul[
 
     Parameters:
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
-        elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
-            contract), threaded to whichever path runs.
         has_epilogue_fn: Whether `epilogue_fn` stores each output at its
-            `(row, col)` in `c` in place of `elementwise_lambda_fn`. Needs
-            Apple M5.
+            `(row, col)` in `c` in place of the plain store. Needs Apple M5.
     """
     comptime assert (
         c_type == .float16 or c_type == .bfloat16 or c_type == .float32
@@ -527,9 +512,7 @@ def enqueue_apple_fp8_matmul[
     if cc != 5:
         comptime if has_epilogue_fn:
             raise Error("enqueue_apple_fp8_matmul: epilogue_fn needs Apple M5")
-        _enqueue_apple_fp8_materialize_dense[c_type, elementwise_lambda_fn](
-            c, a, weight, m, n, k, ctx
-        )
+        _enqueue_apple_fp8_materialize_dense[c_type](c, a, weight, m, n, k, ctx)
         return
 
     # Tiled FP8 route (bf16 A x fp8 B -> fp32 on the native Apple MMA, direct
@@ -548,12 +531,11 @@ def enqueue_apple_fp8_matmul[
     if n > k or m > 1:
         enqueue_matmul2d_fp8[
             c_type=c_type,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             has_epilogue_fn=has_epilogue_fn,
         ](c, a, weight, ctx, epilogue_fn)
         return
 
     # Batch-1 decode: register-resident W8A16 GEMV, no MMA.
-    enqueue_apple_fp8_gemv[c_type, elementwise_lambda_fn, has_epilogue_fn](
+    enqueue_apple_fp8_gemv[c_type, has_epilogue_fn](
         c, a, weight, n, k, ctx, epilogue_fn
     )

@@ -155,7 +155,7 @@ static bool isInheritedFnOp(FnOp fnOp) {
 // The conformance constraint implies the method constraint, so this method
 // is a valid override - we discard the stub.
 static LogicalResult signatureResolveDefaultTraitFnStubs(
-    ASTDecl &structDecl, ASTDecl &traitDecl, StringAttr name,
+    StructASTDecl &structDecl, ASTDecl &traitDecl, StringAttr name,
     ArrayRef<ASTDecl *> candidates, ParameterEvaluator &traitAliasReplacer,
     ConstraintAttr conformanceConstraint) {
 
@@ -163,16 +163,16 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
   SyntheticNode node(structDecl.getLoc());
   IREmitter emitter(structDecl, EC_Trait);
-  auto structSelfType = structDecl.getTypeDeclSelf();
+  auto structSelfType = structDecl.getSelfType();
 
   /// Will attempt to create a wrapper fn op in structFnDecl that will call into
   /// the fn op in traitFnDecl (taking things like aliases that show up in
   /// signature into account). This will also report if another trait has
   /// already provided a default implementation and the struct itself does not
   /// provide an override.
-  auto signatureResolveStub = [&](ASTDecl *traitFnDecl,
-                                  ASTDecl *structFnDecl) -> LogicalResult {
-    FnOp traitFn = cast<FnOp>(traitFnDecl->getIfOperation());
+  auto signatureResolveStub = [&](DefASTDecl *traitFnDecl,
+                                  DefASTDecl *structFnDecl) -> LogicalResult {
+    FnOp traitFn = traitFnDecl->getOp();
 
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [wrapperSignature, bindings] = getTraitFunctionSignature(
@@ -190,8 +190,8 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     SmallVector<ASTDecl *> structDefinesMethods;
     for (ASTDecl *decl : possibleOverloads) {
-      auto impl = llvm::dyn_cast_if_present<FnOp>(decl->getIfOperation());
-      if (!impl || isInheritedFnOp(impl))
+      auto *implDecl = llvm::dyn_cast_if_present<DefASTDecl>(decl);
+      if (!implDecl || !implDecl->getOp() || isInheritedFnOp(implDecl->getOp()))
         continue;
 
       structDefinesMethods.push_back(decl);
@@ -243,7 +243,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     // about to create has a matching signature to an existing wrapper function
     // in the struct.
     for (ASTDecl *decl : possibleOverloads) {
-      auto fnOp = cast<FnOp>(decl->getIfOperation());
+      auto fnOp = cast<DefASTDecl>(decl)->getOp();
 
       auto existingSignature = fnOp.getFullSignature();
       // now we need to compare the full signature to the trait signature
@@ -300,7 +300,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     StructEmitter structEmitter(structDecl);
 
     // Create builder positioned before the first ConformanceOp.
-    auto structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+    auto structDeclOp = structDecl.getOp();
     Block &fieldsBlock = structDeclOp.getFields().front();
 
     // Position builder before the first ConformanceOp (there will always be
@@ -344,9 +344,10 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
   };
 
   for (ASTDecl *decl : candidates) {
-    FnOp fnOp = dyn_cast_if_present<FnOp>(decl->getIfOperation());
-    if (!fnOp)
+    auto *fnDecl = dyn_cast_if_present<DefASTDecl>(decl);
+    if (!fnDecl || !fnDecl->getOp())
       continue;
+    FnOp fnOp = fnDecl->getOp();
 
     // Indicates we've already signature resolved this decl, should actually
     // be able to assume this given the decl is signature resolved, but
@@ -377,14 +378,16 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     // Grab the actual decl corresponding to the trait function we'll be
     // wrapping.
-    if (failed(signatureResolveStub(traitFnDecl, decl)))
+    if (failed(signatureResolveStub(cast<DefASTDecl>(traitFnDecl),
+                                    cast<DefASTDecl>(decl))))
       return failure();
   }
   return success();
 }
 
 LogicalResult
-LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
+LIT::verifyAndBuildConformance(StructASTDecl &structDecl,
+                               TraitSymbolAttr parent,
                                std::optional<MojoInflightDiag> &diag,
                                ConformanceOp op, ASTDecl &conformanceDecl) {
   // If the conformance table already has witnesses, it was pre-built (e.g., for
@@ -414,7 +417,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
       ImplicitLocOpBuilder::atBlockEnd(op.getLoc(), &op.getBody().front());
 
   auto &shared = structDecl.getShared();
-  auto structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  auto structDeclOp = structDecl.getOp();
 
   // Find extensions that target this struct and implement this trait.
   // This implements a form of the orphan rule: extensions can be defined either
@@ -432,8 +435,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
   }
 
   // Search for extensions in the trait's file scope
-  ASTDecl &traitDecl =
-      shared.declResolver->getDeclForTypeSymbol(parent.getSymbol());
+  auto &traitDecl = cast<TraitASTDecl>(
+      shared.declResolver->getDeclForTypeSymbol(parent.getSymbol()));
   if (ASTDecl *traitFileScope =
           traitDecl.getNearestDeclOfType<FileModuleOp>()) {
     traitFileScope->findExtensionsInScopeForStruct(structDecl.getSymbolRef(),
@@ -445,8 +448,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
 
   bool hadErrors = false;
   IREmitter emitter(structDecl, EC_Trait);
-  ASTType selfType = structDecl.getTypeDeclSelf();
-  TraitDeclOp traitDeclOp = cast<TraitDeclOp>(*traitDecl.getIfOperation());
+  ASTType selfType = structDecl.getSelfType();
+  TraitDeclOp traitDeclOp = traitDecl.getOp();
 
   // Make sure to fully resolve the trait first.
   if (failed(shared.declResolver->resolveBody(traitDecl, structDecl.getLoc())))
@@ -517,9 +520,9 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
   // These traitAliasReplacer help us do the needle substitutions later.
   //
   // TODO(MOCO-1993): Consolidate docs on this.
-  auto structSelf = PValue(structDecl.getTypeDeclSelf());
+  auto structSelf = PValue(structDecl.getSelfType());
   auto traitSelfDecl =
-      cast<ParamDeclRefAttr>(PValue(traitDecl.getTypeDeclSelf()).get());
+      cast<ParamDeclRefAttr>(PValue(traitDecl.getSelfType()).get());
   ParameterEvaluator traitAliasReplacer = shared.getParameterEvaluator();
   for (size_t i = 0; i < parent.getParamValues().size(); i++) {
     traitAliasReplacer.setDeclBinding(
@@ -553,12 +556,9 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     // methods first. This helps us avoid any infinite loops as signature
     // resolution for inherited methods also calls verifyConformance.
     for (ASTDecl *decl : decls) {
-      if (Operation *op = decl->getIfOperation()) {
-        if (auto fnOp = dyn_cast<FnOp>(op)) {
-          if (isInheritedFnOp(fnOp))
-            continue;
-        }
-      }
+      if (auto *fnDecl = dyn_cast<DefASTDecl>(decl))
+        if (fnDecl->getOp() && isInheritedFnOp(fnDecl->getOp()))
+          continue;
       if (failed(shared.declResolver->resolveSignature(*decl,
                                                        structDecl.getLoc()))) {
         hadErrors = true;
@@ -825,7 +825,9 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
         // Skip any children that aren't methods or aliases.
-        if (auto traitFn = dyn_cast_or_null<FnOp>(decl->getIfOperation())) {
+        if (auto *traitFnDecl = dyn_cast<DefASTDecl>(decl);
+            traitFnDecl && traitFnDecl->getOp()) {
+          auto traitFn = traitFnDecl->getOp();
           if (failed(checkMethod(name, decl, traitFn.getSymNameAttr(),
                                  traitFn.getFullSignature()))) {
             allMatchFound = false;
@@ -863,7 +865,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     diag->attachNote(traitDecl)
         << "trait " << ASTType(shared.declResolver->getCanonicalTrait(parent))
         << " declared here";
-    if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
+    if (auto *inheritedFrom =
+            cast<StructASTDecl>(structDecl).getTraitConformanceLineage()) {
       if (auto it = inheritedFrom->find(parent);
           it != inheritedFrom->end() && it->second.first != parent) {
         ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
@@ -1636,15 +1639,17 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
   // on AnyType and Movable right now.
   if (auto *aliasDecl = dyn_cast<AliasASTDecl>(&entry)) {
     resultType = aliasDecl->getOp().getType();
-  } else if (auto fnDecl = dyn_cast_or_null<FnOp>(entry.getIfOperation())) {
+  } else if (auto *fnDecl = dyn_cast<DefASTDecl>(&entry);
+             fnDecl && fnDecl->getOp()) {
     // Ensure the function is signature resolved so we can access the mangled
     // name.
     if (failed(shared.declResolver->resolveSignature(entry, errorLoc)))
       return failure();
-    resultType = createRequirementSignature(fnDecl.getFullSignature(), type,
-                                            nullptr, *shared.declResolver);
+    resultType =
+        createRequirementSignature(fnDecl->getOp().getFullSignature(), type,
+                                   nullptr, *shared.declResolver);
     // Use the mangled name from the trait declaration for function witnesses.
-    witnessName = *fnDecl.getSymName();
+    witnessName = *fnDecl->getOp().getSymName();
   } else {
     llvm_unreachable("expected an alias or a function");
   }

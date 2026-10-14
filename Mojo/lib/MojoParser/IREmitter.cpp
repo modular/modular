@@ -2169,8 +2169,9 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   auto closureTrait =
       TraitDeclOp::create(b, mlir::UnknownLoc::get(ctx), // synthetic trait
                           StringAttr::get(ctx, name));
-  ASTDecl &traitDecl = shared.declResolver->addFullyResolvedDecl(
-      &*closureTrait, name, SMLoc(), &shared.getTopLevelDecl());
+  auto &traitDecl =
+      cast<TraitASTDecl>(shared.declResolver->addFullyResolvedDecl(
+          &*closureTrait, name, SMLoc(), &shared.getTopLevelDecl()));
 
   // Populate the trait with parent and self methods.
   SmallVector<TraitSymbolAttr> parents;
@@ -2217,7 +2218,7 @@ ASTDecl *IREmitter::createParametricClosureTrait(SharedState &shared) {
   };
 
   // An extra _Self parameter.
-  ASTType declSelf = traitDecl.getTypeDeclSelf();
+  ASTType declSelf = traitDecl.getSelfType();
   auto selfParam = QuoteAttr::get(
       TypeParamAttr::get(declSelf.extractMetaType(), TypeType::get(ctx)));
 

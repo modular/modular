@@ -35,9 +35,9 @@ void SourceNames::processDecorators(Operation *op,
       ASTDecl *decoratorDecl =
           shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
       if (decoratorDecl)
-        if (auto decoratorFunc =
-                dyn_cast_or_null<FnOp>(decoratorDecl->getIfOperation()))
-          return getSourceName(decoratorFunc);
+        if (auto *decoratorFunc = dyn_cast<DefASTDecl>(decoratorDecl))
+          if (decoratorFunc->getOp())
+            return getSourceName(decoratorFunc->getOp());
     }
     return {};
   };

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import functools
+from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -31,7 +32,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
-from max.nn.comm import Allreduce, Signals
+from max.nn.comm import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import (
     KVCacheParamInterface,
@@ -49,6 +50,11 @@ from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
 from max.nn.transformer.transformer import forward_sharded_layers
+from max.pipelines.lib.interfaces.batch_processor import (
+    ragged_batch_inputs,
+    signal_inputs,
+    vision_merge_inputs,
+)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.tree import Tree
 
@@ -686,70 +692,44 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         )
         return tuple(logits)
 
+    def input_tree(
+        self, kv_params: KVCacheParamInterface
+    ) -> OrderedDict[str, object]:
+        """Names the graph's inputs; its leaves are the graph's inputs.
+
+        The recurrent state sits inside ``kv`` beside the attention cache.
+        Vision and M-RoPE positions follow it, each present only when the graph
+        takes them.
+        """
+        device_refs = list(self.devices)
+        inputs: OrderedDict[str, object] = OrderedDict(
+            batch=ragged_batch_inputs(device_refs[0]),
+            signals=signal_inputs(device_refs),
+            kv=kv_params.get_symbolic_inputs(),
+        )
+        if self.vision_encoder is not None:
+            # The hidden state is replicated across devices, so the merge runs
+            # per replica against a per-device copy of the same embeddings.
+            inputs["vision"] = vision_merge_inputs(
+                device_refs,
+                self.config.compute_dtype,
+                self.config.hidden_size,
+                rows_dim="vision_merged_seq_len",
+            )
+        if self.mrope_enabled:
+            # One shared table drives every full-attention layer, so the
+            # positions arrive once rather than per device.
+            inputs["mrope"] = OrderedDict(
+                position_ids=TensorType(
+                    DType.int64,
+                    shape=[3, "total_seq_len"],
+                    device=device_refs[0],
+                )
+            )
+        return inputs
+
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         """Get input types for graph construction."""
-        device_ref = self.devices[0]
-
-        tokens_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=device_ref
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = kv_params.get_symbolic_inputs()
-
-        base_inputs: list[TensorType | BufferType] = [
-            tokens_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-        ]
-
-        # Signal buffer types
-        signals = Signals(devices=self.devices)
-        signal_buffer_types = signals.input_types()
-
-        # Flatten KV types for all devices
-        flattened_kv_types = tree.leaves(kv_inputs)
-
-        # The hidden state is replicated across devices, so the merge runs per
-        # replica against a per-device copy of the same embeddings.
-        vision_types: list[TensorType | BufferType] = []
-        if self.vision_encoder is not None:
-            vision_types.extend(
-                TensorType(
-                    self.config.compute_dtype,
-                    shape=["vision_merged_seq_len", self.config.hidden_size],
-                    device=device,
-                )
-                for device in self.devices
-            )
-            vision_types.extend(
-                TensorType(
-                    DType.int32, shape=["total_image_tokens"], device=device
-                )
-                for device in self.devices
-            )
-
-        # One shared table drives every full-attention layer, so the M-RoPE
-        # positions arrive once rather than per device.
-        position_ids_types: list[TensorType | BufferType] = []
-        if self.mrope_enabled:
-            position_ids_types.append(
-                TensorType(
-                    DType.int64, shape=[3, "total_seq_len"], device=device_ref
-                )
-            )
-
-        return tuple(
-            base_inputs
-            + signal_buffer_types
-            + flattened_kv_types
-            + vision_types
-            + position_ids_types
-        )
+        return tuple(tree.leaves(self.input_tree(kv_params)))
