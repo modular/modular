@@ -20,7 +20,7 @@ from std.collections.string._utf8 import _is_valid_utf8
 
 
 @fieldwise_init
-struct TestStruct(Copyable):
+struct TestStruct(Copyable, Writable):
     var n: Int
 
     @staticmethod
