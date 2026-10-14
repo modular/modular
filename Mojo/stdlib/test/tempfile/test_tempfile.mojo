@@ -130,8 +130,8 @@ def test_gettempdir() raises:
         tmpdir_result = gettempdir()
         assert_true(tmpdir_result, "Failed to get temporary directory")
         assert_equal(
-            tmpdir_result.value(),
-            String(dir_with_writing_access),
+            tmpdir_result,
+            Optional(String(dir_with_writing_access)),
             String("expected to get:", dir_with_writing_access),
         )
 
@@ -145,8 +145,8 @@ def test_gettempdir() raises:
         tmpdir_result = gettempdir()
         assert_true(tmpdir_result, "Failed to get temporary directory")
         assert_equal(
-            tmpdir_result.value(),
-            String(dir_with_writing_access),
+            tmpdir_result,
+            Optional(String(dir_with_writing_access)),
             String("expected to get:", dir_with_writing_access),
         )
 
@@ -161,8 +161,8 @@ def test_gettempdir() raises:
         tmpdir_result = gettempdir()
         assert_true(tmpdir_result, "Failed to get temporary directory")
         assert_equal(
-            tmpdir_result.value(),
-            String(dir_with_writing_access),
+            tmpdir_result,
+            Optional(String(dir_with_writing_access)),
             String("expected to get:", dir_with_writing_access),
         )
 

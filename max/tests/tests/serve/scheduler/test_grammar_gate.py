@@ -40,16 +40,13 @@ SCHEMA = '{"type": "object"}'
 def create_mock_kv_cache() -> Mock:
     cache = Mock()
     cache.chunk_alignment_tokens = 0
-    cache.max_seq_len = 2048
-    cache.page_size = 16
-    cache.get_total_num_pages = Mock(return_value=128)
-    cache.get_free_blocks_pct = Mock(return_value=0.5)
-    cache.alloc = Mock(return_value=CompletedTransfer.load())
+    cache.alloc = Mock(return_value=CompletedTransfer())
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
     cache.pending_transfers_exist = Mock(return_value=False)
     cache.block_count = Mock(return_value=BlockCount(free=100, total=100))
+    cache.pressure_pct = Mock(return_value=0.0)
     return cache
 
 
@@ -65,17 +62,11 @@ class _StubMatcher:
     def is_stopped(self) -> bool:
         return False
 
-    def get_error(self) -> str | None:
-        return None
-
-    def get_grammar_warnings(self) -> Any:
-        return None
-
     def deep_copy(self) -> "_StubMatcher":
         return self
 
 
-class _ControlledBackend(GrammarBackend[Any]):
+class _ControlledBackend(GrammarBackend):
     """Backend stub whose build can block on ``release_build`` or fail."""
 
     name = "stub"
@@ -97,9 +88,6 @@ class _ControlledBackend(GrammarBackend[Any]):
         if self.fail_build:
             raise ValueError("stub backend refuses this grammar")
         return _StubMatcher()
-
-    def validate_grammar(self, grammar: Any) -> None:
-        pass
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
@@ -123,10 +111,15 @@ def make_helper(
     )
 
 
-def make_gated_pipeline(helper: StructuredOutputHelper) -> Mock:
+def make_gated_pipeline(
+    helper: StructuredOutputHelper, needs_bitmask_constraints: bool = True
+) -> Mock:
     pipeline = Mock()
     pipeline.release = Mock()
     pipeline._structured_output = helper
+    pipeline.pipeline_config = Mock(
+        needs_bitmask_constraints=needs_bitmask_constraints
+    )
     return pipeline
 
 
@@ -375,6 +368,25 @@ def test_tool_grammar_request_is_gated() -> None:
     assert len(inputs.batches[0]) == 1
     assert isinstance(ctx.matcher, _StubMatcher)
     assert backend.compile_json_schema_calls == 0
+
+
+def test_prefill_only_worker_never_compiles_forwarded_grammar() -> None:
+    """A DI prefill worker admits a decode-forwarded tool grammar ungated."""
+    backend = _ControlledBackend()
+    backend.release_build.clear()  # would deadlock if a build were submitted
+    bc = make_batch_constructor(
+        make_gated_pipeline(
+            make_helper(backend), needs_bitmask_constraints=False
+        )
+    )
+    assert bc._grammar_gate is None
+
+    ctx = make_context(grammar="root ::= object")
+    bc.enqueue_new_request(ctx)
+
+    assert ctx.request_id in bc.replicas[0].ce_reqs
+    assert ctx.matcher is None
+    assert backend.create_matcher_calls == 0
 
 
 def test_build_matcher_dispatch() -> None:

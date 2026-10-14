@@ -37,11 +37,9 @@ from std.math.uutils import ufloordiv
 from std.memory import unsafe_stack_allocation
 from std.utils.static_tuple import StaticTuple
 
-from std._gpu import WARP_SIZE, lane_id, thread_idx, warp_id
-from std._gpu.primitives import warp
-from std.sys.info import is_apple_gpu
-
 from max.gpu import barrier
+from max.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
+from max.gpu.primitives import warp
 
 # ===-----------------------------------------------------------------------===#
 # Block Reduction Core
@@ -56,15 +54,20 @@ def _block_reduce_with_padding[
     *,
     n_warps: Int,
     padding: Int,
-    warp_reduce_fn: def[dtype: DType, width: SIMDLength, reduction_idx: Int](
-        SIMD[dtype, width]
-    ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
 ](
     vals: StaticTuple[Scalar[dtype], num_reductions],
     *,
     initial_vals: StaticTuple[Scalar[dtype], num_reductions],
     wid: Int,
+    warp_reduce_fn: Some[
+        TrivialRegisterPassable
+        & (
+            def[
+                dtype: DType, width: SIMDLength, reduction_idx: Int
+            ](SIMD[dtype, width]) -> Scalar[dtype]
+        )
+    ],
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
     comptime smem_stride = n_warps + padding
     # Add padding to avoid bank conflicts
@@ -128,17 +131,9 @@ def _block_reduce_with_padding[
         comptime for i in range(num_reductions):
             warp_results[i] = shared_mem[unsafe_offset=i]
 
-    # The trailing shared-memory reads above (warp 0's per-warp loads, and
-    # every thread's broadcast load) have no barrier after them, so a warp
-    # that finishes this combine can begin the caller's next one and
-    # overwrite the strip while a lagging warp still reads it. On
-    # NVIDIA/AMD warps never
-    # drift that far in practice; Metal's threadgroup scheduling loses this
-    # race readily (measured: rms_norm block tier, run-to-run divergent
-    # bytes on M5). Close the reuse window on Apple only, keeping other
-    # targets' codegen byte-identical.
-    comptime if is_apple_gpu():
-        barrier()
+    # Without this, a warp that starts the caller's next combine can overwrite
+    # the strip while a lagging warp still reads this one's results.
+    barrier()
 
     return warp_results
 
@@ -152,14 +147,19 @@ def _block_reduce[
     block_dim_y: Int = 1,
     block_dim_z: Int = 1,
     *,
-    warp_reduce_fn: def[dtype: DType, width: SIMDLength, reduction_idx: Int](
-        SIMD[dtype, width]
-    ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
 ](
     vals: StaticTuple[Scalar[dtype], num_reductions],
     *,
     initial_vals: StaticTuple[Scalar[dtype], num_reductions],
+    warp_reduce_fn: Some[
+        TrivialRegisterPassable
+        & (
+            def[
+                dtype: DType, width: SIMDLength, reduction_idx: Int
+            ](SIMD[dtype, width]) -> Scalar[dtype]
+        )
+    ],
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
     """Performs a generic block-level reduction operation.
 
@@ -179,9 +179,6 @@ def _block_reduce[
         block_dim_x: The number of threads along the X dimension.
         block_dim_y: The number of threads along the Y dimension (default: 1).
         block_dim_z: The number of threads along the Z dimension (default: 1).
-        warp_reduce_fn: A function that performs warp-level reduction. Receives
-            a compile-time `reduction_idx` parameter to select the reduction
-            operation.
         broadcast: If True, the final reduced values are broadcast to all
             threads in the block. If False, only the first thread will have the
             complete results.
@@ -189,6 +186,9 @@ def _block_reduce[
     Args:
         vals: The input values from each thread, one per reduction.
         initial_vals: The initial values for each reduction.
+        warp_reduce_fn: A function that performs warp-level reduction. Receives
+            a compile-time `reduction_idx` parameter to select the reduction
+            operation.
 
     Returns:
         A `StaticTuple` of reduced values. If broadcast is True, each thread
@@ -233,9 +233,13 @@ def _block_reduce[
         return _block_reduce_with_padding[
             n_warps=n_warps,
             padding=0,
-            warp_reduce_fn=warp_reduce_fn,
             broadcast=broadcast,
-        ](vals, initial_vals=initial_vals, wid=wid)
+        ](
+            vals,
+            initial_vals=initial_vals,
+            wid=wid,
+            warp_reduce_fn=warp_reduce_fn,
+        )
 
     # General case with bank conflict optimization
     # Add padding to avoid bank conflicts
@@ -243,9 +247,13 @@ def _block_reduce[
     return _block_reduce_with_padding[
         n_warps=n_warps,
         padding=padding,
-        warp_reduce_fn=warp_reduce_fn,
         broadcast=broadcast,
-    ](vals, initial_vals=initial_vals, wid=wid)
+    ](
+        vals,
+        initial_vals=initial_vals,
+        wid=wid,
+        warp_reduce_fn=warp_reduce_fn,
+    )
 
 
 @inline(.always)
@@ -288,7 +296,6 @@ def _block_reduce[
     """
 
     @inline(.always)
-    @__parameter
     def _indexed_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -298,11 +305,11 @@ def _block_reduce[
         block_dim_x,
         block_dim_y,
         block_dim_z,
-        warp_reduce_fn=_indexed_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Scalar[dtype], 1](val),
         initial_vals=StaticTuple[Scalar[dtype], 1](initial_val),
+        warp_reduce_fn=_indexed_fn,
     )[
         0
     ]
@@ -672,8 +679,10 @@ def broadcast[
         shared_mem.unsafe_store(val)
 
     barrier()
+    var ret = shared_mem.unsafe_load[width=width]()
+    barrier()
 
-    return shared_mem.unsafe_load[width=width]()
+    return ret
 
 
 # ===-----------------------------------------------------------------------===#
@@ -730,6 +739,10 @@ def _prefix_sum[
     # Step 4: Add the prefix from previous warps
     if wid > 0:
         thread_result += warp_mem[unsafe_offset=wid - 1]
+
+    # Without this, a warp that starts the caller's next scan can overwrite
+    # `warp_mem` while a lagging warp still reads this one's prefixes.
+    barrier()
 
     return thread_result
 

@@ -56,7 +56,6 @@ Recurrent state
    RecurrentKVLeafRegion
    RecurrentLeafInputs
    RecurrentStateBuffer
-   RecurrentStateInputs
    RecurrentStateInputsPerDevice
    RecurrentStateParams
    RecurrentStateRegion
@@ -70,6 +69,7 @@ Attention dispatch
    :template: autosummary/class.rst
 
    AttnKey
+   AttnKeyInterface
    MHAAttnKey
    MLAAttnKey
    MSAAttnKey

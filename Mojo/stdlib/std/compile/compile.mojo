@@ -41,7 +41,7 @@ print(info)
 from std.collections.string.string_span import _get_kgen_string
 from std.os import PathLike
 from std.pathlib import Path
-from std.sys.info import CompilationTarget, _TargetType
+from std.sys.info import CompilationTarget
 
 from std.reflection import get_linkage_name
 
@@ -192,18 +192,19 @@ def _get_emission_kind_id[emission_kind: StaticString]() -> Int:
         + "', must be one of 'asm', 'llvm', 'llvm-opt', or 'object'"
     )
 
-    comptime if emission_kind == "llvm":
-        return _EMISSION_KIND_LLVM
-    elif emission_kind == "llvm-bitcode":
-        return _EMISSION_KIND_LLVM_BITCODE
-    elif emission_kind == "llvm-opt":
-        return _EMISSION_KIND_LLVM_OPT
-    elif emission_kind == "llvm-opt-bitcode":
-        return _EMISSION_KIND_LLVM_OPT_BITCODE
-    elif emission_kind == "object":
-        return _EMISSION_KIND_OBJECT
-    else:
-        return _EMISSION_KIND_ASM
+    comptime match emission_kind:
+        case "llvm":
+            return _EMISSION_KIND_LLVM
+        case "llvm-bitcode":
+            return _EMISSION_KIND_LLVM_BITCODE
+        case "llvm-opt":
+            return _EMISSION_KIND_LLVM_OPT
+        case "llvm-opt-bitcode":
+            return _EMISSION_KIND_LLVM_OPT_BITCODE
+        case "object":
+            return _EMISSION_KIND_OBJECT
+        case _:
+            return _EMISSION_KIND_ASM
 
 
 @inline(.always)

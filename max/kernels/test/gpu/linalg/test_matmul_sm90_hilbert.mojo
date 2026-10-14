@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 

@@ -31,6 +31,19 @@ MojoInflightDiag ParserBase::emitError(SMLoc loc, const Twine &message) {
   return diag;
 }
 
+void ParserBase::warnIfUnprefixedAsyncSpelling(const Token &tok) {
+  StringRef spelling = tok.getSpelling();
+  if (spelling != "async" && spelling != "await")
+    return;
+  emitWarning(tok.getLoc(),
+              "async/await support in Mojo is experimental and unstable, "
+              "there are many known issues. Please do not use it in "
+              "production and do not expect correctness. To suppress this "
+              "warning, use '__async' and '__await' keywords. That does not "
+              "make the feature stable, it merely suppresses the warning.")
+      << FixIt::replaceToken(tok.getLoc(), ("__" + spelling).str());
+}
+
 ParseResult ParserBase::rejectTokenAtStartOfLine(const Twine &what) const {
   return rejectTokenAtStartOfLine(getToken(), what);
 }

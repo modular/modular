@@ -49,7 +49,11 @@ from max.nn.sampling import (
 from max.pipelines.context import TextContext
 
 from .sampling_config import SamplingConfig
-from .sampling_logits_processor import PenaltyInputs, SamplerInputs
+from .sampling_logits_processor import (
+    PenaltyInputs,
+    SamplerInputs,
+    batch_max_k,
+)
 
 
 def _sampling_input_types(
@@ -170,11 +174,12 @@ def token_sampler(
     return_logits: bool = False,
     needs_bitmask_input: bool | None = None,
     custom_extensions: Iterable[Path] = (),
+    unpadded_vocab_size: int | None = None,
 ) -> Graph:
     """Builds a sampling graph that samples tokens from logits.
 
     Args:
-        sampling_config: Sampling configuration (top-k, temperature, etc.).
+        sampling_config: Sampling configuration (top-k, temperature and so on).
         device: Device for the graph inputs and ops.
         return_logits: Whether the graph should expose logits as an output.
         needs_bitmask_input: Whether to wire a ``bitmask`` input into the
@@ -184,6 +189,10 @@ def token_sampler(
             though ``--enable-structured-output`` is off.
         custom_extensions: Custom-op extension paths to compile the graph
             with. Empty by default.
+        unpadded_vocab_size: The tokenizer's token count. Logits for ids at
+            or past it are masked to -inf before sampling, so a padded
+            ``lm_head`` can never produce an id the tokenizer cannot decode.
+            ``None`` disables the mask.
 
     Returns:
         A graph that takes logits (and optional penalty inputs) and outputs tokens.
@@ -278,12 +287,27 @@ def token_sampler(
             logits = ops.gather(logits, logit_offsets[1:] - 1, axis=0)
             logits = ops.rebind(logits, shape=("batch", "vocab_size"))
 
+        if unpadded_vocab_size is not None:
+            # Not a slice: slicing past a narrower lm_head reads out of
+            # bounds instead of failing, and a mask is a no-op there.
+            vocab_dim = logits.shape[1]
+            token_ids = ops.range(
+                0,
+                vocab_dim,
+                out_dim=vocab_dim,
+                dtype=DType.int64,
+                device=logits.device,
+            )
+            logits = ops.where(
+                token_ids >= unpadded_vocab_size, float("-inf"), logits
+            )
+
         if "bitmask" in _input_dict:
             bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
 
             # Unpack the packed int32 bitmask and mask the logits in one fused
             # pass. The kernel reads only words covering ``logits``' vocab dim,
-            # so llguidance's 32-bit alignment padding needs no explicit slice.
+            # so the packed bitmask's 32-bit alignment padding needs no explicit slice.
             logits = apply_packed_bitmask(logits, bitmask, fill_val=-10000.0)
 
         # Apply top_k sampling
@@ -556,6 +580,7 @@ def rejection_sampler_with_residuals(
                 target_logits.tensor,
                 target_logit_offsets.tensor,
                 full_draft_logits.tensor,
+                seed.tensor,
                 rejection_rand.tensor if debug else None,
                 residual_rand.tensor if debug else None,
             )
@@ -829,7 +854,9 @@ class _TypicalAcceptanceRunner(RejectionRunner):
                 target_logits,
                 Buffer.from_numpy(temps_np).to(self._device),
                 Buffer.from_numpy(top_k_np).to(self._device),
-                Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
+                Buffer.from_numpy(
+                    np.array(batch_max_k(top_k_np), dtype=np.int64)
+                ),
                 Buffer.from_numpy(top_p_np).to(self._device),
                 Buffer.from_numpy(np.array(np.min(top_p_np), dtype=np.float32)),
                 self._next_seed(),

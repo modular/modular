@@ -254,10 +254,10 @@ def test_barrier_compile() raises:
 def test_threadid_compile() raises:
     print("== test_threadid_compile")
 
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
+    # CHECK: .amdgcn_target "amdgpu9.42-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
     print(_compile_code[kernel, target=MI300X_TARGET]())
-    # CHECK: .amdgcn_target "amdgcn-amd-amdhsa-unknown-gfx942"
+    # CHECK: .amdgcn_target "amdgpu9.42-amd-amdhsa-unknown-gfx942"
     # CHECK: s_waitcnt lgkmcnt
     print(_compile_code[parametric[kernel], target=MI300X_TARGET]())
     # CHECK: ; ModuleID =
@@ -426,10 +426,10 @@ def test_permlane_compile() raises:
         keep(val_swap_16)
         keep(val_swap_32)
 
-    # CHECK: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
-    # CHECK: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
-    # CHECK: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
-    # CHECK: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK-DAG: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK-DAG: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK-DAG: v_permlane16_swap_b32_e32 v{{.*}} v{{.*}}
+    # CHECK-DAG: v_permlane32_swap_b32_e32 v{{.*}} v{{.*}}
     print(
         _compile_code[
             test_kernel[.float32],

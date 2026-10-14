@@ -6,7 +6,7 @@
 kgen.func @foo() {
   index.constant 0
   index.constant 0
-  kgen.return
+  hlcf.return
 }
 
 kgen.func @bar_longer_name() {
@@ -21,5 +21,5 @@ kgen.func @bar_longer_name() {
   index.constant 0
   index.constant 0
   index.constant 0
-  kgen.return
+  hlcf.return
 }

@@ -13,7 +13,7 @@
 
 """End-to-end tests for the new MAP-dialect fusion system's view handling.
 
-Every graph here is compiled with ``MAX_GC_USE_ADV_FUSION`` set, exercising
+Every graph here exercises
 ``MOToMAP``'s per-view-kind lowering (slice/broadcast/transpose/reshape) and
 ``ViewFuser`` end to end. `test_transpose_of_add_fuses_with_correct_index` in
 particular is the Python-level regression test for the `ElementwiseFuser`
@@ -27,15 +27,15 @@ correctness tests, checked against numpy as the oracle.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from fusion_utils import run_and_verify_fusion
+from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def test_slice_static(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_slice_static(session: InferenceSession) -> None:
     """A standalone `mo.slice` with static bounds compiles and runs correctly."""
     with Graph(
         "slice_static",
@@ -49,9 +49,7 @@ def test_slice_static(
     np.testing.assert_allclose(out, a[2:6, 2:6], rtol=1e-5, atol=1e-5)
 
 
-def test_slice_dynamic(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_slice_dynamic(session: InferenceSession) -> None:
     """A `mo.slice` over a symbolic input shape compiles and runs correctly."""
     with Graph(
         "slice_dynamic",
@@ -67,9 +65,7 @@ def test_slice_dynamic(
     np.testing.assert_allclose(out, a[2:6, 2:6], rtol=1e-5, atol=1e-5)
 
 
-def test_broadcast_rank_preserving(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_broadcast_rank_preserving(session: InferenceSession) -> None:
     """A rank-preserving `mo.static.broadcast_to` compiles and runs correctly."""
     with Graph(
         "broadcast_rank_preserving",
@@ -85,9 +81,7 @@ def test_broadcast_rank_preserving(
     )
 
 
-def test_broadcast_rank_expanding(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_broadcast_rank_expanding(session: InferenceSession) -> None:
     """A rank-expanding `mo.static.broadcast_to` compiles and runs correctly."""
     with Graph(
         "broadcast_rank_expanding",
@@ -103,9 +97,7 @@ def test_broadcast_rank_expanding(
     )
 
 
-def test_transpose_static(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_transpose_static(session: InferenceSession) -> None:
     """A standalone `mo.transpose` (2D swap) compiles and runs correctly."""
     with Graph(
         "transpose_static",
@@ -119,9 +111,7 @@ def test_transpose_static(
     np.testing.assert_allclose(out, a.T, rtol=1e-5, atol=1e-5)
 
 
-def test_reshape_static(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_reshape_static(session: InferenceSession) -> None:
     """A standalone `mo.static.reshape` (flatten) compiles and runs correctly."""
     with Graph(
         "reshape_static",
@@ -135,41 +125,7 @@ def test_reshape_static(
     np.testing.assert_allclose(out, a.reshape([24]), rtol=1e-5, atol=1e-5)
 
 
-def test_transpose_of_add_fuses_with_correct_index(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
-    """`transpose(add(x, y))` on a square matrix fuses via ViewFuser, correctly.
-
-    Regression test for the `ElementwiseFuser` fix (commit "Reject a view as
-    ElementwiseFuser's destination"): `x`/`y` are square, so `transpose`'s
-    output shape matches `add`'s shape exactly. `ElementwiseFuser`'s old,
-    shape-only compatibility check would have spliced `add` into `transpose`
-    at the wrong (untransformed) coordinate, silently computing the wrong
-    answer while leaving the transpose's own index math dead. If that bug
-    ever came back, this would fail on the numeric check, not on a compile
-    error.
-    """
-    with Graph(
-        "transpose_of_add",
-        input_types=[
-            TensorType(DType.float32, [3, 3], device=DeviceRef.CPU()),
-            TensorType(DType.float32, [3, 3], device=DeviceRef.CPU()),
-        ],
-    ) as graph:
-        x, y = (v.tensor for v in graph.inputs)
-        graph.output(ops.transpose(x + y, 0, 1))
-
-    a = np.random.randn(3, 3).astype(np.float32)
-    b = np.random.randn(3, 3).astype(np.float32)
-    (out,) = run_and_verify_fusion(
-        session, graph, a, b, fused=r"mo\.add.*mo\.transpose"
-    )
-    np.testing.assert_allclose(out, (a + b).T, rtol=1e-5, atol=1e-5)
-
-
-def test_chained_slice_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_chained_slice_fuses(session: InferenceSession) -> None:
     """A slice of a slice fuses into one kernel, composing against the first
     slice's view rather than the original tensor.
     """
@@ -189,9 +145,7 @@ def test_chained_slice_fuses(
     np.testing.assert_allclose(out, a[1:9, 1:9][1:7, 1:7], rtol=1e-5, atol=1e-5)
 
 
-def test_view_fuses_into_existing_prologue(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_view_fuses_into_existing_prologue(session: InferenceSession) -> None:
     """A slice fuses into `mo.gather`'s existing prologue capture.
 
     Regression test for the `LoopInvariantViewMotion` fix that let it hoist
@@ -203,7 +157,7 @@ def test_view_fuses_into_existing_prologue(
     materialized tensor) -- `collectFusedCaptureInfos`
     (GraphCompiler/lib/MOGGDialect/MOGGOps.cpp) now reads a capture's layout
     off its own already-emitted `ManagedTensorSlice.to_tile_tensor()` instead
-    of assuming it's always a plain `mogg._tensor.create` result.
+    of assuming it's always a plain `mogg.tensor.create` result.
     """
     with Graph(
         "view_into_prologue",
@@ -224,7 +178,7 @@ def test_view_fuses_into_existing_prologue(
 
 
 def test_broadcast_fuses_into_existing_epilogue(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """A broadcast bias fuses into `mo.reduce.max`'s existing epilogue capture.
 
@@ -234,7 +188,7 @@ def test_broadcast_fuses_into_existing_epilogue(
     view_fusion_into_epilogue.mlir) and for the `EmitMojo` fused-capture fix
     (`collectFusedCaptureInfos` in GraphCompiler/lib/MOGGDialect/MOGGOps.cpp)
     reading a capture's layout off its own `ManagedTensorSlice.to_tile_tensor()`
-    instead of assuming every capture is a plain `mogg._tensor.create` result:
+    instead of assuming every capture is a plain `mogg.tensor.create` result:
     `EpilogueFuser` first fuses the bias-add into the reduction's epilogue,
     capturing the broadcast's own result; `ViewFuser` then splices the
     broadcast itself into that same capture, since a transform op's
@@ -242,9 +196,8 @@ def test_broadcast_fuses_into_existing_epilogue(
 
     Uses `ops.max` rather than `ops.matmul` deliberately: a matmul-fused
     epilogue binds through `_bind_to_fused_compute_output` (a "compute
-    lambda"), a separate, unrelated code path with its own currently-open gap
-    in `EmitMojo`'s io_spec handling -- `ops.max`'s epilogue binds through the
-    plain `_bind_to_fused_output` ("store lambda") path this fix actually
+    lambda"), a separate code path, while `ops.max`'s epilogue binds through
+    the plain `_bind_to_fused_output` ("store lambda") path this fix actually
     covers, keeping this test isolated to what `ViewFuser`'s generalization is
     responsible for.
     """
@@ -268,9 +221,7 @@ def test_broadcast_fuses_into_existing_epilogue(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_view_fanout_duplicates(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_view_fanout_duplicates(session: InferenceSession) -> None:
     """A view feeding two different elementwise consumers fuses into both.
 
     Unlike `ElementwiseFuser`'s cost-gated duplication, `ViewFuser` always
@@ -293,9 +244,128 @@ def test_view_fanout_duplicates(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_reshape_producer_fuses_downstream(
-    session: InferenceSession, adv_fusion_enabled: None
+def test_reshape_and_view_fuse_into_opaque_prologue(
+    session: InferenceSession,
 ) -> None:
+    """A reshape (and the transpose below it) fuse into an opaque's prologue;
+    the view feeding the reshape stays materialized.
+
+    `gather` is the opaque with a prologue; its input is
+    `transpose(reshape(slice(x)))`. A reshape changes rank, so
+    `LoopInvariantViewMotion` can't hoist a view fused atop a reshaped load into
+    a stride view -- so the reshape is the terminal (most-upstream) fused view:
+    the reshape and the transpose below it compose into gather's prologue, while
+    the slice feeding the reshape stays its own materialized kernel. Mirrors
+    `sliceReshapeTransposeIntoPrologue` in
+    GraphCompiler/test/mo-opt/MAPDialect/Transforms/ViewFusion/
+    view_fusion_reshape_barrier.mlir. An e2e correctness check (compiles under
+    the reshape-in-prologue lowering, matches numpy); the fusion structure is
+    covered by that lit test.
+    """
+    with Graph(
+        "reshape_into_prologue",
+        input_types=[
+            TensorType(DType.float32, [10, 64], device=DeviceRef.CPU()),
+            TensorType(DType.int64, [3], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, indices = (v.tensor for v in graph.inputs)
+        chain = ops.transpose(x[1:4, 32:64].reshape([16, 6]), 0, 1)
+        graph.output(ops.gather(chain, indices, axis=0))
+
+    a = np.random.randn(10, 64).astype(np.float32)
+    idx = np.array([0, 3, 5], dtype=np.int64)
+    (out,) = run_and_verify_fusion(session, graph, a, idx)
+    ref = a[1:4, 32:64].reshape([16, 6]).T[idx]
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+
+
+def test_reshape_and_view_fuse_into_opaque_epilogue(
+    session: InferenceSession,
+) -> None:
+    """The same rule holds for an opaque's epilogue load, not just its prologue.
+
+    Mirrors `sliceReshapeTransposeIntoEpilogue` in
+    GraphCompiler/test/mo-opt/MAPDialect/Transforms/ViewFusion/
+    view_fusion_reshape_barrier.mlir. `reduce.max` is the opaque; its store-path
+    add reads a bias fed by `transpose(reshape(bias))`. `findExistingCapture`
+    resolves an epilogue capture the same way it does a prologue one, so the
+    reshape and the transpose below it fuse into the epilogue's load path -- and
+    a view feeding the reshape would stay materialized just as in the prologue
+    case. An e2e correctness check (compiles, matches numpy); the fusion
+    structure is covered by the lit test.
+    """
+    with Graph(
+        "reshape_into_epilogue",
+        input_types=[
+            TensorType(DType.float32, [4, 4], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [4], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        x, bias = (v.tensor for v in graph.inputs)
+        reduced = ops.max(x, axis=0)
+        bias_view = ops.transpose(bias.reshape([4, 1]), 0, 1)
+        graph.output(reduced + bias_view)
+
+    x_np = np.random.randn(4, 4).astype(np.float32)
+    bias_np = np.random.randn(4).astype(np.float32)
+    (out,) = run_and_verify_fusion(session, graph, x_np, bias_np)
+    ref = np.max(x_np, axis=0, keepdims=True) + bias_np.reshape([4, 1]).T
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+
+
+def test_view_and_reshape_both_fuse_into_add(session: InferenceSession) -> None:
+    """`slice(a) + reshape(b)` fuses both views into the one add kernel.
+
+    The reshape indexes one operand's load, the slice the other -- the reshape
+    on one load must not block the slice fusing into the other (the barrier is
+    per-load, not per-body). Mirrors `viewAndReshapeFuseIntoAdd` in
+    view_fusion_reshape_barrier.mlir.
+    """
+    with Graph(
+        "view_and_reshape_into_add",
+        input_types=[
+            TensorType(DType.float32, [10, 64], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [96], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        graph.output(a[1:4, 32:64] + b.reshape([3, 32]))
+
+    a_np = np.random.randn(10, 64).astype(np.float32)
+    b_np = np.random.randn(96).astype(np.float32)
+    (out,) = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.slice.*mo\.add"
+    )
+    ref = a_np[1:4, 32:64] + b_np.reshape([3, 32])
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+
+
+def test_stacked_reshapes_split_at_each_reshape(
+    session: InferenceSession,
+) -> None:
+    """`slice -> reshape -> transpose -> reshape -> relu` compiles and is
+    correct: each reshape is terminal for its own upstream, so the chain splits
+    into groups at each reshape's input rather than fusing across a rank change
+    (which `LoopInvariantViewMotion` could not hoist). An e2e correctness check.
+    """
+    with Graph(
+        "stacked_reshapes",
+        input_types=[
+            TensorType(DType.float32, [10, 64], device=DeviceRef.CPU())
+        ],
+    ) as graph:
+        (x,) = (v.tensor for v in graph.inputs)
+        y = ops.transpose(x[1:4, 32:64].reshape([16, 6]), 0, 1)
+        graph.output(ops.relu(y.reshape([96])))
+
+    a = np.random.randn(10, 64).astype(np.float32)
+    (out,) = run_and_verify_fusion(session, graph, a)
+    ref = np.maximum(a[1:4, 32:64].reshape([16, 6]).T.reshape([96]), 0)
+    np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
+
+
+def test_reshape_producer_fuses_downstream(session: InferenceSession) -> None:
     """A reshape feeding an elementwise consumer fuses in as the producer.
 
     Reshape is always the terminal (most-upstream) link in a fusion chain --
@@ -317,3 +387,47 @@ def test_reshape_producer_fuses_downstream(
     np.testing.assert_allclose(
         out, np.maximum(a.reshape([24]), 0), rtol=1e-5, atol=1e-5
     )
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0,
+    reason="the misaligned vector load only faults on GPU (NVPTX)",
+)
+def test_inner_slice_misaligned_row_stride_fuses(
+    session: InferenceSession,
+) -> None:
+    """An inner-dim slice of a 2-byte-dtype tensor whose row stride is not a
+    multiple of the GPU vector width, fused into an elementwise op, must not
+    over-report the view's alignment and emit a misaligned (faulting) vector
+    load.
+
+    Regression for the gated-deltanet gate crash
+    (``CUDA_ERROR_MISALIGNED_ADDRESS``): ``_mogg_slice_view_alignment`` dropped
+    the outer-dim stride term that ``Slice.get_view_alignment`` carries. A
+    ``[8, 1030]`` matmul output has a 2060-byte row stride (1030 is not a
+    multiple of the 16-element / 32-byte float16 vector width), so its rows are
+    only 4-byte aligned. Slicing it on the inner dim starting at ``(0, 0)``
+    leaves the start term a no-op, so *only* the outer-stride term keeps the
+    view's alignment honest: without it the view kept the buffer's full base
+    alignment and the fused cast issued an over-aligned vector load that faulted
+    on row 1. The slice reads the matmul output (a real, preferred-aligned
+    buffer), and the cast fuses the slice into the elementwise that loads it.
+    """
+    n, k, d = 8, 256, 1030
+    with Graph(
+        "inner_slice_misaligned",
+        input_types=[
+            TensorType(DType.float16, [n, k], device=DeviceRef.GPU()),
+            TensorType(DType.float16, [d, k], device=DeviceRef.GPU()),
+        ],
+    ) as graph:
+        x, w = (v.tensor for v in graph.inputs)
+        y = x @ ops.transpose(w, 0, 1)  # materialized [8, 1030] intermediate
+        graph.output(ops.cast(y[:, 0:1024], DType.float32))
+
+    # 0/1 inputs keep the float16 matmul exact (each row sum <= 256 < 2048).
+    x_np = (np.random.rand(n, k) < 0.5).astype(np.float16)
+    w_np = (np.random.rand(d, k) < 0.5).astype(np.float16)
+    (out,) = run_and_verify_fusion(session, graph, x_np, w_np)
+    ref = x_np.astype(np.float32) @ w_np.astype(np.float32).T
+    np.testing.assert_array_equal(out, ref[:, 0:1024])

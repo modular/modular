@@ -28,6 +28,7 @@
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
@@ -124,9 +125,9 @@ static bool isInheritedFnOp(FnOp fnOp) {
 // signature.
 //
 // Why constraint checking is needed here (not just in later witness selection):
-// This function decides whether to disable the trait's default method stub or
+// This function decides whether to discard the trait's default method stub or
 // create a wrapper for it. If a struct method has a matching signature but
-// incompatible constraints, we must NOT disable the stub, because:
+// incompatible constraints, we must NOT discard the stub, because:
 //
 // Example 1 - Struct method with incompatible constraints:
 //   trait Copyable:
@@ -138,7 +139,7 @@ static bool isInheritedFnOp(FnOp fnOp) {
 //         where not conforms_to(T, Copyable):  # <-- Incompatible!
 //       ...
 //
-// Without constraint checking: We'd see a signature match, disable the stub,
+// Without constraint checking: We'd see a signature match, discard the stub,
 // and lose the default implementation. Later constraint filtering would reject
 // the struct's method, leaving no valid implementation.
 //
@@ -152,7 +153,7 @@ static bool isInheritedFnOp(FnOp fnOp) {
 //       ...
 //
 // The conformance constraint implies the method constraint, so this method
-// is a valid override - we disable the stub.
+// is a valid override - we discard the stub.
 static LogicalResult signatureResolveDefaultTraitFnStubs(
     ASTDecl &structDecl, ASTDecl &traitDecl, StringAttr name,
     ArrayRef<ASTDecl *> candidates, ParameterEvaluator &traitAliasReplacer,
@@ -230,17 +231,11 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     ASTDecl *decl =
         wrapperResult.isYes() ? wrapperResult.getYes().decl : nullptr;
     if (decl) {
-      // Since we are not using the default implementation, set the ASTDecl
-      // which were inserted for referencing default method to be fully
-      // resolved.
       assert(structFnDecl->resolvedness <= DeclResolvedness::signature &&
              "synthesizeMethodInStruct is only valid on non-body resolved Fn "
              "ASTDecls");
-      // This was pointed to the trait default implementation, now that we
-      // know this decl is useless, simply disable it. We mark the ASTDecl as
-      // disabled instead of creating a fake FnOp and mark the FnOp to be
-      // disabled.
-      structFnDecl->markDisabled();
+      structFnDecl->resolvedness = DeclResolvedness::body;
+      shared.declResolver->eraseDecl(*structFnDecl);
       return success();
     }
 
@@ -248,10 +243,6 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     // about to create has a matching signature to an existing wrapper function
     // in the struct.
     for (ASTDecl *decl : possibleOverloads) {
-      // Skip any decls currently pointing to the parent trait method
-      if (decl->isDisabled())
-        continue;
-
       auto fnOp = cast<FnOp>(decl->getIfOperation());
 
       auto existingSignature = fnOp.getFullSignature();
@@ -661,14 +652,13 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     // If there is no user defined alias nor defaulted alias, raise an error.
     // When there are multiple decls, it can not be an AliasDeclOp either,
     // otherwise we should have already reported "redefinition" error.
-    if (decls.empty() ||
-        !isa_and_nonnull<AliasDeclOp>(decls.front()->getIfOperation())) {
+    if (decls.empty() || !isa<AliasASTDecl>(decls.front())) {
       diag->attachNote(*traitAliasDecl)
           << "required member '" << name.str() << "' is not specified";
       return failure(); // Stop the outer loop.
     }
-    ASTDecl *structAliasDecl = decls.front();
-    auto structAliasDeclOp = cast<AliasDeclOp>(decls.front()->getIfOperation());
+    auto *structAliasDecl = cast<AliasASTDecl>(decls.front());
+    AliasDeclOp structAliasDeclOp = structAliasDecl->getOp();
 
     PValue aliasValue;
     if (!structAliasDeclOp.isDefaultedAssociatedAlias()) {
@@ -824,13 +814,13 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     assert(traitDecl.getDeclsInScope().front().second.size() == 1);
 
     ASTDecl *decl = traitDecl.getDeclsInScope().front().second.front();
-    auto callAlias = cast<AliasDeclOp>(decl->getIfOperation());
+    AliasDeclOp callAlias = cast<AliasASTDecl>(decl)->getOp();
     auto evaluator = populateTraitBindingEvaluator(parent, shared);
     auto fullSig =
         cast<FnTypeGeneratorType>(evaluator->replace(callAlias.getType()));
 
     auto name = StringAttr::get(shared.getContext(), "__call__");
-    allMatchFound = succeeded(checkMethod(name, decl, name, fullSig));
+    allMatchFound = succeeded(checkMethod(name, &structDecl, name, fullSig));
   } else {
     for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
@@ -842,9 +832,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
             break;
           }
         }
-        if (AliasDeclOp traitAlias =
-                dyn_cast_or_null<LIT::AliasDeclOp>(decl->getIfOperation())) {
-          if (failed(checkAlias(name, decl, traitAlias))) {
+        if (auto *traitAliasDecl = dyn_cast<AliasASTDecl>(decl)) {
+          if (failed(checkAlias(name, decl, traitAliasDecl->getOp()))) {
             allMatchFound = false;
             break;
           }
@@ -867,18 +856,22 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     return success();
   }
 
-  // Otherwise, emit the set of requirements that are missing.
-  diag->attachNote(traitDecl)
-      << "trait " << ASTType(shared.declResolver->getCanonicalTrait(parent))
-      << " declared here";
-  if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
-    if (auto it = inheritedFrom->find(parent);
-        it != inheritedFrom->end() && it->second.first != parent) {
-      ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
-          it->second.first.getSymbol());
-      diag->attachNote(parentDecl)
-          << "inherited through '" << *parentDecl.getUserNameIfOperation()
-          << "' here";
+  bool isSynthetic = shared.isUniversalParametricClosureTrait(&traitDecl);
+  // We don't have a location for synthetic decl for the attached note.
+  if (!isSynthetic) {
+    // Otherwise, emit the set of requirements that are missing.
+    diag->attachNote(traitDecl)
+        << "trait " << ASTType(shared.declResolver->getCanonicalTrait(parent))
+        << " declared here";
+    if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
+      if (auto it = inheritedFrom->find(parent);
+          it != inheritedFrom->end() && it->second.first != parent) {
+        ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
+            it->second.first.getSymbol());
+        diag->attachNote(parentDecl)
+            << "inherited through '" << *parentDecl.getUserNameIfOperation()
+            << "' here";
+      }
     }
   }
   return failure();
@@ -959,13 +952,12 @@ doesNominalTypeConformToCached(ASTDecl *self, TraitType trait,
     // If user requested failure details, we use the cached only if the verdict
     // was true.
     if (mayBeCached) {
-      std::optional<bool> conforms =
-          self->getShared().getCachedNominalConformance(self, trait,
-                                                        concreteType);
-      if (conforms.has_value() && (!details || *conforms)) {
+      TriBool conforms = self->getShared().getCachedNominalConformance(
+          self, trait, concreteType);
+      if (conforms.isDefinite() && (!details || conforms.isTrue())) {
         if (details)
           details->clear();
-        return TriBool::fromBool(*conforms);
+        return conforms;
       }
     }
 
@@ -1137,15 +1129,32 @@ static TriBool doesNominalTypeConformToUncached(
     }
   }
 
-  // Check the provided symbols against the required symbols by the target
-  // trait: a definitively-missing required symbol keeps the whole thing `no`,
-  // an unproven one makes it `unknown`, and all-present makes it `yes`.
   ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
   SmallVector<TypedAttr> callerAssumptionProps =
       llvm::map_to_vector(callerAssumptions, [](ConstraintAttr constraint) {
         return constraint.getProposition();
       });
-  SmallVector<TypedAttr> scratch;
+  // Fold the caller conjunction on first use, not up front: most requirements
+  // are unconditionally provided and never consult the assumptions, and a
+  // scalar-bool AND now pays a full `insertClause` fold to build.
+  std::optional<TypedAttr> callerCanonicalCache;
+  auto callerCanonical = [&] {
+    if (!callerCanonicalCache) {
+      if (callerAssumptionProps.empty())
+        callerCanonicalCache =
+            SIMDAttr::getScalarBool(self->getContext(), true);
+      else if (callerAssumptionProps.size() == 1)
+        callerCanonicalCache = callerAssumptionProps.front();
+      else
+        callerCanonicalCache =
+            ParamOperatorAttr::get(POC::And, callerAssumptionProps);
+    }
+    return *callerCanonicalCache;
+  };
+
+  // Check the provided symbols against the required symbols by the target
+  // trait: a definitively-missing required symbol keeps the whole thing `no`,
+  // an unproven one makes it `unknown`, and all-present makes it `yes`.
 
   // With `details`, collect every provider constraint behind the verdict and
   // dedupe on (loc, proposition) so derived/ancestor copies of the same
@@ -1183,22 +1192,21 @@ static TriBool doesNominalTypeConformToUncached(
   for (auto [i, required] : llvm::enumerate(trait.getSymbols())) {
     // Assume each requirement's own condition while checking it. Remember that
     // an empty constraints array means every requirement is unconditional.
-    ArrayRef<TypedAttr> assumptions = callerAssumptionProps;
+    std::optional<TypedAttr> refined;
+    auto assumption = [&] { return refined ? *refined : callerCanonical(); };
     if (!requiredConstraints.empty()) {
       TypedAttr requiredCond = requiredConstraints[i].getProposition();
-      if (isPropositionImplied(requiredCond, callerAssumptionProps).isFalse())
+      if (isPropositionImplied(requiredCond, callerCanonical()).isFalse())
         continue;
-      scratch.assign(callerAssumptionProps.begin(),
-                     callerAssumptionProps.end());
-      scratch.push_back(requiredCond);
-      assumptions = scratch;
+      refined =
+          ParamOperatorAttr::get(POC::And, {callerCanonical(), requiredCond});
     }
 
     auto it = providedConditions.find(required);
     TriBool provided = it == providedConditions.end() ? TriBool::no()
                        : (!it->second || isTriviallyTrueProposition(it->second))
                            ? TriBool::yes()
-                           : isPropositionImplied(it->second, assumptions);
+                           : isPropositionImplied(it->second, assumption());
 
     if (provided.isTrue())
       continue; // Symbol is definitely provided.
@@ -1223,7 +1231,7 @@ static TriBool doesNominalTypeConformToUncached(
         if (isPropositionImplied(
                 TypeConformsToTraitAttr::get(PValue(concreteType).get(),
                                              singleTrait.getPValue()),
-                assumptions)
+                assumption())
                 .isTrue())
           continue;
         recordFailure(required, TriBool::unknown());
@@ -1419,6 +1427,46 @@ LIT::reduceTraitCompositionSymbols(SharedState &shared,
   return reduced;
 }
 
+TraitSymbolAttr LIT::extractClosureSymbol(SharedState &shared,
+                                          TraitType trait) {
+  if (!trait)
+    return nullptr;
+
+  for (TraitSymbolAttr symbol : trait.getTraitSymbols())
+    if (shared.isUniversalParametricClosureTrait(symbol))
+      return symbol;
+  return nullptr;
+}
+
+// TODO(MOCO-4627): lining up several closure signatures on one type needs a
+// proper design; until then a composition may name at most one.
+LogicalResult LIT::checkAtMostOneClosureTrait(SharedState &shared,
+                                              ArrayRef<TraitSymbolAttr> symbols,
+                                              SMLoc loc, SourceRange range) {
+  SmallVector<TraitSymbolAttr> closures;
+  for (TraitSymbolAttr symbol : symbols) {
+    if (shared.isUniversalParametricClosureTrait(symbol))
+      closures.push_back(symbol);
+    if (closures.size() > 1)
+      break;
+  }
+  if (closures.size() < 2)
+    return success();
+
+  // Print through the canonical trait: a bare single-symbol TraitType is not
+  // canonical, and rendering one as a value trips the canonicalization
+  // invariant in `DeclResolver::getTraitDecl`.
+  DeclResolver &resolver = *shared.declResolver;
+  auto diag = shared.emitError(loc)
+              << "trait composition must not contain more than one closure "
+                 "type; remove "
+              << ASTType(resolver.getCanonicalTrait(closures[0])) << " or "
+              << ASTType(resolver.getCanonicalTrait(closures[1]));
+  if (range.isValid())
+    diag << range;
+  return failure();
+}
+
 TraitType
 LIT::getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
                                   ArrayRef<ConstraintAttr> assumptions) {
@@ -1501,9 +1549,13 @@ createRequirementSignature(FnTypeGeneratorType signature, ASTType newSelfType,
 
   // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
   // used) not an UnboundAttr which remains an unbound parameter.
+  // NOTE: we need to adjust the depth by -1 since we are pulling out the `Self`
+  // from a parameter scope.
   ParameterEvaluator evaluator = declResolver.shared.getParameterEvaluator();
-  evaluator.appendIndexBinding(
-      UnknownAttr::get(signature.getInputParamTypes()[0]));
+  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  evaluator.appendIndexBinding(UnknownAttr::get(
+      minusOneAdjuster.replace(signature.getInputParamTypes()[0])));
+
   // Use UnboundAttr for any other parameters so they remain in the result.
   for (Type type : signature.getInputParamTypes().drop_front())
     evaluator.appendIndexBinding(
@@ -1582,8 +1634,8 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
   // this function does not properly replace alias mentions with the struct
   // type, but that does not impact any use case since this is only ever called
   // on AnyType and Movable right now.
-  if (auto aliasDecl = dyn_cast_or_null<AliasDeclOp>(entry.getIfOperation())) {
-    resultType = aliasDecl.getType();
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(&entry)) {
+    resultType = aliasDecl->getOp().getType();
   } else if (auto fnDecl = dyn_cast_or_null<FnOp>(entry.getIfOperation())) {
     // Ensure the function is signature resolved so we can access the mangled
     // name.

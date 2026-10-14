@@ -25,7 +25,11 @@ from max.config import ConfigFileModel
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .backend_names import Backend
-from .datasets import DatasetMode, DistributionParameter, ImageTurn
+from .datasets import (
+    DatasetMode,
+    DistributionParameter,
+    TurnSelector,
+)
 from .utils import int_or_none, parse_comma_separated
 
 # Fixed default seed for the workload generator and request sampling. Scheduled
@@ -538,6 +542,19 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    disable_ignore_eos: bool = Field(
+        default=False,
+        description=(
+            "Let requests stop at EOS. By default requests ignore EOS and "
+            "generate their full target length, so every backend generates "
+            "the same number of tokens. With this flag the target length only "
+            "caps generation, which speculative decoding needs: a drafter "
+            "cannot predict tokens past a forced EOS. Matches SGLang's "
+            "--disable-ignore-eos."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
     temperature: float | None = Field(
         default=None,
         description="Temperature for sampling.",
@@ -571,7 +588,70 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         description=(
             "JSON response format for structured output. Can be a JSON string "
             "or '@path/to/schema.json' to load from file. "
-            'Example: \'{"type": "json_schema", "json_schema": {...}}\''
+            'Example: \'{"type": "json_schema", "json_schema": {...}}\'. '
+            "Applied to the share of traffic --response-format-fraction "
+            "selects, except chat-judge workloads, whose driver builds its "
+            "own requests. Constrained requests run without ignore_eos, so a "
+            "drawn output length caps them rather than pinning them."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    response_format_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or of eligible user "
+            "turns (multi-turn) that --response-format constrains. Drawn per "
+            "request/turn, so at the default --response-format-turn every it "
+            "lands directly on the share of requests that set response_format "
+            "-- the quantity production reports. 'first' and 'last' narrow "
+            "eligibility to one turn per session, so the realized request "
+            "share is correspondingly lower. Defaults to 1.0, so "
+            "--response-format alone still constrains everything."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    response_format_turn: TurnSelector = Field(
+        default="every",
+        description=(
+            "Which user turns of a multi-turn chat session "
+            "--response-format-fraction may constrain: 'every', 'first', or "
+            "'last'. Ignored for single-turn requests."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    tools: str | None = Field(
+        default=None,
+        description=(
+            "OpenAI chat-completions tool definitions to send, as a JSON list "
+            "or '@path/to/tools.json' to load from file. Applied to the share "
+            "of traffic --tools-fraction selects, except chat-judge "
+            "workloads, whose driver builds its own requests, and requests "
+            "whose dataset already attached tools. The rendered definitions "
+            "are carved out of a chat session's first turn or a single-turn "
+            "string prompt, so the drawn input length still describes the "
+            "whole prompt. Unrelated to --agentic-tool-profiles, which shapes "
+            "agent-loop load and sends no tools."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    tools_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or of chat sessions "
+            "(multi-turn) that carry --tools. A selected session carries them "
+            "on every turn, as a real agent does, so the realized request "
+            "share tracks the fraction but is weighted by session length. "
+            "Defaults to 1.0, so --tools alone applies to everything."
         ),
         json_schema_extra={"group": "Output Control"},
     )
@@ -773,7 +853,21 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         ge=0.0,
         le=1.0,
         allow_inf_nan=False,
-        description="Fraction (0.0-1.0) of requests (single-turn) or chat sessions (multi-turn) that get at least one generated image mixed in, on top of whatever dataset is selected via --dataset-name. Mutually exclusive with --random-image-count/--random-image-size.",
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or chat sessions "
+            "(multi-turn) that get at least one generated image mixed in, on "
+            "top of whatever dataset is selected via --dataset-name. Drawn "
+            "per session in multi-turn rather than per request, because the "
+            "chat driver resends history: with --image-turn every and "
+            "--image-count 1 it equals both newly-encoded images per request "
+            "and the share of requests carrying one, whereas 'first'/'last' "
+            "encode once per session and so cut the encoder rate by roughly "
+            "the session's turn count. Only the image turn and later turns "
+            "resend it, so 'first' keeps the share of requests carrying one "
+            "at the fraction while 'last' cuts it like the encoder rate. "
+            "Mutually exclusive with "
+            "--random-image-count/--random-image-size."
+        ),
         json_schema_extra={"group": "Multimodal"},
     )
     image_count: DistributionParameter = Field(
@@ -791,9 +885,23 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         description="Distribution for each generated image's width/height ratio (used with --image-fraction). 1.0 produces square images.",
         json_schema_extra={"group": "Multimodal"},
     )
-    image_turn: ImageTurn = Field(
+    image_turn: TurnSelector = Field(
         default="first",
-        description="Which user turn(s) in a multi-turn chat session get images when selected: 'first', 'last', or 'every'. Ignored for single-turn requests.",
+        description=(
+            "Which user turn(s) in a multi-turn chat session get images when "
+            "selected: 'first', 'last', or 'every'. Ignored for single-turn "
+            "requests."
+        ),
+        json_schema_extra={"group": "Multimodal"},
+    )
+    image_num_turns: DistributionParameter | None = Field(
+        default=None,
+        description=(
+            "Distribution for the number of user turns in a chat session "
+            "selected for images (used with --image-fraction). A longer "
+            "session is cut to the drawn length; a shorter one is kept. "
+            "Unset leaves image sessions as sampled."
+        ),
         json_schema_extra={"group": "Multimodal"},
     )
     random_input_len: DistributionParameter = Field(
@@ -925,6 +1033,48 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Control Flags"},
     )
 
+    gpu_metrics_prometheus_url: str = Field(
+        default="",
+        description=(
+            "Base URL of a Prometheus that scrapes the engine nodes' DCGM "
+            "exporter with Kubernetes pod mapping (e.g. "
+            "'http://kps-prometheus.kube-prometheus-stack.svc:9090'). When "
+            "set with --gpu-metrics-selector, --collect-gpu-stats reports "
+            "each GPU's aggregates over the measured window from Prometheus, "
+            "ahead of --gpu-metrics-host and local NVML."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    gpu_metrics_selector: str = Field(
+        default="",
+        description=(
+            "PromQL label matchers, without braces, that select the engine's "
+            "GPUs in --gpu-metrics-prometheus-url (e.g. "
+            '\'namespace="bench",pod=~"engine-.*"\'). Required with '
+            "--gpu-metrics-prometheus-url, so idle GPUs elsewhere stay out "
+            "of the mean."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    gpu_metrics_host: str = Field(
+        default="",
+        description=(
+            "DCGM-exporter host, 'host:port', or full URL to scrape GPU "
+            "utilization from when the benchmark runs off the accelerator "
+            "node and no Prometheus scrapes it (Mammoth uses "
+            "--gpu-metrics-prometheus-url instead). When set, "
+            "--collect-gpu-stats reads this remote endpoint instead of local "
+            "NVML; --gpu-metrics-prometheus-url takes precedence. A bare host "
+            "expands to 'http://<host>:9400/metrics'. "
+            "Accepts a comma-separated list of endpoints (one exporter pod "
+            "per accelerator node) for multi-node engines; every endpoint is "
+            "scraped each interval and merged into one snapshot."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     print_workload_stats: bool = Field(
         default=False,
         description="Print workload distribution statistics (input/output lengths, num turns, delays).",
@@ -934,6 +1084,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     dry_run: bool = Field(
         default=False,
         description="Build the dataset and print workload stats + warmup-sampling preview, then exit without contacting the server.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    workload_stats_json: str | None = Field(
+        default=None,
+        description="Write the statistics of the requests the workload would send (lengths by turn, long-context shares, tool, image and structured-output shares) as JSON to this path. Combine with --dry-run to get them without a server. With --warmup-to-steady-state, describes the sampled workload before warmup picks drop candidate sessions, so the run sends fewer requests than reported.",
         json_schema_extra={"group": "Control Flags"},
     )
 
@@ -1057,7 +1213,8 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         default=None,
         description=(
             "When set, num_prompts is computed as num_prompts_multiplier * max_concurrency "
-            "for each concurrency level, replacing the default 300s duration timeout."
+            "for each concurrency level. Mutually exclusive with --num-prompts. Each level "
+            "still stops at --max-benchmark-duration-s, which defaults to 300s."
         ),
         json_schema_extra={"group": "Sweep Configuration"},
     )
@@ -1135,6 +1292,22 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
                 "--warmup-delay-estimated-ttft-ms /"
                 " --warmup-delay-estimated-tpot-ms require"
                 " --warmup-delay-biased to be set."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_gpu_metrics_selector(self) -> ServingBenchmarkConfig:
+        """A Prometheus source needs a selector, or the mean spans the cluster.
+
+        Checked at parse time so a missing selector fails before warmup
+        rather than after it.
+        """
+        if (
+            self.gpu_metrics_prometheus_url
+            and not self.gpu_metrics_selector.strip()
+        ):
+            raise ValueError(
+                "--gpu-metrics-prometheus-url requires --gpu-metrics-selector."
             )
         return self
 

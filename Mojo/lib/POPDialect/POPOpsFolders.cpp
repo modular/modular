@@ -445,8 +445,7 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
 
 /// We can fold loads of `pop.global_constant` ops.
 OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
-  if (adaptor.getOrdering() != AtomicOrdering::NOT_ATOMIC ||
-      mightBeVolatile()) {
+  if (isAtomicOrMightBeVolatile()) {
     // Don't fold volatile or atomic loads.
     return {};
   }
@@ -504,15 +503,14 @@ OpFoldResult LoadOp::fold(FoldAdaptor adaptor) {
 }
 
 LogicalResult LoadOp::canonicalize(LoadOp op, PatternRewriter &b) {
-  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC || op.mightBeVolatile()) {
+  if (op.isAtomicOrMightBeVolatile()) {
     // Don't canonicalize atomic or volatile loads.
     return failure();
   }
 
   // Canonicalize "store x -> ptr; tmp = load ptr" into "store; tmp = x".
   if (auto store = dyn_cast_if_present<StoreOp>(op->getPrevNode())) {
-    if ((store.getPtr() == op.getPtr()) &&
-        (store.getOrdering() == AtomicOrdering::NOT_ATOMIC)) {
+    if (store.getPtr() == op.getPtr() && !store.isAtomic()) {
       b.replaceOp(op, store.getArg());
       return success();
     }
@@ -1141,7 +1139,13 @@ OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
   auto idx = dyn_cast_if_present<IntegerAttr>(adaptor.getPosition());
   if (!vec || !idx)
     return {};
-  return SIMDAttr::get(vec.getValues()[idx.getInt()], getType());
+  // SCCP folds speculatively, so a raised counted loop hands this the
+  // induction variable's exit value, one past the vector. That state is
+  // unreachable at runtime; decline to fold rather than index out of bounds.
+  int64_t pos = idx.getInt();
+  if (pos < 0 || static_cast<size_t>(pos) >= vec.getValues().size())
+    return {};
+  return SIMDAttr::get(vec.getValues()[pos], getType());
 }
 
 ErrorTreeOrSuccess SIMDExtractElementOp::interpret(ArrayRef<Attribute> operands,
@@ -1188,8 +1192,14 @@ OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   auto idx = dyn_cast_if_present<IntegerAttr>(adaptor.getPosition());
   if (!vec || !val || !idx)
     return {};
+  // See SIMDExtractElementOp::fold: the position can be out of range while
+  // SCCP explores a state the loop bound makes unreachable.
+  int64_t pos = idx.getInt();
+  if (pos < 0 || static_cast<size_t>(pos) >= vec.getValues().size() ||
+      val.getValues().empty())
+    return {};
   SmallVector<DTypeValue> values(vec.getValues());
-  values[idx.getInt()] = val.getValues().front();
+  values[pos] = val.getValues().front();
   return SIMDAttr::get(values, getType());
 }
 
@@ -1472,7 +1482,7 @@ SIMDSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
-  if (op.getOrdering() != AtomicOrdering::NOT_ATOMIC || op.mightBeVolatile()) {
+  if (op.isAtomicOrMightBeVolatile()) {
     // Don't canonicalize atomic or volatile stores.
     return failure();
   }
@@ -2766,7 +2776,7 @@ static ErrorTreeOrSuccess interpretMalloc(ExternalCallOp op,
                                   "expected 1 operand and 1 result");
   }
   ErrorOr<int64_t> sizeOr =
-      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.front()));
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands.front()));
   if (sizeOr.isError()) {
     return ErrorTree(op->getLoc(), "Unable to interpret call to 'malloc', "
                                    "could not interpret size.");
@@ -2801,7 +2811,7 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer result type");
   ErrorOr<int64_t> fdOr =
-      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[0]));
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[0]));
   if (fdOr.isError())
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer typed first operand");
@@ -2812,7 +2822,7 @@ static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
                                   "expected pointer typed second operand");
 
   ErrorOr<int64_t> nbytesOr =
-      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[2]));
+      getScalarIndexValue(dyn_cast_or_null<TypedAttr>(operands[2]));
   if (nbytesOr.isError())
     return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
                                   "expected integer typed third operand");

@@ -477,7 +477,7 @@ trait MHATileScheduler(Copyable, DevicePassable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct MHASchedule(TrivialRegisterPassable):
+struct MHASchedule(EnumLike, TrivialRegisterPassable):
     """Enumerates the scheduling strategy for mapping work tiles to thread blocks.
 
     `DEFAULT` orders tiles to maximize KV-cache locality; `PROMPT_ROTATE`
@@ -489,6 +489,27 @@ struct MHASchedule(TrivialRegisterPassable):
 
     comptime DEFAULT = Self(0)
     comptime PROMPT_ROTATE = Self(1)
+
+    comptime _enum_case_names = ParameterList.of[
+        "DEFAULT".value,
+        "PROMPT_ROTATE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "MHASchedule has no payload"
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:

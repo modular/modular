@@ -289,6 +289,10 @@ def FuncPtrBitcastAttr : DialectAttribute<(attr
   ConcreteType<"FuncTypeGeneratorType">:$type
 )>;
 
+def QuoteAttr : DialectAttribute<(attr
+  ConcreteAttribute<"TypedAttr">:$quotedParam
+)>;
+
 def GeneratorAttr : DialectAttribute<(attr
   TypeArray:$inputParamTypes,
   ConcreteAttribute<"TypedAttr">:$body,
@@ -337,7 +341,8 @@ def ExportKindAttr : DialectAttribute<(attr
 
 def StructDefFieldAttr : DialectAttribute<(attr
   StringAttr:$name,
-  TypedAttr:$typeValue
+  TypedAttr:$typeValue,
+  ConcreteAttribute<"ArrayAttr">:$annotations
 )>;
 
 def StructAttr : DialectAttribute<(attr
@@ -357,7 +362,8 @@ def UpcastAttr : DialectAttribute<(attr
 )>;
 
 def TraitSymbolAttr : DialectAttribute<(attr
-  ConcreteAttribute<"SymbolRefAttr">:$symbol
+  ConcreteAttribute<"SymbolRefAttr">:$symbol,
+  TypedAttrArray:$paramValues
 )>;
 
 def TraitSymbolArrayAttr : DialectAttribute<(attr
@@ -509,6 +515,30 @@ def StructFieldNamesAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type
 )>;
 
+def AnnotationAttr : DialectAttribute<(attr
+  TypedAttr:$value,
+  TypedAttr:$typeValue
+)>;
+
+def GetNumAnnotationsAttr : DialectAttribute<(attr
+  TypedAttr:$structTypeValue,
+  OptionalAttribute<"TypedAttr">:$fieldIndex
+)>;
+
+def GetAnnotationValueAttr : DialectAttribute<(attr
+  TypedAttr:$structTypeValue,
+  Type:$metaType,
+  TypedAttr:$index,
+  OptionalAttribute<"TypedAttr">:$fieldIndex
+)>;
+
+def GetAnnotationTypeAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$structTypeValue,
+  TypedAttr:$index,
+  OptionalAttribute<"TypedAttr">:$fieldIndex
+)>;
+
 def StructFieldIndexByNameAttr : DialectAttribute<(attr
   TypedAttr:$typeValue,
   TypedAttr:$fieldName,
@@ -607,6 +637,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     DTypeConstantAttr,
     SymbolConstantAttr,
     FuncSymbolAttr,
+    QuoteAttr,
     GeneratorAttr,
     TargetParamAttr,
     StructDefFieldAttr,
@@ -664,7 +695,11 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     SingletonAttr,
     FnMetadataAttr,
     TraitSymbolAttr,
-    TraitSymbolArrayAttr
+    TraitSymbolArrayAttr,
+    AnnotationAttr,
+    GetNumAnnotationsAttr,
+    GetAnnotationValueAttr,
+    GetAnnotationTypeAttr
   ];
 }
 

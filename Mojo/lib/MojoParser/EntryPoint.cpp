@@ -29,7 +29,10 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/SourceMgr.h"
+
+#define DEBUG_TYPE "mojo-parser"
 
 using namespace M;
 using namespace KGEN;
@@ -128,8 +131,7 @@ static void sortValueUses(Operation *topLevelOp) {
 /// provides the compiler a canonical form of IR coming out of the parser. This,
 /// for instance, ensures the cache key computed on parser output does not
 /// depend on whether the parser has cache hits for lazy loading.
-static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
-                                  bool preserveClosureTraitMethods = false) {
+static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
   CompilerTimeTraceScope traceScope("eraseUnreachableDecls");
 
   // Precompute a map from structs to their extensions, this will help with
@@ -224,15 +226,6 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module,
       if (it != structToExtensions.end()) {
         for (LIT::ExtensionDeclOp ext : it->second)
           markLive(ext);
-      }
-    }
-
-    // If preserving closure trait methods, mark all functions in closure traits
-    // as live when the trait itself is live.
-    if (preserveClosureTraitMethods) {
-      if (auto traitOp = dyn_cast<LIT::TraitDeclOp>(cur)) {
-        if (traitOp.getClosureSignature().has_value())
-          traitOp.walk([&](FnOp fn) { markLive(fn); });
       }
     }
 
@@ -345,14 +338,7 @@ importMojoImpl(ContextRef context, StringRef moduleIdentifier,
   }
 #endif // MODULAR_PRODUCTION
 
-  // Closure traits live outside module so we cannot distinguish between those
-  // that were defined by this unit and those that were defined by dependencies.
-  // The difference between a trait defined by the unit and one defined by the
-  // dependency is that the methods of the latter need not persist. The same is
-  // not true for the former. Opt to keep all methods of closure traits to
-  // guarantee correctness.
-  eraseUnreachableDecls(moduleDecl.getIfOperation(), *module,
-                        /*preserveClosureTraitMethods=*/true);
+  eraseUnreachableDecls(moduleDecl.getIfOperation(), *module);
   sortValueUses(*module);
 
   // Set the included files if requested.
@@ -434,6 +420,13 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
         // Build the package.
         return sharedState.createPackage(path, packageName);
       });
+  LLVM_DEBUG(
+      llvm::dbgs()
+      << "Parser allocators for package '" << packageName
+      << "': persistent=" << sharedState.persistentAllocator.getTotalMemory()
+      << " bytes in " << sharedState.persistentAllocator.getNumSlabs()
+      << " slabs, statements=" << sharedState.stmtAllocator.getTotalMemory()
+      << " bytes in " << sharedState.stmtAllocator.getNumSlabs() << " slabs\n");
   if (!module)
     return {};
   return {std::move(module),
@@ -466,10 +459,7 @@ OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl,
 
   // Perform the necessary post-parse transformations to prepare the module for
   // compilation.
-  // TODO: ensure bodies of closure traits survive resolution and remove the
-  // closure preservation flag.
-  eraseUnreachableDecls(newDeclOp, *newModule,
-                        /*preserveClosureTraitMethods=*/false);
+  eraseUnreachableDecls(newDeclOp, *newModule);
   sortValueUses(*newModule);
 
   // Give any lit.fn with an empty body region a placeholder entry block and
@@ -525,3 +515,6 @@ void ParserListener::onCall(ArrayRef<ASTDecl *> decls, llvm::SMLoc rparenLoc,
 void ParserListener::onParameterBinding(ArrayRef<ASTDecl *> decls,
                                         llvm::SMLoc rsquareLoc,
                                         ArrayRef<ExprNode *> parameters) {}
+void ParserListener::onMatchMissingCases(llvm::SMRange matchRange,
+                                         llvm::SMLoc insertLoc,
+                                         StringRef arms) {}

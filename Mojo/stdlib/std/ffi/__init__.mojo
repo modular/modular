@@ -66,8 +66,12 @@ from .unsafe_union import UnsafeUnion
 # Primitive C type aliases
 # ===-----------------------------------------------------------------------===#
 
-comptime c_char = Int8
-"""C `char` type."""
+comptime c_char = Scalar[_c_char_dtype()]
+"""C `char` type.
+
+Plain `char`'s signedness is implementation-defined and differs by ABI.
+Use `c_uchar` for a field explicitly declared `unsigned char`, which is always
+unsigned."""
 
 comptime c_uchar = UInt8
 """C `unsigned char` type."""
@@ -140,6 +144,16 @@ def _get_max_path() -> Int:
     # Default POSIX limit
     else:
         return 256
+
+
+def _c_char_dtype() -> DType:
+    # Plain `char` is unsigned by default under AAPCS64 (Linux on ARM), and
+    # signed by default everywhere else this codebase targets (x86-64
+    # Linux, Apple's ARM64 ABI).
+    comptime if CompilationTarget.is_linux() and CompilationTarget.is_arm():
+        return DType.uint8
+    else:
+        return DType.int8
 
 
 def _c_long_dtype[unsigned: Bool = False]() -> DType:
@@ -472,8 +486,8 @@ struct OwnedDLHandle(Boolable, Movable):
 
         var lib = OwnedDLHandle("libcounters.so")
         var counter = lib.get_symbol[c_int]("live_connections")
-        if counter:
-            print(counter.value()[])
+        if case .Some(ptr) = counter:
+            print(ptr[])
         ```
 
         Parameters:
@@ -1049,10 +1063,10 @@ struct _Global[
         opaque_ptr: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
     ):
         # Deinitialize and deallocate the storage.
-        if opaque_ptr:
+        if case .Some(opaque_ptr) = opaque_ptr:
             dealloc(
                 ThinAllocation(
-                    unsafe_owned_ptr=opaque_ptr.unsafe_value().unsafe_bitcast[
+                    unsafe_owned_ptr=opaque_ptr.unsafe_bitcast[
                         Self.StorageType
                     ]()
                 ).unsafe_with_layout({count = 1})
@@ -1064,9 +1078,9 @@ struct _Global[
             Self.name, Self._init_wrapper, Self._deinit_wrapper
         ]()
 
-        comptime if Self.on_error_msg:
+        comptime if case .Some(on_error_msg) = Self.on_error_msg:
             if not ptr:
-                raise Self.on_error_msg.value()()
+                raise on_error_msg()
 
         return unsafe_cast[Type=Self.StorageType](ptr).value()
 
@@ -1092,9 +1106,9 @@ struct _Global[
             Self._deinit_wrapper,
         )
 
-        comptime if Self.on_error_msg:
+        comptime if case .Some(on_error_msg) = Self.on_error_msg:
             if not ptr:
-                raise Self.on_error_msg.value()()
+                raise on_error_msg()
 
         return unsafe_cast[Type=Self.StorageType](ptr).value()
 

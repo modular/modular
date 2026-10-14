@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, TensorType, TensorValue, TensorValueLike
 from max.nn.embedding import Embedding
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
@@ -60,10 +60,6 @@ class Qwen3EmbeddingTransformerBlock(Module):
         Returns:
             Output tensor of shape [total_seq_len, hidden_size]
         """
-        residual_multiplier = ops.constant(
-            self.residual_multiplier, x.dtype, device=x.device
-        )
-
         # Attention with pre-normalization
         attn_out = self.self_attn(
             self.input_layernorm(x),
@@ -71,7 +67,7 @@ class Qwen3EmbeddingTransformerBlock(Module):
         )
 
         if self.residual_multiplier != 1.0:
-            attn_out = attn_out * residual_multiplier
+            attn_out = attn_out * float(self.residual_multiplier)
 
         h = x + attn_out
 
@@ -79,7 +75,7 @@ class Qwen3EmbeddingTransformerBlock(Module):
         mlp_out = self.mlp(self.post_attention_layernorm(h))
 
         if self.residual_multiplier != 1.0:
-            mlp_out = mlp_out * residual_multiplier
+            mlp_out = mlp_out * float(self.residual_multiplier)
 
         return h + mlp_out
 
@@ -165,9 +161,7 @@ class Qwen3EmbeddingTransformer(Module):
         # Embed tokens
         h = self.embed_tokens(tokens)
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         # Process through transformer layers
         input_row_offsets_device = input_row_offsets.to(self.device)

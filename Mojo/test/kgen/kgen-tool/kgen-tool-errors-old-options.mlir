@@ -8,5 +8,5 @@
 // CHECK-NEXT: Did you mean '[[REPL]]'?
 
 kgen.generator export @some_func(%arg0: f32) -> (f32, f32) {
-  kgen.return %arg0, %arg0 : f32, f32
+  hlcf.return %arg0, %arg0 : f32, f32
 }

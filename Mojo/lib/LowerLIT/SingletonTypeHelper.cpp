@@ -75,8 +75,8 @@ SingletonTypeHelper::lookupStructSingletonFields(SymbolRefAttr ref) {
     return alwaysSingletonStructs.end();
 
   // If we repeat an in-progress struct decl, it indicates an illegal cycle.
-  // End the check and consider it _not_ a singleton type. LowerLITTypes will
-  // report the error.
+  // End the check and consider it _not_ a singleton type. The pass's type
+  // lowering will report the error.
   if (!inProgressStructs.insert(refName).second)
     return {};
 

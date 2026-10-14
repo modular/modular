@@ -14,31 +14,27 @@
 
 The MX up/gate-projection grouped matmul consumes the activation E8M0 scale in
 the per-expert fixed-stride `scale_4d` slot layout
-(`Shuffler.scale_4d_slot_byte_off`). Without the fold that layout comes from a
-standalone kernel (`preshuffle_grouped_scale_4d_gpu`, which traces as
-`block_scaled_preshuffle_grouped_scale_4d_kernel_KS<scale_K>` for both formats —
-the name follows the `Shuffler`, not the activation dtype) running *serially*
-after `ep_wait` (dispatch_wait) has written the per-token scale row-major. With
-`fuse_a_scale_preshuffle`, `MXTokenFormat.copy_msg_to_output_tensor` writes the
-scale straight into the slot layout, deleting the separate kernel from the
-decode critical path.
+(`Shuffler.scale_4d_slot_byte_off`). `MXTokenFormat.copy_msg_to_output_tensor`
+writes each scale straight into that layout, so no standalone preshuffle kernel
+runs after `ep_wait` (dispatch_wait) on the decode critical path. That kernel,
+`preshuffle_grouped_scale_4d_gpu`, serves here as the reference.
 
 Both formats run the same checks, parameterized on `quant_dtype`: the format
-enters `MXTokenFormat` only through `elems_per_byte`, and the copy-out scale
+enters `MXTokenFormat` only through `bits_per_element`, and the copy-out scale
 path is identical at both because `group_size` is 32 either way.
 
 Two gates per case:
 
-1. Byte-compare the whole slot region between the fold off (raw row-major scales
-   plus the standalone `preshuffle_grouped_scale_4d_gpu`) and on (direct slot
-   write). This validates the fold's address arithmetic.
-2. Decode the copied message against the host pattern. Gate 1 is blind to a
-   wrong `elems_per_byte`: its two arms share `quant_dtype` and `hidden_size`
-   and read the scale region at the same `scales_offset()`, so a region read
-   from the wrong place lands at the same wrong slot on each side and cancels.
-   The pattern's quant and scale bytes occupy disjoint non-zero ranges ([1,127]
-   vs [128,254]), so neither can be mistaken for the other or for an untouched
-   byte.
+1. Byte-compare the whole slot region between the reference (the host pattern's
+   row-major scales through the standalone `preshuffle_grouped_scale_4d_gpu`)
+   and the copy's direct slot write. This validates both the fold's address
+   arithmetic and the scale bytes it copies.
+2. Decode the copied quant bytes against the host pattern. Gate 1 is blind to a
+   wrong `bits_per_element`: the message is synthesized at the format's own
+   `scales_offset()`, so a scale region misplaced by a wrong quant width is read
+   back from the same wrong place and cancels. The pattern's quant and scale
+   bytes occupy disjoint non-zero ranges ([1,127] vs [128,254]), so neither can
+   be mistaken for the other or for an untouched byte.
 
 The launcher replays `ep_wait`'s copy granularity — ONE WARP PER TOKEN, warps
 spread across blocks — so rows `r` and `r+16`, which pack into the same
@@ -69,7 +65,7 @@ from max.gpu import block_idx
 from max.gpu.host import DeviceContext, HostBuffer
 from max.gpu.host.info import MI355X
 from max.gpu.primitives import warp_id
-from std.math import align_up
+from std.math import ceildiv, align_up
 
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_layout import TensorLayout
@@ -126,7 +122,6 @@ def _ep_wait_copy_kernel[
     aoff_layout: TensorLayout,
     hidden_size: Int,
     top_k: Int,
-    fuse_a_scale_preshuffle: Bool,
     warps_per_block: Int,
 ](
     output_tokens: TileTensor[quant_dtype, out_layout, MutUntrackedOrigin],
@@ -142,11 +137,11 @@ def _ep_wait_copy_kernel[
     var num_active = Int(num_active_dev)
     var total_tokens = Int(total_tokens_dev)
     var max_padded_M = Int(max_padded_M_dev)
-    var fmt = MXTokenFormat[
-        hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
-    ](output_tokens, output_scales, max_padded_M)
+    var fmt = MXTokenFormat[hidden_size, top_k](
+        output_tokens, output_scales, max_padded_M
+    )
 
-    var warp_global = Int(block_idx.x) * warps_per_block + Int(warp_id())
+    var warp_global = block_idx.x * warps_per_block + Int(warp_id())
     var token = warp_global
     if token >= total_tokens:
         return
@@ -185,7 +180,7 @@ def _run_fusion_check[
     # pin that the MXFP8 alias has not drifted away from it.
     comptime assert MXFP4_SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
     comptime assert hidden_size % MXFP4_SF_VECTOR_SIZE == 0
-    # Mirrors `MXTokenFormat.elems_per_byte`, the only place the quant format
+    # Mirrors `MXTokenFormat.bits_per_element`, the only place the quant format
     # enters; the bracket assert below pins the two derivations together.
     comptime elems_per_byte = 2 if quant_dtype == DType.uint8 else 1
     comptime output_dim = hidden_size // elems_per_byte
@@ -231,45 +226,42 @@ def _run_fusion_check[
 
     comptime hw = ctx.default_device_info
 
-    # The token output is compared too, so each path gets its own zeroed buffer
-    # (gate 2 needs an untouched byte to stay 0).
-    var ref_tok_d = ctx.enqueue_create_buffer[quant_dtype](
-        total_tokens * output_dim
-    )
+    # Zeroed so gate 2 sees an untouched byte as 0.
     var fused_tok_d = ctx.enqueue_create_buffer[quant_dtype](
         total_tokens * output_dim
     )
-    ref_tok_d.enqueue_fill(Scalar[quant_dtype](0))
     fused_tok_d.enqueue_fill(Scalar[quant_dtype](0))
-    var ref_tok_tt = TileTensor[origin=MutAnyOrigin](
-        ref_tok_d, row_major(Coord(total_tokens, Idx[output_dim]))
-    )
     var fused_tok_tt = TileTensor[origin=MutAnyOrigin](
-        fused_tok_d, row_major(Coord(total_tokens, Idx[output_dim]))
+        fused_tok_d, row_major(total_tokens, Idx[output_dim])
     )
 
     # Message per token: [quants | E8M0 scales]. A throwaway instance yields the
-    # real offsets; passing the token tensor is what resolves `elems_per_byte`.
+    # real offsets; passing the token tensor resolves `bits_per_element`.
     var dummy_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](scale_K)
     var dummy_fmt = MXTokenFormat[hidden_size, top_k](
-        ref_tok_tt,
+        fused_tok_tt,
         TileTensor[origin=MutAnyOrigin](
-            dummy_scales_d, row_major(Coord(1, Idx[scale_K]))
+            dummy_scales_d, row_major(1, Idx[scale_K])
         ),
+        max_padded_M=0,
     )
     comptime FmtType = type_of(dummy_fmt)
     var scales_off = FmtType.scales_offset()
     var msg_bytes = FmtType.token_size()
-    # A wrong `elems_per_byte` shifts the slot writer and reader together, so
+    # A wrong `bits_per_element` shifts the scale writer and reader together, so
     # gate 1 cannot see it; pin the quant extent directly instead.
     assert_true(
         output_dim <= scales_off and scales_off < 2 * output_dim,
         "scales_offset() is not the aligned quant width for this format",
     )
 
-    # --- Host inputs: synthesized recv buffer + routing. ---
+    # --- Host inputs: synthesized recv buffer, the same scales row-major for
+    #     the reference, and routing. ---
     var recv_h = ctx.enqueue_create_host_buffer[.uint8](
         total_tokens * msg_bytes
+    )
+    var raw_sc_h = ctx.enqueue_create_host_buffer[.uint8](
+        total_tokens * scale_K
     )
     var a_off_h = ctx.enqueue_create_host_buffer[.uint32](n_off)
     ctx.synchronize()
@@ -281,6 +273,7 @@ def _run_fusion_check[
             recv_h[base + j] = _quant_byte(t, j)
         for k in range(scale_K):
             recv_h[base + scales_off + k] = _scale_byte(t, k)
+            raw_sc_h[t * scale_K + k] = _scale_byte(t, k)
     _build_routing(a_off_h, num_tokens_by_expert)
 
     var recv_d = ctx.enqueue_create_buffer[.uint8](total_tokens * msg_bytes)
@@ -291,56 +284,22 @@ def _run_fusion_check[
         a_off_d, row_major[n_off]()
     )
 
-    var grid_blocks = (total_tokens + warps_per_block - 1) // warps_per_block
+    var grid_blocks = ceildiv(total_tokens, warps_per_block)
     if grid_blocks == 0:
         grid_blocks = 1
 
-    # ---- Path A (reference): copy writes raw [tokens, scale_K], then the
-    #      standalone preshuffle kernel rearranges into slots. ----
-    var raw_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
-        total_tokens * scale_K
-    )
+    # ---- Path A (reference): the host pattern's raw [tokens, scale_K]
+    #      scales, rearranged into slots by the standalone preshuffle. ----
+    var raw_scales_d = ctx.enqueue_create_buffer[.uint8](total_tokens * scale_K)
+    ctx.enqueue_copy(raw_scales_d, raw_sc_h)
     var ref_d = ctx.enqueue_create_buffer[.uint8](slot_bytes)
     ref_d.enqueue_fill(UInt8(0))
 
-    var raw_scales_tt = TileTensor[origin=MutAnyOrigin](
-        raw_scales_d, row_major(Coord(total_tokens, Idx[scale_K]))
-    )
-
-    # Every launcher param is explicit, so both scales layouts must be pinned —
-    # they differ between the raw and the slot buffer.
-    comptime kernel_ref = _ep_wait_copy_kernel[
-        quant_dtype,
-        DType.float8_e8m0fnu,
-        ref_tok_tt.LayoutType,
-        raw_scales_tt.LayoutType,
-        a_off_tt.LayoutType,
-        hidden_size=hidden_size,
-        top_k=top_k,
-        fuse_a_scale_preshuffle=False,
-        warps_per_block=warps_per_block,
-    ]
-    ctx.enqueue_function[kernel_ref](
-        ref_tok_tt,
-        raw_scales_tt,
-        recv_d.unsafe_ptr(),
-        a_off_tt,
-        Int32(msg_bytes),
-        Int32(num_active),
-        Int32(total_tokens),
-        Int32(max_padded_M),
-        grid_dim=grid_blocks,
-        block_dim=warps_per_block * WARP_SIZE,
-    )
-
     var raw_scales_bytes = TileTensor[origin=ImmutAnyOrigin](
-        raw_scales_d.unsafe_ptr()
-        .unsafe_bitcast[UInt8]()
-        .as_unsafe_any_origin(),
-        row_major(Coord(total_tokens, Idx[scale_K])),
+        raw_scales_d, row_major(total_tokens, Idx[scale_K])
     )
     var ref_slots_tt = TileTensor[origin=MutAnyOrigin](
-        ref_d, row_major(Coord(num_active * max_padded_M, Idx[scale_K]))
+        ref_d, row_major(num_active * max_padded_M, Idx[scale_K])
     )
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         raw_scales_bytes,
@@ -359,7 +318,7 @@ def _run_fusion_check[
     fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
     var fused_slots_tt = TileTensor[origin=MutAnyOrigin](
         fused_scales_d,
-        row_major(Coord(num_active * max_padded_M, Idx[scale_K])),
+        row_major(num_active * max_padded_M, Idx[scale_K]),
     )
     comptime kernel_fused = _ep_wait_copy_kernel[
         quant_dtype,
@@ -369,7 +328,6 @@ def _run_fusion_check[
         a_off_tt.LayoutType,
         hidden_size=hidden_size,
         top_k=top_k,
-        fuse_a_scale_preshuffle=True,
         warps_per_block=warps_per_block,
     ]
     ctx.enqueue_function[kernel_fused](
@@ -393,20 +351,11 @@ def _run_fusion_check[
         fused_host, fused_scales_d.unsafe_ptr().unsafe_bitcast[UInt8]()
     )
 
-    # --- Gate 2 inputs: the copied quant region and the unfused row-major
-    #     scales, both decoded against the host pattern. ---
+    # --- Gate 2 input: the copied quant region. ---
     var tok_bytes = total_tokens * output_dim
-    var ref_tok_h = ctx.enqueue_create_host_buffer[.uint8](tok_bytes)
     var fused_tok_h = ctx.enqueue_create_host_buffer[.uint8](tok_bytes)
-    var raw_sc_h = ctx.enqueue_create_host_buffer[.uint8](
-        total_tokens * scale_K
-    )
-    ctx.enqueue_copy(ref_tok_h, ref_tok_d.unsafe_ptr().unsafe_bitcast[UInt8]())
     ctx.enqueue_copy(
         fused_tok_h, fused_tok_d.unsafe_ptr().unsafe_bitcast[UInt8]()
-    )
-    ctx.enqueue_copy(
-        raw_sc_h, raw_scales_d.unsafe_ptr().unsafe_bitcast[UInt8]()
     )
     ctx.synchronize()
 
@@ -433,36 +382,18 @@ def _run_fusion_check[
     # A too-narrow quant copy leaves row tails at 0; a too-wide one or a shifted
     # `scales_offset()` drags scale-range bytes in. Both decode as a mismatch.
     var quant_mismatches = 0
-    var fold_perturbed_quant = 0
     for t in range(total_tokens):
         for j in range(output_dim):
-            var want = _quant_byte(t, j)
-            if ref_tok_h[t * output_dim + j] != want:
+            if fused_tok_h[t * output_dim + j] != _quant_byte(t, j):
                 quant_mismatches += 1
-            if fused_tok_h[t * output_dim + j] != want:
-                fold_perturbed_quant += 1
     assert_equal(quant_mismatches, 0, "copied quant bytes do not decode")
-    assert_equal(fold_perturbed_quant, 0, "the fold perturbed the quant copy")
-
-    var scale_mismatches = 0
-    for t in range(total_tokens):
-        for k in range(scale_K):
-            if raw_sc_h[t * scale_K + k] != _scale_byte(t, k):
-                scale_mismatches += 1
-    assert_equal(
-        scale_mismatches,
-        0,
-        "row-major E8M0 scales do not decode (scales_offset)",
-    )
 
     print(
         "    OK: ",
         slot_bytes,
         " slot bytes match; ",
         tok_bytes,
-        " quant + ",
-        total_tokens * scale_K,
-        " scale bytes decode",
+        " quant bytes decode",
     )
 
 
@@ -472,7 +403,7 @@ def main() raises:
         ctx.default_device_info == MI355X
     ), "test_mx_ep_wait_scale_fusion currently requires MI355X"
 
-    print("===> ep_wait MXFP4: fold equivalence + message decode")
+    print("===> ep_wait MXFP4: slot scales vs preshuffle + quant decode")
     # KS224 up/gate proj: hidden 7168 → scale_K 224. The cases cover decode
     # (few tokens/expert), prefill, empty experts, and multi-tile m_blocks.
     _run_fusion_check[.uint8, hidden_size=7168, NUM_ACTIVE=1](
@@ -497,7 +428,7 @@ def main() raises:
         "down-proj-decode", [1, 2, 0, 4], 0, ctx
     )
 
-    print("===> ep_wait MXFP8: fold equivalence + message decode")
+    print("===> ep_wait MXFP8: slot scales vs preshuffle + quant decode")
     # MiniMax-M3 up/gate proj: hidden 6144 → scale_K 192.
     _run_fusion_check[.float8_e4m3fn, hidden_size=6144, NUM_ACTIVE=1](
         "up-proj-single-tiny", [1], 0, ctx

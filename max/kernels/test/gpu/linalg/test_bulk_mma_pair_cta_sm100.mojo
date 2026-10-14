@@ -54,13 +54,21 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
-from layout import Layout, LayoutTensor
+from layout import (
+    Coord,
+    MixedLayout,
+    TensorLayout,
+    TileTensor,
+    coord,
+    row_major,
+)
 from layout._fillers import random
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
+    tile_layout_k_major_typed,
     tile_layout_mn_major,
-    tile_to_descriptor,
+    tile_layout_mn_major_typed,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -87,22 +95,20 @@ from std.utils.static_tuple import StaticTuple
 def bulk_mma_pair_cta_kernel[
     ab_type: DType,
     c_type: DType,
-    a_tma_rank: Int,
-    b_tma_rank: Int,
-    a_tile_shape: IndexList[a_tma_rank],
-    b_tile_shape: IndexList[b_tma_rank],
-    c_layout: Layout,
-    a_desc_shape: IndexList[a_tma_rank],
-    b_desc_shape: IndexList[b_tma_rank],
+    a_tile_shape: Coord,
+    b_tile_shape: Coord,
+    c_layout: TensorLayout,
+    a_desc_shape: Coord,
+    b_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    a_tma_op: TMATensorTile[ab_type, a_tma_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[ab_type, b_tma_rank, b_tile_shape, b_desc_shape],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a_tma_op: TMATensorTile[ab_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[ab_type, b_tile_shape, b_desc_shape],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -115,43 +121,32 @@ def bulk_mma_pair_cta_kernel[
     # MMA shape: pair-CTA doubles both M and N dimensions.
     comptime MMA_M = 2 * BM
     comptime MMA_N = 2 * BN
-    comptime MMA_K = 16  # bf16
 
     comptime CLUSTER_M = Int(cluster_shape[0])
     comptime CLUSTER_N = Int(cluster_shape[1])
 
-    comptime a_smem_layout = tile_layout_k_major[
-        ab_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        ab_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        ab_type, BN, BK, swizzle_mode=b_swizzle
+    comptime a_smem_layout = tile_layout_k_major_typed[
+        ab_type, BM, BK, a_swizzle
+    ]
+    comptime BSmemLayout = type_of(
+        tile_layout_k_major_typed[ab_type, BN, BK, b_swizzle]
+    ) if transpose_b else type_of(
+        tile_layout_mn_major_typed[ab_type, BN, BK, b_swizzle]
+    )
+    comptime b_smem_layout = MixedLayout[
+        shape_types=BSmemLayout._shape_types,
+        stride_types=BSmemLayout._stride_types,
     ]()
 
     var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
-    comptime a_smem_bytes = a_smem_layout.size() * size_of[ab_type]()
-    comptime b_smem_bytes = b_smem_layout.size() * size_of[ab_type]()
+    comptime a_smem_bytes = BM * BK * size_of[ab_type]()
+    comptime b_smem_bytes = BN * BK * size_of[ab_type]()
 
     var a_smem = smem.bitcast[Scalar[ab_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[ab_type]]()
 
     var smem_pool = (smem + a_smem_bytes + b_smem_bytes).bitcast[Int64]()
-
-    var a_smem_tile = LayoutTensor[
-        ab_type,
-        a_smem_layout,
-        address_space=.SHARED,
-        alignment=128,
-    ](a_smem.as_unsafe_any_origin())
-
-    var b_smem_tile = LayoutTensor[
-        ab_type,
-        b_smem_layout,
-        address_space=.SHARED,
-        alignment=128,
-    ](b_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[ab_type]()
 
@@ -160,9 +155,7 @@ def bulk_mma_pair_cta_kernel[
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
 
-    comptime a_expected_bytes = a_smem_layout.size() * size_of[ab_type]()
-    comptime b_expected_bytes = b_smem_layout.size() * size_of[ab_type]()
-    comptime expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
+    comptime expected_bytes = cta_group * (a_smem_bytes + b_smem_bytes)
 
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
@@ -193,28 +186,23 @@ def bulk_mma_pair_cta_kernel[
 
     var tmem_addr = ptr_tmem_addr[0]
 
-    # Build descriptors for the accumulator (MMASmemDescriptorPair)
-    comptime a_canonical_layout = tile_to_descriptor[ab_type, a_smem_layout]()
-    comptime b_canonical_layout = tile_to_descriptor[
-        ab_type, b_smem_layout, is_k_major=transpose_b
-    ]()
-    comptime aSBO = a_canonical_layout[0].stride[1].value() * size_of[ab_type]()
-    comptime aLBO = a_canonical_layout[1].stride[1].value() * size_of[ab_type]()
-    comptime b_stride01 = b_canonical_layout[0].stride[1].value()
-    comptime b_stride11 = b_canonical_layout[1].stride[1].value()
-    comptime bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[
+    # Build descriptors for the accumulator (MMASmemDescriptorPair). The typed
+    # tile layout is ((8, MN/8), (sw, K/sw)) for K-major and its transpose for
+    # MN-major, so the descriptor strides are the outer strides at flattened
+    # positions 1 and 3; MN-major swaps them.
+    comptime aSBO = type_of(a_smem_layout).static_stride[1] * size_of[ab_type]()
+    comptime aLBO = type_of(a_smem_layout).static_stride[3] * size_of[ab_type]()
+    comptime b_stride1 = type_of(b_smem_layout).static_stride[1]
+    comptime b_stride3 = type_of(b_smem_layout).static_stride[3]
+    comptime bSBO = (b_stride1 if transpose_b else b_stride3) * size_of[
         ab_type
     ]()
-    comptime bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[
+    comptime bLBO = (b_stride3 if transpose_b else b_stride1) * size_of[
         ab_type
     ]()
 
-    var adesc_base = MMASmemDescriptorPair.create[aSBO, aLBO, a_swizzle](
-        a_smem_tile.ptr
-    )
-    var bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
-        b_smem_tile.ptr
-    )
+    var adesc_base = MMASmemDescriptorPair.create[aSBO, aLBO, a_swizzle](a_smem)
+    var bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](b_smem)
 
     # The SM100TensorAccumulator handles the k-loop (num_k_mmas) internally
     # via bulk_mma, generating all k-step MMA instructions in one assembly block.
@@ -241,8 +229,18 @@ def bulk_mma_pair_cta_kernel[
         rank_n,
     )
 
-    comptime a_tma_rows = a_desc_shape[0]
-    comptime b_tma_rows = b_desc_shape[0] if transpose_b else b_desc_shape[1]
+    comptime a_tma_rows = a_desc_shape.element_types[0].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[
+        0
+    ].static_value if transpose_b else b_desc_shape.element_types[
+        1
+    ].static_value
+    comptime a_tma_load_size = a_desc_shape.element_types[
+        0
+    ].static_value * a_desc_shape.element_types[1].static_value
+    comptime b_tma_load_size = b_desc_shape.element_types[
+        0
+    ].static_value * b_desc_shape.element_types[1].static_value
 
     var a_multicast_mask: UInt16 = 0x0
     var b_multicast_mask: UInt16 = 0x0
@@ -277,20 +275,30 @@ def bulk_mma_pair_cta_kernel[
                 + block_idx.y * MMA_N
             )
 
-            var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
-            var b_smem_reshape = b_smem_tile.reshape[Layout.row_major(BN, BK)]()
+            var a_smem_slice = TileTensor(
+                a_smem + peer_cta_coord[2] * a_tma_load_size,
+                row_major[
+                    a_tile_shape.element_types[0].static_value,
+                    a_tile_shape.element_types[1].static_value,
+                ](),
+            )
+            var b_smem_slice = TileTensor(
+                b_smem + peer_cta_coord[1] * b_tma_load_size,
+                row_major[
+                    b_tile_shape.element_types[0].static_value,
+                    b_tile_shape.element_types[1].static_value,
+                ](),
+            )
 
             a_tma_op.async_multicast_load[cta_group](
-                a_smem_reshape.split[CLUSTER_N]()[peer_cta_coord[2]],
+                a_smem_slice,
                 tma_mbar[0],
                 (i * BK, a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
             b_tma_op.async_multicast_load[cta_group](
-                b_smem_reshape.split[CLUSTER_M // cta_group]()[
-                    peer_cta_coord[1]
-                ],
+                b_smem_slice,
                 tma_mbar[0],
                 (i * BK, b_gmem_slice_coord) if transpose_b else (
                     b_gmem_slice_coord,
@@ -331,8 +339,10 @@ def bulk_mma_pair_cta_kernel[
     )
     var global_mma_n = cluster_idx_n * CLUSTER_N + peer_cta_coord[2]
 
-    var c_gmem_block = c.tile[MMA_M, MMA_N](global_mma_m, global_mma_n)
-    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](peer_cta_coord[0], 0)
+    var c_gmem_block = c.tile[MMA_M, MMA_N](
+        Int(global_mma_m), Int(global_mma_n)
+    )
+    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](Int(peer_cta_coord[0]), 0)
 
     comptime for ld_i in range(num_ld_iters):
         var c_frag = tcgen05_ld[
@@ -352,11 +362,13 @@ def bulk_mma_pair_cta_kernel[
 
         comptime if MMA_M == 128:
             var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
-                umod(warp_id(), 2), ufloordiv(warp_id(), 2)
+                Int(umod(warp_id(), 2)), Int(ufloordiv(warp_id(), 2))
             ).vectorize[1, 2]()
 
             comptime for i in range(ld_width // 2):
-                c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
+                c_gmem_frag[Int(lane_id()), i] = rebind[
+                    type_of(c_gmem_frag).ElementType
+                ](
                     SIMD[accum_type, 2](
                         rebind[Scalar[accum_type]](c_frag[2 * i]),
                         rebind[Scalar[accum_type]](c_frag[2 * i + 1]),
@@ -364,11 +376,13 @@ def bulk_mma_pair_cta_kernel[
                 )
         else:
             var c_gmem_frag = c_gmem_slice.tile[BM // 4, ld_repeat](
-                warp_id(), ld_i
+                Int(warp_id()), ld_i
             ).vectorize[1, 2]()
 
             comptime for i in range(ld_width // 2):
-                c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
+                c_gmem_frag[Int(lane_id()), i] = rebind[
+                    type_of(c_gmem_frag).ElementType
+                ](
                     SIMD[accum_type, 2](
                         rebind[Scalar[accum_type]](c_frag[2 * i]),
                         rebind[Scalar[accum_type]](c_frag[2 * i + 1]),
@@ -382,22 +396,20 @@ def bulk_mma_pair_cta_kernel[
 def bulk_mma_pair_cta_ts_kernel[
     ab_type: DType,
     c_type: DType,
-    a_tma_rank: Int,
-    b_tma_rank: Int,
-    a_tile_shape: IndexList[a_tma_rank],
-    b_tile_shape: IndexList[b_tma_rank],
-    c_layout: Layout,
-    a_desc_shape: IndexList[a_tma_rank],
-    b_desc_shape: IndexList[b_tma_rank],
+    a_tile_shape: Coord,
+    b_tile_shape: Coord,
+    c_layout: TensorLayout,
+    a_desc_shape: Coord,
+    b_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    a_tma_op: TMATensorTile[ab_type, a_tma_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[ab_type, b_tma_rank, b_tile_shape, b_desc_shape],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a_tma_op: TMATensorTile[ab_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[ab_type, b_tile_shape, b_desc_shape],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
     """TS pair-CTA kernel: A from TMEM (via tcgen05_cp), B from SMEM."""
@@ -416,10 +428,14 @@ def bulk_mma_pair_cta_ts_kernel[
     comptime CLUSTER_M = Int(cluster_shape[0])
     comptime CLUSTER_N = Int(cluster_shape[1])
 
-    comptime a_smem_layout = tile_layout_k_major[
-        ab_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
+    comptime BSmemLayout = type_of(
+        tile_layout_k_major_typed[ab_type, BN, BK, b_swizzle]
+    ) if transpose_b else type_of(
+        tile_layout_mn_major_typed[ab_type, BN, BK, b_swizzle]
+    )
+    # `bulk_mma` derives its per-k-block descriptor offsets from a legacy
+    # `Layout`; this is the same tile layout as `BSmemLayout`.
+    comptime b_mma_layout = tile_layout_k_major[
         ab_type, BN, BK, swizzle_mode=b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
         ab_type, BN, BK, swizzle_mode=b_swizzle
@@ -427,27 +443,13 @@ def bulk_mma_pair_cta_ts_kernel[
 
     var smem = external_memory[UInt8, address_space=.SHARED, alignment=8]()
 
-    comptime a_smem_bytes = a_smem_layout.size() * size_of[ab_type]()
-    comptime b_smem_bytes = b_smem_layout.size() * size_of[ab_type]()
+    comptime a_smem_bytes = BM * BK * size_of[ab_type]()
+    comptime b_smem_bytes = BN * BK * size_of[ab_type]()
 
     var a_smem = smem.bitcast[Scalar[ab_type]]()
     var b_smem = (smem + a_smem_bytes).bitcast[Scalar[ab_type]]()
 
     var smem_pool = (smem + a_smem_bytes + b_smem_bytes).bitcast[Int64]()
-
-    var a_smem_tile = LayoutTensor[
-        ab_type,
-        a_smem_layout,
-        address_space=.SHARED,
-        alignment=128,
-    ](a_smem.as_unsafe_any_origin())
-
-    var b_smem_tile = LayoutTensor[
-        ab_type,
-        b_smem_layout,
-        address_space=.SHARED,
-        alignment=128,
-    ](b_smem.as_unsafe_any_origin())
 
     comptime accum_type = get_accum_type[ab_type]()
 
@@ -455,9 +457,7 @@ def bulk_mma_pair_cta_ts_kernel[
 
     comptime c_frag_size = MMA_M * MMA_N // 128 // cta_group
 
-    comptime a_expected_bytes = a_smem_layout.size() * size_of[ab_type]()
-    comptime b_expected_bytes = b_smem_layout.size() * size_of[ab_type]()
-    comptime expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
+    comptime expected_bytes = cta_group * (a_smem_bytes + b_smem_bytes)
 
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
@@ -492,21 +492,16 @@ def bulk_mma_pair_cta_ts_kernel[
     comptime A_TMEM_COLS = BK // 2
 
     # Build B descriptor (MMASmemDescriptorPair for MMA)
-    comptime b_canonical_layout = tile_to_descriptor[
-        ab_type, b_smem_layout, is_k_major=transpose_b
-    ]()
-    comptime b_stride01 = b_canonical_layout[0].stride[1].value()
-    comptime b_stride11 = b_canonical_layout[1].stride[1].value()
-    comptime bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[
+    comptime b_stride1 = BSmemLayout.static_stride[1]
+    comptime b_stride3 = BSmemLayout.static_stride[3]
+    comptime bSBO = (b_stride1 if transpose_b else b_stride3) * size_of[
         ab_type
     ]()
-    comptime bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[
+    comptime bLBO = (b_stride3 if transpose_b else b_stride1) * size_of[
         ab_type
     ]()
 
-    var bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
-        b_smem_tile.ptr
-    )
+    var bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](b_smem)
 
     # Instruction descriptor for TS MMA
     comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -526,8 +521,18 @@ def bulk_mma_pair_cta_ts_kernel[
         rank_n,
     )
 
-    comptime a_tma_rows = a_desc_shape[0]
-    comptime b_tma_rows = b_desc_shape[0] if transpose_b else b_desc_shape[1]
+    comptime a_tma_rows = a_desc_shape.element_types[0].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[
+        0
+    ].static_value if transpose_b else b_desc_shape.element_types[
+        1
+    ].static_value
+    comptime a_tma_load_size = a_desc_shape.element_types[
+        0
+    ].static_value * a_desc_shape.element_types[1].static_value
+    comptime b_tma_load_size = b_desc_shape.element_types[
+        0
+    ].static_value * b_desc_shape.element_types[1].static_value
 
     var a_multicast_mask: UInt16 = 0x0
     var b_multicast_mask: UInt16 = 0x0
@@ -562,20 +567,30 @@ def bulk_mma_pair_cta_ts_kernel[
                 + block_idx.y * MMA_N
             )
 
-            var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
-            var b_smem_reshape = b_smem_tile.reshape[Layout.row_major(BN, BK)]()
+            var a_smem_slice = TileTensor(
+                a_smem + peer_cta_coord[2] * a_tma_load_size,
+                row_major[
+                    a_tile_shape.element_types[0].static_value,
+                    a_tile_shape.element_types[1].static_value,
+                ](),
+            )
+            var b_smem_slice = TileTensor(
+                b_smem + peer_cta_coord[1] * b_tma_load_size,
+                row_major[
+                    b_tile_shape.element_types[0].static_value,
+                    b_tile_shape.element_types[1].static_value,
+                ](),
+            )
 
             a_tma_op.async_multicast_load[cta_group](
-                a_smem_reshape.split[CLUSTER_N]()[peer_cta_coord[2]],
+                a_smem_slice,
                 tma_mbar[0],
                 (i * BK, a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
             b_tma_op.async_multicast_load[cta_group](
-                b_smem_reshape.split[CLUSTER_M // cta_group]()[
-                    peer_cta_coord[1]
-                ],
+                b_smem_slice,
                 tma_mbar[0],
                 (i * BK, b_gmem_slice_coord) if transpose_b else (
                     b_gmem_slice_coord,
@@ -627,7 +642,7 @@ def bulk_mma_pair_cta_ts_kernel[
                 var elect_val = elect()
 
                 bulk_mma[
-                    b_smem_layout,
+                    b_mma_layout,
                     mma_k=MMA_K,
                     num_k_mmas=num_k_mmas,
                     operand_size=size_of[ab_type](),
@@ -662,8 +677,10 @@ def bulk_mma_pair_cta_ts_kernel[
     )
     var global_mma_n = cluster_idx_n * CLUSTER_N + peer_cta_coord[2]
 
-    var c_gmem_block = c.tile[MMA_M, MMA_N](global_mma_m, global_mma_n)
-    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](peer_cta_coord[0], 0)
+    var c_gmem_block = c.tile[MMA_M, MMA_N](
+        Int(global_mma_m), Int(global_mma_n)
+    )
+    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](Int(peer_cta_coord[0]), 0)
 
     comptime for ld_i in range(num_ld_iters):
         var c_frag = tcgen05_ld[
@@ -683,11 +700,13 @@ def bulk_mma_pair_cta_ts_kernel[
 
         comptime if MMA_M == 128:
             var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
-                umod(warp_id(), 2), ufloordiv(warp_id(), 2)
+                Int(umod(warp_id(), 2)), Int(ufloordiv(warp_id(), 2))
             ).vectorize[1, 2]()
 
             comptime for i in range(ld_width // 2):
-                c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
+                c_gmem_frag[Int(lane_id()), i] = rebind[
+                    type_of(c_gmem_frag).ElementType
+                ](
                     SIMD[accum_type, 2](
                         rebind[Scalar[accum_type]](c_frag[2 * i]),
                         rebind[Scalar[accum_type]](c_frag[2 * i + 1]),
@@ -695,11 +714,13 @@ def bulk_mma_pair_cta_ts_kernel[
                 )
         else:
             var c_gmem_frag = c_gmem_slice.tile[BM // 4, ld_repeat](
-                warp_id(), ld_i
+                Int(warp_id()), ld_i
             ).vectorize[1, 2]()
 
             comptime for i in range(ld_width // 2):
-                c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
+                c_gmem_frag[Int(lane_id()), i] = rebind[
+                    type_of(c_gmem_frag).ElementType
+                ](
                     SIMD[accum_type, 2](
                         rebind[Scalar[accum_type]](c_frag[2 * i]),
                         rebind[Scalar[accum_type]](c_frag[2 * i + 1]),
@@ -755,36 +776,49 @@ def test_bulk_mma_pair_cta[
     comptime N = prob_shape[1]
     comptime K = prob_shape[2]
 
-    var a = ManagedLayoutTensor[ab_type, Layout.row_major(M, K)](ctx)
+    var a = HostDeviceTileTensor[ab_type](row_major[M, K](), ctx)
     random(
-        a.tensor[update=False](),
+        a.host_tensor(),
         min=Scalar[ab_type](-1.0),
         max=Scalar[ab_type](1.0),
     )
 
-    comptime b_layout = Layout.row_major(
-        N, K
-    ) if transpose_b else Layout.row_major(K, N)
-    var b = ManagedLayoutTensor[ab_type, b_layout](ctx)
-    var b_col_major = ManagedLayoutTensor[ab_type, Layout.row_major(N, K)](ctx)
+    var b = HostDeviceTileTensor[ab_type](
+        row_major[N if transpose_b else K, K if transpose_b else N](), ctx
+    )
+    var b_host = b.host_tensor()
+    var b_col_major = HostDeviceTileTensor[ab_type](row_major[N, K](), ctx)
     random(
-        b.tensor[update=False](),
+        b_host,
         min=Scalar[ab_type](-1.0),
         max=Scalar[ab_type](1.0),
     )
 
-    var c = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
-    var c_ref = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
+    var c = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
+    var c_ref = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
+
+    a.to_device()
+    b.to_device()
+
+    var a_dev = a.device_tensor()
+    var c_dev = c.device_tensor()
 
     var a_tma_op = create_tensor_tile[
-        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
-    ](ctx, a.device_tensor())
+        coord[Int(BM) // Int(cluster_shape[1]), BK], swizzle_mode=a_swizzle
+    ](ctx, a_dev)
+    # Int-folded dims: main used `Index(BN//C0, BK) if transpose_b else
+    # Index(BK, BN//C0)`. Selecting between two distinct Coord types does
+    # not fold at comptime; selecting Ints does.
+    comptime b_rows = (
+        Int(BN)
+        // (Int(cluster_shape[0]) // Int(cta_group)) if transpose_b else BK
+    )
+    comptime b_cols = (
+        BK if transpose_b else Int(BN)
+        // (Int(cluster_shape[0]) // Int(cta_group))
+    )
     var b_tma_op = create_tensor_tile[
-        Index(
-            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
-        ) if transpose_b else Index(
-            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
-        ),
+        coord[b_rows, b_cols],
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
@@ -796,11 +830,9 @@ def test_bulk_mma_pair_cta[
         comptime kernel = bulk_mma_pair_cta_ts_kernel[
             ab_type,
             c_type,
-            type_of(a_tma_op).rank,
-            type_of(b_tma_op).rank,
             type_of(a_tma_op).tile_shape,
             type_of(b_tma_op).tile_shape,
-            Layout.row_major(M, N),
+            type_of(c_dev).LayoutType,
             type_of(a_tma_op).desc_shape,
             type_of(b_tma_op).desc_shape,
             block_tile_shape,
@@ -812,7 +844,7 @@ def test_bulk_mma_pair_cta[
         ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
-            c.device_tensor(),
+            c_dev,
             Int32(K // BK),
             grid_dim=(
                 align_up(M // BM, Int(cluster_shape[0])),
@@ -829,11 +861,9 @@ def test_bulk_mma_pair_cta[
         comptime kernel = bulk_mma_pair_cta_kernel[
             ab_type,
             c_type,
-            type_of(a_tma_op).rank,
-            type_of(b_tma_op).rank,
             type_of(a_tma_op).tile_shape,
             type_of(b_tma_op).tile_shape,
-            Layout.row_major(M, N),
+            type_of(c_dev).LayoutType,
             type_of(a_tma_op).desc_shape,
             type_of(b_tma_op).desc_shape,
             block_tile_shape,
@@ -845,7 +875,7 @@ def test_bulk_mma_pair_cta[
         ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,
-            c.device_tensor(),
+            c_dev,
             Int32(K // BK),
             grid_dim=(
                 align_up(M // BM, Int(cluster_shape[0])),
@@ -861,34 +891,36 @@ def test_bulk_mma_pair_cta[
 
     comptime if not transpose_b:
         # NOTE: Matrix B should always be in col-major layout for cublasLt to work
-        var b_host_col_major = b_col_major.tensor()
-        var b_tensor = b.tensor()
+        var b_host_col_major = b_col_major.host_tensor()
         for i in range(N):
             for j in range(K):
-                b_host_col_major[i, j] = b_tensor[j, i]
+                b_host_col_major[i, j] = b_host[j, i]
+        b_col_major.to_device()
 
         vendor_blas.matmul(
             ctx,
-            c_ref.device_tensor[update=False](),
-            a.device_tensor[update=False](),
-            b_col_major.device_tensor[update=True](),
+            c_ref.device_tensor(),
+            a_dev,
+            b_col_major.device_tensor(),
             c_row_major=True,
             transpose_b=True,
         )
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref.device_tensor[update=False](),
-            a.device_tensor[update=False](),
-            b.device_tensor[update=False](),
+            c_ref.device_tensor(),
+            a_dev,
+            b.device_tensor(),
             c_row_major=True,
             transpose_b=True,
         )
 
     ctx.synchronize()
 
-    var c_host = c.tensor()
-    var c_host_ref = c_ref.tensor()
+    c.to_host()
+    c_ref.to_host()
+    var c_host = c.host_tensor()
+    var c_host_ref = c_ref.host_tensor()
 
     for m in range(M):
         for n in range(N):
@@ -899,12 +931,6 @@ def test_bulk_mma_pair_cta[
                 rtol=0.01,
                 msg=String(m) + ", " + String(n),
             )
-
-    _ = a^
-    _ = b^
-    _ = b_col_major^
-    _ = c^
-    _ = c_ref^
 
 
 def main() raises:

@@ -94,7 +94,7 @@ from std.random import rand, random_ui64, seed
 from std.utils.numerics import nan
 
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -108,8 +108,6 @@ from nn.attention.mha_mask import (
     ChunkedMask,
     SlidingWindowCausalMask,
 )
-
-from std.utils import IndexList
 
 
 comptime _LUT_TAIL_PAD = 16
@@ -175,17 +173,15 @@ def execute_ws_bm32_test[
         sep="",
     )
 
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime kv_block_6d_layout = Layout.row_major[6]()
-    comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
 
     var scale = rsqrt(Float32(head_size))
 
@@ -211,44 +207,42 @@ def execute_ws_bm32_test[
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
-    var input_row_offsets_lt = LayoutTensor[
-        mut=False, .uint32, row_offsets_layout
-    ](
-        input_row_offsets_dev,
-        RuntimeLayout[row_offsets_layout].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var input_row_offsets_tt = (
+        TileTensor(
+            input_row_offsets_dev,
+            row_major(Int64(len(input_row_offsets_dev))),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     # --- Q (ragged: [total_length, num_q_heads, head_size]) ---
     var q_size = total_length * num_q_heads * head_size
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
-    var q_host_tt = LayoutTensor[dtype, q_ragged_layout](
-        q_host.unsafe_ptr(),
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var q_host_tt = TileTensor(
+        q_host, row_major(total_length, Idx[num_q_heads], Idx[head_size])
     )
     random(q_host_tt)
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q_dev, q_host)
-    var q_lt = LayoutTensor[mut=False, dtype, q_ragged_layout](
-        q_dev,
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
-    )
+    var q_tt = TileTensor(
+        q_dev, row_major(total_length, Idx[num_q_heads], Idx[head_size])
+    ).as_imm()
 
     # --- Paged KV blocks (shared physical storage for both runs) ---
     var num_paged_blocks = ceildiv(num_keys, page_size) * batch_size + 4
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_params.num_heads,
-        head_size,
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_paged_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        2 * num_layers * page_size * kv_params.num_heads * head_size
     )
+    blocks_strides[1] = Int64(
+        num_layers * page_size * kv_params.num_heads * head_size
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
     var kv_block_size = (
         num_paged_blocks
         * 2
@@ -258,10 +252,7 @@ def execute_ws_bm32_test[
         * head_size
     )
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](kv_block_size)
-    var kv_block_host_tt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_host.unsafe_ptr(),
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_host_tt = TileTensor(kv_block_host, blocks_layout)
     random(kv_block_host_tt)
     # Reserve the last physical block as a NaN poison page. The LUT's padded
     # tail points every unused column at it (see below), so any TMA that reads
@@ -279,10 +270,7 @@ def execute_ws_bm32_test[
         kv_block_host[poison_block * block_elems + i] = nan[dtype]()
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
     ctx.enqueue_copy(kv_block_dev, kv_block_host)
-    var kv_block_paged_lt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_dev,
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_paged_tt = TileTensor(kv_block_dev, blocks_layout)
 
     # --- Full lookup table (unique physical block per logical page) ---
     var full_pages = ceildiv(num_keys, page_size)
@@ -313,31 +301,29 @@ def execute_ws_bm32_test[
     cache_lengths_host[0] = UInt32(cache_length)
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
-    var cache_lengths_lt = LayoutTensor[
-        mut=False, .uint32, cache_lengths_layout
-    ](
-        cache_lengths_dev,
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
+    var cache_lengths_tt = (
+        TileTensor(cache_lengths_dev, row_major(Int64(len(cache_lengths_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size * lut_cols
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
-    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
-        paged_lut_dev,
-        RuntimeLayout[paged_lut_layout].row_major(
-            IndexList[2](batch_size, lut_cols)
-        ),
+    var paged_lut_tt = (
+        TileTensor(paged_lut_dev, row_major(Int64(batch_size), Int64(lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
+    var kv_collection = Collection(
         # Disjoint k/v views share one blocks buffer's origin; declare the block
         # origin UnsafeAnyOrigin to opt out of the nested-origin exclusivity check
         # (mirrors test_mha_sm100_1q_splitk_lse / test_mha_sm100_1q_sink).
-        kv_block_paged_lt.as_unsafe_any_origin(),
-        cache_lengths_lt,
-        paged_lut_lt,
+        kv_block_paged_tt.as_unsafe_any_origin(),
+        cache_lengths_tt,
+        paged_lut_tt,
         UInt32(valid_length),
         UInt32(num_keys),
     )
@@ -349,7 +335,7 @@ def execute_ws_bm32_test[
     # head. Spread rand [0,1) to ~[-2, 6): the ~3-magnitude score range sits
     # inside this band, so across the 64 heads some have sink > a quarter's local
     # max and some below -- exercising the WG0-quarter-0 clamp band (Risk 5). The
-    # same `sinks_lt` feeds both the WS run and the naive oracle.
+    # same `sinks_tt` feeds both the WS run and the naive oracle.
     var sinks_host = ctx.enqueue_create_host_buffer[dtype](num_q_heads)
     if use_sink:
         rand(sinks_host.as_span())
@@ -370,42 +356,41 @@ def execute_ws_bm32_test[
         sinks_host.as_span().fill(Scalar[dtype](0))
     var sinks_dev = ctx.enqueue_create_buffer[dtype](num_q_heads)
     ctx.enqueue_copy(sinks_dev, sinks_host)
-    var sinks_lt = LayoutTensor[mut=False, dtype, sink_layout](
-        sinks_dev.unsafe_ptr().as_unsafe_any_origin(),
-        RuntimeLayout[sink_layout].row_major(IndexList[1](num_q_heads)),
+    var sinks_tt = (
+        TileTensor(sinks_dev, row_major(Int64(len(sinks_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     var test_out_size = total_length * num_q_heads * head_size
 
     # ============ Run 1: WS FA4 (BM=32) over the full cache ============
     var test_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
-    var test_out_lt = LayoutTensor[dtype, output_layout](
-        test_out_dev.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var test_out_tt = TileTensor(
+        test_out_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     comptime if use_sink:
         flash_attention[ragged=True, sink=True](
-            test_out_lt,
-            q_lt,
+            test_out_tt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            input_row_offsets_lt,
+            input_row_offsets_tt,
             scale,
             ctx,
-            sink_weights=sinks_lt,
+            sink_weights=sinks_tt,
             num_partitions=np_opt,
         )
     else:
         flash_attention[ragged=True](
-            test_out_lt,
-            q_lt,
+            test_out_tt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            input_row_offsets_lt,
+            input_row_offsets_tt,
             scale,
             ctx,
             num_partitions=np_opt,
@@ -413,20 +398,18 @@ def execute_ws_bm32_test[
 
     # ============ Run 2: naive over the full key range [0, num_keys) ======
     var ref_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
-    var ref_out_lt = LayoutTensor[dtype, output_layout](
-        ref_out_dev.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var ref_out_tt = TileTensor(
+        ref_out_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     comptime if use_sink:
         mha_gpu_naive[ragged=True, sink=True](
-            q_lt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            ref_out_lt,
-            input_row_offsets_lt,
+            ref_out_tt,
+            input_row_offsets_tt,
             scale,
             batch_size,
             valid_length,
@@ -435,16 +418,16 @@ def execute_ws_bm32_test[
             head_size,
             group,
             ctx,
-            sinks_lt,
+            sinks_tt,
         )
     else:
         mha_gpu_naive[ragged=True](
-            q_lt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            ref_out_lt,
-            input_row_offsets_lt,
+            ref_out_tt,
+            input_row_offsets_tt,
             scale,
             batch_size,
             valid_length,

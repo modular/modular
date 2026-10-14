@@ -108,8 +108,7 @@ comptime TOTAL_FP32 = NUM_CASES * PER_CASE_FP32
 # --------------------------------------------------------------------------- #
 def _per_lane_row_offset(k_local: Int) -> Int:
     # Pulled from ACC_ROW_OFFSETS_32x32 = [0,1,2,3, 8,9,10,11, 16,17,18,19, 24,25,26,27]
-    var stripe = k_local // 4
-    var idx_in_stripe = k_local % 4
+    var stripe, idx_in_stripe = divmod(k_local, 4)
     return stripe * 8 + idx_in_stripe
 
 

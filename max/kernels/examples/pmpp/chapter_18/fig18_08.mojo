@@ -22,6 +22,7 @@ from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
 from std.collections import List
+from std.math import ceildiv
 
 from graph_utils import (
     UNVISITED,
@@ -103,7 +104,7 @@ def main() raises:
     ctx.enqueue_copy(d_level, h_level)
 
     var curr_level: UInt32 = 1
-    var grid_size = (NUM_VERTICES + BLOCK_SIZE - 1) // BLOCK_SIZE
+    var grid_size = ceildiv(NUM_VERTICES, BLOCK_SIZE)
 
     print("Running BFS...")
     while True:

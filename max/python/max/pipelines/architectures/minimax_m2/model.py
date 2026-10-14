@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
@@ -50,7 +51,7 @@ class MiniMaxM2Inputs(Llama3Inputs):
         #   *signals, *kv,
         #   *ep_inputs                                       (EP MoE only)
         assert self.kv_cache_inputs is not None
-        kv_flat = self.kv_cache_inputs.flatten()
+        kv_flat = tree.leaves(self.kv_cache_inputs)
         result: tuple[Buffer, ...] = (
             self.tokens,
             self.input_row_offsets,

@@ -149,10 +149,10 @@ def test_var_implicit() raises:
     _ = y
 
 
-# --- var name^: move capture ---
+# --- var name^: transfer capture ---
 
 
-def test_var_move_capture() raises:
+def test_var_transfer_capture() raises:
     var data: List[Int] = [1, 2, 3]
 
     def take_data() {var data^} -> Int:
@@ -162,10 +162,10 @@ def test_var_move_capture() raises:
     # data is consumed; referencing it here would be a compile error
 
 
-# --- bare name^: move capture (equivalent to var name^) ---
+# --- bare name^: transfer capture (equivalent to var name^) ---
 
 
-def test_bare_move_capture() raises:
+def test_bare_transfer_capture() raises:
     var data: List[Int] = [1, 2, 3]
 
     def take_data() {data^} -> Int:
@@ -410,8 +410,8 @@ def main() raises:
     test_mut_implicit()
     test_var_explicit_snapshot()
     test_var_implicit()
-    test_var_move_capture()
-    test_bare_move_capture()
+    test_var_transfer_capture()
+    test_bare_transfer_capture()
     test_var_caret_copyable_closure()
     test_ref_parametric_mutability()
     test_empty_capture_list()

@@ -1,0 +1,153 @@
+---
+title: Prefill-decode disaggregation
+description: Run prefill and decode on separate workers to tune latency and throughput independently when serving with MAX.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+:::caution Experimental
+
+Prefill-decode disaggregation is experimental. The configuration surface and
+supported model coverage may change between releases.
+
+:::
+
+Prefill-decode (P/D) disaggregation splits inference into two specialized
+worker roles: prefill workers that encode the prompt into the KV cache, and
+decode workers that generate tokens. Without disaggregation, a long prefill
+batch delays every in-flight decode step, which shows up as uneven
+inter-token latency. Separating the roles lets you scale and tune each one
+independently: prefill workers optimized for compute-bound prompt processing,
+decode workers optimized for memory-bandwidth-bound token generation.
+
+On this page, you'll learn how to enable and run a P/D deployment. Sizing
+the prefill and decode worker fleet for your traffic is up to you.
+
+## How disaggregation works
+
+You control the role of each `max serve` process with the
+[`--pipeline-role`](/cli/serve/#--pipeline-role-pipeline_role) flag:
+
+- `prefill_and_decode` (default): one worker handles both phases.
+- `prefill_only`: the worker only encodes prompts and transfers the resulting
+  KV cache to a decode worker.
+- `decode_only`: the worker accepts client requests, dispatches prefill work
+  to a prefill worker, receives the KV cache, and generates tokens.
+
+Clients send requests only to the decode worker. The decode worker asks a
+prefill worker to process the prompt. The prefill worker encodes the prompt
+and sends the resulting KV cache to the decode worker, which generates the
+response.
+
+Both workers must serve the same model with compatible KV cache settings.
+
+## Quickstart
+
+Run one prefill worker and one decode worker on separate GPUs of the same
+host. The prefill worker binds a dispatcher address set with the
+`MAX_SERVE_DI_BIND_ADDRESS` [environment
+variable](/environment-variables), which defaults to `tcp://127.0.0.1:5555`.
+The decode worker connects to the prefill worker through the
+`target_endpoint` each request names, so the defaults work for a same-host
+setup.
+
+Set these environment variables when running the workers on the same host
+(see [Environment variables](/environment-variables)):
+
+- `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT=99`: Required for GPU
+  KV cache transfers. It enables the memory manager backing the fast CUDA
+  IPC transport; without it, startup fails with an error naming the
+  variable.
+- `MAX_SERVE_METRICS_ENDPOINT_PORT`: Every `max serve` process also runs a
+  metrics server, which defaults to port `8001`. Workers on the same host must
+  set distinct metrics ports so they don't collide with each other or with a
+  worker serving on port `8001`.
+
+1. Start the prefill worker:
+
+   ```bash
+   MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT=99 \
+   MAX_SERVE_METRICS_ENDPOINT_PORT=8011 \
+   max serve --model meta-llama/Llama-3.1-8B-Instruct \
+       --devices gpu:0 \
+       --pipeline-role prefill_only \
+       --port 8001
+   ```
+
+2. Start the decode worker:
+
+   ```bash
+   MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT=99 \
+   MAX_SERVE_METRICS_ENDPOINT_PORT=8010 \
+   max serve --model meta-llama/Llama-3.1-8B-Instruct \
+       --devices gpu:1 \
+       --pipeline-role decode_only \
+       --port 8000
+   ```
+
+3. Send requests to the decode worker's port. The decode worker doesn't
+   select a prefill worker on its own, so each request names the prefill
+   worker's dispatcher address with the `target_endpoint` field or the
+   `X-Target-Endpoint` header. In production, a router or load balancer
+   injects it for you:
+
+   <Tabs>
+   <TabItem value="curl" label="curl" default>
+
+        ```bash
+        curl -X POST http://localhost:8000/v1/chat/completions \
+          -H "Content-Type: application/json" \
+          -d '{
+            "model": "meta-llama/Llama-3.1-8B-Instruct",
+            "target_endpoint": "tcp://127.0.0.1:5555",
+            "messages": [{"role": "user", "content": "Hello!"}]
+          }'
+        ```
+
+   </TabItem>
+   <TabItem value="python" label="Python">
+
+        ```python
+        from openai import OpenAI
+
+        client = OpenAI(
+            base_url="http://localhost:8000/v1",
+            api_key="EMPTY",
+        )
+
+        response = client.chat.completions.create(
+            model="meta-llama/Llama-3.1-8B-Instruct",
+            messages=[{"role": "user", "content": "Hello!"}],
+            extra_body={"target_endpoint": "tcp://127.0.0.1:5555"},
+        )
+
+        print(response.choices[0].message.content)
+        ```
+
+   </TabItem>
+   </Tabs>
+
+When the workers run on different hosts, set `MAX_SERVE_DI_BIND_ADDRESS` on
+the prefill worker to an address reachable from the decode worker (such as
+`tcp://0.0.0.0:5555`). Requests must then set `target_endpoint` to the
+prefill dispatcher address on that host.
+
+## Configure the KV transfer backend
+
+NIXL moves KV cache blocks between workers over the fastest available
+interconnect. Select the transfer backend with the
+`MODULAR_NIXL_TRANSFER_BACKEND` [environment
+variable](/environment-variables). Supported values are `ucx`, `libfabric`,
+and `uccl`. The default `ucx` backend covers NVIDIA and AMD GPUs, including
+RDMA transports such as RoCE and InfiniBand; the MAX serving container also
+includes libraries for AWS EFA.
+
+## Next steps
+
+- [Parallelism](/serve/parallelism): Scale each role across multiple GPUs
+  with tensor, data, and expert parallelism.
+- [Prefix caching](/serve/prefix-caching): Reuse KV cache across requests to
+  reduce prefill work.
+- [MAX serve metrics](/serve/metrics): Monitor TTFT and inter-token latency
+  for each role.

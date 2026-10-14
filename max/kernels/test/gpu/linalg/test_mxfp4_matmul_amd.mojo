@@ -28,7 +28,7 @@ from std.random import random_ui64
 from std.sys.intrinsics import llvm_intrinsic
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     BlockScaledMatmulAMD,
@@ -228,11 +228,11 @@ def test_mxfp4_matmul[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor(a_dev, a_shape).as_immut()
-    var b_tt = TileTensor(b_dev, b_shape).as_immut()
+    var a_tt = TileTensor(a_dev, a_shape).as_imm()
+    var b_tt = TileTensor(b_dev, b_shape).as_imm()
     var c_tt = TileTensor(c_dev, c_shape)
-    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_immut()
-    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_immut()
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_imm()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_imm()
 
     # --- Direct launch with explicit tile params ---
     comptime Kernel = BlockScaledMatmulAMD[
@@ -386,11 +386,11 @@ def test_mxfp4_matmul_split_k[
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    var a_tt = TileTensor(a_dev, a_shape).as_immut()
-    var b_tt = TileTensor(b_dev, b_shape).as_immut()
+    var a_tt = TileTensor(a_dev, a_shape).as_imm()
+    var b_tt = TileTensor(b_dev, b_shape).as_imm()
     var c_tt = TileTensor(c_dev, c_shape)
-    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_immut()
-    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_immut()
+    var a_scales_tt = TileTensor(a_scales_dev, a_scales_shape).as_imm()
+    var b_scales_tt = TileTensor(b_scales_dev, b_scales_shape).as_imm()
 
     # --- Split-K launch (workspace + reduce path) ---
     _launch_block_scaled_split_k[

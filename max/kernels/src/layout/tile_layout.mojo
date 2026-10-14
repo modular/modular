@@ -41,7 +41,7 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 """
 
 import std.sys
-from std.collections.string.string import _calc_initial_buffer_size_int32
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math.uutils import udivmod_unchecked
 
 from layout.coord import (
@@ -96,7 +96,7 @@ def _mod_by_shape[ShapeType: CoordLike](val: Int, shape_val: Int) -> Int:
         return r
 
 
-trait TensorLayout(TrivialRegisterPassable):
+trait TensorLayout(DevicePassable, TrivialRegisterPassable):
     """Trait defining the interface for mixed compile-time/runtime layouts.
 
     Implementors map logical multi-dimensional coordinates to linear memory
@@ -301,7 +301,13 @@ Parameters:
 struct Layout[
     shape_types: TypeList[Trait=CoordLike, ...],
     stride_types: TypeList[Trait=CoordLike, ...],
-](ImplicitlyCopyable, TensorLayout, TrivialRegisterPassable, Writable):
+](
+    DevicePassable,
+    ImplicitlyCopyable,
+    TensorLayout,
+    TrivialRegisterPassable,
+    Writable,
+):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions
@@ -716,6 +722,26 @@ struct Layout[
         """
         writer.write(t"({self.shape_coord()}:{self.stride_coord()})")
 
+    comptime device_type = Self
+    """Device-side type for GPU kernel parameter passing."""
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Gets the name of the host type.
+
+        Returns:
+            The host type's name.
+        """
+        return String(
+            t"Layout[{Coord[*Self.shape_types].get_type_name()},"
+            t" {Coord[*Self.stride_types].get_type_name()}]"
+        )
+
 
 # ===----------------------------------------------------------------------=== #
 # Type-level Layout Conversion
@@ -742,18 +768,19 @@ def _types_to_int_tuple[Types: TypeList[Trait=CoordLike, ...]]() -> IntTuple:
     Falls back to append for rank > 2.
     """
     comptime N = Types.length
-    comptime if N == 1:
-        return _type_to_int_tuple[Types[0]]()
-    elif N == 2:
-        return IntTuple(
-            _type_to_int_tuple[Types[0]](),
-            _type_to_int_tuple[Types[1]](),
-        )
-    else:
-        var result = IntTuple()
-        comptime for i in range(N):
-            result.append(_type_to_int_tuple[Types[i]]())
-        return result
+    comptime match N:
+        case 1:
+            return _type_to_int_tuple[Types[0]]()
+        case 2:
+            return IntTuple(
+                _type_to_int_tuple[Types[0]](),
+                _type_to_int_tuple[Types[1]](),
+            )
+        case _:
+            var result = IntTuple()
+            comptime for i in range(N):
+                result.append(_type_to_int_tuple[Types[i]]())
+            return result
 
 
 # This is passed a pair of [shape, stride] as CoordLike values.
@@ -1127,7 +1154,7 @@ def row_major_nested(
         comptime idx = rank - 1 - i
         var stride_ptr = Pointer(to=strides[idx])
         comptime StrideType = RowMajorTypes[idx]
-        stride_ptr.write(rebind[StrideType](StrideType()))
+        stride_ptr.write(StrideType())
 
     return {shape, Coord(strides^)}
 
@@ -1341,7 +1368,7 @@ def col_major_nested(
     comptime for i in range(rank):
         var stride_ptr = Pointer(to=strides[i])
         comptime StrideType = ColMajorTypes[i]
-        stride_ptr.write(rebind[StrideType](StrideType()))
+        stride_ptr.write(StrideType())
 
     return Layout(shape, Coord[*ColMajorTypes](strides^))
 

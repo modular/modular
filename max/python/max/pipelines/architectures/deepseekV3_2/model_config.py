@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -69,6 +70,55 @@ def resolve_indexer_types(
     ]
 
 
+def indexer_cache_layer_map(
+    indexer_types: Sequence[str], num_layers: int
+) -> list[int]:
+    """Maps each decoder layer to its slot in the indexer K cache.
+
+    Only ``"full"`` layers run the indexer, so only they get a slot; slots are
+    numbered in layer order. ``"shared"`` layers never touch the indexer cache
+    and map to slot 0. An empty schedule means every layer is full.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        The indexer cache slot of each of the first ``num_layers`` layers.
+    """
+    if not indexer_types:
+        return list(range(num_layers))
+    slots: list[int] = []
+    next_slot = 0
+    for layer_type in indexer_types[:num_layers]:
+        if layer_type == "full":
+            slots.append(next_slot)
+            next_slot += 1
+        else:
+            slots.append(0)
+    return slots
+
+
+def num_indexer_cache_layers(
+    indexer_types: Sequence[str], num_layers: int
+) -> int:
+    """Returns how many layers the indexer K cache needs to hold.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        The number of ``"full"`` layers among the first ``num_layers``, or
+        ``num_layers`` when the schedule is empty.
+    """
+    if not indexer_types:
+        return num_layers
+    return sum(t == "full" for t in indexer_types[:num_layers])
+
+
 @dataclass(kw_only=True)
 class DeepseekV3_2Config(DeepseekV3Config):
     """Configuration for DeepseekV3.2 models."""
@@ -117,8 +167,15 @@ class DeepseekV3_2Config(DeepseekV3Config):
         # Per-token FP8 KV scales use float32 storage; required for
         # ``KVCacheParams.quantized_kv_cache``, runtime ``kv_scales`` buffers,
         # and ``store_k_scale_cache`` in the indexer path.
+        #
+        # The granularity is the head dim itself: the indexer quantizes its
+        # keys over the whole head, so it stores one scale per token. A finer
+        # granularity would give the page more slots per token than there are
+        # scales to fill them.
+        indexer_head_dim = huggingface_config.index_head_dim
         indexer_kvcache_quant_config = KVCacheQuantizationConfig(
-            scale_dtype=DType.float32, quantization_granularity=32
+            scale_dtype=DType.float32,
+            quantization_granularity=indexer_head_dim,
         )
         assert isinstance(mla_kv_params, KVCacheParams)
 
@@ -134,8 +191,13 @@ class DeepseekV3_2Config(DeepseekV3Config):
             dtype=indexer_cache_dtype,
             # Similar to MLA, the indexer's k-cache uses a single KV head.
             n_kv_heads=1,
-            head_dim=huggingface_config.index_head_dim,
-            num_layers=mla_kv_params.num_layers,
+            head_dim=indexer_head_dim,
+            num_layers=num_indexer_cache_layers(
+                resolve_indexer_types(
+                    huggingface_config, mla_kv_params.num_layers
+                ),
+                mla_kv_params.num_layers,
+            ),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             # Set to True because there is only a key-cache, and one KV head.
@@ -163,7 +225,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config and so on)
         should be set directly after calling this method.
 
         Args:

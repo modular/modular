@@ -16,9 +16,13 @@ When compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`, the helpers in
 this module check loaded float values against the bit pattern written by
 the debug allocator (`MODULAR_DEBUG_DEVICE_ALLOCATOR=uninitialized-poison`).
 A match prints a diagnostic identifying the load site and the offending
-lane, then triggers `abort()`. When disabled (the default), `@__parameter
-if` / `comptime if` eliminates all checking code at compile time with zero
-runtime overhead.
+lane, then triggers `abort()`. `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=report`
+prints the same diagnostic and continues, which enumerates every offending
+site in one run rather than stopping at the first; its output is bounded by
+nothing, so it is for the case where a run is expensive enough that one
+site per run is not affordable. Apple GPUs abort in both modes, because the
+trap is their only signal. When disabled (the default), `comptime if`
+eliminates all checking code at compile time with zero runtime overhead.
 
 The poison pattern is the bit pattern of the largest finite value of the
 float type (e.g. `FLT_MAX` for `float32`). This is intentionally non-NaN
@@ -34,9 +38,15 @@ from std.sys import is_apple_gpu, is_gpu
 from std.sys.defines import get_defined_string
 from std.utils.numerics import max_finite
 
+comptime _UNINIT_CHECK_MODE = get_defined_string[
+    "MOJO_STDLIB_SIMD_UNINIT_CHECK", "false"
+]()
+
 comptime _UNINIT_CHECK_ENABLED = (
-    get_defined_string["MOJO_STDLIB_SIMD_UNINIT_CHECK", "false"]() == "true"
+    _UNINIT_CHECK_MODE == "true" or _UNINIT_CHECK_MODE == "report"
 )
+
+comptime _UNINIT_CHECK_ABORTS = _UNINIT_CHECK_MODE == "true"
 
 
 # Float dtypes that participate in the poison check. The set must stay in
@@ -50,6 +60,18 @@ comptime _UNINIT_CHECK_ENABLED = (
 #   bit pattern produced by legitimate saturate-to-max in narrow fp8, so
 #   the check yields pervasive false positives. The C++ side skips these
 #   too.
+# Integer dtypes are NOT checked, and cannot be checked at the load site as
+# this module is written. The allocator does poison them, with a `0xCD`
+# byte-fill (`DebugAllocPoison.cpp:51`), but the sentinel is a legal value in
+# many integer buffers: packed 4-bit weights and hashes can hold `0xCDCDCDCD`.
+# What also blocks it is that the diagnostic path below calls `print`, whose
+# string machinery performs integer loads of its own: checking integer loads
+# makes the reporter require itself, and the elaborator rejects it with
+# "function instantiation in parameter domain that recursively requires
+# itself". Floats never hit this because nothing on the print path loads a
+# float. Extending the check to integers therefore needs both a diagnostic
+# path with no checked loads and a way to exempt buffers where the sentinel
+# is legal, not just a wider dtype predicate.
 @inline(.always)
 def _is_poison_checked_dtype[dtype: DType]() -> Bool:
     return (
@@ -67,8 +89,8 @@ def _poison_abort[
     poisoned_value: Scalar[uint_type],
     lane: Int,
     location: Optional[SourceLocation] = {},
-) -> Never:
-    """Reports a poison-pattern match and aborts.
+):
+    """Reports a poison-pattern match, then aborts unless in report mode.
 
     Unlike the standard `abort(msg)` path in `os.mojo`, this prints from
     *any* trapping lane rather than gating to thread (0,0,0) of block
@@ -98,7 +120,8 @@ def _poison_abort[
 
     comptime if is_apple_gpu():
         # FIXME: Apple GPU printf path is broken (MOCO-3697); fall through
-        # to a bare trap. The host still gets the trap, just no message.
+        # to a bare trap. The host still gets the trap, just no message, so
+        # the trap below fires even in report mode.
         pass
     elif is_gpu():
         print(
@@ -120,14 +143,16 @@ def _poison_abort[
             flush=True,
         )
 
-    abort()
+    comptime if _UNINIT_CHECK_ABORTS or is_apple_gpu():
+        abort()
 
 
 @inline(.always)
 def _check_not_poison[dtype: DType, width: Int](val: SIMD[dtype, width]):
     """Checks that a loaded SIMD value doesn't match debug allocator poison.
 
-    Only active when compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`. Zero cost otherwise.
+    Only active when compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`
+    (abort on match) or `=report` (print and continue). Zero cost otherwise.
     """
 
     comptime if not _UNINIT_CHECK_ENABLED:
@@ -149,7 +174,8 @@ def _check_not_poison_masked[
 ](val: SIMD[dtype, width], mask: SIMD[.bool, width]):
     """Checks unmasked lanes of a SIMD value for debug allocator poison.
 
-    Only active when compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`. Zero cost otherwise.
+    Only active when compiled with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`
+    (abort on match) or `=report` (print and continue). Zero cost otherwise.
     Masked-off lanes contain passthrough values and are not checked.
     """
     comptime if not _UNINIT_CHECK_ENABLED:

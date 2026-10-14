@@ -17,13 +17,14 @@ from typing import cast
 from unittest.mock import Mock
 
 import numpy as np
+from max import tree
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import (
-    KVCacheInputsInterface,
+    KVCacheInputs,
     KVCacheParams,
     MHAKVCacheParams,
 )
@@ -50,7 +51,7 @@ class MockModelInputs(ModelInputs):
         self,
         active_batch_size: int,
         eos_prob: float,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int | Buffer = 1,
     ) -> None:
         self.active_batch_size = active_batch_size
@@ -62,7 +63,7 @@ class MockModelInputs(ModelInputs):
             np.array([0, max(active_batch_size, 1)], dtype=np.uint32)
         )
         self.signal_buffers: list[Buffer] = []
-        self.kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = (
+        self.kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = (
             kv_cache_inputs
         )
         if isinstance(return_n_logits, Buffer):
@@ -79,7 +80,11 @@ class MockModelInputs(ModelInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
         )
 
 
@@ -206,7 +211,7 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         actual_batch_size = sum(len(batch) for batch in replica_batches)

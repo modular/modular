@@ -49,7 +49,7 @@ def _extract_eagle_aux_layer_ids(
     """Extract ``eagle_aux_hidden_state_layer_ids`` from a HuggingFace config.
 
     The IDs live inside an ``eagle_config`` sub-dict/object that is present on
-    the *draft* checkpoint's config (e.g. ``nvidia/Kimi-K2.5-Thinking-Eagle3``)
+    the *draft* checkpoint's config (such as ``nvidia/Kimi-K2.5-Thinking-Eagle3``)
     but may also be propagated onto the target config at runtime.
 
     Returns:
@@ -167,7 +167,7 @@ class KimiK2_5TextConfig(
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config and so on)
         should be set via the `finalize()` method.
 
         Args:
@@ -357,7 +357,7 @@ class VisionConfig:
             huggingface_config: Full HuggingFace model config, used to derive
                 ``text_hidden_size`` from ``text_config.hidden_size`` when
                 ``hf_vision_config`` does not carry the attribute directly
-                (e.g. moonshotai/Kimi-VL-A3B-Instruct vs nvidia/Kimi-K2.5-NVFP4).
+                (such as moonshotai/Kimi-VL-A3B-Instruct vs nvidia/Kimi-K2.5-NVFP4).
 
         Note: dtype fields will be set to defaults and should be updated
         via finalize() once state_dict is available.

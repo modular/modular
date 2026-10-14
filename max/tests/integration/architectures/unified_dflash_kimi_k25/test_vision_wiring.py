@@ -26,7 +26,10 @@ non-blind output" check is the served smoke on the real checkpoint):
   inputs, so the vision encoder output has somewhere to bind and reach
   ``merge_multimodal_embeddings``; and
 * ``UnifiedDflashKimiK25Inputs`` packs the seam-set vision-merge buffers in
-  that same position, so the buffer tuple matches the graph signature.
+  that same position, so the buffer tuple matches the graph signature; and
+* the shared Kimi vision path accepts this pipeline's batch processor, which
+  binds its own Inputs generic and so is a sibling of ``KimiK2_5BatchProcessor``
+  rather than a subclass of it.
 """
 
 from __future__ import annotations
@@ -38,21 +41,37 @@ from unittest.mock import MagicMock
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.pipelines.architectures.kimik2_5.batch_processor import (
+    KimiK2_5BatchProcessor,
+)
 from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
 )
 from max.pipelines.architectures.unified_dflash_kimi_k25 import (
     unified_dflash_kimi_k25_arch,
 )
+from max.pipelines.architectures.unified_dflash_kimi_k25.batch_processor import (
+    UnifiedDflashKimiK25BatchProcessor,
+)
 from max.pipelines.architectures.unified_dflash_kimi_k25.model import (
     UnifiedDflashKimiK25Inputs,
     UnifiedDflashKimiK25Model,
 )
+from max.pipelines.architectures.unified_dflash_kimi_k25.model_config import (
+    UnifiedDflashKimiK25Config,
+)
+from max.pipelines.architectures.unified_dflash_kimi_k25.spec_adapters import (
+    DFlashKimiK25Target,
+)
 from max.pipelines.architectures.unified_dflash_kimi_k25.unified_dflash_kimi_k25 import (
     UnifiedDflashKimiK25,
+    dflash_kimi_k25_input_spec,
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 from max.pipelines.modeling.types import InputModality
+from max.pipelines.speculative.spec_input_types import (
+    build_spec_decode_input_types,
+)
 
 _N_DEVICES = 4
 _HIDDEN_SIZE = 64
@@ -94,31 +113,43 @@ def _fake_pipeline_model(n_devices: int) -> Any:
 def _graph_input_types(
     n_devices: int, *, enable_structured_output: bool = False
 ) -> tuple[Any, ...]:
-    """The fused graph's declared input arity, from the real ``input_types``
-    with KV inputs zeroed out (matching the ``kv_cache_inputs=None`` model
-    inputs on the buffers side).
+    """The fused graph's declared input arity, with KV inputs zeroed out
+    (matching the ``kv_cache_inputs=None`` model inputs on the buffers side).
 
-    ``input_types`` reads only the target's device list, DP degree, hidden size,
-    EP manager and structured-output flag, so a duck-typed stand-in avoids
-    building the target + draft modules.
+    ``dflash_kimi_k25_input_spec`` reads only the target's device list, DP
+    degree and hidden size, and the driver forwards ``ep_input_types`` to its
+    target adapter, which reads only the EP manager -- so duck-typed stand-ins
+    reach both without building the target + draft modules. Those two are the whole of what the architecture contributes to
+    its signature -- ``build_spec_decode_input_types`` builds the rest, which
+    is what this calls directly below.
     """
-    fake_self = cast(
+    config = cast(
+        UnifiedDflashKimiK25Config,
+        SimpleNamespace(
+            target=SimpleNamespace(
+                devices=[DeviceRef("gpu", i) for i in range(n_devices)],
+                data_parallel_degree=1,
+                hidden_size=_HIDDEN_SIZE,
+            )
+        ),
+    )
+    stand_in = cast(
         UnifiedDflashKimiK25,
         SimpleNamespace(
-            config=SimpleNamespace(
-                target=SimpleNamespace(
-                    devices=[DeviceRef("gpu", i) for i in range(n_devices)],
-                    data_parallel_degree=1,
-                    hidden_size=_HIDDEN_SIZE,
-                )
-            ),
-            target=SimpleNamespace(ep_manager=None),
-            enable_structured_output=enable_structured_output,
+            _target=DFlashKimiK25Target(
+                cast(Any, SimpleNamespace(ep_manager=None))
+            )
         ),
     )
     kv_params = MagicMock()
     kv_params.flattened_kv_inputs.return_value = []
-    return UnifiedDflashKimiK25.input_types(fake_self, kv_params)
+    return build_spec_decode_input_types(
+        dflash_kimi_k25_input_spec(
+            config, enable_structured_output=enable_structured_output
+        ),
+        kv_params=kv_params,
+        ep_input_types=UnifiedDflashKimiK25.ep_input_types(stand_in),
+    )
 
 
 def _fill_spec_decode_tail(inputs: UnifiedDflashKimiK25Inputs) -> None:
@@ -259,3 +290,32 @@ def test_inputs_pack_vision_and_bitmask_together() -> None:
         wait_payload,
         device_bitmask_scratch,
     )
+
+
+def test_vision_execute_accepts_this_pipelines_batch_processor() -> None:
+    """``vision_execute`` must reach the encoder with the DFlash processor.
+
+    It is a sibling of ``KimiK2_5BatchProcessor``, not a subclass, so a type
+    guard naming the leaf would reject it at the first image request.
+    """
+    assert not issubclass(
+        UnifiedDflashKimiK25BatchProcessor, KimiK2_5BatchProcessor
+    )
+
+    seen: list[Any] = []
+
+    def encode(selection: Any) -> tuple[list[Buffer], list[int]]:
+        seen.append(selection)
+        return [], []
+
+    processor = cast(Any, object.__new__(UnifiedDflashKimiK25BatchProcessor))
+    processor.encode_uncached_chunked = encode
+
+    model = cast(Any, object.__new__(UnifiedDflashKimiK25Model))
+    model._batch_processor = processor
+
+    result = model.vision_execute(selection=(), devices=[], packed=None)
+
+    assert seen == [()]
+    assert result.embeddings == []
+    assert result.per_image_token_counts == []

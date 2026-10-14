@@ -11,7 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Idx, Coord, coord, row_major, col_major
+from layout import (
+    Idx,
+    coord,
+    row_major,
+    col_major,
+)
 from layout.tile_layout import (
     Layout,
     CoalesceLayout,

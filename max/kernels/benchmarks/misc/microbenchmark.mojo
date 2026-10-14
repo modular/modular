@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import std.time
-
 
 trait Benchmarkable:
     def global_pre_run(self):

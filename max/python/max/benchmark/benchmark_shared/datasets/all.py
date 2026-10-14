@@ -327,7 +327,9 @@ def sample_requests(
             # dataset's encode/decode fan-out is done; workers spawn lazily
             # on first use, so this is free when none of the methods below
             # actually exercise the pool.
-            with TokenizerPool(tokenizer) as pool:
+            with TokenizerPool(
+                tokenizer, disable_tqdm=args.disable_tqdm
+            ) as pool:
                 if args.num_chat_sessions:
                     return benchmark_dataset.gen_multiturn_random_requests(
                         input_len=args.random_input_len,
@@ -370,7 +372,9 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    with TokenizerPool(tokenizer) as pool:
+                    with TokenizerPool(
+                        tokenizer, disable_tqdm=args.disable_tqdm
+                    ) as pool:
                         return benchmark_dataset.gen_multiturn_sessions(
                             num_sessions=inflated_n,
                             tokenizer=tokenizer,
@@ -463,7 +467,9 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    with TokenizerPool(tokenizer) as pool:
+                    with TokenizerPool(
+                        tokenizer, disable_tqdm=args.disable_tqdm
+                    ) as pool:
                         return benchmark_dataset.gen_multiturn_sessions(
                             num_sessions=inflated_n,
                             tokenizer=tokenizer,
@@ -504,7 +510,9 @@ def sample_requests(
                     args, args.num_chat_sessions
                 )
                 if args.fit_distributions:
-                    with TokenizerPool(tokenizer) as pool:
+                    with TokenizerPool(
+                        tokenizer, disable_tqdm=args.disable_tqdm
+                    ) as pool:
                         return benchmark_dataset.gen_multiturn_sessions(
                             num_sessions=inflated_n,
                             tokenizer=tokenizer,

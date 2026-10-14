@@ -49,6 +49,23 @@ static bool isAlwaysInlineFunction(FuncOp func) {
          inlineLevelOrAutomatic(func.getInlineLevel()) == InlineLevel::Always;
 }
 
+/// Function attributes to compare when deciding whether to inline. The kernel
+/// id names an offload entry point which is added by the offload lowering,
+// not a property of the user code and should not impact inline decision.
+static constexpr llvm::StringLiteral kKernelIdAttr = "kgen.offload.kernelid";
+static DictionaryAttr fnAttrsForInlining(FuncOp func) {
+  DictionaryAttr attrs = func.getFnAttrs();
+  if (!attrs)
+    return DictionaryAttr::get(func.getContext());
+  if (!attrs.contains(kKernelIdAttr))
+    return attrs;
+  SmallVector<NamedAttribute> kept;
+  for (NamedAttribute attr : attrs)
+    if (attr.getName() != kKernelIdAttr)
+      kept.push_back(attr);
+  return DictionaryAttr::get(attrs.getContext(), kept);
+}
+
 namespace {
 //===----------------------------------------------------------------------===//
 // AlwaysInlineGraphNode
@@ -325,6 +342,11 @@ bool CallGraphNode::canInlineCallee(CallGraphNode *callee) {
   // Always inlines.
   if (isAlwaysInlineFunction(callee->func))
     return true;
+
+  // Don't inline callee if it carries different non-empty function attributes.
+  DictionaryAttr calleeAttrs = fnAttrsForInlining(callee->func);
+  if (!calleeAttrs.empty() && calleeAttrs != fnAttrsForInlining(func))
+    return false;
 
   // Try to inline callee if it is not in the same SCC as the current node
   // (which is the caller).

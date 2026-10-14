@@ -32,10 +32,9 @@ from max.gpu.host.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
-from std.sys import has_nvidia_gpu_accelerator
-from std.sys.info import _accelerator_arch
+from std._gpu.host.info import TargetAccelerator
 
-from ..host.info import H100, GPUInfo
+from ..host.info import H100
 
 comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 
@@ -52,9 +51,11 @@ def _support_pdl_launch() -> Bool:
         True if PDL is supported and enabled, False otherwise.
     """
 
+    comptime default = TargetAccelerator.default_accelerator()
+
     comptime if (
-        has_nvidia_gpu_accelerator()
-        and GPUInfo.from_name[_accelerator_arch()]().compute >= H100.compute
+        default.target.is_nvidia_gpu()
+        and default.gpu_info.compute >= H100.compute
     ):
         return True
     else:

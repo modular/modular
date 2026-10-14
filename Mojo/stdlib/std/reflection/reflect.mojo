@@ -26,6 +26,9 @@ are spelled as `reflect[T].method()` (no parens after `[T]`).
 - `field_at[idx]` - `Reflected[FieldT]` for the field at index `idx`.
 - `field_offset[name=...]()` / `field_offset[index=...]()` - byte offset.
 - `field_ref[idx](s)` - reference to field at index `idx` in value `s`.
+- `annotations()` - the struct's `@__annotation` values as a `Tuple`.
+- `field_annotations[field_idx]()` - a field's `@__annotation` values as a
+  `Tuple`.
 
 `reflect` is auto-imported via the prelude, so it is available without
 an explicit import. `Reflected[T]` must be imported from `std.reflection`
@@ -57,6 +60,7 @@ def main():
 ```
 """
 
+from std.builtin.rebind import downcast
 from std.builtin.variadics import ParameterList, TypeList
 from std.sys import CompilationTarget
 
@@ -86,6 +90,126 @@ comptime _field_names_of[T: AnyType] = ParameterList[
         `#kgen.struct_field_names<`, T, `> : !kgen.param_list<!kgen.string>`
     ]
 ]
+
+# `#kgen.get_num_annotations` and its siblings read the struct's own list
+# when no field index is given, so struct and field reads are spelled
+# separately. `@__annotation` stores each type at `AnyType`, so a type is
+# downcast to the bound `Tuple` needs, and a value is rebound onto its tuple
+# element once the read folds; both hold while `T` is still generic.
+comptime _struct_annotation_count[T: AnyType] = Int(
+    Scalar[DType.int](
+        mlir_value=__mlir_attr[`#kgen.get_num_annotations<`, T, `>`]
+    )
+)
+
+comptime _field_annotation_count[T: AnyType, field_index: Int] = Int(
+    Scalar[DType.int](
+        mlir_value=__mlir_attr[
+            `#kgen.get_num_annotations<`,
+            T,
+            `, `,
+            field_index._mlir_value,
+            `>`,
+        ]
+    )
+)
+
+comptime _StructAnnotationType[
+    T: AnyType, index: Int
+]: Movable & Deinitable = downcast[
+    __mlir_attr[
+        `#kgen.get_annotation_type<`,
+        T,
+        `, `,
+        index._mlir_value,
+        `> : `,
+        AnyType,
+    ],
+    Movable & Deinitable,
+]
+
+comptime _FieldAnnotationType[
+    T: AnyType, field_index: Int, index: Int
+]: Movable & Deinitable = downcast[
+    __mlir_attr[
+        `#kgen.get_annotation_type<`,
+        T,
+        `, `,
+        index._mlir_value,
+        `, `,
+        field_index._mlir_value,
+        `> : `,
+        AnyType,
+    ],
+    Movable & Deinitable,
+]
+
+comptime _struct_annotation_types_of[T: AnyType] = TypeList.tabulate[
+    _struct_annotation_count[T], _StructAnnotationType[T, _]
+]
+
+comptime _field_annotation_types_of[
+    T: AnyType, field_index: Int
+] = TypeList.tabulate[
+    _field_annotation_count[T, field_index],
+    _FieldAnnotationType[T, field_index, _],
+]
+
+
+# The read's type is the matching `#kgen.get_annotation_type`, so no `: type`
+# suffix is spelled here.
+comptime _struct_annotation_of[T: AnyType, index: Int] = __mlir_attr[
+    `#kgen.get_annotation_value<`,
+    T,
+    `, `,
+    AnyType,
+    `, `,
+    index._mlir_value,
+    `>`,
+]
+
+comptime _field_annotation_of[
+    T: AnyType, field_index: Int, index: Int
+] = __mlir_attr[
+    `#kgen.get_annotation_value<`,
+    T,
+    `, `,
+    AnyType,
+    `, `,
+    index._mlir_value,
+    `, `,
+    field_index._mlir_value,
+    `>`,
+]
+
+
+# Builds the runtime tuple of one annotation list. `Tuple` has no constructor
+# that takes a per-index generator, so this mirrors how `Tuple.__init__`
+# itself fills its storage.
+@inline(.nodebug)
+def _struct_annotations_tuple[
+    T: AnyType
+](out result: Tuple[*_struct_annotation_types_of[T]()]):
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
+    comptime for i in range(_struct_annotation_count[T]):
+        comptime value = _struct_annotation_of[T, i]
+        comptime assert conforms_to(type_of(value), Movable)
+        Pointer(to=result[i]).unsafe_write(
+            rebind_var[type_of(result[i])](materialize[value]())
+        )
+
+
+@inline(.nodebug)
+def _field_annotations_tuple[
+    T: AnyType, field_index: Int
+](out result: Tuple[*_field_annotation_types_of[T, field_index]()]):
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
+    comptime for i in range(_field_annotation_count[T, field_index]):
+        comptime value = _field_annotation_of[T, field_index, i]
+        comptime assert conforms_to(type_of(value), Movable)
+        Pointer(to=result[i]).unsafe_write(
+            rebind_var[type_of(result[i])](materialize[value]())
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -544,3 +668,69 @@ struct Reflected[T: AnyType]:
                 `> : index`,
             ]
         )
+
+    @staticmethod
+    def annotations() -> Tuple[*_struct_annotation_types_of[Self.T]()]:
+        """Returns the `@__annotation` values on struct `T` as a `Tuple`.
+
+        Repeated decorators accumulate into one list in source order. Each
+        value is materialized from its compile-time form, so the result is an
+        ordinary runtime tuple. Its `Ts` parameter lists the annotation types,
+        and `len()` gives their count; a struct with no annotations yields an
+        empty tuple. A literal is stored in its materialized form, so
+        `@__annotation(9)` reads back as an `Int` and `@__annotation("x")` as
+        a `String`.
+
+        Constraints:
+            `T` must be a struct type.
+
+        Returns:
+            A `Tuple` with one element per annotation value, in source order.
+
+        Example:
+            ```mojo
+            @__annotation("a", 2)
+            struct Target:
+                var value: String
+
+            def main():
+                var values = reflect[Target].annotations()
+                print(len(values), values[0], values[1])  # 2 a 2
+                comptime assert type_of(values).Ts[1] == Int
+            ```
+        """
+        return _struct_annotations_tuple[Self.T]()
+
+    @staticmethod
+    def field_annotations[
+        field_index: Int
+    ]() -> Tuple[*_field_annotation_types_of[Self.T, field_index]()]:
+        """Returns the `@__annotation` values on a field of `T` as a `Tuple`.
+
+        Each value is materialized from its compile-time form, so the result
+        is an ordinary runtime tuple. Its `Ts` parameter lists the annotation
+        types, and `len()` gives their count; an undecorated field yields an
+        empty tuple.
+
+        Parameters:
+            field_index: The zero-based index of the field.
+
+        Constraints:
+            `T` must be a struct type. `field_index` must be in range
+            `[0, field_count())`.
+
+        Returns:
+            A `Tuple` with one element per annotation value, in source order.
+
+        Example:
+            ```mojo
+            struct Target:
+                @__annotation(3, "tag")
+                var value: String
+
+            def main():
+                var values = reflect[Target].field_annotations[0]()
+                print(values[0], values[1])  # 3 tag
+            ```
+        """
+        return _field_annotations_tuple[Self.T, field_index]()

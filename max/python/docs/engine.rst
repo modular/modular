@@ -19,7 +19,10 @@ Model inference
    :toctree: generated
    :template: autosummary/class.rst
 
+   CompilationStopped
    CompiledModel
+   CompileOnlyExecutionError
+   CompileOnlyModel
    InferenceSession
    Model
 
@@ -39,4 +42,9 @@ Configuration
 Types
 -----
 
-.. py:data:: CustomExtensionsType
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   CustomExtensionsType

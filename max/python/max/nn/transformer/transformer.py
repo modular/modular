@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import TypeVar
+from typing import Any, TypeVar
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -25,6 +26,7 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
+from max.tree import Tree
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
@@ -32,8 +34,6 @@ from ..layer import (
     Layer,
     LayerList,
     Module,
-    SubgraphInput,
-    _flatten_graph_inputs,
 )
 from ..linear import Linear
 from ..rotary_embedding import RotaryEmbedding
@@ -63,7 +63,7 @@ def forward_sharded_layers(
 
 def _call_layer_directly(
     layer: Module,
-    values: Sequence[SubgraphInput],
+    values: Sequence[Tree[Any]],
 ) -> list[TensorValue]:
     result = layer(*values)
     if isinstance(result, tuple):
@@ -76,7 +76,7 @@ def forward_sequential_layers(
     *,
     inputs_for_layer: Callable[
         [int, list[TensorValue]],
-        Sequence[SubgraphInput],
+        Sequence[Tree[Any]],
     ],
     initial_hidden_states: list[TensorValue],
     on_layer_output: Callable[[int, list[TensorValue]], None] | None = None,
@@ -157,9 +157,7 @@ def forward_sequential_layers(
                     weight_prefix=weight_prefix_for_layer(layer_idx),
                 )
 
-            flat_args = [
-                leaf for v in values for leaf in _flatten_graph_inputs(v)
-            ]
+            flat_args = tree.leaves(values)
             call_results = ops.call(
                 group_idx_to_subgraph[group_idx],
                 *flat_args,
@@ -301,22 +299,53 @@ class TransformerBlock(Module):
 
 
 class ReturnLogits(str, Enum):
+    """Which logits a transformer model returns per sequence.
+
+    ``LAST_TOKEN`` returns only the final position's logits, ``VARIABLE``
+    returns ``return_n_logits`` trailing positions, and ``ALL`` returns
+    every position.
+    """
+
     LAST_TOKEN = "last_token"
+    """Return only the final token's logits."""
+
     VARIABLE = "variable"
+    """Return ``return_n_logits`` trailing positions' logits."""
+
     ALL = "all"
+    """Return every token's logits."""
 
 
 class ReturnHiddenStates(str, Enum):
+    """Which hidden states a transformer model returns per sequence.
+
+    ``NONE`` returns none, ``LAST`` returns the final token's hidden
+    states, and ``ALL`` returns every token's. See each member's
+    description for the other modes.
+    """
+
     NONE = "none"
+    """Return no hidden states."""
+
     LAST = "last"
+    """Return the final token's hidden states."""
+
     # Like LAST but returns the post-allgather per-device tensors rather
     # than collapsing to a single copy. Lets callers consume the data that
     # was already placed on every device by the allgather, avoiding a
     # redundant broadcast.
     LAST_PER_DEVICE = "last_per_device"
+    """Return the final token's hidden states as per-device tensors,
+    one per device, without collapsing identical replicas."""
+
     ALL_NORMALIZED = "all_normalized"
+    """Return every token's hidden states after the model's final norm."""
+
     ALL = "all"
+    """Return every token's hidden states."""
+
     SELECTED_LAYERS = "selected_layers"
+    """Return hidden states captured at specific layer indices."""
 
 
 def logits_postprocess(
@@ -580,9 +609,7 @@ class Transformer(LogitsPostprocessMixin, Module):
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * ops.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         return self._process_hidden_states(
             h, kv_collection, return_n_logits, input_row_offsets

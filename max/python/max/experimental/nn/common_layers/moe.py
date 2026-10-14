@@ -17,6 +17,7 @@ These classes need to be cleaned up before moving to `max.nn`.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 
 from max.driver import CPU, Device
@@ -27,6 +28,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
     fused_silu,
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_finalize,
     shard_and_stack,
     stack_device_shards,
 )
@@ -38,10 +40,13 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
 )
-from max.experimental.tensor import Tensor
-from max.graph import TensorValue
+from max.experimental.tensor import (
+    Tensor,
+    default_device,
+    default_dtype,
+    defaults,
+)
 from typing_extensions import Self
 
 
@@ -99,7 +104,6 @@ class MoE(Module[[Tensor], Tensor]):
         gate_cls: Callable[..., MoEGate] = MoEGate,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
-        apply_router_weight_first: bool = False,
     ):
         """Initialize MoE layer.
 
@@ -111,13 +115,11 @@ class MoE(Module[[Tensor], Tensor]):
             gate_cls: The model specific gate implementation.
             has_shared_experts: Whether to use shared experts.
             shared_experts_dim: The dimension of the shared experts.
-            apply_router_weight_first: Whether to apply the router weight first.
         """
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
-        self.apply_router_weight_first = apply_router_weight_first
         self.gate = gate_cls(
             hidden_dim=hidden_dim,
             num_experts=num_experts,
@@ -155,7 +157,8 @@ class MoE(Module[[Tensor], Tensor]):
         mesh = _mesh(target)
         if mesh.num_devices > 1:
             raise ValueError(
-                "Cannot transfer MoE Layer to multi-device mesh. Use TensorParallelMoE or ExpertParallelMoE instead."
+                "Cannot move an MoE layer to a multi-device mesh. Build a "
+                "TensorParallelMoE inside default_device(mesh) instead."
             )
         super().to(target)
         return self
@@ -222,10 +225,7 @@ class MoE(Module[[Tensor], Tensor]):
             expert_ids,
             expert_usage_stats,
         )
-        return Tensor.from_shard_values(
-            [TensorValue(s) for s in out.local_shards],
-            mapping=permuted_states.mapping,
-        )
+        return out.rebind_mapping(permuted_states.mapping)
 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass for MoE layer.
@@ -236,8 +236,6 @@ class MoE(Module[[Tensor], Tensor]):
         Returns:
             Tensor with shape (seq_len, hidden_dim)
         """
-        seq_len = x.shape[0]
-
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
         router_idx = F.reshape(
@@ -257,16 +255,11 @@ class MoE(Module[[Tensor], Tensor]):
         permutated_states = F.gather(
             x,
             F.cast(
-                F.floor_div(token_expert_order, self.num_experts_per_token),
+                token_expert_order // self.num_experts_per_token,
                 DType.int32,
             ),
             axis=0,
         )
-
-        if self.apply_router_weight_first:
-            permutated_states = permutated_states * F.gather(
-                router_weight.reshape([-1, 1]), token_expert_order, axis=0
-            ).cast(x.dtype)
 
         down_projs = self._grouped_expert_compute(
             permutated_states,
@@ -275,21 +268,9 @@ class MoE(Module[[Tensor], Tensor]):
             expert_usage_stats,
         )
 
-        down_projs = F.gather(down_projs, restore_token_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, -1]
+        routed_expert_out = moe_finalize(
+            down_projs, restore_token_order, router_weight, x.dtype
         )
-
-        if not self.apply_router_weight_first:
-            # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-            routed_expert_out = F.unsqueeze(router_weight, axis=1) @ down_projs
-            routed_expert_out = F.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
-            )
-        else:
-            routed_expert_out = down_projs.transpose(1, 2)
-            routed_expert_out = F.squeeze(
-                F.sum(routed_expert_out, axis=2), axis=2
-            ).cast(x.dtype)
 
         if self.shared_experts is not None:
             routed_expert_out += self.shared_experts(x)
@@ -298,31 +279,42 @@ class MoE(Module[[Tensor], Tensor]):
 
 
 class TensorParallelMoE(MoE):
-    """MoE layer with tensor parallelism."""
+    """MoE layer with tensor parallelism.
+
+    Shards the experts across the mesh from
+    :func:`~max.experimental.tensor.default_device` at construction.
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._initial_moe_dim = self.moe_dim
-        self.mesh = DeviceMesh.single(self.device)
+        _, mesh = defaults()
+        self._set_mesh(mesh)
+
+    def _init_experts(self) -> None:
+        dtype, mesh = defaults()
+        # With multiple devices, build the experts on CPU: ``shard_and_stack``
+        # transfers each device its slice of them.
+        placement = (
+            contextlib.nullcontext()
+            if mesh.num_devices == 1
+            else default_device(CPU())
+        )
+        with placement, default_dtype(dtype):
+            super()._init_experts()
+
+    def _set_mesh(self, mesh: DeviceMesh) -> None:
+        if mesh.ndim != 1:
+            raise ValueError(
+                f"Mesh used with TensorParallelMoE must have exactly one device axis, but got {mesh}"
+            )
+        self.mesh = mesh
+        self.moe_dim = self._initial_moe_dim // mesh.num_devices
 
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
-        """Transfer the MoE layer to the target device."""
-        self.mesh = _mesh(target)
-        if self.mesh.ndim != 1:
-            raise ValueError(
-                f"Mesh used with TensorParallelMoE must have exactly one device axis, but got {self.mesh}"
-            )
-        self.moe_dim = self._initial_moe_dim // self.mesh.num_devices
-
-        self.gate.to(target)
-        if self.shared_experts is not None:
-            self.shared_experts.to(target)
-
-        # If there are multiple devices, keep expert weights on CPU because
-        # the weights will be transferred via the `shard_and_stack` operation.
-        device = CPU() if self.mesh.num_devices > 1 else self.mesh.devices[0]
-        for expert in self.experts:
-            expert.to(device)
+        """Moves the MoE layer to a single device."""
+        super().to(target)
+        self._set_mesh(_mesh(target))
         return self
 
     @property
@@ -373,10 +365,7 @@ class TensorParallelMoE(MoE):
             # device only summed its own ``moe_dim`` slice, so the values are
             # partial. Re-tag as Partial; the caller resolves with an
             # all-reduce.
-            return Tensor.from_shard_values(
-                [TensorValue(s) for s in output.local_shards],
-                mapping=PlacementMapping(self.mesh, (Partial(),)),
-            )
+            return output.rebind_mapping(DeviceMapping(self.mesh, (Partial(),)))
 
 
 def _mesh(target: Device | DeviceMesh | DeviceMapping) -> DeviceMesh:

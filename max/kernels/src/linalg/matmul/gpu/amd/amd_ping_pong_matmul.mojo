@@ -25,7 +25,6 @@ from max.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
-    thread_idx,
     warp_id,
 )
 from max.gpu.host import DeviceContext
@@ -39,25 +38,23 @@ from std.utils.numerics import get_accum_type
 from layout import TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major, col_major
-from layout.tensor_core import num_matrix_reg
 
 from std.bit import log2_floor
 
-from ....utils import elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    apply_elementwise_epilogue,
+    elementwise_epilogue_type,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 
 from pipeline.config import ScheduleConfig, SchedulingStrategy
 from pipeline.pipeline_dsl import ScheduleEntry
 from pipeline.program_builder import derive_safe_max_globals
 from .amd_target import mi355x_target
-from .amd_ping_pong_schedule import (
-    build_schedule,
-    PingPongOps,
-    LOAD_A,
-    LOAD_B,
-    MMA_LOAD_A,
-    MMA_LOAD_B,
-    MMA,
-)
+from .amd_ping_pong_schedule import build_schedule, PingPongOps
 
 from .matmul_mma import QuadrantMmaOp
 from structured_kernels.amd_tile_io import RegTileWriter, TileLoaderLDS
@@ -329,6 +326,136 @@ struct AMDPingPongMatmul[
             b: RHS input matrix tile of shape `N` x `K` in `b_type`.
             c: Output matrix tile of shape `M` x `N` in `c_type`.
         """
+        Self._run_impl[has_epilogue_fn=False, has_compute_fn=False](
+            a, b, c, no_epilogue_fn, no_compute_fn
+        )
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.config.num_threads())
+        )
+    )
+    @__name(
+        t"amd_ping_pong_matmul_epilogue_fn_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
+    )
+    @staticmethod
+    def run_with_epilogue_fn[
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_layout: TensorLayout,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        c_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+    ](
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Same as `run`, storing the output through `epilogue_fn`.
+
+        Launch with `host_arg=epilogue_fn`. Requires
+        `elementwise_lambda_fn` to be unset.
+
+        Parameters:
+            a_layout: Memory layout of the `a` input tile (inferred).
+            b_layout: Memory layout of the `b` input tile (inferred).
+            c_layout: Memory layout of the `c` output tile (inferred).
+            a_engine: Engine of the `a` input tile (inferred).
+            b_engine: Engine of the `b` input tile (inferred).
+            c_engine: Engine of the `c` output tile (inferred).
+            EpilogueFnType: Type of `epilogue_fn`.
+
+        Args:
+            a: LHS input matrix tile of shape `M` x `K` in `a_type`.
+            b: RHS input matrix tile of shape `N` x `K` in `b_type`.
+            c: Output matrix tile of shape `M` x `N`. Only its shape is
+                read.
+            epilogue_fn: Stores each output element.
+        """
+        comptime assert not Self.elementwise_lambda_fn, (
+            "run_with_epilogue_fn takes the epilogue as a value; leave"
+            " elementwise_lambda_fn unset"
+        )
+        Self._run_impl[has_epilogue_fn=True, has_compute_fn=False](
+            a, b, c, epilogue_fn, no_compute_fn
+        )
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.config.num_threads())
+        )
+    )
+    @__name(
+        t"amd_ping_pong_matmul_compute_fn_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
+    )
+    @staticmethod
+    def run_with_compute_fn[
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_layout: TensorLayout,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        c_engine: TensorEngine,
+        ComputeFnType: ElementwiseComputeFn,
+    ](
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        compute_fn: ComputeFnType,
+    ):
+        """Same as `run`, storing `compute_fn(idx, value)` into `c`.
+
+        Launch with `host_arg=compute_fn`. Requires
+        `elementwise_lambda_fn` to be unset.
+
+        Parameters:
+            a_layout: Memory layout of the `a` input tile (inferred).
+            b_layout: Memory layout of the `b` input tile (inferred).
+            c_layout: Memory layout of the `c` output tile (inferred).
+            a_engine: Engine of the `a` input tile (inferred).
+            b_engine: Engine of the `b` input tile (inferred).
+            c_engine: Engine of the `c` output tile (inferred).
+            ComputeFnType: Type of `compute_fn`.
+
+        Args:
+            a: LHS input matrix tile of shape `M` x `K` in `a_type`.
+            b: RHS input matrix tile of shape `N` x `K` in `b_type`.
+            c: Output matrix tile of shape `M` x `N` in `c_type`.
+            compute_fn: Maps each output index and value to the value to
+                store.
+        """
+        comptime assert not Self.elementwise_lambda_fn, (
+            "run_with_compute_fn takes the epilogue as a value; leave"
+            " elementwise_lambda_fn unset"
+        )
+        Self._run_impl[has_epilogue_fn=False, has_compute_fn=True](
+            a, b, c, no_epilogue_fn, compute_fn
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run_impl[
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_layout: TensorLayout,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        c_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
+    ](
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
+    ):
         Self.validate_config()
 
         comptime BM = Self.BM
@@ -432,8 +559,8 @@ struct AMDPingPongMatmul[
         # observed otherwise). The conv `TileLoaderLDSIm2col` sibling
         # still uses the anchor form because conv's im2col address
         # math can't fold the block origin into the SRD base.
-        var a_block_gmem = a_gmem.tile[BM, K](Int(block_idx.y), 0)
-        var b_block_gmem = b_gmem.tile[BN, K](Int(block_idx.x), 0)
+        var a_block_gmem = a_gmem.tile[BM, K](block_idx.y, 0)
+        var b_block_gmem = b_gmem.tile[BN, K](block_idx.x, 0)
         var a_loader = TileLoaderLDS[
             Self.in_type,
             half_BM,
@@ -494,23 +621,17 @@ struct AMDPingPongMatmul[
         )
 
         @inline(.always)
-        @__parameter
-        def load_a[stage: Int, which: Int](k: Int):
+        def load_a[stage: Int, which: Int](k: Int) {imm}:
             a_loader.load_tile(
-                rebind[type_of(a_load_tiles[0][0])](
-                    rebind[type_of(a_load_tiles[0])](a_load_tiles[stage])[which]
-                ),
+                a_load_tiles[stage][which],
                 m_offset=which * half_BM,
                 k_offset=k,
             )
 
         @inline(.always)
-        @__parameter
-        def load_b[stage: Int, which: Int](k: Int):
+        def load_b[stage: Int, which: Int](k: Int) {imm}:
             b_loader.load_tile(
-                rebind[type_of(b_load_tiles[0][0])](
-                    rebind[type_of(b_load_tiles[0])](b_load_tiles[stage])[which]
-                ),
+                b_load_tiles[stage][which],
                 m_offset=which * half_BN,
                 k_offset=k,
             )
@@ -550,43 +671,36 @@ struct AMDPingPongMatmul[
             Self.LGKM_PER_LOAD_B,
         ](sched_config, target)
 
-        @__parameter
         @inline(.always)
-        def _bind[entry: ScheduleEntry](k_base: Int):
+        def _bind[entry: ScheduleEntry](k_base: Int) {imm}:
             comptime k_off = entry.op.k_offset.signed_bk_multiple()
             var k = k_base + k_off * BK
-            comptime if entry.op.tag == LOAD_A:
-                load_a[entry.op.stage, entry.op.subtile](k)
-            elif entry.op.tag == LOAD_B:
-                load_b[entry.op.stage, entry.op.subtile](k)
-            elif entry.op.tag == MMA_LOAD_A:
-                mma_op.load_a_quadrant[entry.op.subtile](
-                    rebind[type_of(a_mma_tiles[0][0])](
-                        rebind[type_of(a_mma_tiles[0])](
-                            a_mma_tiles[entry.op.stage]
-                        )[entry.op.subtile]
+            comptime op = PingPongOps(entry.op.tag)
+            comptime match op:
+                case .LOAD_A:
+                    load_a[entry.op.stage, entry.op.subtile](k)
+                case .LOAD_B:
+                    load_b[entry.op.stage, entry.op.subtile](k)
+                case .MMA_LOAD_A:
+                    mma_op.load_a_quadrant[entry.op.subtile](
+                        a_mma_tiles[entry.op.stage][entry.op.subtile]
                     )
-                )
-            elif entry.op.tag == MMA_LOAD_B:
-                mma_op.load_b_quadrant[entry.op.subtile](
-                    rebind[type_of(b_mma_tiles[0][0])](
-                        rebind[type_of(b_mma_tiles[0])](
-                            b_mma_tiles[entry.op.stage]
-                        )[entry.op.subtile]
+                case .MMA_LOAD_B:
+                    mma_op.load_b_quadrant[entry.op.subtile](
+                        b_mma_tiles[entry.op.stage][entry.op.subtile]
                     )
-                )
-            elif entry.op.tag == MMA:
-                mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
-            elif entry.op.tag == PingPongOps.BARRIER.value:
-                s_barrier()
-            elif entry.op.tag == PingPongOps.WAIT_VM.value:
-                s_waitcnt[vmcnt=UInt32(entry.op.wait_value)]()
-            elif entry.op.tag == PingPongOps.WAIT_LGKM.value:
-                s_waitcnt[lgkmcnt=UInt32(entry.op.wait_value)]()
-            elif entry.op.tag == PingPongOps.SET_PRIO.value:
-                s_setprio[Int16(entry.op.wait_value)]()
-            elif entry.op.tag == PingPongOps.SCHEDULE_BARRIER.value:
-                schedule_barrier()
+                case .MMA:
+                    mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
+                case .BARRIER:
+                    s_barrier()
+                case .WAIT_VM:
+                    s_waitcnt[vmcnt=UInt32(entry.op.wait_value)]()
+                case .WAIT_LGKM:
+                    s_waitcnt[lgkmcnt=UInt32(entry.op.wait_value)]()
+                case .SET_PRIO:
+                    s_setprio[Int16(entry.op.wait_value)]()
+                case .SCHEDULE_BARRIER:
+                    schedule_barrier()
 
         # Prologue.
         comptime for i in range(schedule.warp_stagger_index):
@@ -620,8 +734,14 @@ struct AMDPingPongMatmul[
         if warp_tile_m < M and warp_tile_n < N:
             var c_reg = mma_op.accum_tile()
 
-            comptime if Bool(Self.elementwise_lambda_fn):
-                comptime epilogue_fn = Self.elementwise_lambda_fn.value()
+            comptime if (
+                Bool(Self.elementwise_lambda_fn)
+                or has_epilogue_fn
+                or has_compute_fn
+            ):
+                # Rows are only scalar-aligned when N % BN != 0, so
+                # compute-mode stores use scalar alignment.
+                comptime scalar_align = align_of[Scalar[Self.c_type]]()
                 var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)
 
                 comptime for m_mma in range(num_m_mmas):
@@ -647,14 +767,27 @@ struct AMDPingPongMatmul[
                                         + (e % 4)
                                     )
                                     if col < N:
-                                        epilogue_fn[
-                                            alignment=align_of[
-                                                Scalar[Self.c_type]
-                                            ]()
-                                        ](
-                                            IndexList[2](m, col),
-                                            SIMD[Self.c_type, 1](v[e]),
-                                        )
+                                        comptime if has_compute_fn:
+                                            c.store_linear[
+                                                alignment=scalar_align
+                                            ](
+                                                IndexList[2](m, col),
+                                                compute_fn[
+                                                    Self.c_type, 1, alignment=1
+                                                ](
+                                                    (m, col),
+                                                    SIMD[Self.c_type, 1](v[e]),
+                                                ),
+                                            )
+                                        else:
+                                            apply_elementwise_epilogue[
+                                                Self.elementwise_lambda_fn,
+                                                alignment=scalar_align,
+                                            ](
+                                                epilogue_fn,
+                                                (m, col),
+                                                SIMD[Self.c_type, 1](v[e]),
+                                            )
                             else:
                                 var n = (
                                     warp_tile_n
@@ -662,11 +795,22 @@ struct AMDPingPongMatmul[
                                     + lane_group * c_frag_size
                                 )
                                 if n < N:
-                                    epilogue_fn[
-                                        alignment=align_of[
-                                            SIMD[Self.c_type, c_frag_size]
-                                        ]()
-                                    ](IndexList[2](m, n), v)
+                                    comptime if has_compute_fn:
+                                        c.store_linear[alignment=scalar_align](
+                                            IndexList[2](m, n),
+                                            compute_fn[
+                                                Self.c_type,
+                                                c_frag_size,
+                                                alignment=1,
+                                            ]((m, n), v),
+                                        )
+                                    else:
+                                        apply_elementwise_epilogue[
+                                            Self.elementwise_lambda_fn,
+                                            alignment=align_of[
+                                                SIMD[Self.c_type, c_frag_size]
+                                            ](),
+                                        ](epilogue_fn, (m, n), v)
             else:
                 var c_block = c.tile[BM, BN](block_idx.y, block_idx.x)
                 var c_warp = c_block.tile[WM, WN](warp_id_m, warp_id_n)
@@ -722,8 +866,7 @@ def amd_ping_pong_matmul[
     var M = Int(c.dim[0]())
 
     @inline(.always)
-    @__parameter
-    def run_kernel[config: KernelConfig]() raises:
+    def run_kernel[config: KernelConfig]() raises {imm}:
         comptime kernel = AMDPingPongMatmul[
             a_type,
             b_type,

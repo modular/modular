@@ -41,12 +41,17 @@ def float32_to_bfloat16_as_uint16(
     # bit16 is the LSB of the upper 16 bits, used for round-to-even on ties.
     # This is equivalent to: round_up when lower > 0x8000, or when
     # lower == 0x8000 and bit16 == 1 (round ties to even).
-    rounded = uint32_view + (0x7FFF + ((uint32_view >> 16) & 1))
+    rounded = (uint32_view + (0x7FFF + ((uint32_view >> 16) & 1))) >> 16
 
-    # Extract upper 16 bits by viewing as uint16 and taking every other element.
-    # On little-endian systems, upper 16 bits are at odd indices in uint16 view.
-    # Copy to return a contiguous array that owns its data (slicing creates a view).
-    return rounded.view(np.uint16)[1::2].reshape(arr.shape).copy()
+    # A NaN's exponent is already saturated, so the rounding carry escapes the
+    # mantissa and lands in it, silently producing a finite value: 0x7F800001
+    # rounded to +inf and 0x7FFFFFFF to -0.0. Emit the canonical quiet NaN
+    # instead, keeping only the sign.
+    is_nan = (uint32_view & 0x7FFFFFFF) > 0x7F800000
+    canonical_nan = ((uint32_view >> 16) & 0x8000) | 0x7FC0
+
+    narrowed = np.where(is_nan, canonical_nan, rounded).astype(np.uint16)
+    return narrowed.reshape(arr.shape)
 
 
 def float32_array_to_buffer(

@@ -28,7 +28,7 @@ from max.driver import Buffer
 from max.nn.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
-    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
 from max.nn.kv_cache.cache_params import KVCacheBufferInterface
@@ -37,10 +37,10 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     ByteCount,
-    KVConnectorTransfer,
+    KVTransfer,
 )
 
-from .block_manager import PrefixCacheHits
+from ._common import PrefixCacheHits
 
 
 class PagedKVCacheManagerInterface(ABC):
@@ -60,7 +60,7 @@ class PagedKVCacheManagerInterface(ABC):
         """Counts each replica's contiguous cached prefix for a request."""
 
     @abstractmethod
-    def alloc(self, ctx: TextContext) -> KVConnectorTransfer:
+    def alloc(self, ctx: TextContext) -> KVTransfer:
         """Allocates blocks for a request."""
 
     @abstractmethod
@@ -70,7 +70,7 @@ class PagedKVCacheManagerInterface(ABC):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests."""
 
     @abstractmethod
@@ -80,7 +80,7 @@ class PagedKVCacheManagerInterface(ABC):
         *,
         max_cache_length: int | None = None,
         batch_characteristics: BatchCharacteristics | None = None,
-    ) -> KVCacheInputs[Buffer, Buffer]:
+    ) -> tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...]:
         """Returns :meth:`runtime_inputs` narrowed to a single leaf cache."""
 
     @abstractmethod
@@ -91,13 +91,21 @@ class PagedKVCacheManagerInterface(ABC):
     def block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the device KV cache block occupancy for the given replica."""
 
-    @abstractmethod
-    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the host KV tier occupancy in bytes for the given replica."""
+    def pressure_pct(self, replica_idx: int = 0) -> float:
+        """Returns how close the replica is to refusing work, in ``[0, 100]``.
+
+        Defaults to block occupancy. A manager whose blocks are coarser than
+        what a request allocates overrides this.
+        """
+        return self.block_count(replica_idx).used_pct
 
     @abstractmethod
-    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the disk KV tier occupancy in bytes for the given replica."""
+    def host_byte_count(self) -> ByteCount:
+        """Returns the host KV tier occupancy in bytes, shared by every replica."""
+
+    @abstractmethod
+    def disk_byte_count(self) -> ByteCount:
+        """Returns the disk KV tier occupancy in bytes, shared by every replica."""
 
     @abstractmethod
     def release(self, ctx: TextContext) -> None:
@@ -124,8 +132,8 @@ class PagedKVCacheManagerInterface(ABC):
         """Returns whether the request is claimed on any replica."""
 
     @abstractmethod
-    def reset_metrics(self) -> None:
-        """Resets metrics for the block manager."""
+    def take_metrics_aggregated(self) -> KVCacheMetrics:
+        """Reads and clears aggregated metrics across all replicas."""
 
     @abstractmethod
     def reset_prefix_cache(self) -> None:
@@ -140,8 +148,17 @@ class PagedKVCacheManagerInterface(ABC):
         """Returns aggregated metrics across all replicas."""
 
     @abstractmethod
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds on the replica it was claimed on."""
+    def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
+        """Returns the block IDs the request holds, keyed by leaf id.
+
+        Covers the replica the request was claimed on, with one entry per leaf
+        that :meth:`KVCacheParamInterface.leaves` names. A manager whose leaves
+        share one block space repeats the same row under every leaf.
+        """
+
+    @abstractmethod
+    def num_req_blocks(self, ctx: TextContext) -> int:
+        """Returns how many pages long the request is on its claimed replica."""
 
     @abstractmethod
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:

@@ -25,6 +25,7 @@ from kv_cache.types import (
     _populate_via_row_idx,
     create_flat_scale_tma_tile,
     flat_scale_window,
+    scale_align_elems,
     kv_num_sub_tiles,
     kv_sub_tile_rows,
     kv_tma_fold_chunks,
@@ -33,7 +34,6 @@ from kv_cache.types import (
 )
 from layout import (
     Layout,
-    LayoutTensor,
     DefaultEngine,
     TensorEngine,
     UNKNOWN_VALUE,
@@ -45,7 +45,6 @@ from layout.tile_layout import (
 )
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
-    SharedMemBarrier,
     _gather4_box_width,
     create_split_tma,
     TMATensorTile,
@@ -54,10 +53,8 @@ from layout.tma_async import (
 )
 from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major
-from layout.coord import Idx, Coord
+from layout.coord import Idx, Coord, coord
 from std.math import ceildiv
-
-from std.utils import Index, IndexList
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
@@ -86,7 +83,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     ]:
         ...
 
-    # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
+    # TODO: change this to return a TileTensor once MOCO-1471 is fixed
     @inline(.always)
     def block_paged_ptr[
         tile_size: Int,
@@ -184,6 +181,53 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         ...
 
     @inline(.always)
+    def scale_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row, block)` coordinate of a token's scale tile.
+
+        Defaults to the flat form, which is one block: the row is this
+        operand's own row index rounded down to the 16-byte unit a TMA box
+        must start on, and the block is 0. A paged operand overrides this,
+        because folding its block into the row makes the coordinate scale with
+        the whole pool rather than with one block.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row, and the block.
+        """
+        comptime align = scale_align_elems[Self.dtype]()
+        return (
+            Int32(self.row_idx(batch_idx, start_tok_idx) & ~UInt32(align - 1)),
+            Int32(0),
+        )
+
+    @inline(.always)
+    def kv_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The `(row_in_block, block)` coordinate of a token's KV tile.
+
+        Defaults to the flat form, which is one block: the row is this
+        operand's own row index and the block is 0. A paged operand overrides
+        this, because folding its block into the row makes the coordinate
+        scale with the whole shared slab rather than with one block, and a TMA
+        coordinate is signed 32-bit. Mirrors :meth:`scale_tma_coords`, which
+        splits for the same reason.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        return (Int32(self.row_idx(batch_idx, start_tok_idx)), Int32(0))
+
+    @inline(.always)
     def populate[
         BN: Int,
         base_alignment: Int,
@@ -231,6 +275,26 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         ...
 
     @inline(.always)
+    def sparse_tma_row(self, batch_idx: UInt32, logical_index: Int32) -> Int32:
+        """Returns the TMA row of a sparse selection's logical token, or `-1`.
+
+        Default: `row_idx`, with a negative (unused) slot staying `-1`.
+        Cache-backed operands forward to `KVCacheT.sparse_tma_row`, which on a
+        paged cache also maps an unallocated page to `-1`.
+
+        Args:
+            batch_idx: Batch entry the selection belongs to.
+            logical_index: Token position within the entry, or `-1`.
+
+        Returns:
+            The row `get_tma_row` would return for the slot's physical index,
+            or `-1`.
+        """
+        if logical_index < 0:
+            return -1
+        return Int32(self.row_idx(batch_idx, UInt32(logical_index)))
+
+    @inline(.always)
     def create_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -241,7 +305,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         row_major: Bool = False,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
-        IndexList[3](BN, 1, BK),
+        coord[BN, 1, BK],
         swizzle_mode,
     ]:
         """Creates a TMA tile for efficient GPU memory transfers.
@@ -265,9 +329,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         BMN: Int
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.scale_dtype,
-        2,
-        Index(1, BMN),
-        Index(1, BMN),
+        coord[1, BMN],
     ]:
         """Creates a TMA tile for efficient GPU memory transfers.
         This is useful for `m-major` MMA operations where we don't
@@ -279,9 +341,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         TILE: Int
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         Self.dtype,
-        2,
-        Index(1, flat_scale_window[Self.dtype, TILE]()),
-        Index(1, flat_scale_window[Self.dtype, TILE]()),
+        coord[1, flat_scale_window[Self.dtype, TILE]()],
     ]:
         """Creates a flat TMA tile over the scale pool this operand addresses.
 
@@ -306,7 +366,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         padded_depth: Int,
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         DType.bfloat16,
-        IndexList[3](BN, 1, BK),
+        coord[BN, 1, BK],
         swizzle_mode,
     ]:
         """Creates a BF16 TMA tile for the rope portion of the per-tensor rope-aware KV cache.
@@ -323,15 +383,13 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         tma_dtype,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             tile_height,
             _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-        ),
-        desc_shape=IndexList[2](
-            1,
-            _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-        ),
+        ],
+        desc_shape=coord[
+            1, _gather4_box_width[tma_dtype, tile_width, swizzle_mode]()
+        ],
     ]:
         """Creates a 2D TMA gather4 descriptor for this operand.
 
@@ -376,15 +434,13 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             tile_height,
             _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-        ),
-        desc_shape=IndexList[2](
-            1,
-            _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-        ),
+        ],
+        desc_shape=coord[
+            1, _gather4_box_width[.bfloat16, tile_width, swizzle_mode]()
+        ],
     ]:
         """Creates a BF16 gather4 TMA descriptor for the rope portion of the
         KV cache.
@@ -535,6 +591,25 @@ struct KVCacheMHAOperand[
         return self.cache.num_kv_rows()
 
     @inline(.always)
+    def kv_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """Forwards to the cache, which knows its own paging.
+
+        The trait's default folds the block into the row, which is what this
+        override exists to avoid on a paged cache; see
+        `PagedKVCache.kv_tma_coords`.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        return self.cache.kv_tma_coords(batch_idx, start_tok_idx)
+
+    @inline(.always)
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix.
 
@@ -588,6 +663,16 @@ struct KVCacheMHAOperand[
         return self.cache.get_tma_row(encoded_index)
 
     @inline(.always)
+    def sparse_tma_row(self, batch_idx: UInt32, logical_index: Int32) -> Int32:
+        """Forwards to the cache, which knows its own paging.
+
+        Args:
+            batch_idx: Batch entry the selection belongs to.
+            logical_index: Token position within the entry, or `-1`.
+        """
+        return self.cache.sparse_tma_row(batch_idx, logical_index)
+
+    @inline(.always)
     def create_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
@@ -601,7 +686,7 @@ struct KVCacheMHAOperand[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             Self.dtype,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -646,9 +731,7 @@ struct KVCacheMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             Self.scale_dtype,
-            2,
-            Index(1, BMN),
-            Index(1, BMN),
+            coord[1, BMN],
         ],
     ) raises:
         """Creates a TMA tile for efficient GPU memory transfers.
@@ -675,7 +758,7 @@ struct KVCacheMHAOperand[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             DType.bfloat16,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -708,15 +791,13 @@ struct KVCacheMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             tma_dtype,
-            2,
-            tile_shape=IndexList[2](
+            tile_shape=coord[
                 tile_height,
                 _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-            ),
-            desc_shape=IndexList[2](
-                1,
-                _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-            ),
+            ],
+            desc_shape=coord[
+                1, _gather4_box_width[tma_dtype, tile_width, swizzle_mode]()
+            ],
         ],
     ) raises:
         """Creates a 2D TMA gather4 descriptor for this KV cache operand.
@@ -762,15 +843,13 @@ struct KVCacheMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](
+            tile_shape=coord[
                 tile_height,
                 _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-            ),
-            desc_shape=IndexList[2](
-                1,
-                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-            ),
+            ],
+            desc_shape=coord[
+                1, _gather4_box_width[.bfloat16, tile_width, swizzle_mode]()
+            ],
         ],
     ) raises:
         """Delegates to the underlying KVCache to create a BF16 rope gather4
@@ -940,9 +1019,34 @@ struct KVCacheScalesMHAOperand[
         return self.cache.scale_row_idx(batch_idx, start_tok_idx)
 
     @inline(.always)
+    def scale_tma_coords(
+        self, batch_idx: UInt32, start_tok_idx: UInt32
+    ) -> Tuple[Int32, Int32]:
+        """The paged `(row_in_block, block)` coordinate; see the cache's own.
+
+        Args:
+            batch_idx: Batch entry to address.
+            start_tok_idx: First token of the tile, within the entry.
+
+        Returns:
+            The row within the block, and the block.
+        """
+        return self.cache.scale_tma_coords(batch_idx, start_tok_idx)
+
+    @inline(.always)
     def get_tma_row(self, encoded_index: Int32) -> Int32:
         """Convert an encoded sparse index to a physical TMA row."""
         return self.cache.get_tma_row(encoded_index)
+
+    @inline(.always)
+    def sparse_tma_row(self, batch_idx: UInt32, logical_index: Int32) -> Int32:
+        """Forwards to the cache, in the same value-pool space as `get_tma_row`.
+
+        Args:
+            batch_idx: Batch entry the selection belongs to.
+            logical_index: Token position within the entry, or `-1`.
+        """
+        return self.cache.sparse_tma_row(batch_idx, logical_index)
 
     @inline(.always)
     def create_tma_tile[
@@ -958,7 +1062,7 @@ struct KVCacheScalesMHAOperand[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             Self.dtype,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -973,9 +1077,7 @@ struct KVCacheScalesMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             Self.scale_dtype,
-            2,
-            Index(1, BMN),
-            Index(1, BMN),
+            coord[1, BMN],
         ],
     ) raises:
         comptime assert False, "create_scale_tma_tile is not implemented"
@@ -988,9 +1090,7 @@ struct KVCacheScalesMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             Self.dtype,
-            2,
-            Index(1, flat_scale_window[Self.dtype, TILE]()),
-            Index(1, flat_scale_window[Self.dtype, TILE]()),
+            coord[1, flat_scale_window[Self.dtype, TILE]()],
         ],
     ) raises:
         """A flat window on the cache's scale pool.
@@ -1013,7 +1113,7 @@ struct KVCacheScalesMHAOperand[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             DType.bfloat16,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -1035,15 +1135,13 @@ struct KVCacheScalesMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             tma_dtype,
-            2,
-            tile_shape=IndexList[2](
+            tile_shape=coord[
                 tile_height,
                 _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-            ),
-            desc_shape=IndexList[2](
-                1,
-                _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-            ),
+            ],
+            desc_shape=coord[
+                1, _gather4_box_width[tma_dtype, tile_width, swizzle_mode]()
+            ],
         ],
     ) raises:
         """Not supported for KVCacheScalesMHAOperand.
@@ -1082,15 +1180,13 @@ struct KVCacheScalesMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](
+            tile_shape=coord[
                 tile_height,
                 _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-            ),
-            desc_shape=IndexList[2](
-                1,
-                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-            ),
+            ],
+            desc_shape=coord[
+                1, _gather4_box_width[.bfloat16, tile_width, swizzle_mode]()
+            ],
         ],
     ) raises:
         """Not supported for KVCacheScalesMHAOperand."""
@@ -1136,7 +1232,7 @@ def _null_scale_tile_tensor[
     )
 
 
-struct LayoutTensorMHAOperand[
+struct TileTensorMHAOperand[
     origin: ImmOrigin,
     scale_origin: ImmOrigin,
     //,
@@ -1207,7 +1303,7 @@ struct LayoutTensorMHAOperand[
 
     @staticmethod
     def get_type_name() -> String:
-        return "LayoutTensorMHAOperand"
+        return "TileTensorMHAOperand"
 
     def __init__(
         out self,
@@ -1367,7 +1463,7 @@ struct LayoutTensorMHAOperand[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             Self.dtype,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -1377,8 +1473,8 @@ struct LayoutTensorMHAOperand[
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0, String("BN = ", BN, "\ndepth = ", depth, "\nBK = ", BK)
         var rows = Int(self.buffer.dim[0]()) * Int(self.buffer.dim[1]())
-        comptime smem_shape = IndexList[3](BN, 1, BK)
-        comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
+        comptime smem_shape = coord[BN, 1, BK]
+        comptime gmem_shape = coord[UNKNOWN_VALUE, UNKNOWN_VALUE, depth]
 
         tma = create_split_tma[
             smem_shape,
@@ -1401,9 +1497,7 @@ struct LayoutTensorMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             Self.scale_dtype,
-            2,
-            Index(1, BMN),
-            Index(1, BMN),
+            coord[1, BMN],
         ],
     ) raises:
         var total_elements = self.scale_buffer.num_elements()
@@ -1416,12 +1510,12 @@ struct LayoutTensorMHAOperand[
         )
         var scale_tensor = TileTensor(
             self.scale_buffer.ptr,
-            row_major(Coord(Idx[1], total_elements)),
+            row_major(Idx[1], total_elements),
         )
         return create_tensor_tile[
-            Index(1, BMN),
+            coord[1, BMN],
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-            __desc_shape=Index(1, BMN),
+            __desc_shape=coord[1, BMN],
         ](ctx, scale_tensor)
 
     @inline(.always)
@@ -1436,11 +1530,11 @@ struct LayoutTensorMHAOperand[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             DType.bfloat16,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
-        """Not supported for LayoutTensorMHAOperand.
+        """Not supported for TileTensorMHAOperand.
 
         Parameters:
             swizzle_mode: TMA swizzle mode for shared memory access
@@ -1456,7 +1550,7 @@ struct LayoutTensorMHAOperand[
         """
         comptime assert (
             False
-        ), "create_rope_tma_tile is not supported for LayoutTensorMHAOperand"
+        ), "create_rope_tma_tile is not supported for TileTensorMHAOperand"
 
     @inline(.always)
     def create_gather4_tma_tile[
@@ -1471,15 +1565,13 @@ struct LayoutTensorMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             tma_dtype,
-            2,
-            tile_shape=IndexList[2](
+            tile_shape=coord[
                 tile_height,
                 _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-            ),
-            desc_shape=IndexList[2](
-                1,
-                _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-            ),
+            ],
+            desc_shape=coord[
+                1, _gather4_box_width[tma_dtype, tile_width, swizzle_mode]()
+            ],
         ],
     ) raises:
         """Creates a 2D TMA gather4 descriptor for this contiguous operand.
@@ -1526,18 +1618,16 @@ struct LayoutTensorMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](
+            tile_shape=coord[
                 tile_height,
                 _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-            ),
-            desc_shape=IndexList[2](
-                1,
-                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-            ),
+            ],
+            desc_shape=coord[
+                1, _gather4_box_width[.bfloat16, tile_width, swizzle_mode]()
+            ],
         ],
     ) raises:
-        """Not supported for LayoutTensorMHAOperand.
+        """Not supported for TileTensorMHAOperand.
 
         Parameters:
             tile_width: Number of BF16 elements per row in global
@@ -1557,17 +1647,17 @@ struct LayoutTensorMHAOperand[
         """
         comptime assert False, (
             "create_rope_gather4_tma_tile is not supported for"
-            " LayoutTensorMHAOperand"
+            " TileTensorMHAOperand"
         )
 
     @inline(.always)
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Float32, MutAnyOrigin]:
-        """Returns a dangling pointer. Contiguous operands do not support
-        quantization."""
-        # SAFETY: LayoutTensor operands are never quantized; callers only
-        # dereference behind comptime quantization guards.
+        """Returns a dangling pointer for unsupported raw-scale access."""
+        # SAFETY: This raw-scale API is unsupported; the returned sentinel must
+        # not be dereferenced. Contiguous scales are accessed through
+        # scales_block_paged_ptr or load_scale.
         return UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
 
 
@@ -1831,7 +1921,7 @@ struct RaggedMHAOperand[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             Self.dtype,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -1841,8 +1931,8 @@ struct RaggedMHAOperand[
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()
         ) == 0
         var rows = Int(self.buffer.dim[0]())  # total tokens
-        comptime smem_shape = IndexList[3](BN, 1, BK)
-        comptime gmem_shape = IndexList[3](UNKNOWN_VALUE, UNKNOWN_VALUE, depth)
+        comptime smem_shape = coord[BN, 1, BK]
+        comptime gmem_shape = coord[UNKNOWN_VALUE, UNKNOWN_VALUE, depth]
 
         tma = create_split_tma[
             smem_shape,
@@ -1865,9 +1955,7 @@ struct RaggedMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             Self.scale_dtype,
-            2,
-            Index(1, BMN),
-            Index(1, BMN),
+            coord[1, BMN],
         ],
     ) raises:
         # if per token scale, treat as 1D tensor
@@ -1882,12 +1970,12 @@ struct RaggedMHAOperand[
             )
             var scale_tensor = TileTensor(
                 self.scale_buffer.ptr,
-                row_major(Coord(Idx[1], total_elements)),
+                row_major(Idx[1], total_elements),
             )
             return create_tensor_tile[
-                Index(1, BMN),
+                coord[1, BMN],
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-                __desc_shape=Index(1, BMN),
+                __desc_shape=coord[1, BMN],
             ](ctx, scale_tensor)
 
         # if per token per head scale, treat as 2D tensor with shape [num_heads, total_seq_len]
@@ -1897,13 +1985,13 @@ struct RaggedMHAOperand[
 
             var scale_tensor = TileTensor(
                 self.scale_buffer.ptr,
-                row_major(Coord(Idx[num_heads], total_seq_len)),
+                row_major(Idx[num_heads], total_seq_len),
             )
 
             return create_tensor_tile[
-                Index(1, BMN),
+                coord[1, BMN],
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-                __desc_shape=Index(1, BMN),
+                __desc_shape=coord[1, BMN],
             ](ctx, scale_tensor)
 
         else:
@@ -1920,9 +2008,7 @@ struct RaggedMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             Self.dtype,
-            2,
-            Index(1, flat_scale_window[Self.dtype, TILE]()),
-            Index(1, flat_scale_window[Self.dtype, TILE]()),
+            coord[1, flat_scale_window[Self.dtype, TILE]()],
         ],
     ) raises:
         """A flat window on the buffer this operand addresses.
@@ -1960,7 +2046,7 @@ struct RaggedMHAOperand[
         ctx: DeviceContext,
         out tma: SplitLastDimTMATensorTile[
             DType.bfloat16,
-            IndexList[3](BN, 1, BK),
+            coord[BN, 1, BK],
             swizzle_mode,
         ],
     ) raises:
@@ -1982,15 +2068,13 @@ struct RaggedMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             tma_dtype,
-            2,
-            tile_shape=IndexList[2](
+            tile_shape=coord[
                 tile_height,
                 _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-            ),
-            desc_shape=IndexList[2](
-                1,
-                _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
-            ),
+            ],
+            desc_shape=coord[
+                1, _gather4_box_width[tma_dtype, tile_width, swizzle_mode]()
+            ],
         ],
     ) raises:
         """Creates a 2D TMA gather4 descriptor for this ragged operand."""
@@ -2017,15 +2101,13 @@ struct RaggedMHAOperand[
         ctx: DeviceContext,
         out tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](
+            tile_shape=coord[
                 tile_height,
                 _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-            ),
-            desc_shape=IndexList[2](
-                1,
-                _gather4_box_width[.bfloat16, tile_width, swizzle_mode](),
-            ),
+            ],
+            desc_shape=coord[
+                1, _gather4_box_width[.bfloat16, tile_width, swizzle_mode]()
+            ],
         ],
     ) raises:
         """Not supported for RaggedMHAOperand."""

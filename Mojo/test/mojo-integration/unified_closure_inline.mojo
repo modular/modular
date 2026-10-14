@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 kgen %s -elaborate -S -o - | FileCheck %s
 # RUN: kgen %s -elaborate -S -o - | FileCheck %s
 
 # COM: Closure and wrapper are inlined away

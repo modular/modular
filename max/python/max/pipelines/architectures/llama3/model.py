@@ -19,11 +19,12 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -89,7 +90,7 @@ class Llama3Inputs(ModelInputs):
                 self.return_n_logits,
                 splits_tensor,
                 *(
-                    self.kv_cache_inputs.flatten()
+                    tree.leaves(self.kv_cache_inputs)
                     if self.kv_cache_inputs is not None
                     else ()
                 ),
@@ -101,7 +102,7 @@ class Llama3Inputs(ModelInputs):
             self.return_n_logits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -167,7 +168,7 @@ class LlamaModelBase(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs:
         """Delegates to the batch processor and narrows to ``Llama3Inputs``."""

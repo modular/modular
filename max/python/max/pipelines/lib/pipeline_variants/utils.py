@@ -35,7 +35,6 @@ from max.pipelines.context import (
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     GrammarBackend,
-    LlguidanceBackend,
     make_grammar_backend,
 )
 from max.pipelines.lib.tool_parsing import (
@@ -82,37 +81,6 @@ def _count_token_subsequence(
     return count
 
 
-def calculate_num_steps(
-    context: TextGenerationContextType,
-    num_steps: int,
-    max_seq_len: int,
-) -> int:
-    """Compute the number of generation steps allowed for a context.
-
-    The value is clamped by the remaining capacity with respect to
-    the model's configured ``max_seq_len``.
-
-    Args:
-        context: The context whose sequence length constraints apply.
-        num_steps: Desired number of steps to attempt.
-        max_seq_len: The maximum allowed sequence length for the model.
-
-    Returns:
-        The number of steps to execute for this context (>= 1).
-
-    Raises:
-        ValueError: If the current request length is already >= ``max_seq_len``.
-    """
-    num_available_steps = context.compute_num_available_steps(max_seq_len)
-
-    if num_available_steps <= 0:
-        raise ValueError(
-            f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
-        )
-
-    return min(num_available_steps, num_steps)
-
-
 def build_response(
     context_batch: list[TextGenerationContextType],
     max_seq_len: int,
@@ -120,7 +88,7 @@ def build_response(
     """Build response from updated contexts.
 
     Marks a context ``MAXIMUM_LENGTH`` only when it has no room for even one
-    more token. Callers that can append more than one token per step (e.g.
+    more token. Callers that can append more than one token per step (such as
     speculative decoding) are responsible for not overshooting the cap when
     they commit tokens; see
     :func:`update_spec_decode_context_and_prepare_responses`.
@@ -409,21 +377,16 @@ class StructuredOutputHelper:
     """Whether user-provided json_schema is allowed."""
     vocab_size: int | None = None
     """Vocabulary size from the tokenizer, or None if disabled."""
-    backend: GrammarBackend[Any] | None = field(default=None, repr=False)
-    """Pluggable grammar backend (llguidance by default)."""
+    backend: GrammarBackend | None = field(default=None, repr=False)
+    """Pluggable grammar backend."""
     tool_call_region_delimiters: StructuredOutputRegionDelimiters | None = None
     """Token sequences for tool call boundaries (conditional enforcement)."""
     # Serialises access to per-context ``ctx.matcher`` between the async
     # FSM-advance host callback and the synchronous spec-decode bitmask
-    # path; concurrent calls into llguidance's ``LLInterpreter`` trip a
-    # ``RuntimeError: Already borrowed`` and kill the worker coroutine.
+    # path; concurrent stepping of a single matcher is unsafe.
     _matcher_lock: threading.Lock = field(
         default_factory=threading.Lock, repr=False
     )
-
-    def __post_init__(self) -> None:
-        if self.enabled and self.backend is None:
-            self.backend = LlguidanceBackend(None)
 
     @staticmethod
     def _get_tool_region_tags(
@@ -437,11 +400,11 @@ class StructuredOutputHelper:
         enforcement doesn't start immediately).  The end tag, if
         present, tells it when to stop.
 
-        For **section-wrapped** parsers (e.g. Kimi K2.5, DeepSeek V3)
+        For **section-wrapped** parsers (such as Kimi K2.5, DeepSeek V3)
         that define ``SECTION_BEGIN``/``SECTION_END``, the outer
         section pair is returned — enforcement spans all tool calls.
 
-        For **flat** parsers (e.g. Gemma 4) that only define
+        For **flat** parsers (such as Gemma 4) that only define
         ``CALL_BEGIN``/``CALL_END``, only ``CALL_BEGIN`` is returned
         as the start trigger; the end is ``None``.  ``CALL_END`` is a
         per-call delimiter, not a region boundary — using it would
@@ -494,11 +457,11 @@ class StructuredOutputHelper:
         Args:
             tokenizer: A pipeline tokenizer with a HuggingFace delegate attribute.
             enable_structured_output: Whether structured output is enabled
-                (e.g. to constrain to response format json_schema).
+                (such as to constrain to response format json_schema).
             tool_parser_name: Name of the registered tool parser. Used to extract
                 structural tags for tool call start/end markers.
             backend_name: Structured-output backend to use. ``None`` (the
-                default, i.e. an unresolved ``SamplingConfig``) falls back to
+                default; that is, an unresolved ``SamplingConfig``) falls back to
                 ``"xgrammar"``.
             any_whitespace: Whether ``response_format`` grammars accept
                 whitespace between JSON tokens. ``None`` (an unresolved
@@ -568,9 +531,6 @@ class StructuredOutputHelper:
             return self.backend.create_matcher(grammar)
         assert json_schema is not None
         compiled = self.backend.compile_json_schema(json_schema)
-        # No-op on xgrammar, which rejects unsatisfiable schemas at compile
-        # time; llguidance fails open without it.
-        self.backend.validate_grammar(compiled)
         return self.backend.create_matcher(compiled)
 
     def install_matcher(
@@ -743,7 +703,7 @@ class StructuredOutputHelper:
         Mirrors ``TextGenerationContext._tokens_for_consume`` for the async
         spec-decode paths: on the enforcement flip-on (``was_enforced`` was
         False), feed the whole start marker rather than just the token that
-        completed it, so multi-token / namespace-prefixed markers (e.g.
+        completed it, so multi-token / namespace-prefixed markers (such as
         MiniMax-M3's ``NS<tool_call>``) align with the grammar's start rule
         instead of rejecting into fail-open. Single-token markers have
         ``start_token_ids == [token]``, so this is a no-op for them.
@@ -762,7 +722,7 @@ class StructuredOutputHelper:
     ) -> None:
         """Fill one bitmask slot, unless the matcher has no valid continuation.
 
-        A matcher that is stopped *without* accepting has erred: llguidance
+        A matcher that is stopped *without* accepting has erred: the backend
         leaves it stopped-and-not-accepting once a token is rejected, and
         ``fill_next_token_bitmask`` then writes an all-zero row. That row offers
         the sampler no candidate at all, and because the masked-out fill is
@@ -776,10 +736,8 @@ class StructuredOutputHelper:
         A stopped matcher that *is* accepting is a completed grammar, not an
         error. Its mask allows only EOS, which is correct and still applied --
         a backend whose native fill call can't tolerate a stopped matcher
-        (see :meth:`XgrammarBackend.fill_next_token_bitmask`) is responsible
-        for computing that EOS-only mask itself, since llguidance's real,
-        frequently-hit case here is a normal successful completion, not an
-        error state.
+        (see ``XgrammarBackend.fill_next_token_bitmask``) is responsible
+        for computing that EOS-only mask itself.
 
         Args:
             ctx: The request context, for the report latch and diagnostics.
@@ -794,11 +752,8 @@ class StructuredOutputHelper:
                 logger.error(
                     "Matcher for request %s is stopped without accepting, so "
                     "it has no valid next token; leaving its bitmask "
-                    "unconstrained for the rest of the request. "
-                    "matcher_errors=%s matcher_warnings=%s",
+                    "unconstrained for the rest of the request.",
                     ctx.request_id,
-                    matcher.get_error(),
-                    matcher.get_grammar_warnings(),
                 )
             return
         assert self.backend is not None
@@ -813,7 +768,7 @@ class StructuredOutputHelper:
         """Advance enforcement state through drafts, filling per-slot bitmasks.
 
         A draft that flips enforcement on mid-window causes downstream
-        slots to be constrained: e.g. a ``</think>`` draft exits the
+        slots to be constrained. For example, a ``</think>`` draft exits the
         thinking region, so the slot immediately after it gets a filled
         bitmask instead of staying unconstrained. The matcher is walked
         on a deep copy (never mutated), and enforcement state is restored
@@ -849,10 +804,9 @@ class StructuredOutputHelper:
                 "at least one slot per draft plus the bonus slot."
             )
         # Speculatively consume drafts on a throwaway copy of the matcher.
-        # LLMatcher.rollback() is not a perfect inverse when the consumed
-        # span crosses a grammar rule/repetition boundary — e.g.
-        # ``<|tool_call_begin|>`` can cause issues for rollback. Bypass this
-        # issue by taking a deep copy instead.
+        # Rollback is not a perfect inverse when the consumed span crosses a
+        # grammar rule/repetition boundary — e.g. ``<|tool_call_begin|>`` can
+        # cause issues for rollback. Bypass this by taking a deep copy instead.
         matcher_copy = ctx.matcher.deep_copy()
 
         # Slot 0: state immediately after committed tokens.
@@ -915,7 +869,7 @@ class StructuredOutputHelper:
         * ``matcher_accepting=False`` means the matcher was mid-structure
           (inside a call header / args), not at a stoppable boundary.
         * ``open_sections>0`` means more ``<|tool_calls_section_begin|>`` than
-          ``...section_end|>`` are committed, i.e. an open tool-call section.
+          ``...section_end|>`` are committed; that is, an open tool-call section.
         * ``committed_token_ids`` is this spec-decode step's accepted-drafts +
           bonus token, as raw token IDs, so the exact desyncing batch can be
           reconstructed offline against the tokenizer.
@@ -1051,9 +1005,8 @@ class StructuredOutputHelper:
         # This method runs on an AsyncRT worker thread. The main thread
         # may try to access the same ``ctx.matcher`` via
         # ``compute_speculative_bitmasks`` for the next iter while this
-        # callback is still in flight; without serialisation llguidance
-        # raises ``RuntimeError: Already borrowed`` and the worker dies.
-        # See the comment on ``_matcher_lock``.
+        # callback is still in flight; concurrent stepping of a single
+        # matcher is unsafe. See the comment on ``_matcher_lock``.
         with self._matcher_lock:
             # Part 1: permanently advance every producing-batch matcher
             # through its committed tokens. Order-independent of the output
@@ -1115,14 +1068,11 @@ class StructuredOutputHelper:
                     logger.error(
                         "Async matcher rejected %d token(s) ending at %d "
                         "(request %s, role=%s); disabling enforcement "
-                        "for the rest of the request. "
-                        "matcher_errors=%s matcher_warnings=%s %s",
+                        "for the rest of the request. %s",
                         len(tokens),
                         token,
                         ctx.request_id,
                         role,
-                        ctx.matcher.get_error(),
-                        ctx.matcher.get_grammar_warnings(),
                         self._rejection_diagnostics(
                             ctx, committed_tokens, committed_idx
                         ),
@@ -1255,9 +1205,8 @@ class StructuredOutputHelper:
 
         # Serialise against the async FSM-advance host callback
         # (``advance_fsm_and_compute_bitmasks``). Both paths touch the
-        # same ``ctx.matcher`` LLInterpreter; concurrent access trips
-        # llguidance's "Already borrowed" Rust panic and kills the
-        # worker. See the comment on ``_matcher_lock``.
+        # same ``ctx.matcher``; concurrent stepping of a single matcher
+        # is unsafe. See the comment on ``_matcher_lock``.
         with self._matcher_lock:
             # Initialize matchers for contexts with json_schema or grammar
             for ctx in context_batch:

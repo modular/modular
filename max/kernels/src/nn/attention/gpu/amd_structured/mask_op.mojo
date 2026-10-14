@@ -311,7 +311,7 @@ struct MaskTileOp[
                         # at its KV head's first. S==1 is split out
                         # (byte-identical). Only head-keyed masks consume this;
                         # Causal/Null ignore it.
-                        var q_head_idx = Int(block_idx.x)
+                        var q_head_idx = block_idx.x
                         comptime if Self.token_gen:
                             comptime if fold_seq_len == 1:
                                 q_head_idx = block_idx.y * Self.group + umod(
@@ -327,7 +327,7 @@ struct MaskTileOp[
                                     % Self.num_heads_per_token
                                 )
                                 q_head_idx = (
-                                    Int(block_idx.y) * Self.head_base_stride
+                                    block_idx.y * Self.head_base_stride
                                     + head_in_token
                                 )
                         comptime for j in range(0, output_frag_size, 1):

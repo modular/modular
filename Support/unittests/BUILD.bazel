@@ -28,6 +28,7 @@ modular_cc_test(
     srcs = [
         "AlignedAllocTest.cpp",
         "AssertStreamTest.cpp",
+        "BumpAllocatorTest.cpp",
         "ErrorOrTest.cpp",
         "ErrorTest.cpp",
         "FunctionExtrasTest.cpp",
@@ -136,7 +137,7 @@ modular_cc_test(
         "MODULAR_LOG_STDOUT": "false",
     },
     deps = [
-        "//Support:Log",
+        "//Support:SpanGuard",
         "@llvm-project//llvm:Support",
     ],
 )

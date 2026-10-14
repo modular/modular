@@ -332,10 +332,8 @@ class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
         extended_attention_mask = F.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )
-        extended_attention_mask = (1 - extended_attention_mask) * F.constant(
-            np.finfo(np.float32).min,
-            DType.float32,
-            device=attention_mask.device,
+        extended_attention_mask = (1 - extended_attention_mask) * float(
+            np.finfo(np.float32).min
         )
         encoded_results = self.encoder(
             embedding_output, extended_attention_mask
@@ -347,12 +345,7 @@ class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
                 F.unsqueeze(attention_mask, 1),
                 ("batch_size", encoded_results.shape[1], "seq_len"),
             )
-            input_lengths = F.max(
-                F.sum(input_mask_expanded),
-                F.constant(
-                    1e-9, DType.float32, device=input_mask_expanded.device
-                ),
-            )
+            input_lengths = F.max(F.sum(input_mask_expanded), 1e-9)
             pooled_output = (
                 F.sum(encoded_results * input_mask_expanded) / input_lengths
             )

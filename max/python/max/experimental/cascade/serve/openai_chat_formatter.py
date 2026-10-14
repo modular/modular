@@ -234,6 +234,13 @@ class OpenAIChatFormatter(Worker):
         saw_tool_call = False
         async for chunk in chunk_iter:
             saw_tool_call |= isinstance(chunk, GenAIToolCall)
+            # A text-free chunk carries only a token count, which usage reads
+            # off the chunk stream; there is no delta to send for it.
+            if (
+                isinstance(chunk, (GenAITextChunk, GenAIReasoningChunk))
+                and not chunk.text
+            ):
+                continue
             yield _frame(
                 chunk_to_delta(chunk, self.emit_reasoning_content),
                 model,

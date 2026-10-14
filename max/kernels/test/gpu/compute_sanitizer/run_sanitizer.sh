@@ -41,7 +41,7 @@
 #
 # compute-sanitizer is compiled with `--mojocopt=--debug-level
 # --mojocopt=line-tables` (line-tables, NOT full: keeps ptxas -O optimizations
-# so racecheck sees the real schedule).
+# so racecheck sees the real schedule), except NO_LINE_TABLES_TARGETS below.
 # ===----------------------------------------------------------------------=== #
 set -uo pipefail
 
@@ -116,6 +116,48 @@ case "$TOOL" in
   *) usage ;;
 esac
 
+# The line-tables compile of these targets exceeds the remote executor's
+# memory (test_mha_causal_mask_depth_64 peaks at ~290 GiB RSS), and one
+# OOM-killed remote action (Exit 34) aborts the whole bazel invocation despite
+# --keep_going. They are therefore tested in a separate invocation without line
+# tables: their findings still gate, but reports lack source lines.
+NO_LINE_TABLES_TARGETS=(
+  //max/kernels/test/gpu/nn:attention/test_mha_sm100_ws_bm32.mojo.test
+  //max/kernels/test/gpu/nn:attention/test_mha_sm100_ws_bm32_splitk.mojo.test
+  //max/kernels/test/gpu/nn:test_flash_attention.mojo.test
+  //max/kernels/test/gpu/nn:test_mha_causal_mask_depth_64.mojo.test
+  //max/kernels/test/gpu/nn:test_mha_causal_mask_depth_128.mojo.test
+)
+
+# Expand the caller's patterns (honoring `-//...` excludes) to concrete test
+# targets, for splitting off NO_LINE_TABLES_TARGETS and for the findings scan.
+POS=""
+NEG=""
+for a in "$@"; do
+  case "$a" in
+    -*) NEG="$NEG - ${a#-}" ;;
+    *) POS="${POS:+$POS + }$a" ;;
+  esac
+done
+EXPANDED=()
+if [ -n "$POS" ]; then
+  while IFS= read -r t; do [ -n "$t" ] && EXPANDED+=("$t"); done \
+    < <(./bazelw query "tests($POS)$NEG" 2>/dev/null)
+fi
+NO_LT_SELECTED=()
+NO_LT_EXCLUDES=()
+for h in "${NO_LINE_TABLES_TARGETS[@]}"; do
+  NO_LT_EXCLUDES+=("-$h")
+  for t in ${EXPANDED[@]+"${EXPANDED[@]}"}; do
+    [ "$t" = "$h" ] && NO_LT_SELECTED+=("$h")
+  done
+done
+if [ "${#EXPANDED[@]}" -eq 0 ]; then
+  # The query failed or matched nothing: one run over the caller's patterns.
+  EXPANDED=("$@")
+  NO_LT_EXCLUDES=()
+fi
+
 LOG="$RESULTS/run.log"
 echo ">>> tool=$TOOL targets=$# results=$RESULTS" | tee "$LOG"
 
@@ -132,12 +174,20 @@ else
   # under `--run_under`, and one (test_gather_nd_oob) is a deliberate
   # expect_crash OOB that would surface a spurious memcheck "out of bounds"
   # finding. Restrict to `gpu`-tagged tests while we're at it.
-  ./bazelw test "${COMMON[@]}" $POOL \
-    --test_tag_filters=gpu,-filecheck \
-    --run_under="$RUNUNDER" \
-    --mojocopt=--debug-level --mojocopt=line-tables \
-    ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
-    -- "$@" 2>&1 | tee -a "$LOG"
+  CS_FLAGS=("${COMMON[@]}" "--test_tag_filters=gpu,-filecheck" --run_under="$RUNUNDER")
+  [ -n "$POOL" ] && CS_FLAGS+=("$POOL")
+  if [ "${#NO_LT_SELECTED[@]}" -lt "${#EXPANDED[@]}" ]; then
+    ./bazelw test "${CS_FLAGS[@]}" \
+      --mojocopt=--debug-level --mojocopt=line-tables \
+      ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
+      -- "$@" ${NO_LT_EXCLUDES[@]+"${NO_LT_EXCLUDES[@]}"} 2>&1 | tee -a "$LOG"
+  fi
+  if [ "${#NO_LT_SELECTED[@]}" -gt 0 ]; then
+    echo ">>> ${#NO_LT_SELECTED[@]} target(s) without line tables" | tee -a "$LOG"
+    ./bazelw test "${CS_FLAGS[@]}" \
+      ${MOJOCOPTS[@]+"${MOJOCOPTS[@]}"} \
+      -- "${NO_LT_SELECTED[@]}" 2>&1 | tee -a "$LOG"
+  fi
 fi
 
 # --- Extract findings from each target's test.log -----------------------------
@@ -160,12 +210,6 @@ MARKERS='Invalid __(global|shared|local|device)__|Race reported|Barrier error|Un
 echo "" | tee -a "$LOG"
 echo "==================== FINDINGS SUMMARY ($TOOL) ====================" | tee -a "$LOG"
 found_any=0
-# Expand any `//...` / `:all` wildcards to concrete test targets for scanning.
-EXPANDED=()
-for a in "$@"; do
-  while IFS= read -r t; do [ -n "$t" ] && EXPANDED+=("$t"); done < <(./bazelw query "tests($a)" 2>/dev/null)
-done
-[ "${#EXPANDED[@]}" -eq 0 ] && EXPANDED=("$@")
 for tgt in "${EXPANDED[@]}"; do
   # //pkg:name -> bazel-testlogs/pkg/name/test.log
   rel="${tgt#//}"; rel="${rel/://}"

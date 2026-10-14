@@ -5,7 +5,7 @@ kgen.func @terminators_conditionally_pure(%arg0: !kgen.scalar<bool>) {
   hlcf.loop {
     // CHECK: {b}
     hlcf.if %arg0 {
-      kgen.return
+      hlcf.return
     } else {
       hlcf.yield
     } {b}
@@ -37,21 +37,21 @@ kgen.func @terminators_conditionally_pure(%arg0: !kgen.scalar<bool>) {
 
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @fold_if_return
 kgen.func @fold_if_return(%arg0 : index, %arg1: index, %arg2: index) -> index {
   // CHECK-NOT: hlcf.if
-  // CHECK-NEXT: kgen.return %arg0
-  // CHECK-NOT: kgen.return
+  // CHECK-NEXT: hlcf.return %arg0
+  // CHECK-NOT: hlcf.return
   %cond = kgen.param.constant: scalar<bool> = <true>
   hlcf.if %cond {
-    kgen.return %arg0: index
+    hlcf.return %arg0: index
   } else {
-    kgen.return %arg1: index
+    hlcf.return %arg1: index
   }
-  kgen.return %arg2: index
+  hlcf.return %arg2: index
 }
 
 // CHECK-LABEL: @fold_if_yield
@@ -59,7 +59,7 @@ kgen.func @fold_if_yield(%arg0 : index, %arg1: index) -> index {
   // CHECK-NOT: hlcf.if
   // CHECK-NEXT: %[[TEN:.*]] = index.constant 10
   // CHECK-NEXT: %[[RES:.*]] = index.add %arg1, %[[TEN]]
-  // CHECK-NEXT: kgen.return %[[RES]]
+  // CHECK-NEXT: hlcf.return %[[RES]]
   %cond = kgen.param.constant: scalar<bool> = <false>
   %z = hlcf.if %cond -> index {
     hlcf.yield %arg0: index
@@ -68,7 +68,7 @@ kgen.func @fold_if_yield(%arg0 : index, %arg1: index) -> index {
   }
   %ten = index.constant 10
   %r = index.add %z, %ten
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @hoist_unconditional_return
@@ -78,14 +78,14 @@ kgen.func @hoist_unconditional_return(%arg0: !kgen.scalar<bool>, %arg1: index, %
   // CHECK-NEXT: else
   // CHECK-NEXT:   hlcf.yield %arg2
   // CHECK-NOT:  index.add
-  // CHECK:      kgen.return %[[IF_RES]]
+  // CHECK:      hlcf.return %[[IF_RES]]
   %a, %b = hlcf.if %arg0 -> index, index {
-    kgen.return %arg1: index
+    hlcf.return %arg1: index
   } else {
-    kgen.return %arg2: index
+    hlcf.return %arg2: index
   }
   %r = index.add %a, %arg3
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @hoist_cond_return_then
@@ -98,12 +98,12 @@ kgen.func @hoist_cond_return_then(%cond: !kgen.scalar<bool>, %arg1: index, %arg2
   // CHECK-NOT:  index.add
   // CHECK:      return %[[IF_RES]]
   %a, %b = hlcf.if %cond -> index, index {
-    kgen.return %arg1: index
+    hlcf.return %arg1: index
   } else {
     hlcf.yield %arg2, %arg3: index, index
   }
   %r = index.add %a, %b
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @hoist_cond_return_else
@@ -118,10 +118,57 @@ kgen.func @hoist_cond_return_else(%cond: !kgen.scalar<bool>, %arg1: index, %arg2
   %a, %b = hlcf.if %cond -> index, index {
     hlcf.yield %arg2, %arg3: index, index
   } else {
-    kgen.return %arg1: index
+    hlcf.return %arg1: index
   }
   %r = index.add %a, %b
-  kgen.return %r: index
+  hlcf.return %r: index
+}
+
+// Multi-arm: then/elif return, else yields — move trailing code into the
+// single yield arm and hoist one return after the if.
+// CHECK-LABEL: @hoist_cond_return_multiarms
+kgen.func @hoist_cond_return_multiarms(%cond1: !kgen.scalar<bool>, %cond2: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[IF_RES:.*]] = hlcf.if
+  // CHECK-NEXT:   hlcf.yield %arg2
+  // CHECK-NEXT: else
+  // CHECK-NEXT:   hlcf.if.elifcond.yield
+  // CHECK-NEXT: then
+  // CHECK-NEXT:   hlcf.yield %arg2
+  // CHECK-NEXT: else
+  // CHECK-NEXT:   %[[ELSE_VAL:.*]] = index.add
+  // CHECK-NEXT:   hlcf.yield %[[ELSE_VAL]]
+  // CHECK-NOT:  index.add
+  // CHECK:      return %[[IF_RES]]
+  %a, %b = hlcf.if %cond1 -> index, index {
+    hlcf.return %arg1: index
+  } else {
+    hlcf.if.elifcond.yield %cond2
+  } then {
+    hlcf.return %arg1: index
+  } else {
+    hlcf.yield %arg2, %arg3: index, index
+  }
+  %r = index.add %a, %b
+  hlcf.return %r: index
+}
+
+// Two yield arms: do not hoist (would require cloning the trailing code).
+// CHECK-LABEL: @dont_hoist_cond_return_two_yields
+kgen.func @dont_hoist_cond_return_two_yields(%cond1: !kgen.scalar<bool>, %cond2: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[RES:.*]]:2 = hlcf.if
+  // CHECK:      %[[R:.*]] = index.add %[[RES]]#0, %[[RES]]#1
+  // CHECK:      return %[[R]]
+  %a, %b = hlcf.if %cond1 -> index, index {
+    hlcf.return %arg1: index
+  } else {
+    hlcf.if.elifcond.yield %cond2
+  } then {
+    hlcf.yield %arg2, %arg3: index, index
+  } else {
+    hlcf.yield %arg2, %arg3: index, index
+  }
+  %r = index.add %a, %b
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @hoist_cond_break
@@ -134,7 +181,7 @@ kgen.func @hoist_cond_break(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: inde
   // CHECK-NEXT:     hlcf.yield %[[ELSE_VAL]]
   // CHECK-NOT:    index.add
   // CHECK:        hlcf.break %[[IF_RES]]
-  // CHECK:      kgen.return %[[LOOP_RES]]
+  // CHECK:      hlcf.return %[[LOOP_RES]]
   %t = hlcf.loop () -> index {
     %a, %b = hlcf.if %cond -> index, index {
       hlcf.break %arg1: index
@@ -144,7 +191,7 @@ kgen.func @hoist_cond_break(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: inde
     %r = index.add %a, %b
     hlcf.break %r: index
   }
-  kgen.return %t: index
+  hlcf.return %t: index
 }
 
 // CHECK-LABEL: @hoist_cond_break2
@@ -158,7 +205,7 @@ kgen.func @hoist_cond_break2(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: ind
   // CHECK-NEXT:       hlcf.yield
   // CHECK:          hlcf.break "outer"
   // CHECK:        hlcf.break "outer"
-  // CHECK:      kgen.return
+  // CHECK:      hlcf.return
   %outer_res = hlcf.loop "outer" () -> index {
     %inner_res = hlcf.loop "inner" () -> index {
       %a, %b = hlcf.if %cond -> index, index {
@@ -171,7 +218,7 @@ kgen.func @hoist_cond_break2(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: ind
     }
     hlcf.break "outer" %inner_res: index
   }
-  kgen.return %outer_res: index
+  hlcf.return %outer_res: index
 }
 
 // CHECK-LABEL: @hoist_cond_break3
@@ -185,7 +232,7 @@ kgen.func @hoist_cond_break3(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: ind
   // CHECK:          index.add
   // CHECK:          hlcf.break "outer"
   // CHECK:        hlcf.break "outer"
-  // CHECK:      kgen.return
+  // CHECK:      hlcf.return
   %outer_res = hlcf.loop "outer" () -> index {
     %inner_res = hlcf.loop "inner" () -> index {
       %a, %b = hlcf.if %cond -> index, index {
@@ -198,7 +245,7 @@ kgen.func @hoist_cond_break3(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: ind
     }
     hlcf.break "outer" %inner_res: index
   }
-  kgen.return %outer_res: index
+  hlcf.return %outer_res: index
 }
 
 // CHECK-LABEL: @hoist_cond_break4
@@ -206,17 +253,17 @@ kgen.func @hoist_cond_break4(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: ind
   // CHECK:      hlcf.loop
   // CHECK-NEXT:   hlcf.loop
   // CHECK-NEXT:     hlcf.if
-  // CHECK-NEXT:       kgen.return
+  // CHECK-NEXT:       hlcf.return
   // CHECK-NEXT:     else
   // CHECK-NEXT:       hlcf.yield
   // CHECK:          index.add
   // CHECK:          hlcf.break
   // CHECK:        hlcf.break
-  // CHECK:      kgen.return
+  // CHECK:      hlcf.return
   %outer_res = hlcf.loop () -> index {
     %inner_res = hlcf.loop () -> index {
       %a, %b = hlcf.if %cond -> index, index {
-        kgen.return %arg1: index
+        hlcf.return %arg1: index
       } else {
         hlcf.yield %arg2, %arg3: index, index
       }
@@ -225,14 +272,14 @@ kgen.func @hoist_cond_break4(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: ind
     }
     hlcf.break %inner_res: index
   }
-  kgen.return %outer_res: index
+  hlcf.return %outer_res: index
 }
 
 // CHECK-LABEL: @dont_hoist_cond_return_nested
 kgen.func @dont_hoist_cond_return_nested(%cond1: !kgen.scalar<bool>, %cond2: !kgen.scalar<bool>, %arg2: index, %arg3: index) -> index {
   hlcf.if %cond1 {
     hlcf.if %cond2 {
-      kgen.return %arg2: index
+      hlcf.return %arg2: index
     } else {
       hlcf.yield
     }
@@ -240,7 +287,7 @@ kgen.func @dont_hoist_cond_return_nested(%cond1: !kgen.scalar<bool>, %cond2: !kg
   } else {
     hlcf.yield
   }
-  kgen.return %arg3: index
+  hlcf.return %arg3: index
 }
 
 // CHECK-LABEL: @several_ifs
@@ -252,24 +299,24 @@ kgen.func @dont_hoist_cond_return_nested(%cond1: !kgen.scalar<bool>, %cond2: !kg
 kgen.func @several_ifs(%cond1: !kgen.scalar<bool>, %cond2: !kgen.scalar<bool>, %cond3: !kgen.scalar<bool>) -> () {
   hlcf.if %cond1 {
     %x = index.constant 1
-    kgen.return
+    hlcf.return
   } else {
     hlcf.yield
   }
   hlcf.if %cond2 {
     %x = index.constant 2
-    kgen.return
+    hlcf.return
   } else {
     hlcf.yield
   }
   hlcf.if %cond3 {
     %x = index.constant 3
-    kgen.return
+    hlcf.return
   } else {
     hlcf.yield
   }
   %y = index.constant 4
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @cond_return_two_ifs2
@@ -282,7 +329,7 @@ kgen.func @cond_return_two_ifs2(%cond: !kgen.scalar<bool>, %arg: index) -> index
     %X = index.constant 1
     %Y = index.constant 2
     %c, %d = hlcf.if %cond -> index, index {
-      kgen.return %arg: index
+      hlcf.return %arg: index
     } else {
       %x = index.constant 3
       %y = index.constant 4
@@ -291,18 +338,18 @@ kgen.func @cond_return_two_ifs2(%cond: !kgen.scalar<bool>, %arg: index) -> index
     %r = index.add %X, %c
     hlcf.yield %r: index
   }
-  kgen.return %tt: index
+  hlcf.return %tt: index
 }
 
 // CHECK-LABEL: @empty_if_1
 kgen.func @empty_if_1(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index) -> index {
-  // CHECK-NEXT: kgen.return %arg1
+  // CHECK-NEXT: hlcf.return %arg1
   hlcf.if %cond {
     hlcf.yield
   } else {
     hlcf.yield
   }
-  kgen.return %arg1: index
+  hlcf.return %arg1: index
 }
 
 // CHECK-LABEL: @empty_if_2
@@ -310,28 +357,28 @@ kgen.func @empty_if_2(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index) -> 
   // CHECK-NOT:  hlcf.if
   // CHECK-NOT:  hlcf.yield %arg1, %arg2
   // CHECK:      %[[RES:.*]] = index.add %arg1, %arg2
-  // CHECK-NEXT: kgen.return %[[RES]]
+  // CHECK-NEXT: hlcf.return %[[RES]]
   %a, %b = hlcf.if %cond -> index, index {
     hlcf.yield %arg1, %arg2: index, index
   } else {
     hlcf.yield %arg1, %arg2: index, index
   }
   %r = index.add %a, %b
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @empty_if_partial
 kgen.func @empty_if_partial(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index) -> index {
   // CHECK:      hlcf.if
   // CHECK:      %[[RES:.*]] = index.add %arg1, %{{.*}}
-  // CHECK-NEXT: kgen.return %[[RES]]
+  // CHECK-NEXT: hlcf.return %[[RES]]
   %a, %b = hlcf.if %cond -> index, index {
     hlcf.yield %arg1, %arg1: index, index
   } else {
     hlcf.yield %arg1, %arg2: index, index
   }
   %r = index.add %a, %b
-  kgen.return %r: index
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @remove_unused_if_results
@@ -346,216 +393,137 @@ kgen.func @remove_unused_if_results(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2
     // CHECK-NEXT: hlcf.yield %arg2 : i32
     hlcf.yield %arg1, %arg2 : i32, i32
   }
-  kgen.return %0#1 : i32
+  hlcf.return %0#1 : i32
 }
 
-//===----------------------------------------------------------------------===//
-// Same canonicalizations for 2-arm `hlcf.elif` (empty elif list).
-//===----------------------------------------------------------------------===//
-
-// CHECK-LABEL: @fold_elif_return
-kgen.func @fold_elif_return(%arg0 : index, %arg1: index, %arg2: index) -> index {
-  // CHECK-NOT: hlcf.elif
-  // CHECK-NEXT: kgen.return %arg0
-  // CHECK-NOT: kgen.return
-  %cond = kgen.param.constant: scalar<bool> = <true>
-  hlcf.elif %cond {
-    kgen.return %arg0: index
-  } else {
-    kgen.return %arg1: index
-  }
-  kgen.return %arg2: index
-}
-
-// CHECK-LABEL: @fold_elif_yield
-kgen.func @fold_elif_yield(%arg0 : index, %arg1: index) -> index {
-  // CHECK-NOT: hlcf.elif
-  // CHECK-NEXT: %[[TEN:.*]] = index.constant 10
-  // CHECK-NEXT: %[[RES:.*]] = index.add %arg1, %[[TEN]]
-  // CHECK-NEXT: kgen.return %[[RES]]
-  %cond = kgen.param.constant: scalar<bool> = <false>
-  %z = hlcf.elif %cond -> index {
-    hlcf.yield %arg0: index
-  } else {
-    hlcf.yield %arg1: index
-  }
-  %ten = index.constant 10
-  %r = index.add %z, %ten
-  kgen.return %r: index
-}
-
-// CHECK-LABEL: @hoist_unconditional_return_elif
-kgen.func @hoist_unconditional_return_elif(%arg0: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
-  // CHECK:      %[[IF_RES:.*]] = hlcf.elif
-  // CHECK-NEXT:   hlcf.yield %arg1
-  // CHECK-NEXT: else
-  // CHECK-NEXT:   hlcf.yield %arg2
-  // CHECK-NOT:  index.add
-  // CHECK:      kgen.return %[[IF_RES]]
-  %a, %b = hlcf.elif %arg0 -> index, index {
-    kgen.return %arg1: index
-  } else {
-    kgen.return %arg2: index
-  }
-  %r = index.add %a, %arg3
-  kgen.return %r: index
-}
-
-// CHECK-LABEL: @hoist_cond_return_then_elif
-kgen.func @hoist_cond_return_then_elif(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
-  // CHECK:      %[[IF_RES:.*]] = hlcf.elif
-  // CHECK-NEXT:   hlcf.yield %arg1
-  // CHECK-NEXT: else
-  // CHECK-NEXT:   %[[ELSE_VAL:.*]] = index.add
-  // CHECK-NEXT:   hlcf.yield %[[ELSE_VAL]]
-  // CHECK-NOT:  index.add
-  // CHECK:      return %[[IF_RES]]
-  %a, %b = hlcf.elif %cond -> index, index {
-    kgen.return %arg1: index
-  } else {
-    hlcf.yield %arg2, %arg3: index, index
-  }
-  %r = index.add %a, %b
-  kgen.return %r: index
-}
-
-// CHECK-LABEL: @hoist_cond_return_else_elif
-kgen.func @hoist_cond_return_else_elif(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
-  // CHECK:      %[[IF_RES:.*]] = hlcf.elif
-  // CHECK-NEXT:   %[[THEN_VAL:.*]] = index.add
-  // CHECK-NEXT:   hlcf.yield %[[THEN_VAL]]
-  // CHECK-NEXT: else
-  // CHECK-NEXT:   hlcf.yield %arg1
-  // CHECK-NOT:  index.add
-  // CHECK:      return %[[IF_RES]]
-  %a, %b = hlcf.elif %cond -> index, index {
-    hlcf.yield %arg2, %arg3: index, index
-  } else {
-    kgen.return %arg1: index
-  }
-  %r = index.add %a, %b
-  kgen.return %r: index
-}
-
-// CHECK-LABEL: @hoist_cond_break_elif
-kgen.func @hoist_cond_break_elif(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
-  // CHECK:      %[[LOOP_RES:.*]] = hlcf.loop
-  // CHECK-NEXT:   %[[IF_RES:.*]] = hlcf.elif
-  // CHECK-NEXT:     hlcf.yield %arg1
-  // CHECK-NEXT:   else
-  // CHECK-NEXT:     %[[ELSE_VAL:.*]] = index.add
-  // CHECK-NEXT:     hlcf.yield %[[ELSE_VAL]]
-  // CHECK-NOT:    index.add
-  // CHECK:        hlcf.break %[[IF_RES]]
-  // CHECK:      kgen.return %[[LOOP_RES]]
-  %t = hlcf.loop () -> index {
-    %a, %b = hlcf.elif %cond -> index, index {
-      hlcf.break %arg1: index
-    } else {
-      hlcf.yield %arg2, %arg3: index, index
-    }
-    %r = index.add %a, %b
-    hlcf.break %r: index
-  }
-  kgen.return %t: index
-}
-
-// CHECK-LABEL: @empty_elif_1
-kgen.func @empty_elif_1(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index) -> index {
-  // CHECK-NEXT: kgen.return %arg1
-  hlcf.elif %cond {
-    hlcf.yield
-  } else {
-    hlcf.yield
-  }
-  kgen.return %arg1: index
-}
-
-// CHECK-LABEL: @empty_elif_2
-kgen.func @empty_elif_2(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index) -> index {
-  // CHECK-NOT:  hlcf.elif
-  // CHECK-NOT:  hlcf.yield %arg1, %arg2
-  // CHECK:      %[[RES:.*]] = index.add %arg1, %arg2
-  // CHECK-NEXT: kgen.return %[[RES]]
-  %a, %b = hlcf.elif %cond -> index, index {
-    hlcf.yield %arg1, %arg2: index, index
-  } else {
-    hlcf.yield %arg1, %arg2: index, index
-  }
-  %r = index.add %a, %b
-  kgen.return %r: index
-}
-
-// CHECK-LABEL: @empty_elif_partial
-kgen.func @empty_elif_partial(%cond: !kgen.scalar<bool>, %arg1: index, %arg2: index) -> index {
-  // CHECK:      hlcf.elif
-  // CHECK:      %[[RES:.*]] = index.add %arg1, %{{.*}}
-  // CHECK-NEXT: kgen.return %[[RES]]
-  %a, %b = hlcf.elif %cond -> index, index {
-    hlcf.yield %arg1, %arg1: index, index
-  } else {
-    hlcf.yield %arg1, %arg2: index, index
-  }
-  %r = index.add %a, %b
-  kgen.return %r: index
-}
-
-// CHECK-LABEL: @remove_unused_elif_results
-kgen.func @remove_unused_elif_results(%arg0: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
-  // CHECK-NEXT: %0 = hlcf.elif %arg0 -> i32 {
-  %0:2 = hlcf.elif %arg0 -> i32, i32 {
-    "some.op"() : () -> ()
-    // CHECK: hlcf.yield %arg2 : i32
-    hlcf.yield %arg1, %arg2 : i32, i32
-  // CHECK-NEXT: else
-  } else {
-    // CHECK-NEXT: hlcf.yield %arg2 : i32
-    hlcf.yield %arg1, %arg2 : i32, i32
-  }
-  kgen.return %0#1 : i32
-}
-
-// CHECK-LABEL: @elif_cond_same
-kgen.func @elif_cond_same(%arg0: !kgen.scalar<bool>) -> !kgen.scalar<bool> {
-  %0 = kgen.param.constant: scalar<bool> = <false>
-  %1 = kgen.param.constant: scalar<bool> = <true>
-  // CHECK-NEXT: return %arg0
-  %2 = hlcf.elif %arg0 -> !kgen.scalar<bool> {
-    hlcf.yield %1 : !kgen.scalar<bool>
-  } else {
-    hlcf.yield %0 : !kgen.scalar<bool>
-  }
-  kgen.return %2 : !kgen.scalar<bool>
-}
-
-// Multi-arm elif must not use the 2-arm static-false fold (would drop elif arms).
-// CHECK-LABEL: @dont_fold_multiarms_elif_false
-kgen.func @dont_fold_multiarms_elif_false(%arg0: index, %arg1: index, %arg2: index) -> index {
-  // CHECK: hlcf.elif
-  // CHECK: hlcf.elif.yield
-  // CHECK: kgen.return
+// Multi-arm if with a statically-false first condition promotes the first
+// elif arm; the constant-true elif then folds away the else.
+// CHECK-LABEL: @fold_multiarms_elif_false
+kgen.func @fold_multiarms_elif_false(%arg0: index, %arg1: index, %arg2: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK-NEXT: hlcf.return %arg1
   %false = kgen.param.constant: scalar<bool> = <false>
   %true = kgen.param.constant: scalar<bool> = <true>
-  %0 = hlcf.elif %false -> index {
+  %0 = hlcf.if %false -> index {
     hlcf.yield %arg0: index
   } else {
-    hlcf.elif.yield %true
+    hlcf.if.elifcond.yield %true
   } then {
     hlcf.yield %arg1: index
   } else {
     hlcf.yield %arg2: index
   }
-  kgen.return %0: index
+  hlcf.return %0: index
+}
+
+// Leading constant-false arms must collapse in one rewrite (not peel one arm
+// per iteration — that is O(N^2) on long elif chains).
+// CHECK-LABEL: @fold_multiarms_leading_false_prefix
+kgen.func @fold_multiarms_leading_false_prefix(%arg0: index, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK-NEXT: hlcf.return %arg2
+  %false = kgen.param.constant: scalar<bool> = <false>
+  %true = kgen.param.constant: scalar<bool> = <true>
+  %0 = hlcf.if %false -> index {
+    hlcf.yield %arg0: index
+  } else {
+    hlcf.if.elifcond.yield %false
+  } then {
+    hlcf.yield %arg1: index
+  } else {
+    hlcf.if.elifcond.yield %true
+  } then {
+    hlcf.yield %arg2: index
+  } else {
+    hlcf.yield %arg3: index
+  }
+  hlcf.return %0: index
+}
+
+// All conditions constant false → else, still in one rewrite.
+// CHECK-LABEL: @fold_multiarms_all_false_to_else
+kgen.func @fold_multiarms_all_false_to_else(%arg0: index, %arg1: index, %arg2: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK-NEXT: hlcf.return %arg2
+  %false = kgen.param.constant: scalar<bool> = <false>
+  %0 = hlcf.if %false -> index {
+    hlcf.yield %arg0: index
+  } else {
+    hlcf.if.elifcond.yield %false
+  } then {
+    hlcf.yield %arg1: index
+  } else {
+    hlcf.yield %arg2: index
+  }
+  hlcf.return %0: index
+}
+
+// CHECK-LABEL: @hoist_multiarms_identical_yields
+kgen.func @hoist_multiarms_identical_yields(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %arg0: index) -> index {
+  // CHECK-NOT: hlcf.if
+  // CHECK: hlcf.return %{{.*}}
+  %0 = hlcf.if %c0 -> index {
+    hlcf.yield %arg0: index
+  } else {
+    hlcf.if.elifcond.yield %c1
+  } then {
+    hlcf.yield %arg0: index
+  } else {
+    hlcf.yield %arg0: index
+  }
+  hlcf.return %0: index
+}
+
+// CHECK-LABEL: @remove_unused_multiarms_if_results
+kgen.func @remove_unused_multiarms_if_results(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %arg1: i32, %arg2: i32) -> i32 {
+  // CHECK-NEXT: %0 = hlcf.if %{{.*}} -> i32 {
+  %0:2 = hlcf.if %c0 -> i32, i32 {
+    "some.op"() : () -> ()
+    // CHECK: hlcf.yield %{{.*}} : i32
+    hlcf.yield %arg1, %arg2 : i32, i32
+  } else {
+    hlcf.if.elifcond.yield %c1
+  } then {
+    // CHECK: hlcf.yield %{{.*}} : i32
+    hlcf.yield %arg1, %arg2 : i32, i32
+  } else {
+    // CHECK: hlcf.yield %{{.*}} : i32
+    hlcf.yield %arg1, %arg2 : i32, i32
+  }
+  hlcf.return %0#1 : i32
+}
+
+// CHECK-LABEL: @hoist_unconditional_return_multiarms
+kgen.func @hoist_unconditional_return_multiarms(%c0: !kgen.scalar<bool>, %c1: !kgen.scalar<bool>, %arg1: index, %arg2: index, %arg3: index) -> index {
+  // CHECK:      %[[IF_RES:.*]] = hlcf.if
+  // CHECK:        hlcf.yield
+  // CHECK:        hlcf.if.elifcond.yield
+  // CHECK:        hlcf.yield
+  // CHECK:        hlcf.yield
+  // CHECK:      hlcf.return %[[IF_RES]]
+  // CHECK-NOT:  index.add
+  %x = index.constant 1
+  hlcf.if %c0 {
+    hlcf.return %arg1: index
+  } else {
+    hlcf.if.elifcond.yield %c1
+  } then {
+    hlcf.return %arg2: index
+  } else {
+    hlcf.return %arg3: index
+  }
+  %r = index.add %x, %x
+  hlcf.return %r: index
 }
 
 // CHECK-LABEL: @dead_loop
 kgen.func @dead_loop() {
   // CHECK-NOT:  hlcf.loop
-  // CHECK-NEXT: kgen.return
+  // CHECK-NEXT: hlcf.return
   hlcf.loop {
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @dead_loop_inner
@@ -564,7 +532,7 @@ kgen.func @dead_loop_inner(%arg0: index, %arg1: index) -> index{
   // CHECK-NOT:    hlcf.loop
   // CHECK-NEXT:   index.add
   // CHECK-NEXT:   hlcf.break %
-  // CHECK:      kgen.return
+  // CHECK:      hlcf.return
   %r1 = hlcf.loop () -> index {
     %r2 = hlcf.loop () -> index{
       hlcf.break %arg0: index
@@ -572,7 +540,7 @@ kgen.func @dead_loop_inner(%arg0: index, %arg1: index) -> index{
     %t = index.add %r2, %arg1
     hlcf.break %t: index
   }
-  kgen.return %r1: index
+  hlcf.return %r1: index
 }
 
 // CHECK-LABEL: @dead_loop_inner2
@@ -580,7 +548,7 @@ kgen.func @dead_loop_inner2(%arg0: index, %arg1: index, %arg2: index) -> index{
   // CHECK-NOT:  hlcf.loop
   // CHECK-NOT:                index.add %arg0, %arg1
   // CHECK-NEXT: %[[RES:.*]] = index.add %arg0, %arg2
-  // CHECK-NEXT: kgen.return %[[RES]]
+  // CHECK-NEXT: hlcf.return %[[RES]]
   %x = hlcf.loop "outer" () -> index {
     hlcf.loop {
       hlcf.break "outer" %arg0: index
@@ -589,7 +557,7 @@ kgen.func @dead_loop_inner2(%arg0: index, %arg1: index, %arg2: index) -> index{
     hlcf.break %y: index
   }
   %z = index.add %x, %arg2
-  kgen.return %z: index
+  hlcf.return %z: index
 }
 
 // CHECK-LABEL: @dead_loop_label
@@ -612,7 +580,7 @@ kgen.func @dead_loop_label() {
     }
     hlcf.continue
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @dead_loop_returns_loop_arg
@@ -622,8 +590,8 @@ kgen.func @dead_loop_returns_loop_arg() -> index {
     hlcf.break "loop" %arg0 : index
   }
   // CHECK: [[IDX0:%.*]] = index.constant 0
-  // CHECK-NEXT: kgen.return [[IDX0]] : index
-  kgen.return %0 : index
+  // CHECK-NEXT: hlcf.return [[IDX0]] : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: @dead_loop_returns_not_loop_arg
@@ -632,8 +600,8 @@ kgen.func @dead_loop_returns_not_loop_arg(%arg0: index) -> index {
   %0 = hlcf.loop "loop" () -> index {
     hlcf.break "loop" %arg0 : index
   }
-  // CHECK: kgen.return %arg0 : index
-  kgen.return %0 : index
+  // CHECK: hlcf.return %arg0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: @unused_loop_results
@@ -655,7 +623,7 @@ kgen.func @unused_loop_results(%arg0: i32, %arg1: i32) -> i32 {
   // CHECK: } {unrollLevel = #hlcf<unroll_level 2>}
   } {unrollLevel = #hlcf<unroll_level 2>}
 
-  kgen.return %0#1 : i32
+  hlcf.return %0#1 : i32
 }
 
 // CHECK-LABEL: @unused_loop_args
@@ -665,7 +633,7 @@ kgen.func @unused_loop_args(%arg0: i32) {
     // CHECK-NEXT: hlcf.continue
     hlcf.continue %arg0 : i32
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @break_in_both
@@ -679,7 +647,7 @@ kgen.func @break_in_both(%arg0: !kgen.scalar<bool>) {
     hlcf.continue
   }
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @break_outer
@@ -696,7 +664,7 @@ kgen.func @break_outer(%arg0: !kgen.scalar<bool>) {
     hlcf.continue
   }
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @break_different_label
@@ -715,7 +683,7 @@ kgen.func @break_different_label(%arg0: !kgen.scalar<bool>) {
     }
     hlcf.continue
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @noop_loop
@@ -728,7 +696,7 @@ kgen.func @noop_loop(%arg0: index, %arg1: index, %arg2: index, %arg3: !kgen.poin
     hlcf.for.yield [induction_var (%2 : index)] [retvals ()] [iterargs ()]
   }
   // CHECK-NEXT: return
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @store_loop
@@ -741,7 +709,7 @@ kgen.func @store_loop(%arg0: index, %arg1: index, %arg2: index, %arg3: !kgen.poi
     pop.store %2, %arg3 : !kgen.pointer<index>
     hlcf.for.yield [induction_var (%2 : index)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }
 
 
@@ -755,7 +723,7 @@ kgen.func @if_cond_same(%arg0: !kgen.scalar<bool>) -> !kgen.scalar<bool> {
   } else {
     hlcf.yield %0 : !kgen.scalar<bool>
   }
-  kgen.return %2 : !kgen.scalar<bool>
+  hlcf.return %2 : !kgen.scalar<bool>
 }
 
 
@@ -770,7 +738,7 @@ kgen.func @if_cond_same(%arg0: !kgen.scalar<bool>) -> !kgen.scalar<bool> {
 // CHECK-NEXT:      %[[REC:.*]] = kgen.call @tail_call_error_fn
 // CHECK-NEXT:      hlcf.yield %[[REC]] : !kgen.scalar<bool>
 // CHECK-NEXT:    }
-// CHECK-NEXT:    kgen.return %[[R]]
+// CHECK-NEXT:    hlcf.return %[[R]]
 kgen.generator export @tail_call_error_fn(%cond: !kgen.scalar<bool>, %arg0: index, %arg1: index, %arg2: !kgen.pointer<struct<() memoryOnly>> byref_error, %arg3: !kgen.pointer<index> byref_result) throws -> !kgen.scalar<bool> attributes {sourceName = "factorial"} {
   %0 = kgen.param.constant: scalar<bool> = <true>
   %1 = kgen.param.constant: scalar<bool> = <false>
@@ -781,11 +749,11 @@ kgen.generator export @tail_call_error_fn(%cond: !kgen.scalar<bool>, %arg0: inde
     %6 = kgen.call @tail_call_error_fn(%cond, %arg0, %arg0, %arg2, %arg3) : (!kgen.scalar<bool>, index, index, !kgen.pointer<struct<() memoryOnly>> byref_error, !kgen.pointer<index> byref_result) throws -> !kgen.scalar<bool>
     // This 'if' should be canonicalized away.
     hlcf.if %6 {
-      kgen.return %0 : !kgen.scalar<bool>
+      hlcf.return %0 : !kgen.scalar<bool>
     } else {
       hlcf.yield
     }
     hlcf.yield %1 : !kgen.scalar<bool>
   }
-  kgen.return %4 : !kgen.scalar<bool>
+  hlcf.return %4 : !kgen.scalar<bool>
 }

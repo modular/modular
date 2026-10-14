@@ -157,10 +157,6 @@ static bool filterForBestCandidates(
     if (!isValidOrFnInconclusive(eval) || bestFitness->isBetter(eval))
       continue;
 
-    // Ignore any functions explicitly marked as disabled.
-    if (candidate->isDisabled())
-      continue;
-
     // If we found a strictly better candidate, clear the list and update.
     if (eval.isBetter(*bestFitness)) {
       bestCandidates.clear();
@@ -639,9 +635,6 @@ CalleeResult OverloadSet::filterOverloadSet(
   DenseSet<Type> seenWitness;
   ASTType selfTrait;
   for (ASTDecl *candidate : fnDecls) {
-    if (candidate->isDisabled())
-      continue;
-
     // If we are dealing with a static method, we check if the operands include
     // a self operand and remove it, otherwise the signature might not match.
     if (operands.hasSelfOperand && candidate->isStaticMethodDecl()) {
@@ -651,7 +644,7 @@ CalleeResult OverloadSet::filterOverloadSet(
     }
 
     FnTypeGeneratorType desiredSignature = candidate->getDeclFullSignature();
-    if (candidate->getIfWitness()) {
+    if (isa<WitnessASTDecl>(candidate)) {
       auto sig = cast<FnTypeGeneratorType>(getCanonicalType(desiredSignature));
       ArrayRef<Type> inputParamTypes = sig.getInputParamTypes();
       if (inputParamTypes.empty() || !isa<TraitType>(inputParamTypes[0]))
@@ -1021,10 +1014,6 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
               kOverloadEvaluationsInlineSize>
       inconclusiveEvaluations;
   for (ASTDecl *candidate : fnDecls) {
-    // Skip functions explicitly marked as 'disabled'.
-    if (candidate->isDisabled())
-      continue;
-
     // A trait member reached through a composition has no `FnOp` to form a
     // function literal from, so it cannot be referenced as a function value.
     auto candidateFn = dyn_cast_or_null<FnOp>(candidate->getIfOperation());
@@ -1232,10 +1221,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
       assert(!resultDecls.empty() && "We know this succeeded");
       assert(result.fnDecls.empty() && "Already have entries");
 
-      // Filter out disabled functions to avoid multiple definition conflicts
       for (ASTDecl *decl : resultDecls) {
-        if (decl->isDisabled())
-          continue;
         // If we find a vardecl or any other thing, then fail to find anything
         // because it cannot be called.
         if (!decl->isCallableDecl()) {
@@ -1264,10 +1250,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
         ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
         assert(!resultDecls.empty() && "We know this succeeded");
 
-        // Filter out disabled functions to avoid multiple definition conflicts
         for (ASTDecl *decl : resultDecls) {
-          if (decl->isDisabled())
-            continue;
           // If we find a vardecl or any other thing, then fail to find anything
           // because it cannot be called.
           if (!decl->isCallableDecl()) {
@@ -1410,14 +1393,26 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 // Call Emission Implementation
 //===----------------------------------------------------------------------===//
 
-/// Emit an indirect call to a resolved value in a try block, invoking a
-/// callback to generate logic in the 'catch' block that is wrapped around the
-/// call. This ensures that the ExprDest is updated and live after the try
-/// block, which only works if the "catch" logic doesn't fall through.
-///
-/// This emits an error and returns null on failure.
 CValue IREmitter::emitIndirectCallInTryBlock(
     CValue callee, CallOperands &&operands,
+    std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
+  return emitCallInTryBlock(
+      callee, std::move(operands),
+      [&](CallOperands &&operands) {
+        return emitIndirectCall(callee, std::move(operands));
+      },
+      std::move(emitCatchLogic));
+}
+
+/// Emit a call to `callee` in a try block, invoking a callback to generate
+/// logic in the 'catch' block that is wrapped around the call. This ensures
+/// that the ExprDest is updated and live after the try block, which only works
+/// if the "catch" logic doesn't fall through.
+///
+/// This emits an error and returns null on failure.
+CValue IREmitter::emitCallInTryBlock(
+    CValue callee, CallOperands &&operands,
+    function_ref<CValue(CallOperands &&)> emitCall,
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
   ExprDest finalDest(operands.dest.getContext());
 
@@ -1466,7 +1461,7 @@ CValue IREmitter::emitIndirectCallInTryBlock(
   // Emit this call into the try region.
   builder->createBlock(&tryOp.getTryRegion());
 
-  CValue result = emitIndirectCall(callee, std::move(operands));
+  CValue result = emitCall(std::move(operands));
   if (!result)
     finalDest.resetForError(*this);
   TryYieldOp::create(*builder, tryOp.getLoc());

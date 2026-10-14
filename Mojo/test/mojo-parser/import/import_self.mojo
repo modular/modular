@@ -14,7 +14,7 @@
 # A standalone module cannot import its own bare name: it would only ever
 # resolve to itself, silently shadowing any same-named system package.
 # Self-imports inside packages are unaffected (see
-# import_relative_self_reexport.mojo and import_self_named_package.mojo).
+# import_relative_self_reexport.mojo).
 
 # RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics %s
 

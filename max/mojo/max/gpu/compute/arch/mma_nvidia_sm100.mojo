@@ -29,7 +29,9 @@ from std.hashlib.hasher import Hasher
 
 
 @fieldwise_init("implicit")
-struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
+struct UMMAKind(
+    EnumLike, Equatable, Hashable, TrivialRegisterPassable, Writable
+):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -57,6 +59,61 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
     comptime KIND_MXF4NVF4 = Self(7)
     """MXF4NVF4 type."""
+
+    # The implicit fieldwise initializer permits raw backing values the named
+    # cases do not cover (e.g. the -1 sentinel from unsupported-dtype
+    # lookups); `write_to` keeps its `unknown` catch-all for them, so the
+    # enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "KIND_TF32".value,
+        "KIND_F16".value,
+        "KIND_F8F6F4".value,
+        "KIND_I8".value,
+        "KIND_MXF8F6F4".value,
+        "KIND_MXF4".value,
+        "KIND_MXF4NVF4".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        """Return the active case index.
+
+        The raw backing values are not the case indices (there is no case 1
+        between TF32 and F16), so this maps the raw value to its position in
+        the case list; unknown backing values return -1.
+        """
+        match self._value:
+            case Self.KIND_TF32._value:
+                return 0
+            case Self.KIND_F16._value:
+                return 1
+            case Self.KIND_F8F6F4._value:
+                return 2
+            case Self.KIND_I8._value:
+                return 3
+            case Self.KIND_MXF8F6F4._value:
+                return 4
+            case Self.KIND_MXF4._value:
+                return 5
+            case Self.KIND_MXF4NVF4._value:
+                return 6
+            case _:
+                return -1
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Return the payload of case `id`. UMMAKind cases carry no payload."""
+        comptime assert False, "UMMAKind has no payload"
 
     @inline(.nodebug)
     def __int__(self) -> Int:
@@ -98,22 +155,23 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
         Args:
             writer: The writer to write the UMMA kind to.
         """
-        if self == Self.KIND_TF32:
-            writer.write("kind::tf32")
-        elif self == Self.KIND_F16:
-            writer.write("kind::f16")
-        elif self == Self.KIND_F8F6F4:
-            writer.write("kind::f8f6f4")
-        elif self == Self.KIND_MXF8F6F4:
-            writer.write("kind::mxf8f6f4")
-        elif self == Self.KIND_I8:
-            writer.write("kind::i8")
-        elif self == Self.KIND_MXF4:
-            writer.write("kind::mxf4")
-        elif self == Self.KIND_MXF4NVF4:
-            writer.write("kind::mxf4nvf4")
-        else:
-            writer.write("kind::unknown")
+        match self:
+            case .KIND_TF32:
+                writer.write("kind::tf32")
+            case .KIND_F16:
+                writer.write("kind::f16")
+            case .KIND_F8F6F4:
+                writer.write("kind::f8f6f4")
+            case .KIND_MXF8F6F4:
+                writer.write("kind::mxf8f6f4")
+            case .KIND_I8:
+                writer.write("kind::i8")
+            case .KIND_MXF4:
+                writer.write("kind::mxf4")
+            case .KIND_MXF4NVF4:
+                writer.write("kind::mxf4nvf4")
+            case _:
+                writer.write("kind::unknown")
 
 
 @inline(.always)
@@ -210,27 +268,30 @@ def _get_f16_mma_shape[
             use_cta_pair=use_cta_pair,
         ]()
 
-        comptime if mma_m == 64:
-            _constrained_mma_n[
-                mma_n,
-                (8, 256),
-                8,
-                UMMAKind.KIND_F16,
-                use_cta_pair=use_cta_pair,
-            ]()
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
-        elif mma_m == 128:
-            _constrained_mma_n[
-                mma_n,
-                (16, 256),
-                16,
-                UMMAKind.KIND_F16,
-                use_cta_pair=use_cta_pair,
-            ]()
+        comptime match mma_m:
+            case 64:
+                _constrained_mma_n[
+                    mma_n,
+                    (8, 256),
+                    8,
+                    UMMAKind.KIND_F16,
+                    use_cta_pair=use_cta_pair,
+                ]()
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
+            case 128:
+                _constrained_mma_n[
+                    mma_n,
+                    (16, 256),
+                    16,
+                    UMMAKind.KIND_F16,
+                    use_cta_pair=use_cta_pair,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
-        else:
-            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
+            case _:
+                comptime assert False, String(
+                    "Invalid MMA shape: ", mma_m, mma_n
+                )
 
     else:
         _constrained_mma_m[
@@ -240,28 +301,31 @@ def _get_f16_mma_shape[
             use_cta_pair=use_cta_pair,
         ]()
 
-        comptime if mma_m == 128:
-            _constrained_mma_n[
-                mma_n,
-                (32, 256),
-                32,
-                UMMAKind.KIND_F16,
-                use_cta_pair=use_cta_pair,
-            ]()
+        comptime match mma_m:
+            case 128:
+                _constrained_mma_n[
+                    mma_n,
+                    (32, 256),
+                    32,
+                    UMMAKind.KIND_F16,
+                    use_cta_pair=use_cta_pair,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
-        elif mma_m == 256:
-            _constrained_mma_n[
-                mma_n,
-                (32, 256),
-                32,
-                UMMAKind.KIND_F16,
-                use_cta_pair=use_cta_pair,
-            ]()
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
+            case 256:
+                _constrained_mma_n[
+                    mma_n,
+                    (32, 256),
+                    32,
+                    UMMAKind.KIND_F16,
+                    use_cta_pair=use_cta_pair,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
-        else:
-            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 16)
+            case _:
+                comptime assert False, String(
+                    "Invalid MMA shape: ", mma_m, mma_n
+                )
 
 
 @inline(.always)
@@ -287,28 +351,31 @@ def _get_tf32_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        comptime if mma_m == 64:
-            _constrained_mma_n[
-                mma_n,
-                (8, 256),
-                8,
-                UMMAKind.KIND_TF32,
-                use_cta_pair=use_pair_cta,
-            ]()
+        comptime match mma_m:
+            case 64:
+                _constrained_mma_n[
+                    mma_n,
+                    (8, 256),
+                    8,
+                    UMMAKind.KIND_TF32,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
-        elif mma_m == 128:
-            _constrained_mma_n[
-                mma_n,
-                (16, 256),
-                16,
-                UMMAKind.KIND_TF32,
-                use_cta_pair=use_pair_cta,
-            ]()
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
+            case 128:
+                _constrained_mma_n[
+                    mma_n,
+                    (16, 256),
+                    16,
+                    UMMAKind.KIND_TF32,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
-        else:
-            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
+            case _:
+                comptime assert False, String(
+                    "Invalid MMA shape: ", mma_m, mma_n
+                )
     else:
         _constrained_mma_m[
             mma_m,
@@ -317,28 +384,31 @@ def _get_tf32_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        comptime if mma_m == 128:
-            _constrained_mma_n[
-                mma_n,
-                (32, 256),
-                32,
-                UMMAKind.KIND_TF32,
-                use_cta_pair=use_pair_cta,
-            ]()
+        comptime match mma_m:
+            case 128:
+                _constrained_mma_n[
+                    mma_n,
+                    (32, 256),
+                    32,
+                    UMMAKind.KIND_TF32,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
-        elif mma_m == 256:
-            _constrained_mma_n[
-                mma_n,
-                (32, 256),
-                32,
-                UMMAKind.KIND_TF32,
-                use_cta_pair=use_pair_cta,
-            ]()
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
+            case 256:
+                _constrained_mma_n[
+                    mma_n,
+                    (32, 256),
+                    32,
+                    UMMAKind.KIND_TF32,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
-        else:
-            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 8)
+            case _:
+                comptime assert False, String(
+                    "Invalid MMA shape: ", mma_m, mma_n
+                )
 
 
 @inline(.always)
@@ -364,29 +434,32 @@ def _get_f8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        comptime if mma_m == 64:
-            _constrained_mma_n[
-                mma_n,
-                (8, 256),
-                8,
-                UMMAKind.KIND_F8F6F4,
-                use_cta_pair=use_pair_cta,
-            ]()
+        comptime match mma_m:
+            case 64:
+                _constrained_mma_n[
+                    mma_n,
+                    (8, 256),
+                    8,
+                    UMMAKind.KIND_F8F6F4,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
-        elif mma_m == 128:
-            _constrained_mma_n[
-                mma_n,
-                (16, 256),
-                16,
-                UMMAKind.KIND_F8F6F4,
-                use_cta_pair=use_pair_cta,
-            ]()
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+            case 128:
+                _constrained_mma_n[
+                    mma_n,
+                    (16, 256),
+                    16,
+                    UMMAKind.KIND_F8F6F4,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
 
-        else:
-            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
+            case _:
+                comptime assert False, String(
+                    "Invalid MMA shape: ", mma_m, mma_n
+                )
 
     else:
         _constrained_mma_m[
@@ -396,28 +469,31 @@ def _get_f8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        comptime if mma_m == 128:
-            _constrained_mma_n[
-                mma_n,
-                (32, 256),
-                32,
-                UMMAKind.KIND_F8F6F4,
-                use_cta_pair=use_pair_cta,
-            ]()
+        comptime match mma_m:
+            case 128:
+                _constrained_mma_n[
+                    mma_n,
+                    (32, 256),
+                    32,
+                    UMMAKind.KIND_F8F6F4,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
-        elif mma_m == 256:
-            _constrained_mma_n[
-                mma_n,
-                (32, 256),
-                32,
-                UMMAKind.KIND_F8F6F4,
-                use_cta_pair=use_pair_cta,
-            ]()
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+            case 256:
+                _constrained_mma_n[
+                    mma_n,
+                    (32, 256),
+                    32,
+                    UMMAKind.KIND_F8F6F4,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
-        else:
-            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+            case _:
+                comptime assert False, String(
+                    "Invalid MMA shape: ", mma_m, mma_n
+                )
 
 
 @inline(.always)
@@ -465,28 +541,31 @@ def _get_mxf8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        comptime if mma_m == 128:
-            _constrained_mma_n[
-                mma_n,
-                (16, 256),
-                16,
-                UMMAKind.KIND_MXF8F6F4,
-                use_cta_pair=use_pair_cta,
-            ]()
+        comptime match mma_m:
+            case 128:
+                _constrained_mma_n[
+                    mma_n,
+                    (16, 256),
+                    16,
+                    UMMAKind.KIND_MXF8F6F4,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
-        elif mma_m == 256:
-            _constrained_mma_n[
-                mma_n,
-                (16, 256),
-                16,
-                UMMAKind.KIND_MXF8F6F4,
-                use_cta_pair=use_pair_cta,
-            ]()
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+            case 256:
+                _constrained_mma_n[
+                    mma_n,
+                    (16, 256),
+                    16,
+                    UMMAKind.KIND_MXF8F6F4,
+                    use_cta_pair=use_pair_cta,
+                ]()
 
-            return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
-        else:
-            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
+                return IndexList[3, element_type=.uint32](mma_m, mma_n, 32)
+            case _:
+                comptime assert False, String(
+                    "Invalid MMA shape: ", mma_m, mma_n
+                )
 
 
 @inline(.always)
@@ -501,15 +580,16 @@ def _mxf8f6f4_operand_format[dtype: DType]() -> UInt32:
     (`PACKED_FP4_ALIGN16B`), not from the densely packed layout the FP4-only
     kinds read.
     """
-    comptime if dtype == .float8_e4m3fn:
-        return 0
-    elif dtype == .float8_e5m2:
-        return 1
-    else:
-        comptime assert dtype == .uint8, String(
-            "Unsupported operand type for kind::mxf8f6f4: ", dtype
-        )
-        return 5
+    comptime match dtype:
+        case .float8_e4m3fn:
+            return 0
+        case .float8_e5m2:
+            return 1
+        case _:
+            comptime assert dtype == .uint8, String(
+                "Unsupported operand type for kind::mxf8f6f4: ", dtype
+            )
+            return 5
 
 
 struct UMMAInsDescriptor[
@@ -847,30 +927,31 @@ struct UMMAInsDescriptor[
             transpose_a_bit, UInt32(0) if transpose_b else UInt32(1)
         )
 
-        comptime if Self.mma_kind == UMMAKind.KIND_TF32:
-            return Self(
-                desc
-                | Self._create_tf32_desc[d_type, a_type, b_type]()
-                | transpose_bit
-            )
+        comptime match Self.mma_kind:
+            case .KIND_TF32:
+                return Self(
+                    desc
+                    | Self._create_tf32_desc[d_type, a_type, b_type]()
+                    | transpose_bit
+                )
 
-        elif Self.mma_kind == UMMAKind.KIND_F16:
-            return Self(
-                desc
-                | Self._create_f16_desc[d_type, a_type, b_type]()
-                | transpose_bit
-            )
+            case .KIND_F16:
+                return Self(
+                    desc
+                    | Self._create_f16_desc[d_type, a_type, b_type]()
+                    | transpose_bit
+                )
 
-        elif Self.mma_kind == UMMAKind.KIND_F8F6F4:
-            return Self(
-                desc
-                | Self._create_f8f6f4_desc[d_type, a_type, b_type]()
-                | transpose_bit
-            )
-        else:
-            comptime assert False, String(
-                "Unsupported UMMA kind: ", Self.mma_kind
-            )
+            case .KIND_F8F6F4:
+                return Self(
+                    desc
+                    | Self._create_f8f6f4_desc[d_type, a_type, b_type]()
+                    | transpose_bit
+                )
+            case _:
+                comptime assert False, String(
+                    "Unsupported UMMA kind: ", Self.mma_kind
+                )
 
     @staticmethod
     def create[
@@ -913,29 +994,27 @@ struct UMMAInsDescriptor[
             transpose_a_bit, UInt32(0) if transpose_b else UInt32(1)
         )
 
-        comptime if Self.mma_kind == UMMAKind.KIND_MXF8F6F4:
-            return Self(
-                desc
-                | Self._create_mxf8f6f4_desc[
-                    d_type, a_type, b_type, scale_type
-                ]()
-                | transpose_bit
-            )
-        elif (
-            Self.mma_kind == UMMAKind.KIND_MXF4NVF4
-            or Self.mma_kind == UMMAKind.KIND_MXF4
-        ):
-            return Self(
-                desc
-                | Self._create_mxf4_mxf4nvf4_desc[
-                    d_type, a_type, b_type, scale_type
-                ]()
-                | transpose_bit
-            )
-        else:
-            comptime assert False, String(
-                "Unsupported UMMA kind: ", Self.mma_kind
-            )
+        comptime match Self.mma_kind:
+            case .KIND_MXF8F6F4:
+                return Self(
+                    desc
+                    | Self._create_mxf8f6f4_desc[
+                        d_type, a_type, b_type, scale_type
+                    ]()
+                    | transpose_bit
+                )
+            case .KIND_MXF4NVF4 | .KIND_MXF4:
+                return Self(
+                    desc
+                    | Self._create_mxf4_mxf4nvf4_desc[
+                        d_type, a_type, b_type, scale_type
+                    ]()
+                    | transpose_bit
+                )
+            case _:
+                comptime assert False, String(
+                    "Unsupported UMMA kind: ", Self.mma_kind
+                )
 
     @staticmethod
     def update_desc_with_sf_id[
@@ -1049,20 +1128,20 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @__parameter
         def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
-            comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
-                return 0
-            elif mode == TensorMapSwizzle.SWIZZLE_32B:
-                return 6
-            elif mode == TensorMapSwizzle.SWIZZLE_64B:
-                return 4
-            elif mode == TensorMapSwizzle.SWIZZLE_128B:
-                return 2
-            else:
-                comptime assert False, String(
-                    "Unsupported swizzle mode: ", mode
-                )
+            comptime match mode:
+                case .SWIZZLE_NONE:
+                    return 0
+                case .SWIZZLE_32B:
+                    return 6
+                case .SWIZZLE_64B:
+                    return 4
+                case .SWIZZLE_128B:
+                    return 2
+                case _:
+                    comptime assert False, String(
+                        "Unsupported swizzle mode: ", mode
+                    )
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
@@ -1209,20 +1288,20 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @__parameter
         def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
-            comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
-                return 0
-            elif mode == TensorMapSwizzle.SWIZZLE_32B:
-                return 6
-            elif mode == TensorMapSwizzle.SWIZZLE_64B:
-                return 4
-            elif mode == TensorMapSwizzle.SWIZZLE_128B:
-                return 2
-            else:
-                comptime assert False, String(
-                    "Unsupported swizzle mode: ", mode
-                )
+            comptime match mode:
+                case .SWIZZLE_NONE:
+                    return 0
+                case .SWIZZLE_32B:
+                    return 6
+                case .SWIZZLE_64B:
+                    return 4
+                case .SWIZZLE_128B:
+                    return 2
+                case _:
+                    comptime assert False, String(
+                        "Unsupported swizzle mode: ", mode
+                    )
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
@@ -1325,60 +1404,61 @@ def mma[
         "Invalid c_scale: ", c_scale
     )
 
-    comptime if cta_group == 1:
-        var masks = IndexList[4, element_type=DType.uint32](0)
+    comptime match cta_group:
+        case 1:
+            var masks = IndexList[4, element_type=DType.uint32](0)
 
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::1."""
-            + String(kind)
-            + """ [$0], $1, $2, $3, {$5, $6, $7, $8}, p;
-            }""",
-            NoneType,
-            constraints="r,l,l,r,n,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-        )
-    elif cta_group == 2:
-        var masks = IndexList[8, element_type=DType.uint32](0)
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::1."""
+                + String(kind)
+                + """ [$0], $1, $2, $3, {$5, $6, $7, $8}, p;
+                }""",
+                NoneType,
+                constraints="r,l,l,r,n,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+            )
+        case 2:
+            var masks = IndexList[8, element_type=DType.uint32](0)
 
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::2."""
-            + String(kind)
-            + """ [$0], $1, $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
-            }""",
-            NoneType,
-            constraints="r,l,l,r,n,r,r,r,r,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-            masks[4],
-            masks[5],
-            masks[6],
-            masks[7],
-        )
-    else:
-        comptime assert False, String("Unsupported cta group: ", cta_group)
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::2."""
+                + String(kind)
+                + """ [$0], $1, $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
+                }""",
+                NoneType,
+                constraints="r,l,l,r,n,r,r,r,r,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+                masks[4],
+                masks[5],
+                masks[6],
+                masks[7],
+            )
+        case _:
+            comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 @inline(.always)
@@ -1431,50 +1511,51 @@ def mma[
 
     comptime scale_vector_size = _get_scale_vector_size[kind]()
 
-    comptime if cta_group == 1:
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::1."""
-            + String(kind)
-            + scale_vector_size
-            + """ [$0], $1, $2, $3, [$5], [$6], p;
-            }""",
-            NoneType,
-            constraints="r,l,l,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            sfa_tmem,
-            sfb_tmem,
-        )
-    elif cta_group == 2:
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::2."""
-            + String(kind)
-            + scale_vector_size
-            + """ [$0], $1, $2, $3, [$5], [$6], p;
-            }""",
-            NoneType,
-            constraints="r,l,l,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            sfa_tmem,
-            sfb_tmem,
-        )
-    else:
-        comptime assert False, String("Unsupported cta group: ", cta_group)
+    comptime match cta_group:
+        case 1:
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::1."""
+                + String(kind)
+                + scale_vector_size
+                + """ [$0], $1, $2, $3, [$5], [$6], p;
+                }""",
+                NoneType,
+                constraints="r,l,l,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                sfa_tmem,
+                sfb_tmem,
+            )
+        case 2:
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::2."""
+                + String(kind)
+                + scale_vector_size
+                + """ [$0], $1, $2, $3, [$5], [$6], p;
+                }""",
+                NoneType,
+                constraints="r,l,l,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                sfa_tmem,
+                sfb_tmem,
+            )
+        case _:
+            comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 @inline(.always)
@@ -1508,60 +1589,61 @@ def mma[
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    comptime if cta_group == 1:
-        var masks = IndexList[4, element_type=DType.uint32](0)
+    comptime match cta_group:
+        case 1:
+            var masks = IndexList[4, element_type=DType.uint32](0)
 
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::1."""
-            + String(kind)
-            + """ [$0], $1, $2, $3, {$5, $6, $7, $8}, p;
-            }""",
-            NoneType,
-            constraints="r,l,l,r,r,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-        )
-    elif cta_group == 2:
-        var masks = IndexList[8, element_type=DType.uint32](0)
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::1."""
+                + String(kind)
+                + """ [$0], $1, $2, $3, {$5, $6, $7, $8}, p;
+                }""",
+                NoneType,
+                constraints="r,l,l,r,r,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+            )
+        case 2:
+            var masks = IndexList[8, element_type=DType.uint32](0)
 
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::2."""
-            + String(kind)
-            + """ [$0], $1, $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
-            }""",
-            NoneType,
-            constraints="r,l,l,r,r,r,r,r,r,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-            masks[4],
-            masks[5],
-            masks[6],
-            masks[7],
-        )
-    else:
-        comptime assert False, String("Unsupported cta group: ", cta_group)
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::2."""
+                + String(kind)
+                + """ [$0], $1, $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
+                }""",
+                NoneType,
+                constraints="r,l,l,r,r,r,r,r,r,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+                masks[4],
+                masks[5],
+                masks[6],
+                masks[7],
+            )
+        case _:
+            comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 @inline(.always)
@@ -1594,60 +1676,61 @@ def mma[
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    comptime if cta_group == 1:
-        var masks = IndexList[4, element_type=DType.uint32](0)
+    comptime match cta_group:
+        case 1:
+            var masks = IndexList[4, element_type=DType.uint32](0)
 
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::1."""
-            + String(kind)
-            + """ [$0], [$1], $2, $3, {$5, $6, $7, $8}, p;
-            }""",
-            NoneType,
-            constraints="r,r,l,r,r,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-        )
-    elif cta_group == 2:
-        var masks = IndexList[8, element_type=DType.uint32](0)
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::1."""
+                + String(kind)
+                + """ [$0], [$1], $2, $3, {$5, $6, $7, $8}, p;
+                }""",
+                NoneType,
+                constraints="r,r,l,r,r,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+            )
+        case 2:
+            var masks = IndexList[8, element_type=DType.uint32](0)
 
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::2."""
-            + String(kind)
-            + """ [$0], [$1], $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
-            }""",
-            NoneType,
-            constraints="r,r,l,r,r,r,r,r,r,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-            masks[4],
-            masks[5],
-            masks[6],
-            masks[7],
-        )
-    else:
-        comptime assert False, String("Unsupported cta group: ", cta_group)
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::2."""
+                + String(kind)
+                + """ [$0], [$1], $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
+                }""",
+                NoneType,
+                constraints="r,r,l,r,r,r,r,r,r,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+                masks[4],
+                masks[5],
+                masks[6],
+                masks[7],
+            )
+        case _:
+            comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 @inline(.always)
@@ -1685,60 +1768,61 @@ def mma[
         "Invalid c_scale: ", c_scale
     )
 
-    comptime if cta_group == 1:
-        var masks = IndexList[4, element_type=DType.uint32](0)
+    comptime match cta_group:
+        case 1:
+            var masks = IndexList[4, element_type=DType.uint32](0)
 
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::1."""
-            + String(kind)
-            + """ [$0], [$1], $2, $3, {$5, $6, $7, $8}, p;
-            }""",
-            NoneType,
-            constraints="r,r,l,r,n,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-        )
-    elif cta_group == 2:
-        var masks = IndexList[8, element_type=DType.uint32](0)
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::1."""
+                + String(kind)
+                + """ [$0], [$1], $2, $3, {$5, $6, $7, $8}, p;
+                }""",
+                NoneType,
+                constraints="r,r,l,r,n,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+            )
+        case 2:
+            var masks = IndexList[8, element_type=DType.uint32](0)
 
-        inlined_assembly[
-            """{
-                .reg .pred p;
-                setp.ne.b32 p, $4, 0;
-                tcgen05.mma.cta_group::2."""
-            + String(kind)
-            + """ [$0], [$1], $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
-            }""",
-            NoneType,
-            constraints="r,r,l,r,n,r,r,r,r,r,r,r,r",
-        ](
-            c_tmem,
-            a_desc,
-            b_desc,
-            inst_desc,
-            c_scale,
-            masks[0],
-            masks[1],
-            masks[2],
-            masks[3],
-            masks[4],
-            masks[5],
-            masks[6],
-            masks[7],
-        )
-    else:
-        comptime assert False, String("Unsupported cta group: ", cta_group)
+            inlined_assembly[
+                """{
+                    .reg .pred p;
+                    setp.ne.b32 p, $4, 0;
+                    tcgen05.mma.cta_group::2."""
+                + String(kind)
+                + """ [$0], [$1], $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
+                }""",
+                NoneType,
+                constraints="r,r,l,r,n,r,r,r,r,r,r,r,r",
+            ](
+                c_tmem,
+                a_desc,
+                b_desc,
+                inst_desc,
+                c_scale,
+                masks[0],
+                masks[1],
+                masks[2],
+                masks[3],
+                masks[4],
+                masks[5],
+                masks[6],
+                masks[7],
+            )
+        case _:
+            comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 # ===----------------------------------------------------------------------=== #

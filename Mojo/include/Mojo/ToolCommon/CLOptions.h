@@ -448,13 +448,15 @@ private:
       llvm::cl::cat(KGENOptionsCategory)};
 
   using SanitizerKind = Sanitizers::SanitizerKind;
-  M::cl::MBitsOpt<SanitizerKind, unsigned> sanitizerOptions{
+  M::cl::MListOpt<SanitizerKind> sanitizerOptions{
       "sanitize", cl::desc("Enable the given sanitizer."),
       cl::values(clEnumValN(SanitizerKind::kAddress, "address",
                             "Enable address sanitizer"),
                  clEnumValN(SanitizerKind::kThread, "thread",
                             "Enable thread sanitizer")),
-      llvm::cl::location(options.sanitizerOptions),
+      llvm::cl::callback([this](const SanitizerKind &kind) {
+        options.sanitizerOptions |= 1u << kind;
+      }),
       llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MOpt<int, true> elaborationErrorLimit{

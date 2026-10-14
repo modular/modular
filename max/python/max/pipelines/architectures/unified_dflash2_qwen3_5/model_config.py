@@ -30,6 +30,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
+    recurrent_leaf,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.config import (
@@ -44,14 +45,16 @@ from typing_extensions import Self
 
 from ..llama3.model_config import Llama3Config
 from ..qwen3_5.model_config import Qwen3_5Config
-from ..qwen3_5.state_cache import attn_cache
+from ..qwen3_5.state_cache import STATE_CACHE_KEY, attn_cache
 from ..unified_dflash_llama3.model_config import parse_dflash_draft_hf_config
+from ..unified_mtp_qwen3_5.model_config import UnifiedMTPQwen3_5Config
 
 __all__ = [
     "Dflash2DraftHFConfig",
     "UnifiedDflash2Qwen3_5Config",
     "construct_dflash2_draft_kv_params",
     "dflash2_draft_width",
+    "dflash2_kv_params",
     "parse_dflash2_draft_hf_config",
     "resolve_dflash2_num_speculative_tokens",
 ]
@@ -235,8 +238,9 @@ def construct_dflash2_draft_kv_params(
     :data:`DRAFT_SLIDING_WINDOW`, and the materialize is trimmed to the same
     bound, so a page older than the window is neither read nor written.
 
-    ``page_size`` follows the target's, which Qwen3.5 bumps to its head_dim;
-    :class:`MultiKVCacheParams` requires one page size across the tree.
+    ``page_size`` follows the target's, which Qwen3.5 bumps to its head_dim,
+    and so does the draft width the cache reserves pages for.
+    :class:`MultiKVCacheParams` requires both to agree across the tree.
     """
     return pipeline_config.model.kv_cache.to_params(
         # Pinned rather than following --kv-cache-dtype: the drafter fills
@@ -250,7 +254,33 @@ def construct_dflash2_draft_kv_params(
         devices=list(draft_config.devices),
         data_parallel_degree=pipeline_config.model.data_parallel_degree,
         page_size=target_kv_params.page_size,
+        num_draft_tokens=target_kv_params.num_draft_tokens,
         window_size=DRAFT_SLIDING_WINDOW,
+    )
+
+
+def dflash2_kv_params(
+    target_kv_params: KVCacheParamInterface, draft_kv_params: KVCacheParams
+) -> MultiKVCacheParams:
+    """Returns the cache the fused graph is served from.
+
+    The target's attention leaf, the drafter's windowed leaf, then the
+    target's recurrent state, verify ring included, as its own child. The
+    graph's signature drops that child and declares the state in its tail
+    instead, like the Qwen3.5 MTP graph's.
+
+    Args:
+        target_kv_params: The target's cache, attention and state.
+        draft_kv_params: The drafter's windowed leaf.
+    """
+    state = recurrent_leaf(target_kv_params)
+    assert state is not None, "a Qwen3.5 target keeps a recurrent state"
+    return MultiKVCacheParams.from_params(
+        {
+            "target": attn_cache(target_kv_params),
+            "draft": draft_kv_params,
+            STATE_CACHE_KEY: state,
+        }
     )
 
 
@@ -383,11 +413,8 @@ class UnifiedDflash2Qwen3_5Config(ArchConfigWithKVCache):
         return list(self.target.devices)
 
     def get_kv_params(self) -> KVCacheParamInterface:
-        return MultiKVCacheParams.from_params(
-            {
-                "target": self.target.get_kv_params(),
-                "draft": self.draft_kv_params,
-            }
+        return dflash2_kv_params(
+            self.target.get_kv_params(), self.draft_kv_params
         )
 
     def get_max_seq_len(self) -> int:
@@ -426,7 +453,8 @@ class UnifiedDflash2Qwen3_5Config(ArchConfigWithKVCache):
                 update={"num_speculative_tokens": resolved}
             )
 
-        target_config = Qwen3_5Config.initialize_from_config(
+        # The speculative target config, so its cache holds the verify ring.
+        target_config = UnifiedMTPQwen3_5Config.initialize_from_config(
             pipeline_config,
             model_config.huggingface_config,
             model_config,

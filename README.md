@@ -43,7 +43,7 @@ The main components include:
 
 ## Contribute
 
-We accept contributions to the [Mojo standard library](./mojo), [MAX
+We accept contributions to the [Mojo standard library](/Mojo/stdlib), [MAX
 accelerator library](./max/kernels), [MAX model
 architectures](/max/python/max/pipelines/architectures), code examples, Mojo
 docs, and more. We aren't accepting contributions to the Mojo compiler yet.

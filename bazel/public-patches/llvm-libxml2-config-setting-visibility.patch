@@ -1,0 +1,26 @@
+diff --git a/utils/bazel/llvm-project-overlay/third-party/BUILD.bazel b/utils/bazel/llvm-project-overlay/third-party/BUILD.bazel
+index cec651d356e6..323b1e732a04 100644
+--- a/utils/bazel/llvm-project-overlay/third-party/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/third-party/BUILD.bazel
+@@ -22,7 +22,6 @@ string_flag(
+ config_setting(
+     name = "llvm_libxml2_auto",
+     flag_values = {":llvm_enable_libxml2": "auto"},
+-    visibility = ["//visibility:private"],
+ )
+ 
+ # This specializes llvm_libxml2_auto so select() prefers it for macOS targets.
+@@ -36,13 +35,11 @@ config_setting(
+ config_setting(
+     name = "llvm_libxml2_external",
+     flag_values = {":llvm_enable_libxml2": "external"},
+-    visibility = ["//visibility:private"],
+ )
+ 
+ config_setting(
+     name = "llvm_libxml2_system",
+     flag_values = {":llvm_enable_libxml2": "system"},
+-    visibility = ["//visibility:private"],
+ )
+ 
+ selects.config_setting_group(

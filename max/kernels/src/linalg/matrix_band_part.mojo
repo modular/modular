@@ -33,7 +33,7 @@ def matrix_band_part[
     simd_width: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
+    & def[width: Int](Coord) -> SIMD[dtype, width],
     target: StaticString = "cpu",
 ](
     input_0_fn: InputFnType,
@@ -112,7 +112,7 @@ def _matrix_band_part_impl[
     simd_width: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
+    & def[width: Int](Coord) -> SIMD[dtype, width],
     exclude: Bool,
     target: StaticString = "cpu",
 ](
@@ -141,12 +141,8 @@ def _matrix_band_part_impl[
 
     @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](index: Coord) {var}:
-        var idx = IndexList[rank]()
-        comptime for i in range(rank):
-            idx[i] = Int(index[i].value())
-
-        var row = idx[rank - 2]
-        var col = idx[rank - 1]
+        var row = Int(index[rank - 2].value())
+        var col = Int(index[rank - 1].value())
 
         var in_band = (
             lower_diagonal_index < 0 or (row - col) <= lower_diagonal_index
@@ -156,9 +152,9 @@ def _matrix_band_part_impl[
             in_band = not in_band
 
         if in_band:
-            output.store_linear(idx, input_0_fn[1, rank](idx))
+            output.store(index, input_0_fn[1](index))
         else:
-            output.store_linear(idx, Scalar[dtype](0))
+            output.store(index, Scalar[dtype](0))
 
     elementwise[
         simd_width=1,

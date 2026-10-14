@@ -24,7 +24,7 @@ from max.experimental.nn.common_layers.linear import ColumnParallelLinear
 from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import DeviceMesh, PlacementMapping
+from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
 from max.nn.kv_cache import (
     KVCacheParamInterface,
@@ -276,7 +276,7 @@ class Gemma4(Module[..., tuple[Tensor, ...]]):
         # over the TP mesh rather than sharded over it. tokens.mapping would
         # be wrong here: the primary inputs are broadcast, not distributed,
         # so their mapping is single-device.
-        kv_mapping = PlacementMapping.replicated(self.mesh)
+        kv_mapping = DeviceMapping.replicated(self.mesh)
         sliding_kv = PagedCacheValues.from_upstream(sliding_inputs, kv_mapping)
         global_kv = PagedCacheValues.from_upstream(global_inputs, kv_mapping)
         return self.language_model(

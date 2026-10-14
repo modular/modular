@@ -26,7 +26,7 @@ from max.driver import (
     Buffer,
     Device,
     DeviceEvent,
-    DevicePinnedBuffer,
+    Usage,
     is_virtual_device_mode,
 )
 from max.dtype import DType
@@ -38,6 +38,8 @@ from max.pipelines.context import (
 )
 from max.profiler import Tracer, traced
 from typing_extensions import Self
+
+from .seeds import request_row_seed
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
@@ -80,10 +82,11 @@ def _to_pinned_host_buffer(
             device=device,
         )
     else:
-        buffer = DevicePinnedBuffer(
+        buffer = Buffer(
             shape=(len(values),),
             dtype=dtype,
             device=device,
+            usage=Usage.STAGING | Usage.UNTRACKED,
         )
 
     buffer_np = buffer.to_numpy()
@@ -170,10 +173,11 @@ class FusedSamplingProcessor:
                 )
             else:
                 # GPU - allocate pinned memory for faster H2D transfer
-                self._pinned_bitmask = DevicePinnedBuffer(
+                self._pinned_bitmask = Buffer(
                     shape=self.bitmask.shape,
                     dtype=DType.int32,
                     device=device,
+                    usage=Usage.STAGING | Usage.UNTRACKED,
                 )
             self._pinned_bitmask.to_numpy()[:] = self.bitmask
             self.tensor_bitmask = self._pinned_bitmask.to(self.device)
@@ -192,10 +196,11 @@ class FusedSamplingProcessor:
                 device=device,
             )
         else:
-            self.generated_tokens = DevicePinnedBuffer(
+            self.generated_tokens = Buffer(
                 shape=(batch_size, 0),
                 dtype=DType.int64,
                 device=device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
 
         self.sampler_inputs = SamplerInputs.create(context_batch, device)
@@ -292,15 +297,14 @@ class FusedSamplingProcessor:
     def update_bitmask(self, packed_bitmask: npt.NDArray[np.int32]) -> None:
         """Update the GPU bitmask with new FSM state for multi-step execution.
 
-        Copies the packed int32 bitmask from llguidance into the pinned host
-        buffer and transfers it to the GPU, keeping the bitmask synchronized
-        with the FSM state after each token is sampled. Unpacking is done on the
-        GPU by the sampler graph (apply_packed_bitmask), not here.
+        Copies the packed int32 bitmask from the grammar backend into the
+        pinned host buffer and transfers it to the GPU, keeping the bitmask
+        synchronized with the FSM state after each token is sampled. Unpacking
+        is done on the GPU by the sampler graph (apply_packed_bitmask), not here.
 
         Args:
-            packed_bitmask: Packed int32 bitmask from
-                llguidance.numpy.allocate_token_bitmask. Shape is
-                [batch_size, ceil(vocab_size/32)].
+            packed_bitmask: Packed int32 bitmask from the grammar backend's
+                allocate_token_bitmask. Shape is [batch_size, ceil(vocab_size/32)].
         """
         if (
             self.tensor_bitmask is None
@@ -586,6 +590,26 @@ class PenaltyInputs:
         )
 
 
+def batch_max_k(top_k: npt.NDArray[np.int64]) -> int:
+    """Returns the ``max_k`` scalar the fused sampler takes for ``top_k``.
+
+    The kernel resolves a row's ``top_k`` of ``-1`` (no limit) to ``max_k``,
+    so the plain batch maximum would hand that row a batch-mate's explicit
+    ``top_k``: next to a greedy request it would decode greedily. Returning
+    ``-1`` whenever any row has no limit lets the kernel give those rows its
+    own unrestricted bound while explicit rows keep their ``top_k``.
+
+    Args:
+        top_k: Per-row ``top_k`` values of the batch.
+
+    Returns:
+        ``-1`` if any row has no top-k limit, else the largest ``top_k``.
+    """
+    if (top_k <= 0).any():
+        return -1
+    return int(top_k.max())
+
+
 @dataclass
 class SamplerInputs:
     """Container for sampler inputs."""
@@ -641,7 +665,7 @@ class SamplerInputs:
 
         # max_k is a scalar 0-d tensor. It does not need to be pinned since it
         # is not copied to the device.
-        max_k_np = np.array(np.max(top_k_host.to_numpy()), dtype=np.int64)
+        max_k_np = np.array(batch_max_k(top_k_host.to_numpy()), dtype=np.int64)
         max_k = Buffer.from_numpy(max_k_np)
 
         # top_p is a tensor of shape (batch_size,)
@@ -665,10 +689,7 @@ class SamplerInputs:
 
         # seed is a tensor of shape (batch_size,)
         seed_host = _to_pinned_host_buffer(
-            [
-                context.sampling_params.seed + len(context.tokens)
-                for context in batch
-            ],
+            [request_row_seed(context) for context in batch],
             device=device,
             dtype=DType.uint64,
         )

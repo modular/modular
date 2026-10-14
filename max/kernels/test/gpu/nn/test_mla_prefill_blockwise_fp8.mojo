@@ -13,22 +13,12 @@
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from std.random import randn
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
-
-from std.utils.index import Index
 
 
 def test_prefill[
@@ -384,28 +374,26 @@ def test_prefill[
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_device.as_immut().as_unsafe_any_origin()
+    var k_ref_operand = TileTensorMHAOperand(
+        k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_device.as_immut().as_unsafe_any_origin()
+    var v_ref_operand = TileTensorMHAOperand(
+        v_ref_device.as_imm().as_unsafe_any_origin()
     )
 
     # create reference output
 
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_device_rank4.to_layout_tensor(),
+        q_device_rank4,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
+        output_ref_device,
         null_valid_length,
         scale,
         batch_size,

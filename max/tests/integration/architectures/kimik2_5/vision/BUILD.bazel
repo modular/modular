@@ -30,6 +30,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],

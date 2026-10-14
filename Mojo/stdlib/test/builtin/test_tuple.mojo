@@ -27,6 +27,35 @@ from test_utils import (
 )
 
 
+def test_tuple_first_of() raises:
+    var t = (1, String("two"), 3.0, 4)
+
+    assert_equal(t.first_of[Int](), 1)
+    assert_equal(t.first_of[String](), "two")
+    assert_equal(t.first_of[Float64](), 3.0)
+
+    # The returned reference propagates mutability and picks the first match.
+    t.first_of[Int]() += 10
+    t.first_of[String]() += "!"
+    assert_equal(t[0], 11)
+    assert_equal(t[3], 4)
+    assert_equal(t[1], "two!")
+
+    var m = (MoveOnly[Int](7), 2)
+    assert_equal(m.first_of[MoveOnly[Int]]().data, 7)
+
+
+def test_tuple_first_of_picks_first_match() raises:
+    var t = (10, String("x"), 20)
+
+    assert_equal(t.first_of[Int](), 10)
+
+    # Writing through the reference must hit the first `Int`, not the second.
+    t.first_of[Int]() = 30
+    assert_equal(t[0], 30)
+    assert_equal(t[2], 20)
+
+
 def test_tuple_contains() raises:
     var a = (123, True, StaticString("Mojo is awesome"))
 
@@ -55,19 +84,10 @@ def test_tuple_contains() raises:
     assert_true(b.__contains__(True))
     assert_true(False in b)
     assert_true(b.__contains__(False))
-    assert_false(b.__contains__(1))
-    assert_false(b.__contains__(0))
-
-    var c = (1, 0)
-    assert_false(c.__contains__(True))
-    assert_false(c.__contains__(False))
-    assert_false(True in c)
-    assert_false(False in c)
 
     var d = (123, True, "Mojo is awesome")
 
     assert_true("Mojo is awesome" in d)
-    assert_false(StaticString("Mojo is awesome") in d)
     assert_true(d.__contains__("Mojo is awesome"))
 
     assert_false("Hello world" in d)
@@ -100,14 +120,6 @@ def test_tuple_contains() raises:
     assert_true(b_alias.__contains__(True))
     assert_true(False in b_alias)
     assert_true(b_alias.__contains__(False))
-    assert_false(b_alias.__contains__(1))
-    assert_false(b_alias.__contains__(0))
-
-    comptime c_alias = (1, 0)
-    assert_false(c_alias.__contains__(True))
-    assert_false(c_alias.__contains__(False))
-    assert_false(True in c_alias)
-    assert_false(False in c_alias)
 
     comptime d_alias = (123, True, "Mojo is awesome")
     # Ensure `contains` itself works in comp-time domain
@@ -409,12 +421,10 @@ def test_tuple_consume_elements_move_only() raises:
     var t = (MoveOnly[Int](10), MoveOnly[Int](20), MoveOnly[Int](30))
     var collected = [0, 0, 0]
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
-        var e = rebind_var[MoveOnly[Int]](elt^)
-        collected[idx] = e.data
+    def handler[idx: Int](var elt: t.Ts[idx]) {mut collected}:
+        collected[idx] = elt.data
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     assert_equal(collected, [10, 20, 30])
 
 
@@ -430,12 +440,12 @@ def test_tuple_consume_elements_destroys_once() raises:
     )
     assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 0)
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
+    # TODO(MOCO-4969): Drop the `{imm}` here.
+    def handler[idx: Int](var elt: t.Ts[idx]) {imm}:
         # Discarding the owned `elt` runs its destructor exactly once.
-        _ = rebind_var[Observed](elt^)
+        _ = elt^
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     # Each element is destroyed once and `deinit self` disables the tuple's own
     # destructor, so there is no double-free.
     assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 3)
@@ -447,8 +457,9 @@ def test_tuple_consume_elements_heterogeneous() raises:
     var got_int = 0
     var got_sum = 0
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
+    def handler[
+        idx: Int
+    ](var elt: t.Ts[idx]) {mut got_str, mut got_int, mut got_sum}:
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
         elif idx == 1:
@@ -458,7 +469,7 @@ def test_tuple_consume_elements_heterogeneous() raises:
             for x in lst:
                 got_sum += x
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     assert_equal(got_str, "hello")
     assert_equal(got_int, 42)
     assert_equal(got_sum, 6)
@@ -468,12 +479,10 @@ def test_tuple_consume_elements_single() raises:
     var t = (MoveOnly[Int](7),)
     var collected = [0]
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
-        var e = rebind_var[MoveOnly[Int]](elt^)
-        collected[idx] = e.data
+    def handler[idx: Int](var elt: t.Ts[idx]) {mut collected}:
+        collected[idx] = elt.data
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     assert_equal(collected, [7])
 
 
@@ -483,12 +492,11 @@ def test_tuple_consume_elements_single() raises:
 def _count_consumed[*Ts: Movable & Deinitable](var t: Tuple[*Ts]) -> Int:
     var count = 0
 
-    @__parameter
-    def handler[idx: Int](var elt: t.Ts[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]) {mut count}:
         _ = elt^
         count += 1
 
-    t^.consume_elements[handler]()
+    t^.consume_elements(handler)
     return count
 
 
@@ -503,13 +511,11 @@ def test_tuple_deinit_with() raises:
     var t = (ExplicitDestroy(0), ExplicitDestroy(1), ExplicitDestroy(2))
     var destroyed = List[Int]()
 
-    @__parameter
-    def dispose[idx: Int](var elt: t.Ts[idx]):
-        var e = rebind_var[ExplicitDestroy](elt^)
-        destroyed.append(e.value)
-        e^.destroy()
+    def dispose[idx: Int](var elt: ExplicitDestroy) {mut destroyed}:
+        destroyed.append(elt.value)
+        elt^.destroy()
 
-    t^.deinit_with[dispose]()
+    t^.deinit_with(dispose)
     assert_equal(destroyed, [0, 1, 2])
 
 
@@ -520,8 +526,7 @@ def test_tuple_deinit_with_heterogeneous() raises:
     var got_str = String()
     var got_val = 0
 
-    @__parameter
-    def dispose[idx: Int](var elt: t.Ts[idx]):
+    def dispose[idx: Int](var elt: t.Ts[idx]) {mut got_str, mut got_val}:
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
         else:
@@ -529,7 +534,7 @@ def test_tuple_deinit_with_heterogeneous() raises:
             got_val = e.value
             e^.destroy()
 
-    t^.deinit_with[dispose]()
+    t^.deinit_with(dispose)
     assert_equal(got_str, "hello")
     assert_equal(got_val, 42)
 

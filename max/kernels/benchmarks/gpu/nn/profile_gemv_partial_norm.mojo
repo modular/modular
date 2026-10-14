@@ -41,14 +41,13 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.memory import alloc
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from internal_utils import assert_almost_equal
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from std.math import sqrt
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from internal_utils._cache_busting import CacheBustingBuffer
 from internal_utils._utils import InitializationType
@@ -121,11 +120,11 @@ def main() raises:
             N_NORMED,
         )
 
-    comptime a_shape = row_major(Coord(Idx[1], Idx[7168]))
-    comptime b_shape = row_major(Coord(Idx[2112], Idx[7168]))
-    comptime c_shape = row_major(Coord(Idx[1], Idx[2112]))
-    comptime normed_shape = row_major(Coord(Idx[1], Idx[1536]))
-    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime a_shape = row_major(Idx[1], Idx[7168])
+    comptime b_shape = row_major(Idx[2112], Idx[7168])
+    comptime c_shape = row_major(Idx[1], Idx[2112])
+    comptime normed_shape = row_major(Idx[1], Idx[1536])
+    var unnormed_shape = row_major(Idx[1], N_UNNORMED)
     comptime gamma_shape = row_major(Idx[1536])
 
     comptime variant: String = "fused" if fused else "unfused"
@@ -202,9 +201,9 @@ def main() raises:
 
         vendor_blas.matmul(
             ctx,
-            y_ref_tensor.to_layout_tensor(),
-            a_iter0.to_layout_tensor(),
-            b_iter0.to_layout_tensor(),
+            y_ref_tensor,
+            a_iter0,
+            b_iter0,
             c_row_major=True,
             transpose_b=True,
         )

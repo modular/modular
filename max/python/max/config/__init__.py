@@ -703,18 +703,6 @@ class MAXConfig:
         files. For comprehensive files, automatically detects the appropriate
         section based on class name.
 
-        Args:
-            config_path: The path to the YAML configuration file.
-            section_name: The section name for comprehensive configs.
-                Auto-detected if ``None``. Defaults to ``None``.
-
-        Returns:
-            A config instance with parameters loaded from the file.
-
-        Raises:
-            FileNotFoundError: If the config file does not exist.
-            ValueError: If the configuration is invalid.
-
         Define a config subclass, then load its values from a YAML file:
 
         .. code-block:: python
@@ -741,6 +729,18 @@ class MAXConfig:
         .. invisible-code-block: python
 
             assert config.page_size == 256
+
+        Args:
+            config_path: The path to the YAML configuration file.
+            section_name: The section name for comprehensive configs.
+                Auto-detected if ``None``. Defaults to ``None``.
+
+        Returns:
+            A config instance with parameters loaded from the file.
+
+        Raises:
+            FileNotFoundError: If the config file does not exist.
+            ValueError: If the configuration is invalid.
         """
         config_path = Path(config_path)
 
@@ -937,28 +937,6 @@ class MAXConfig:
         values back to their proper types (for example, enum objects) using
         :class:`MAXConfig` type conversion logic.
 
-        Args:
-            choices_provider: A dictionary mapping field names to their valid
-                choices. Allows external code to specify choices for specific
-                fields. Defaults to ``None``.
-            description: A description for the argument parser. Defaults to
-                ``None``.
-            formatter_class: A formatter class for the argument parser,
-                forwarded to the ``argparse.ArgumentParser`` constructor.
-                Defaults to ``None``.
-            required_params: A set of field names that should be marked as
-                required in the argument parser, regardless of their default
-                values. Defaults to ``None``.
-
-        Returns:
-            A configured ``ArgumentParser`` with an enhanced ``parse_args()``
-            method that:
-
-            - Uses loaded config values as argument defaults.
-            - Converts parsed values to proper types (enums and similar).
-            - Groups arguments by field metadata for better organization.
-            - Maintains compatibility with standard ``argparse`` usage.
-
         Build a parser from a config instance and parse a list of arguments,
         restricting a field to a set of valid choices:
 
@@ -985,6 +963,28 @@ class MAXConfig:
         .. invisible-code-block: python
 
             assert args.backend == "vllm"
+
+        Args:
+            choices_provider: A dictionary mapping field names to their valid
+                choices. Allows external code to specify choices for specific
+                fields. Defaults to ``None``.
+            description: A description for the argument parser. Defaults to
+                ``None``.
+            formatter_class: A formatter class for the argument parser,
+                forwarded to the ``argparse.ArgumentParser`` constructor.
+                Defaults to ``None``.
+            required_params: A set of field names that should be marked as
+                required in the argument parser, regardless of their default
+                values. Defaults to ``None``.
+
+        Returns:
+            A configured ``ArgumentParser`` with an enhanced ``parse_args()``
+            method that:
+
+            - Uses loaded config values as argument defaults.
+            - Converts parsed values to proper types (enums and similar).
+            - Groups arguments by field metadata for better organization.
+            - Maintains compatibility with standard ``argparse`` usage.
         """
 
         # Create parser

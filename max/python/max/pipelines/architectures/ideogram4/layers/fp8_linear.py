@@ -107,7 +107,7 @@ def fp8_matmul_2d(
 class Ideogram4FP8Linear(Module[[Tensor], Tensor]):
     """A bias-free linear projection executed as a native FP8 GEMM.
 
-    By convention the weight is stored transposed, i.e. ``weight.shape ==
+    By convention the weight is stored transposed; that is, ``weight.shape ==
     [out_dim, in_dim]``, matching :class:`~max.experimental.nn.Linear` and the
     checkpoint layout.
 

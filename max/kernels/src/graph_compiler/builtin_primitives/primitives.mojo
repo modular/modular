@@ -15,7 +15,6 @@ from std.logger import Logger
 from std.math import fma, gcd
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
-from std.sys.intrinsics import strided_load, strided_store
 
 from max.algorithm.functional import elementwise
 
@@ -23,7 +22,6 @@ from extensibility import StaticTensorSpec
 from extensibility import (
     ComputeOutputFusion,
     ComputeOutputFusionTile,
-    ElementwiseFusion,
     ElementwiseFusionTile,
     InputFusion,
     OutputFusion,
@@ -38,10 +36,11 @@ from max.gpu.host import (
     DeviceGraphBuilder,
     DeviceGraphCache,
     DeviceGraphInput,
+    StableAddr,
 )
-from max.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
+from max.gpu.host.device_context import _DeviceContextPtr
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
-from std.memory import OwnedPointer, MaybeUninit, alloc, dealloc
+from std.memory import OwnedPointer, MaybeUninit, alloc
 from std.os import abort
 from layout import (
     Coord,
@@ -60,18 +59,17 @@ from layout.tile_io import (
 )
 from layout.tile_tensor import stack_allocation
 from std.memory import unsafe_memcpy
-from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
 from nn.reshape import reshape
 from nn.slice import slice_as_view
-from layout.coord import DynamicCoord
 from layout.int_tuple import _IntTupleToCoordLike, UNKNOWN_VALUE
 from layout.tile_layout import Layout as TileLayout
 from extensibility import register_internal
 from extensibility import (
     IOSpec,
     ManagedTensorSlice,
+    StableTensor,
 )
 from extensibility import IO
 from extensibility import (
@@ -80,13 +78,12 @@ from extensibility import (
     get_kernel_simd_width,
     simd_load_from_managed_tensor_slice,
 )
-from extensibility.managed_tensor_slice import _gcd_pow2
 
 from std.utils import Index, IndexList, StaticTuple
 
 from max.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
 
-from .buffer_plan import BufferPlanState, BufferPlanStats
+from .buffer_plan import BufferPlanState
 
 comptime MutByteBuffer = DynamicTensor[.int8, 1]
 comptime ImmutByteBuffer = DynamicTensor[.int8, 1]
@@ -588,6 +585,47 @@ def mgp_tensor_create[
         return {view, storage^}
 
 
+@register_internal("mgp.device_graph.stable.tensor")
+@inline(.never)
+def mgp_device_graph_stable_tensor[
+    spec_rank: Int,
+    buffer_rank: Int,
+    dtype: DType,
+    mut: Bool = False,
+    host: Bool = False,
+](
+    addr: StableAddr,
+    spec: IndexList[spec_rank],
+) -> OwnedTensor[
+    dtype, buffer_rank, mut, host
+]:
+    """Views a stable address slot as the tensor it stands for.
+
+    The view's data pointer is the slot's address, not the pointer the slot
+    holds, so a kernel recorded against the tensor dereferences the slot at
+    replay. The slot belongs to the `DeviceGraphCache` for the model's
+    lifetime, so the tensor carries no storage handle.
+    """
+    var ptr = (
+        addr.ptr.unsafe_bitcast[Scalar[dtype]]()
+        .unsafe_origin_cast[MutAnyOrigin]()
+        .unsafe_mut_cast[target_mut=True]()
+    )
+    comptime if spec_rank == 0:
+        # We promote scalar tensor to tensor<[1]>
+        comptime assert buffer_rank == 1
+        var view = DynamicTensor[dtype, buffer_rank](
+            ptr, rebind[IndexList[buffer_rank]](IndexList[1](1))
+        )
+        return {view, AnyAsyncValueRef()}
+    else:
+        comptime assert spec_rank == buffer_rank
+        var view = DynamicTensor[dtype, buffer_rank](
+            ptr, rebind[IndexList[buffer_rank]](spec)
+        )
+        return {view, AnyAsyncValueRef()}
+
+
 @register_internal("mgp.tensor.extract.tensor_spec")
 @inline(.never)
 def mgp_tensor_extract_tensor_spec[
@@ -719,7 +757,7 @@ def mgp_buffer_constant(
     # Constant memory is owned by the resource system, not refcounted, so the
     # storage handle is the empty (non-tracked) reference.
     var view = MutByteBuffer(
-        resource_ptr.unsafe_bitcast[Int8](), IndexList[1](resource_bytecount)
+        resource_ptr.unsafe_bitcast[Int8](), (resource_bytecount,)
     )
     return OwnedByteBuffer(view, AnyAsyncValueRef())
 
@@ -907,7 +945,6 @@ def mgp_buffer_plan[
         - offsets: Offsets for each allocation (static_sizes first, then runtime_sizes).
     """
 
-    @__parameter
     def compute_static_allocations(
         out result: BufferPlanState[
             alignments,
@@ -946,22 +983,20 @@ def mgp_buffer_concat[
 ) raises:
     var output_lt = TileTensor(
         output.unsafe_ptr(),
-        row_major(Coord(output.size())),
+        row_major(output.size()),
     )
     var input_tensors = StaticTuple[_, inputs.length](
-        TileTensor(inputs[0].unsafe_ptr(), row_major(Coord(inputs[0].size())))
+        TileTensor(inputs[0].unsafe_ptr(), row_major(inputs[0].size()))
         .as_unsafe_any_origin()
-        .as_immut()
+        .as_imm()
     )
     for i in range(1, len(inputs)):
         input_tensors[i] = (
-            TileTensor(
-                inputs[i].unsafe_ptr(), row_major(Coord(inputs[i].size()))
-            )
+            TileTensor(inputs[i].unsafe_ptr(), row_major(inputs[i].size()))
             .as_unsafe_any_origin()
-            .as_immut()
+            .as_imm()
         )
-    concat[.int8, bDevice, None](output_lt, 0, input_tensors, context=call_ctx)
+    concat[.int8, bDevice](output_lt, 0, input_tensors, context=call_ctx)
 
 
 @register_internal("mgp.buffer.device_to_host")
@@ -1090,22 +1125,25 @@ def mgp_buffer_memset[
     """
     # `cast` to the matching-width unsigned int truncates to the low N bits,
     # which is exactly the little-endian low-byte pattern.
-    if elem_size == 1:
-        _memset_buffer[.uint8, bDevice](
-            buffer, value_bits.cast[.uint8](), dev_context
-        )
-    elif elem_size == 2:
-        _memset_buffer[.uint16, bDevice](
-            buffer, value_bits.cast[.uint16](), dev_context
-        )
-    elif elem_size == 4:
-        _memset_buffer[.uint32, bDevice](
-            buffer, value_bits.cast[.uint32](), dev_context
-        )
-    elif elem_size == 8:
-        _memset_buffer[.uint64, bDevice](buffer, value_bits, dev_context)
-    else:
-        raise Error("mgp.buffer.memset: elem_size must be one of {1, 2, 4, 8}")
+    match elem_size:
+        case 1:
+            _memset_buffer[.uint8, bDevice](
+                buffer, value_bits.cast[.uint8](), dev_context
+            )
+        case 2:
+            _memset_buffer[.uint16, bDevice](
+                buffer, value_bits.cast[.uint16](), dev_context
+            )
+        case 4:
+            _memset_buffer[.uint32, bDevice](
+                buffer, value_bits.cast[.uint32](), dev_context
+            )
+        case 8:
+            _memset_buffer[.uint64, bDevice](buffer, value_bits, dev_context)
+        case _:
+            raise Error(
+                "mgp.buffer.memset: elem_size must be one of {1, 2, 4, 8}"
+            )
 
 
 @register_internal("mgp.buffer.host_to_device")
@@ -1314,7 +1352,7 @@ def _get_scalar_from_managed_tensor_slice[
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
-    return tensor.load[width=1](IndexList[1](0))
+    return tensor.load[width=1]((0,))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1753,6 +1791,46 @@ def mogg_tensor_init[
     }
 
 
+@register_internal("mogg.tensor.__init__.stable")
+@inline(.always)
+def mogg_stable_tensor_init[
+    LayoutType: TensorLayout,
+    //,
+    dtype: DType,
+    rank: Int,
+    mut: Bool,
+    input: IO,
+    alignment: Int,
+](
+    ptr: Pointer[mut=True, NoneType, _],
+    layout: LayoutType,
+    out result: StableTensor[
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[
+            dtype,
+            rank,
+            static_layout=LayoutType,
+        ](alignment, .GENERIC),
+    ],
+):
+    """
+    Helper for constructing a StableTensor from a layout and the data pointer
+    of a stable `mgp.tensor`, which is the address of its slot. Selected by
+    `mogg.tensor.__init__` when its result `!mo.tensor` is marked `stable`.
+    """
+    var addr = StableAddr(
+        ptr.unsafe_bitcast[
+            Pointer[NoneType, MutUntrackedOrigin]
+        ]().unsafe_origin_cast[MutUntrackedOrigin]()
+    )
+    result = {
+        addr,
+        type_of(result).RuntimeLayout(
+            layout.shape_coord(), layout.stride_coord()
+        ),
+    }
+
+
 @register_internal("mogg.async.join")
 @inline(.never)
 def mogg_async_check_task_error(mut error: Optional[Error]) raises:
@@ -2063,7 +2141,7 @@ def mogg_index_reshape[
     # Reindex `index` (a point in the from-shape) to the point in the to-shape
     # with the same row-major linear offset. Backs `mogg.index.reshape`: the
     # per-index (store-side) counterpart of the whole-tensor
-    # `mogg._tensor.create.reshape` view, used for a reshape fused into an
+    # `mogg.tensor.create.reshape` view, used for a reshape fused into an
     # epilogue's store. `from_static_shape`/`to_static_shape` are the compile-time
     # shapes (a dim is `-1`, `UNKNOWN_VALUE`, where dynamic); `from_shape`/
     # `to_shape` are their runtime values, read only where a dim is dynamic.
@@ -2151,6 +2229,96 @@ def mogg_index_reshape[
     return out
 
 
+@register_internal("mogg.index.slice.select")
+@inline(.always)
+def mogg_index_slice_select[
+    rank: Int,
+    //,
+    static_starts: IntTuple,
+    static_steps: IntTuple,
+    in_static_shape: IntTuple,
+    out_static_shape: IntTuple,
+](
+    index: IndexList[rank],
+    in_shape: IndexList[rank] = _reshape_static_index_list[
+        rank, in_static_shape
+    ](),
+    out_shape: IndexList[rank] = _reshape_static_index_list[
+        rank, out_static_shape
+    ](),
+) -> Tuple[IndexList[rank], Bool]:
+    """Maps an index into a slice's input to the index into its output.
+
+    Backs `mogg.index.slice.select`, whose body runs at the returned index
+    only where the slice selects `index`. The slice follows `mo.slice`: a
+    start resolves against its input dim the numpy way, and the output shape
+    bounds the slice, so stops are never read. A runtime shape is read only
+    where its static counterpart is `UNKNOWN_VALUE`, and a dim the static
+    bounds and shapes prove unsliced costs nothing.
+
+    Parameters:
+        rank: The rank of the slice's input and output.
+        static_starts: The slice's start per dim, as written.
+        static_steps: The slice's positive step per dim.
+        in_static_shape: The slice's input shape, where statically known.
+        out_static_shape: The slice's output shape, where statically known.
+
+    Args:
+        index: An index into the slice's input.
+        in_shape: The input's runtime shape.
+        out_shape: The output's runtime shape.
+
+    Returns:
+        The index into the slice's output, and whether the slice selects
+        `index` at all. The index means nothing where it does not.
+    """
+    var result = index
+    var in_slice = True
+    comptime for d in range(rank):
+        comptime start = Int(static_starts[d])
+        comptime step = Int(static_steps[d])
+        comptime n_in = Int(in_static_shape[d])
+        comptime n_out = Int(out_static_shape[d])
+        comptime unsliced = (
+            start == 0 and step == 1 and n_in != UNKNOWN_VALUE and n_in == n_out
+        )
+        comptime if not unsliced:
+            var in_dim: Int
+            comptime if n_in != UNKNOWN_VALUE:
+                in_dim = n_in
+            else:
+                in_dim = in_shape[d]
+            var out_dim: Int
+            comptime if n_out != UNKNOWN_VALUE:
+                out_dim = n_out
+            else:
+                out_dim = out_shape[d]
+            # Numpy's start resolution, which `MOToMAP` already applied where
+            # the dim is static: from the end if negative, then clamped to 0.
+            # A start past the end needs no clamp, since `out_dim` is then 0.
+            # Nor does a negative start whose clamp a static `n_out` rules
+            # out: it fires only on an input dim too short to hold `n_out`
+            # elements `step` apart, and the bound check below trusts `n_out`
+            # already.
+            var s = start
+            comptime if start < 0:
+                comptime clamp_needed = (
+                    n_out == UNKNOWN_VALUE or (n_out - 1) * step + 1 < -start
+                )
+                comptime if clamp_needed:
+                    s = max(start + in_dim, 0)
+                else:
+                    s = start + in_dim
+            var offset = index[d] - s
+            comptime if step != 1:
+                in_slice = in_slice and offset % step == 0
+            var j = offset // step
+            # Unsigned, a negative index wraps past `out_dim`: one compare.
+            in_slice = in_slice and UInt(j) < UInt(out_dim)
+            result[d] = j
+    return (result, in_slice)
+
+
 # ===----------------------------------------------------------------------===#
 # POP operations
 # ===----------------------------------------------------------------------===#
@@ -2178,54 +2346,6 @@ def simd_select[
 # ===-----------------------------------------------------------------------===#
 # MOGG elementwise / view primitives
 # ===-----------------------------------------------------------------------===#
-
-
-@register_internal("mogg.elemwise_for_each")
-@inline(.never)
-def foreach[
-    dtype: DType,
-    rank: Int,
-    //,
-    func: def[width: Int, element_alignment: Int](
-        IndexList[rank]
-    ) capturing -> SIMD[dtype, width],
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _trace_name: StaticString = "mogg.for_each",
-](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    ctx: DeviceContext,
-) raises:
-    """Apply the function `func` to each element of the tensor slice.
-
-    Parameters:
-        dtype: The data type of the elements in the tensor slice.
-        rank: The rank of the tensor slice.
-        func: The function to apply to each element of the tensor slice.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        simd_width: The SIMD width for the target (usually leave this as its default value).
-        _trace_name: Name of the executed operation displayed in the trace_description.
-
-    Args:
-        tensor: The output tensor slice which receives the return values from `func`.
-        ctx: The call context (forward this from the custom operation).
-    """
-
-    @inline(.always)
-    def elementwise_fn_wrapper[
-        width: Int,
-        alignment: Int = 1,
-    ](index: Coord) {var}:
-        var idx = coord_to_index_list(index)
-        var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
-        tensor._fused_store[element_alignment=alignment](index, val)
-
-    elementwise[
-        simd_width,
-        target=target,
-        _trace_description=_trace_name,
-    ](elementwise_fn_wrapper, tensor.shape_coord(), ctx)
 
 
 @register_internal("mogg.elemwise_for_each")
@@ -2287,120 +2407,7 @@ def foreach[
     ](wrapper, tensor.shape_coord(), ctx)
 
 
-@fieldwise_init
-struct _ElementwiseFusionAdapter[
-    dtype: DType,
-    rank: Int,
-    InFusion: InputFusion,
-    OutFusion: OutputFusion,
-    ComputeFusion: ComputeOutputFusion,
-    ComputeFusionTile: ComputeOutputFusionTile,
-    OutFusionTile: OutputFusionTile,
-    io_spec: IOSpec[True, _],
-    static_spec: StaticTensorSpec[
-        dtype,
-        rank,
-        _,
-        InFusion,
-        OutFusion,
-        ComputeFusion,
-        ComputeFusionTile,
-        OutFusionTile,
-    ],
-    //,
-    E: ElementwiseFusion,
-](
-    ImplicitlyCopyable,
-    RegisterPassable,
-    def[width: Int, alignment: Int = 1](Coord) -> None,
-):
-    """Per-element body for `foreach_fusion`, holding the fusion struct and
-    output tensor by value.
-
-    Named adapter twin of a `{var elem, var tensor}` closure: a closure over
-    the generic `E` synthesizes a parametric-witness `lit.closure.init` the
-    MOGG package loader can't resolve, so the body is a concrete
-    register-passable struct instead. Passing the instance by value to
-    `elementwise` carries `elem` (and the tensor's ptr/shape/strides) through
-    `crossDeviceCaptures` by value.
-
-    Parameters:
-        dtype: The data type of the tensor elements.
-        rank: The rank of the tensor.
-        InFusion: The tensor's input-fusion type.
-        OutFusion: The tensor's output-fusion type.
-        ComputeFusion: The tensor's compute-output-fusion type.
-        ComputeFusionTile: The tensor's compute-output-fusion-tile type.
-        OutFusionTile: The tensor's output-fusion-tile (store) type.
-        io_spec: The tensor's IO spec.
-        static_spec: The tensor's static spec.
-        E: The elementwise fusion struct type.
-    """
-
-    var elem: Self.E
-    var tensor: ManagedTensorSlice[
-        io_spec=Self.io_spec, static_spec=Self.static_spec
-    ]
-
-    @inline(.always)
-    def __call__[width: Int, alignment: Int = 1](self, index: Coord):
-        var idx = rebind[IndexList[Self.rank]](coord_to_index_list(index))
-        var val = self.elem.compute[Self.dtype, Self.rank, width, alignment](
-            idx
-        )
-        self.tensor._fused_store[element_alignment=alignment](idx, val)
-
-
 @register_internal("mogg.call.foreach")
-@inline(.never)
-def foreach_fusion[
-    dtype: DType,
-    rank: Int,
-    //,
-    E: ElementwiseFusion,
-    *,
-    target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _trace_name: StaticString = "mogg.for_each",
-](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
-    var elem: E,
-    ctx: DeviceContext,
-) raises:
-    """Apply a pure elementwise fusion to each element of the tensor slice.
-
-    Parameters:
-        dtype: The data type of the elements in the tensor slice.
-        rank: The rank of the tensor slice.
-        E: The elementwise fusion struct type.
-        target: Indicates the type of the target device (e.g. "cpu", "gpu").
-        simd_width: The SIMD width for the target.
-        _trace_name: Name of the executed operation displayed in the trace.
-
-    Args:
-        tensor: The output tensor slice which receives the computed values.
-        elem: The elementwise fusion struct.
-        ctx: The call context (forward this from the custom operation).
-    """
-
-    # Capture `elem` by value through a named adapter struct rather than a
-    # closure. A `{var elem}` closure over the generic `E` synthesizes a
-    # `lit.closure.init` with parametric witnesses the package loader can't
-    # resolve (see functional.mojo `_IndexListToCoordAdapter`); the adapter is
-    # a concrete register-passable type, so passing it by value to
-    # `elementwise` sends `elem`'s decomposed ptr/shape/strides through
-    # `crossDeviceCaptures` by value — which the host-stack `@__parameter
-    # capturing` form did not.
-    var adapter = _ElementwiseFusionAdapter[E](elem, tensor)
-
-    elementwise[
-        simd_width=simd_width,
-        target=target,
-        _trace_description=_trace_name,
-    ](adapter, Coord(tensor.shape()), ctx)
-
-
-@register_internal("mogg._call.foreach")
 def _foreach[
     Lambda: ImplicitlyCopyable
     & RegisterPassable
@@ -2459,9 +2466,43 @@ comptime _MoggSliceStrideTypes[
 ]()
 
 
+def _dense_row_major_anchor_stride(
+    rank: Int, shape: IntTuple, strides: IntTuple
+) -> Int:
+    """Returns a stride that every dynamic stride of this layout is a whole
+    multiple of, or 0 when no such stride can be established.
+
+    Walks outward from the innermost dimension for as long as
+    `stride[k] == shape[k + 1] * stride[k + 1]` holds with every term static,
+    and returns the outermost stride of that run. Strides reaching a kernel are
+    dense row-major strides, possibly permuted by a transpose or scaled by a
+    slice step, and all three keep every outer stride a whole multiple of the
+    innermost dense-chain stride. A layout that is broadcast, permuted or
+    step-scaled across the run fails the equality and yields 0.
+    """
+    if rank < 2 or Int(strides[rank - 1]) != 1:
+        return 0
+
+    var anchor = 0
+    for k in range(rank - 2, -1, -1):
+        var stride = Int(strides[k])
+        var inner_shape = Int(shape[k + 1])
+        var inner_stride = Int(strides[k + 1])
+        if (
+            stride == UNKNOWN_VALUE
+            or inner_shape == UNKNOWN_VALUE
+            or inner_stride == UNKNOWN_VALUE
+            or stride != inner_shape * inner_stride
+        ):
+            break
+        anchor = stride
+    return anchor
+
+
 def _mogg_slice_view_alignment[
     rank: Int,
     dtype: DType,
+    input_shape: IntTuple,
     input_strides: IntTuple,
     static_starts: IntTuple,
     static_steps: IntTuple,
@@ -2473,6 +2514,9 @@ def _mogg_slice_view_alignment[
     comptime stride_types = _IntTupleToCoordLike[DType.int, input_strides]
     comptime start_types = _IntTupleToCoordLike[DType.int, static_starts]
     comptime step_types = _IntTupleToCoordLike[DType.int, static_steps]
+    comptime anchor = _dense_row_major_anchor_stride(
+        rank, input_shape, input_strides
+    )
 
     var alignment = input_alignment
     comptime for i in range(rank):
@@ -2483,18 +2527,47 @@ def _mogg_slice_view_alignment[
         comptime if not start_types[i].is_static_value:
             return 1
         comptime if start_types[i].static_value != 0:
-            comptime if not stride_types[i].is_static_value:
-                return 1
-            alignment = gcd(
-                alignment,
-                start_types[i].static_value
-                * stride_types[i].static_value
-                * align_of[dtype](),
-            )
+            comptime if stride_types[i].is_static_value:
+                alignment = gcd(
+                    alignment,
+                    start_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
+            else:
+                comptime if anchor == 0:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    start_types[i].static_value * anchor * align_of[dtype](),
+                )
+
+        # Iterating a non-innermost dim advances the pointer by
+        # `step[i] * strides[i]` elements per step, so that stride bounds the
+        # view's alignment too -- e.g. a slice that keeps the parent's row
+        # stride (not a multiple of the vector width) leaves each row start
+        # under-aligned. Mirrors `Slice.get_view_alignment`; omitting it made a
+        # strided view over-report its alignment and emit a misaligned
+        # (faulting) vector load on GPU.
+        comptime if i != rank - 1:
+            comptime if stride_types[i].is_static_value:
+                alignment = gcd(
+                    alignment,
+                    step_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
+            else:
+                comptime if anchor == 0:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    step_types[i].static_value * anchor * align_of[dtype](),
+                )
     return alignment
 
 
-@register_internal("mogg._tensor.create.slice")
+@register_internal("mogg.tensor.create.slice")
 def mogg_tensor_create_slice[
     dtype: DType,
     rank: Int,
@@ -2526,13 +2599,14 @@ def mogg_tensor_create_slice[
         _mogg_slice_view_alignment[
             rank,
             dtype,
+            input._static_shape_tuple,
             input._static_strides_tuple,
             static_starts,
             static_steps,
         ](input.alignment),
     ),
 ]:
-    """Backing primitive for `mogg._tensor.create.slice`: a zero-copy strided
+    """Backing primitive for `mogg.tensor.create.slice`: a zero-copy strided
     view of `input`, offset and re-strided per `starts`/`stops`/`steps`.
     `output_static_shape`/`static_starts`/`static_steps` carry whatever is
     known about the view's shape and bounds at compile time (an entry is
@@ -2600,7 +2674,7 @@ def _mogg_broadcast_view_strides[
     return new_strides
 
 
-@register_internal("mogg._tensor.create.broadcast")
+@register_internal("mogg.tensor.create.broadcast")
 def mogg_tensor_create_broadcast[
     dtype: DType,
     in_rank: Int,
@@ -2621,13 +2695,13 @@ def mogg_tensor_create_broadcast[
         ](),
     ](),
 ]:
-    """Backing primitive for `mogg._tensor.create.broadcast`: a zero-copy
+    """Backing primitive for `mogg.tensor.create.broadcast`: a zero-copy
     reindexed view of `input` that replicates it (numpy broadcasting
     semantics) up to `output_static_shape` -- a leading dimension `input`
     doesn't have, or an aligned dimension where `input`'s size is 1, gets
     stride 0. Preserves whatever static shape/stride information is known
     at compile time, mirroring
-    `StaticBroadcastTo.update_input_view`/`get_view_strides_list`.
+    `StaticBroadcastTo.input_view`/`get_view_strides_list`.
 
     Parameters:
         dtype: The element type of `input`.
@@ -2655,7 +2729,7 @@ def mogg_tensor_create_broadcast[
     return {input.unsafe_ptr(), new_shape, new_strides}
 
 
-@register_internal("mogg._tensor.create.reshape")
+@register_internal("mogg.tensor.create.reshape")
 def mogg_tensor_create_reshape[
     dtype: DType,
     in_rank: Int,
@@ -2672,13 +2746,13 @@ def mogg_tensor_create_reshape[
         output_static_shape,
     ](),
 ]:
-    """Backing primitive for `mogg._tensor.create.reshape`: a zero-copy view
+    """Backing primitive for `mogg.tensor.create.reshape`: a zero-copy view
     of `input` reinterpreted under `output_shape` -- valid only because
     `input` is contiguous, so de-linearizing/re-linearizing through one
     shared flat index produces row-major strides for the new shape.
     `output_static_shape` still types the return value's static layout with
     whatever dims ARE known at compile time (mirroring
-    `StaticReshape.update_input_view`), but `output_shape` -- not a cast of
+    `StaticReshape.input_view`), but `output_shape` -- not a cast of
     `output_static_shape` -- is what this op actually reshapes into: unlike
     broadcast/transpose, this op's own stride is a row-major
     de-linearization of the *output* shape's own values, with no input
@@ -2740,7 +2814,7 @@ comptime _MoggTransposeStrideTypes[
 ]()
 
 
-@register_internal("mogg._tensor.create.transpose")
+@register_internal("mogg.tensor.create.transpose")
 def mogg_tensor_create_transpose[
     dtype: DType,
     rank: Int,
@@ -2765,14 +2839,14 @@ def mogg_tensor_create_transpose[
         ],
     ](),
 ]:
-    """Backing primitive for `mogg._tensor.create.transpose`: a zero-copy
+    """Backing primitive for `mogg.tensor.create.transpose`: a zero-copy
     reindexed view of `input` that reorders its dimensions -- the view's
     dimension `i` comes from `input`'s dimension `perm[i]`. `perm` is known
     per dimension either at compile time (an entry of `static_permutations`)
     or, where that entry is `UNKNOWN_VALUE`, at runtime (the matching entry
     of the `permutations` operand). Preserves whatever static shape/stride
     information is known at compile time, mirroring
-    `Transpose.update_input_view`/`_TransposeStrideTypes`.
+    `Transpose.input_view`/`_TransposeStrideTypes`.
 
     Parameters:
         dtype: The element type of `input`.
@@ -2807,209 +2881,6 @@ def mogg_tensor_create_transpose[
     return {input.unsafe_ptr(), new_shape, new_strides}
 
 
-@register_internal("mogg._tensor.load")
-@inline(.always)
-def tile_tensor_strided_load[
-    dtype: DType,
-    simd_width: Int,
-    //,
-    tensor_alignment: Int,
-    element_alignment: Int = 1,
-](tile: TileTensor[dtype=dtype, ...], idx: Coord,) -> SIMD[dtype, simd_width]:
-    """Loads `simd_width` elements from a `TileTensor`, honoring its innermost
-    stride.
-
-    This mirrors `managed_tensor_slice.simd_load_from_managed_tensor_slice`
-    branch-for-branch, reading through a `TileTensor` instead of a
-    `ManagedTensorSlice`: a unit-stride inner axis keeps the plain contiguous
-    vector load, a zero stride splats one value, and any other stride gathers.
-    Every advanced-fusion load -- the foreach closure and the prologue/epilogue
-    functor alike -- captures each source as a bare pointer + layout and
-    rebuilds a `TileTensor` (see `TensorLoadOp::emitMojo`), so a strided fused
-    view -- a transpose, a non-unit slice, a broadcast -- must load through here
-    rather than `TileTensor.load`, whose `raw_load` assumes a contiguous inner
-    axis and would read the wrong elements.
-
-    TODO(GEX-3701): fold this into `TileTensor.load` once advanced fusion is the
-    only fusion system, so every `TileTensor` load is stride-correct.
-
-    Parameters:
-        dtype: The element type (inferred from `tile`).
-        simd_width: The vector width to load.
-        tensor_alignment: The source's own static byte alignment, threaded from
-            the originating `ManagedTensorSlice`'s `alignment` so this matches
-            `simd_load_from_managed_tensor_slice` exactly (`TileTensor` carries
-            no static alignment of its own).
-        element_alignment: The caller's element-alignment promise for the
-            contiguous fast path.
-
-    Args:
-        tile: The tensor to load from.
-        idx: The element coordinate to load at.
-    """
-    comptime TileT = type_of(tile)
-    comptime rank = TileT.rank
-    comptime invariant = not TileT.mut
-    # Load alignment cannot exceed the data type's alignment; the exact
-    # `_gcd_pow2` `simd_load_from_managed_tensor_slice` uses, so the fused load
-    # promises exactly the alignment the legacy `ManagedTensorSlice` path did.
-    comptime max_alignment = _gcd_pow2[
-        tensor_alignment, element_alignment * align_of[dtype]()
-    ]()
-    comptime _last_stride_is_static = TileT.LayoutType._stride_types[
-        rank - 1
-    ].is_static_value
-    comptime _last_stride_value = TileT.LayoutType._stride_types[
-        rank - 1
-    ].static_value
-
-    # The pointer at `idx`. Computed the same way `TileTensor.ptr_at_offset`
-    # does -- offset the base storage by `layout(idx)` -- but inlined here to
-    # avoid its `where coords.flat_rank == Self.flat_rank` clause, which the
-    # caller's bare `Coord` can't prove.
-    var ptr = rebind[
-        Pointer[Scalar[dtype], TileT.origin, address_space=TileT.address_space]
-    ](tile._storage).unsafe_offset(
-        tile.layout[linear_idx_type=TileT.linear_idx_type](idx)
-    )
-
-    @__parameter
-    @inline(.always)
-    def load_stride1() -> SIMD[dtype, simd_width]:
-        comptime if dtype == .bool:
-            var v = ptr.unsafe_bitcast[UInt8]().unsafe_load[
-                width=simd_width, invariant=invariant
-            ](0)
-            return v.cast[dtype]()
-        else:
-            return ptr.unsafe_load[
-                width=simd_width, alignment=max_alignment, invariant=invariant
-            ](0)
-
-    @__parameter
-    @inline(.always)
-    def load_strided(stride: Int) -> SIMD[dtype, simd_width]:
-        comptime if dtype == .bool:
-            var v = strided_load[simd_width, invariant=invariant](
-                ptr.unsafe_bitcast[UInt8](), stride
-            )
-            return v.cast[dtype]()
-        else:
-            return strided_load[simd_width, invariant=invariant](ptr, stride)
-
-    comptime if not _last_stride_is_static:
-        var stride = Int(tile.layout.stride_coord()[rank - 1].value())
-        if stride == 0:
-            return SIMD[dtype, simd_width](
-                ptr.unsafe_load[invariant=invariant](0)
-            )
-        elif stride == 1:
-            return load_stride1()
-        else:
-            return load_strided(stride)
-    else:
-        comptime if _last_stride_value == 0:
-            return SIMD[dtype, simd_width](
-                ptr.unsafe_load[invariant=invariant](0)
-            )
-        elif _last_stride_value == 1:
-            return load_stride1()
-        else:
-            return load_strided(_last_stride_value)
-
-
-@register_internal("mogg._tensor.store")
-@inline(.always)
-def tile_tensor_strided_store[
-    dtype: DType,
-    simd_width: Int,
-    //,
-    tensor_alignment: Int,
-    element_alignment: Int = 1,
-](
-    tile: TileTensor[mut=True, dtype=dtype, ...],
-    idx: Coord,
-    value: SIMD[dtype, simd_width],
-):
-    """Stores `simd_width` elements into a `TileTensor`, honoring its innermost
-    stride.
-
-    Store-side counterpart of `tile_tensor_strided_load`, mirroring
-    `managed_tensor_slice.simd_store_into_managed_tensor_slice`: a strided fused
-    output view (a transpose or non-unit slice on the store side) must scatter
-    through here rather than `TileTensor.store`'s contiguous `raw_store`.
-
-    Parameters:
-        dtype: The element type (inferred from `tile`).
-        simd_width: The vector width to store.
-        tensor_alignment: The target's own static byte alignment, threaded from
-            the originating `ManagedTensorSlice`'s `alignment` so this matches
-            `simd_store_into_managed_tensor_slice` exactly (`TileTensor` carries
-            no static alignment of its own).
-        element_alignment: The caller's element-alignment promise for the
-            contiguous fast path.
-
-    Args:
-        tile: The tensor to store into.
-        idx: The element coordinate to store at.
-        value: The values to store.
-    """
-    comptime TileT = type_of(tile)
-    comptime rank = TileT.rank
-    # Mirrors `simd_store_into_managed_tensor_slice`; see
-    # `tile_tensor_strided_load` for the alignment rationale.
-    comptime max_alignment = _gcd_pow2[
-        tensor_alignment, element_alignment * align_of[dtype]()
-    ]()
-    comptime _last_stride_is_static = TileT.LayoutType._stride_types[
-        rank - 1
-    ].is_static_value
-    comptime _last_stride_value = TileT.LayoutType._stride_types[
-        rank - 1
-    ].static_value
-
-    # See `tile_tensor_strided_load` for why `ptr_at_offset` is inlined here.
-    var ptr = rebind[
-        Pointer[Scalar[dtype], TileT.origin, address_space=TileT.address_space]
-    ](tile._storage).unsafe_offset(
-        tile.layout[linear_idx_type=TileT.linear_idx_type](idx)
-    )
-
-    @__parameter
-    @inline(.always)
-    def store_stride1():
-        comptime if dtype == .bool:
-            ptr.unsafe_bitcast[UInt8]().unsafe_store(0, value.cast[.uint8]())
-        else:
-            ptr.unsafe_store[alignment=max_alignment](0, value)
-
-    @__parameter
-    @inline(.always)
-    def store_strided(stride: Int):
-        comptime if dtype == .bool:
-            strided_store(
-                value.cast[.uint8](), ptr.unsafe_bitcast[UInt8](), stride
-            )
-        else:
-            strided_store(value, ptr, stride)
-
-    comptime if not _last_stride_is_static:
-        var stride = Int(tile.layout.stride_coord()[rank - 1].value())
-        if stride == 0:
-            ptr.unsafe_store(0, value)
-        elif stride == 1:
-            store_stride1()
-        else:
-            store_strided(stride)
-    else:
-        comptime if _last_stride_value == 0:
-            ptr.unsafe_store(0, value)
-        elif _last_stride_value == 1:
-            store_stride1()
-        else:
-            store_strided(_last_stride_value)
-
-
 @fieldwise_init
 struct _ElementwiseFusionTileAdapter[
     dtype: DType,
@@ -3037,8 +2908,8 @@ struct _ElementwiseFusionTileAdapter[
     """Per-tile body for `foreach_fusion_tile`, holding the fusion struct and
     output tensor by value.
 
-    Analogous to `_ElementwiseFusionAdapter`, but for tile-based fusion: a
-    named, register-passable struct (not a closure) so `elem` and the tensor's
+    A named, register-passable struct (not a closure) for tile-based fusion, so
+    `elem` and the tensor's
     decomposed ptr/shape/strides cross into the GPU kernel by value. Its
     `__call__` drives one output *tile*, handing the fusion struct a load copier
     (used by `compute` to pull its inputs into `Copier.dst_address_space`) and
@@ -3079,9 +2950,7 @@ struct _ElementwiseFusionTileAdapter[
         # column. Carried into the kernel as a closure (the adapter is not
         # `DevicePassable`, so its captures cross via the same mechanism
         # `functional.elementwise` uses for its body closure).
-        var tile_coords = IndexList[Self.rank](
-            Int(block_idx.y), Int(block_idx.x)
-        )
+        var tile_coords = IndexList[Self.rank](block_idx.y, block_idx.x)
         # NOTE(GEX-3913): we likely want to replace the adapter defining the
         # load copier here with a `functional.tile_elementwise` primitive, so
         # the load / tiling policy is reusable.
@@ -3242,7 +3111,7 @@ def foreach_out_func[
     ](out_func_shim, tensor.shape_coord(), ctx)
 
 
-# TensorCopy intrinsic used by view kernels.
+# TensorCopy intrinsic used by the view ops (slice, reshape, transpose, ...).
 # z is a kernel output, and x a view of the input.
 @register_internal("mogg.call.materialize")
 @doc_hidden

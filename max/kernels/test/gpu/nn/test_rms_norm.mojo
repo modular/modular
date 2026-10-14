@@ -12,11 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import sqrt
+from std.sys import align_of
 from std.random import rand
 
 from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
+from builtin_kernels.rowwise_normalization import rms_norm
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -302,14 +304,18 @@ def run_rms_norm_row_based[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        # The closure's `alignment` counts elements, as the graph compiler's
+        # closures read it; `raw_load` / `raw_store` take bytes.
+        return data_buf.raw_load[
+            width=width, alignment=alignment * align_of[dtype]()
+        ](idx)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
         var idx = out_buf.layout(coords)
-        out_buf.raw_store[width=width, alignment=alignment](
+        out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
@@ -473,4 +479,16 @@ def main() raises:
         )
         run_rms_norm_row_based[DType.bfloat16, multiply_before_cast=False](
             ctx, Index(4, 4096), rtol=2e-2
+        )
+
+        # Few rows of at least `_SPLITK_MIN_ROW_BYTES` take the phase-aware
+        # split-K tier: one row, the 16-row cap, an odd width, and both
+        # `multiply_before_cast` branches.
+        run_rms_norm_row_based[DType.float32](ctx, Index(1, 65536))
+        run_rms_norm_row_based[DType.float32](ctx, Index(3, 100003))
+        run_rms_norm_row_based[DType.bfloat16](
+            ctx, Index(16, 262144), rtol=2e-2
+        )
+        run_rms_norm_row_based[DType.bfloat16, multiply_before_cast=False](
+            ctx, Index(2, 1048576), rtol=2e-2
         )

@@ -23,8 +23,6 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden_with_position_ids,
 )
 
-from std.utils import IndexList
-
 
 def _test_rope_ragged_gpu_impl[
     rope_dim: Int, dtype: DType, has_position_ids: Bool
@@ -158,28 +156,19 @@ def _test_rope_ragged_gpu_impl[
     var position_ids_device_tensor_static = TileTensor(
         position_ids_device_buffer, position_ids_layout
     )
-    var position_ids_device_tensor = TileTensor[
-        .uint32,
-        type_of(position_ids_device_tensor_static).LayoutType,
-        ImmutAnyOrigin,
-    ](
-        position_ids_device_tensor_static._storage.as_imm().unsafe_origin_cast[
-            ImmutAnyOrigin
-        ](),
-        position_ids_device_tensor_static.layout,
-    ).make_dynamic[
-        DType.int64
-    ]()
+    var position_ids_device_tensor = (
+        position_ids_device_tensor_static.as_imm()
+        .as_unsafe_any_origin()
+        .make_dynamic[DType.int64]()
+    )
 
     var q_out_device_tensor = TileTensor(q_out_device_buffer, q_layout)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {
-        var q_out_device_tensor
-    } -> None:
-        q_out_device_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var q_out_device_tensor} -> None:
+        q_out_device_tensor.store[width=width](idx, val)
 
     # Execute rope_ragged kernel on GPU
     comptime if has_position_ids:
@@ -422,18 +411,16 @@ def test_rope_ragged_gpu_rope_first[
     @inline(.always)
     def full_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {
-        var full_out_device_tensor
-    } -> None:
-        full_out_device_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var full_out_device_tensor} -> None:
+        full_out_device_tensor.store[width=width](idx, val)
 
     @inline(.always)
     def prefix_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {
+    ](idx: Coord, val: SIMD[dtype, width]) {
         var prefix_out_device_tensor
     } -> None:
-        prefix_out_device_tensor.store[width=width](Coord(idx), val)
+        prefix_out_device_tensor.store[width=width](idx, val)
 
     rope_ragged[
         dtype,

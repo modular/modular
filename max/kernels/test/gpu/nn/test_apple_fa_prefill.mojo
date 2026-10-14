@@ -14,7 +14,7 @@
 
 Mirrors `test/gpu/nn/test_flash_attention.mojo` (the e2e host-reference pattern)
 for the Apple prefill path: build dense BSHD Q/K/V, run a prefill kernel directly
-against a `LayoutTensorMHAOperand`, and compare against an fp32 host attention
+against a `TileTensorMHAOperand`, and compare against an fp32 host attention
 reference. Covers `NullMask` + `CausalMask` + `SlidingWindowCausalMask`, fp16/bf16
 in, head dims that are multiples of 16 up to 256, and ragged M/N (seq_len /
 num_keys not multiples of the tile size, to exercise the bounded edges). PASS on
@@ -27,29 +27,27 @@ prefill, `num_simdgroups=16`) against the fp32 reference for every shape/mask.
 from std.collections import OptionalReg
 from max.gpu.host import DeviceContext
 from std.math import exp, isinf, isnan, sqrt
-from std.random import rand, seed
+from std.random import seed
 from std.sys.info import _accelerator_arch
 
 from layout import (
-    UNKNOWN_VALUE,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
 )
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.apple.fa_prefill import fa_prefill_apple
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.mha_mask import (
     CausalMask,
     MHAMask,
     NullMask,
     SlidingWindowCausalMask,
 )
-from nn.attention.mha_operand import LayoutTensorMHAOperand
-
-from std.utils.index import Index
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 
 # ===-------------------------------------------------------------------=== #
@@ -273,8 +271,8 @@ def _run[
     )
     var o_t = TileTensor(o_d, row_major(batch, seq, Idx[num_heads], Idx[depth]))
 
-    var k_op = LayoutTensorMHAOperand(k_t)
-    var v_op = LayoutTensorMHAOperand(v_t)
+    var k_op = TileTensorMHAOperand(k_t)
+    var v_op = TileTensorMHAOperand(v_t)
 
     # Dummy valid_length (dense path doesn't read it).
     var vl_d = ctx.enqueue_create_buffer[.uint32](batch + 1)
@@ -286,20 +284,10 @@ def _run[
     for h in range(num_heads):
         sink_h[h] = Scalar[qkv_type](sink_w[h])
     ctx.enqueue_copy(sink_d, sink_h)
-    comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime SinkOpt = OptionalReg[
-        LayoutTensor[qkv_type, sinks_layout, ImmutAnyOrigin]
-    ]
+    comptime SinkOpt = OptionalReg[ImmutTileTensor1D[qkv_type]]
     var sink_opt: SinkOpt
     comptime if use_sink:
-        sink_opt = SinkOpt(
-            LayoutTensor[qkv_type, sinks_layout](
-                sink_d.unsafe_ptr(),
-                RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
-            )
-            .as_imm()
-            .as_unsafe_any_origin()
-        )
+        sink_opt = SinkOpt(immut_tile_tensor_1d(sink_d.unsafe_ptr(), num_heads))
     else:
         sink_opt = SinkOpt(None)
 
@@ -309,12 +297,12 @@ def _run[
         _use_valid_length=False,
         _is_cache_length_accurate=True,
     ](
-        q_t.to_layout_tensor(),
+        q_t,
         k_op,
         v_op,
         mask,
-        o_t.to_layout_tensor(),
-        vl_t.to_layout_tensor(),
+        o_t,
+        vl_t,
         scale,
         batch,
         seq,  # max_prompt_len

@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from std.math import align_up
 from std.sys import argv, size_of
-import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -38,7 +36,6 @@ from linalg.fp4_utils import (
 from std.random import random_ui64
 from std.simd import _convert_f32_to_float8_ue8m0
 from layout import (
-    Coord,
     CoordLike,
     Idx,
     TileTensor,
@@ -87,15 +84,13 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]))
+    var a_shape = row_major(batch, m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            batch,
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        batch,
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
+    var c_shape = row_major(batch, m, Idx[NType.static_value])
 
     var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
     var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
@@ -120,24 +115,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        Coord(
-            Int(batch.value()),
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        batch.value(),
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Int(batch.value()),
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        batch.value(),
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -174,8 +165,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                     comptime assert b_host.flat_rank == 3
                     b_host[b, n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     for batch_idx in range(Int(batch.value())):
@@ -273,31 +264,25 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var a_2d_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_2d_shape = row_major(m, Idx[KType.static_value])
     var b_2d_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_2d_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_2d_shape = row_major(m, Idx[NType.static_value])
     var a_scales_5d_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_5d_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_batch_stride = Int(m.value()) * Int(k.value())

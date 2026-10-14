@@ -46,6 +46,15 @@ DATASETS = ("gpqa_diamond", "taubench_airline")
 #: half means a model biased toward that letter scores well for free.
 MAX_TARGET_LETTER_SHARE = 0.5
 
+#: ``stop_reason`` values meaning the response was cut off by a length limit.
+#: The openbench harness normalizes the OpenAI finish_reason "length" onto
+#: inspect_ai's "max_tokens" enum value, so only the latter occurs in its logs
+#: (verified against inspect_ai 0.3.125); "length" is kept for a harness that
+#: does not normalize. inspect_ai records a ``context_length_exceeded`` error
+#: as "model_length", a response that never produced an answer, so it counts
+#: against `stop_ratio` too rather than passing as a normal finish.
+TRUNCATION_STOP_REASONS = frozenset({"length", "max_tokens", "model_length"})
+
 
 def target_letter_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
     """Counts how often each letter is the correct answer.
@@ -74,12 +83,12 @@ def answer_position_warning(rows: list[dict[str, Any]]) -> str | None:
 
     openbench's gpqa_diamond calls ``random.seed(0)`` inside its per-record
     mapper before shuffling the options, so every question gets the same
-    permutation and the correct answer is always the same letter. Measured on
-    the full 198-question set: all 198 targets came back 'B'. The score then
-    reflects the model's position bias as much as its knowledge, and a model
-    that always answers that letter scores near 100%. Detected here rather than
-    corrected, because correcting it would diverge from the methodology this
-    runner exists to reproduce.
+    permutation and the correct answer is always the same letter: all 198
+    targets come back 'B'. The score then reflects the model's position bias
+    as much as its knowledge, and a model that always answers that letter
+    scores near 100%. The GPQA runner now uses OpenRouter's per-question
+    shuffle (see ``exacto_gpqa_openrouter``), so this guards logs from
+    openbench's task or from any other task with the same flaw.
 
     Returns:
         A warning string, or ``None`` when the answer positions look spread.
@@ -160,8 +169,7 @@ def parse_openbench_log(
         if isinstance(tokens, int):
             output_tokens.append(tokens)
         for choice in output.get("choices") or []:
-            # Inspect normalizes the OpenAI finish_reason onto stop_reason.
-            if choice.get("stop_reason") == "length":
+            if choice.get("stop_reason") in TRUNCATION_STOP_REASONS:
                 finish_length += 1
             else:
                 finish_stop += 1
@@ -185,6 +193,9 @@ def parse_openbench_log(
     eval_meta = log.get("eval") or {}
     config = eval_meta.get("config") or {}
     dataset = eval_meta.get("dataset") or {}
+    plan_config = (log.get("plan") or {}).get("config") or {}
+    # The task names the harness it reproduces; openbench's own tasks do not.
+    task_metadata = eval_meta.get("metadata") or {}
 
     summary: dict[str, Any] = {
         "accuracy": _metric(score, "accuracy"),
@@ -206,7 +217,9 @@ def parse_openbench_log(
         "finish_length": finish_length,
         "stop_ratio": (finish_stop / graded) if graded else None,
         # Provenance: the knobs that make a score comparable to OpenRouter's.
-        "harness": "openbench",
+        "harness": task_metadata.get("harness", "openbench"),
+        "harness_commit": task_metadata.get("harness_commit"),
+        "dataset_revision": task_metadata.get("dataset_revision"),
         "harness_status": log.get("status"),
         "task": eval_meta.get("task"),
         "dataset_name": dataset.get("name"),
@@ -216,9 +229,8 @@ def parse_openbench_log(
         "epochs": config.get("epochs"),
         "epochs_reducer": config.get("epochs_reducer"),
         "limit": config.get("limit"),
-        "temperature": ((log.get("plan") or {}).get("config") or {}).get(
-            "temperature"
-        ),
+        "temperature": plan_config.get("temperature"),
+        "reasoning_effort": plan_config.get("reasoning_effort"),
         "inspect_version": (eval_meta.get("packages") or {}).get("inspect_ai"),
     }
     return rows, summary
@@ -329,12 +341,6 @@ def parse_tau2_log(
 
 def load_json(path: str) -> dict[str, Any]:
     """Loads a JSON harness log from ``path``."""
-    with open(path) as f:
-        return json.load(f)
-
-
-def load_openbench_log(path: str) -> dict[str, Any]:
-    """Loads an openbench JSON eval log from ``path``."""
     with open(path) as f:
         return json.load(f)
 

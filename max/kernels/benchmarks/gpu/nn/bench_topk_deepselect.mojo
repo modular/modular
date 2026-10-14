@@ -156,10 +156,8 @@ def _verify[
     var vals_host = ctx.enqueue_create_host_buffer[dtype](check_rows * K)
     ctx.enqueue_copy(in_host, in_view)
     ctx.enqueue_copy(idx_host, idx_view)
-    if vals_buf:
-        var vals_view = vals_buf.value().create_sub_buffer[dtype](
-            0, check_rows * K
-        )
+    if case .Some(vals_buf) = vals_buf:
+        var vals_view = vals_buf.create_sub_buffer[dtype](0, check_rows * K)
         ctx.enqueue_copy(vals_host, vals_view)
         ctx.synchronize()
         _ = vals_view^

@@ -143,8 +143,8 @@ OriginTrackable::OriginTrackable(Value v) {
       return;
     }
 
-    // The results of an if operation can be owned.
-    if (isa<HLCF::IfOp, HLCF::ElifOp, ParamIfOp>(res.getOwner())) {
+    // The results of an if/elif operation can be owned.
+    if (isa<HLCF::IfOp, HLCF::ComptimeIfOp>(res.getOwner())) {
       name = StringAttr::get(v.getContext(), "(if result)");
       isIndirect = false;
       startsUninit = true;
@@ -544,7 +544,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     return {};
   }
   // A return consumes all the live-out values from the function.
-  if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp, KGEN::UnreachableOp,
+  if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp, HLCF::UnreachableOp,
           HLCF::YieldOp>(op)) {
     // We always consume the result register - even if it is often trivial.
     for (auto o : op.getOperands())
@@ -588,8 +588,9 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   }
 
   // Local control flow ops.
-  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, ParamForBreakOp,
-          ParamForContinueOp, HLCF::MatchNextOp>(op))
+  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp,
+          HLCF::ComptimeForBreakOp, HLCF::ComptimeForContinueOp,
+          HLCF::MatchNextOp>(op))
     return OverallOpValueEffect::localControlFlowOp;
 
   // Match complete exits the enclosing match (like yield) and may produce
@@ -600,8 +601,8 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     return OverallOpValueEffect::localControlFlowOp;
   }
 
-  // If-like operations.
-  if (isa<ParamIfOp, HLCF::IfOp>(op)) {
+  // If-like operations (comptime if). Runtime if/else is HLCF::IfOp below.
+  if (isa<HLCF::ComptimeIfOp>(op)) {
     // If-like ops can return owned results.
     for (auto opResult : op.getResults()) {
       auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
@@ -612,7 +613,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     return OverallOpValueEffect::ifLikeOp;
   }
 
-  if (isa<HLCF::ElifOp>(op)) {
+  if (isa<HLCF::IfOp>(op)) {
     // If-like ops can return owned results.
     for (auto opResult : op.getResults()) {
       auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
@@ -620,7 +621,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
                               : ResultEffect::regDefine;
       results.push_back(resultEffect);
     }
-    return OverallOpValueEffect::elifOp;
+    return OverallOpValueEffect::ifOp;
   }
 
   if (isa<HLCF::MatchOp>(op)) {
@@ -634,7 +635,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   }
 
   /// This is HLCF::LoopOp.
-  if (isa<HLCF::LoopOp, ParamForOp>(op))
+  if (isa<HLCF::LoopOp, HLCF::ComptimeForOp>(op))
     return OverallOpValueEffect::loopOp;
 
   if (isa<LIT::TryOp>(op))
@@ -869,6 +870,11 @@ static bool scanForOrigins(TypeOrAttr typeOrAttr,
         handled = true;
       }
     }
+
+    // Ignore origin on a trait symbol (this can only happen for parametric
+    // closures trait).
+    if (isa<TraitSymbolAttr>(typeOrAttr))
+      handled = true;
   }
 
   // Values of function types should only consider any origins in the capture

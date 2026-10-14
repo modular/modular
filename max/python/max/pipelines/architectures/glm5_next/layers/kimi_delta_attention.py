@@ -78,11 +78,11 @@ from .kda import KdaReplayInputs, KdaSublayerInputs
 __all__ = ["Glm5NextKdaSublayer", "KimiDeltaAttention"]
 
 STATE_LAYOUT: KdaStateLayout = "K_FIRST"
-"""Pool axis order, ``[max_slots, heads, head_dim, head_dim]``.
+"""Pool axis order, ``[num_rows, heads, head_dim, head_dim]``.
 
-Pinned here so both recurrence ops, the pool allocator and the memory planner
-cannot disagree; it also matches the ``[max_slots, num_v_heads, key_dim,
-val_dim]`` layout Qwen3.5's state cache already allocates, which core clones.
+Pinned here so both recurrence ops, the cache's declared leaves and the memory
+planner cannot disagree; it also matches the ``[num_rows, num_v_heads, key_dim,
+val_dim]`` layout Qwen3.5's recurrent state cache declares.
 """
 
 
@@ -244,16 +244,19 @@ class KimiDeltaAttention(Module, Shardable):
         """
         return True
 
-    def conv_pool_shape(self, max_slots: int) -> list[int]:
-        """Returns this shard's conv state pool shape."""
-        return [max_slots, self.conv_dim, self.conv_kernel_size - 1]
+    def state_row_shapes(
+        self,
+    ) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """Returns this shard's ``(conv, recurrent)`` shapes for one row.
 
-    def recurrent_pool_shape(self, max_slots: int) -> list[int]:
-        """Returns this shard's recurrent state pool shape.
-
-        Laid out for :data:`STATE_LAYOUT`.
+        One row is one layer's state for one request, which is what a
+        recurrent cache leaf is declared in. The recurrent shape is laid out
+        for :data:`STATE_LAYOUT`.
         """
-        return [max_slots, self.num_heads, self.head_dim, self.head_dim]
+        return (
+            (self.conv_dim, self.conv_kernel_size - 1),
+            (self.num_heads, self.head_dim, self.head_dim),
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -385,23 +388,28 @@ class KimiDeltaAttention(Module, Shardable):
         self,
         x: TensorValue,
         conv_pool: BufferValue,
+        conv_row_id: TensorValue,
         recurrent_pool: BufferValue,
-        slot_idx: TensorValue,
+        recurrent_row_id: TensorValue,
         input_row_offsets: TensorValue,
         replay_capture: list[KdaReplayInputs] | None = None,
     ) -> TensorValue:
         """Runs one KDA layer, mutating both state pools in place.
 
-        Both pools are mutable graph inputs the kernels address at slot
-        ``slot_idx[batch_item]``, so there is no state graph output and no
+        Both pools are mutable graph inputs the kernels address at row
+        ``row_id[batch_item]``, so there is no state graph output and no
         Python-side gather or scatter.
 
         Args:
             x: ``[total_tokens, hidden_size]``, already normalized by the
                 decoder layer.
-            conv_pool: This layer's conv pool, mutated in place.
-            recurrent_pool: This layer's recurrent pool, mutated in place.
-            slot_idx: ``[batch_size]`` pool slot per sequence.
+            conv_pool: The conv leaf's pool, flat over blocks and layers,
+                mutated in place.
+            conv_row_id: ``[batch_size]`` row of ``conv_pool`` this layer
+                reads and writes. Already folded, so the layer never sees the
+                layout.
+            recurrent_pool: The recurrent leaf's pool, mutated in place.
+            recurrent_row_id: Its row for this layer.
             input_row_offsets: ``[batch_size + 1]`` exclusive prefix offsets.
             replay_capture: When given, this call's :class:`KdaReplayInputs`
                 are appended to it so a speculative rollback can re-run the
@@ -431,7 +439,7 @@ class KimiDeltaAttention(Module, Shardable):
                 qkv_input_ragged=qkv,
                 conv_weight=conv_weight,
                 conv_state=conv_pool,
-                slot_idx=slot_idx.cast(DType.uint32),
+                slot_idx=conv_row_id.cast(DType.uint32),
                 input_row_offsets=row_offsets_uint32,
             )
         )
@@ -461,7 +469,7 @@ class KimiDeltaAttention(Module, Shardable):
 
         a_log = self.A_log.to(device)
         dt_bias = ops.reshape(self.dt_bias.to(device), [heads, head_dim])
-        state_indices = slot_idx.cast(DType.int32)
+        state_indices = recurrent_row_id.cast(DType.int32)
         # float32 out: the next stage is a float32 gated norm, so rounding to
         # the compute dtype in between would cost a round trip for nothing.
         core_out = kda_decode(
@@ -529,7 +537,7 @@ class Glm5NextKdaSublayer(Module):
 
         Args:
             xs: ``[total_tokens, hidden_size]`` per device, normalized.
-            inputs: This layer's per-step pools and offsets.
+            inputs: This layer's per-step pools, row ids and offsets.
 
         Returns:
             ``[total_tokens, hidden_size]`` per device.
@@ -539,8 +547,9 @@ class Glm5NextKdaSublayer(Module):
                 shard(
                     xs[i],
                     conv_pool=inputs.conv_pools[i],
+                    conv_row_id=inputs.conv_row_ids[i],
                     recurrent_pool=inputs.recurrent_pools[i],
-                    slot_idx=inputs.slot_idx[i],
+                    recurrent_row_id=inputs.recurrent_row_ids[i],
                     input_row_offsets=inputs.input_row_offsets[i],
                     replay_capture=(
                         None

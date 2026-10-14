@@ -155,19 +155,37 @@ def _build_mojo_source_package(path: Path) -> Path:
     # Ensure parent directories exist
     tmp_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Compile under a private per-process directory and publish with an atomic
+    # rename. The cache path is keyed only by source path and shared between
+    # processes; without the rename, a concurrent reader sees a half-written
+    # .mojoc ("invalid magic bytes") — bazel tests on macOS share the user
+    # temp dir and hit this constantly, while Linux sandboxes merely hide it.
+    # The staging copy must carry the FINAL filename: the compiler bakes the
+    # module name from the output stem, and a loader rejects a mismatch.
+    staging_dir = tmp_path.parent / f".staging.{os.getpid()}"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    staging_path = staging_dir / tmp_path.name
+
     args = [
         # `mojo` command argument is impliict.
         "precompile",
         str(path),
         "-o",
-        str(tmp_path),
+        str(staging_path),
     ]
 
     try:
         subprocess_run_mojo(args, capture_output=True, check=True)
+        os.replace(staging_path, tmp_path)
     except subprocess.CalledProcessError as e:
         error = MojoCompilationError.from_subprocess_error(path, args, e)
         logging.error(str(error))
         raise error from e
+    finally:
+        staging_path.unlink(missing_ok=True)
+        try:
+            staging_dir.rmdir()
+        except OSError:
+            pass
 
     return tmp_path

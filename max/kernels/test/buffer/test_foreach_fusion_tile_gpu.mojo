@@ -130,11 +130,9 @@ def test_foreach_fusion_tile_add(ctx: DeviceContext) raises:
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, M, N]()
     var out_mts = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](out_dev.unsafe_ptr(), IndexList[2](M, N))
+    ](out_dev.unsafe_ptr(), (M, N))
 
-    foreach_fusion_tile[target="gpu", tile_shape=IndexList[2](TM, TN)](
-        out_mts, elem, ctx
-    )
+    foreach_fusion_tile[target="gpu", tile_shape=(TM, TN)](out_mts, elem, ctx)
 
     var out_host = ctx.enqueue_create_host_buffer[.float32](NUM)
     ctx.enqueue_copy(out_host, out_dev)

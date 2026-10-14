@@ -93,13 +93,80 @@ These variables control telemetry collection and metrics reporting.
 For more information, read about
 [telemetry](/serve/metrics#telemetry).
 
-| Variable                          | Description                                                                                                                                                                 | Values       | Default |
-|-----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|---------|
-| `MAX_SERVE_DISABLE_TELEMETRY`     | Disable remote telemetry collection                                                                                                                                         | `0`, `1`     | `0`     |
-| `MODULAR_USER_ID`                 | User identifier for telemetry (for example, your company name)                                                                                                              | String       | None    |
-| `MAX_SERVE_DEPLOYMENT_ID`         | Deployment identifier for telemetry (for example, your application name)                                                                                                    | String       | None    |
-| `MAX_SERVE_OTLP_METRICS_ENDPOINT` | Push a self-calibrating exponential-histogram shadow (`<metric>.exponential`) of every histogram metric to an OTLP endpoint, alongside the Prometheus `/metrics` histograms | Endpoint URL | None    |
-| `MAX_SERVE_EPLB_PROFILE`          | Enable expert-parallel load balancing (EPLB) statistics profiling in `max serve`                                                                                            | `0`, `1`     | `0`     |
+| Variable                          | Description                                                                                                                                                                                                                       | Values                         | Default |
+|-----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------|---------|
+| `MAX_SERVE_DISABLE_TELEMETRY`     | Disable remote telemetry collection                                                                                                                                                                                               | `0`, `1`                       | `0`     |
+| `MODULAR_USER_ID`                 | User identifier for telemetry (for example, your company name)                                                                                                                                                                    | String                         | None    |
+| `MAX_SERVE_DEPLOYMENT_ID`         | Deployment identifier for telemetry (for example, your application name)                                                                                                                                                          | String                         | None    |
+| `MAX_SERVE_OTLP_METRICS_ENDPOINT` | Push a self-calibrating exponential-histogram shadow (`<metric>.exponential`) of every histogram metric to an OTLP endpoint, alongside the Prometheus `/metrics` histograms                                                       | Endpoint URL                   | None    |
+| `MAX_SERVE_EPLB_PROFILE`          | Enable expert-parallel load balancing (EPLB) statistics profiling in `max serve`                                                                                                                                                  | `0`, `1`                       | `0`     |
+| `MAX_SERVE_KERNEL_TRACE_LEVEL`    | Set the GPU kernel trace depth for the whole session                                                                                                                                                                              | `off`, `batch`, `op`, `kernel` | `off`   |
+| `MAX_SERVE_KERNEL_TRACE_HEADERS`  | Honor the per-request `x-max-trace-level` header (`batch`, `op`, `kernel-sampled`, `kernel`, `full`). Needs `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and the profiler plugin. Ignored when `MAX_SERVE_KERNEL_TRACE_LEVEL` is `kernel` | `true`, `false`                | `false` |
+
+### Standard OpenTelemetry variables
+
+MAX reads the standard OpenTelemetry SDK variables, so you can point it
+at your own collector without MAX-specific configuration.
+
+| Variable                              | Description                          | Values          | Default                 |
+|---------------------------------------|--------------------------------------|-----------------|-------------------------|
+| `OTEL_SERVICE_NAME`                   | Reported as `service.name`           | String          | `unknown_service`       |
+| `OTEL_RESOURCE_ATTRIBUTES`            | Extra resource attributes, see below | `key=value,...` | None                    |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`         | Base metrics endpoint, path appended | URL             | Modular's               |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`  | Trace endpoint; turns span export on | URL             | None                    |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Metrics endpoint, used as given      | URL             | Modular's               |
+| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`  | Trace protocol, see below            | Protocol name   | `http/protobuf`         |
+| `OTEL_TRACES_SAMPLER`                 | Trace sampling strategy              | Sampler name    | `parentbased_always_on` |
+| `OTEL_TRACES_SAMPLER_ARG`             | Argument to the sampler              | String          | None                    |
+| `OTEL_SDK_DISABLED`                   | Disable OTLP export                  | `true`, `false` | `false`                 |
+
+Leave `MAX_SERVE_OTLP_METRICS_ENDPOINT` unset when you use these variables.
+It is a separate opt-in reader, so aiming both at one collector sends every
+metric twice, with counters and histograms arriving in two temporalities.
+
+MAX exports spans only when `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set, and
+uses it exactly as given; the base endpoint alone never turns tracing on. For
+metrics, a signal-specific endpoint takes precedence over the base endpoint:
+setting `OTEL_EXPORTER_OTLP_ENDPOINT` to `http://collector:4318` sends metrics
+to `http://collector:4318/v1/metrics`.
+
+MAX exports metrics over OTLP HTTP only, so their endpoint must be an HTTP
+receiver, conventionally port 4318; a gRPC receiver on port 4317 drops them.
+Spans go over HTTP too unless `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` (or the
+generic `OTEL_EXPORTER_OTLP_PROTOCOL`) is `grpc`. For gRPC, write the traces
+endpoint with an `http://` scheme, such as `http://collector:4317`, to get a
+plaintext channel: without one the exporter uses TLS unless
+`OTEL_EXPORTER_OTLP_TRACES_INSECURE` is `true`.
+
+The published container images set `OTEL_SERVICE_NAME` to `max-serve`, so
+override it explicitly rather than leaving it unset:
+
+```bash
+docker run --env "OTEL_SERVICE_NAME=my-service" modular/max-nvidia-full:latest ...
+```
+
+`OTEL_SDK_DISABLED` is enabled only by the value `true`, ignoring case and
+surrounding space, per the OpenTelemetry specification. Any other value, `1`
+included, leaves telemetry on. `OTEL_SDK_DISABLED` stops OTLP export only: the
+local Prometheus `/metrics` endpoint keeps serving, and so does an explicitly
+set `MAX_SERVE_OTLP_METRICS_ENDPOINT`.
+
+`OTEL_RESOURCE_ATTRIBUTES` reaches the resource, but MAX sets `deployment.id`
+and `enduser.id` itself and an attribute set here loses to that. Use
+`MAX_SERVE_DEPLOYMENT_ID` and `MODULAR_USER_ID` for those two.
+
+Continuous OTLP log export is off unless `MAX_SERVE_LOGS_OTLP_LEVEL` is set,
+but MAX still sends one record to Modular's collector at startup unless
+telemetry is disabled. Either way logs go to Modular:
+`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` has no effect, and
+`OTEL_EXPORTER_OTLP_PROTOCOL` is not read.
+
+The generic `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_CERTIFICATE`,
+`OTEL_EXPORTER_OTLP_TIMEOUT` and `OTEL_EXPORTER_OTLP_COMPRESSION` settings are
+read by every exporter that gets built, and any signal still pointed at
+Modular's collector carries them. If you set headers to authenticate against
+your own collector but redirect only traces, your metrics reach Modular with
+those headers attached.
 
 ## Debugging
 
@@ -119,6 +186,7 @@ This table includes all options you can add to `MODULAR_DEBUG`:
 | `nan-check`                | Insert NaN/Inf checks on a sampled subset of floating-point kernel outputs (see `nan-check-stride`)           | Boolean | N/A                                                      | `false`   |
 | `nan-check-stride`         | When `nan-check` is enabled, check one of every N floating-point kernel outputs. Set to `1` for full coverage | Integer | Positive integer (≥1)                                    | `20`      |
 | `uninitialized-read-check` | Detect reads of uninitialized memory                                                                          | Boolean | N/A                                                      | `false`   |
+| `uninitialized-read-mode`  | `report` prints each `uninitialized-read-check` match and continues; output is unbounded. Apple GPUs abort    | String  | `abort`, `report`                                        | `abort`   |
 | `device-sync-mode`         | Force synchronous GPU execution for debugging                                                                 | Boolean | N/A                                                      | `false`   |
 | `stack-trace-on-error`     | Show Mojo stack traces on runtime errors                                                                      | Boolean | N/A                                                      | `false`   |
 | `stack-trace-on-crash`     | Show Mojo stack traces on crashes                                                                             | Boolean | N/A                                                      | `false`   |
@@ -134,12 +202,28 @@ The following variables control memory-allocation debugging:
 |--------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------|----------------------|
 | `MODULAR_DEBUG_DEVICE_ALLOCATOR`                       | Comma-separated allocator debugging modes. `poison-all` fills every memory-manager allocation with a NaN-pattern byte; the `uninitialized-read-check` debug option automatically enables `uninitialized-poison` | Comma-separated modes | None                 |
 | `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN` | Byte pattern written by the `poison-all` allocator mode                                                                                                                                                         | Byte (0–255)          | Built-in NaN pattern |
+| `MODULAR_DEBUG_ALLOC_POISON_SELECT`                    | Which allocations the `uninitialized-poison` allocator mode poisons; it zero-fills the rest. See [Select allocations to poison](#select-allocations-to-poison)                                                  | Selection string      | `all`                |
+| `MODULAR_DEBUG_ALLOC_POISON_SELECT_FILE`               | File holding a selection string, checked on every allocation. Each change resets allocation ordinals to 0. Overrides `MODULAR_DEBUG_ALLOC_POISON_SELECT`                                                        | Path                  | Unset                |
 
 The following variable overrides the GPU compiler MAX uses:
 
 | Variable                       | Description                                                                                                                            | Values | Default |
 |--------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|--------|---------|
 | `MODULAR_NVPTX_COMPILER_PATH`  | Path to a custom NVIDIA `ptxas` binary, useful as an escape hatch when the installed NVIDIA driver is too old for the bundled compiler | Path   | Unset   |
+
+### Select allocations to poison
+
+`MODULAR_DEBUG_ALLOC_POISON_SELECT` narrows which allocations the
+`uninitialized-poison` mode poisons, so you can bisect for the one an
+uninitialized read comes from. Unselected allocations are zero-filled, so both
+sides of a comparison stay deterministic. Set it to `all` (the default),
+`none`, `sync-only` (which keeps the per-allocation device synchronization but
+writes nothing, to tell a race apart from an uninitialized read), or to
+`dtype=si64,ui32`, `ord=100-2000`, or both joined by `&`. Ordinals count
+allocations from 0, and MAX logs each one with its data type to stderr on a
+`DEBUG_ALLOC_POISON:` line. `MODULAR_DEBUG_ALLOC_POISON_SELECT_FILE` reads the
+selection from a file instead and resets ordinals whenever the file changes;
+replace the file with a rename so every change registers.
 
 ## Profiling
 

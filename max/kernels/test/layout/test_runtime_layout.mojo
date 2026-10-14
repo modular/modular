@@ -12,11 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import (
+    ComptimeInt,
     IntTuple,
     Layout,
-    LayoutTensor,
+    RowMajorLayout,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
     UNKNOWN_VALUE,
 )
 from layout.layout import coalesce as coalesce_layout
@@ -191,13 +193,23 @@ def test_make_layout() raises:
 def test_large_layout_linear_index() raises:
     print("== test_large_layout_linear_index")
     # Shape size exceeds Int32 max but stays within UInt32 max.
-    # This ensures the runtime layout uses Int64 for linear indexing.
+    # Both tensor views and runtime layouts need Int64 linear indexing.
     comptime large_layout = Layout.row_major(65536, 57344)
-    comptime tensor_type = LayoutTensor[.uint8, large_layout, _]
+    comptime tensor_type = TileTensor[
+        .uint8,
+        RowMajorLayout[ComptimeInt[65536], ComptimeInt[57344]],
+        MutAnyOrigin,
+    ]
+    comptime assert tensor_type.linear_idx_type == .int64
+    comptime runtime_layout_type = RuntimeLayout[
+        large_layout,
+        element_type=.int32,
+        linear_idx_type=tensor_type.linear_idx_type,
+    ]
 
-    var shape = tensor_type.RuntimeLayoutType.ShapeType(65536, 57344)
-    var stride = tensor_type.RuntimeLayoutType.StrideType(57344, 1)
-    var runtime_layout = tensor_type.RuntimeLayoutType(shape, stride)
+    var shape = runtime_layout_type.ShapeType(65536, 57344)
+    var stride = runtime_layout_type.StrideType(57344, 1)
+    var runtime_layout = runtime_layout_type(shape, stride)
 
     var idx = runtime_layout(
         RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](65535, 57343)

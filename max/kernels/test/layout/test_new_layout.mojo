@@ -14,7 +14,6 @@
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
     TileTensor,
     col_major,
@@ -1523,7 +1522,7 @@ def test_weakly_compatible_not_symmetric() raises:
     because scalar coord elements are always compatible with any layout mode.
     """
     comptime flat_L = type_of(row_major[1, 1]())
-    comptime nested_L = type_of(row_major(Coord(Coord(Idx[1], Idx[1]), Idx[1])))
+    comptime nested_L = type_of(row_major(Coord(Idx[1], Idx[1]), Idx[1]))
 
     # Nested coord vs flat layout — incompatible.
     comptime assert not WeaklyCompatible[

@@ -13,34 +13,27 @@
 
 from std.compile import compile_info
 from max.gpu.host import get_gpu_target
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import TileTensor, row_major
+from layout.tile_tensor import stack_allocation
 
 
 # CHECK-LABEL: test_no_alloca_fill
 def test_no_alloca_fill():
     print("== test_no_alloca_fill")
 
-    def layout_tensor_kernel(
-        output: LayoutTensor[
-            .float32,
-            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-            MutAnyOrigin,
-        ],
+    def tile_tensor_kernel(
+        output: TileTensor[.float32, type_of(row_major((0, 0))), MutAnyOrigin],
         i: Int,
         j: Int,
     ):
-        var reg_tile = (
-            LayoutTensor[.float32, Layout.row_major(4, 4), MutAnyOrigin]
-            .stack_allocation()
-            .fill(0)
-        )
+        var reg_tile = stack_allocation[.float32](row_major[4, 4]()).fill(0)
 
         output.tile[4, 4](i, j).copy_from(reg_tile)
 
     # CHECK-NOT: alloca float, i64 16, align 4
     print(
         compile_info[
-            layout_tensor_kernel,
+            tile_tensor_kernel,
             emission_kind="llvm",
             target=get_gpu_target(),
         ]()

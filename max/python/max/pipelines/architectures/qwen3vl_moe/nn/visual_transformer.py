@@ -160,7 +160,7 @@ class BilinearInterpolationPositionEmbedding(Module):
 
     It uses a Standard embedding layer
     * Embedding table of size (num_position_embeddings, hidden_size).
-    * Assumes a square grid (e.g., 16x16 = 256 embeddings).
+    * Assumes a square grid (such as 16x16 = 256 embeddings).
     * Computes num_grid_per_side = sqrt(num_position_embeddings).
     * Bilinear interpolation is applied for each patch:
         1. Retrieve embeddings of the 4 neighboring positions using nn.Embedding.

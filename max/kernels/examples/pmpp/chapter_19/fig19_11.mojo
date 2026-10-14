@@ -32,6 +32,7 @@ from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 
 from conv_utils import idx_x, idx_y, conv_cpu, init_data, verify_results
+from std.math import ceildiv
 
 comptime TILE_WIDTH = 16
 
@@ -106,7 +107,7 @@ def conv_layer_mm_kernel(
     var width_A = C * K * K
 
     # Loop over F and B tiles
-    var num_phases = (width_A + TILE_WIDTH - 1) // TILE_WIDTH
+    var num_phases = ceildiv(width_A, TILE_WIDTH)
 
     for ph in range(num_phases):
         # Load F tile into shared memory
@@ -216,8 +217,8 @@ def main() raises:
     # Grid Z: Batch size
     var num_output_pixels = H_out * W_out
 
-    var grid_x = (num_output_pixels + TILE_WIDTH - 1) // TILE_WIDTH
-    var grid_y = (M + TILE_WIDTH - 1) // TILE_WIDTH
+    var grid_x = ceildiv(num_output_pixels, TILE_WIDTH)
+    var grid_y = ceildiv(M, TILE_WIDTH)
 
     print("Launching MM Kernel with Grid(", grid_x, ",", grid_y, ",", N, ")")
 

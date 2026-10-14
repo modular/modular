@@ -1103,6 +1103,7 @@ def test_variable_key_pattern_properties_fails_closed() -> None:
             }
         ),
         tool_choice="required",
+        reject_unsupported=True,
     )
     with pytest.raises(Exception):
         _compile_structural_tag(grammar)

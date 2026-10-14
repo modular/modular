@@ -193,6 +193,13 @@ def LowerAsyncFunctions : Pass<"lower-async-functions", "ModuleOp"> {
      All CO ops except for suspension points are lowered in this pass.
   }];
 
+  let options = [
+    Option<"useLivenessFrameEvaluation", "use-liveness-frame-evaluation",
+           "bool", "false",
+           "If true, compute the coroutine frame from liveness at suspension "
+           "points instead of from state numbering.">,
+  ];
+
   let dependentDialects = [
     "POPDialect",
     "KGENDialect",
@@ -774,13 +781,13 @@ def Mem2Reg : Pass<"mem-2-reg"> {
     %0 = pop.stack_allocation 1 x index
     pop.store %arg0, %0 : !kgen.pointer<index>
     %1 = pop.load %0 : !kgen.pointer<index>
-    kgen.return %1 : index
+    hlcf.return %1 : index
     ```
 
     Will become:
 
     ```mlir
-    kgen.return %arg0 : index
+    hlcf.return %arg0 : index
     ```
 
     However, stores within a nested region will not be elided (yet).
@@ -793,7 +800,7 @@ def Mem2Reg : Pass<"mem-2-reg"> {
       pop.store %arg1, %0 : !kgen.pointer<index>
     }
     %1 = pop.load %0 : !kgen.pointer<index>
-    kgen.return %1 : index
+    hlcf.return %1 : index
     ```
   }];
 
@@ -896,6 +903,9 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
               "the number of trivial loops erased">,
     Statistic<"numErasedTry", "num-erased-try",
               "the number of trivial try erased">,
+    Statistic<"numImpliedConditions", "num-implied-conditions",
+              "the number of if conditions implied by a region that never "
+              "falls through">,
   ];
 }
 
@@ -921,6 +931,25 @@ def ArgPromotion : Pass<"arg-promotion", "ModuleOp"> {
   ];
 
   let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// DecomposeFunctionArguments
+//===----------------------------------------------------------------------===//
+
+def DecomposeFunctionArguments
+    : Pass<"decompose-function-arguments", "ModuleOp"> {
+  let summary = "Flatten struct arguments into their leaf fields";
+  let description = [{
+    The `decompose-function-arguments` pass flattens `kgen.struct` arguments
+    of every `kgen.func` into leaf fields and rewrites the body and the
+    surviving `kgen.call` sites to match. Which arguments to flatten, and
+    each leaf's attributes and convention, come from a
+    `FunctionArgumentDecompositionPolicy`; the pipeline-registered form uses
+    the default policy, which flattens every struct argument.
+  }];
+
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
 }
 
 //===----------------------------------------------------------------------===//

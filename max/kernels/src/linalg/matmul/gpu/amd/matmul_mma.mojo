@@ -30,14 +30,9 @@ from std.utils import IndexList
 from layout import TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
-from layout.tile_layout import Layout, row_major, col_major
+from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
-from structured_kernels.amd_tile_io import (
-    GMemTile,
-    SMemTile,
-    RegTile,
-    load_lds_fragment,
-)
+from structured_kernels.amd_tile_io import SMemTile, load_lds_fragment
 
 
 # ===----------------------------------------------------------------------=== #

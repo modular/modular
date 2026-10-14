@@ -13,8 +13,10 @@
 
 # COM: Run parsing twice to ensure the cache is populated.
 # RUN: %parse-mojo-isolated -I=%S/inputs %s -o /dev/null
+# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
 
-# CHECK: !Trait = !lit.trait<@imported_cached_module::@Trait>
+# CHECK: !Trait_AnyType = !lit.trait<@imported_cached_module::@Trait,
+# CHECK: #alias_StringLiteralAlias = {{.*}}"foobar">
 
 from imported_cached_module import (
     StringLiteralAlias,
@@ -25,11 +27,11 @@ from imported_cached_module import (
 
 # CHECK-LABEL: lit.fn @"assign_from()"
 def assign_from():
-    # CHECK: string = <"foobar">
+    # CHECK: string = <#alias_StringLiteralAlias>
     var foo = StringLiteralAlias
 
 
-# CHECK-LABEL: lit.struct.decl @Struct(!Trait, !AnyType[!Trait])
+# CHECK-LABEL: lit.struct.decl @Struct(!Trait_AnyType{{.*}})
 struct Struct(Trait):
     pass
 

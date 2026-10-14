@@ -19,6 +19,8 @@ Both are transcribed from the authors' own vLLM fork
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.layer import Module
@@ -228,7 +230,10 @@ class DFlash2CandidateSelector(Module):
         return ops.unsqueeze(unary_logits, 2) + edges
 
     def select_path(
-        self, scores: TensorValue, candidate_ids: TensorValue
+        self,
+        scores: TensorValue,
+        candidate_ids: TensorValue,
+        sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> TensorValue:
         """Walks the score tensor left to right, following the best successor.
 
@@ -241,6 +246,8 @@ class DFlash2CandidateSelector(Module):
             scores: ``[batch, steps, top_k, top_k]`` from
                 :meth:`score_edges`.
             candidate_ids: ``[batch, steps, top_k]``.
+            sampler: Draws step ``l``'s ``[batch]`` candidate index from its
+                ``[batch, top_k]`` successor scores in place of the argmax.
 
         Returns:
             ``[batch, steps]`` chosen token ids.
@@ -253,7 +260,12 @@ class DFlash2CandidateSelector(Module):
         tokens: list[TensorValue] = []
         for step in range(steps):
             row = ops.gather_nd(scores[:, step], previous, batch_dims=1)
-            previous = ops.argmax(row, axis=-1).cast(DType.int64)
+            if sampler is None:
+                previous = ops.argmax(row, axis=-1).cast(DType.int64)
+            else:
+                previous = ops.unsqueeze(
+                    sampler(row, step).cast(DType.int64), axis=-1
+                )
             tokens.append(
                 ops.gather_nd(candidate_ids[:, step], previous, batch_dims=1)
             )

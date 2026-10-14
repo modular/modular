@@ -247,16 +247,36 @@ def _ep_forward(
         moe_shards[0].has_shared_experts
         and not batch_mgr.config.fused_shared_expert
     )
+    # Per-token NVFP4 global scales exist only on the fused dispatch.
     overlap_shared_expert = (
-        has_unfused_shared and not batch_mgr.config.use_allreduce
+        has_unfused_shared
+        and not batch_mgr.config.use_allreduce
+        and not batch_mgr.config.nvfp4_dyn_global_scales
     )
 
-    # Decide the MXFP4 EP A-scale preshuffle fold before dispatch because the
-    # dispatch scales output shape depends on it. All dispatch paths now thread
-    # the fusion parameters. `MoE` handles this as a no-op; `MoEQuantized`
-    # enables the fold when applicable.
-    for shard in moe_shards:
-        shard.configure_ep_scale_fusion(dispatch_supports_fold=True)
+    # One-launch fused EP MoE, once EP init set it up (``fused_moe_ready``).
+    # Replaces dispatch, the local FFN and the combine with ONE launch per
+    # device that returns the token-indexed routed output. All-or-nothing per
+    # layer (every rank must run the same protocol); any shard it cannot serve
+    # keeps the shipping chain below.
+    #
+    # Exclusive-launch contract: the fused grid is one persistent CTA per SM
+    # and was qualified with nothing co-resident, so the shared expert runs
+    # INLINE on the default stream (never ``ops.side_stream``) and serializes
+    # with the fused launch. The shipping path below keeps its side stream.
+    if batch_mgr.config.fused_moe_ready and all(
+        shard._can_fuse_megaffn_ep() for shard in moe_shards
+    ):
+        fused_outputs: list[TensorValue] = []
+        for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+            shared = shard.shared_experts(x) if has_unfused_shared else None
+            out = shard._ep_fused_forward(
+                x, all_topk_ids[i], all_router_weights[i]
+            )
+            if shared is not None:
+                out += shared
+            fused_outputs.append(out.cast(x.dtype))
+        return fused_outputs
 
     shared_outs: list[TensorValue | None] | None = None
 
@@ -306,7 +326,12 @@ def _ep_forward(
         all_dispatch_results = batch_mgr.ep_dispatch_all(
             xs, all_topk_ids, device_ids, input_scales=scales
         )
-        if has_unfused_shared:
+        if has_unfused_shared and batch_mgr.config.nvfp4_dyn_global_scales:
+            shared_outs = [
+                shard.shared_experts(x)
+                for shard, x in zip(moe_shards, xs, strict=True)
+            ]
+        elif has_unfused_shared:
             shared_outs = _compute_shared_experts(
                 moe_shards, xs, range(len(moe_shards))
             )
@@ -321,12 +346,20 @@ def _ep_forward(
         // batch_mgr.config.n_gpus_per_node
     ).cast(DType.uint32)
 
-    # Per-shard local expert compute.
-    all_down_projs: list[TensorValue] = []
-    for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
-        expert_inputs = all_dispatch_results[i]
-        down = shard._local_ep_compute(expert_inputs, x, estimated_total_m)
-        all_down_projs.append(down)
+    # Per-shard local expert compute. A shard whose FFN epilogue performs
+    # the combine send itself returns None: its output went straight to the
+    # peers, so there is no local tensor to hand to a combine.
+    downs = [
+        shard._local_ep_compute(all_dispatch_results[i], x, estimated_total_m)
+        for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True))
+    ]
+    all_down_projs = [down for down in downs if down is not None]
+    ffn_sent = len(all_down_projs) < len(downs)
+    if ffn_sent and all_down_projs:
+        raise ValueError(
+            "the FFN-fused combine send must be all-or-nothing across shards:"
+            " a shard that kept its output would have no send to wait on"
+        )
 
     if batch_mgr.config.use_allreduce:
         # launch per-device combine since they don't need to do cross-device
@@ -346,10 +379,15 @@ def _ep_forward(
         # earlier between dispatch_async and dispatch_wait; combine_async +
         # combine_wait gives the scheduler a second window to absorb any
         # remaining shared-expert work.
-        for i, shard in enumerate(moe_shards):
-            shard.ep_batch_manager.ep_combine_async(
-                all_down_projs[i], device_ids[i]
-            )
+        #
+        # When the FFN epilogue already sent, there is nothing to launch here:
+        # the payload is in the peer buffers and the arrival signal is
+        # published, so the wait below is the only remaining step.
+        if not ffn_sent:
+            for i, shard in enumerate(moe_shards):
+                shard.ep_batch_manager.ep_combine_async(
+                    all_down_projs[i], device_ids[i]
+                )
         combine_results = [
             shard.ep_batch_manager.ep_combine_wait(
                 all_router_weights[i], device_ids[i]
@@ -462,7 +500,7 @@ def forward_moe_sharded_layers(
     :func:`forward_sharded_layers`.
 
     Args:
-        shards: Per-device shard callables (MoE, MLP, etc.).
+        shards: Per-device shard callables (MoE, MLP and so on).
         xs: Input tensors, one per shard.
 
     Returns:

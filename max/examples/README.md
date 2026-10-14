@@ -6,7 +6,9 @@ READMEs for usage instructions.
 
 ## Mojo code examples
 
-We moved the Mojo examples to [/Mojo/examples](../../Mojo/examples/)
+The Mojo examples that don't depend on MAX moved to
+[/Mojo/examples](../../Mojo/examples/). The Mojo examples that use the MAX
+accelerator and layout APIs are still in this directory, and are listed below.
 
 ## [Modules](modules/)
 
@@ -79,18 +81,22 @@ Whenever possible, code examples should be tested in the following ways.
 
 Use a `BUILD.bazel` file to create an executable binary for the code.
 
-Any code used in a build function (such as `modular_by_binary()` or
+Any code used in a build function (such as `modular_py_binary()` or
 `mojo_binary()`), is automatically built as part of the "build everything" CI
 commands that run during PR pre-submit. For
-[example](https://github.com/modular/modular/tree/main/examples/max-graph/BUILD.bazel):
+[example](modules/BUILD.bazel):
 
 ```bzl
 modular_py_binary(
-    name = "addition",
-    srcs = ["addition.py"],
+    name = "modules",
+    srcs = ["modules.py"],
     imports = ["."],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
@@ -99,7 +105,7 @@ modular_py_binary(
 You can run it directly to confirm it works like this:
 
 ```sh
-br //max/examples/max-graph:addition
+br //max/examples/modules:modules
 ```
 
 For help writing this code, look at the other `BUILD.bazel` files in the
@@ -122,7 +128,7 @@ It's possible that an API changed in a way that passes the above build but
 doesn't break until the code is executed. To verify that the code actually runs
 successfully, add a `modular_run_binary_test()` function to the same
 `BUILD.bazel` file that calls the previously-defined binary. For
-[example](https://github.com/modular/modular/blob/8dbd252/examples/mojo/gpu-intro/BUILD.bazel#L15-L19):
+[example](gpu-intro/BUILD.bazel):
 
 ```bzl
 mojo_binary(
@@ -185,8 +191,7 @@ fixed (hopefully).
 
 The simple `pixi` test above is good enough for most cases, but it doesn't
 assert that the result produced is what's expected. To go to that next level, we
-might add an actual [pytest](https://docs.pytest.org/en/stable/). For
-[example](https://github.com/modular/modular/tree/main/examples/max-graph/pixi.toml):
+might add an actual [pytest](https://docs.pytest.org/en/stable/):
 
 ```toml
 [tasks]

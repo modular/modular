@@ -19,12 +19,10 @@ from std.utils.numerics import FPUtils
 ```
 """
 
-from std.sys import CompilationTarget, bit_width_of, llvm_intrinsic
+from std.sys import CompilationTarget, llvm_intrinsic
 from std.sys._assembly import inlined_assembly
-from std.ffi import _external_call_const
 
 from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
-from std.simd import _simd_apply
 from std.memory import bitcast
 
 # ===----------------------------------------------------------------------=== #
@@ -481,44 +479,45 @@ def nan[dtype: DType]() -> Scalar[dtype]:
         dtype.is_floating_point()
     ), "Only floating point dtypes support NaN."
 
-    comptime if dtype == .float8_e4m3fn:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fn>`,
-        )
-    elif dtype == .float8_e4m3fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fnuz>`,
-        )
-    elif dtype == .float8_e5m2:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2>`,
-        )
-    elif dtype == .float8_e5m2fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2fnuz>`,
-        )
-    elif dtype == .float8_e8m0fnu:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e8m0fnu>`,
-        )
-    elif dtype == .bfloat16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<bf16>`,
-        )
-    elif dtype == .float16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f16>`,
-        )
-    elif dtype == .float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f32>`,
-        )
-    elif dtype == .float64:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f64>`,
-        )
-    else:
-        comptime assert False, "unsupported float type"
+    comptime match dtype:
+        case .float8_e4m3fn:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fn>`,
+            )
+        case .float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fnuz>`,
+            )
+        case .float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2>`,
+            )
+        case .float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2fnuz>`,
+            )
+        case .float8_e8m0fnu:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e8m0fnu>`,
+            )
+        case .bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<bf16>`,
+            )
+        case .float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f16>`,
+            )
+        case .float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f32>`,
+            )
+        case .float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f64>`,
+            )
+        case _:
+            comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -598,36 +597,37 @@ def inf[dtype: DType]() -> Scalar[dtype]:
         dtype.is_floating_point()
     ), "Only floating point dtypes support +inf."
 
-    comptime if dtype == .float8_e4m3fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e4m3fnuz>`,
-        )
-    elif dtype == .float8_e5m2:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2>`,
-        )
-    elif dtype == .float8_e5m2fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2fnuz>`,
-        )
-    elif dtype == .bfloat16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<bf16>`,
-        )
-    elif dtype == .float16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f16>`,
-        )
-    elif dtype == .float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f32>`,
-        )
-    elif dtype == .float64:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f64>`,
-        )
-    else:
-        comptime assert False, "unsupported float type"
+    comptime match dtype:
+        case .float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e4m3fnuz>`,
+            )
+        case .float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2>`,
+            )
+        case .float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2fnuz>`,
+            )
+        case .bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<bf16>`,
+            )
+        case .float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f16>`,
+            )
+        case .float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f32>`,
+            )
+        case .float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f64>`,
+            )
+        case _:
+            comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -652,40 +652,41 @@ def neg_inf[dtype: DType]() -> Scalar[dtype]:
         dtype.is_floating_point()
     ), "Only floating point dtypes support -inf."
 
-    comptime if dtype == .float8_e4m3fn:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fn>`,
-        )
-    elif dtype == .float8_e4m3fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fnuz>`,
-        )
-    elif dtype == .float8_e5m2:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2>`,
-        )
-    elif dtype == .float8_e5m2fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2fnuz>`,
-        )
-    elif dtype == .bfloat16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<bf16>`,
-        )
-    elif dtype == .float16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f16>`,
-        )
-    elif dtype == .float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f32>`,
-        )
-    elif dtype == .float64:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f64>`,
-        )
-    else:
-        comptime assert False, "unsupported float type"
+    comptime match dtype:
+        case .float8_e4m3fn:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fn>`,
+            )
+        case .float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fnuz>`,
+            )
+        case .float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2>`,
+            )
+        case .float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2fnuz>`,
+            )
+        case .bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<bf16>`,
+            )
+        case .float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f16>`,
+            )
+        case .float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f32>`,
+            )
+        case .float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f64>`,
+            )
+        case _:
+            comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -957,6 +958,16 @@ def nextafter[
 ](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes next representable value of `arg0` in the direction of `arg1`.
 
+    CPU and GPU targets share one Mojo implementation that walks the IEEE-754
+    bit pattern directly: the only floating-point operation is the NaN check,
+    so the result is exact on every target and is unaffected by targets that
+    flush subnormal arithmetic. Read as a signed integer, the raw bit pattern
+    is monotone on each half of the real line — increasing with value from
+    +0 to +NaN, and decreasing from -1 at -NaN to the most negative integer
+    at -0 — so a single ±1 step of the bit pattern, with the direction
+    decided by the ordering of `arg0` and `arg1` and the sign of `arg0`,
+    reaches the neighbouring representable value.
+
     Constraints:
         The element dtype of the input must be a floating-point type.
 
@@ -976,60 +987,47 @@ def nextafter[
         DType.float64,
     ), "nextafter only supports float32 and float64 types"
 
-    @inline(.nodebug)
-    def _float32_dispatch[
-        lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
-        return _external_call_const["nextafterf", Scalar[result_type]](
-            arg0, arg1
-        )
-
-    @inline(.nodebug)
-    def _float64_dispatch[
-        lhs_type: DType, rhs_type: DType, result_type: DType
-    ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
-        return _external_call_const["nextafter", Scalar[result_type]](
-            arg0, arg1
-        )
-
     comptime assert (
         dtype.is_floating_point()
     ), "input dtype must be floating point"
 
-    if __is_run_in_comptime_interpreter:
-        # The runtime path dispatches to libc `nextafter(f)` through an
-        # `external_call`, which the comptime interpreter cannot execute. Walk
-        # to the neighbouring value directly from the IEEE-754 bit pattern
-        # instead: for a fixed sign, consecutive representable values map to
-        # consecutive integers when the raw bits are read as an integer, so
-        # stepping the magnitude is a single increment or decrement.
-        comptime int_dtype = _integral_type_of[dtype]()
-        var bits = bitcast[int_dtype, width](arg0)
-        # Moving toward `arg1` grows the magnitude (and the raw-bit integer)
-        # when it heads away from zero, and shrinks it otherwise: a larger
-        # value steps the bits up for a positive `arg0` but down for a negative
-        # one, and vice versa.
-        var toward_larger = arg1.gt(arg0)
-        var negative = arg0.lt(0)
-        var stepped = toward_larger.select(
-            negative.select(bits - 1, bits + 1),
-            negative.select(bits + 1, bits - 1),
-        )
-        var result = bitcast[dtype, width](stepped)
-        # `arg0 == 0` has no neighbour by stepping bits: the answer is the
-        # smallest subnormal carrying `arg1`'s sign (bit pattern `1`).
-        var smallest = bitcast[dtype, width](SIMD[int_dtype, width](1))
-        result = arg0.eq(0).select(
-            arg1.lt(0).select(-smallest, smallest), result
-        )
-        # Equal inputs (including +0 and -0) return `arg1` per the C contract.
-        result = arg0.eq(arg1).select(arg1, result)
-        # A NaN operand yields NaN.
-        result = (isnan(arg0) | isnan(arg1)).select(
-            SIMD[dtype, width](nan[dtype]()), result
-        )
-        return result
-
-    comptime if dtype == .float64:
-        return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
-    return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)
+    comptime int_dtype = _integral_type_of[dtype]()
+    comptime IntT = SIMD[int_dtype, width]
+    var bits = bitcast[int_dtype, width](arg0)
+    var ybits = bitcast[int_dtype, width](arg1)
+    comptime Imax = IntT(FPUtils[dtype].exponent_mantissa_mask())
+    # A totalOrder key on the raw bits, monotone increasing along
+    # -NaN < -inf < ... < -0 < +0 < ... < +inf < +NaN. Every predicate below
+    # is an integer operation on the key or the bits, so — unlike a floating
+    # point comparison — it is correct on targets that flush subnormal
+    # operands to zero.
+    var key = bits.ge(0).select(bits, bits ^ Imax)
+    var ykey = ybits.ge(0).select(ybits, ybits ^ Imax)
+    # Moving toward `arg1` grows the magnitude (and the raw-bit integer)
+    # when it heads away from zero, and shrinks it otherwise: a larger
+    # value steps the bits up for a positive `arg0` but down for a negative
+    # one, and vice versa.
+    var toward_larger = ykey.gt(key)
+    var negative = bits.lt(0)
+    var stepped = toward_larger.select(
+        negative.select(bits - IntT(1), bits + IntT(1)),
+        negative.select(bits + IntT(1), bits - IntT(1)),
+    )
+    var result = bitcast[dtype, width](stepped)
+    var smallest = bitcast[dtype, width](IntT(1))
+    # `arg0` zero (either sign) has no bit-neighbour towards the other zero:
+    # the answer is the smallest subnormal carrying `arg1`'s sign (bit
+    # pattern `1`). Reading zero from the bits keeps this correct on
+    # targets that flush subnormals, where a subnormal would compare equal
+    # to zero.
+    var x_zero = (bits & Imax).eq(0)
+    var y_zero = (ybits & Imax).eq(0)
+    result = x_zero.select(ykey.lt(0).select(-smallest, smallest), result)
+    # Equal inputs (including +0 and -0, whose keys differ) return `arg1` per
+    # the C contract.
+    result = (key.eq(ykey) | (x_zero & y_zero)).select(arg1, result)
+    # A NaN operand yields NaN.
+    result = (isnan(arg0) | isnan(arg1)).select(
+        SIMD[dtype, width](nan[dtype]()), result
+    )
+    return result

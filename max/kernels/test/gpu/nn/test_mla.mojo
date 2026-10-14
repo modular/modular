@@ -11,37 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.random import randn
-from std.sys import (
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_prefill
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
-
-
-from std.utils.index import Index
 
 
 def is_benchmark() -> Bool:
@@ -72,7 +62,7 @@ def test[
         "batch_size:",
         batch_size,
         "num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        num_partitions.or_else(-1),
         "seq_len:",
         seq_len,
         "num_keys:",
@@ -233,21 +223,19 @@ def test[
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        var k_operand = LayoutTensorMHAOperand(
-            k_device.as_immut().as_unsafe_any_origin()
+        var k_operand = TileTensorMHAOperand(
+            k_device.as_imm().as_unsafe_any_origin()
         )
-        var null_valid_length = LayoutTensor[
-            .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-        ](
-            None,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+        var null_valid_length = TileTensor(
+            MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            row_major(Idx[0]),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
-            q_device.to_layout_tensor(),
+            q_device,
             k_operand,
             k_operand,
             CausalMask(),
-            output_ref_device.to_layout_tensor(),
+            output_ref_device,
             null_valid_length,
             scale,
             batch_size,
@@ -309,6 +297,7 @@ def test_prefill[
     cache_num_heads: Int,
     batch_size: Int = 1,
     use_causal_mask: Bool = True,
+    use_cache_offsets: Bool = False,
     output_type: DType = qkv_type,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
@@ -455,6 +444,16 @@ def test_prefill[
         row_major(batch_size + 1),
     )
 
+    var cache_offsets_buffer = ctx.enqueue_create_buffer[.uint32](
+        batch_size if use_cache_offsets else 0
+    )
+    var cache_offsets = OptionalReg[ImmutTileTensor1D[.uint32]]()
+    comptime if use_cache_offsets:
+        ctx.enqueue_memset(cache_offsets_buffer, 0)
+        cache_offsets = immut_tile_tensor_1d(
+            cache_offsets_buffer.unsafe_ptr(), batch_size
+        )
+
     @inline(.always)
     def kernel_launch(
         ctx: DeviceContext,
@@ -480,6 +479,7 @@ def test_prefill[
             scale,
             ctx,
             q_max_seq_len=seq_len,
+            cache_offsets=cache_offsets,
         )
 
     if is_benchmark():
@@ -590,27 +590,25 @@ def test_prefill[
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_device.as_immut().as_unsafe_any_origin()
+    var k_ref_operand = TileTensorMHAOperand(
+        k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_device.as_immut().as_unsafe_any_origin()
+    var v_ref_operand = TileTensorMHAOperand(
+        v_ref_device.as_imm().as_unsafe_any_origin()
     )
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_device_rank4.to_layout_tensor(),
+        q_device_rank4,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
+        output_ref_device,
         null_valid_length,
         scale,
         batch_size,
@@ -640,7 +638,7 @@ def test_prefill[
 
     # compare output with reference
     comptime atol: Float64 = 2e-2
-    comptime rtol: Float64 = 2e-2 if has_nvidia_gpu_accelerator() else 3e-2
+    comptime rtol: Float64 = 2e-2 if ctx.target.is_nvidia_gpu() else 3e-2
     for b in range(batch_size):
         for s in range(seq_len):
             for h in range(num_heads):
@@ -657,6 +655,7 @@ def test_prefill[
                         rtol=rtol,
                     )
 
+    _ = cache_offsets_buffer
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
@@ -1103,7 +1102,7 @@ def main() raises:
             # partials, which the combine kernel then folds into the output.
             test_decoding_partial_head_group[1, 2, True](ctx, False)
 
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             test_decoding[1, 4, False](ctx, False)
             test_decoding[27, 2, False](ctx, False)
             # Default (None) — exercise the AMD heuristic.
@@ -1138,6 +1137,28 @@ def main() raises:
             # these counts tail; an overrun there folds one split's partials
             # into the next head's output.
             test_decoding_k3_head_counts[1, 2, True](ctx, 1, 4096)
+
+        comptime if ctx.target.is_amd_gpu():
+            # 12 heads needs BM rounded up to 16; 24 leaves a partial last
+            # head tile at BM=16.
+            test_decoding_k3_head_counts[2, 1, False](ctx, 1, 512)
+            test_decoding_k3_head_counts[1, 1, False](ctx, 1, 4096)
+            # AMD reaches its combine kernel through partitions, not warp
+            # split-K.
+            test_decoding_k3_head_counts[1, 4, False](ctx, 1, 4096)
+
+        # An explicit zero-offset tensor must match the no-offset reference.
+        test_prefill[
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=192,
+            num_heads=128,
+            kv_depth=128,
+            cache_depth=576,
+            cache_num_heads=1,
+            batch_size=2,
+            use_cache_offsets=True,
+        ](32, 64, ctx)
 
         # test mla prefill
         test_mla_prefill[2, DType.bfloat16, DType.bfloat16](ctx)

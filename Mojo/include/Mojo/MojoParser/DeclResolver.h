@@ -44,6 +44,7 @@ class ParserBase;
 class SharedState;
 class UnresolvedImportOp;
 class ImportOp;
+class EnumCaseOp;
 class StructDeclOp;
 class StructFieldOp;
 class TraitDeclOp;
@@ -101,9 +102,18 @@ public:
                               ASTDecl *parentDecl, LexerCursor cursor,
                               LexerCursor endCursor, ssize_t indentation);
 
+  /// Create a witness declaration and install it in the trait's scope.
+  WitnessASTDecl &
+  createWitnessDecl(WitnessASTDecl::UnresolvedDecls unresolvedDecls,
+                    TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
+                    ASTDecl &traitDecl, StringAttr name);
+
   /// Attach a declaration to its parent's name table.  For use with
   /// `makeUnlistedDecl`.
   void attachDeclToParentNameTable(ASTDecl *decl, StringAttr name);
+
+  /// Remove an unreachable declaration and its owned children.
+  void eraseDecl(ASTDecl &decl);
 
   /// Register a decl's symbol in the MLIR symbol table and declForTypeSymbol
   /// map, without adding it to the parent's declsInScope. This allows the
@@ -119,6 +129,10 @@ public:
   // importing all extensions easier).
   // TODO(MOCO-522): Centralize into arcana doc.
   void aliasDeclInParent(ASTDecl *decl, StringAttr aliasName);
+
+  /// Register a newly added extension decl under its parent's aggregate
+  /// "extension:" name.
+  void registerExtensionDecl(ASTDecl &extensionDecl);
 
   /// Attach a declaration to a trait composition's decl. This does not modify
   /// any existing parent-child relationships of the `childDecl`. It merely adds
@@ -283,6 +297,17 @@ public:
   void expandWildcardsForName(ASTDecl &scope, StringAttr name,
                               bool stopOnFirstHit = false);
 
+  /// If `decl` is a file module, pull the extensions its wildcard imports
+  /// provide into its scope, so conformance checks against its traits and
+  /// structs see them. Called once the decl's body is resolved.
+  void completeModuleScope(ASTDecl &decl);
+
+  /// Import every extension visible in `module`'s scope into `dest`, as part
+  /// of importing from `module`.
+  LogicalResult importModuleExtensions(ASTDecl &module, ASTDecl &dest,
+                                       ImportPathAttr moduleName,
+                                       SMLoc sourceLoc, SMLoc destLoc);
+
   ArrayRef<ASTDecl *> getParsedDeclList() const { return parsedDeclList; }
 
   //===--------------------------------------------------------------------===//
@@ -399,6 +424,10 @@ private:
 
   LogicalResult resolveSignature(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(StructDeclOp op, Lexer &lexer, ASTDecl &decl);
+  /// Resolve the cases parsed in the body of an enum, given in declaration
+  /// order.
+  void resolveEnumCases(ASTDecl &decl, ArrayRef<ASTDecl *> caseDecls);
+  LogicalResult resolveSignature(EnumCaseOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
   ParseResult resolveBody(StructFieldOp op, Lexer &lexer, ASTDecl &decl);
   LogicalResult resolveSignature(TraitDeclOp op, Lexer &lexer, ASTDecl &decl);
@@ -411,8 +440,8 @@ private:
 
   ParseResult resolveSignature(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
-  ParseResult resolveSignature(WitnessDecl *witness, ASTDecl &decl);
-  ParseResult resolveBody(WitnessDecl *witness, ASTDecl &decl);
+  ParseResult resolveSignature(WitnessASTDecl &witness);
+  ParseResult resolveBody(WitnessASTDecl &witness);
 
   ParseResult resolveBody(ConformanceOp op, ASTDecl &decl);
 
@@ -441,6 +470,10 @@ private:
 
   /// This array holds all of the parsed declarations in a deterministic order.
   std::vector<ASTDecl *> parsedDeclList;
+
+  /// Removed declarations retained until the resolver is destroyed so active
+  /// resolution frames can unwind safely.
+  std::vector<ASTDecl *> retiredDeclList;
 
   /// From-import placeholders (`from a.b import c`) that resolved to a
   /// submodule and were superseded by an ImportOp.

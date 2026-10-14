@@ -807,7 +807,7 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     // A struct parameterized on a variadic sequence of element types.
     kgen.generator @example<Ts: param_list<!kgen.type>>(
       %0: !kgen.struct<(Ts)>,
-    ) { kgen.return }
+    ) { hlcf.return }
     ```
   }];
 

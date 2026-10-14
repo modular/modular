@@ -57,6 +57,18 @@ SmallVector<TraitSymbolAttr>
 reduceTraitCompositionSymbols(SharedState &shared,
                               ArrayRef<TraitSymbolAttr> symbols);
 
+/// Return the universal parametric closure trait symbol of a trait composition,
+/// or null if `trait` is null or contains no such symbol.
+///
+/// FIXME: what if there are multiple closure traits? We need to be more clever
+/// to line them up.
+TraitSymbolAttr extractClosureSymbol(SharedState &shared, TraitType trait);
+
+// TODO: we need a proper design to support this correctly.
+LogicalResult checkAtMostOneClosureTrait(SharedState &shared,
+                                         ArrayRef<TraitSymbolAttr> symbols,
+                                         SMLoc loc, SourceRange range = {});
+
 /// Given a type expression and scope-level assumptions, compute the effective
 /// trait bound implied by any `conforms_to(type, Trait)` constraints.
 TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,

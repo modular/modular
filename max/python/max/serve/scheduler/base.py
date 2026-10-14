@@ -15,7 +15,12 @@ from typing import Generic, Literal, TypeVar
 
 import msgspec
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import TransferReqData
+from max.pipelines.kv_cache import (
+    JengaKVCacheManager,
+    PagedKVCacheManagerInterface,
+    TransferReqData,
+)
+from max.pipelines.kv_cache.registry import jenga_supports_di
 from max.pipelines.modeling.types import RequestID
 
 ContextType = TypeVar("ContextType", bound=TextContext)
@@ -42,7 +47,7 @@ class PrefillRequest(
 
     Generic over the context type: msgspec decodes each field at its declared
     type, so the DI prefill decoder must be parameterized with the
-    architecture's concrete context subclass (e.g. a ``TextAndVisionContext``
+    architecture's concrete context subclass (such as a ``TextAndVisionContext``
     subclass for VLMs) or the wire silently narrows the context to the base
     class, dropping vision fields. The ``tag`` stays the class name
     (``"PrefillRequest"``) for every parameterization, keeping the decode
@@ -55,8 +60,9 @@ class PrefillRequest(
     """The input context containing the request data and state."""
     transfer_engine_name: str
     """Name of the transfer engine to use for KV cache transfers."""
-    dst_block_ids: list[int]
-    """List of block IDs allocated for KV cache storage on Decode."""
+    dst_block_ids: dict[str, list[int]]
+    """Block IDs allocated for KV cache storage on Decode, keyed by leaf id.
+    ``-1`` marks a page decode already holds from its prefix cache."""
     dst_replica_idx: int
     """The replica the request is on Decode."""
 
@@ -124,3 +130,21 @@ class CancelRequest(msgspec.Struct, tag=True, omit_defaults=True, kw_only=True):
 
     id: RequestID
     """Unique identifier of the request to cancel."""
+
+
+def check_di_supports(kv_cache: PagedKVCacheManagerInterface) -> None:
+    """Raises if disaggregated serving cannot transfer this KV cache.
+
+    Only the Jenga manager can serve disaggregated inference, and only for full
+    attention leaves, because a sliding-window leaf nulls the pages its window
+    slid past and so has no contiguous prefix of block ids to transfer.
+    """
+    if not isinstance(kv_cache, JengaKVCacheManager):
+        raise NotImplementedError(
+            "Disaggregated inference is incompatible with the legacy KV"
+            " manager; unset MODULAR_USE_LEGACY_KV_CACHE."
+        )
+    if not jenga_supports_di(kv_cache.params):
+        raise NotImplementedError(
+            "Disaggregated inference supports only full-attention KV caches."
+        )

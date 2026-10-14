@@ -18,7 +18,7 @@ kgen.func @basic(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, struct<(s
     %2 = kgen.struct.extract %struct[2] : !kgen.struct<(struct<(scalar<index>)>, struct<(scalar<index>)>, struct<(scalar<index>)>)>
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @many_nests
@@ -49,7 +49,7 @@ kgen.func @many_nests(%arg0: !kgen.pointer<struct<(struct<(scalar<index>)>, stru
     }
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @memory_ops_untouched
@@ -66,7 +66,7 @@ kgen.func @memory_ops_untouched(%input: !kgen.pointer<index>, %output: !kgen.poi
     }
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @hoist_loop_index
@@ -83,7 +83,7 @@ kgen.func @hoist_loop_index(%arg0: index, %cond: !kgen.scalar<bool>) {
     }
     hlcf.break
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @hoist_nested_funcs
@@ -113,9 +113,9 @@ kgen.func @hoist_nested_funcs(%arg0: index) {
         %6 = index.divs %arg1, %arg0
         hlcf.continue
       }
-      kgen.return
+      hlcf.return
     }
     hlcf.continue
   }
-  kgen.return
+  hlcf.return
 }

@@ -30,6 +30,9 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.paged_kv_cache.block_utils import (
+    LittleKVCacheBlock,
+)
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,
     KVLeafInfo,
@@ -71,30 +74,53 @@ STATE_LEAVES = {
 }
 
 
-def state_group(bm: JengaBlockManager) -> RecurrentKVGroupCoordinator:
-    """The group under test."""
-    group = bm.groups[KVCacheGroupId.recurrent()]
-    assert isinstance(group, RecurrentKVGroupCoordinator)
-    return group
+def state_groups(bm: JengaBlockManager) -> list[RecurrentKVGroupCoordinator]:
+    """The coordinators under test, one per state leaf.
+
+    The state tree has two recurrent leaves (conv and rec), and each is its
+    own coordinator now, so what used to be one group's answer is the union
+    of theirs.
+    """
+    groups = [
+        group
+        for group in bm.groups.values()
+        if isinstance(group, RecurrentKVGroupCoordinator)
+    ]
+    assert groups, "no recurrent leaf in this manager"
+    return groups
 
 
 def live(bm: JengaBlockManager, ctx: TextContext) -> dict[str, int] | None:
     """The blocks this request's recurrence runs in, drawing them if new."""
-    return state_group(bm).live_blocks(ctx.request_id)
+    merged: dict[str, int] = {}
+    for group in state_groups(bm):
+        blocks = group.live_blocks(ctx.request_id)
+        if blocks is None:
+            # One leaf without a live block means the state is not drawn,
+            # which is what a single group reported for the whole tree.
+            return None
+        merged.update(blocks)
+    return merged
 
 
 def resume(
     bm: JengaBlockManager, ctx: TextContext
 ) -> Mapping[str, tuple[int | None, int]]:
     """The block each leaf's next forward resumes its state from."""
-    return state_group(bm).resume(ctx, 0)
+    merged: dict[str, tuple[int | None, int]] = {}
+    for group in state_groups(bm):
+        merged.update(group.resume(ctx, 0))
+    return merged
 
 
 def checkpoint(
     bm: JengaBlockManager, ctx: TextContext
-) -> Mapping[str, tuple[int, int]]:
+) -> Mapping[str, tuple[int | None, int]]:
     """The blocks the forward that just ran should be copied between."""
-    return state_group(bm).checkpoint(ctx, 0)
+    merged: dict[str, tuple[int | None, int]] = {}
+    for group in state_groups(bm):
+        merged.update(group.checkpoint(ctx, 0))
+    return merged
 
 
 def make_manager(
@@ -107,7 +133,12 @@ def make_manager(
         pools=pools,
         block_size=BLOCK_SIZE,
         enable_prefix_caching=enable_prefix_caching,
-        groups=create_groups(STATE_LEAVES, pools, BLOCK_SIZE),
+        groups=create_groups(
+            STATE_LEAVES,
+            pools,
+            BLOCK_SIZE,
+            enable_prefix_caching=enable_prefix_caching,
+        ),
         leaves=STATE_PARAMS.leaves(),
     )
 
@@ -135,7 +166,8 @@ def forward(bm: JengaBlockManager, ctx: TextContext, token: int = 42) -> None:
 
 
 def published(bm: JengaBlockManager) -> list[bytes]:
-    return list(bm.pools[0].prefix_caches[CONV])
+    # Sorted: the pool's prefix cache is a Rust map with no insertion order.
+    return sorted(bm.pools[0].prefix_caches[CONV])
 
 
 # ===--------------------------------------------------------------------=== #
@@ -317,6 +349,7 @@ def test_a_forward_ending_on_a_boundary_checkpoints() -> None:
     assert set(copies) == {region.leaf_id for region in STATE_PARAMS_REGIONS}
     leaves = STATE_PARAMS.leaves()
     for leaf_id, (src, dst) in copies.items():
+        assert src is not None, "a checkpoint always names a block to copy"
         assert src != dst, "a successor is a block of its own"
         rows = leaves[leaf_id].bound_row_copies(src, dst)
         for src_rows, dst_rows in rows.values():
@@ -417,6 +450,77 @@ def test_nothing_is_published_when_prefix_caching_is_off() -> None:
 
     assert live(bm, ctx) is not None
     assert not published(bm)
+
+
+def test_admission_prices_the_successor_a_boundary_draws() -> None:
+    # The pool holds two requests at one state block each. A checkpoint takes
+    # a second block, so a batch admitted without it finds the pool empty at
+    # the boundary, in the step, where nothing can requeue it.
+    bm = make_manager(num_huge_blocks=7)
+    admitted: list[TextContext] = []
+    for idx in range(2):
+        ctx = make_ctx(BLOCK_SIZE, offset=idx * BLOCK_SIZE)
+        bm.claim(ctx)
+        try:
+            bm.alloc(ctx)
+        except InsufficientBlocksError:
+            continue  # the scheduler requeues what admission refuses
+        admitted.append(ctx)
+    assert admitted, "the pool must hold at least one request"
+
+    for ctx in admitted:
+        resume(bm, ctx)
+        ctx.update(42)
+        assert checkpoint(bm, ctx), "the forward must end on a boundary"
+        bm.step(ctx)
+
+
+def held_state_blocks(bm: JengaBlockManager, ctx: TextContext) -> int:
+    """Returns the state blocks the request holds, its successors included."""
+    held = 0
+    for group in state_groups(bm):
+        row = group.rows.get(ctx.request_id)
+        if row is not None:
+            held += sum(not block.is_null for block in row[group.leaf_id])
+        held += ctx.request_id in group.successors
+    return held
+
+
+@pytest.mark.parametrize("caching", [True, False])
+def test_a_state_holds_its_successor_from_admission_only_with_caching(
+    caching: bool,
+) -> None:
+    # With caching on each state also holds the block its next checkpoint
+    # continues in, whether or not this forward reaches a boundary.
+    bm = make_manager(enable_prefix_caching=caching)
+    ctx = make_ctx(BLOCK_SIZE - 1)
+    bm.claim(ctx)
+
+    bm.alloc(ctx)
+
+    per_state = 2 if caching else 1
+    assert held_state_blocks(bm, ctx) == per_state * len(state_groups(bm))
+
+
+def test_a_state_never_holds_more_than_its_two_budgeted_blocks() -> None:
+    # A checkpoint takes the successor, and admission does not replace it
+    # until the checkpoint is published, so the budget's two blocks hold
+    # across a boundary. Release gives every one back.
+    bm = make_manager()
+    free_before = bm.huge_block_count().free
+    ctx = make_ctx(BLOCK_SIZE)
+    bm.claim(ctx)
+    budget = 2 * len(state_groups(bm))
+    for _ in range(3 * BLOCK_SIZE):
+        bm.alloc(ctx)
+        resume(bm, ctx)
+        assert held_state_blocks(bm, ctx) <= budget
+        ctx.update(42)
+        checkpoint(bm, ctx)
+        bm.step(ctx)
+
+    bm.release(ctx)
+    assert bm.huge_block_count().free == free_before
 
 
 def test_release_commits_nothing() -> None:
@@ -543,7 +647,9 @@ def make_hybrid_manager(num_huge_blocks: int = 999) -> JengaBlockManager:
     return JengaBlockManager(
         pools=pools,
         block_size=BLOCK_SIZE,
-        groups=create_groups(HYBRID_LEAVES, pools, BLOCK_SIZE),
+        groups=create_groups(
+            HYBRID_LEAVES, pools, BLOCK_SIZE, enable_prefix_caching=True
+        ),
         leaves=hybrid_leaves(),
     )
 
@@ -589,3 +695,154 @@ def test_a_hybrid_hit_settles_on_the_deepest_run_every_group_accepts(
         assert (
             bm._find_longest_device_prefix_cache_hit(keys, 0, False) == expected
         ), f"seed={seed} keys={len(keys)}"
+
+
+# ===--------------------------------------------------------------------=== #
+# The checkpoint an external tier is copying in
+# ===--------------------------------------------------------------------=== #
+
+
+def splice_landing_state(
+    bm: JengaBlockManager, ctx: TextContext, depth: int
+) -> dict[str, LittleKVCacheBlock]:
+    """Hands each state leaf a checkpoint a connector is still loading."""
+    pool = bm.pools[0]
+    landing: dict[str, LittleKVCacheBlock] = {}
+    for group in state_groups(bm):
+        leaf_id = group.leaf_id
+        block = pool.alloc_block(leaf_id)
+        row = [pool.null_little_blocks[leaf_id]] * (depth - 1) + [block]
+        group.extend(ctx.request_id, {leaf_id: []}, {leaf_id: row}, 0)
+        landing[leaf_id] = block
+    ctx.tokens.skip_processing(depth * BLOCK_SIZE)
+    return landing
+
+
+def test_a_state_still_landing_is_not_the_block_the_recurrence_runs_in() -> (
+    None
+):
+    """A loading checkpoint is resumed from, never run in."""
+    bm = make_manager()
+    ctx = make_ctx(3 * BLOCK_SIZE)
+    bm.claim(ctx)
+    landing = splice_landing_state(bm, ctx, depth=2)
+
+    bm.alloc(ctx)
+
+    runs_in = live(bm, ctx)
+    assert runs_in is not None
+    for leaf_id, block in landing.items():
+        assert runs_in[leaf_id] != block.bid, (
+            f"{leaf_id} would run in the block its hit is still copying into"
+        )
+    # The scheduler holds the request out of the batch until the copy lands.
+    assert resume(bm, ctx) == {
+        leaf_id: (block.bid, runs_in[leaf_id])
+        for leaf_id, block in landing.items()
+    }
+
+
+def test_a_landing_state_holds_up_no_successor() -> None:
+    """A loading checkpoint does not stop admission drawing the successor."""
+    bm = make_manager()
+    ctx = make_ctx(3 * BLOCK_SIZE)
+    bm.claim(ctx)
+    landing = splice_landing_state(bm, ctx, depth=2)
+    bm.alloc(ctx)
+    # Landing block, live block and the successor, as a device hit holds.
+    assert held_state_blocks(bm, ctx) == 3 * len(state_groups(bm))
+
+    # The forward runs to the next boundary, so it checkpoints.
+    resume(bm, ctx)
+    ctx.update(42)
+    fills = checkpoint(bm, ctx)
+    bm.step(ctx)
+
+    assert set(fills) == set(landing), "the boundary found no successor"
+    for group in state_groups(bm):
+        assert landing[group.leaf_id].block_hash is not None
+        assert ctx.request_id not in group.loading
+
+
+def test_a_row_cut_back_forgets_the_state_that_was_landing() -> None:
+    """A rolled-back hit frees the landing block; its copy keeps its own pin."""
+    bm = make_manager()
+    ctx = make_ctx(3 * BLOCK_SIZE)
+    bm.claim(ctx)
+    landing = splice_landing_state(bm, ctx, depth=2)
+
+    for group in state_groups(bm):
+        group.shrink_to_fit(ctx.request_id, 0, 0)
+
+    for group in state_groups(bm):
+        assert ctx.request_id not in group.loading
+    assert all(block.ref_cnt == 0 for block in landing.values())
+    # The request starts over as a plain miss.
+    ctx.tokens.rewind_processing(2 * BLOCK_SIZE)
+    bm.alloc(ctx)
+    assert live(bm, ctx) is not None
+
+
+def test_an_external_tier_is_asked_for_the_state_at_the_hits_depth() -> None:
+    """A hit loads one state block and claims only the deepest hash."""
+    bm = make_manager()
+    keys = [f"k{idx}".encode() for idx in range(5)]
+    for group in state_groups(bm):
+        assert group.blocks_held_of_connector_hit(5) == 1
+        assert group.blocks_held_of_connector_hit(1) == 1
+        assert group.blocks_held_of_connector_hit(0) == 0
+        assert list(group.claimable_hashes(keys)) == keys[-1:]
+        assert list(group.claimable_hashes([])) == []
+
+
+# A speculative step commits 1 to K+1 tokens, so with prefix caching on a
+# recurrent group keeps publishing checkpoints at the lagging length the
+# overlap pipeline hands it.
+
+_SPEC_STRIDES = (1, 2, 3, 4) * 10
+"""Tokens committed per step, cycling the counts a K=3 verify produces."""
+
+
+def forward_n(bm: JengaBlockManager, ctx: TextContext, num_tokens: int) -> bool:
+    """Runs one forward of ``num_tokens`` and returns whether it checkpointed."""
+    bm.alloc(ctx)
+    resume(bm, ctx)
+    for _ in range(num_tokens):
+        ctx.update(42)
+    checkpointed = checkpoint(bm, ctx) != {}
+    bm.step(ctx)
+    return checkpointed
+
+
+def count_checkpoints(strides: Sequence[int]) -> int:
+    """Returns how many of ``strides`` forwards published a checkpoint."""
+    bm = make_manager()
+    ctx = make_ctx(BLOCK_SIZE)
+    bm.claim(ctx)
+    fired = 0
+    for num_tokens in strides:
+        fired += forward_n(bm, ctx, num_tokens)
+    return fired
+
+
+def test_a_speculative_stride_keeps_checkpointing_while_caching_is_on() -> None:
+    assert count_checkpoints(_SPEC_STRIDES) > 1
+
+
+def test_no_checkpoint_is_left_unpublished_under_speculative_strides() -> None:
+    # The commit scan skips the settled head of the row. A speculative step
+    # sizes the row for every draft token, so the boundary it accepts up to
+    # can sit behind the row's last slot; whatever the stride, nothing below
+    # the filled blocks may stay committable.
+    bm = make_manager()
+    ctx = make_ctx(BLOCK_SIZE)
+    bm.claim(ctx)
+    for num_tokens in _SPEC_STRIDES:
+        forward_n(bm, ctx, num_tokens)
+        filled = ctx.tokens.processed_length // BLOCK_SIZE
+        for group in state_groups(bm):
+            row = group.rows[ctx.request_id][group.leaf_id]
+            assert not any(
+                group._is_committable(ctx.request_id, row, idx)
+                for idx in range(min(filled, len(row)))
+            )

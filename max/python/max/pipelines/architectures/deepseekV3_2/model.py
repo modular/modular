@@ -27,6 +27,7 @@ from typing_extensions import override
 
 from ..deepseekV3.memory_planner import (
     _ep_max_rank_send_tokens_for_pipeline,
+    ep_fuse_ffn_combine_send_for_pipeline,
 )
 from ..deepseekV3.model import DeepseekV3Model
 from .deepseekV3_2 import DeepseekV3_2
@@ -39,6 +40,16 @@ class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV3_2Config
+
+    def _first_mla_layer(self) -> int:
+        """Index of the first layer that actually has multi-latent attention.
+
+        Zero for an all-MLA decoder, which is every model on this path today.
+        A hybrid schedule that interleaves another attention family overrides
+        this: probing layer 0 for an MLA-only tensor raises ``KeyError`` when
+        layer 0 belongs to the other family.
+        """
+        return 0
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
@@ -90,11 +101,15 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
+                moe_dim=config.moe_intermediate_size,
                 max_tokens_per_rank=ep_max_rank_send_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
                 use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
+                fuse_ffn_combine_send=ep_fuse_ffn_combine_send_for_pipeline(
+                    self.pipeline_config, config
+                ),
             )
 
             if config.n_shared_experts == 1:
@@ -115,7 +130,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
             ep_config = EPConfig(**ep_kwargs)
 
         norm_dtype = state_dict[
-            "layers.0.self_attn.kv_a_layernorm.weight"
+            f"layers.{self._first_mla_layer()}.self_attn.kv_a_layernorm.weight"
         ].dtype
 
         if config.topk_method == "noaux_tc":

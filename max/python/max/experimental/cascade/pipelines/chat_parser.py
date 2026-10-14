@@ -48,9 +48,11 @@ from typing import Annotated
 from max.experimental.cascade.core import Worker, worker_method
 from max.experimental.cascade.interfaces.gen_ai import (
     GenAIChunk,
+    GenAIImageChunk,
     GenAIReasoningChunk,
     GenAITextChunk,
     GenAIToolCall,
+    RawTextChunk,
 )
 
 # Importing the module registers the "echo" tool parser (used by the echo
@@ -233,15 +235,32 @@ class ChatChunkParser:
             config, region_start, region_end
         )
         self._buffer = ""
+        # Tokens fed since the last chunk was emitted. The parser buffers
+        # across deltas -- a delta can emit nothing while a marker might still
+        # complete -- so a count cannot be attached to the delta that carried
+        # it. It rides on the first chunk of the next flush instead, and later
+        # chunks in that flush carry 0. Per-chunk values are lumpy; the sum
+        # over a stream is exact, which is the invariant usage and the rate
+        # metrics depend on.
+        self._pending_num_tokens = 0
 
-    def feed(self, text: str) -> list[GenAIChunk]:
+    def feed(self, text: str, num_tokens: int = 0) -> list[GenAIChunk]:
         """Parse one text delta into its reasoning / text / tool-call chunks."""
         self._buffer += text
+        self._pending_num_tokens += num_tokens
         return self._drain(flush=False)
 
     def finish(self) -> list[GenAIChunk]:
         """Flush text held back across chunk boundaries, ending the open span."""
-        return self._drain(flush=True)
+        chunks = self._drain(flush=True)
+        # Tokens whose text never became a chunk -- an EOS, a trailing
+        # delimiter -- have nothing left to ride on but an empty one.
+        if self._pending_num_tokens:
+            chunks.append(
+                GenAITextChunk(text="", num_tokens=self._pending_num_tokens)
+            )
+            self._pending_num_tokens = 0
+        return chunks
 
     def _drain(self, flush: bool) -> list[GenAIChunk]:
         chunks: list[GenAIChunk] = []
@@ -263,7 +282,7 @@ class ChatChunkParser:
         if flush:
             self._emit(self._buffer, chunks)
             self._buffer = ""
-            return chunks
+            return self._attribute(chunks)
 
         # No marker can complete in what is buffered, but a suffix of it may
         # still grow into one, so hold that much back rather than emit marker
@@ -278,7 +297,7 @@ class ChatChunkParser:
         sendable = len(self._buffer) - holdback
         self._emit(self._buffer[:sendable], chunks)
         self._buffer = self._buffer[sendable:]
-        return chunks
+        return self._attribute(chunks)
 
     def _next_transition(self) -> tuple[int, str, _Span] | None:
         """Find the earliest marker in the buffer that ends the current span."""
@@ -291,6 +310,17 @@ class ChatChunkParser:
             key=lambda transition: transition[0],
             default=None,
         )
+
+    def _attribute(self, chunks: list[GenAIChunk]) -> list[GenAIChunk]:
+        """Put the pending token count on the first chunk of this flush."""
+        if chunks:
+            first = chunks[0]
+            # The parser turns generated text into text, reasoning and
+            # tool-call chunks; images reach a response by another route.
+            assert not isinstance(first, GenAIImageChunk)
+            first.num_tokens = self._pending_num_tokens
+            self._pending_num_tokens = 0
+        return chunks
 
     def _emit(self, text: str, chunks: list[GenAIChunk]) -> None:
         """Deliver one span's text as the chunks that span produces."""
@@ -347,14 +377,14 @@ class ChatParserWorker(Worker):
     @worker_method()
     async def parse_stream(
         self,
-        text_iter: AsyncIterable[str],
+        text_iter: AsyncIterable[RawTextChunk],
         tools_enabled: bool,
         tool_schemas: dict[str, dict[str, object]],
     ) -> AsyncIterator[GenAIChunk]:
-        """Stream structured chunks parsed from a stream of text deltas."""
+        """Split a detokenizer's raw text deltas into structured chunks."""
         parser = ChatChunkParser(self.config, tool_schemas, tools_enabled)
-        async for text in text_iter:
-            for chunk in parser.feed(text):
+        async for delta in text_iter:
+            for chunk in parser.feed(delta.text, delta.num_tokens):
                 yield chunk
         for chunk in parser.finish():
             yield chunk

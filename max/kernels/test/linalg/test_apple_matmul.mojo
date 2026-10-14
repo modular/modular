@@ -141,7 +141,7 @@ def test_matmul[
     kernel_type_m: Int,
 ) raises -> Int:
     var c1_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
-    var golden_shape = row_major(Coord(m, n))
+    var golden_shape = row_major(m, n)
     var golden = TileTensor[Engine=DefaultEngine[element_width=1]](
         c1_ptr, golden_shape
     )
@@ -254,7 +254,7 @@ def test_matmul[
     var b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
     var b = TileTensor(
         b_ptr,
-        row_major(Coord(n, k) if transpose_b else Coord(k, n)),
+        row_major(n, k) if transpose_b else row_major(k, n),
     )
 
     var padded_n_k: IndexList[2]
@@ -305,8 +305,9 @@ def test_matmul[
     @__copy_capture(c)
     def epilogue_fn[
         _type: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
-        c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
+    ](idx: Coord, val: SIMD[_type, width]) -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c.store(idx, rebind[SIMD[c_type, width]](val + some_constant))
 
     comptime if has_epilogue_fusion:
         errors = test_matmul[
@@ -361,7 +362,6 @@ def test_shapes[
     b_packed: Bool,
     mixed_kernels: Bool,
 ]() raises:
-    @__parameter
     def test_shapes_helper[
         transpose_b: Bool = False
     ](m: Int, n: Int, k: Int) raises:
@@ -497,7 +497,7 @@ def test_batched_matmul[
     var golden_ptr = alloc[Scalar[c.dtype]](
         batches * m * n, alignment=alignment
     )
-    var golden_shape = row_major(Coord(batches, m, n))
+    var golden_shape = row_major(batches, m, n)
     var golden = TileTensor(golden_ptr, golden_shape)
 
     for batch in range(batches):
@@ -522,14 +522,11 @@ def test_batched_matmul[
     def epilogue_fn[
         _type: DType,
         width: SIMDLength,
-        rank: Int,
         *,
         alignment: Int = 1,
-    ](coords: IndexList[rank], val: SIMD[_type, width],) -> None:
-        c.store_linear(
-            rebind[IndexList[3]](coords),
-            rebind[SIMD[c.dtype, width]](val + some_constant),
-        )
+    ](coords: Coord, val: SIMD[_type, width],) -> None:
+        comptime assert coords.rank == 3
+        c.store(coords, rebind[SIMD[c.dtype, width]](val + some_constant))
 
     @inline(.always)
     def bench_fn_batched_matmul() raises {var}:
@@ -611,9 +608,9 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     var a_ptr = alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
     var b_ptr = alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
 
-    var c_shape = row_major(Coord(batch, m, n))
-    var a_shape = row_major(Coord(batch, m, k))
-    var b_shape = row_major(Coord(batch, k, n))
+    var c_shape = row_major(batch, m, n)
+    var a_shape = row_major(batch, m, k)
+    var b_shape = row_major(batch, k, n)
     var c = TileTensor(c_ptr, c_shape)
     var a = TileTensor(a_ptr, a_shape)
     var b = TileTensor(b_ptr, b_shape)

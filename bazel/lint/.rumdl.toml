@@ -17,6 +17,7 @@ disable = [
 
 exclude = [
     ".claude",
+    ".agents",
     "third-party",
     "oss/mojo-gpu-puzzles/book",
     "oss/skills",

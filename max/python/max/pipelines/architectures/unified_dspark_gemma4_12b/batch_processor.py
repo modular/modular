@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
     UnifiedSpecDecodeBatchProcessor,
@@ -51,7 +51,7 @@ class UnifiedDSparkGemma4_12BBatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         seed: Buffer,
         structured_output: bool,
     ) -> UnifiedDSparkGemma4_12BInputs:

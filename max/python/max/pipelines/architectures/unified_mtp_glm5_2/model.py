@@ -16,25 +16,24 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, fields, replace
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Protocol
 
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferValue, Graph, TensorValue, Value
+from max.graph import Graph
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    MultiKVCacheInputs,
-    MultiKVCacheParams,
-)
+from max.nn.comm.ep import EPCommInitializer, EPConfig
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
+)
+from max.pipelines.speculative import (
+    DraftAliases,
+    validate_draft_state_dict,
 )
 from typing_extensions import override
 
@@ -44,9 +43,17 @@ from ..deepseekV3_2.model_config import DeepseekV3_2Config
 from ..deepseekV3_2_nextn.model_config import DeepseekV3_2NextNConfig
 from ..glm5_1.model import Glm5_1Model
 from .batch_processor import UnifiedMTPGlm5_2BatchProcessor
+from .spec_adapters import INDEXER_DRAFT_KV, INDEXER_TARGET_KV
 from .unified_mtp_glm5_2 import UnifiedMTPGlm5_2
 
 logger = logging.getLogger("max.pipelines")
+
+
+class _TargetConfig(Protocol):
+    """What the MTP setup reads from a graph-API or ModuleV3 target config."""
+
+    ep_config: EPConfig | None
+    n_shared_experts: int
 
 
 def _subtree_quantized(
@@ -56,11 +63,10 @@ def _subtree_quantized(
 
     A projection is quantized iff the checkpoint provides a ``weight_scale``
     companion for it. Used to detect the MTP layer's per-subtree quantization
-    (e.g. NVFP4 leaves the whole MTP layer in bf16, with no scales).
+    (for example, NVFP4 leaves the whole MTP layer in bf16, with no scales).
     """
     return any(
-        subtree in key and key.endswith(".weight_scale")
-        for key in draft_state_dict
+        subtree in key and ".weight_scale" in key for key in draft_state_dict
     )
 
 
@@ -78,7 +84,6 @@ class UnifiedMTPGlm5_2Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
     def buffers(self) -> tuple[Buffer, ...]:
         return super().buffers + self._spec_decode_tail_buffers(
             include_in_thinking_phase=True,
-            include_draft_probs_full=self.sampled_draft_proposal,
         )
 
 
@@ -141,8 +146,28 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
         if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
             raise ValueError("Only the EP strategy is supported.")
 
-        # Build the nested {target: {mla, indexer}, draft: {mla, indexer}}
-        # KV tree. The draft caches store a single layer.
+        self._finish_mtp_config(config)
+        return config
+
+    def _finish_mtp_config(self, config: _TargetConfig) -> None:
+        """Builds the draft config and the nested target/draft KV tree."""
+        draft_kv = self._split_mtp_kv_params()
+        draft_config = self._create_draft_config(
+            self._draft_state_dict, draft_kv
+        )
+
+        if draft_config.ep_config is not None and config.ep_config is not None:
+            draft_config.ep_config.node_id = config.ep_config.node_id
+
+        draft_config.return_hidden_states = ReturnHiddenStates.LAST
+        self._draft_config = draft_config
+
+    def _split_mtp_kv_params(self) -> MultiKVCacheParams:
+        """Nests the target's KV tree beside a single-layer draft tree.
+
+        Sets :attr:`kv_params` to ``{target: {mla, indexer}, draft: {mla,
+        indexer}}`` and returns the draft's tree.
+        """
         assert isinstance(self.kv_params, MultiKVCacheParams)
         target_kv = self.kv_params
         target_mla_params = target_kv.children["mla"]
@@ -155,21 +180,10 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
                 "indexer": replace(target_indexer_params, num_layers=1),
             }
         )
-
-        draft_config = self._create_draft_config(
-            self._draft_state_dict, draft_kv
-        )
-
-        if draft_config.ep_config is not None and config.ep_config is not None:
-            draft_config.ep_config.node_id = config.ep_config.node_id
-
         self.kv_params = MultiKVCacheParams.from_params(
             {"target": target_kv, "draft": draft_kv}
         )
-
-        draft_config.return_hidden_states = ReturnHiddenStates.LAST
-        self._draft_config = draft_config
-        return config
+        return draft_kv
 
     @override
     def _init_distributed_runtime(
@@ -177,11 +191,12 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
         session: InferenceSession,
         model_config: Any,
     ) -> None:
-        assert isinstance(model_config, DeepseekV3_2Config)
+        # A graph-API or ModuleV3 target config.
+        config: _TargetConfig = model_config
         self.ep_comm_initializer = None
         self.draft_ep_comm_initializer = None
 
-        if model_config.ep_config is None or is_virtual_device_mode():
+        if config.ep_config is None or is_virtual_device_mode():
             return
 
         # NVFP4 leaves the MTP layer's routed experts in bf16 (no
@@ -192,20 +207,20 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             self._draft_state_dict, ".mlp.experts."
         )
 
-        ep_alloc_config = model_config.ep_config
+        ep_alloc_config = config.ep_config
         if draft_moe_dispatches_bf16:
             ep_alloc_config = replace(
-                model_config.ep_config,
+                config.ep_config,
                 dispatch_dtype=DType.bfloat16,
                 dispatch_quant_config=None,
-                fused_shared_expert=model_config.n_shared_experts == 1,
+                fused_shared_expert=config.n_shared_experts == 1,
             )
             logger.info("Upsizing shared EP buffers for bf16 draft dispatch.")
 
         self.ep_comm_initializer = EPCommInitializer(ep_alloc_config)
         self.ep_comm_initializer.ep_init(session)
-        model_config.ep_config.node_id = ep_alloc_config.node_id
-        if model_config.ep_config.node_id == -1:
+        config.ep_config.node_id = ep_alloc_config.node_id
+        if config.ep_config.node_id == -1:
             raise ValueError(
                 "EP node ID is not set. Please check if the EP "
                 "initialization is successful."
@@ -245,21 +260,13 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             self._draft_state_dict, weight_alignment=1, strict=False
         )
 
-        draft_expected = set(nn_model.draft.raw_state_dict().keys())
-        draft_provided = set(self._draft_state_dict.keys())
-        shared_prefixes = ("embed_tokens.", "lm_head.")
-        missing = {
-            k
-            for k in draft_expected - draft_provided
-            if not k.startswith(shared_prefixes)
-        }
-        extra = draft_provided - draft_expected
-        if missing:
-            raise ValueError(
-                f"Draft model has unloaded non-shared weights: {sorted(missing)}"
-            )
-        if extra:
-            logger.warning(f"Draft state_dict has unused keys: {sorted(extra)}")
+        # The NextN head ships in the target checkpoint, so the draft
+        # inherits both.
+        validate_draft_state_dict(
+            nn_model.draft.raw_state_dict().keys(),
+            self._draft_state_dict.keys(),
+            DraftAliases(always=("embed_tokens.", "lm_head.")),
+        )
 
         weights_registry = {
             **nn_model.draft.state_dict(),
@@ -273,102 +280,35 @@ class UnifiedMTPGlm5_2Model(_UnifiedSpecDecodeModelMixin, Glm5_1Model):
             "glm5_2_with_mtp_graph",
             input_types=nn_model.input_types(kv_params),
         ) as graph:
-            (
-                tokens,
-                devices_input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *variadic_args,
-            ) = graph.inputs
-
-            variadic_args_iter = iter(variadic_args)
-            signal_buffers = [
-                next(variadic_args_iter).buffer
-                for _ in range(len(self.devices))
-            ]
-
-            kv_tree = kv_params.unflatten_kv_inputs(variadic_args_iter)
-            assert isinstance(kv_tree, MultiKVCacheInputs)
-            target_tree = kv_tree.children["target"]
-            draft_tree = kv_tree.children["draft"]
-            assert isinstance(target_tree, MultiKVCacheInputs)
-            assert isinstance(draft_tree, MultiKVCacheInputs)
-            target_mla = target_tree.children["mla"]
-            target_indexer = target_tree.children["indexer"]
-            draft_mla = draft_tree.children["mla"]
-            draft_indexer = draft_tree.children["indexer"]
-            assert isinstance(target_mla, KVCacheInputs)
-            assert isinstance(target_indexer, KVCacheInputs)
-            assert isinstance(draft_mla, KVCacheInputs)
-            assert isinstance(draft_indexer, KVCacheInputs)
-            target_mla_kv = list(target_mla.inputs)
-            target_indexer_kv = list(target_indexer.inputs)
-            draft_mla_kv = list(draft_mla.inputs)
-            draft_indexer_kv = list(draft_indexer.inputs)
-
-            batch_context_lengths = [
-                next(variadic_args_iter).tensor
-                for _ in range(len(self.devices))
-            ]
-
-            target_ep_inputs: list[Value[Any]] | None = None
-            if nn_model.target.ep_manager is not None:
-                n_target_ep = len(nn_model.target.ep_manager.input_types())
-                target_ep_inputs = [
-                    next(variadic_args_iter) for _ in range(n_target_ep)
-                ]
-
-            draft_tokens = next(variadic_args_iter).tensor
-
-            # draft_probs_full rides immediately after draft_tokens in the
-            # canonical spec-decode ordering; a miss here silently shifts every
-            # downstream input.
-            draft_probs_full_graph: TensorValue | None = None
-            if nn_model.sampled_draft_proposal:
-                draft_probs_full_graph = next(variadic_args_iter).tensor
-
-            seed = next(variadic_args_iter).tensor
-            temperature = next(variadic_args_iter).tensor
-            top_k = next(variadic_args_iter).tensor
-            max_k = next(variadic_args_iter).tensor
-            top_p = next(variadic_args_iter).tensor
-            min_top_p = next(variadic_args_iter).tensor
-            in_thinking_phase = next(variadic_args_iter).tensor
-
-            pinned_bitmask_graph: TensorValue | None = None
-            wait_payload_graph: BufferValue | None = None
-            device_bitmask_scratch_graph: BufferValue | None = None
-            if nn_model.enable_structured_output:
-                pinned_bitmask_graph = next(variadic_args_iter).tensor
-                wait_payload_graph = next(variadic_args_iter).buffer
-                device_bitmask_scratch_graph = next(variadic_args_iter).buffer
+            graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
 
             outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=devices_input_row_offsets.tensor,
-                draft_tokens=draft_tokens,
-                signal_buffers=signal_buffers,
-                target_mla_kv=target_mla_kv,
-                target_indexer_kv=target_indexer_kv,
-                draft_mla_kv=draft_mla_kv,
-                draft_indexer_kv=draft_indexer_kv,
-                return_n_logits=return_n_logits.tensor,
-                host_input_row_offsets=host_input_row_offsets.tensor,
-                data_parallel_splits=data_parallel_splits.tensor,
-                batch_context_lengths=batch_context_lengths,
-                seed=seed,
-                temperature=temperature,
-                top_k=top_k,
-                max_k=max_k,
-                top_p=top_p,
-                min_top_p=min_top_p,
-                in_thinking_phase=in_thinking_phase,
-                ep_inputs=target_ep_inputs,
-                pinned_bitmask=pinned_bitmask_graph,
-                wait_payload=wait_payload_graph,
-                device_bitmask_scratch=device_bitmask_scratch_graph,
-                draft_probs_full=draft_probs_full_graph,
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target", "mla"),
+                draft_kv_collections=graph_inputs.kv("draft", "mla"),
+                passthrough_kv={
+                    INDEXER_TARGET_KV: graph_inputs.kv("target", "indexer"),
+                    INDEXER_DRAFT_KV: graph_inputs.kv("draft", "indexer"),
+                },
+                return_n_logits=graph_inputs.return_n_logits,
+                host_input_row_offsets=graph_inputs.host_offsets,
+                data_parallel_splits=graph_inputs.dp_splits,
+                batch_context_lengths=graph_inputs.batch_context_lengths,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                ep_inputs=graph_inputs.ep_inputs or None,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+                draft_probs_full=graph_inputs.draft_probs_full,
             )
 
             graph.output(*outputs)

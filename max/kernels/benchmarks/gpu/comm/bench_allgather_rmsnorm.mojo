@@ -35,7 +35,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    has_amd_gpu_accelerator,
     size_of,
     simd_width_of,
 )
@@ -273,7 +272,7 @@ def _verify_results[
                 max_ulp,
             )
         )
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -322,9 +321,6 @@ def bench_allgather_rmsnorm[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for i in range(ngpus):
         var shard_rows = config.rank_units(i)
@@ -346,8 +342,7 @@ def bench_allgather_rmsnorm[
         )
         for j in range(cb_shards[i].alloc_size()):
             var local = j % shard_len
-            var lr = local // num_cols
-            var c = local % num_cols
+            var lr, c = divmod(local, num_cols)
             h[j] = _gathered_value[in_dtype](start_i + lr, c)
         list_of_ctx[i].enqueue_copy(cb_shards[i].device_buffer(), h)
         _ = h^
@@ -371,12 +366,12 @@ def bench_allgather_rmsnorm[
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Gamma (shared; each rank reads GPU 0 via P2P as the standalone norm does).
     var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
@@ -632,15 +627,14 @@ def bench_allgather_rmsnorm[
     @inline(.always)
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
-    ) raises {mut in_shards, imm}:
+    ) raises {imm}:
         @inline(.always)
-        def call_fn(
-            ctx_inner: DeviceContext, cache_iter: Int
-        ) raises {mut in_shards, imm}:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
+            var in_shards = Array[ShardType, ngpus](uninitialized=True)
             _rebuild_shards(cache_iter, in_shards)
 
             @inline(.always)
-            def two_launch() raises capturing:
+            def two_launch() raises {imm}:
                 var out_base = rebind[
                     MutPointer[Scalar[in_dtype], MutAnyOrigin]
                 ](sum_full[ctx_idx].unsafe_ptr())
@@ -673,7 +667,7 @@ def bench_allgather_rmsnorm[
                         ctx_inner,
                     )
 
-            _dispatch_ag_norm[two_launch=two_launch](
+            _dispatch_ag_norm(
                 in_shards,
                 normed_views[ctx_idx],
                 sum_views[ctx_idx],
@@ -682,6 +676,7 @@ def bench_allgather_rmsnorm[
                 weight_offset,
                 rank_sigs,
                 ctx_inner,
+                two_launch,
             )
 
         bencher_iter_custom(bench, call_fn, ctx)

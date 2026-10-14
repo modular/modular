@@ -18,19 +18,18 @@ broadcast collectives, along with communicator initialization helpers and
 availability probes.
 """
 
-from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
+from std.sys import simd_width_of, size_of, default_accelerator
 from std.pathlib import Path
 from max.algorithm import elementwise
-from std.utils import IndexList
 from std.ffi import _get_global_or_null, external_call
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
-from layout import TensorLayout, TileTensor
+from layout import TensorLayout, TileTensor, row_major
 from std.memory.unsafe_pointer import unsafe_cast
 from std.memory.alloc import Layout as AllocLayout
-from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host._amdgpu_hip import HIP
 from max.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
@@ -113,7 +112,7 @@ comptime NCCL_LIBRARY_PATHS: List[Path] = [
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
 def _init_ccl_dylib() -> OwnedDLHandle:
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         return _find_dylib["RCCL"](materialize[RCCL_LIBRARY_PATHS]())
     else:
         return _find_dylib["NCCL"](materialize[NCCL_LIBRARY_PATHS]())
@@ -276,7 +275,7 @@ def _ccl_broadcast(
 def _ccl_stream_ptr(
     ctx: DeviceContext,
 ) raises -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         return unsafe_cast[Type=NoneType](HIP(ctx.stream()))
     else:
         return unsafe_cast[Type=NoneType](CUDA(ctx.stream()))
@@ -304,14 +303,15 @@ struct Communicators(ImplicitlyCopyable):
 
 
 def _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
-    comptime if dtype == .float32:
-        return ncclDataType_t.ncclFloat32
-    elif dtype == .bfloat16:
-        return ncclDataType_t.ncclBfloat16
-    elif dtype == .float16:
-        return ncclDataType_t.ncclFloat16
-
-    raise Error("vendor_ccl: dtype not supported: ", dtype)
+    comptime match dtype:
+        case .float32:
+            return ncclDataType_t.ncclFloat32
+        case .bfloat16:
+            return ncclDataType_t.ncclBfloat16
+        case .float16:
+            return ncclDataType_t.ncclFloat16
+        case _:
+            raise Error("vendor_ccl: dtype not supported: ", dtype)
 
 
 @inline(.always)
@@ -323,8 +323,8 @@ def _check_ccl_ok(status: ncclResult_t) raises:
 def _get_global_comms(ngpus: Int) raises -> Communicators:
     var NAME = String(t"COMM_VENDOR_CCL_{ngpus}")
     var global_ptr = _get_global_or_null(NAME)
-    if global_ptr:
-        return global_ptr.value().unsafe_bitcast[Communicators]()[]
+    if case .Some(global_ptr) = global_ptr:
+        return global_ptr.unsafe_bitcast[Communicators]()[]
 
     if ngpus > MAX_GPUS:
         raise Error("too many GPUs for CCL")
@@ -381,7 +381,6 @@ def allreduce[
     out_origin: MutOrigin,
     //,
     ngpus: Int,
-    output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
@@ -425,28 +424,79 @@ def allreduce[
         )
     )
 
-    comptime if output_lambda:
-        comptime epilogue = output_lambda.value()
-        comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
-        def epilogue_wrapper[
-            simd_width: Int, alignment: Int = 1
-        ](idx: Coord) {var}:
-            var flat_idx = idx[0].value()
-            var val = output_tensor.raw_load[
-                width=simd_width,
-                alignment=alignment * size_of[dtype](),
-            ](flat_idx)
-            epilogue[dtype, simd_width, alignment=alignment](
-                output_tensor.layout.idx2crd(Int(flat_idx)),
-                val,
-            )
+def allreduce[
+    dtype: DType,
+    in_layout: TensorLayout,
+    in_origin: ImmOrigin,
+    rank_sigs_origin: Origin[mut=True],
+    out_layout: TensorLayout,
+    //,
+    ngpus: Int,
+    output_lambda: elementwise_epilogue_type,
+    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    use_multimem: Bool = False,
+](
+    input_tensors: Array[
+        TileTensor[dtype, in_layout, in_origin], 1 if use_multimem else ngpus
+    ],
+    output_layout: out_layout,
+    rank_sigs: Array[MutPointer[Signal, rank_sigs_origin], ngpus],
+    ctx: DeviceContext,
+    _max_num_blocks: Optional[Int] = None,
+) raises:
+    """Per-GPU allreduce that hands every reduced value to `output_lambda`.
 
-        elementwise[
-            simd_size,
-            target="gpu",
-            _trace_description="ccl_epilogue",
-        ](epilogue_wrapper, Coord(output_tensor.num_elements()), ctx)
+    The vendor collective can only write its result to memory, so it reduces
+    into a scratch buffer of the input dtype, and an elementwise pass then
+    reads each value back and calls `output_lambda` with its output
+    coordinates. The output itself is given as a layout: the epilogue owns
+    every write, and its destination need not share the input dtype or a
+    contiguous layout. Requires a prior single-threaded call to `init_comms`.
+    """
+    comptime assert (
+        not use_multimem
+    ), "vendor_ccl allreduce does not support multimem path"
+    var device_rank = Int(ctx.id())
+    var count = input_tensors[0].num_elements()
+    var comms = _get_global_comms(ngpus)
+
+    var scratch = ctx.enqueue_create_buffer[dtype](count)
+    var reduced = TileTensor(scratch, row_major(count))
+
+    _check_ccl_ok(
+        _ccl_allreduce(
+            input_tensors[device_rank]._storage.bitcast[NoneType](),
+            reduced._storage.bitcast[NoneType](),
+            count,
+            _dtype_to_ccl[dtype](),
+            ncclRedOp_t.ncclSum,
+            comms.comms[device_rank],
+            ctx,
+        )
+    )
+
+    comptime simd_size = simd_width_of[dtype, target=ctx.target]()
+
+    def epilogue_wrapper[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var flat_idx = idx[0].value()
+        var val = reduced.raw_load[
+            width=simd_width,
+            alignment=alignment * size_of[dtype](),
+        ](flat_idx)
+        output_lambda[dtype, simd_width, alignment=alignment](
+            output_layout.idx2crd(Int(flat_idx)),
+            val,
+        )
+
+    elementwise[
+        simd_size,
+        target="gpu",
+        _trace_description="ccl_epilogue",
+    ](epilogue_wrapper, Coord(count), ctx)
+    # The free is stream-ordered; keep `scratch` until the epilogue is queued.
+    _ = scratch^
 
 
 def _is_ccl_symbol_available[name: StaticString]() -> Bool:

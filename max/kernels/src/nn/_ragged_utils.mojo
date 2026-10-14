@@ -15,37 +15,12 @@ from std.sys.info import CompilationTarget, simd_width_of
 from std.math.uutils import ufloordiv
 
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
-from layout import LayoutTensor, TileTensor
-from layout import Coord, Idx, coord_to_index_list
+from layout import TileTensor
+from layout import Coord, coord_to_index_list
 
 from std.utils import IndexList
-
-
-@inline(.always)
-def get_batch_from_row_offsets(
-    row_offsets: LayoutTensor[mut=False, .uint32, ...], tok_idx: Int
-) -> Int:
-    """Calculate the batch_idx for the given flattened token_idx using row_offsets.
-    """
-    var row_offsets_size = row_offsets.size()
-
-    assert tok_idx >= 0 and tok_idx < Int(
-        row_offsets[row_offsets_size - 1]
-    ), "tok_idx is out of range of row_offsets"
-
-    var low = 0
-    var high: Int = row_offsets_size - 1
-    while low + 1 != high:
-        var mid = ufloordiv(low + high, 2)
-
-        if tok_idx >= Int(row_offsets[mid]):
-            low = mid
-        else:
-            high = mid
-
-    return low
 
 
 @inline(.always)
@@ -84,7 +59,11 @@ def get_batch_and_token_idx_from_row_offsets(
     comptime assert row_offsets.flat_rank == 1
 
     var batch_idx = get_batch_from_row_offsets(row_offsets, tok_idx)
-    return batch_idx, Int(tok_idx - Int(row_offsets[batch_idx]))
+    var batch_start = row_offsets[batch_idx]
+    assert tok_idx >= Int(
+        batch_start
+    ), "tok_idx is before its batch's first row"
+    return batch_idx, Int(UInt32(tok_idx) - batch_start)
 
 
 def merge_ragged_tensors[
@@ -143,17 +122,6 @@ def merge_ragged_tensors[
 
         dst_idx[0] = dst_row_idx
 
-        # Compute flat offsets for pointer load/store (Horner form).
-        # Inner dimensions are the same across a, b, and c.
-        @inline(.always)
-        @__parameter
-        def _flat_offset[r: Int](index: IndexList[r]) -> Int:
-            comptime assert r == rank
-            var flat = index[0]
-            comptime for i in range(1, rank):
-                flat = flat * Int(c.dim[i]()) + index[i]
-            return flat
-
         # The elementwise function takes care of handling the scenario where
         # tensors' last dimension is not multiple of simdwidth. It will call
         # this `merge_fn`function with width = 1 for the last few elements.
@@ -185,7 +153,7 @@ def merge_ragged_tensors[
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
             target
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+        ]() else simd_width_of[dtype, target=ctx.target]()
     )
     comptime kernel_simd_width = 1 if rank == 1 else target_simd_width
 

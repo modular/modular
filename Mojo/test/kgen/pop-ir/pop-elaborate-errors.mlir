@@ -12,7 +12,7 @@ kgen.generator @out_of_range_read() -> i32 {
   // expected-note @below {{failed to interpret operation pop.load}}
   // expected-note @below {{memory access size 4 is out-of-bounds}}
   %1 = pop.load %0 : !kgen.pointer<i32>
-  kgen.return %1 : i32
+  hlcf.return %1 : i32
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -20,14 +20,14 @@ kgen.generator @call_it() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   %0 = kgen.param.constant: i32 = <apply(:() -> i32 @out_of_range_read)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 kgen.generator @return_stack_addr() -> !kgen.pointer<index> {
   %0 = pop.stack_allocation 1 x index
-  kgen.return %0 : !kgen.pointer<index>
+  hlcf.return %0 : !kgen.pointer<index>
 }
 
 // expected-note @below {{failed to interpret function @stack_use_after_free}}
@@ -38,7 +38,7 @@ kgen.generator @stack_use_after_free() -> index {
   // expected-note @below {{failed to interpret operation pop.load{isInvariant: false, isNonTemporal: false, isVolatile: false, ordering: #pop.atomic_ordering<not_atomic>}(#interp.pointer}}
   // expected-note @below {{address is out-of-bounds}}
   %1 = pop.load %0 : !kgen.pointer<index>
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -46,7 +46,7 @@ kgen.generator @call_it() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @stack_use_after_free)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -62,7 +62,7 @@ kgen.generator @heap_use_after_free() -> i64 {
   // expected-note @below {{failed to interpret operation pop.load{isInvariant: false, isNonTemporal: false, isVolatile: false, ordering: #pop.atomic_ordering<not_atomic>}(#interp.pointer}}
   // expected-note @below {{accessing memory that was freed}}
   %1 = pop.load %0 : !kgen.pointer<i64>
-  kgen.return %1 : i64
+  hlcf.return %1 : i64
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -70,7 +70,7 @@ kgen.generator @call_it() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i64 = <apply(:() -> i64 @heap_use_after_free)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -88,7 +88,7 @@ kgen.generator @clobber_pointer(%arg0: i16) -> i16 {
   // expected-note @below {{failed to interpret operation pop.store}}
   // expected-note @below {{write clobbers a pointer region}}
   pop.store %arg0, %3 : !kgen.pointer<i16>
-  kgen.return %arg0 : i16
+  hlcf.return %arg0 : i16
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -96,7 +96,7 @@ kgen.generator @call_it() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i16 = <apply(:(i16) -> i16 @clobber_pointer, 5)>
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -119,7 +119,7 @@ kgen.generator @clobber_pointer(%arg0: i64) -> i64 {
   // expected-note @below {{failed to interpret operation pop.store}}
   // expected-note @below {{write clobbers a pointer region}}
   pop.store %arg0, %6 : !kgen.pointer<i64>
-  kgen.return %arg0 : i64
+  hlcf.return %arg0 : i64
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -127,7 +127,7 @@ kgen.generator @call_it() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i64 = <apply(:(i64) -> i64 @clobber_pointer, 1)>
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -143,7 +143,7 @@ kgen.generator @parameter_closure() -> index {
   // expected-note @below {{failed to interpret operation pop.compiler.global_load{name: "named_global"}()}}
   // expected-note @below {{cannot evaluate standalone capturing closure at compile time}}
   %0 = pop.compiler.global_load "named_global" : index
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -151,7 +151,7 @@ kgen.generator export @use_it() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @parameter_closure)>
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -170,7 +170,7 @@ kgen.generator @load_union() -> !pop.union<index> {
   // expected-note @below {{failed to interpret operation pop.load}}
   // expected-note @below {{cannot read a union-typed value}}
   %2 = pop.load %0 : !kgen.pointer<union<index>>
-  kgen.return %2 : !pop.union<index>
+  hlcf.return %2 : !pop.union<index>
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -178,7 +178,7 @@ kgen.generator export @use_it() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: union<index> = <apply(:() -> !pop.union<index> @load_union)>
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -200,7 +200,7 @@ kgen.generator @invalid_simd<dtype: dtype, size>() -> index {
   // expected-note @below {{simd width must be a power of 2}}
   %3 = pop.simd.splat %2 : !kgen.simd<size, dtype>
 
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -208,7 +208,7 @@ kgen.generator export @use_it_simd_5() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @invalid_simd<:dtype si32, 5>)>
-  kgen.return
+  hlcf.return
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -216,7 +216,7 @@ kgen.generator export @use_it_simd_3() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @invalid_simd<:dtype si32, 3>)>
-  kgen.return
+  hlcf.return
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -224,7 +224,7 @@ kgen.generator export @use_it_simd_invalid() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @invalid_simd<:dtype invalid, 4>)>
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -238,7 +238,7 @@ kgen.generator @invalid_simd_reduce_or() -> !kgen.scalar<f32> {
   %0 = kgen.param.constant: simd<4, f32> = <<"1.0", "0.0", "1.5", "2.0">>
 // expected-note @below {{failed to fold operation pop.simd.reduce_or}}
   %1 = pop.simd.reduce_or %0 : !kgen.simd<4, f32>
-  kgen.return %1 : !kgen.scalar<f32>
+  hlcf.return %1 : !kgen.scalar<f32>
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -246,7 +246,7 @@ kgen.generator export @use_it_simd_invalid_reduce_or() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @invalid_simd_reduce_or)>
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -260,7 +260,7 @@ kgen.generator @invalid_simd_reduce_and() -> !kgen.scalar<f32> {
   %0 = kgen.param.constant: simd<4, f32> = <<"1.0", "0.0", "1.5", "2.0">>
 // expected-note @below {{failed to fold operation pop.simd.reduce_and}}
   %1 = pop.simd.reduce_and %0 : !kgen.simd<4, f32>
-  kgen.return %1 : !kgen.scalar<f32>
+  hlcf.return %1 : !kgen.scalar<f32>
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -268,7 +268,7 @@ kgen.generator export @use_it_simd_invalid_reduce_and() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant = <apply(:() -> index @invalid_simd_reduce_and)>
-  kgen.return
+  hlcf.return
 }
 
 }
@@ -286,7 +286,7 @@ kgen.generator @gpu_inline_asm() -> i64 {
   // to match the beginning and the fact that the note is appended.
   // expected-note-re @below {{failed to fold operation pop.inline_asm{{.*}}Note: Inline assembly cannot be evaluated at compile time. Inline assembly contains hardware-specific instructions that can only execute at runtime on the target hardware.}}
   %0 = pop.inline_asm "createpolicy.fractional.L2::evict_first.b64 $0;", "=l", () : () -> i64
-  kgen.return %0 : i64
+  hlcf.return %0 : i64
 }
 
 // expected-error @below {{function instantiation failed}}
@@ -294,5 +294,5 @@ kgen.generator export @use_inline_asm_in_param() {
   // CHECK-PARAM: failed to compile-time evaluate function call
   // expected-note @below {{failed to compile-time evaluate function call}}
   kgen.param.constant: i64 = <apply(:() -> i64 @gpu_inline_asm)>
-  kgen.return
+  hlcf.return
 }

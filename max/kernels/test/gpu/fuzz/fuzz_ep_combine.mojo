@@ -366,8 +366,8 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     # ----- the kernel under test: combine send_tokens_back uses src_info as a
     # ----- write offset. A garbage offset is the SERVOPT-1458 wild write.
     ctx.enqueue_function[combine_async](
-        out_t.as_immut(),
-        src_info_t.as_immut(),
+        out_t.as_imm(),
+        src_info_t.as_imm(),
         combine_send.unsafe_ptr(),
         combine_recv_bufs,
         combine_recv_count_bufs,

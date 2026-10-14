@@ -11,8 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std._plugin._overlay import STD_PLUGINS
-from std.testing import assert_equal, TestSuite
+from std._plugin import PluginForTarget
+
+from std.testing import assert_equal, assert_false, TestSuite
+
+from std.sys.info import CompilationTarget
+
+from std._plugin import DefaultPluginHooks
+from std._plugin.metal import MetalPluginHooks
+from std._plugin.cuda import CUDAPluginHooks
+from std._plugin.hip import HIPPluginHooks
 
 from max.gpu.host.info import (
     _a100_target,
@@ -22,24 +30,27 @@ from max.gpu.host.info import (
 )
 
 
-# STD_PLUGINS order: [DefaultPlugin=0, MetalPlugin=1, CUDAPlugin=2, HIPPlugin=3]
+comptime _host_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
+        `#kgen.target<triple = "x86_64-unknown-linux-gnu", arch = "x86-64"> : !kgen.target`
+    ]
+]()
 
 
-def _idx[target: __mlir_type.`!kgen.target`]() -> Int:
-    return Int(SIMDLength(mlir_value=STD_PLUGINS.index_for_target[target]))
+def test_payload_plugin_selection() raises:
+    # fmt: off
+    comptime assert _host_target.stdlib_plugin == DefaultPluginHooks[_host_target]
+    comptime assert _a100_target.stdlib_plugin == CUDAPluginHooks[_a100_target]
+    comptime assert _h100_target.stdlib_plugin == CUDAPluginHooks[_h100_target]
+    comptime assert _mi300x_target.stdlib_plugin == HIPPluginHooks[_mi300x_target]
+    comptime assert _metal_m1_target.stdlib_plugin == MetalPluginHooks[_metal_m1_target]
+    # fmt: on
 
 
-def test_nvidia_targets_select_cuda_plugin() raises:
-    assert_equal(_idx[_a100_target._mlir_value](), 2)
-    assert_equal(_idx[_h100_target._mlir_value](), 2)
-
-
-def test_amd_targets_select_hip_plugin() raises:
-    assert_equal(_idx[_mi300x_target._mlir_value](), 3)
-
-
-def test_apple_targets_select_metal_plugin() raises:
-    assert_equal(_idx[_metal_m1_target._mlir_value](), 1)
+def test_plugin_for_target_specializes_on_target() raises:
+    assert_false(
+        PluginForTarget[_h100_target._mlir_value]._handles_debug_assert
+    )
 
 
 def main() raises:

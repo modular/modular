@@ -30,7 +30,7 @@
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 
 kgen.func @callee_sret(%s: !llvm.struct<(i64, i64, i64)>) cabi -> !llvm.struct<(i64, i64, i64)> {
-  kgen.return %s : !llvm.struct<(i64, i64, i64)>
+  hlcf.return %s : !llvm.struct<(i64, i64, i64)>
 }
 
 // CHECK-LABEL: llvm.func internal @caller_sret
@@ -39,7 +39,7 @@ kgen.func @caller_sret(%s: !llvm.struct<(i64, i64, i64)>) -> !llvm.struct<(i64, 
   // CHECK-NOT: llvm.call tail @callee_sret
   // CHECK:     llvm.call @callee_sret
   %r = kgen.call tail @callee_sret(%s) : (!llvm.struct<(i64, i64, i64)>) -> !llvm.struct<(i64, i64, i64)>
-  kgen.return %r : !llvm.struct<(i64, i64, i64)>
+  hlcf.return %r : !llvm.struct<(i64, i64, i64)>
 }
 
 } // module
@@ -57,7 +57,7 @@ kgen.func @caller_sret(%s: !llvm.struct<(i64, i64, i64)>) -> !llvm.struct<(i64, 
 module attributes {M.target_info = #M.target<triple="aarch64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128", simd_bit_width=128>} {
 
 kgen.func @callee_reg(%s: !llvm.struct<(i32)>) cabi -> !llvm.struct<(i32)> {
-  kgen.return %s : !llvm.struct<(i32)>
+  hlcf.return %s : !llvm.struct<(i32)>
 }
 
 // CHECK-LABEL: llvm.func internal @caller_reg
@@ -65,7 +65,7 @@ kgen.func @caller_reg(%s: !llvm.struct<(i32)>) -> !llvm.struct<(i32)> {
   // Tail call preserved: register return has no sret alloca.
   // CHECK: llvm.call tail @callee_reg
   %r = kgen.call tail @callee_reg(%s) : (!llvm.struct<(i32)>) -> !llvm.struct<(i32)>
-  kgen.return %r : !llvm.struct<(i32)>
+  hlcf.return %r : !llvm.struct<(i32)>
 }
 
 } // module
@@ -90,7 +90,7 @@ kgen.func @caller_indirect_sret(
   // CHECK-NOT: llvm.call tail
   // CHECK:     llvm.call %arg0
   %r = kgen.call_indirect tail %callee(%s) : (!llvm.struct<(i64, i64, i64)>) cabi -> !llvm.struct<(i64, i64, i64)>
-  kgen.return %r : !llvm.struct<(i64, i64, i64)>
+  hlcf.return %r : !llvm.struct<(i64, i64, i64)>
 }
 
 } // module
@@ -114,7 +114,7 @@ kgen.func @caller_indirect_reg(
   // Tail call preserved: register return has no sret alloca.
   // CHECK: llvm.call tail %arg0
   %r = kgen.call_indirect tail %callee(%s) : (!llvm.struct<(i32)>) cabi -> !llvm.struct<(i32)>
-  kgen.return %r : !llvm.struct<(i32)>
+  hlcf.return %r : !llvm.struct<(i32)>
 }
 
 } // module

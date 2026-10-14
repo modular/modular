@@ -14,10 +14,8 @@ from std.collections import OptionalReg
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from std.memory import alloc
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -63,14 +61,12 @@ def test_warp_specialize_gemm_with_multicasting[
     comptime CLUSTER_N = cluster_shape[0]
     comptime CLUSTER_M = cluster_shape[1]
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
@@ -97,8 +93,8 @@ def test_warp_specialize_gemm_with_multicasting[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Initialize matmul operands
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)

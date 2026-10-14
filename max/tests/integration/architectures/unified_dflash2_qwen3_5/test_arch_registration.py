@@ -62,10 +62,9 @@ def test_the_checkpoint_fixed_draft_width_is_registered() -> None:
 
 
 def test_the_declared_capabilities_match_what_the_graph_supports() -> None:
-    """Capture and overlap are refused, and TP is not wired.
+    """Capture is refused and TP is not wired.
 
-    The rollback replays a row count that depends on the accepted length, so
-    the graph's shapes change step to step and capture cannot hold; the
+    Capture is off until validated, as for the Qwen3.5 MTP graph. The
     drafter's body is unsharded and borrows the target's collective embedding
     and head, so a second device has nothing to run.
     """
@@ -74,7 +73,6 @@ def test_the_declared_capabilities_match_what_the_graph_supports() -> None:
     )
     assert arch is not None
     assert arch.supports_device_graph_capture is False
-    assert arch.supports_overlap_scheduler is False
     assert arch.multi_gpu_supported is False
 
 

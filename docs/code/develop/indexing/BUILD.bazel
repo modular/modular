@@ -17,6 +17,7 @@ modular_run_binary_test(
     name = "gather_test",
     size = "large",
     binary = "gather",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -39,6 +40,7 @@ modular_run_binary_test(
     name = "where_test",
     size = "large",
     binary = "where",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -61,6 +63,7 @@ modular_run_binary_test(
     name = "scatter_test",
     size = "large",
     binary = "scatter",
+    tags = ["skip-ci-asan"],
     # Incompatible with macOS: these doc-example tests time out on remote macOS CI workers; Linux CI provides equivalent coverage.
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],

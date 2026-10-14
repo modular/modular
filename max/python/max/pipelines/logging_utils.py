@@ -189,16 +189,6 @@ def log_basic_config(
         config_entries.append(
             ("use_greedy_acceptance", spec.use_greedy_acceptance)
         )
-        # Nothing reads rejection_sampling_strategy. Print the request and
-        # its inertness together, so an A/B over the flag is not credited to
-        # an acceptance-rule change that never happened.
-        config_entries.append(
-            (
-                "rejection_sampling_strategy",
-                f"{spec.rejection_sampling_strategy or 'unset'} (inert:"
-                " the architecture's AcceptanceSampler decides)",
-            )
-        )
         if spec.use_relaxed_acceptance_for_thinking:
             config_entries.append(("relaxed_topk", spec.relaxed_topk))
             config_entries.append(("relaxed_delta", spec.relaxed_delta))

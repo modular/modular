@@ -23,8 +23,6 @@ from std.collections.string.string_span import (
     CodepointSliceIter,
     GraphemeIndicesIter,
     GraphemeSliceIter,
-    _to_string_list,
-    _unsafe_strlen,
 )
 from std.builtin.builtin_slice import ContiguousSlice
 from std.hashlib.hasher import Hasher
@@ -572,7 +570,7 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSpan(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr
                 )
             )
         )
@@ -591,7 +589,9 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSpan(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[
+                        c_char
+                    ]()
                 )
             )
         )
@@ -1955,7 +1955,7 @@ struct String(
         Args:
             prefix: The prefix to check.
             start: The start offset in bytes from which to check.
-            end: The end offset in bytes from which to check.
+            end: The end offset in bytes up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
@@ -1974,7 +1974,7 @@ struct String(
         Args:
             suffix: The suffix to check.
             start: The start offset in bytes from which to check.
-            end: The end offset in bytes from which to check.
+            end: The end offset in bytes up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.

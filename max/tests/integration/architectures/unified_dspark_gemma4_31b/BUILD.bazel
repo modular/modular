@@ -146,6 +146,7 @@ modular_py_test(
     ],
     deps = [
         ":speculators_reference",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -195,6 +196,7 @@ modular_py_test(
     ],
     deps = [
         ":speculators_reference",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -253,6 +255,7 @@ modular_py_test(
         "requires-network",
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

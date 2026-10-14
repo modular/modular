@@ -20,7 +20,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import ld_matrix, mma
 from max.gpu.compute.mma_util import store_matrix_d
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import unsafe_stack_allocation
@@ -187,19 +187,19 @@ def check_ldmatrix_transposed_bf16[
     # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
     # Run naive matmul.
@@ -301,19 +301,19 @@ def check_ldmatrix(
     # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
     # Run naive matmul.

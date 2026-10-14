@@ -32,17 +32,12 @@ multiply-before-cast, bf16 last):
     `AG_NORM_FUSE_THRESHOLD`, and drives the dispatch routing-invariant check.
 """
 
-from std.sys import (
-    has_amd_gpu_accelerator,
-    simd_width_of,
-    size_of,
-)
+from std.sys import simd_width_of, size_of
 
 from std.math.uutils import ualign_down
 from std.math import rsqrt
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
-from std.utils.numerics import get_accum_type
 from std.testing import assert_equal, assert_raises, assert_true
 
 from layout import Coord, TileTensor, row_major
@@ -162,7 +157,7 @@ def _run_case[
     # Crossover vs `rms_norm_gpu` was calibrated at simd==8 on AMD (block.sum
     # geometry depends on it); assert so a width change surfaces here, not
     # silently.
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         comptime assert (
             simd_width == 8
         ), "fused-vs-production crossover assumes simd=8 on AMD"
@@ -182,9 +177,6 @@ def _run_case[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -228,12 +220,12 @@ def _run_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -285,9 +277,8 @@ def _run_case[
             # into the residual output `sum_full`, then `rms_norm_gpu` into
             # `normed`. `sum_out` must be the gathered stream on both branches
             # (op contract).
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 _allgather_full[in_dtype, ngpus, num_cols](
                     in_shards, sum_full, config, rank_sigs, list_of_ctx[i], i
                 )
@@ -301,7 +292,7 @@ def _run_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_ag_norm[two_launch=two_launch](
+            _dispatch_ag_norm(
                 in_shards,
                 normed_view,
                 sum_view,
@@ -310,6 +301,7 @@ def _run_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 threshold=dispatch_threshold,
             )
         else:
@@ -454,7 +446,7 @@ def _run_case[
         )
     # Residual: bit-identical on AMD; 1-ULP tolerance on NVIDIA (AG is a pure
     # copy either way, but leave headroom for a non-AMD path).
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -611,9 +603,6 @@ def _run_prod_oracle_case[
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -658,12 +647,12 @@ def _run_prod_oracle_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -718,9 +707,8 @@ def _run_prod_oracle_case[
         comptime if use_dispatch:
             # Two-launch fallback writes the residual into `sum_full` (the op
             # contract), then norms it into `normed`.
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 _allgather_full[
                     in_dtype, ngpus, num_cols, group_size=group_size
                 ](
@@ -741,7 +729,7 @@ def _run_prod_oracle_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_ag_norm[two_launch=two_launch, group_size=group_size](
+            _dispatch_ag_norm[group_size=group_size](
                 world_shards,
                 normed_view,
                 sum_view,
@@ -750,6 +738,7 @@ def _run_prod_oracle_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 my_rank=i,
             )
         else:
@@ -875,7 +864,7 @@ def _run_prod_oracle_case[
     )
 
     # sum_out must be bit-identical to a standalone all-gather at every M.
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -890,7 +879,7 @@ def _run_prod_oracle_case[
 
     # Routing invariant: the dispatched op must be bit-identical to production at
     # EVERY M (fused below the threshold, two-launch above). AMD-scoped.
-    comptime if use_dispatch and has_amd_gpu_accelerator():
+    comptime if use_dispatch and list_of_ctx.T.target.is_amd_gpu():
         if normed_mismatch != 0:
             raise Error(
                 String(
@@ -961,9 +950,6 @@ def _run_interleaved_barrier_case[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var world_out = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -1008,12 +994,12 @@ def _run_interleaved_barrier_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # ONE init for the whole run: continuously advancing shared counters are
     # exactly what desyncs when both collectives sit in domain 0.
@@ -1223,9 +1209,6 @@ def _run_asymmetric_fuse_gate_case[
     var quant_dev = List[DeviceBuffer[.float8_e4m3fn]](capacity=ngpus)
     var scale_dev = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -1271,12 +1254,12 @@ def _run_asymmetric_fuse_gate_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -1346,9 +1329,8 @@ def _run_asymmetric_fuse_gate_case[
 
         # The op's own fallback. Windowed by each device's OWN group height,
         # which is what the symmetric `_allgather_full` cannot express.
-        @__parameter
         @inline(.always)
-        def two_launch() raises:
+        def two_launch() raises {imm}:
             var world_out_views = Array[FullType, ngpus * group_size](
                 uninitialized=True
             )
@@ -1409,7 +1391,6 @@ def _run_asymmetric_fuse_gate_case[
 
         comptime if quant:
             _dispatch_ag_norm_quant[
-                two_launch_with_quant=two_launch,
                 quant_epilogue=mx_epilogue,
                 group_size=group_size,
             ](
@@ -1421,10 +1402,11 @@ def _run_asymmetric_fuse_gate_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 my_rank=i,
             )
         else:
-            _dispatch_ag_norm[two_launch=two_launch, group_size=group_size](
+            _dispatch_ag_norm[group_size=group_size](
                 world_shards,
                 normed_view,
                 sum_view,
@@ -1433,6 +1415,7 @@ def _run_asymmetric_fuse_gate_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 my_rank=i,
             )
     group_end()
@@ -1506,9 +1489,6 @@ def _run_rank_validation_case[
 
     var shard_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=group_size)
-    var sigs = Array[MutPointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
-    )
     for i in range(group_size):
         shard_dev.append(
             list_of_ctx[i].enqueue_create_buffer[in_dtype](
@@ -1518,12 +1498,13 @@ def _run_rank_validation_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var sigs = Array[_, group_size](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
     var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
     # Allocate the WORLD size so a deliberately over-sized view below still
     # points at real memory (nothing launches -- the raises fire first).
@@ -1686,7 +1667,7 @@ def _run_grouped_suite[
 
     # `_dispatch_ag_norm_quant` carries its own copy of the verdict and hangs
     # the same way. Its two-launch arm quantizes, so CDNA4 only.
-    if has_amd_gpu_accelerator():
+    if list_of_ctx.T.target.is_amd_gpu():
         _run_asymmetric_fuse_gate_case[
             in_dtype, ngpus, group_size, num_cols, quant=True
         ](256 // group_size, 32 // group_size, list_of_ctx)
@@ -1740,7 +1721,7 @@ def _run_suite[
 
         # Calibration gate: any M the threshold would fuse MUST be bit-identical
         # to production. AMD-scoped (gfx950-calibrated).
-        comptime if has_amd_gpu_accelerator():
+        comptime if list_of_ctx.T.target.is_amd_gpu():
             var full_bytes = num_rows * num_cols * size_of[in_dtype]()
             if full_bytes <= AG_NORM_FUSE_THRESHOLD and mismatch != 0:
                 raise Error(

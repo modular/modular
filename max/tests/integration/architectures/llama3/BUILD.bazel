@@ -40,12 +40,14 @@ modular_py_test(
         # Used as a pytest plugin
         "//max/tests/integration/test_common:registry",
     ],
+    precompile_mefs = True,
     tags = [
         "gpu",
         "no-sandbox",
         "requires-network",
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

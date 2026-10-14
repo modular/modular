@@ -20,7 +20,7 @@ from std.atomic import Atomic, Ordering, fence
 from max.gpu import thread_idx
 from max.gpu.primitives.warp import _ReduceFn
 from std.os import abort
-from std.sys.info import has_amd_gpu_accelerator, is_amd_gpu
+from std.sys.info import is_amd_gpu
 from max.gpu.host import DeviceAttribute, DeviceContext
 from max.gpu.sync import barrier
 
@@ -83,7 +83,7 @@ def coop_group_size(
     Returns:
         Blocks per row, or `1` when the row should not be split.
     """
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not ctx.target.is_amd_gpu():
         return 1
     if batch_size <= 0:
         return 1
@@ -186,7 +186,7 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         comptime assert (
             width <= COOP_SLOT_FLOATS
         ), "a publish cannot exceed one slot"
-        var tx = Int(thread_idx.x)
+        var tx = thread_idx.x
         var slots = self._slots(workspace)
         var slot_base = self._phase * Self.group_size * COOP_SLOT_FLOATS
         self._phase ^= 1

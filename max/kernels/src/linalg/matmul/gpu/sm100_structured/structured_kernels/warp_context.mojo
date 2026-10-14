@@ -305,7 +305,7 @@ struct MmaWarp[
     opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
-](Deinitable where False):
+](not Deinitable):
     """Unified linear type for MMA warp TMEM lifecycle.
 
     Works as both a linear type (direct use) and within context managers.
@@ -412,7 +412,7 @@ struct EpilogueWarp[
     opc: OutputPipelineConfig,
     mma_threads: Int,
     epilogue_threads: Int,
-](Deinitable where False):
+](not Deinitable):
     """Unified linear type for epilogue warp lifecycle.
 
     Works as both a linear type (direct use) and within context managers.

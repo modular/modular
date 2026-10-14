@@ -43,12 +43,12 @@ from .types import (
     ChatSamples,
     ChatSession,
     DatasetMode,
-    ImageTurn,
     OpenAIImage,
     PixelGenerationImageOptions,
     PixelGenerationSampledRequest,
     SampledRequest,
     SharedContext,
+    TurnSelector,
 )
 from .vision_arena import VisionArenaBenchmarkDataset
 
@@ -72,7 +72,6 @@ __all__ = [
     "DiscreteDistribution",
     "DistributionParameter",
     "HuggingFaceBenchmarkDataset",
-    "ImageTurn",
     "InstructCoderBenchmarkDataset",
     "LocalBenchmarkDataset",
     "LocalImageBenchmarkDataset",
@@ -91,6 +90,7 @@ __all__ = [
     "SyntheticPixelBenchmarkDataset",
     "ToolConfig",
     "TurnProfile",
+    "TurnSelector",
     "TurnTargets",
     "VisionArenaBenchmarkDataset",
     "tool_profiles_from_mapping",

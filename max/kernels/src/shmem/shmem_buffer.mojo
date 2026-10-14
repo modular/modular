@@ -17,12 +17,7 @@ Provides `SHMEMBuffer`, a typed buffer allocated from the SHMEM symmetric heap
 so that it is directly addressable by all GPUs in the job.
 """
 
-from std.sys import (
-    CompilationTarget,
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-    size_of,
-)
+from std.sys import CompilationTarget, size_of
 from std.ffi import external_call
 
 from max.gpu.host import DeviceContext, HostBuffer
@@ -68,7 +63,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         ctx: DeviceContext,
         size: Int,
     ) raises:
-        comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu():
             self._data = shmem_malloc[Self.dtype](size)
             self._ctx_ptr = ctx._handle
             self._size = size

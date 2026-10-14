@@ -73,7 +73,7 @@ mixture of experts, etc.
 
 In fact, if we look at a profile from the Llama 8B model using FP8 on 2xB200,
 we observe that over 83% of the model's runtime is occupied executing some
-variant of matmul (e.g. linear, attention and mlp layers).
+variant of matmul (for example linear, attention and mlp layers).
 
 ![piechart.jpg](./img/matmul-on-blackwell-part-1/img01-piechart.jpeg)
 ///caption
@@ -97,7 +97,7 @@ Simplified illustration of matrix multiplication
 If we want to do the matmul on a CPU, then here’s pseudocode code we’ll have to
 write:
 
-```mojo
+```pseudocode
 for row in range(M):
  for col in range(N):
   for inner in range(K):
@@ -153,7 +153,7 @@ memory. The threads in each SM have access to two more memory regions:
 1. Registers which are local variables and are private to each thread.
 2. Shared memory which is visible across threads in an SM*. Since Hopper,
    multiple CTAs can form a cluster and CTAs within the same cluster can access
-   each other's shared memory.*
+   each other's shared memory*.
 
 ![image.png](./img/matmul-on-blackwell-part-1/img05-gpu-memory-arch.jpeg)
 ///caption
@@ -180,8 +180,8 @@ the B matrix is `KxN` in dimension
 A CUDA core processes a fused multiplication and addition operation at a time,
 so we are multiplying a single element from matrix `A` by another element from
 matrix `B` and accumulating the value in `C` per instruction. A Tensor Core, on
-the other hand, computes an MMA operation (e.g. a 64×128 tile), in a single
-instruction.
+the other hand, computes an MMA operation (for example a 64×128 tile), in a
+single instruction.
 
 ![Screenshot 2025-08-25 at 7.30.18 PM.png](./img/matmul-on-blackwell-part-1/img07-tensor-core-2.jpeg)
 ///caption Matrix multiplication with a single CUDA core ///
@@ -218,6 +218,9 @@ As a result of the massive parallelism afforded to by the GPU, one has to think
 about GPU programming differently. For example, while, in traditional CPU
 programming we process data sequentially through loops:
 
+The following conceptual fragments assume the application supplies `data`,
+`result`, and `process()`; they aren't standalone programs.
+
 ```mojo
 # CPU approach
 for i in range(data_size):
@@ -231,7 +234,7 @@ would look like:
 
 ```mojo
 # GPU approach (conceptual)
-thread_id = global_idx.x
+var thread_id = global_idx.x
 result[thread_id] = process(data[thread_id])
 ```
 
@@ -491,11 +494,16 @@ Armed with the understanding of GPU programming and the hardware, we can now,
 *finally*, translate our matmul function over to a GPU matmul kernel. This is
 trivial, and can be done like so:
 
+The snippets in this section are context-dependent fragments, not standalone
+programs. They assume the tensor arguments and coordinates defined below. The
+second operand is stored transposed as an `N x K` row-major tensor, so each
+thread reads `b[col, k]` while computing the logical `M x N` output.
+
 ```mojo
-acc = Float32(0)
+var acc = Float32(0)
 for k in range(K):
-    acc += a[global_idx.y, k] * b[global_idx.x, k]
-c[row, col] = acc
+    acc += (a[row, k][0] * b[col, k][0]).cast[.float32]()
+c[row, col] = acc.cast[.bfloat16]()
 ```
 
 We created a 2D grid of threads large enough to cover our entire C matrix:
@@ -503,35 +511,58 @@ We created a 2D grid of threads large enough to cover our entire C matrix:
 - Each thread computes one element of the output matrix C, and that element is
   based on that thread’s unique id
 
-    ```python
-    row = global_idx.y
-    col = global_idx.x
+    ```mojo
+    var row = global_idx.y
+    var col = global_idx.x
     ```
 
 - Thread blocks are mapped to tiles of the output matrix
 
 The kernel does this dot product for every output in the C matrix, all at once.
 
-![image.png](./img/matmul-on-blackwell-part-1/img21-dot-product.jpeg
+![image.png](./img/matmul-on-blackwell-part-1/img21-dot-product.jpeg)
 ///caption
 Concurrent dot product for every output
 ///
 
-The inputs to the matmul function is a LayoutTensor. To learn more about
-LayoutTensor, see [Using
-LayoutTensor](https://mojolang.org/docs/manual/layout/tensors/) in the Mojo
-Manual
+The inputs to the matmul function are native `TileTensor` views. Each layout is
+a type implementing `TensorLayout`; `row_major[M, N]()` constructs a static
+native layout, and `type_of()` supplies its type to `TileTensor`. To learn more,
+see [Using TileTensor](https://max.modular.com/tile-tensor/tensors/).
 
 ```mojo
+from max.gpu import global_idx
+from layout import TileTensor, row_major
+
+
 def matmul_kernel[
     M: Int, N: Int, K: Int
 ](
-    c: LayoutTensor[DType.bfloat16, Layout.row_major(M, N)],
-    a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K)],
-    b: LayoutTensor[DType.bfloat16, Layout.row_major(N, K)],
+    c: TileTensor[
+        mut=True, .bfloat16, type_of(row_major[M, N]()), MutAnyOrigin
+    ],
+    a: TileTensor[.bfloat16, type_of(row_major[M, K]()), ImmutAnyOrigin],
+    b: TileTensor[.bfloat16, type_of(row_major[N, K]()), ImmutAnyOrigin],
 ):
-# previous 4 lines of code
+    comptime assert c.flat_rank == 2 and a.flat_rank == 2 and b.flat_rank == 2
+    var row = global_idx.y
+    var col = global_idx.x
+    if row >= M or col >= N:
+        return
+
+    var acc = Float32(0)
+    for k in range(K):
+        acc += (a[row, k][0] * b[col, k][0]).cast[.float32]()
+    c[row, col] = acc.cast[.bfloat16]()
 ```
+
+The output view is mutable, and the input views are immutable. These types use
+the default scalar `DefaultEngine` and generic address space; they refer to
+GPU-resident memory when passed to the kernel. A view doesn't own its storage,
+so keep the backing buffers alive until device work completes. A host launcher
+must match the declared layout, engine, and origin types, and must not launch
+overlapping writes to the same output element. The coordinate guard handles
+threads outside the matrix; the tensor view doesn't supply bounds checking.
 
 This allows us to abstract away the algebra required to index/offset into
 memory to fetch it (for instance, for matrix A, that would’ve been `a[row * K +
@@ -553,16 +584,19 @@ larger range makes it great for deep learning applications and LLMs, where you
 need to accommodate gradients over many orders of magnitude, and where
 precision of individual values is not critical.
 
-There is however a catch: when accumulating many values (K iterations),
-rounding errors in BF16 compound rapidly (because its Mantissa is small, it has
-a smaller granularity between hops). To prevent this, we can change our code to
-accumulate the intermediates in higher precision:
+There is however a catch: BF16 multiplication rounds each product before it
+reaches the FP32 accumulator. Across K iterations, these rounding errors can
+compound because BF16 has a small mantissa. The code already accumulates in
+FP32; casting both operands before multiplication also computes each product
+in higher precision:
 
 ```mojo
+var acc = Float32(0)
 for k in range(K):
- acc += a[global_idx.y, k].cast[DType.float32]() *
-     b[global_idx.x, k].cast[DType.float32]()
-c[global_idx.y, global_idx.x] = acc.cast[DType.bfloat16]()
+    acc += (
+        a[row, k][0].cast[.float32]() * b[col, k][0].cast[.float32]()
+    )
+c[row, col] = acc.cast[.bfloat16]()
 ```
 
 Using FP32 for accumulation preserves numerical accuracy during the reduction,
@@ -570,14 +604,19 @@ while still getting the memory benefits of BFloat16. Note that tensor cores
     would accumulate BFloat16 in Float32 as well. The reduction result is then
     downcast to BFloat16 before storing to global memory.
 
-To measure the performance of our kernel, we run the
-[code](https://github.com/modular/modular/blob/main/max/kernels/test/gpu/linalg/matmul_blackwell_iterative/0_naive_sm100.mojo)
-and measure how many FLOPS (FLoating-point OPerations per Second) it achieves.
+To measure the performance of our kernel, we measure how many FLOPS
+(FLoating-point OPerations per Second) it achieves. A runnable naive baseline is
+available in the current
+[code](https://github.com/modular/modular/blob/main/max/kernels/test/gpu/linalg/matmul_blackwell_iterative/1_naive_sm100.mojo).
+That baseline stores B as a `K x N` row-major tensor and reads `b[k, col]`,
+unlike the transposed `N x K` storage used in the illustrative snippets above.
 In this setup, we multiply matrix $A (M*K) * B (K*N) = C (M*N)$. There are $M*N$
 elements in the output, each of which took a dot product of size K (K
 multiplications and K additions). Hence, our kernel does $(M*N)*2K$ flops in
 total, and the performance, in FLOPS, is calculated as $2*m*n*k / time$. Our
-kernel gives us 5 TFLOPs.
+kernel gave us 5 TFLOPs in the original measurements reported in this post. The
+figures below retain those historical results; the updated illustrative API
+snippets aren't a new performance measurement.
 
 ![01.png](./img/matmul-on-blackwell-part-1/img23-naive-perf.jpeg)
 ///caption

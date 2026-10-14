@@ -35,9 +35,8 @@ from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_true
 
-from layout import LayoutTensor, TileTensor
-from layout.coord import Coord, Idx
-from layout.runtime_layout import RuntimeLayout
+from layout import TileTensor
+from layout.coord import Idx
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
@@ -45,7 +44,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     mha_prefill_v2,
 )
 from nn.attention.mha_mask import NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 
 comptime Q_BLOCK_SIZE = 32
@@ -144,30 +143,22 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(Int32(BATCH), Int32(seq_q), Idx[NUM_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(seq_q), Idx[NUM_HEADS], Idx[depth]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(Int32(BATCH), Int32(num_keys), Idx[NUM_KV_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(num_keys), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(Int32(BATCH), Int32(num_keys), Idx[NUM_KV_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(num_keys), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(Int32(BATCH), Int32(seq_q), Idx[NUM_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(seq_q), Idx[NUM_HEADS], Idx[depth]),
     )
-    var k_op = LayoutTensorMHAOperand(k_tt)
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var k_op = TileTensorMHAOperand(k_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     mha_prefill_v2[CONFIG](
         q_tt, k_op, v_op, o_tt, NullMask(), scale, num_keys, 0, ctx

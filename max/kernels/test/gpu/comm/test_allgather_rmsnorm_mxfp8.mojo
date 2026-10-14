@@ -34,7 +34,7 @@ owns the numerics, this one owns the wiring.
 """
 
 from std.memory import bitcast
-from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
+from std.sys import default_accelerator, simd_width_of, size_of
 from std.testing import assert_equal, assert_true
 from std.utils.index import Index
 
@@ -102,9 +102,6 @@ def _run_case[
     var scales_ref = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var scales_fused = List[DeviceBuffer[.float8_e8m0fnu]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -164,12 +161,12 @@ def _run_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -330,9 +327,8 @@ def _run_case[
 
         # This branch owes the SAME outputs as the fused one; dropping the
         # `quantize_mx_amd` leaves them stale and arm A catches it (verified).
-        @__parameter
         @inline(.always)
-        def two_launch_with_quant() raises:
+        def two_launch_with_quant() raises {imm}:
             comptime if not route_two_launch:
                 # Poison: `threshold = full_bytes` forces the fused branch, so
                 # being called at all means the routing inverted -- which the
@@ -354,10 +350,7 @@ def _run_case[
                 )
                 quantize_mx_amd(ctx_i, quant_view, scale_view, normed_view)
 
-        _dispatch_ag_norm_quant[
-            two_launch_with_quant=two_launch_with_quant,
-            quant_epilogue=mx_epilogue,
-        ](
+        _dispatch_ag_norm_quant[quant_epilogue=mx_epilogue,](
             in_shards,
             normed_view,
             sum_view,
@@ -366,6 +359,7 @@ def _run_case[
             weight_offset,
             rank_sigs,
             ctx_i,
+            two_launch_with_quant,
             threshold=threshold,
         )
     group_end()
@@ -467,7 +461,7 @@ def main() raises:
     if num_devices < 2:
         print("SKIPPED: needs at least 2 GPUs, found", num_devices)
         return
-    if not has_amd_gpu_accelerator():
+    if not default_accelerator().is_amd_gpu():
         print("SKIPPED: the MXFP8 quantize path is CDNA4-only")
         return
 

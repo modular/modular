@@ -20,8 +20,14 @@ iteration strategies used by prefill and decode kernels.
 
 from std.utils import StaticTuple
 from std.math import align_down, iota, ceildiv
-from std.sys import is_nvidia_gpu
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from std.sys import is_nvidia_gpu, llvm_intrinsic
+from std.memory import bitcast
+from layout import (
+    Coord,
+    ImmTileTensor,
+    RowMajorLayout,
+    TensorLayout,
+)
 from std.collections import OptionalReg
 from std.utils.index import IndexList, Index
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -32,7 +38,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
 @fieldwise_init
-struct MaskName(Equatable, Writable):
+struct MaskName(EnumLike, Equatable, Writable):
     """A canonical string name identifying a mask type."""
 
     var name: String
@@ -46,11 +52,61 @@ struct MaskName(Equatable, Writable):
     comptime CHUNKED_CAUSAL = Self("chunked_causal")
     comptime CAUSAL_PADDING = Self("causal_padding")
 
+    # `MaskName` accepts arbitrary strings, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "NULL".value,
+        "CAUSAL".value,
+        "CHUNKED".value,
+        "SLIDING_WINDOW_CAUSAL".value,
+        "SLIDING_WINDOW_NONCAUSAL".value,
+        "MATERIALIZED".value,
+        "CHUNKED_CAUSAL".value,
+        "CAUSAL_PADDING".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        """Return the active case index."""
+        match self.name:
+            case "null":
+                return 0
+            case "causal":
+                return 1
+            case "chunked":
+                return 2
+            case "sliding_window_causal":
+                return 3
+            case "sliding_window_noncausal":
+                return 4
+            case "materialized":
+                return 5
+            case "chunked_causal":
+                return 6
+            case "causal_padding":
+                return 7
+            case _:
+                return -1
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Return the payload of case `id`. MaskName cases carry no payload."""
+        comptime assert False, "MaskName has no payload"
+
     def write_to(self, mut writer: Some[Writer]):
         """Writes the mask name.
 
         Args:
-            writer: The writer to write to.
+            writer: The writer to write_to.
         """
         writer.write_string(self.name)
 
@@ -213,6 +269,64 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
             score_vec: The score vector at `coord` of the score matrix.
         """
         ...
+
+    comptime has_row_bias: Bool = False
+    """Whether `add_row_bias` adds this mask's additive bias, leaving
+    `visibility_mask` the rest of `mask`."""
+
+    @inline(.always)
+    def add_row_bias[
+        BN: Int, //
+    ](
+        self,
+        mut srow: Array[Float32, BN],
+        seq_id: UInt32,
+        head: UInt32,
+        q_idx: UInt32,
+        k_start: Int32,
+    ):
+        """Adds the mask's additive bias to one row of `BN` scaled scores.
+
+        A kernel that owns a whole score row per thread calls this once per
+        row and then `visibility_mask` per vector, instead of `mask`, which
+        gathers the bias one vector at a time.
+
+        Args:
+            srow: The row's scores, scaled, before the visibility mask.
+            seq_id: The sequence index.
+            head: The query head index.
+            q_idx: The query's absolute position in its sequence.
+            k_start: The key position of `srow[0]`.
+        """
+        pass
+
+    @inline(.always)
+    def visibility_mask[
+        dtype: DType,
+        width: SIMDLength,
+        //,
+        *,
+        element_type: DType = .uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        """Applies `mask` without the additive bias `add_row_bias` adds.
+
+        Parameters:
+            dtype: The element type of the score vector.
+            width: The SIMD width of the score vector.
+            element_type: The integer type for index coordinates.
+
+        Args:
+            coord: The coordinate tuple `(seq_id, head, q_idx, k_idx)`.
+            score_vec: The score vector at `coord` of the score matrix.
+
+        Returns:
+            The masked score vector.
+        """
+        return self.mask(coord, score_vec)
 
     def status[
         *, element_type: DType = .uint32
@@ -1628,7 +1742,7 @@ struct SlidingWindowNonCausalMask[window_size: Int](
 # ===-----------------------------------------------------------------------===#
 
 
-struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
+struct CausalPaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
     MHAMask, TrivialRegisterPassable
 ):
     """Causal mask combined with padding: a position (seq_id, head, q, k) is
@@ -1645,7 +1759,7 @@ struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
 
-    var valid_lengths: LayoutTensor[.uint32, Self.layout_, Self.origin_]
+    var valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_]
 
     comptime device_type: AnyType = Self
 
@@ -1664,7 +1778,7 @@ struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
 
     def __init__(
         out self,
-        valid_lengths: LayoutTensor[.uint32, Self.layout_, Self.origin_],
+        valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_],
     ):
         self.valid_lengths = valid_lengths
 
@@ -1685,7 +1799,9 @@ struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
 
         comptime index_type = coord.element_type
         var k_idx = coord[3]
-        var valid_len = Scalar[index_type](Int(self.valid_lengths[coord[0]]))
+        var valid_len = Scalar[index_type](
+            Int(self.valid_lengths[Int(coord[0])])
+        )
         var k_positions = iota[index_type, width](Scalar[index_type](k_idx))
 
         return k_positions.lt(valid_len).select(causal_result, MASK_VALUE)
@@ -1823,6 +1939,172 @@ struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
 
 
 # ===-----------------------------------------------------------------------===#
+# PaddingMask
+# ===-----------------------------------------------------------------------===#
+
+
+struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
+    MHAMask, TrivialRegisterPassable
+):
+    """Padding-only mask: a position (seq_id, head, q, k) is visible iff
+    `k < valid_lengths[seq_id]`. No causal (q >= k) restriction is applied.
+
+    Unlike `CausalPaddingMask`, this does not assume key column order
+    reflects key recency, so it is the right choice for an attention call
+    over a gathered/reordered key buffer (e.g. a top-k sparse selection
+    copied into a dense scratch) where causality is already enforced by
+    the selection step itself and a causal check against the column index
+    would be meaningless.
+
+    `valid_lengths` is a tensor of shape [num_seqs] with one uint32 value per
+    sequence indicating the number of valid (non-padding) tokens.
+    """
+
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = is_nvidia_gpu()
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
+
+    var valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_]
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "PaddingMask"
+
+    @staticmethod
+    def name() -> String:
+        return "PaddingMask"
+
+    def __init__(
+        out self,
+        valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_],
+    ):
+        self.valid_lengths = valid_lengths
+
+    @always_inline
+    def mask[
+        dtype: DType,
+        width: SIMDLength,
+        //,
+        *,
+        element_type: DType = .uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        comptime index_type = coord.element_type
+        var k_idx = coord[3]
+        var valid_len = Scalar[index_type](
+            Int(self.valid_lengths[Int(coord[0])])
+        )
+        var k_positions = iota[index_type, width](Scalar[index_type](k_idx))
+
+        return k_positions.lt(valid_len).select(score_vec, MASK_VALUE)
+
+    @always_inline
+    def status[
+        *, element_type: DType = .uint32
+    ](
+        self,
+        seq_id: UInt32,
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
+    ) -> TileMaskStatus:
+        var valid_len = Scalar[element_type](
+            Int(self.valid_lengths[Int(seq_id)])
+        )
+
+        # Tile fully masked when its first column is already past valid_len.
+        if tile_offset.data[1] >= valid_len:
+            return TileMaskStatus.FULL_MASK
+
+        if tile_offset.data[1] + tile_size.data[1] <= valid_len:
+            return TileMaskStatus.NO_MASK
+
+        return TileMaskStatus.PARTIAL_MASK
+
+    @always_inline
+    def start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32) -> UInt32:
+        # No causal restriction: every batch starts at column 0.
+        return 0
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        return BN
+
+    @always_inline
+    def total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        var valid_len = UInt32(Int(self.valid_lengths[Int(seq_id)]))
+        var effective = min(num_cols, valid_len)
+        return ceildiv(effective, UInt32(BN))
+
+    @staticmethod
+    def count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 2
+
+    @always_inline
+    def last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+
+    @always_inline
+    def masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        var valid_len = UInt32(Int(self.valid_lengths[Int(seq_id)]))
+        var effective = min(num_cols, valid_len)
+        var num_unmasked = effective // UInt32(BN)
+        var total = self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+        return {num_unmasked, total}
+
+    @staticmethod
+    def nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.NO_MASK, TileMaskStatus.PARTIAL_MASK}
+
+    @staticmethod
+    def mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.NO_MASK, MaskStrategy.BITMASK}
+
+    @always_inline
+    def mask_bits(
+        self,
+        seq_id: UInt32,
+        score_row: Int32,
+        col_start: Int32,
+        num_keys: Int32,
+    ) -> UInt32:
+        # Padding-only: low `n_valid_pad` bits set, no causal component.
+        var valid_len: Int32 = Int32(Int(self.valid_lengths[Int(seq_id)]))
+        var n_valid_pad: Int32 = max(valid_len - col_start, 0)
+        return (
+            (UInt32(1) << UInt32(n_valid_pad)) - UInt32(1)
+        ) if n_valid_pad < 32 else UInt32(0xFFFF_FFFF)
+
+    @staticmethod
+    def sliding_window_size() -> Int:
+        return 0
+
+
+# ===-----------------------------------------------------------------------===#
 # MaterializedMask
 # ===-----------------------------------------------------------------------===#
 
@@ -1909,9 +2191,9 @@ def naively_get_first_nonempty_mask_col[
     return kv_row
 
 
-struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
-    MHAMask, TrivialRegisterPassable
-):
+struct MaterializedMask[
+    dtype_: DType, layout_: TensorLayout, origin_: ImmOrigin
+](MHAMask, TrivialRegisterPassable):
     """Mask that's backed by a materialized tensor.
 
     Parameters:
@@ -1926,11 +2208,11 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
     comptime mask_safe_out_of_bounds: Bool = False
     comptime check_mask_during_decoding: Bool = True
 
-    var mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_]
+    var mask_tensor: ImmTileTensor[Self.dtype_, Self.layout_, Self.origin_]
 
     @__allow_legacy_any_origin_fields
     var start_pos: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        ImmTileTensor[.uint32, RowMajorLayout[Int64], ImmutAnyOrigin]
     ]
     var is_multiple_of_2: Bool
 
@@ -1951,31 +2233,28 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
 
     def __init__(
         out self,
-        mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_],
+        mask_tensor: ImmTileTensor[Self.dtype_, Self.layout_, Self.origin_],
         start_pos: OptionalReg[
-            LayoutTensor[
-                .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ]
+            ImmTileTensor[.uint32, RowMajorLayout[Int64], ImmutAnyOrigin]
         ] = None,
     ):
-        comptime assert Self.layout_.rank() in (
+        comptime assert Self.layout_.rank in (
             3,
             4,
         ), "Expected rank 3 or 4 for mask tensor"
         self.mask_tensor = mask_tensor
         self.start_pos = start_pos
         self.is_multiple_of_2 = (
-            self.mask_tensor.dim[Self.layout_.rank() - 1]() % 2 == 0
+            Int(self.mask_tensor.dim[Self.layout_.rank - 1]()) % 2 == 0
         )
 
     @inline(.always)
     def get_start_pos(self, batch_idx: Int) -> Int:
-        if self.start_pos:
-            return Int(self.start_pos.value()[batch_idx])
+        if case .Some(start_pos) = self.start_pos:
+            return Int(start_pos[batch_idx])
         else:
-            return (
-                self.mask_tensor.dim[Self.layout_.rank() - 1]()
-                - self.mask_tensor.dim[Self.layout_.rank() - 2]()
+            return Int(self.mask_tensor.dim[Self.layout_.rank - 1]()) - Int(
+                self.mask_tensor.dim[Self.layout_.rank - 2]()
             )
 
     @inline(.always)
@@ -1991,13 +2270,13 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         comptime IndexListType = IndexList[
-            Self.layout_.rank(), element_type=element_type
+            Self.layout_.rank, element_type=element_type
         ]
         var adjusted_coord: IndexListType
 
         var start_pos = self.get_start_pos(coord[0])
 
-        comptime if Self.layout_.rank() == 3:
+        comptime if Self.layout_.rank == 3:
             adjusted_coord = IndexListType(
                 coord[0], coord[2] - start_pos, coord[3]
             )
@@ -2007,26 +2286,28 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
             )
 
         var retval = SIMD[dtype, width](MASK_VALUE)
-        comptime rank = Self.layout_.rank()
-        if adjusted_coord[rank - 2] < self.mask_tensor.dim[rank - 2]():
+        comptime rank = Self.layout_.rank
+        if adjusted_coord[rank - 2] < Int(self.mask_tensor.dim[rank - 2]()):
             if (
                 adjusted_coord[rank - 1] + width
-                <= self.mask_tensor.dim[rank - 1]()
+                <= Int(self.mask_tensor.dim[rank - 1]())
                 and self.is_multiple_of_2
             ):
                 retval = self.mask_tensor.load[width=width](
-                    adjusted_coord.canonicalize()
+                    Coord(adjusted_coord)
                 ).cast[dtype]()
-            elif adjusted_coord[rank - 1] < self.mask_tensor.dim[rank - 1]():
+            elif adjusted_coord[rank - 1] < Int(
+                self.mask_tensor.dim[rank - 1]()
+            ):
                 for i in range(
                     min(
                         Int(width),
-                        self.mask_tensor.dim[rank - 1]() - coord[3],
+                        Int(self.mask_tensor.dim[rank - 1]()) - coord[3],
                     )
                 ):
                     adjusted_coord[rank - 1] = coord[3] + i
                     retval[i] = self.mask_tensor.load[width=1](
-                        adjusted_coord.canonicalize()
+                        Coord(adjusted_coord)
                     ).cast[dtype]()
 
         return score_vec + retval
@@ -2102,7 +2383,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
         num_keys: Int32,
     ) -> UInt32:
         # `MaterializedMask` is an additive-bias mask: `mask()` returns
-        # `score_vec + retval` (line ~1547), where `retval` is loaded from
+        # `score_vec + retval`, where `retval` is loaded from
         # an arbitrary-dtype tensor (e.g. ALiBi slopes, log-bias). A
         # 1-bit-per-key visibility mask cannot faithfully represent
         # arbitrary additive biases, so this mask permanently uses
@@ -2702,8 +2983,12 @@ struct RelativeLogitsMask[
     //,
     visibility: V,
     dtype_: DType,
-    layout_: Layout,
-    origin_: Origin[mut=False],
+    BiasLayout: TensorLayout,
+    origin_: ImmOrigin,
+    CacheLengthsLayout: TensorLayout,
+    cache_lengths_origin: ImmOrigin,
+    RowOffsetsLayout: TensorLayout,
+    row_offsets_origin: ImmOrigin,
 ](MHAMask, TrivialRegisterPassable):
     """Causal (optionally sliding-window) mask plus an additive relative-position bias.
 
@@ -2717,9 +3002,13 @@ struct RelativeLogitsMask[
         visibility: `CausalMask()` (global) or
             `SlidingWindowCausalMask[window_size]()` (local).
         dtype_: Element type of the bias tensor.
-        layout_: Layout of the bias tensor, rank 3
+        BiasLayout: Layout of the bias tensor, rank 3
             `(total_q_tokens, heads, extent)`.
         origin_: Origin of the bias tensor.
+        CacheLengthsLayout: Layout of the rank-1 cache-lengths tensor.
+        cache_lengths_origin: Origin of the cache-lengths tensor.
+        RowOffsetsLayout: Layout of the rank-1 input-row-offsets tensor.
+        row_offsets_origin: Origin of the input-row-offsets tensor.
     """
 
     comptime window_size: Int = Self.V.sliding_window_size()
@@ -2730,18 +3019,16 @@ struct RelativeLogitsMask[
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
 
-    var bias: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_]
+    var bias: ImmTileTensor[Self.dtype_, Self.BiasLayout, Self.origin_]
     """`(total_q_tokens, heads, extent)`, row `r` matching `q`'s ragged-flat row."""
 
-    @__allow_legacy_any_origin_fields
-    var cache_lengths: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    var cache_lengths: ImmTileTensor[
+        .uint32, Self.CacheLengthsLayout, Self.cache_lengths_origin
     ]
     """Cached tokens before this call's new tokens."""
 
-    @__allow_legacy_any_origin_fields
-    var input_row_offsets: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    var input_row_offsets: ImmTileTensor[
+        .uint32, Self.RowOffsetsLayout, Self.row_offsets_origin
     ]
     """Ragged row offset into `bias`/`q` for this call's new tokens, `(batch + 1,)`."""
 
@@ -2762,17 +3049,23 @@ struct RelativeLogitsMask[
 
     def __init__(
         out self,
-        bias: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_],
-        cache_lengths: LayoutTensor[
-            .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        bias: ImmTileTensor[Self.dtype_, Self.BiasLayout, Self.origin_],
+        cache_lengths: ImmTileTensor[
+            .uint32, Self.CacheLengthsLayout, Self.cache_lengths_origin
         ],
-        input_row_offsets: LayoutTensor[
-            .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        input_row_offsets: ImmTileTensor[
+            .uint32, Self.RowOffsetsLayout, Self.row_offsets_origin
         ],
     ):
         comptime assert (
-            Self.layout_.rank() == 3
+            Self.BiasLayout.rank == 3
         ), "Expected rank 3 (tokens, heads, extent) for the bias tensor"
+        comptime assert (
+            Self.CacheLengthsLayout.rank == 1
+        ), "Expected rank 1 (batch,) for the cache lengths tensor"
+        comptime assert (
+            Self.RowOffsetsLayout.rank == 1
+        ), "Expected rank 1 (batch + 1,) for the input row offsets tensor"
         comptime visibility_name = Self.V.get_type_name()
         comptime assert (
             visibility_name == CausalMask.get_type_name()
@@ -2812,10 +3105,10 @@ struct RelativeLogitsMask[
         # Gather the bias by relative distance, zero outside [0, extent).
         var flat_row = self._flat_row(Int(coord[0]), Int(q_idx))
         var head = Int(coord[1])
-        var extent = self.bias.dim[2]()
+        var extent = Int(self.bias.dim[2]())
         if extent == 0:
             return Self.visibility.mask(coord, score_vec)
-        var num_rows = self.bias.dim[0]()
+        var num_rows = Int(self.bias.dim[0]())
         var row_in_bounds = 0 <= flat_row < num_rows
         # Clamp to an in-bounds row once; the gather below then has no
         # data-dependent skip on it.
@@ -2843,6 +3136,87 @@ struct RelativeLogitsMask[
         # as exactly `MASK_VALUE` (never `MASK_VALUE + bias`). The visibility
         # mask's own `mask()` is the select, so this can't drift from it.
         return Self.visibility.mask(coord, score_vec + bias_vec)
+
+    comptime has_row_bias: Bool = True
+
+    @inline(.always)
+    def add_row_bias[
+        BN: Int, //
+    ](
+        self,
+        mut srow: Array[Float32, BN],
+        seq_id: UInt32,
+        head: UInt32,
+        q_idx: UInt32,
+        k_start: Int32,
+    ):
+        var extent = Int(self.bias.dim[2]())
+        # Column `c` takes the bias at distance `hi - c`, so the row covers
+        # distances `[lo, hi]` back to front.
+        var hi = Int(q_idx) - Int(k_start)
+        var lo = hi - (BN - 1)
+        # Every key is in the future (masked anyway) or beyond the table.
+        if extent == 0 or hi < 0 or lo >= extent:
+            return
+        var flat_row = self._flat_row(Int(seq_id), Int(q_idx))
+        # Rows past the ragged total are tile padding; `mask()` gives them no
+        # bias either.
+        if not (0 <= flat_row < Int(self.bias.dim[0]())):
+            return
+        var row_ptr = self.bias.unsafe_ptr().unsafe_offset(
+            Int(self.bias.layout(Coord(flat_row, Int(head), 0)))
+        )
+
+        comptime if Self.dtype_ == DType.bfloat16:
+            # A row starts at element (flat_row * heads + head) * extent,
+            # so only an even extent keeps every row start 4-byte aligned
+            # for the word reads below. The extent is a compile-time dim on
+            # the graph path; a dynamic dim skips the check.
+            comptime if Self.BiasLayout._shape_types[2].is_static_value:
+                comptime assert (
+                    Self.BiasLayout._shape_types[2].static_value % 2 == 0
+                ), "bf16 bias rows need an even extent for 4-byte loads"
+            # Read the span as aligned bf16 pairs, `BN // 2 + 1` words so a
+            # funnel shift can realign them by one element when `lo` is odd.
+            var lo_even = lo & ~1
+            if lo_even >= 0 and lo_even + BN + 2 <= extent:
+                var words = (row_ptr + lo_even).bitcast[UInt32]()
+                var shift = UInt32(lo & 1) * 16
+                var w = words[0]
+                comptime for m in range(BN // 2):
+                    var w_next = words[m + 1]
+                    var pair = llvm_intrinsic[
+                        "llvm.fshr", UInt32, has_side_effect=False
+                    ](w_next, w, shift)
+                    # The low half is distance `lo + 2m`, the high half the
+                    # next one; a bf16 widens to f32 by shifting in zeros.
+                    srow[BN - 1 - 2 * m] += bitcast[.float32](pair << 16)
+                    srow[BN - 2 - 2 * m] += bitcast[.float32](pair & 0xFFFF0000)
+                    w = w_next
+                return
+
+        # Spans that cross the table's edges, and other dtypes: clamp the
+        # read so it stays in bounds, and drop the value when out of range.
+        comptime for c in range(BN):
+            var rel_dist = UInt32(hi - c)
+            var raw_bias = row_ptr[min(rel_dist, UInt32(extent - 1))].cast[
+                .float32
+            ]()
+            srow[c] += raw_bias if rel_dist < UInt32(extent) else Float32(0)
+
+    @inline(.always)
+    def visibility_mask[
+        dtype: DType,
+        width: SIMDLength,
+        //,
+        *,
+        element_type: DType = .uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        return Self.visibility.mask(coord, score_vec)
 
     @inline(.always)
     def status[

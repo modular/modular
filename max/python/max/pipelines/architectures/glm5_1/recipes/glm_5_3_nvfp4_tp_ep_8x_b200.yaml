@@ -22,14 +22,17 @@ model:
   data_parallel_degree: 1
   kv_cache:
     kv_cache_format: float8_e4m3fn
-    device_memory_utilization: 0.78
+    device_memory_utilization: 0.75
 
 speculative:
   speculative_method: mtp
   num_speculative_tokens: 5
+  draft_proposal: sampled
 
 runtime:
   ep_size: 8
+  # Off because perf benchmarks measured it degrading prefill and decode.
+  ep_fuse_ffn_combine_send: false
   max_batch_input_tokens: 8192
   max_batch_size: 32
 

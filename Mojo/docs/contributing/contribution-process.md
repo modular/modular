@@ -14,6 +14,10 @@ report a bug rather than contribute code, use the
 Before you implement a change, check that the part of the codebase you want to
 improve is [open to receiving contributions](contribution-areas.md).
 
+> [!NOTE]
+> Keep each pull request inside a single area. See
+> [keep each pull request to one contribution](issue-pr-etiquette.md#keep-each-pull-request-to-one-contribution).
+
 ### Signal your intent
 
 Make sure there's a GitHub issue describing the bug you intend to fix or the
@@ -22,6 +26,14 @@ aware of what's already being worked on.
 
 Search the existing issues before you create a new one, and follow the
 [issue and PR etiquette](issue-pr-etiquette.md) when you open one.
+
+### Check you've signed the CLA
+
+Before merging your first PR, all contributors must sign the
+[CLA](https://github.com/modular/cla/blob/main/CLA.md) by leaving a comment on
+your PR stating:
+
+> I have read the CLA Document and I hereby sign the CLA
 
 ## Stage 2: Planning
 

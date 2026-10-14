@@ -22,10 +22,8 @@ using namespace M;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct REPLOptTable : public llvm::opt::PrecomputedOptTable {
-  REPLOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct REPLOptTable : public llvm::opt::OptTable {
+  REPLOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 } // namespace
 

@@ -12,6 +12,7 @@ modular_py_test(
         ["test_*.py"],
         exclude = [
             "test_bounded_cache.py",
+            "test_chat_encoder.py",
             "test_reasoning.py",
             "test_structured_output_backend.py",
         ],
@@ -32,9 +33,16 @@ modular_py_test(
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines:graph_input_stager",
         "//max/python/max/pipelines:logging_utils",
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
@@ -43,7 +51,9 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/unified_dflash_llama3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
         "//max/python/max/serve/parser",
@@ -79,6 +89,24 @@ modular_py_test(
     srcs = ["test_bounded_cache.py"],
     deps = [
         "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_chat_encoder",
+    srcs = ["test_chat_encoder.py"],
+    ignore_extra_deps = [
+        # Transitive dep of transformers, needed to render chat templates
+        requirement("jinja2"),
+    ],
+    deps = [
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("transformers"),
     ],
 )
 

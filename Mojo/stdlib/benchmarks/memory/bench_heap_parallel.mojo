@@ -30,12 +30,11 @@ from std.benchmark import (
     BenchConfig,
     Bencher,
     BenchId,
-    Unit,
     black_box,
     keep,
 )
 from std.math import ceildiv
-from std.memory import Allocation, alloc, dealloc
+from std.memory import alloc
 from std.atomic import Atomic
 from std.sys.info import num_physical_cores
 

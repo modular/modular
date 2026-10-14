@@ -14,6 +14,14 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_conv_state_layout",
+    srcs = ["test_conv_state_layout.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/inkling",
+    ],
+)
+
+modular_py_test(
     name = "test_reasoning",
     srcs = ["test_reasoning.py"],
     deps = [
@@ -56,6 +64,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],

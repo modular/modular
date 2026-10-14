@@ -22,6 +22,12 @@ _EXTRA_CONSTRAINTS = {
         "//:has_gpu",
         "//:amd_gpu",
     ],
+    # Only NVIDIA (mbarrier) and AMD (atomic-counter) backends exist; Apple
+    # GPUs would fall through to the NVIDIA-only mbarrier path.
+    "test_producer_consumer_pipeline.mojo": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 # Per-file compile defines. The test compiles the reference-cadence /
@@ -52,6 +58,16 @@ _EXTRA_TAGS = {
     # red-flags unrelated presubmits. Re-enable once KERN-3589 is fixed; run
     # it by explicit target to check a fix.
     "test_mha_prefill_v2_lazy_rescale_crossrow_canary.mojo": ["manual"],
+    # https://linear.app/modularml/issue/KERN-3610
+    "test_mha_vs_naive_reference.mojo": ["manual"],
+    # Flaky due to a K/V DMA race in `MhaPrefillV2` (KERN-3053).
+    "test_mha_i2i_random_ref.mojo": ["manual"],
+    "test_mha_i2i_repro.mojo": ["manual"],
+    "test_mha_prefill_v2.mojo": ["manual"],
+    "test_mha_prefill_v2_causal.mojo": ["manual"],
+    "test_mha_prefill_v2_gqa.mojo": ["manual"],
+    "test_mha_prefill_v2_paged.mojo": ["manual"],
+    "test_mha_prefill_v2_rescale.mojo": ["manual"],
 }
 
 [

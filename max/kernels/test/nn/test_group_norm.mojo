@@ -75,34 +75,36 @@ def run_group_norm_cpu[
     var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
     var epsilon = Float32(1e-5)
 
-    @__copy_capture(data_buf)
     @inline(.always)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
-    @__copy_capture(gamma)
     @inline(.always)
-    @__parameter
-    def gamma_scalar_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def gamma_scalar_fn[
+        width: Int
+    ](coords: Coord) {var gamma} -> SIMD[dtype, width]:
         var idx = gamma.layout(coords)
         return gamma.raw_load[width=width](idx)
 
-    @__copy_capture(beta)
     @inline(.always)
-    @__parameter
-    def beta_scalar_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def beta_scalar_fn[
+        width: Int
+    ](coords: Coord) {var beta} -> SIMD[dtype, width]:
         var idx = beta.layout(coords)
         return beta.raw_load[width=width](idx)
 
-    group_norm_cpu[
-        dtype=dtype,
-        rank=rank,
-        input_fn=input_fn,
-        gamma_fn=gamma_scalar_fn,
-        beta_fn=beta_scalar_fn,
-    ](Coord(shape), epsilon, output_buf, num_groups)
+    group_norm_cpu[dtype=dtype, rank=rank](
+        input_fn,
+        gamma_scalar_fn,
+        beta_scalar_fn,
+        Coord(shape),
+        epsilon,
+        output_buf,
+        num_groups,
+    )
 
     var data_ptr_ptr: MutPointer[
         data_ptr.T, origin_of(data_ptr)

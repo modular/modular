@@ -13,16 +13,22 @@
 
 from __future__ import annotations
 
+import atexit
 import dataclasses
+import json
 import logging
-import logging.handlers
 import math
 import os
 import platform
+import signal
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from contextvars import ContextVar
 from time import time
+from types import FrameType
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import numpy as np
 import requests
@@ -32,6 +38,7 @@ from max.serve.telemetry.metrics import (
     HISTOGRAM_SHADOW_SUFFIX,
     configure_histogram_shadow_emission,
 )
+from opentelemetry import trace
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.context import Context as OtelContext
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -65,22 +72,101 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
 
+if TYPE_CHECKING:
+    # For annotations only: the CLI imports this module early.
+    from max.pipelines.context import TextContext
+    from max.pipelines.request import RequestID
+
 otelBaseUrl = "https://telemetry.modular.com:443"
+
+
+def _operator_set_endpoint(signal_var: str) -> bool:
+    """Whether the operator set ``signal_var`` or the generic endpoint variable.
+
+    The exporter must then be built with no explicit endpoint so the SDK can
+    resolve it: passing the value read here as ``endpoint=`` would let the
+    generic variable beat the signal-specific one.
+    """
+    return bool(
+        os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+        or os.environ.get(signal_var)
+    )
+
+
+def _telemetry_disabled(settings: Settings) -> bool:
+    """Whether egress is off, by MAX setting or by ``OTEL_SDK_DISABLED``.
+
+    The SDK reads that variable too but only no-ops instruments, leaving the
+    providers, their exporter threads and ``send_telemetry_log``'s raw POST
+    running; reading it here stops those. Parsed as the SDK parses it.
+    """
+    if os.environ.get("OTEL_SDK_DISABLED", "").lower().strip() == "true":
+        return True
+    return settings.disable_telemetry
+
 
 request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
     "max.serve.request_trace_ctx", default=None
 )
-"""The OTel context extracted from the current request's inbound W3C
-traceparent/tracestate headers (or None). Set once per request by the route
-handler in openai_routes.py before it calls into the pipeline, so it is
-already populated by the time TextContext is constructed in llm.py — even
-though route handlers and the pipeline live in different modules, ContextVar
-values propagate through the whole async call chain within the same task."""
+"""The OTel context holding the current request's HTTP server span (or None),
+which continues the inbound W3C traceparent where there is one. For a probe it
+is the inbound context itself, and with tracing off it is None. Set by the
+``request_session`` middleware, so it is already populated by the time
+TextContext is constructed in llm.py — ``call_next`` runs the route in a child
+task, which inherits a copy of the context set here."""
+
+_request_id_ctx: ContextVar[str | None] = ContextVar(
+    "max.serve.request_id_ctx", default=None
+)
+"""The HTTP request's ID. ``/v1/completions`` and ``/v1/embeddings`` take one
+pipeline request per prompt, whose ``RequestID`` and ``max.request_id`` span
+attribute append ``_<index>`` to this."""
+
+_batch_id_ctx: ContextVar[int | None] = ContextVar(
+    "max.serve.batch_id_ctx", default=None
+)
+"""The ID of the forward pass the text-generation scheduler is executing, or
+None. It is set around ``pipeline.execute`` only when tracing is enabled; the
+API process and the disaggregated workers never set it."""
+
+
+_trace_level_header_enabled = False
+"""Whether per-request trace levels are honored in this process: the API
+server reads the ``x-max-trace-level`` header and the model worker may arm
+captures. Set by :func:`configure_tracing` when it installs a provider and
+``kernel_trace_headers`` is on. Read it through the module: that call
+rebinds it."""
+
+
+def _tracing_enabled() -> bool:
+    """Whether a real TracerProvider is installed, vs. the OTel no-op default."""
+    return not isinstance(
+        trace.get_tracer_provider(), trace.ProxyTracerProvider
+    )
+
+
+def _capture_request_context(
+    request_id: str, inbound: OtelContext, server_span: trace.Span | None
+) -> None:
+    """Sets the ambient correlation IDs for the request being handled.
+
+    ``request_session`` calls this, through ``start_server_span``, before
+    ``call_next``, so the downstream task's context copy carries them onto
+    every route's records. The span is not made current: the OTLP log handler
+    would stamp its trace ID, the caller's where a traceparent arrived, onto
+    records sent to Modular.
+    """
+    _request_id_ctx.set(request_id)
+    request_trace_ctx.set(
+        trace.set_span_in_context(server_span, inbound)
+        if server_span is not None
+        else inbound
+    )
 
 
 def _getCloudProvider() -> str:
@@ -108,27 +194,25 @@ def _getWebUserId() -> str:
         return ""
 
 
-logs_resource = Resource.create(
-    {
-        "event.domain": "serve",
-        "telemetry.session": uuid.uuid4().hex,
-        "web.user.id": _getWebUserId(),
-        "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
-        "os.type": platform.system(),
-        "os.version": platform.release(),
-        "cpu.description": platform.processor(),
-        "cpu.arch": platform.architecture()[0],
-        "system.cloud": _getCloudProvider(),
-        "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
-    }
-)
+_LOGS_RESOURCE_ATTRS = {
+    "event.domain": "serve",
+    "telemetry.session": uuid.uuid4().hex,
+    "web.user.id": _getWebUserId(),
+    "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
+    "os.type": platform.system(),
+    "os.version": platform.release(),
+    "cpu.description": platform.processor(),
+    "cpu.arch": platform.architecture()[0],
+    "system.cloud": _getCloudProvider(),
+    "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
+}
+logs_resource = Resource.create(_LOGS_RESOURCE_ATTRS)
 
-metrics_resource = Resource.create(
-    {
-        "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
-        "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
-    }
-)
+_METRICS_RESOURCE_ATTRS = {
+    "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
+    "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
+}
+metrics_resource = Resource.create(_METRICS_RESOURCE_ATTRS)
 
 
 def _log_spaced_buckets(
@@ -191,6 +275,21 @@ HISTOGRAM_GIB_PER_S_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
     0.1, 800.0, 2.0
 )
 
+# Encoded media payload sizes. Log-spaced 1 KiB to 1 GiB at ratio 2 (22
+# boundaries): the per-request media budget defaults to 100 MiB and a single
+# item can use all of it, and the limit is disableable (Settings.max_media_bytes
+# is ``ge=0``), so the ladder clears the default with headroom.
+HISTOGRAM_BYTES_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    1024.0, 1024.0**3, 2.0
+)
+
+# Image pixel counts (width * height), pre-resize. 19 boundaries, 1 K to 100 M:
+# 1 K covers a 32x32 thumbnail, 100 M a 10000x10000 image, above which the
+# decoded-size estimate rejects it against the default budget anyway.
+HISTOGRAM_PIXELS_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    1024.0, 1.0e8, 2.0
+)
+
 # Per-metric histogram bucket boundaries, matched by exact instrument name.
 #
 # Each Histogram instrument is matched to exactly one View by its exact name, so
@@ -211,18 +310,23 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.di.api_pre_tokenize": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.di.api_submit": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.di.mw_queue_wait": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.decode_admission_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.decode_send_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.dispatch_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.prefill_span": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.reply_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.prefill_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.ce_pool_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.decode_postprocess_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.early_sync_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.handoff_to_first_token_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.structured_output.grammar_build_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.video.encoding_time_milliseconds": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.vision.image_admission_decode_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.media.resolve_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_read_latency_max": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
@@ -249,13 +353,22 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.di.ce_preempted_tg_pending_count": HISTOGRAM_COUNT_BUCKETS,
     # Batch size
     "maxserve.batch_size": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # Real tool inventories sit in the low tens; 512 clears all of them.
+    "maxserve.tool_call.tools_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # MiniMax-M3's video processor samples up to 512 frames per clip
     # (see max_private/minimax_m3/vision_processor.py); this bucket set's
     # upper bound (512) matches exactly.
     "maxserve.video.frames_per_clip": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # Media items of one kind on a single request; the same ladder as batch
+    # size, since both count per-request work items.
+    "maxserve.media.items_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Throughput (tokens/s)
     "maxserve.batch_prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
     "maxserve.batch_generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
+    # Encoded media payload bytes
+    "maxserve.media.item_size": HISTOGRAM_BYTES_BUCKETS,
+    # Image pixel counts
+    "maxserve.media.image_size": HISTOGRAM_PIXELS_BUCKETS,
     # Transfer throughput (GiB/s)
     "maxserve.dkv.nixl_read_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
     "maxserve.dkv.nixl_write_gib_per_s": HISTOGRAM_GIB_PER_S_BUCKETS,
@@ -271,37 +384,10 @@ def get_log_level(settings: Settings) -> int | str | None:
         else None
     )
 
-    if settings.disable_telemetry:
+    if _telemetry_disabled(settings):
         otlp_level = None
 
     return otlp_level
-
-
-# Create a logger that buffers logs in memory and prints them to the console in batches.
-# The returned logger is a no op if logging has not yet been configured.
-def get_batch_logger(
-    parent_logger: logging.Logger, capacity: int = 10
-) -> logging.Logger:
-    batch_logger = logging.getLogger(parent_logger.name)
-    console_handlers = [
-        h
-        for h in logging.getLogger().handlers
-        if type(h) is logging.StreamHandler
-    ]
-    memory_handler = logging.handlers.MemoryHandler(
-        capacity=capacity,
-        target=console_handlers[0] if len(console_handlers) > 0 else None,
-    )
-    batch_logger.addHandler(memory_handler)
-    batch_logger.propagate = False
-    return batch_logger
-
-
-# Force a flush of the batch given logger.
-def flush_batch_logger(logger: logging.Logger) -> None:
-    for handler in logger.handlers:
-        if type(handler) is logging.handlers.MemoryHandler:
-            handler.flush()
 
 
 COLOR_MAP = {
@@ -326,14 +412,77 @@ class PrefixFormatter(logging.Formatter):
         return f"{self.prefix} {formatted_message}"
 
 
+def _correlation_fields() -> dict[str, str | int]:
+    """Returns the ambient request and batch correlation IDs for a log line.
+
+    ``dd.trace_id`` is the key Datadog's correlator reads, as 32 hex digits.
+    No span ID: for a probe, ``request_trace_ctx`` holds the caller's context,
+    so one would attach MAX's logs to the caller's span.
+    """
+    fields: dict[str, str | int] = {}
+    request_id = _request_id_ctx.get()
+    if request_id is not None:
+        fields["request_id"] = request_id
+    batch_id = _batch_id_ctx.get()
+    if batch_id is not None:
+        fields["batch_id"] = batch_id
+    context = request_trace_ctx.get()
+    if context is not None:
+        span_context = trace.get_current_span(context).get_span_context()
+        if span_context.is_valid:
+            fields["dd.trace_id"] = trace.format_trace_id(span_context.trace_id)
+    return fields
+
+
+class _CorrelatedJsonFormatter(jsonlogger.JsonFormatter):
+    """Renders the correlation IDs into this handler's JSON only.
+
+    ``configure_logging`` uses it only with tracing on. The IDs go into the
+    output dict, never onto the record: every handler shares one record, and
+    the OTLP handler exports its attributes to Modular, where an inbound
+    trace ID is the caller's data.
+    """
+
+    def add_fields(
+        self,
+        log_record: dict[str, object],
+        record: logging.LogRecord,
+        message_dict: dict[str, object],
+    ) -> None:
+        super().add_fields(log_record, record, message_dict)
+        log_record.update(_correlation_fields())
+
+
+class _RequestIdJsonFormatter(jsonlogger.JsonFormatter):
+    """Renders only ``request_id``, the same way, for tracing off."""
+
+    def add_fields(
+        self,
+        log_record: dict[str, object],
+        record: logging.LogRecord,
+        message_dict: dict[str, object],
+    ) -> None:
+        super().add_fields(log_record, record, message_dict)
+        request_id = _request_id_ctx.get()
+        if request_id is not None:
+            log_record["request_id"] = request_id
+
+
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
 # Note that the color is not propagated to subprocesses. eg: ModelWorker
 def configure_logging(
     settings: Settings, color: str | None = None, silent: bool = True
 ) -> None:
+    # Structured logs carry request_id; only traced requests capture the
+    # trace context, so without tracing there is no dd.trace_id field.
+    correlate = _tracing_enabled()
+    json_formatter = (
+        _CorrelatedJsonFormatter if correlate else _RequestIdJsonFormatter
+    )
+    trace_id_field = " %(dd.trace_id)s" if correlate else ""
     otlp_level = get_log_level(settings)
-    egress_enabled = not settings.disable_telemetry
+    egress_enabled = not _telemetry_disabled(settings)
 
     logging_handlers: list[logging.Handler] = []
 
@@ -382,8 +531,8 @@ def configure_logging(
         console_handler = logging.StreamHandler()
         console_formatter: logging.Formatter
         if settings.structured_logging:
-            console_formatter = jsonlogger.JsonFormatter(
-                f"{color_code}%(levelname)s: %(message)s %(request_id)s %(batch_id)s{color_terminator}",
+            console_formatter = json_formatter(
+                f"{color_code}%(levelname)s: %(message)s %(request_id)s %(batch_id)s{trace_id_field}{color_terminator}",
                 timestamp=True,
             )
         else:
@@ -414,8 +563,8 @@ def configure_logging(
         file_handler = logging.FileHandler(settings.logs_file_path)
         file_formatter: logging.Formatter
         if settings.structured_logging:
-            file_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(message)s %(request_id)s %(batch_id)s",
+            file_formatter = json_formatter(
+                f"%(levelname)s %(message)s %(request_id)s %(batch_id)s{trace_id_field}",
                 timestamp=True,
             )
         else:
@@ -550,7 +699,9 @@ class _ExponentialShadowOnlyReader(PeriodicExportingMetricReader):
     shadow histograms (plus counters/gauges) to that endpoint, keeping the
     two histogram representations on separate destinations for MXSERV-258
     side-by-side comparison rather than duplicating the explicit-bucket one
-    there too.
+    there too. That separation assumes this endpoint differs from the one the
+    primary reader resolves: aimed at the same collector, counters and gauges
+    arrive twice, cumulative from that reader and delta from this one.
     """
 
     def _receive_metrics(
@@ -606,19 +757,38 @@ def _histogram_views(settings: Settings) -> list[View]:
     return views
 
 
+@contextmanager
+def _sdk_disable_masked() -> Iterator[None]:
+    """Hides ``OTEL_SDK_DISABLED`` from an SDK provider constructor.
+
+    ``MeterProvider`` would otherwise return no-op instruments, emptying the
+    local Prometheus surface and making every measurement log an error.
+    Egress is decided by ``_telemetry_disabled`` and the readers below.
+    """
+    saved = os.environ.pop("OTEL_SDK_DISABLED", None)
+    try:
+        yield
+    finally:
+        if saved is not None:
+            os.environ["OTEL_SDK_DISABLED"] = saved
+
+
+def _metric_exporter() -> OTLPMetricExporter:
+    """Builds the metric exporter, falling back to Modular's collector."""
+    if _operator_set_endpoint("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"):
+        return OTLPMetricExporter()
+    return OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+
+
 def configure_metrics(settings: Settings) -> None:
-    egress_enabled = not settings.disable_telemetry
+    egress_enabled = not _telemetry_disabled(settings)
     configure_histogram_shadow_emission(bool(settings.otlp_metrics_endpoint))
 
     meter_readers: list[MetricReader] = [
         _SkipExponentialHistogramsPrometheusReader(True)
     ]
     if egress_enabled:
-        meter_readers.append(
-            PeriodicExportingMetricReader(
-                OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
-            )
-        )
+        meter_readers.append(PeriodicExportingMetricReader(_metric_exporter()))
     if settings.otlp_metrics_endpoint:
         meter_readers.append(
             _ExponentialShadowOnlyReader(
@@ -632,55 +802,259 @@ def configure_metrics(settings: Settings) -> None:
             )
         )
 
-    set_meter_provider(
-        MeterProvider(
+    with _sdk_disable_masked():
+        provider = MeterProvider(
             metric_readers=meter_readers,
             resource=metrics_resource,
             views=_histogram_views(settings),
         )
-    )
+    set_meter_provider(provider)
 
     logger = logging.getLogger()
-    if settings.disable_telemetry:
-        logger.info("Metrics disabled.")
+    if not egress_enabled:
+        logger.info("OTLP metrics export disabled.")
     else:
         logger.info("Metrics initialized.")
 
 
-def configure_tracing(settings: Settings) -> None:
-    if not settings.disable_telemetry:
-        # If the user set either standard OTel env var (e.g. for an
-        # in-cluster DD agent), let OTLPSpanExporter resolve the endpoint
-        # itself: its own env-var handling appends the signal-specific
-        # "/v1/traces" path to OTEL_EXPORTER_OTLP_ENDPOINT, which a plain
-        # os.environ.get() read here would not. Only fall back to the shared
-        # Modular telemetry endpoint when neither var is set.
-        user_configured_endpoint = os.environ.get(
-            "OTEL_EXPORTER_OTLP_ENDPOINT"
-        ) or os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
-        exporter = (
-            OTLPSpanExporter()
-            if user_configured_endpoint
-            else OTLPSpanExporter(endpoint=otelBaseUrl + "/v1/traces")
+_HTTP_PROTOBUF = "http/protobuf"
+_GRPC = "grpc"
+
+
+def _traces_protocol() -> str:
+    """Returns the OTLP protocol to export spans over.
+
+    Reads OTel's own ``OTEL_EXPORTER_OTLP_PROTOCOL`` convention, so an
+    operator configures MAX Serve the way they configure anything else
+    speaking OTLP, and the traces-specific variable wins over the generic
+    one. Unset leaves MAX Serve on ``http/protobuf``, which is the only
+    protocol it has ever spoken. ``http/json`` is in the specification but
+    has no exporter in the Python SDK, so it is rejected with everything
+    else unrecognised.
+    """
+    configured = os.environ.get(
+        "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
+    ) or os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL")
+    protocol = (configured or _HTTP_PROTOBUF).strip().lower()
+    if protocol in (_GRPC, _HTTP_PROTOBUF):
+        return protocol
+    logging.getLogger(__name__).warning(
+        "Unsupported OTLP traces protocol %r; exporting over %s.",
+        protocol,
+        _HTTP_PROTOBUF,
+    )
+    return _HTTP_PROTOBUF
+
+
+def _tls_by_omission() -> str | None:
+    """Returns the traces endpoint that gRPC will dial over TLS unasked.
+
+    The SDK infers a plaintext channel only from an explicit ``http://``
+    scheme, and ``urlparse`` reads a bare ``agent:4317`` as a URL whose
+    scheme is the hostname — so the obvious in-cluster spelling is dialled
+    over TLS and fails against a plaintext collector. An operator who set
+    the insecure variable chose their transport, so leave them alone.
+    """
+    if os.environ.get("OTEL_EXPORTER_OTLP_TRACES_INSECURE") or os.environ.get(
+        "OTEL_EXPORTER_OTLP_INSECURE"
+    ):
+        return None
+    endpoint = os.environ.get(
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+    ) or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint or urlparse(endpoint).scheme in ("http", "https"):
+        return None
+    return endpoint
+
+
+def _grpc_span_exporter() -> SpanExporter:
+    """Builds the gRPC span exporter, tolerating an HTTP-shaped environment.
+
+    The imports are function-local, against the repository's top-level
+    import rule, because they cost approximately 0.6s of cold start and 7MB
+    of resident memory. Every import of this module pays that, while only a
+    deployment that asks for gRPC needs it.
+    """
+    from grpc import Compression
+    from opentelemetry.exporter.otlp.proto.grpc.exporter import (
+        InvalidCompressionValueException,
+    )
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+        OTLPSpanExporter as OTLPGrpcSpanExporter,
+    )
+
+    logger = logging.getLogger(__name__)
+    endpoint = _tls_by_omission()
+    if endpoint is not None:
+        logger.warning(
+            "OTLP traces endpoint %r has no http:// or https:// scheme, so "
+            "spans will be exported over TLS. Write it as http://%s for a "
+            "plaintext collector, or set OTEL_EXPORTER_OTLP_TRACES_INSECURE.",
+            endpoint,
+            endpoint,
         )
-        provider = TracerProvider(resource=logs_resource)
+
+    try:
+        return OTLPGrpcSpanExporter()
+    except InvalidCompressionValueException:
+        # gRPC accepts only gzip, where HTTP also takes none and deflate.
+        # The generic variable is shared with metrics and logs, which stay
+        # on HTTP, so a setting that is valid for them must not take the
+        # server down when traces move to gRPC.
+        logger.warning(
+            "OTLP traces compression %r is unavailable over gRPC, which "
+            "accepts only gzip; exporting spans uncompressed.",
+            os.environ.get("OTEL_EXPORTER_OTLP_TRACES_COMPRESSION")
+            or os.environ.get("OTEL_EXPORTER_OTLP_COMPRESSION"),
+        )
+        return OTLPGrpcSpanExporter(compression=Compression.NoCompression)
+
+
+def _span_exporter() -> SpanExporter:
+    """Builds the span exporter, leaving the endpoint to the SDK."""
+    if _traces_protocol() == _GRPC:
+        return _grpc_span_exporter()
+    return OTLPSpanExporter()
+
+
+def configure_tracing(settings: Settings, max_links: int | None = None) -> None:
+    """Installs the process's tracer provider if it is to export spans.
+
+    Args:
+        settings: Server settings.
+        max_links: A per-span link limit to use in place of the SDK's.
+    """
+    global _trace_level_header_enabled
+    _trace_level_header_enabled = False
+    # Spans cost work on every request, so only the traces-specific variable
+    # turns them on: the generic endpoint may be set for metrics alone.
+    telemetry_on = not _telemetry_disabled(settings)
+    export_spans = telemetry_on and bool(
+        os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+    )
+    if export_spans:
+        provider = TracerProvider(
+            resource=logs_resource,
+            span_limits=(
+                SpanLimits(max_links=max_links)
+                if max_links is not None
+                else None
+            ),
+        )
+        exporter = _span_exporter()
         provider.add_span_processor(BatchSpanProcessor(exporter))
         set_tracer_provider(provider)
+        _trace_level_header_enabled = settings.kernel_trace_headers
 
     logger = logging.getLogger()
-    if settings.disable_telemetry:
-        logger.info("Tracing disabled.")
-    else:
+    if export_spans:
         logger.info("Tracing initialized.")
+    elif not telemetry_on:
+        logger.info("Tracing disabled.")
+    elif os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"):
+        # The generic endpoint turned traces on before, so say why they stop.
+        logger.warning(
+            "OTEL_EXPORTER_OTLP_ENDPOINT is set but spans need"
+            " OTEL_EXPORTER_OTLP_TRACES_ENDPOINT; not exporting traces."
+        )
+    else:
+        logger.info(
+            "Tracing off; set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT to export"
+            " spans."
+        )
 
 
 _kernel_trace_level = KernelTraceLevel.OFF
 
 
 def batch_spans_enabled() -> bool:
-    """Returns whether ``max.batch`` spans should be emitted, i.e. the model
+    """Returns whether ``max.batch`` spans should be emitted; that is, the model
     worker was configured with ``kernel_trace_level`` at ``batch`` or above."""
     return _kernel_trace_level >= KernelTraceLevel.BATCH
+
+
+def _sampled_link(parent: OtelContext) -> trace.Link | None:
+    """Returns a link to the span in ``parent``, or None when it has none or
+    it is not sampled, since an unsampled span is never exported.
+
+    Args:
+        parent: A request's context, as extracted from its trace carrier.
+    """
+    span_context = trace.get_current_span(parent).get_span_context()
+    if span_context.is_valid and span_context.trace_flags.sampled:
+        return trace.Link(span_context)
+    return None
+
+
+class _BatchLinks:
+    """The links from the scheduler's ``max.batch`` spans to their members'
+    sampled request spans, kept from admission until each request leaves.
+
+    Args:
+        link_every_member: Whether every member is linked, as at global level
+            ``batch`` or higher, rather than only traced members.
+        max_links: The most links one ``max.batch`` span keeps.
+    """
+
+    def __init__(self, link_every_member: bool, max_links: int) -> None:
+        self._link_every_member = link_every_member
+        self._max_links = max_links
+        self._links: dict[RequestID, trace.Link] = {}
+
+    def admit(
+        self, request_id: RequestID, parent: OtelContext | None, traced: bool
+    ) -> None:
+        """Keeps a link to a new request's span if its passes link to it.
+
+        Args:
+            request_id: The request.
+            parent: The request's context, from its trace carrier.
+            traced: Whether the request is traced.
+        """
+        if parent is None or not (traced or self._link_every_member):
+            return
+        if (link := _sampled_link(parent)) is not None:
+            self._links[request_id] = link
+
+    def for_pass(
+        self,
+        batch: Sequence[TextContext],
+        is_traced: Callable[[RequestID], bool] | None,
+    ) -> list[trace.Link]:
+        """Returns a pass's links, and over the cap keeps traced members'
+        first, so the requests that asked for the pass's capture can find it.
+
+        Args:
+            batch: The pass's requests.
+            is_traced: Says whether a request is traced, as the scheduler's
+                kernel capture does, or None without a capture.
+        """
+        members = [
+            ctx.request_id for ctx in batch if ctx.request_id in self._links
+        ]
+        if len(members) > self._max_links and is_traced is not None:
+            members.sort(key=lambda r: not is_traced(r))
+        return [self._links[r] for r in members[: self._max_links]]
+
+    def drop_untraced(self, request_ids: Iterable[RequestID]) -> None:
+        """Drops the links of running requests that are no longer traced,
+        which only traced requests have below global level ``batch``."""
+        if not self._link_every_member:
+            for request_id in request_ids:
+                self._links.pop(request_id, None)
+
+    def drop(self, request_id: RequestID) -> None:
+        """Drops the link of a request that has left."""
+        self._links.pop(request_id, None)
+
+
+def _exit_on_sigterm(signum: int, frame: FrameType | None) -> None:
+    """Raises ``SystemExit`` so that SIGTERM runs the process's exit hooks.
+
+    The profiler plugin writes the libkineto trace from an exit hook, which
+    SIGTERM's default action skips.
+    """
+    raise SystemExit(128 + signum)
 
 
 def configure_kernel_tracing(settings: Settings) -> None:
@@ -689,7 +1063,8 @@ def configure_kernel_tracing(settings: Settings) -> None:
     Must be called in the model worker process before ``InferenceSession``
     is constructed so that the libkineto auto-start picks up the enabled
     flag. Also records the level read by :func:`batch_spans_enabled`, so it
-    must run before the scheduler starts.
+    must run before the scheduler is built. At ``kernel`` level it installs
+    a SIGTERM handler, so it must run on the main thread.
 
     Args:
         settings: Server settings carrying ``kernel_trace_level``.
@@ -705,6 +1080,10 @@ def configure_kernel_tracing(settings: Settings) -> None:
         # the libkineto auto-start that fires on InferenceSession construction.
         set_gpu_profiling_state("detailed")
         os.environ.setdefault("MODULAR_MAX_DEBUG_PROFILING_ENABLED", "true")
+        signal.signal(signal.SIGTERM, _exit_on_sigterm)
+        # Once exit starts, SIGTERM must not interrupt the trace write.
+        # Finalization resets a Python handler to SIG_DFL but keeps SIG_IGN.
+        atexit.register(signal.signal, signal.SIGTERM, signal.SIG_IGN)
     else:
         # OP level: op-level NVTX user-annotation ranges only.
         set_gpu_profiling_state("on")
@@ -714,53 +1093,68 @@ def configure_kernel_tracing(settings: Settings) -> None:
     )
 
 
+def _string_attrs(pairs: Mapping[str, object]) -> list[dict[str, object]]:
+    """Renders a mapping as OTLP string-valued key/value attributes."""
+    return [
+        {"key": key, "value": {"stringValue": str(value)}}
+        for key, value in pairs.items()
+    ]
+
+
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
 # (see MAXSERV-904)
 def send_telemetry_log(model_name: str) -> None:
-    request_body = f"""{{
-  "resourceLogs": [
-    {{
-      "resource": {{
-        "attributes": [
-          {{"key": "deployment.model", "value": {{"stringValue": "{model_name}"}}}},
-          {{"key": "web.user.id", "value": {{"stringValue": "{logs_resource.attributes["web.user.id"]}"}}}},
-          {{"key": "enduser.id", "value": {{"stringValue": "{logs_resource.attributes["enduser.id"]}"}}}},
-          {{"key": "deployment.id", "value": {{"stringValue": "{logs_resource.attributes["deployment.id"]}"}}}},
-          {{"key": "os.type", "value": {{"stringValue": "{logs_resource.attributes["os.type"]}"}}}},
-          {{"key": "os.version", "value": {{"stringValue": "{logs_resource.attributes["os.version"]}"}}}},
-          {{"key": "cpu.description", "value": {{"stringValue": "{logs_resource.attributes["cpu.description"]}"}}}},
-          {{"key": "cpu.arch", "value": {{"stringValue": "{logs_resource.attributes["cpu.arch"]}"}}}},
-          {{"key": "system.cloud", "value": {{"stringValue": "{logs_resource.attributes["system.cloud"]}"}}}},
-          {{"key": "service.name", "value": {{"stringValue": "unknown_service"}}}},
-          {{"key": "telemetry.sdk.language", "value": {{"stringValue": "python"}}}},
-          {{"key": "telemetry.sdk.version", "value": {{"stringValue": "0.0.0"}}}},
-          {{"key": "telemetry.sdk.name", "value": {{"stringValue": "opentelemetry"}}}}
+    attrs = logs_resource.attributes
+    body = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": _string_attrs(
+                        {
+                            "deployment.model": model_name,
+                            "web.user.id": attrs["web.user.id"],
+                            "enduser.id": attrs["enduser.id"],
+                            "deployment.id": attrs["deployment.id"],
+                            "os.type": attrs["os.type"],
+                            "os.version": attrs["os.version"],
+                            "cpu.description": attrs["cpu.description"],
+                            "cpu.arch": attrs["cpu.arch"],
+                            "system.cloud": attrs["system.cloud"],
+                            "service.name": attrs["service.name"],
+                            "telemetry.sdk.language": "python",
+                            "telemetry.sdk.version": "0.0.0",
+                            "telemetry.sdk.name": "opentelemetry",
+                        }
+                    )
+                },
+                "scopeLogs": [
+                    {
+                        "logRecords": [
+                            {
+                                "attributes": _string_attrs(
+                                    {
+                                        "event.domain": "modular",
+                                        "event.name": "serve.telemetry.log",
+                                    }
+                                ),
+                                "body": {"stringValue": ""},
+                                "observedTimeUnixNano": str(
+                                    int(time() * 1_000_000_000)
+                                ),
+                                "severityNumber": 9,
+                                "severityText": "INFO",
+                            }
+                        ],
+                        "scope": {"name": "modular_logger"},
+                    }
+                ],
+            }
         ]
-      }},
-      "scopeLogs": [
-        {{
-          "logRecords": [
-            {{
-              "attributes": [
-                {{"key": "event.domain", "value": {{"stringValue": "modular"}}}},
-                {{"key": "event.name", "value": {{"stringValue": "serve.telemetry.log"}}}}
-              ],
-              "body": {{"stringValue": ""}},
-              "observedTimeUnixNano": "{int(time() * 1_000_000_000)}",
-              "severityNumber": 9,
-              "severityText": "INFO"
-            }}
-          ],
-          "scope": {{"name": "modular_logger"}}
-        }}
-      ]
-    }}
-  ]
-}}"""
+    }
 
     requests.post(
         otelBaseUrl + "/v1/logs",
-        data=request_body,
+        data=json.dumps(body),
         headers={"Content-Type": "application/json"},
         timeout=2,
     )

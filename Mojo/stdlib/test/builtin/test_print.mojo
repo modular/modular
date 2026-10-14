@@ -53,7 +53,7 @@ struct PrintChecker(Movable):
         return self^
 
     def stream(self) -> FileDescriptor:
-        return FileDescriptor(self.tmp._file_handle._get_raw_fd())
+        return FileDescriptor(self.tmp._file_handle)
 
     def check_line(mut self, expected: String, msg: String = "") raises:
         print(end="", file=self.stream(), flush=True)

@@ -83,13 +83,11 @@ def _transpose_inplace_8x8[
     var row6 = bufloat0.raw_load[width=8](48)
     var row7 = bufloat0.raw_load[width=8](56)
 
-    @__parameter
     def _apply_permute_0(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 8, 1, 9, 4, 12, 5, 13](other)
 
-    @__parameter
     def _apply_permute_1(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
@@ -104,13 +102,11 @@ def _transpose_inplace_8x8[
     var k6 = _apply_permute_0(row6, row7)
     var k7 = _apply_permute_1(row6, row7)
 
-    @__parameter
     def _apply_permute_2(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 1, 8, 9, 4, 5, 12, 13](other)
 
-    @__parameter
     def _apply_permute_3(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
@@ -125,13 +121,11 @@ def _transpose_inplace_8x8[
     var k570 = _apply_permute_2(k5, k7)
     var k571 = _apply_permute_3(k5, k7)
 
-    @__parameter
     def _apply_permute_4(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 1, 2, 3, 8, 9, 10, 11](other)
 
-    @__parameter
     def _apply_permute_5(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
@@ -165,7 +159,6 @@ def _transpose_inplace_16x16[
     comptime assert cols == 16
     comptime assert bufloat0.flat_rank == 2
 
-    @__parameter
     def _apply_permute_0(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -173,7 +166,6 @@ def _transpose_inplace_16x16[
             0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29
         ](other)
 
-    @__parameter
     def _apply_permute_1(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -181,7 +173,6 @@ def _transpose_inplace_16x16[
             2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31
         ](other)
 
-    @__parameter
     def _apply_permute_2(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -189,7 +180,6 @@ def _transpose_inplace_16x16[
             0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29
         ](other)
 
-    @__parameter
     def _apply_permute_3(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -197,7 +187,6 @@ def _transpose_inplace_16x16[
             2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31
         ](other)
 
-    @__parameter
     def _apply_permute_4(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -205,7 +194,6 @@ def _transpose_inplace_16x16[
             0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
         ](other)
 
-    @__parameter
     def _apply_permute_5(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -213,7 +201,6 @@ def _transpose_inplace_16x16[
             4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
         ](other)
 
-    @__parameter
     def _apply_permute_6(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -221,7 +208,6 @@ def _transpose_inplace_16x16[
             0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
         ](other)
 
-    @__parameter
     def _apply_permute_7(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -370,14 +356,15 @@ def transpose_inplace[
     comptime assert rows == buf.static_shape[0]
     comptime assert cols == buf.static_shape[1]
 
-    comptime if rows == 4:
-        _transpose_inplace_4x4[rows, cols, dtype](buf)
-    elif rows == 8:
-        _transpose_inplace_8x8[rows, cols, dtype](buf)
-    elif rows == 16:
-        _transpose_inplace_16x16[rows, cols, dtype](buf)
-    else:
-        _transpose_inplace_naive[rows, cols, dtype](buf)
+    comptime match rows:
+        case 4:
+            _transpose_inplace_4x4[rows, cols, dtype](buf)
+        case 8:
+            _transpose_inplace_8x8[rows, cols, dtype](buf)
+        case 16:
+            _transpose_inplace_16x16[rows, cols, dtype](buf)
+        case _:
+            _transpose_inplace_naive[rows, cols, dtype](buf)
 
 
 def _permute_data[
@@ -647,7 +634,7 @@ def _transpose_2d_parallel_tiled[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime if rank < 2:
         return
@@ -711,7 +698,7 @@ def transpose_2d[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Transposes the inner two dimensions of a simplified rank-2 tensor.
 
@@ -772,7 +759,7 @@ def _transpose_4d_swap_middle_helper[
     M: Int,
     N: Int,
     K: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     var work = L * M * N
     var total_size = L * M * N * K
@@ -835,7 +822,7 @@ def transpose_4d_swap_middle[
     perms: UnsafePointer[Int, _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Transposes the middle two axes of a rank-4 tensor.
 
@@ -963,7 +950,7 @@ def transpose_trivial_memcpy[
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Copies the input buffer to the output buffer as a trivial transpose.
 
@@ -1019,7 +1006,7 @@ def _copy_with_strides[
     output_strides: UnsafePointer[mut=False, Int, _],
     input_offset: Int,
     output_offset: Int,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """
     Copy data from `input_ptr` to `output_ptr`, starting at corresponding
@@ -1157,7 +1144,7 @@ def transpose_strided[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """Transposes a tensor with arbitrary strides via a generic strided copy.
 
@@ -1236,7 +1223,7 @@ def transpose[
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     perms: UnsafePointer[Int, _],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in

@@ -19,12 +19,16 @@ import logging
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import cache_dtype_for_encoding
@@ -47,6 +51,7 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
 )
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
+from ..gemma4.block_spec_adapters import SLIDING_KV
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
 from ..speculators_common.draft_config import construct_draft_kv_params
 from ..speculators_common.weight_adapters import (
@@ -88,17 +93,21 @@ class UnifiedDSparkGemma4_31BInputs(UnifiedSpecDecodeInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
         )
         return buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=True
+            include_in_thinking_phase=True,
         )
 
 
 class UnifiedDSparkGemma4_31BModel(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedDSparkGemma4_31BConfig],
 ):
     """Unified speculators-DSpark Gemma4: target + draft in one compiled
     graph."""
@@ -244,10 +253,9 @@ class UnifiedDSparkGemma4_31BModel(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedDSparkGemma4_31BConfig,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDSparkGemma4_31BConfig)
 
         nn_model = UnifiedDSparkGemma4_31BModule(
             model_config,
@@ -288,8 +296,30 @@ class UnifiedDSparkGemma4_31BModel(
             "unified_dspark_gemma4_31b",
             input_types=nn_model.input_types(),
         ) as graph:
-            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(inputs)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target", "full_attention"),
+                passthrough_kv={
+                    SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+                },
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                draft_probs_full=graph_inputs.draft_probs_full,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
             graph.output(*outputs)
 
         return graph, weights_registry

@@ -13,11 +13,14 @@
 
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 import python.runfiles
 from click.testing import CliRunner
 from max._entrypoints import pipelines
+from max.experimental.cascade.serve import main as cascade_main
+from max.pipelines.lib import PipelineArgs
 
 
 def test_main_help() -> None:
@@ -95,11 +98,11 @@ def test_serve_cascade_context_options_published() -> None:
     result = runner.invoke(pipelines.main, ["serve", "--help"])
     assert result.exit_code == 0
     for flag in (
-        "--transport",
-        "--local-cpu-workers",
-        "--local-gpu-workers",
-        "--remote-cpu-workers",
-        "--remote-gpu-workers",
+        "--cascade-transport",
+        "--cascade-local-cpu-workers",
+        "--cascade-local-gpu-workers",
+        "--cascade-remote-cpu-workers",
+        "--cascade-remote-gpu-workers",
     ):
         assert flag in result.output
 
@@ -107,11 +110,11 @@ def test_serve_cascade_context_options_published() -> None:
 @pytest.mark.parametrize(
     "flag",
     [
-        "--transport=http",
-        "--local-cpu-workers=1",
-        "--local-gpu-workers=1",
-        "--remote-cpu-workers=a:9001",
-        "--remote-gpu-workers=a:9001",
+        "--cascade-transport=http",
+        "--cascade-local-cpu-workers=1",
+        "--cascade-local-gpu-workers=1",
+        "--cascade-remote-cpu-workers=a:9001",
+        "--cascade-remote-gpu-workers=a:9001",
     ],
 )
 def test_serve_cascade_only_flags_require_cascade(flag: str) -> None:
@@ -138,15 +141,15 @@ def test_serve_cascade_only_flags_allowed_with_cascade() -> None:
         [
             "serve",
             "--cascade",
-            "--transport",
+            "--cascade-transport",
             "grpc",
-            "--local-cpu-workers",
+            "--cascade-local-cpu-workers",
             "1",
-            "--local-gpu-workers",
+            "--cascade-local-gpu-workers",
             "0",
-            "--remote-cpu-workers",
+            "--cascade-remote-cpu-workers",
             "a:1",
-            "--remote-gpu-workers",
+            "--cascade-remote-gpu-workers",
             "b:1",
         ],
     )
@@ -154,3 +157,49 @@ def test_serve_cascade_only_flags_allowed_with_cascade() -> None:
     # check, never the cascade guard.
     assert "requires --cascade" not in result.output
     assert "No model specified" in result.output
+
+
+def _write_cascade_recipe(tmp_path: Path) -> Path:
+    recipe = tmp_path / "cascade.yaml"
+    recipe.write_text("cascade: true\nmodel:\n  model_path: echo:org/model\n")
+    return recipe
+
+
+def test_serve_recipe_enables_cascade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    served: list[str] = []
+
+    async def fake_serve(
+        *, pipeline_args: PipelineArgs, **kwargs: object
+    ) -> None:
+        served.append(pipeline_args.model_path)
+
+    monkeypatch.setattr(cascade_main, "serve", fake_serve)
+    result = CliRunner().invoke(
+        pipelines.main,
+        ["serve", "--config-file", str(_write_cascade_recipe(tmp_path))],
+    )
+    assert result.exit_code == 0, result.output
+    assert served == ["echo:org/model"]
+
+
+def test_serve_no_cascade_flag_overrides_recipe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    served: list[str] = []
+
+    async def fake_serve(**kwargs: object) -> None:
+        served.append("cascade")
+
+    monkeypatch.setattr(cascade_main, "serve", fake_serve)
+    CliRunner().invoke(
+        pipelines.main,
+        [
+            "serve",
+            "--no-cascade",
+            "--config-file",
+            str(_write_cascade_recipe(tmp_path)),
+        ],
+    )
+    assert served == []

@@ -24,7 +24,7 @@ import logging
 import pathlib
 from collections.abc import Iterator
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import pytest
@@ -49,6 +49,10 @@ from max.nn.kv_cache import (
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.dflash_llama3 import DFlashLlama3
+from max.pipelines.architectures.gemma4.block_spec_adapters import (
+    SLIDING_KV,
+    block_dispatch_metadata,
+)
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
@@ -68,7 +72,6 @@ from max.pipelines.architectures.unified_dflash_gemma4_31b.model_config import (
 )
 from max.pipelines.architectures.unified_dflash_gemma4_31b.unified_dflash_gemma4_31b import (
     UnifiedDflashGemma4_31B,
-    _block_dispatch_metadata,
 )
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -77,6 +80,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.speculative.config import VerifyWidthRange
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import PretrainedConfig
 
@@ -496,6 +500,8 @@ def _make_real_target(
 
 def _make_unified_real(
     quant_config: QuantConfig | None = None,
+    draft_proposal: Literal["argmax", "sampled"] = "argmax",
+    skips_draft: bool = False,
 ) -> UnifiedDflashGemma4_31BConfig:
     devices = [DeviceRef.GPU()]
     draft = _tiny_draft_config(devices, num_hidden_layers=2)
@@ -504,7 +510,19 @@ def _make_unified_real(
         draft=draft,
         draft_kv_params=cast(MHAKVCacheParams, draft.kv_params),
         speculative_config=SpeculativeConfig(
-            speculative_method="dflash", num_speculative_tokens=15
+            speculative_method="dflash",
+            num_speculative_tokens=15,
+            draft_proposal=draft_proposal,
+            # A schedule that reaches width 0 is what makes the driver declare
+            # its draft row inputs.
+            num_speculative_tokens_per_batch_size=(
+                [
+                    VerifyWidthRange(batch_start=1, batch_end=8, num_tokens=15),
+                    VerifyWidthRange(batch_start=9, batch_end=64, num_tokens=0),
+                ]
+                if skips_draft
+                else None
+            ),
         ),
         target_layer_ids=[0, 1],
         layer_types=["sliding_attention", "full_attention"],
@@ -538,16 +556,27 @@ def virtual_gpu() -> Iterator[None]:
 def test_graph_signature_binds_thinking_and_structured_output(
     virtual_gpu: None,
 ) -> None:
-    """Structured output off: the tail ends at ``in_thinking_phase``; on:
-    exactly the packed bitmask triple is appended, prefix unchanged."""
-    base_types = UnifiedDflashGemma4_31B(_make_unified_real()).input_types()
+    """With structured output off, the tail ends at ``in_thinking_phase``,
+    followed by the skippable-draft pair under a schedule that skips. With it
+    on, exactly the packed bitmask triple is appended and the prefix is
+    unchanged."""
+    no_skip_types = UnifiedDflashGemma4_31B(_make_unified_real()).input_types()
+    base_types = UnifiedDflashGemma4_31B(
+        _make_unified_real(skips_draft=True)
+    ).input_types()
     so_types = UnifiedDflashGemma4_31B(
-        _make_unified_real(), enable_structured_output=True
+        _make_unified_real(skips_draft=True), enable_structured_output=True
     ).input_types()
 
-    thinking = base_types[-1]
+    assert _signature(base_types[:-2]) == _signature(no_skip_types)
+
+    thinking, slot_ids, block_offsets = base_types[-3:]
     assert isinstance(thinking, TensorType)
     assert thinking.dtype == DType.bool
+    assert isinstance(slot_ids, TensorType)
+    assert slot_ids.dtype == DType.int32
+    assert isinstance(block_offsets, TensorType)
+    assert block_offsets.dtype == DType.uint32
 
     assert _signature(so_types[: len(base_types)]) == _signature(base_types)
     assert len(so_types) == len(base_types) + 3
@@ -560,9 +589,12 @@ def test_graph_signature_binds_thinking_and_structured_output(
     assert scratch.dtype == DType.int32
 
 
+@pytest.mark.parametrize("draft_proposal", ["argmax", "sampled"])
 @pytest.mark.parametrize("structured_output", [False, True])
 def test_graph_stages_end_to_end(
-    virtual_gpu: None, structured_output: bool
+    virtual_gpu: None,
+    structured_output: bool,
+    draft_proposal: Literal["argmax", "sampled"],
 ) -> None:
     """The whole merge -> target -> reject -> materialize -> block graph
     stages, and the drafted output is ``[batch, block_size - 1]``.
@@ -573,7 +605,7 @@ def test_graph_stages_end_to_end(
     collective embedding and tied head being driven from the draft's block
     stream.
     """
-    config = _make_unified_real()
+    config = _make_unified_real(draft_proposal=draft_proposal, skips_draft=True)
     nn_model = UnifiedDflashGemma4_31B(
         config, enable_structured_output=structured_output
     )
@@ -586,13 +618,47 @@ def test_graph_stages_end_to_end(
     with Graph(
         "unified_dflash_gemma4_31b_test", input_types=nn_model.input_types()
     ) as graph:
-        values = nn_model._unflatten_graph_inputs(graph.inputs)
-        assert (values.pinned_bitmask is not None) == structured_output
-        outputs = nn_model(values)
-        assert len(outputs) == 3
+        graph_inputs = nn_model.decode_inputs(graph.inputs)
+        assert (graph_inputs.pinned_bitmask is not None) == structured_output
+        outputs = nn_model(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            signal_buffers=graph_inputs.signal_buffers,
+            kv_collections=graph_inputs.kv("target", "full_attention"),
+            passthrough_kv={
+                SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+            },
+            draft_kv_collections=graph_inputs.kv("draft"),
+            return_n_logits=graph_inputs.return_n_logits,
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            in_thinking_phase=graph_inputs.in_thinking_phase,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            draft_probs_full=graph_inputs.draft_probs_full,
+        )
+        # One device skips its drafter, and a sampled step pads the skipped
+        # rows' distributions back out to ``batch_size`` too.
+        assert graph_inputs.draft_slot_ids is not None
         next_draft_tokens = outputs[2]
         assert int(next_draft_tokens.shape[1]) == config.block_size - 1
         assert next_draft_tokens.dtype == DType.int64
+        if draft_proposal == "sampled":
+            assert len(outputs) == 4
+            probs = outputs[3]
+            assert probs.dtype == DType.float32
+            assert [int(d) for d in probs.shape[1:]] == [
+                config.block_size - 1,
+                config.target.text_config.vocab_size,
+            ]
+        else:
+            assert len(outputs) == 3
         graph.output(*outputs)
 
 
@@ -629,6 +695,8 @@ def _make_placeholder_inputs(
         top_p=b,
         min_top_p=b,
         in_thinking_phase=b,
+        draft_slot_ids=b,
+        draft_block_offsets=b,
     )
     if structured_output:
         return UnifiedDflashGemma4_31BInputs(
@@ -655,10 +723,10 @@ def test_inputs_buffer_tail_matches_graph_signature(
     """
     for structured_output in (False, True):
         module = UnifiedDflashGemma4_31B(
-            _make_unified_real(),
+            _make_unified_real(skips_draft=True),
             enable_structured_output=structured_output,
         )
-        n_kv = len(module._unified_kv_params().flattened_kv_inputs())
+        n_kv = len(module.signature_kv_params.flattened_kv_inputs())
         inputs = _make_placeholder_inputs(structured_output=structured_output)
         assert len(inputs.buffers) == len(module.input_types()) - n_kv
 
@@ -747,13 +815,35 @@ def test_block_forward_rebuilds_attention_dispatch_metadata(
         "unified_dflash_gemma4_31b_block_meta_test",
         input_types=nn_model.input_types(),
     ) as graph:
-        values = nn_model._unflatten_graph_inputs(graph.inputs)
-        graph.output(*nn_model(values))
+        graph_inputs = nn_model.decode_inputs(graph.inputs)
+        outputs = nn_model(
+            tokens=graph_inputs.tokens,
+            input_row_offsets=graph_inputs.input_row_offsets,
+            draft_tokens=graph_inputs.draft_tokens,
+            signal_buffers=graph_inputs.signal_buffers,
+            kv_collections=graph_inputs.kv("target", "full_attention"),
+            passthrough_kv={
+                SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+            },
+            draft_kv_collections=graph_inputs.kv("draft"),
+            return_n_logits=graph_inputs.return_n_logits,
+            seed=graph_inputs.seed,
+            temperature=graph_inputs.temperature,
+            top_k=graph_inputs.top_k,
+            max_k=graph_inputs.max_k,
+            top_p=graph_inputs.top_p,
+            min_top_p=graph_inputs.min_top_p,
+            in_thinking_phase=graph_inputs.in_thinking_phase,
+            pinned_bitmask=graph_inputs.pinned_bitmask,
+            wait_payload=graph_inputs.wait_payload,
+            device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+        )
+        graph.output(*outputs)
 
     assert len(captured) == 1
     block_kv = captured[0]
     block_meta = block_kv.attention_dispatch_metadata
-    leaf_meta = values.draft_kv_collection.attention_dispatch_metadata
+    leaf_meta = graph_inputs.kv("draft")[0].attention_dispatch_metadata
     assert block_meta is not None
     assert leaf_meta is not None
     assert block_meta._mlir_value != leaf_meta._mlir_value
@@ -762,7 +852,7 @@ def test_block_forward_rebuilds_attention_dispatch_metadata(
     # The paired query-width bound must be block-width too.
     assert (
         block_kv.max_prompt_length._mlir_value
-        != values.draft_kv_collection.max_prompt_length._mlir_value
+        != graph_inputs.kv("draft")[0].max_prompt_length._mlir_value
     )
 
 
@@ -776,7 +866,7 @@ def test_block_dispatch_metadata_rebuild_content() -> None:
         input_types=(TensorType(DType.int64, [4], DeviceRef.CPU()),),
     ) as graph:
         (meta,) = graph.inputs
-        graph.output(_block_dispatch_metadata(meta.tensor, 16))
+        graph.output(block_dispatch_metadata(meta.tensor, 16))
 
     session = InferenceSession(devices=[CPU()])
     compiled = session.load(graph)

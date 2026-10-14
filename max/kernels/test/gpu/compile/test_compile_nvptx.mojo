@@ -13,7 +13,6 @@
 
 from std.math import exp2
 from std.pathlib import Path
-from std.sys import CompilationTarget
 from std.sys._assembly import inlined_assembly
 
 from max.gpu import thread_idx
@@ -22,8 +21,6 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.info import A100
 from std.memory import unsafe_stack_allocation
-
-comptime A100_target = CompilationTarget.from[A100]()
 
 
 def kernel(x: Int) -> Int:
@@ -145,15 +142,15 @@ def test_exp2_compile() raises:
         )
 
     # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"
-    print(_compile_code[exp_op, target=A100_target, emission_kind="llvm-opt"]())
+    print(_compile_code[exp_op, target=A100.target, emission_kind="llvm-opt"]())
     # CHECK: fma.rn.f32
-    print(_compile_code[exp_op, target=A100_target, emission_kind="asm"]())
+    print(_compile_code[exp_op, target=A100.target, emission_kind="asm"]())
 
     # CHECK: fma.rn.ftz.f32
     print(
         _compile_code[
             exp_op,
-            target=A100_target,
+            target=A100.target,
             emission_kind="asm",
             compile_options="target-abi=shortptr,denormal-fp-math-f32=preserve-sign",
         ]()

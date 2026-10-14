@@ -120,17 +120,14 @@ static void moveInvariantsIn(FunctionLike func, mlir::DominanceInfo &domInfo,
       moveInvariants(func, domInfo, loop, loop.getBody(), numHoisted);
     }
 
-    // We hoist from both branches of the if/elif regardless of the condition
+    // We hoist from both branches of the elif regardless of the condition
     // with the guarantee that these ops have no side effects and LLVM is free
     // to move them back if that is more optimal.
     else if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
       moveInvariants(func, domInfo, ifOp, ifOp.getThenRegion(), numHoisted);
       moveInvariants(func, domInfo, ifOp, ifOp.getElseRegion(), numHoisted);
-    } else if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
-      moveInvariants(func, domInfo, elifOp, elifOp.getThenRegion(), numHoisted);
-      moveInvariants(func, domInfo, elifOp, elifOp.getElseRegion(), numHoisted);
-      for (Region &region : elifOp.getElifRegions())
-        moveInvariants(func, domInfo, elifOp, region, numHoisted);
+      for (Region &region : ifOp.getElifRegions())
+        moveInvariants(func, domInfo, ifOp, region, numHoisted);
     }
 
     else if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {

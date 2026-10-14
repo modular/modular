@@ -25,8 +25,7 @@ cta_group 1) and layout B (cta_group 2).
 test_matmul_sm100_partial_n_tile_epilogue covers the compute-lambda path.
 """
 
-from std.collections import Optional
-from std.sys import align_of, size_of
+from std.sys import size_of
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
@@ -39,7 +38,6 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from linalg.utils import elementwise_epilogue_type
 import linalg.matmul.vendor.blas as vendor_blas
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -76,14 +74,12 @@ def test_transposed_epilogue_row_straddle[
         NType.static_value * size_of[c_type]() % 16 == 0
     ), "N must keep C's row stride TMA-aligned"
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
@@ -109,22 +105,15 @@ def test_transposed_epilogue_row_straddle[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_tensor_lt)
     def store_epilogue[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[width=width](idx, val.cast[c_type]())
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c_tensor.store[width=width](idx, val.cast[c_type]())
 
     seed(1234)
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # C is zeroed, so a dropped store reads back as 0 against a reference
     # the random operands make nonzero.
@@ -146,25 +135,22 @@ def test_transposed_epilogue_row_straddle[
         AB_swapped=swapAB,
     )
 
-    comptime optional_lambda_fn = Optional[elementwise_epilogue_type](
-        store_epilogue
-    )
-
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        elementwise_lambda_fn=optional_lambda_fn,
-    ](c_tensor, a_tensor, b_tensor, ctx)
-
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
+    ](
+        IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+        a_tensor,
+        b_tensor,
+        store_epilogue,
+        ctx,
+    )
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )

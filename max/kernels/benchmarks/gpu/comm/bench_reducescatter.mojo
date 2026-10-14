@@ -34,7 +34,7 @@ from max.benchmark import (
 )
 from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
@@ -48,7 +48,6 @@ from std.testing import assert_almost_equal, assert_true
 
 
 @inline(.always)
-@__parameter
 def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:
@@ -138,9 +137,6 @@ def bench_reducescatter_2d[
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     # Initialize buffers for each GPU.
     comptime for gpu_idx in range(ngpus):
@@ -182,12 +178,12 @@ def bench_reducescatter_2d[
             list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with_unrolled=lambda [i: Int]() {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create 2D input and output TileTensors.
     comptime OutputTileType = TileTensor[
@@ -382,9 +378,6 @@ def bench_reducescatter[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     # Initialize buffers for each GPU
     for gpu_idx in range(ngpus):
@@ -427,12 +420,12 @@ def bench_reducescatter[
             list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create input and output TileTensors
     comptime OutputTileType = TileTensor[

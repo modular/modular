@@ -29,7 +29,6 @@ from std.testing import (
     assert_not_equal,
     assert_raises,
     assert_true,
-    assert_false,
 )
 from test_utils import check_write_to
 

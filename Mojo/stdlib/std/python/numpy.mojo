@@ -40,30 +40,31 @@ comptime _PY_WRITEABLE = "WRITEABLE"
 
 def _numpy_dtype_name[dtype: DType]() -> Optional[StaticString]:
     """Returns the NumPy dtype string for `dtype`, or `None` if unsupported."""
-    if dtype == .int8:
-        return StaticString("int8")
-    elif dtype == .int16:
-        return StaticString("int16")
-    elif dtype == .int32:
-        return StaticString("int32")
-    elif dtype == .int64:
-        return StaticString("int64")
-    elif dtype == .uint8:
-        return StaticString("uint8")
-    elif dtype == .uint16:
-        return StaticString("uint16")
-    elif dtype == .uint32:
-        return StaticString("uint32")
-    elif dtype == .uint64:
-        return StaticString("uint64")
-    elif dtype == .float16:
-        return StaticString("float16")
-    elif dtype == .float32:
-        return StaticString("float32")
-    elif dtype == .float64:
-        return StaticString("float64")
-    else:
-        return None
+    match dtype:
+        case .int8:
+            return StaticString("int8")
+        case .int16:
+            return StaticString("int16")
+        case .int32:
+            return StaticString("int32")
+        case .int64:
+            return StaticString("int64")
+        case .uint8:
+            return StaticString("uint8")
+        case .uint16:
+            return StaticString("uint16")
+        case .uint32:
+            return StaticString("uint32")
+        case .uint64:
+            return StaticString("uint64")
+        case .float16:
+            return StaticString("float16")
+        case .float32:
+            return StaticString("float32")
+        case .float64:
+            return StaticString("float64")
+        case _:
+            return None
 
 
 def _is_numpy_dtype[dtype: DType]() -> Bool:
@@ -204,11 +205,6 @@ def copy_to_numpy_tensor[
         "copy_to_numpy_tensor: nested `Coord` shapes are not supported; pass"
         " one element per axis."
     )
-    comptime assert not shape.contains_slices, (
-        "copy_to_numpy_tensor: `All` is not a dimension; pass a concrete"
-        " extent for every axis."
-    )
-
     var np = Python.import_module("numpy")
     var dtype_str = _numpy_dtype_name[dtype]().value()
 

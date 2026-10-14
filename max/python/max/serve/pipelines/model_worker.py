@@ -27,7 +27,12 @@ from multiprocessing.synchronize import Event
 from typing import Any, Protocol, runtime_checkable
 
 import uvloop
-from max.driver import Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    Usage,
+    accelerator_api,
+)
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.experimental.nn._compilation_timer import collect_compilation_stats
@@ -36,7 +41,13 @@ from max.pipelines.kv_cache import (
     DummyKVCache,
     PagedKVCacheManagerInterface,
 )
-from max.pipelines.lib import MemoryPlan, PipelineConfig, PipelineModel
+from max.pipelines.lib import (
+    MemoryPlan,
+    PipelineConfig,
+    PipelineModel,
+    PipelineRole,
+    ProfilingConfig,
+)
 from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -56,6 +67,7 @@ from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
+from max.serve.telemetry import common as telemetry
 from max.serve.telemetry.common import (
     configure_kernel_tracing,
     configure_logging,
@@ -81,6 +93,102 @@ from max.serve.worker_interface.lora_request_processor import (
 logger = logging.getLogger("max.serve")
 
 GiB = 1024 * 1024 * 1024
+
+
+def _configure_kernel_capture(
+    settings: Settings, pipeline_role: PipelineRole
+) -> bool:
+    """Returns whether requests may arm kernel captures in this worker,
+    loading the profiler plugin if they may."""
+    # Only load_scheduler's prefill_and_decode scheduler takes a capture, so
+    # other roles skip the profiler plugin, though non-text pipelines in that
+    # role still load it, harmlessly.
+    if (
+        not telemetry._trace_level_header_enabled
+        or pipeline_role != "prefill_and_decode"
+    ):
+        return False
+    # Lazy so default startup skips the capture module.
+    from max.serve.telemetry._kernel_capture import (
+        configure_kernel_capture,
+        kernel_capture_permitted,
+    )
+
+    configure_kernel_capture(settings)
+    return kernel_capture_permitted()
+
+
+def _configure_worker_tracing(
+    settings: Settings, profiling: ProfilingConfig
+) -> None:
+    """Configures the model worker's tracing."""
+    links = profiling.kernel_trace_max_batch_links
+    # The default, 128, is also the OTel SDK's link limit.
+    default = ProfilingConfig.model_fields[
+        "kernel_trace_max_batch_links"
+    ].default
+    configure_tracing(settings, max_links=links if links > default else None)
+
+
+def _warn_raised_kernel_trace_limits(
+    profiling: ProfilingConfig,
+    pipeline_role: PipelineRole,
+    kernel_capture: bool,
+) -> None:
+    """Warns once for each kernel-tracing limit that is in use and raised.
+
+    Args:
+        profiling: The model worker's profiling config.
+        pipeline_role: The worker's pipeline role.
+        kernel_capture: Whether requests may arm kernel captures.
+    """
+    # Without a capture, only the link limit can apply, and only while
+    # max.batch spans export: at level batch or higher with tracing on, in
+    # the one role whose scheduler emits them. A capture implies tracing.
+    batch_spans = kernel_capture or (
+        pipeline_role == "prefill_and_decode"
+        and telemetry.batch_spans_enabled()
+        and telemetry._tracing_enabled()
+    )
+    if not batch_spans:
+        return
+    for name, used, cost in (
+        (
+            "kernel_trace_max_passes",
+            kernel_capture,
+            "each capture records more, so it is likelier to exceed "
+            "kernel_trace_max_capture_bytes and export no spans",
+        ),
+        (
+            "kernel_trace_max_spans",
+            kernel_capture,
+            "each capture's replay exports more spans",
+        ),
+        (
+            "kernel_trace_max_capture_bytes",
+            kernel_capture,
+            "parsing a capture holds the GIL for about 12 ms per MiB, "
+            "about 0.8 s at the default, and peaks at about 6x its size "
+            "in memory",
+        ),
+        (
+            "kernel_trace_max_batch_links",
+            batch_spans,
+            "each max.batch span exports more links",
+        ),
+    ):
+        if not used:
+            continue
+        value: int = getattr(profiling, name)
+        default = type(profiling).model_fields[name].default
+        if value > default:
+            logger.warning(
+                "profiling.%s is %d, above its default of %d: %s.",
+                name,
+                value,
+                default,
+                cost,
+            )
 
 
 @runtime_checkable
@@ -114,7 +222,12 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
     """
     if device.is_host:
         return
-    pinned = DevicePinnedBuffer(shape=(bytes,), dtype=DType.int8, device=device)
+    pinned = Buffer(
+        shape=(bytes,),
+        dtype=DType.int8,
+        device=device,
+        usage=Usage.STAGING | Usage.UNTRACKED,
+    )
     del pinned
 
 
@@ -126,7 +239,7 @@ def _get_eplb_stats_accumulator(
 
     Args:
         pipeline: The model pipeline running in this worker process.
-        enabled: pipeline_config.runtime.eplb_profile i.e. whether the user has opted in to EPLB profiling for this run.
+        enabled: pipeline_config.runtime.eplb_profile; that is, whether the user has opted in to EPLB profiling for this run.
 
     Returns:
         The accumulator constructed by the pipeline's load_model, or
@@ -255,9 +368,17 @@ class ModelWorker:
                 process took to start (Python imports + driver init), which
                 can dominate first-run startup on cold filesystem caches.
         """
+        # Tracing first: configure_logging adds the dd.trace_id field only
+        # when tracing is on.
+        _configure_worker_tracing(settings, pipeline_config.profiling)
         configure_logging(settings)
-        configure_tracing(settings)
         configure_kernel_tracing(settings)
+        pipeline_role = pipeline_config.runtime.pipeline_role
+        _warn_raised_kernel_trace_limits(
+            pipeline_config.profiling,
+            pipeline_role,
+            _configure_kernel_capture(settings, pipeline_role),
+        )
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 
@@ -285,7 +406,7 @@ class ModelWorker:
             exit_stack.enter_context(detect_and_wrap_ooms())
 
             # Prime the pinned memory cache in the model worker process.
-            # The first DevicePinnedBuffer allocation per GPU triggers
+            # The first staging Buffer allocation per GPU triggers
             # heavyweight driver context initialization that can take
             # seconds. Doing it here at startup avoids that latency
             # hitting the first real request.
@@ -598,6 +719,35 @@ class ModelWorker:
             pass  # suppress noisy stack traces for user abort
 
 
+def _enable_driver_staging_for_worker(pipeline_config: PipelineConfig) -> None:
+    """Sets ``HSA_USERPTR_FOR_PAGED_MEM=0`` for the model worker when its KV
+    connector config asks for a driver-allocated host staging region.
+
+    HIP latches this once, at its own first driver call, so it has to be in
+    the environment before the worker makes that call. Setting it inside the
+    worker itself would often be too late if something ahead of the KV
+    connector (such as a device probe) already touched HIP first.
+
+    The model worker is spawned as a fresh ``multiprocessing`` ``spawn``
+    process rather than a fork, so it inherits this (parent) process's
+    environment at its own startup and reads the variable from there at its
+    own, independent HIP init -- whether this process has already
+    initialized HIP for its own device probing (it has, by this point, via
+    ``scan_available_devices``) has no bearing on the worker's HIP state.
+    """
+    try:
+        kv_connector_config = pipeline_config.model.kv_cache.kv_connector_config
+    except ValueError:
+        # No main model configured (e.g. a diffusion pipeline with no text
+        # role); none of those use the tiered KV connector.
+        return
+    if (
+        kv_connector_config.host_staging_alloc == "driver"
+        and accelerator_api() == "hip"
+    ):
+        os.environ["HSA_USERPTR_FOR_PAGED_MEM"] = "0"
+
+
 @asynccontextmanager
 async def start_model_worker(
     model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
@@ -631,6 +781,10 @@ async def start_model_worker(
     """
     worker_name = "MODEL_" + str(uuid.uuid4())
     logger.info("Starting worker: %s", worker_name)
+
+    # Must happen before the subprocess spawns below: HIP reads the
+    # environment once, at its own init, inside the worker.
+    _enable_driver_staging_for_worker(pipeline_config)
 
     mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Model Worker") as proc:

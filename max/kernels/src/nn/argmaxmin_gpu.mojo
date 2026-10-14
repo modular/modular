@@ -22,9 +22,8 @@ from max.gpu.primitives.grid_controls import (
 )
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
-from std.sys.info import has_apple_gpu_accelerator
 
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from layout import TensorLayout, TensorEngine, TileTensor, coord_to_index_list
 from nn.topk import TopK_2, _block_reduce_topk, _topk_dead_val
@@ -222,9 +221,9 @@ def _argmaxmin_scan_kernel[
     var num_elements = Int(num_elements_arg)
     # Rows ride the x dimension: it is the only one whose extent is not
     # capped at 65535, and a batch can have millions of rows.
-    var row_id = Int(block_idx.x)
-    var split = Int(block_idx.y)
-    var tid = Int(thread_idx.x)
+    var row_id = block_idx.x
+    var split = block_idx.y
+    var tid = thread_idx.x
 
     var begin = min(split * Int(split_len_arg), num_elements)
     var count = min(Int(split_len_arg), num_elements - begin)
@@ -238,7 +237,7 @@ def _argmaxmin_scan_kernel[
             count,
             aligned_arg != 0,
             tid,
-            Int(block_dim.x),
+            block_dim.x,
         )
         var total = _block_reduce_topk[ascending=largest](partial)
 
@@ -283,8 +282,8 @@ def _argmaxmin_combine_kernel[
         num_splits_arg: Slices per row.
     """
     var num_splits = Int(num_splits_arg)
-    var row_id = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var row_id = block_idx.x
+    var tid = thread_idx.x
     var base = row_id * num_splits
 
     with PDL():
@@ -292,7 +291,7 @@ def _argmaxmin_combine_kernel[
         # indices, so a strict insert plus the block reduce's lowest-index
         # tie-break reproduces a single-pass first-index scan.
         var partial = TopK_2[dtype, largest]()
-        for i in range(tid, num_splits, Int(block_dim.x)):
+        for i in range(tid, num_splits, block_dim.x):
             partial.insert(
                 part_vals.unsafe_offset(base + i)[],
                 Int(part_idxs.unsafe_offset(base + i)[]),
@@ -365,7 +364,7 @@ def argmaxmin_gpu[
                 "argmaxmin_gpu: inner dimension exceeds the int32 index range"
             )
 
-        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
         # A single block streaming a whole row tops out at the per-SM load
         # rate (~44 GB/s measured on B200), so a 512KB row would take ~12us.
@@ -399,7 +398,7 @@ def argmaxmin_gpu[
         )
         block_size = max(block_size, WARP_SIZE)
         var combine_block_size = max(next_power_of_two(num_splits), WARP_SIZE)
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             block_size = WARP_SIZE
             combine_block_size = WARP_SIZE
 
@@ -415,7 +414,7 @@ def argmaxmin_gpu[
             type_of(input).Engine,
         ]
         ctx.enqueue_function[scan_kernel](
-            input.as_immut(),
+            input.as_imm(),
             part_vals,
             part_idxs,
             Int32(num_elements),

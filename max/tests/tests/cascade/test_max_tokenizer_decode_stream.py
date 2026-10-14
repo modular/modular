@@ -25,6 +25,7 @@ from typing import cast
 
 import numpy as np
 import pytest
+from max.experimental.cascade.interfaces.gen_ai import RawTextChunk
 from max.experimental.cascade.workers.max_tokenizer import MAXTokenizer
 from max.experimental.cascade.workers.tokenizer_worker import (
     _REPLACEMENT_CHAR,
@@ -38,6 +39,8 @@ _FRAGMENTS: dict[int, bytes] = {
     2: b"c",
     3: b"\xf0\x9f",
     4: b"\x98\x80",
+    # Stands in for an EOS dropped by ``skip_special_tokens``.
+    5: b"",
 }
 
 
@@ -65,15 +68,18 @@ def _tokenizer() -> MAXTokenizer:
 
 async def _decode_stream(
     tok: MAXTokenizer, chunks: Sequence[Sequence[int]]
-) -> list[str]:
+) -> list[RawTextChunk]:
     async def token_iter() -> AsyncIterator[np.ndarray]:
         for chunk in chunks:
             yield np.array(chunk, dtype=np.int32)
 
     # A streaming worker_method returns the async iterator when called directly
     # on the instance (the proxy path returns a ResultIter handle instead).
-    stream = cast("AsyncIterator[str]", tok.decode_stream(token_iter(), True))
-    return [text async for text in stream]
+    stream = cast(
+        "AsyncIterator[RawTextChunk]",
+        tok.decode_stream(token_iter(), True),
+    )
+    return [piece async for piece in stream]
 
 
 @pytest.mark.asyncio
@@ -88,7 +94,7 @@ async def test_decode_stream_flushes_complete_tail_at_end() -> None:
     tok = _tokenizer()
     pieces = await _decode_stream(tok, [[1], [2, 3]])
 
-    joined = "".join(pieces)
+    joined = "".join(delta.text for delta in pieces)
     # Matches the one-shot decode of the full sequence (which includes the
     # trailing replacement char for the unfinished emoji).
     assert joined == "abc" + _REPLACEMENT_CHAR
@@ -101,8 +107,40 @@ async def test_decode_stream_joins_multibyte_split_across_chunks() -> None:
     tok = _tokenizer()
     pieces = await _decode_stream(tok, [[1], [3], [4]])
 
-    joined = "".join(pieces)
+    joined = "".join(delta.text for delta in pieces)
     assert joined == "ab\U0001f600"
     assert _REPLACEMENT_CHAR not in joined
     # The emoji is emitted exactly once (not partially, per chunk).
     assert joined.count("\U0001f600") == 1
+
+
+@pytest.mark.asyncio
+async def test_decode_stream_counts_trailing_token_with_no_text() -> None:
+    """A trailing token decoding to nothing is still counted.
+
+    Token 5 stands in for an EOS: it produces no text, so it never satisfies
+    the text-growth check that gates an emission.
+    """
+    tok = _tokenizer()
+    pieces = await _decode_stream(tok, [[1], [2], [5]])
+
+    assert "".join(delta.text for delta in pieces) == "abc"
+    assert sum(delta.num_tokens for delta in pieces) == 3
+
+
+@pytest.mark.asyncio
+async def test_decode_stream_counts_trailing_token_after_deferred_tail() -> (
+    None
+):
+    """A text-free token behind a deferred tail is counted exactly once.
+
+    Token 3 opens a multibyte character nothing completes, so the tail is held
+    back until the end and its flush carries every pending token -- including
+    token 5, which produced no text. Counting it again afterwards would
+    double-bill it.
+    """
+    tok = _tokenizer()
+    pieces = await _decode_stream(tok, [[1], [2, 3], [5]])
+
+    assert "".join(delta.text for delta in pieces) == "abc" + _REPLACEMENT_CHAR
+    assert sum(delta.num_tokens for delta in pieces) == 4

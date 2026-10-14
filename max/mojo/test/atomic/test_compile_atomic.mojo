@@ -14,7 +14,6 @@
 from std.atomic import Atomic, Ordering, fence
 
 from std.compile import compile_info
-from std.sys import CompilationTarget
 from std.testing import TestSuite, assert_false, assert_true
 
 from max.gpu.host import get_gpu_target
@@ -41,9 +40,7 @@ def test_compile_store_nvptx_default_scope() raises:
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
         Atomic[Int32].store[ordering=Ordering.RELEASE](ptr, v)
 
-    var ptx = String(
-        compile_info[my_store, target=CompilationTarget.from[A100]()]()
-    )
+    var ptx = String(compile_info[my_store, target=A100.target]())
 
     assert_true("st.release.sys.global" in ptx)
     # Guards against regressing back to the pre-MOLIB-2603 lowering
@@ -55,9 +52,7 @@ def test_compile_store_nvptx_device_scope() raises:
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
         Atomic[Int32, scope="device"].store[ordering=Ordering.RELEASE](ptr, v)
 
-    var ptx = String(
-        compile_info[my_store, target=CompilationTarget.from[A100]()]()
-    )
+    var ptx = String(compile_info[my_store, target=A100.target]())
 
     assert_true("st.release.gpu.global" in ptx)
     assert_false("atom.exch" in ptx)
@@ -70,9 +65,7 @@ def test_compile_load_nvptx_default_scope() raises:
     ):
         dst[] = Atomic[Int32].load[ordering=Ordering.ACQUIRE](ptr)
 
-    var ptx = String(
-        compile_info[my_load, target=CompilationTarget.from[A100]()]()
-    )
+    var ptx = String(compile_info[my_load, target=A100.target]())
 
     assert_true("ld.acquire.sys.global" in ptx)
 
@@ -86,9 +79,7 @@ def test_compile_load_nvptx_device_scope() raises:
             ptr
         )
 
-    var ptx = String(
-        compile_info[my_load, target=CompilationTarget.from[A100]()]()
-    )
+    var ptx = String(compile_info[my_load, target=A100.target]())
 
     assert_true("ld.acquire.gpu.global" in ptx)
 

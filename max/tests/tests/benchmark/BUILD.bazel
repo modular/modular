@@ -38,6 +38,7 @@ modular_py_test(
         requirement("huggingface-hub"),
         requirement("msgspec"),
         requirement("numpy"),
+        requirement("openai"),
         requirement("pillow"),
         requirement("pydantic"),
         requirement("pytest-asyncio"),

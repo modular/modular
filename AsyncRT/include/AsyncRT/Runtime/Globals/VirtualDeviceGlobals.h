@@ -64,6 +64,15 @@ MODULAR_CXX_EXPORT std::string getVirtualDeviceAPI();
 MODULAR_CXX_EXPORT void setVirtualDeviceTargetArch(StringRef arch);
 MODULAR_CXX_EXPORT std::string getVirtualDeviceTargetArch();
 
+// Virtual CPU codegen target control functions.
+// Empty = host CPU. Accepts an LLVM CPU name, "generic", or a
+// "triple=...;cpu=...[;features=...]" descriptor; must be set before compiling
+// CPU kernels. The M::Driver::{set,get}VirtualCpuTarget API forwards here so
+// the state gets the single-copy-per-process guarantee described above.
+// Thread-safe.
+MODULAR_CXX_EXPORT void setVirtualCpuTarget(StringRef cpu);
+MODULAR_CXX_EXPORT std::string getVirtualCpuTarget();
+
 } // namespace M::AsyncRT
 
 #endif // ASYNCRT_RUNTIME_GLOBALS_VIRTUALDEVICEGLOBALS_H

@@ -22,7 +22,7 @@ from std.python.numpy import copy_to_numpy_tensor, from_numpy_tensor
 from .coord import DynamicCoord
 from .tile_layout import RowMajorLayout, TensorLayout, row_major
 from .tile_tensor import TileTensor
-from .tensor_engine import TensorEngine
+from .tensor_engine import DefaultEngine, TensorEngine
 
 
 comptime _NumPyLayout[rank: Int] = RowMajorLayout[
@@ -35,7 +35,12 @@ one runtime extent per axis."""
 def from_numpy[
     mut: Bool, //, dtype: DType, rank: Int, origin: Origin[mut=mut]
 ](ref[origin] array: PythonObject) raises -> TileTensor[
-    dtype, _NumPyLayout[rank], origin
+    # The view aliases the NumPy buffer through a raw pointer, so pin
+    # DefaultEngine.
+    dtype,
+    _NumPyLayout[rank],
+    origin,
+    Engine=DefaultEngine[element_width=1],
 ]:
     """Borrows an N-D C-contiguous NumPy array as a `TileTensor`.
 
@@ -131,7 +136,7 @@ def to_numpy[
     from layout.coord import Coord, Idx
 
     var storage = Array[Float32, 6](uninitialized=True)
-    var tensor = TileTensor(Span(storage), row_major(Coord(Idx[2], Idx[3])))
+    var tensor = TileTensor(Span(storage), row_major(Idx[2], Idx[3]))
     var array = to_numpy(tensor)  # a 2x3 NumPy float32 array
     ```
 

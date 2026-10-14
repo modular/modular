@@ -11,15 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.gpu import WARP_SIZE, lane_id
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import MI300X, MI355X
-from layout import Layout, LayoutTensor
-from layout._fillers import arange
-from layout.tensor_core import load_b_tr
+from max.gpu.host.info import MI300X
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
-from std.testing import assert_equal
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 comptime fp8_dtype = (
     DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
@@ -2073,54 +2068,6 @@ def test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(
     ](ctx)
 
 
-def test_load_b_tr(ctx: DeviceContext) raises:
-    print("== test_load_b_tr")
-
-    def kernel[
-        mma_shape: IndexList[3]
-    ](flag: MutPointer[Scalar[.bool], MutAnyOrigin]):
-        var smem = LayoutTensor[
-            .bfloat16,
-            Layout.row_major(mma_shape[2], mma_shape[1]),
-            MutAnyOrigin,
-            address_space=.SHARED,
-        ].stack_allocation()
-
-        if lane_id() == 0:
-            arange(smem)
-
-        # reference fragments
-        comptime warp_layout = Layout.row_major(2, 32) if mma_shape[
-            0
-        ] == 32 else Layout.row_major(4, 16)
-        var frags = smem.vectorize[4, 1]().distribute[warp_layout](lane_id())
-        var frags_simd = frags[0, 0].join(frags[1, 0])
-
-        var frags_tr = load_b_tr[mma_shape](smem)
-
-        flag[lane_id()] = frags_simd == rebind[type_of(frags_simd)](frags_tr)
-
-    var flag = ctx.enqueue_create_buffer[.bool](WARP_SIZE)
-
-    comptime kernel_32_32_16 = kernel[IndexList[3](32, 32, 16)]
-    ctx.enqueue_function[kernel_32_32_16](
-        flag, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
-    with flag.map_to_host() as flag_host:
-        for i in range(WARP_SIZE):
-            if not flag_host[i]:
-                assert_equal(flag_host[i], True, "frags_simd != frags_tr")
-
-    comptime kernel_16_16_32 = kernel[IndexList[3](16, 16, 32)]
-    ctx.enqueue_function[kernel_16_16_32](
-        flag, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
-    with flag.map_to_host() as flag_host:
-        for i in range(WARP_SIZE):
-            if not flag_host[i]:
-                assert_equal(flag_host[i], True, "frags_simd != frags_tr")
-
-
 def main() raises:
     with DeviceContext() as ctx:
         test_load_and_mma_f32_f32_16x16x4(ctx)
@@ -2141,6 +2088,3 @@ def main() raises:
         test_load_and_mma_f32_bf8_16x16x32(ctx)
         test_load_and_mma_f32_bf8_16x16x32_transpose(ctx)
         test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(ctx)
-
-        comptime if DeviceContext.default_device_info.compute >= MI355X.compute:
-            test_load_b_tr(ctx)

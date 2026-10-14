@@ -16,7 +16,12 @@ from std.random import random_float64
 
 from max.algorithm.functional import parallelize_over_rows
 from std.benchmark import Bench, Bencher, BenchId
-from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
+from layout import (
+    Idx,
+    DefaultEngine,
+    TileTensor,
+    row_major,
+)
 from nn.toppminp import min_p_sampling, top_p_sampling
 from std.testing import assert_equal
 
@@ -175,14 +180,14 @@ def test_case_sampling[
     )
     var in_logits = TileTensor(
         in_logits_ptr,
-        row_major(Coord(batch_size, vocab_size)),
+        row_major(batch_size, vocab_size),
     )
     var token_ids_ptr = List(
         length=batch_size * 1, fill=Scalar[out_idx_type](0)
     )
     var token_ids = TileTensor(
         token_ids_ptr,
-        row_major(Coord(batch_size, Idx[1])),
+        row_major(batch_size, Idx[1]),
     )
     var p_thresholds_ptr = List(length=batch_size, fill=Scalar[dtype](0))
     var p_thresholds = TileTensor(

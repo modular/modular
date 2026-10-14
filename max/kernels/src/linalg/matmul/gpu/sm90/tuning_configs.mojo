@@ -25,7 +25,7 @@ from max.gpu.host.info import H100
 
 
 @fieldwise_init
-struct TuningGroup(Equatable, TrivialRegisterPassable, Writable):
+struct TuningGroup(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
     comptime CORE = Self(0)
@@ -33,6 +33,30 @@ struct TuningGroup(Equatable, TrivialRegisterPassable, Writable):
     comptime INTERNVL = Self(2)
     comptime LLAMA_3_3_70B = Self(3)
     comptime GEMMA_3_27B = Self(4)
+
+    comptime _enum_case_names = ParameterList.of[
+        "CORE".value,
+        "MISCELLANEOUS".value,
+        "INTERNVL".value,
+        "LLAMA_3_3_70B".value,
+        "GEMMA_3_27B".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TuningGroup has no payload"
 
 
 struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):

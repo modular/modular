@@ -17,5 +17,5 @@ lit.struct.decl @Bar {
 // expected-note @below {{see current operation}}
 // expected-error @below {{during header emission for this function}}
 kgen.func export @nestedParametricStruct(%a: !lit.struct<@Bar>) cabi {
-  kgen.return
+  hlcf.return
 }

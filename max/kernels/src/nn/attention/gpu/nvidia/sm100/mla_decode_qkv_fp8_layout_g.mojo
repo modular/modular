@@ -30,7 +30,6 @@ SMEM layout (BN_QK=64, 5 stages):
   barriers:   (6N+11) fixed + output barriers
 """
 
-from std.collections import OptionalReg
 from std.math import ceildiv, exp2, log2, recip
 from std.math.constants import log2e
 from std.sys import size_of
@@ -40,7 +39,7 @@ from max.gpu import (
     thread_idx,
     warp_id,
 )
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, syncwarp
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.primitives.warp import _vote_nvidia_helper
@@ -49,13 +48,10 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory, fence_async_view_proxy
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_ld,
     tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
     tcgen05_st,
     tcgen05_store_wait,
 )
@@ -64,7 +60,6 @@ from layout.tma_async import (
 )
 from layout import (
     ComptimeInt,
-    CoordLike,
     Layout,
     RowMajorLayout,
     TensorEngine,
@@ -83,6 +78,7 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    attn_tmem_addr,
     elect,
     SharedMemPointer,
     MBarType,
@@ -90,6 +86,8 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+    fp8_p_bias,
+    fp8_p_rescale_threshold,
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
@@ -337,6 +335,9 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         comptime MaskName: String = Self.MaskType.name()
         comptime MaskTypeName: String = Self.MaskType.get_type_name()
         comptime assert Self.AccumType.is_floating_point()
+        comptime p_bias = fp8_p_bias[True](
+            Self.config.skip_correction_threshold
+        ).cast[Self.AccumType]()
         comptime assert (
             Self.BM == 32
         ), "Softmax_Layout_G requires BM=32 (1×4 datapath)."
@@ -499,7 +500,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # Per-row max: register-only reduce + 4-way SMEM consolidation.
             # Double-buffered to avoid the W-W race between N+1's write and
             # iteration N's read.
-            comptime rescale_threshold: Float32 = (
+            comptime rescale_threshold: Float32 = fp8_p_rescale_threshold[True](
                 Self.config.skip_correction_threshold
             )
             var buf_offset = (tiles_done & 1) * WARPGROUP_SIZE
@@ -533,12 +534,13 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 scale_for_old_max = 1.0
                 new_max = mi
 
-            # exp2(s - new_max) + per-thread sum over the col-quadrant.
+            # exp2(s + p_offset) + per-thread sum over the col-quadrant.
             var float2_register = s_row.vectorize[2]()
             var float2_current_sum: SIMD[Self.AccumType, 2] = 0.0
+            var p_offset = p_bias - new_max
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
-                float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
+                float2_register[i] = exp2(element.fma(log2e_f32, p_offset))
                 float2_current_sum += float2_register[i]
 
             # Correction-scale write to TMEM (skip on the first processed
@@ -605,9 +607,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         # Split-K LSE write — all 4 warps hold identical (mi, li); pick
         # `warp_in_wg == 0` as the single writer.
         comptime if Self.config.decoding_warp_split_k:
+            # li is a sum of exp2(s - p_ref).
+            var p_ref = mi - p_bias
             comptime if Self.fold_q:
-                var q_local = row // Self.config.num_q_heads
-                var head_local = row % Self.config.num_q_heads
+                var q_local, head_local = divmod(row, Self.config.num_q_heads)
                 if warp_in_wg == 0 and row < (
                     Self.q_len_fold * Self.config.num_q_heads
                 ):
@@ -616,7 +619,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                         partial_lse = min_or_neg_inf[Self.AccumType]()
                     else:
                         partial_lse = (
-                            log2(max(li, Scalar[Self.AccumType](0))) + mi
+                            log2(max(li, Scalar[Self.AccumType](0))) + p_ref
                         )
                     var stride_batch = (
                         offset_position.max_seq_len * Self.config.num_q_heads
@@ -639,7 +642,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 var head_idx = block_idx.x * Self.BM + row
                 if warp_in_wg == 0 and head_idx < Self.config.num_q_heads:
                     var partial_lse = (
-                        log2(max(li, Scalar[Self.AccumType](0))) + mi
+                        log2(max(li, Scalar[Self.AccumType](0))) + p_ref
                     )
                     var seq_idx = block_idx.y
                     var stride_batch = (
@@ -803,7 +806,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var elect_mask = elect()
         var is_leader: Bool = elect_mask != 0
         var row: Int = offset_position.out_row_offset
-        var rows_to_store = rows_owned[Self.config](Int(block_idx.x))
+        var rows_to_store = rows_owned[Self.config](block_idx.x)
 
         # col = n * BN_PV + m * (BN_PV // 2) + k * BK_PV
         comptime slot_col_stride_LG: Int = Self.BN_PV // 2
@@ -1290,10 +1293,8 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         #   CORR_SCALE  = 448
         #   CORR_LI     = 449
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
         var is_leader = elect() != 0
 
-        # Init: warp 8 inits barriers, warp 9 allocates TMEM.
         if warp_idx == 8:
             if is_leader:
                 mbar_q[].init(1)
@@ -1307,10 +1308,6 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 q_tma.prefetch_descriptor()
                 k_tma.prefetch_descriptor()
                 o_tma.prefetch_descriptor()
-        elif warp_idx == 9:
-            tcgen05_alloc[Self.config.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         barrier()
 
         # Warpgroup dispatch (3-WG layout, same as Layout E):
@@ -1323,7 +1320,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         if warp_idx < 4:
             warpgroup_reg_alloc[num_reg_softmax]()
             Self.Softmax_Layout_G[num_sp_stages=Self.num_stages,](
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 s_bars,
                 p_bars,
                 p_smem.as_unsafe_any_origin(),
@@ -1343,7 +1340,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         elif warp_idx >= 4 and warp_idx < 8:
             warpgroup_reg_alloc[num_reg_correction]()
             Self.Correction_Layout_G(
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 o_bars,
                 c_bars,
                 corr_done_bars,
@@ -1364,7 +1361,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     q_smem.as_unsafe_any_origin(),
                     kv_smem.as_unsafe_any_origin(),
                     mbar_q,
@@ -1374,7 +1371,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                 )
             elif warp_idx == 10:
                 Self.mmaPV(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     kv_smem.as_unsafe_any_origin(),
                     p_smem.as_unsafe_any_origin(),
                     p_bars,
@@ -1389,17 +1386,12 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     o_tma,
                     offset_position,
                 )
-        barrier()
+        syncwarp()
 
-        # PDL: Signal that this CTA is done
+        # PDL: the combine kernel can launch once every thread of the CTA has
+        # signaled (or exited), so each thread signals after its own work.
         comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
-
-        if warp_idx == 9:
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
-            tcgen05_dealloc[Self.config.cta_group](
-                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-            )
 
     # Load: TMA Q (FP8) and TMA KV (FP8). Cloned from the Layout E sibling;
     # TMA descriptors are config-driven so the BM=32 shapes flow through.
@@ -1479,9 +1471,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     Self.BM * Self.config.q_depth * Self.fp8_bytes_per_element
                 )
             )
-            comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
-                q_tma
-            ).tile_shape[1]
+            comptime q_elems = (
+                type_of(q_tma).tile_shape.element_types[0].static_value
+                * type_of(q_tma).tile_shape.element_types[1].static_value
+            )
             comptime q_tt_layout = tt_row_major[q_elems]()
             var q_smem_tensor = TileTensor[
                 Self.kv_type,

@@ -528,8 +528,8 @@ llvm::SMLoc ExprNode::getRangeStart() const { return getRange().getStart(); }
 llvm::SMLoc ExprNode::getRangeEnd() const { return getRange().getEnd(); }
 
 /// Return the 'loc' for this node translated to an MLIR location.
-Location ExprNode::getLocation(IREmitter &emitter) const {
-  return emitter.translateLocation(getLoc());
+Location ExprNode::getLocation(SharedStateUser &shared) const {
+  return shared.translateLocation(getLoc());
 }
 /// Recursively dig through noop paren nodes (if present) to find what is
 /// inside of them.
@@ -698,63 +698,191 @@ AnyValue StringLiteralNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 /// Get the source range for a t-string, from start to the closing quote.
 SourceRange TStringExprNode::getRange() const { return {startLoc, endLoc}; }
 
-/// Emit IR for a t-string.
-///
-/// Lowers t"Hello, {name}!" to __make_tstring["Hello, {}"](name).
-/// The format template is built at compile time with {} placeholders for each
-/// interpolation, then passed as a comptime string parameter to
-/// __make_tstring. The interpolated expressions become runtime arguments.
-AnyValue TStringExprNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
-  // Build the format template string and collect interpolated expressions.
-  SmallString<128> formatTemplate;
-  SmallVector<const ExprNode *> interpolatedExprs;
+static constexpr StringRef kTStringModule[] = {"std", "format", "tstring"};
 
-  for (const Part &part : parts) {
+/// Build the format template, replacing each interpolation with a `{}`.
+static void
+buildFormatTemplate(ArrayRef<TStringExprNode::Part> parts,
+                    SmallVectorImpl<char> &formatTemplate,
+                    SmallVectorImpl<const ExprNode *> &interpolatedExprs) {
+  using LiteralPart = TStringExprNode::LiteralPart;
+  using InterpolationPart = TStringExprNode::InterpolationPart;
+  for (const TStringExprNode::Part &part : parts) {
     std::visit(Overloaded{
                    [&](const LiteralPart &literal) {
-                     formatTemplate += Lexer::getTStringLiteralValue(
+                     std::string text = Lexer::getTStringLiteralValue(
                          literal.text, literal.isRaw);
+                     llvm::append_range(formatTemplate, text);
                    },
                    [&](const InterpolationPart &interpolation) {
-                     formatTemplate += "{}";
+                     formatTemplate.append({'{', '}'});
                      interpolatedExprs.push_back(interpolation.expr);
                    },
                },
                part);
   }
+}
 
-  // Emit IR for each interpolated expression.
-  SmallVector<ASTExprAnd<AnyValue>> interpolatedValues;
-  ExprDest exprDest(EC_OperatorOperandValue);
+/// Emit each interpolated expression into memory.  Returns the immutable
+/// union of their origins.
+static TypedAttr
+emitInterpolatedValues(IREmitter &emitter, ExprContext context,
+                       ArrayRef<const ExprNode *> interpolatedExprs,
+                       SmallVectorImpl<ASTExprAnd<AnyValue>> &values) {
+  SmallVector<TypedAttr> origins;
   for (const ExprNode *expr : interpolatedExprs) {
+    ExprDest exprDest(EC_OperatorOperandValue);
     AnyValue exprValue = emitter.emitExpr(expr, exprDest);
     if (!exprValue)
       return {};
-    interpolatedValues.push_back({std::move(exprValue), expr});
+
+    // A literal has no storage to reference until it takes its materialized
+    // type: `t"{42}"` interpolates an `Int`, not an `IntLiteral`.
+    ASTType type = exprValue.getRValueTypeIfResolvable();
+    if (type)
+      if (ASTType materialized =
+              type.getNonmaterializableTarget(emitter.shared))
+        type = materialized;
+
+    AnyValue memValue =
+        emitter.emitMemoryValue({std::move(exprValue), expr}, context, type);
+    if (!memValue)
+      return {};
+
+    origins.push_back(memValue.getMValueType().getOrigin());
+    values.push_back({std::move(memValue), expr});
   }
 
-  // Bind the format string as a compile-time parameter.
-  ParamBindings paramBindings(emitter.declScope, this);
-  auto formatStringAttr = StringAttr::get(
-      formatTemplate, KGEN::StringType::get(emitter.getContext()));
-  paramBindings.add(this, formatStringAttr);
+  // `_FormatArgument` holds an immutable reference, so the union is too.
+  return OriginMutCastAttr::get(
+      OriginUnionAttr::get(emitter.getContext(), origins), /*isMutable=*/false);
+}
 
-  // Look up __make_tstring and create an overload set.
-  constexpr auto kMakeTStringFnName = "__make_tstring";
-  auto fnDecls = emitter.shared.getBuiltinFunction(
-      emitter.declScope, {"std", "format", "tstring"}, kMakeTStringFnName,
-      getLoc());
+/// Return the `_FormatArgument[origin]` type each value is wrapped in.
+static ASTType getArgumentType(IREmitter &emitter, const ExprNode *expr,
+                               PValue origin) {
+  ASTDecl *decl = emitter.shared.getCachedBuiltinTypeDecl(
+      SharedState::ImportPath(kTStringModule), "_FormatArgument",
+      expr->getLoc());
+  if (!decl)
+    return {};
+  auto structOp = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  assert(structOp && "builtin '_FormatArgument' does not refer to a struct");
+
+  ParamBindings bindings(emitter.declScope, expr);
+  bindings.add(expr, origin);
+  return specializeStruct(bindings, structOp, decl);
+}
+
+/// Look up a t-string entry point and bind the parameters given, in order.
+static std::optional<OverloadSet>
+getTStringOverloadSet(IREmitter &emitter, const ExprNode *expr,
+                      StringRef fnName, ArrayRef<AnyValue> params) {
+  ArrayRef<ASTDecl *> fnDecls = emitter.shared.getBuiltinFunction(
+      emitter.declScope, SharedState::ImportPath(kTStringModule), fnName,
+      expr->getLoc());
   if (fnDecls.empty())
+    return std::nullopt;
+
+  ParamBindings bindings(emitter.declScope, expr);
+  for (const AnyValue &param : params)
+    bindings.add(expr, param);
+  return OverloadSet(fnName, fnDecls, std::move(bindings),
+                     CallSyntax::kDirectCall);
+}
+
+/// Wrap each of `values` in `argumentType` and collect them into an array.
+static AnyValue emitArgumentArray(IREmitter &emitter, const ExprNode *expr,
+                                  ASTType argumentType,
+                                  ArrayRef<ASTExprAnd<AnyValue>> values) {
+  ASTDecl *decl = emitter.shared.getCachedBuiltinTypeDecl(
+      SharedState::ImportPath({"std", "collections"}), "Array", expr->getLoc());
+  if (!decl)
+    return {};
+  auto structOp = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  assert(structOp && "builtin 'Array' does not refer to a struct");
+
+  // The element type is bound rather than inferred, because a t-string with
+  // no interpolations has no element to infer it from.  The length is left
+  // unbound for the literal's `__literal_size__` to fill in.
+  ParamBindings bindings(emitter.declScope, expr);
+  bindings.add(expr, PValue(argumentType));
+  bindings.add(expr,
+               UnboundAttr::get(UnresolvedType::get(emitter.getContext())));
+  ASTType arrayType = specializeStruct(bindings, structOp, decl);
+  if (!arrayType)
     return {};
 
-  OverloadSet os(kMakeTStringFnName, fnDecls, std::move(paramBindings),
-                 CallSyntax::kDirectCall);
+  CallOperands operands(CallSyntax::kTypeCall, expr, ExprDest(EC_CallArgValue));
+  for (const ASTExprAnd<AnyValue> &value : values) {
+    CValue argument = emitter.emitConstructorCall(
+        argumentType, CallOperands(CallSyntax::kTypeCall, value.expr,
+                                   ExprDest(EC_CallArgValue), {value}));
+    if (!argument)
+      return {};
+    operands.add({AnyValue(argument), value.expr});
+  }
+  addNoneLiteralMarker(operands, "__list_literal__", emitter);
+  return emitter.emitConstructorCall(arrayType, std::move(operands));
+}
 
-  // Build the call operands from the interpolated values.
+/// Lowers t"Hello, {name}!" to:
+///
+///   __make_tstring["Hello, {}", origin_of(name)](
+///     [_FormatArgument[origin_of(name)](name), ...])
+///
+/// Each value is wrapped in a `_FormatArgument` and then in an `Array`.
+AnyValue TStringExprNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
+  SmallString<128> formatTemplate;
+  SmallVector<const ExprNode *> interpolatedExprs;
+  buildFormatTemplate(parts, formatTemplate, interpolatedExprs);
+
+  // Abandon the destination, which ~ExprDest requires of a diagnosed error.
+  auto fail = [&]() -> AnyValue {
+    dest.resetForError(emitter);
+    return {};
+  };
+
+  // The `ref` arguments this lowering introduces are not in the source, so
+  // phrase their diagnostics against the enclosing context instead.
+  ExprContext context = dest.getContext();
+
+  SmallVector<ASTExprAnd<AnyValue>> values;
+  TypedAttr originUnion =
+      emitInterpolatedValues(emitter, context, interpolatedExprs, values);
+  if (!originUnion)
+    return fail();
+  PValue origin = emitter.getStdlibOriginOf(originUnion, getLoc());
+  if (!origin)
+    return fail();
+
+  // The wrappers need the whole union, so they cannot be built until every
+  // interpolated value has been emitted.
+  ASTType argumentType = getArgumentType(emitter, this, origin);
+  if (!argumentType)
+    return fail();
+
+  AnyValue arguments = emitArgumentArray(emitter, this, argumentType, values);
+  if (!arguments)
+    return fail();
+
+  // `__make_tstring` borrows that array, so it has to be in memory too.
+  arguments = emitter.emitMemoryValue({std::move(arguments), this}, context);
+  if (!arguments)
+    return fail();
+
+  AnyValue params[] = {
+      PValue(StringAttr::get(formatTemplate,
+                             KGEN::StringType::get(emitter.getContext()))),
+      origin};
+  auto overloadSet =
+      getTStringOverloadSet(emitter, this, "__make_tstring", params);
+  if (!overloadSet)
+    return fail();
+
   CallOperands operands(CallSyntax::kDirectCall, this, std::move(dest));
-  for (const auto &interpolated : interpolatedValues)
-    operands.add(interpolated);
-  return os.emitCall(std::move(operands), emitter);
+  operands.add({std::move(arguments), this});
+  return overloadSet->emitCall(std::move(operands), emitter);
 }
 
 bool Operand::isPositionalStringLiteral(StringRef str) const {
@@ -1144,8 +1272,6 @@ lookupMembersInDecls(SmallVectorImpl<ASTDecl *> &memberDecls,
     bool isExtension =
         isa_and_nonnull<ExtensionDeclOp>(containerDecl->getIfOperation());
     for (ASTDecl *decl : lookup.getIfSuccess()) {
-      if (decl->isDisabled())
-        continue;
       if (isExtension)
         if (!decl->getIfOperation())
           if (PValue cv = decl->getIfIRValue().getIfPValue())
@@ -1359,7 +1485,8 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                          expr->getRange(), CallSyntax::kDirectCall, {});
 
   // Aliases form a PValue.
-  if (auto param = dyn_cast_or_null<AliasDeclOp>(decl->getIfOperation())) {
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(decl)) {
+    AliasDeclOp param = aliasDecl->getOp();
     PValue result =
         resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
 
@@ -1460,7 +1587,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                                                  spelling, expr->getLoc());
           if (!decl)
             return {};
-        } else if (emitter.builder) {
+        } else if (emitter.builder && dest.getContext() != EC_TypeOf) {
           // There is no default set nor this capture was registered already.
           // This is an error.
           emitter.shared.emitError(
@@ -1767,19 +1894,6 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
   if (!newBindings)
     return {};
 
-  // Applying arguments to a parametric alias whose right-hand side is a closure
-  // type must substitute the arguments into the closure trait's captured
-  // aliases and yield a freshly specialized closure trait.
-  if (ASTDecl *moduleDecl =
-          emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>()) {
-    if (TraitType specialized =
-            emitter.shared.getClosureEmitter().getSpecializedClosureTrait(
-                sig, newBindings.getValues(), *moduleDecl, expr->getLoc())) {
-      return PValue(
-          TypeParamAttr::get(specialized, AnyTraitType::get(specialized)));
-    }
-  }
-
   return newBindings.specializeGenerator(callable);
 }
 
@@ -1863,7 +1977,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       size_t numEmitted = 0;
       for (const Operand &operand : exprOperands) {
         emitter.emitExpressionWithoutEvaluatingIt(
-            operand.expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+            operand.expr, EC_Origin,
+            [&](CValue result, IREmitter &emitter, Block &) {
               anyDynamic |= !result.getIfPValue();
               ++numEmitted;
             });
@@ -1884,8 +1999,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
         StringAttr::get(emitter.getContext(), staticGetterName));
     SubscriptNode subscriptNode(&getItemNode, node->getLoc(), exprOperands,
                                 node->getLoc());
-    if (isa_and_nonnull<AliasDeclOp>(
-            staticGetters.getIfSuccess().front()->getIfOperation())) {
+    if (isa<AliasASTDecl>(staticGetters.getIfSuccess().front())) {
       return emitter.emitExpr(&subscriptNode, dest);
     }
 
@@ -2214,16 +2328,16 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   // dynamic lookup attribute methods (__getattr__ etc) on the type.
   if (memberDecls.empty()) {
     // Convert the attribute name to a StringLiteralNode since that's how the
-    // operand will be emitted.  We need to allocate it persistently to enable
-    // DLValues to capture it.
+    // operand will be emitted. Allocate it with the surrounding statement so
+    // DLValues can capture it through emission.
     std::string quotedName = '"' + spelling.str() + '"';
-    StringRef quotedNameRef = shared.getPersistentCopy(StringRef(quotedName));
+    StringRef quotedNameRef = shared.stmtAllocator.internString(quotedName);
     // StringLiteral wants ArrayRef<StringRef>.
-    auto strRefs = shared.getPersistentCopy(ArrayRef(quotedNameRef));
-    auto *strLiteral = shared.allocPersistent<StringLiteralNode>(strRefs);
+    auto strRefs = shared.stmtAllocator.internElements(ArrayRef(quotedNameRef));
+    auto *strLiteral = shared.stmtAllocator.create<StringLiteralNode>(strRefs);
     // Put the expression in a ParenNode so it has a location.
     auto *parenNode =
-        shared.allocPersistent<ParenNode>(getLoc(), strLiteral, getLoc());
+        shared.stmtAllocator.create<ParenNode>(getLoc(), strLiteral, getLoc());
     return emitGetterSetterAccess(
         this, {baseVal, base},
         Operand(parenNode, getLoc(), ArgUnpackStyle::kPositional), dest,
@@ -2316,18 +2430,18 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
   };
 
   // References to an AliasDecl form a PValue.
-  if (isa_and_nonnull<AliasDeclOp>(memberDecls[0]->getIfOperation())) {
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(memberDecls[0])) {
     // Handle accessing an alias in a struct or an extension.
     // Can not be a TraitDeclOp, member lookup should be routed with a TraitType
     // Decl, and should be handled below;
     assert(isa_and_nonnull<StructDeclOp>(typeDeclOp) ||
            isa_and_nonnull<ExtensionDeclOp>(
                memberDecls[0]->getParentDecl()->getIfOperation()));
-    PValue result = resolveAliasReference(
-        cast<AliasDeclOp>(memberDecls[0]->getIfOperation()), spelling,
-        baseRVType.getParamBindings(), getLoc(), emitter);
+    PValue result =
+        resolveAliasReference(aliasDecl->getOp(), spelling,
+                              baseRVType.getParamBindings(), getLoc(), emitter);
     return emitter.emitResult(getParamMemberSugar(result), this, dest);
-  } else if (WitnessDecl *witness = memberDecls[0]->getIfWitness()) {
+  } else if (auto *witness = dyn_cast<WitnessASTDecl>(memberDecls[0])) {
     assert(sugarIsa<TraitType>(typeDecl->getIfTypeValue()) &&
            "Trait witness lookup must be routed via TraitType decl.");
 
@@ -3045,7 +3159,7 @@ static AnyValue emitFStringSubscriptMLIROp(const SubscriptNode &subscript,
       }
       concat.append(dre->spelling.data(), dre->spelling.size());
     }
-    tmpl = emitter.shared.getPersistentCopy(StringRef(concat));
+    tmpl = emitter.shared.stmtAllocator.internString(concat);
   }
 
   // 3. Process `_type` if present (single Type or Tuple of Types).
@@ -3510,6 +3624,8 @@ static AnyValue emitListLiteral(const ExprNode *expr,
 ExprNode::ELVIITResult ListLiteralNode::emitLCVIR(ExprDest &dest,
                                                   IREmitter &emitter,
                                                   bool isSpeculative) const {
+  auto expectedType = dest.getIfInitializerType();
+
   // Speculative emission is used for LHS patterns like `var [a, b] = …`. We
   // don't do anything with it, because `[var x:Int] = ...` isn't enough to
   // infer the type of the RHS anyway.  Just wait for the RHS to get emitted.
@@ -3518,12 +3634,20 @@ ExprNode::ELVIITResult ListLiteralNode::emitLCVIR(ExprDest &dest,
 
   // If this is the LHS of an assignment, then we unpack the list pattern into
   // the subexpressions of the pattern.
-  if (auto expectedType = dest.getIfInitializerType()) {
+  if (expectedType) {
     if (sugarIsa<TypeCheckErrorType>(expectedType))
       return {};
+
     DLValue result(RCRef<ListPatternDLValue>::create(
         exprs, expectedType, dest.getPatternDeclKind(), this));
     return emitter.emitResult(result, this, dest);
+  }
+
+  if (starIndex) {
+    emitter.emitError(exprs[*starIndex]->getLoc(),
+                      "can't use starred expression here")
+        << exprs[*starIndex]->getRange();
+    return {};
   }
 
   // Normal RHS emission: `[a, b, c]` as a list literal initializer.
@@ -3843,8 +3967,11 @@ AnyValue BinOpNode::emitWalrus(ExprDest &dest, IREmitter &emitter) const {
   if (rhsRValue.getIfSRValue())
     rhsRValue = emitter.emitMRValue({rhsRValue, rhs}, EC_Assignment);
 
-  // A setter taking a 'var' argument would consume the value we return.
-  BValue bValue = emitter.emitBValue({rhsRValue, rhs}, EC_Assignment);
+  // A setter taking a 'var' argument would consume the value we return. The
+  // synthetic node keeps a `x^` RHS from warning that it is only borrowed,
+  // since the value is moved into the result below.
+  SyntheticNode rhsNode(rhs->getLoc());
+  BValue bValue = emitter.emitBValue({rhsRValue, &rhsNode}, EC_Assignment);
   if (!bValue)
     return {};
   if (!emitter.emitStoreToLValue({bValue, rhs}, lhsLV, EC_Assignment))
@@ -3937,6 +4064,11 @@ AnyValue BinOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
           lhsTrait.getTraitType().getSymbols());
       llvm::append_range(symbols, rhsTrait.getTraitType().getSymbols());
       sortAndDeduplicateTraitSymbols(symbols);
+
+      if (failed(checkAtMostOneClosureTrait(emitter.shared, symbols, getLoc(),
+                                            getRange())))
+        return {};
+
       if (llvm::equal(symbols, lhsTrait.getTraitType().getSymbols())) {
         emitter.emitWarning(getLoc())
             << "redundant trait composition: "
@@ -4041,8 +4173,8 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
   if (!lhsI1SRValue)
     return {};
 
-  auto ifOp = HLCF::ElifOp::create(*emitter.builder, ifLoc,
-                                   TypeRange{lhsV.getType()}, lhsI1SRValue);
+  auto ifOp = HLCF::IfOp::create(*emitter.builder, ifLoc,
+                                 TypeRange{lhsV.getType()}, lhsI1SRValue);
   emitter.builder->createBlock(&ifOp.getThenRegion());
   emitter.builder->createBlock(&ifOp.getElseRegion());
 
@@ -4161,10 +4293,10 @@ AnyValue BinOpNode::emitAndOr(ExprDest &dest, IREmitter &emitter) const {
   HLCF::YieldOp::create(*emitter.builder, ifLoc);
 
   // MemoryOnly results don't need the 'elif' result.  There is no way to remove
-  // results after creating it, so we create a new ElifOp and move IR over.
+  // results after creating it, so we create a new IfOp and move IR over.
   emitter.builder->setInsertionPointAfter(ifOp);
   auto newIfOp =
-      HLCF::ElifOp::create(*emitter.builder, ifLoc, TypeRange{}, lhsI1SRValue);
+      HLCF::IfOp::create(*emitter.builder, ifLoc, TypeRange{}, lhsI1SRValue);
   deadCodeCheck();
   newIfOp.getThenRegion().takeBody(ifOp.getThenRegion());
   newIfOp.getElseRegion().takeBody(ifOp.getElseRegion());
@@ -4295,7 +4427,7 @@ UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
   if (newSubExpr == subExpr)
     return this;
 
-  return emitter.shared.allocPersistent<UnaryOpNode>(
+  return emitter.shared.stmtAllocator.create<UnaryOpNode>(
       kind, opLoc, const_cast<ExprNode *>(newSubExpr));
 }
 
@@ -4334,6 +4466,12 @@ AnyValue UnaryOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       return {};
     }
     return result;
+  }
+
+  if (kind == kPrefixEQ) {
+    emitter.emitError(getLoc(), "prefix '==' is only valid in a pattern")
+        << getRange();
+    return {};
   }
 
   if (kind == kComptime)
@@ -4467,8 +4605,8 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     return emitter.emitResult(value, this, dest);
   }
 
-  // If the condition is a comptime PValue, emit kgen.param.if instead of
-  // hlcf.elif. During elaboration, processParamIfOp selects and inlines only
+  // If the condition is a comptime PValue, emit hlcf.comptime.if instead of
+  // hlcf.if. During elaboration, processComptimeIfOp selects and inlines only
   // the live branch, preventing dead-branch ops (e.g. `comptime assert False`)
   // from ever being elaborated.
   if (PValue condPVal = condRVal.getIfPValue()) {
@@ -4484,33 +4622,41 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     // Create with a placeholder result (the condition's i1 type); the real
     // result type is fixed after emitting both branches. For the memory-only
     // path the op is recreated without a result at the end (same pattern as
-    // the hlcf.elif memory-only path below).
-    auto paramIfOp =
-        ParamIfOp::create(*emitter.builder, ifLoc,
-                          TypeRange{condPVal.get().getType()}, condPVal.get());
-
-    emitter.builder->createBlock(&paramIfOp.getThenRegion());
-    AnyValue trueRawVal = emitBranchUnderAssumption(
-        trueExpr, buildBranchAssumption(condPVal.get(),
-                                        /*invertCondition=*/false, ifLoc));
-
-    emitter.builder->createBlock(&paramIfOp.getElseRegion());
-    AnyValue falseRawVal = emitBranchUnderAssumption(
-        falseExpr,
-        buildBranchAssumption(condPVal.get(), /*invertCondition=*/true, ifLoc));
+    // the hlcf.if memory-only path below).
+    AnyValue trueRawVal, falseRawVal;
+    auto comptimeIfOp = HLCF::ComptimeIfOp::create(
+        *emitter.builder, ifLoc, TypeRange{condPVal.get().getType()},
+        condPVal.get(),
+        [&]() -> LogicalResult {
+          trueRawVal = emitBranchUnderAssumption(
+              trueExpr,
+              buildBranchAssumption(condPVal.get(),
+                                    /*invertCondition=*/false, ifLoc));
+          return success();
+        },
+        [&]() -> LogicalResult {
+          falseRawVal = emitBranchUnderAssumption(
+              falseExpr,
+              buildBranchAssumption(condPVal.get(),
+                                    /*invertCondition=*/true, ifLoc));
+          return success();
+        });
+    if (!comptimeIfOp)
+      return {};
 
     CValue falseVal =
         emitToCValueInferringType({falseRawVal, falseExpr}, trueRawVal);
-    emitter.builder->setInsertionPointToEnd(&paramIfOp.getThenRegion().front());
+    emitter.builder->setInsertionPointToEnd(
+        &comptimeIfOp.getThenRegion().front());
     CValue trueVal =
         emitToCValueInferringType({trueRawVal, trueExpr}, falseRawVal);
 
     if (!trueVal || !falseVal) {
-      emitter.builder->setInsertionPointAfter(paramIfOp);
+      emitter.builder->setInsertionPointAfter(comptimeIfOp);
       return {};
     }
 
-    return emitter.mergeCValuesAcrossIfLikeOp(paramIfOp, ifLoc, getLoc(),
+    return emitter.mergeCValuesAcrossIfLikeOp(comptimeIfOp, ifLoc, getLoc(),
                                               trueVal, trueExpr, falseVal,
                                               falseExpr, this, dest);
   }
@@ -4523,8 +4669,8 @@ AnyValue IfElseOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 
   // At this point since we don't know the type of trueExpr / falseExpr, use a
   // dummy type for the 'elif' result.  We'll fix it later.
-  auto ifOp = HLCF::ElifOp::create(*emitter.builder, ifLoc,
-                                   TypeRange{condValue.getType()}, condValue);
+  auto ifOp = HLCF::IfOp::create(*emitter.builder, ifLoc,
+                                 TypeRange{condValue.getType()}, condValue);
 
   // Emit the trueVal and falseVal's, coercing any UValue to the other operand
   // type if present, but otherwise not diagnosing conflicts or merging types
@@ -4578,18 +4724,17 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
   if (!prevCmpI1Value)
     return {};
   SRValue prevCmpI1SRValue;
-  HLCF::ElifOp ifOp;
+  HLCF::IfOp ifOp;
   if (emitter.builder) {
     prevCmpI1SRValue =
         emitter.emitSRValue({prevCmpI1Value, this}, EC_BoolCondition);
     if (!prevCmpI1SRValue)
       return {};
     // In the dynamic case we need to build the RHS evaluation in the Then
-    // region of an ElifOp.  But if we end up having all parameters, it will not
+    // region of an IfOp.  But if we end up having all parameters, it will not
     // have been necessary.
-    ifOp =
-        HLCF::ElifOp::create(*emitter.builder, ifLocation,
-                             prevCmpVal.getType().mlirType, prevCmpI1SRValue);
+    ifOp = HLCF::IfOp::create(*emitter.builder, ifLocation,
+                              prevCmpVal.getType().mlirType, prevCmpI1SRValue);
     emitter.builder->createBlock(&ifOp.getThenRegion());
   }
   AnyValue newRHS = emitter.emitExpr(exprs[opIdx + 1], EC_OperatorOperandValue);
@@ -4631,7 +4776,7 @@ RValue ChainedCmpOpNode::emitNextCmp(IREmitter &emitter, size_t opIdx,
     return ret;
   }
 
-  // We need to return the result of the ElifOp as a RValue.
+  // We need to return the result of the IfOp as a RValue.
   // More concretely, it will be an SRValue or, for exotic memory-only bool
   // equivalents, one of the pointer type RValues.
   // But for simplicity, let's only support return values that can fit in an
@@ -4730,7 +4875,7 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   argList.resultArg = resultArg;
   argList.effects = effects;
   argList.isThin = isThin;
-  argList.isExperimentalParamTrait = isExperimentalParamTrait;
+  argList.isParsingClosure = !isThin && !effects.isCapturing();
   argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
 
   TypeCheckedFnSignature tcSignature(paramList, argList, originExpr,
@@ -4759,17 +4904,9 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
 
-  if (argList.isClosureFunctionType()) {
-    ASTDecl *moduleDecl =
-        emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>();
-    if (argList.isExperimentalParamTrait) {
-      TraitType traitType = emitter.shared.declResolver->getCanonicalTrait(
-          emitter.bindParamsToClosureTraitFromSig(signature));
-      return emitter.emitResult(ASTType(traitType), this, dest);
-    }
-    ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
-        getLoc(), *moduleDecl, signature);
-    Type traitType = trait->getTypeDeclSelf().extractMetaType();
+  if (argList.isClosureTrait()) {
+    TraitType traitType = emitter.shared.declResolver->getCanonicalTrait(
+        emitter.bindParamsToClosureTraitFromSig(signature));
     return emitter.emitResult(ASTType(traitType), this, dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);
@@ -4964,13 +5101,20 @@ AnyValue MagicFunctionNode::emitOriginOf(ExprDest &dest,
 
   for (ExprNode *subExpr : subExprs) {
     emitter.emitExpressionWithoutEvaluatingIt(
-        subExpr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+        subExpr, EC_Origin,
+        [&](CValue result, IREmitter &emitter, Block &exprBlock) {
           // If this is a value of std.Origin type, remember it.
           if (auto origin = ASTType(result.getType()).isOriginStruct())
             singleOrigin = result;
 
-          if (auto origin = emitter.extractOriginOf(subExpr, result))
-            origins.push_back(origin);
+          // Drop a bad operand rather than bailing, so the remaining operands
+          // are checked and reported too.
+          TypedAttr origin = emitter.extractOriginOf(subExpr, result);
+          if (!origin || failed(emitter.checkRootOriginsOutliveBlock(
+                             origin, exprBlock, subExpr)))
+            return;
+
+          origins.push_back(origin);
         });
   }
 
@@ -4991,7 +5135,8 @@ AnyValue MagicFunctionNode::emitTypeOf(ExprDest &dest,
   // TypeOf can reference dynamic values even when in a parameter context.
   ASTType resultType;
   emitter.emitExpressionWithoutEvaluatingIt(
-      subExprs.front(), EC_Origin, [&](CValue result, IREmitter &emitter) {
+      subExprs.front(), EC_TypeOf,
+      [&](CValue result, IREmitter &emitter, Block &) {
         resultType = result.getRValueType();
       });
 
@@ -5220,7 +5365,7 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ExprDest &dest,
 
   // If we have a concrete struct type and a concrete index, use the direct path
   auto structType = sugarDynCast<LIT::StructType>(elementType);
-  ErrorOr<int64_t> indexValueOr = POP::getScalarIndexValue(indexAttr);
+  ErrorOr<int64_t> indexValueOr = getScalarIndexValue(indexAttr);
   if (structType && succeeded(indexValueOr)) {
     // RefStructGEROp requires the base to be a StructType: rebind away sugar.
     if (!isa<LIT::StructType>(structRef.getRValueType())) {
@@ -5329,13 +5474,8 @@ LogicalResult TupleNode::emitDestructuringPValue(PValue toUnpack,
     // Get the item from the tuple into the corresponding LValue.
     ExprDest eltDest(eltType, EC_TupleElement);
 
-    // Bind the i parameters.  Int explicitly constructs from index type now.
-    TypedAttr indexAttr =
-        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-
     CValue intIndexCValue =
-        emitter.emitInt(ASTExprAnd<PValue>{PValue(indexAttr), this},
-                        ExprContext::EC_CallParamValue);
+        emitter.emitInt(index, getLoc(), ExprContext::EC_CallParamValue);
     PValue intIndex = intIndexCValue.getIfPValue();
     assert(intIndex && "Int must be PValue when constructed from int attr");
 
@@ -5463,12 +5603,12 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
         newExprs.push_back(const_cast<ExprNode *>(newExpr));
       else {
         assert(result.getIfValue() && "unexpected result kind");
-        newExprs.push_back(shared.allocPersistent<SyntheticNode>(
+        newExprs.push_back(shared.stmtAllocator.create<SyntheticNode>(
             expr->getLoc(), result.getIfValue()));
       }
     }
-    return shared.allocPersistent<TupleNode>(
-        firstCommaLoc, shared.getPersistentCopy(ArrayRef(newExprs)));
+    return shared.stmtAllocator.create<TupleNode>(
+        firstCommaLoc, shared.stmtAllocator.internElements(ArrayRef(newExprs)));
   }
 
   // Otherwise, emit in a non-speculatively path, which could be an LValue or

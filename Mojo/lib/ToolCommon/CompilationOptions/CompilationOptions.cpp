@@ -190,7 +190,12 @@ bool M::KGEN::isMetalTriple(const llvm::Triple &triple) {
 }
 
 bool M::KGEN::overrideExported(const llvm::Triple &triple) {
-  return isGPUTriple(triple);
+  if (isGPUTriple(triple))
+    return true;
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(triple);
+  const TargetTraits *traits = traitsOr.isError() ? nullptr : *traitsOr;
+  return traits && traits->forcesExportedSymbols();
 }
 
 bool M::KGEN::overrideExported(const CompilationOptions &options) {

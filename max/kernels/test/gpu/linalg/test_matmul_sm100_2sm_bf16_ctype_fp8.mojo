@@ -12,15 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import argv, size_of
-import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from std.random import rand
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -73,14 +70,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
         Int(n.value())
@@ -117,8 +112,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             for k_idx in range(Int(k.value())):
                 b_host[n_idx, k_idx] = Float32(n_idx + k_idx).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements(), min=-1.0, max=1.0)
-        rand(b_host._storage, b_host.num_elements(), min=-1.0, max=1.0)
+        rand(a_host.as_span(), min=-1.0, max=1.0)
+        rand(b_host.as_span(), min=-1.0, max=1.0)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

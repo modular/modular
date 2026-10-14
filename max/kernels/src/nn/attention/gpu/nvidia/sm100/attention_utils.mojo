@@ -21,12 +21,13 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 - Masking utilities (apply_mask, apply_oob_mask)
 """
 
+from std.builtin.dtype import _unsigned_integral_type_of
 from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
-from std.sys import size_of, _RegisterPackType, get_defined_bool
+from std.sys import size_of, _RegisterPackType
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
-from std.bit import prev_power_of_two, pop_count
+from std.bit import log2_ceil, prev_power_of_two, pop_count
 from max.gpu import block_idx
 from max.gpu.globals import WARP_SIZE
 from max.gpu.primitives.id import cluster_dim
@@ -38,6 +39,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
 )
 from max.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
+from max.gpu.host.info import B200
 from layout import (
     IntTuple,
     Layout,
@@ -54,9 +56,13 @@ from layout.tile_layout import (
     Layout as InternalLayout,
     row_major as tt_row_major,
 )
+from layout.swizzle import make_swizzle
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
-from nn.attention.gpu.nvidia.sm100.attention import FA4Config
+from nn.attention.gpu.nvidia.sm100.attention import (
+    FA4Config,
+    SM100_RESERVED_SMEM_BYTES,
+)
 
 # `elect` is defined in the shared NVIDIA module so SM90 and SM100 can both use
 # it without a cross-architecture import. Re-exported here for the many SM100
@@ -64,7 +70,6 @@ from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.common import elect
 from nn.attention.mha_mask import MHAMask, MASK_VALUE, MaskStrategy
 from nn.attention.mha_operand import (
-    MHAOperand,
     PagedRowIndices,
     kv_sub_tile_rows,
     kv_num_sub_tiles,
@@ -112,7 +117,9 @@ comptime SharedMemTensor[
     address_space=.SHARED,
 ]
 
-# Legacy LayoutTensor aliases for TMA/MMA API boundaries
+# Legacy LayoutTensor alias: `STMatrixLayout.TensorType` builds local
+# register tiles for the tcgen05 TMEM `st_matrix` store path, which has no
+# TileTensor equivalent yet.
 comptime LocalLT[
     dtype: DType, layout: Layout, element_layout: Layout = Layout(1, 1)
 ] = LayoutTensor[
@@ -122,10 +129,65 @@ comptime LocalLT[
     address_space=.LOCAL,
     element_layout=element_layout,
 ]
-comptime SharedMemPointer[type: AnyType] = UnsafePointer[
+comptime SharedMemPointer[type: AnyType] = Pointer[
     type, MutAnyOrigin, address_space=.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
+
+# SM100 attention kernels do not allocate TMEM. Each kernel's shared-memory
+# footprint (checked by `assert_sm_exclusive_smem`) leaves room for one CTA per
+# SM, so the TMEM allocator has nothing to arbitrate and every kernel uses TMEM
+# from address 0.
+
+
+@inline(.always)
+def attn_tmem_addr[cluster_size: Int]() -> UInt32:
+    """Returns the TMEM base, 0, as a value ptxas cannot fold.
+
+    A literal 0 makes ptxas rebuild every TMEM operand per `tcgen05.mma` (an
+    `IMAD.MOV` plus an `R2UR` per use) instead of keeping one uniform
+    register; inline asm cannot hide it, since ptxas folds the PTX immediate.
+    A CTA's cluster rank is below `cluster_size`, so shifting it right by
+    `log2_ceil(cluster_size)` is a run-time 0 that costs an `S2R` and a shift.
+    Inline asm hides the rank from LLVM, which folds `cluster.ctarank` to 0
+    under `nvvm.cluster_dim` = (1, 1, 1), and ptxas folds neither the rank
+    nor the shift. `%cluster_ctaid.y` is also 0 in these 1-D clusters, but
+    ptxas computes it as `%ctaid.y` modulo the cluster shape: three
+    constant-bank loads and a reciprocal division.
+
+    Parameters:
+        cluster_size: CTAs per cluster, or 1 when launched without a cluster.
+    """
+    comptime assert cluster_size >= 1, "cluster_size must be positive"
+    comptime shift = log2_ceil(cluster_size)
+    comptime if shift == 0:
+        return inlined_assembly[
+            "mov.u32 $0, %cluster_ctarank;",
+            UInt32,
+            constraints="=r",
+            has_side_effect=False,
+        ]()
+    else:
+        return inlined_assembly[
+            String(
+                "{ .reg .b32 %rank; mov.u32 %rank, %cluster_ctarank;",
+                t" shr.u32 $0, %rank, {shift}; }}",
+            ),
+            UInt32,
+            constraints="=r",
+            has_side_effect=False,
+        ]()
+
+
+@inline(.always)
+def assert_sm_exclusive_smem[smem_bytes: Int]():
+    """Asserts that a second CTA of this kernel cannot be co-resident on the
+    SM: with less than half the SM's shared memory, two CTAs would share the
+    unallocated TMEM at address 0."""
+    comptime assert (
+        2 * (smem_bytes + SM100_RESERVED_SMEM_BYTES)
+        > B200.shared_memory_per_multiprocessor
+    ), "SM100 attention uses TMEM unallocated, so needs > half the SM's smem"
 
 
 # PagedRowIndices, kv_sub_tile_rows, kv_num_sub_tiles are now defined in
@@ -159,22 +221,20 @@ def cumulative_power_of_two(N: Int, i: Int) -> Int:
 # to enable use of this function with pipelining.
 @inline(.nodebug)
 def break_into_powers_of_two[
-    origins: OriginSet,
-    //,
-    func: def[pow_two: Int, offset: Int]() capturing[origins] -> None,
     N: Int,
     *,
     max_value: Int = 128,
-]():
+](func: Some[def[pow_two: Int, offset: Int]() -> None]):
     """Calls `func` for each power-of-two-sized chunk of `N`, plus a final `pow_two=0` call for pipeline cleanup.
 
     Parameters:
-        origins: Origin set captured by the callback (inferred).
-        func: Callback invoked once per power-of-two chunk with the chunk
-            size and starting offset, plus a final `pow_two=0` cleanup call.
         N: Total size to decompose into power-of-two chunks.
         max_value: Upper bound on the largest power-of-two chunk size
             (defaults to 128).
+
+    Args:
+        func: Callback invoked once per power-of-two chunk with the chunk
+            size and starting offset, plus a final `pow_two=0` cleanup call.
     """
     comptime power_of_two = prev_power_of_two(min(max_value, N))
 
@@ -366,6 +426,101 @@ def o_store_tma_blocks_per_op[
 
 
 @inline(.always)
+def opaque_u32(x: UInt32) -> UInt32:
+    """Returns `x` through a copy LLVM can neither hoist nor merge.
+
+    Epilogue addresses derive only from the thread's row, so LLVM hoists them
+    to the kernel entry (merging them across call sites) and they stay live
+    through the main loop, where ptxas spills them. Deriving them from this
+    copy pins the arithmetic at its use; the 2Q d128 kernel spilled 28 B
+    without it.
+    """
+    return inlined_assembly[
+        "mov.u32 $0, $1;",
+        UInt32,
+        constraints="=r,r",
+        has_side_effect=True,
+    ](x)
+
+
+@inline(.always)
+def o_smem_chunk_offset[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    rows: Int,
+](row: Int, chunk: Int) -> Int:
+    """Element offset of 16 B chunk `chunk` of output row `row` in the O
+    staging tile a per-block `swizzle_mode` O-TMA store reads.
+
+    The tile is block-major `[block, rows, K]`, `K = swizzle_mode.bytes() //
+    size_of[dtype]`, with `swizzle_mode`'s XOR applied within each block, so
+    the 8 rows of one store phase land on 8 distinct 16 B bank groups for every
+    mode. `chunk` counts 16 B units along the row (8 bf16 or 4 f32 columns).
+    SWIZZLE_NONE reduces to one chunk per block, `chunk * rows * K + row * K`.
+    """
+    comptime cw = 16 // size_of[dtype]()
+    comptime K = swizzle_mode.bytes() // size_of[dtype]()
+    comptime cpb = K // cw
+    var blk, c = divmod(chunk, cpb)
+    var r = Int(opaque_u32(UInt32(row)))
+    return blk * rows * K + make_swizzle[dtype, swizzle_mode]()(r * K + c * cw)
+
+
+def _o_split_band[esz: Int](ov: Int, P: Int, block_bytes: Int) -> Int:
+    """Widest partition band (columns) of the 1Q split-K reduce-scatter when
+    its unit is one `block_bytes`-wide O-store block."""
+    var K = block_bytes // esz
+    return ceildiv(ceildiv(ov, K), P) * K
+
+
+def fa4_o_store_swizzle[
+    output_type: DType, config: FA4Config
+]() -> TensorMapSwizzle:
+    """Swizzle of the FA4 O-TMA store, i.e. its block width.
+
+    SWIZZLE_128B (64 bf16 columns per box row) unless split-K reduce-scatters
+    O across the cluster: every partition TMA-stores only its own depth band,
+    so a block must not straddle two partitions' bands. There the widest block
+    is chosen that leaves the widest band no wider than the 16 B-block split
+    would, which keeps the reduce-scatter's critical path unchanged (d128:
+    P=2 -> 128B, P=4 -> 64B, P=6 or 16 -> NONE).
+    """
+    comptime esz = size_of[output_type]()
+    comptime P = config.splitk_partitions
+    comptime ov = config.ov_depth
+    comptime if P <= 1:
+        return TensorMapSwizzle.SWIZZLE_128B
+    elif config.use_ws:
+        # WS split-K: partition `p` owns the contiguous warp bands
+        # `[p*bpp, (p+1)*bpp)` of `ov // m_pack` columns each.
+        comptime cols = ceildiv(config.m_pack, P) * (ov // config.m_pack)
+        comptime if cols % (128 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_128B
+        elif cols % (64 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_64B
+        elif cols % (32 // esz) == 0:
+            return TensorMapSwizzle.SWIZZLE_32B
+        else:
+            return TensorMapSwizzle.SWIZZLE_NONE
+    else:
+        comptime floor_band = _o_split_band[esz](ov, P, 16)
+        comptime if ov % (128 // esz) == 0 and _o_split_band[esz](
+            ov, P, 128
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_128B
+        elif ov % (64 // esz) == 0 and _o_split_band[esz](
+            ov, P, 64
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_64B
+        elif ov % (32 // esz) == 0 and _o_split_band[esz](
+            ov, P, 32
+        ) <= floor_band:
+            return TensorMapSwizzle.SWIZZLE_32B
+        else:
+            return TensorMapSwizzle.SWIZZLE_NONE
+
+
+@inline(.always)
 def pack_row[
     n: Int, //, output_type: DType, w: Int, start: Int = 0
 ](o_vals: Array[Float32, n]) -> SIMD[.uint32, 4]:
@@ -432,7 +587,7 @@ def blasst_vote_unanimous(
     # One aligned 32-bit read replaces 4 byte reads + a short-circuit AND
     # chain (which serializes the loads behind 3 branches). Legal because a
     # `(wg, phase)` group's 4 slots are consecutive bytes at a 4-byte-aligned
-    # address (`blasst_vote_byte_offset` follows the UInt32 `tmem_addr`, and
+    # address (`blasst_vote_byte_offset` follows the 8-byte mbarriers, and
     # `base` is a multiple of 4) and every slot only ever holds 0 or 1
     # (`kernel.mojo` zero-inits the region; `blasst_observe` writes 0/1), so
     # "all four nonzero" == "the word is 0x01010101".
@@ -661,7 +816,8 @@ struct TMemTile[
 
     @inline(.always)
     def __getitem__(self, i: UInt32) -> Self:
-        return {self.tmem_addr + i * UInt32(Self.BN)}
+        # TMEM columns are 32-bit words; `BN` counts elements.
+        return {self.tmem_addr + i * UInt32(Self.BN * Self.dtype_size // 4)}
 
     @inline(.always)
     def offset[m_mma: Int, n_mma: Int](self) -> UInt32:
@@ -701,7 +857,7 @@ struct TMemTile[
         ].TensorType[Self.dtype],
     ):
         comptime assert Self.dtype_size <= 4
-        var ptr = src.ptr.bitcast[UInt32]()
+        var ptr = src.ptr.unsafe_bitcast[UInt32]()
         comptime st_mat_layout = STMatrixLayout[
             Self.BM,
             Self.BN,
@@ -710,9 +866,8 @@ struct TMemTile[
         ]
         comptime assert st_mat_layout.bits == 128 or st_mat_layout.bits == 256
 
-        @__parameter
         @inline(.always)
-        def store_fn[pow_two: Int, offset: Int]():
+        def store_fn[pow_two: Int, offset: Int]() {var}:
             # pow_two is current repeat, offset total so far
             comptime if pow_two > 0:
                 comptime for m_mma in range(st_mat_layout.num_m_tiles):
@@ -728,7 +883,7 @@ struct TMemTile[
                     var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
                     var frag = Array[_, offsets.local_frag_size_b32](
                         fill_with_unrolled=lambda [i: Int]() -> UInt32: (
-                            ptr.load(offsets.ptr_offset + i)
+                            ptr.unsafe_load(offsets.ptr_offset + i)
                         )
                     )
                     # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
@@ -740,9 +895,9 @@ struct TMemTile[
                     ](tmem, frag)
 
         comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[
-            func=store_fn, N=st_mat_layout.repeat, max_value=max_value
-        ]()
+        break_into_powers_of_two[N=st_mat_layout.repeat, max_value=max_value](
+            store_fn
+        )
 
     @inline(.always)
     def load_async_with_st_matrix_layout[
@@ -811,14 +966,11 @@ struct TMemTile[
         ]()
         comptime load_dtype = DType.uint32
         var ptr = rebind[
-            UnsafePointer[
-                Scalar[load_dtype], MutAnyOrigin, address_space=.LOCAL
-            ]
+            Pointer[Scalar[load_dtype], MutAnyOrigin, address_space=.LOCAL]
         ](dst.ptr)
 
-        @__parameter
         @inline(.always)
-        def load_fn[pow_two: Int, local_offset: Int]():
+        def load_fn[pow_two: Int, local_offset: Int]() {var}:
             comptime assert pow_two + local_offset <= num_repeats
             comptime if pow_two > 0:
                 comptime for m_mma in range(st_mat_layout.num_m_tiles):
@@ -842,12 +994,10 @@ struct TMemTile[
                     ](tmem)
 
                     comptime for _i in range(offsets.local_frag_size_b32):
-                        ptr.store(offsets.ptr_offset + _i, frag[_i])
+                        ptr.unsafe_store(offsets.ptr_offset + _i, frag[_i])
 
         comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[
-            func=load_fn, N=num_repeats, max_value=max_value
-        ]()
+        break_into_powers_of_two[N=num_repeats, max_value=max_value](load_fn)
 
     @inline(.always)
     def load_async(
@@ -855,20 +1005,18 @@ struct TMemTile[
         out dst: Array[Scalar[Self.dtype], Self.BN],
     ):
         dst = Array[Scalar[Self.dtype], Self.BN](uninitialized=True)
-        # The uint32 bitcast path below assumes dtype_size == 4.
-        # Sub-32-bit types (bf16, f16) pack multiple elements per uint32
-        # and would need unpacking logic not yet implemented.
-        comptime assert (
-            Self.dtype_size == 4
-        ), "load_async only supports 32-bit dtypes"
-        comptime repeat = Self.dtype_size * Self.BN // 4
-        comptime dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
+        comptime assert 4 % Self.dtype_size == 0
+        # Each 32-bit TMEM word holds `per_word` elements, lowest element in
+        # the low bits -- the order `store_async` packs them in.
+        comptime per_word = 4 // Self.dtype_size
+        comptime assert Self.BN % per_word == 0
+        comptime repeat = Self.BN // per_word
 
-        @__parameter
+        # `pow_two` and `offset` count words, not elements.
         @inline(.always)
-        def load_fn[pow_two: Int, offset: Int]():
+        def load_fn[pow_two: Int, offset: Int]() {var, mut dst}:
             comptime if pow_two > 0:
-                comptime if dtype == Self.dtype:
+                comptime if per_word == 1:
                     var frag0 = tcgen05_ld[
                         datapaths=32,  # first dimension of the shape
                         bits=32,  # second dimension of the shape
@@ -891,24 +1039,27 @@ struct TMemTile[
                     ](self.tmem_addr + UInt32(offset))
 
                     comptime for _i in range(pow_two):
-                        dst[offset + _i] = bitcast[Self.dtype](frag1[_i])
+                        var elems = bitcast[Self.dtype, per_word](frag1[_i])
+                        comptime for _j in range(per_word):
+                            dst[(offset + _i) * per_word + _j] = elems[_j]
 
-        break_into_powers_of_two[func=load_fn, N=repeat, max_value=128]()
+        break_into_powers_of_two[N=repeat, max_value=128](load_fn)
 
     @inline(.always)
     def store_async[
         src_type: DType
     ](self, src: LocalTensor[src_type, row_major[Self.BN](), _]):
-        @__parameter
         @inline(.always)
-        def store_fn[pow_two: Int, offset: Int]():
+        def store_fn[pow_two: Int, offset: Int]() {var}:
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
                 var frag = Array[UInt32, frag_width](uninitialized=True)
 
                 comptime if src_type == Self.dtype:
                     comptime for _i in range(frag_width):
-                        frag[_i] = src.ptr.bitcast[UInt32]().load(offset + _i)
+                        frag[_i] = src.ptr.unsafe_bitcast[UInt32]().load(
+                            offset + _i
+                        )
                 elif pow_two > 1:
                     comptime size_ratio = size_of[src_type]() // Self.dtype_size
                     comptime cast_width = min(
@@ -950,7 +1101,7 @@ struct TMemTile[
                     pack=False,
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
-        break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
+        break_into_powers_of_two[N=Self.BN, max_value=128](store_fn)
 
     @inline(.always)
     def store_async[
@@ -958,14 +1109,13 @@ struct TMemTile[
         src_len: Int,
         src_offset: Int = 0,
     ](self, src: Array[Scalar[src_type], src_len]):
-        @__parameter
         @inline(.always)
-        def store_fn[pow_two: Int, offset: Int]():
+        def store_fn[pow_two: Int, offset: Int]() {var, imm src}:
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
                 var frag = Array[UInt32, frag_width](uninitialized=True)
 
-                comptime if src_type == Self.dtype:
+                comptime if src_type == Self.dtype and Self.dtype_size == 4:
                     comptime for _i in range(frag_width):
                         frag[_i] = bitcast[.uint32](
                             src[src_offset + offset + _i]
@@ -1010,7 +1160,7 @@ struct TMemTile[
                     pack=False,
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
-        break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
+        break_into_powers_of_two[N=Self.BN, max_value=128](store_fn)
 
 
 struct SM100TensorAccumulator[
@@ -2359,10 +2509,36 @@ def bulk_mma_ws_ts_partial[
 
 @inline(.always)
 def llvm_opaque_tid() -> UInt32:
-    """Returns the opaque thread ID via the `llvm.nvvm.read.ptx.sreg.tid.x` intrinsic.
+    """Returns `tid.x` via a read LLVM may not CSE with any other `tid.x` read.
+
+    The point is the NON-merging, not the value: a single hoisted `tid.x` read
+    leaves everything derived from it live across the `setmaxnreg` boundary,
+    where only the reported register count is available, and ptxas then spills
+    it. Keeping the read inside the warp-role branch keeps the derived
+    addresses on the consumer's side of the boundary.
+
+    Must be INLINE ASM, not `llvm_intrinsic[..., has_side_effect=True]`:
+    NVVM's `llvm.nvvm.read.ptx.sreg.tid.x` carries IntrNoMem/IntrSpeculatable
+    from its own definition, so a call-site side-effect marking does not stop
+    the merge. Measured 2026-09-15 on the trimmed fp8-d128-prefill vehicle: the
+    intrinsic form emitted exactly ONE `%tid.x` per kernel on every 2Q and 1Q
+    arm (so the marking was inert and the helper bought nothing), while this
+    form emits one per role branch -- 3 on the 2Q kernels, with a fresh
+    `S2R SR_TID.X` immediately after each `USETMAXREG.TRY_ALLOC`. Spill across
+    the vehicle's 69 kernels went 456 B -> 408 B, 12 kernels improved and none
+    regressed, with no register-count change: the 2Q bf16/fp8 bodies reached
+    0 B (0 B stack frame) from 4 B, and 1Q went 56->52 / 20->16 / 4->0.
+
+    VERIFY IN SASS, NOT SOURCE (this helper has silently regressed once): count
+    `%tid.x` in the emitted PTX -- more than one read means the marking
+    survived, exactly one means it was merged -- and check that an
+    `S2R ... SR_TID.X` appears on BOTH sides of `USETMAXREG.TRY_ALLOC`.
     """
-    return llvm_intrinsic[
-        "llvm.nvvm.read.ptx.sreg.tid.x", UInt32, has_side_effect=True
+    return inlined_assembly[
+        "mov.u32 $0, %tid.x;",
+        UInt32,
+        constraints="=r",
+        has_side_effect=True,
     ]()
 
 
@@ -2478,6 +2654,35 @@ def add_ftz_rm(a: SIMD[.float32, 2], b: SIMD[.float32, 2]) -> SIMD[.float32, 2]:
         b: Second `f32x2` addend vector.
     """
     return intrin_ftz_x2["add.rm"](a, b)
+
+
+@inline(.always)
+def relu_cvt_bf16x2(hi: Float32, lo: Float32) -> SIMD[.bfloat16, 2]:
+    """Returns `{relu(lo), relu(hi)}` as a packed `bf16x2`, in one instruction.
+
+    `cvt.rn.relu.bf16x2.f32` fuses the clamp-at-zero into the narrowing convert
+    and lowers to a single `F2FP.RELU.BF16.F32.PACK_AB` on SM100, so a relu that
+    costs one `FMNMX` per lane in f32 (PTX has no `max.f32x2` at any ISA
+    version) becomes free. Pairs with a `bf16x2` `.fma()` to fold two columns in
+    two instructions instead of three.
+
+    Inline asm rather than `max(...).cast[bfloat16]()` because LLVM emits the
+    plain `cvt.rn.bf16x2.f32` and leaves the two `max` instructions standing.
+
+    Args:
+        hi: Value converted into the HIGH half of the result -- lane 1. PTX
+            names the packed halves high-first, the reverse of the SIMD index
+            order, so swapping these silently misaligns every lane downstream.
+        lo: Value converted into the LOW half of the result -- lane 0.
+    """
+    return bitcast[DType.bfloat16, 2](
+        inlined_assembly[
+            "cvt.rn.relu.bf16x2.f32 $0, $1, $2;",
+            UInt32,
+            constraints="=r,f,f",
+            has_side_effect=False,
+        ](hi, lo)
+    )
 
 
 @inline(.always)
@@ -2690,7 +2895,7 @@ def exp2_emulation[
 @inline(.always)
 def elect_mma_arrive[
     cta_group: Int = 1
-](mbar_ptr: UnsafePointer[address_space=.SHARED, ...], elect: Int32,):
+](mbar_ptr: ImmPointer[address_space=.SHARED, ...], elect: Int32,):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:
@@ -2795,7 +3000,7 @@ def store_global_pred[
     not read back what they store here without an explicit fence.
 
     Parameters:
-        dtype: Element dtype of the store; must be 4 or 8 bytes (inferred).
+        dtype: Element dtype of the store; must be 2, 4 or 8 bytes (inferred).
         address_space: Address space of `ptr` (inferred).
 
     Args:
@@ -2809,17 +3014,17 @@ def store_global_pred[
         address_space == .GENERIC or address_space == .GLOBAL
     ), "store_global_pred emits `st.global`; the pointer must address gmem"
     comptime size = size_of[dtype]()
-    comptime assert size in (4, 8), (
-        "store_global_pred handles 4- and 8-byte scalars; got a "
+    comptime assert size in (2, 4, 8), (
+        "store_global_pred handles 2-, 4- and 8-byte scalars; got a "
         + String(size)
         + "-byte dtype"
     )
-    comptime bits = "b32" if size == 4 else "b64"
+    comptime bits = "b" + String(8 * size)
     # Bitcast to the same-width unsigned integer so one `.bXX`/register-class
     # pair covers float and integer dtypes alike; `st.global.bXX` is
     # bit-preserving.
-    comptime word_type = DType.uint32 if size == 4 else DType.uint64
-    comptime word_constraint = "r" if size == 4 else "l"
+    comptime word_type = _unsigned_integral_type_of[dtype]()
+    comptime word_constraint = "h" if size == 2 else ("r" if size == 4 else "l")
 
     inlined_assembly[
         """{
@@ -3758,7 +3963,7 @@ def apply_mask[
 ):
     """Applies bitmask, computed, and out-of-bounds masking strategies to a row of `BN` attention scores.
 
-    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.mask`, and both paths apply the out-of-bounds clip via `apply_oob_mask`.
+    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.visibility_mask` (after `mask.add_row_bias` on the whole row for a mask with `has_row_bias`), and both paths apply the out-of-bounds clip via `apply_oob_mask`.
 
     Parameters:
         BN: Number of scores in the row; must be a multiple of 32 for
@@ -3868,22 +4073,39 @@ def apply_mask[
 
     else:
         comptime block_size = BN // simd_size
+        # A mask with a row-wise bias takes the whole scaled row at once;
+        # each pair then only needs the visibility select.
+        comptime row_bias = (
+            MaskType.has_row_bias and MaskStrategy.COMPUTED in mask_strategy
+        )
+        comptime if row_bias:
+            comptime if not skip_scale:
+                comptime for n in range(block_size):
+                    comptime frag_col = simd_size * n
+                    var scaled = mul_ftz(
+                        F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
+                    )
+                    srow[frag_col] = scaled[0]
+                    srow[frag_col + 1] = scaled[1]
+            mask.add_row_bias(
+                srow,
+                prompt_idx,
+                q_head_idx,
+                UInt32(score_row),
+                kv_tile_start_row,
+            )
 
         comptime for n in range(block_size):
             # score_col = mask_frag_col + j * 8
             comptime frag_col = simd_size * n
-            var s: F32x2
-
-            comptime if skip_scale:
-                s = F32x2(srow[frag_col], srow[frag_col + 1])
-            else:
-                s = mul_ftz(
-                    F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
-                )
+            var s = F32x2(srow[frag_col], srow[frag_col + 1])
+            comptime if not (skip_scale or row_bias):
+                s = mul_ftz(s, scale_log2e)
             var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
 
+            # `visibility_mask` is `mask` for every mask without a row bias.
             comptime if MaskStrategy.COMPUTED in mask_strategy:
-                s = mask.mask(
+                s = mask.visibility_mask(
                     IndexList[4, element_type=.uint32](
                         Int(prompt_idx),
                         Int(q_head_idx),
@@ -3933,16 +4155,17 @@ def clusters_per_wave[cluster_size: Int, sm_count: Int]() -> Int:
     the `else` branch is a comptime error on any other chip.
     """
     comptime C = cluster_size
-    comptime if sm_count == 148:
-        # B200: irregular 11-GPC layout -- three 20s, four 18s, one 10, three 2s.
-        return 3 * (20 // C) + 4 * (18 // C) + (10 // C) + 3 * (2 // C)
-    elif sm_count == 160:
-        # B300 / Blackwell Ultra: uniform 8 GPCs x 20 SMs.
-        return 8 * (20 // C)
-    else:
-        comptime assert (
-            False
-        ), "clusters_per_wave: only B200 (148) / B300 (160) modeled"
+    comptime match sm_count:
+        case 148:
+            # B200: irregular 11-GPC layout -- three 20s, four 18s, one 10, three 2s.
+            return 3 * (20 // C) + 4 * (18 // C) + (10 // C) + 3 * (2 // C)
+        case 160:
+            # B300 / Blackwell Ultra: uniform 8 GPCs x 20 SMs.
+            return 8 * (20 // C)
+        case _:
+            comptime assert (
+                False
+            ), "clusters_per_wave: only B200 (148) / B300 (160) modeled"
 
 
 @inline(.always)
@@ -4096,26 +4319,27 @@ def peel_mask[
         kv_row: KV row index forwarded to `load_fn`.
     """
     comptime assert num_sets in (1, 2, 3)
-    comptime if num_sets == 1:
-        mask_iters[0] -= 1
-        return load_fn[mask_strategies[0]](kv_row)
-    elif num_sets == 2:
-        if mask_iters[0] > 0:
+    comptime match num_sets:
+        case 1:
             mask_iters[0] -= 1
             return load_fn[mask_strategies[0]](kv_row)
-        else:
-            mask_iters[1] -= 1
-            return load_fn[mask_strategies[1]](kv_row)
-    else:
-        if mask_iters[0] > 0:
-            mask_iters[0] -= 1
-            return load_fn[mask_strategies[0]](kv_row)
-        elif mask_iters[1] > 0:
-            mask_iters[1] -= 1
-            return load_fn[mask_strategies[1]](kv_row)
-        else:
-            mask_iters[2] -= 1
-            return load_fn[mask_strategies[2]](kv_row)
+        case 2:
+            if mask_iters[0] > 0:
+                mask_iters[0] -= 1
+                return load_fn[mask_strategies[0]](kv_row)
+            else:
+                mask_iters[1] -= 1
+                return load_fn[mask_strategies[1]](kv_row)
+        case _:
+            if mask_iters[0] > 0:
+                mask_iters[0] -= 1
+                return load_fn[mask_strategies[0]](kv_row)
+            elif mask_iters[1] > 0:
+                mask_iters[1] -= 1
+                return load_fn[mask_strategies[1]](kv_row)
+            else:
+                mask_iters[2] -= 1
+                return load_fn[mask_strategies[2]](kv_row)
 
 
 struct FA4MiscMBars[

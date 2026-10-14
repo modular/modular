@@ -125,12 +125,18 @@ def split_batch_replicated(
     input_row_offsets_int64: TensorValue,
     data_parallel_splits: TensorValue,
     prefix: str = "",
+    group_size: int = 1,
 ) -> tuple[list[TensorValue], list[TensorValue]]:
     """Split a ragged token batch into data parallel batches.
 
     This version takes a list of input and input_row_offsets replicated on
     each device. Also see `split_input` for a version of this method that takes
     a single ragged token batch.
+
+    ``group_size`` devices form one replica and share a split, so the batch is
+    divided into ``len(devices) // group_size`` parts rather than one per
+    device. The example below is the ``group_size=1`` case, where the two
+    coincide.
 
     The following example splits a ragged batch of 4 requests that is
     replicated across two device references. Each device holds a full copy of
@@ -183,9 +189,14 @@ def split_batch_replicated(
             The list must be the same length as the number of devices.
         input_row_offsets_int64: Row offsets tensor indicating batch boundaries.
             Must be located on CPU.
-        data_parallel_splits: Buffer containing batch splits for each device
+        data_parallel_splits: Buffer containing batch splits for each replica
             that must be located on CPU. The size of ``data_parallel_splits``
-            must be equal to the number of devices + 1.
+            must be equal to the number of replicas + 1.
+        prefix: Prepended to the generated dimension names.
+        group_size: Devices per replica. Each contiguous group of this many
+            devices receives the same split, so a replica's tensor-parallel
+            peers each cut it from their own copy rather than receiving it
+            from the group's leader.
 
     Returns:
         Tuple of (split_input, split_offsets)
@@ -196,8 +207,16 @@ def split_batch_replicated(
 
     if num_devices == 0:
         raise ValueError("Expected at least one device")
-    if num_devices == 1:
-        # No splitting needed for single device
+    if group_size < 1:
+        raise ValueError(f"Expected group_size of at least 1, got {group_size}")
+    if num_devices % group_size != 0:
+        raise ValueError(
+            f"Expected group_size {group_size} to evenly divide the "
+            f"{num_devices} devices"
+        )
+    num_replicas = num_devices // group_size
+    if num_replicas == 1:
+        # Every device holds the whole batch already.
         return list(input), list(input_row_offsets)
 
     # Check that input and input_row_offsets are replicated for each device.
@@ -221,32 +240,39 @@ def split_batch_replicated(
     split_input = []
     split_offsets = []
     for i in range(num_devices):
+        # A replica's devices share one split, and name their dimensions after
+        # the replica, so peers agree on both the range and the symbol.
+        replica = i // group_size
         # Offsets must be on CPU to be used as a slice index.
-        start_offset = input_row_offsets[i][data_parallel_splits[i]]
-        start_offset_i64 = input_row_offsets_int64[data_parallel_splits[i]]
-        end_offset_i64 = input_row_offsets_int64[data_parallel_splits[i + 1]]
+        start_offset = input_row_offsets[i][data_parallel_splits[replica]]
+        start_offset_i64 = input_row_offsets_int64[
+            data_parallel_splits[replica]
+        ]
+        end_offset_i64 = input_row_offsets_int64[
+            data_parallel_splits[replica + 1]
+        ]
         token_slice = ops.slice_tensor(
             input[i],
             [
                 (
                     slice(start_offset_i64.to(cpu), end_offset_i64.to(cpu)),
-                    f"{prefix}_input_split_{i}",
+                    f"{prefix}_input_split_{replica}",
                 ),
                 ...,
             ],
         )
-        if i + 1 >= num_devices:
+        if replica + 1 >= num_replicas:
             end_idx = None
         else:
-            end_idx = data_parallel_splits[i + 1] + 1
+            end_idx = data_parallel_splits[replica + 1] + 1
 
         offsets_slice = (
             ops.slice_tensor(
                 input_row_offsets[i],
                 [
                     (
-                        slice(data_parallel_splits[i], end_idx),
-                        f"{prefix}_offset_split_{i}",
+                        slice(data_parallel_splits[replica], end_idx),
+                        f"{prefix}_offset_split_{replica}",
                     )
                 ],
             )

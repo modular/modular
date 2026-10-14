@@ -150,6 +150,5 @@ class Qwen3AttentionNoCache(
             return x
 
         x_expanded = x.unsqueeze(2)
-        tensors_to_concat = [x_expanded] * n_rep
-        x_repeated = F.concat(tensors_to_concat, axis=2)
+        x_repeated = F.tile(x_expanded, [1, 1, n_rep, 1])
         return x_repeated.reshape((-1, self.n_kv_heads * n_rep, self.head_dim))

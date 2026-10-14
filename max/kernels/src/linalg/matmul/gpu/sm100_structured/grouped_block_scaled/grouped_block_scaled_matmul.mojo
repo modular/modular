@@ -53,11 +53,10 @@ from std.sys import size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import B200
-from layout import TileTensor
+from layout import TileTensor, coord
 
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import elementwise_compute_lambda_type
@@ -233,6 +232,8 @@ def grouped_block_scaled_matmul[
         transpose_b,
         config=config,
         max_groups=max_groups,
+        group_ptr_engine=type_of(a_ptrs).Engine,
+        problem_sizes_engine=type_of(problem_sizes).Engine,
         cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
@@ -245,7 +246,7 @@ def grouped_block_scaled_matmul[
     # ===== Create template TMA descriptors using kernel-derived layouts =====
 
     # A matrix TMA
-    comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
+    comptime a_tma_tile_shape = coord[1, BM // cluster_shape[1], BK]
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
@@ -254,9 +255,9 @@ def grouped_block_scaled_matmul[
     ](ctx, a_template)
 
     # B matrix TMA
-    comptime b_tma_tile_shape = Index(
+    comptime b_tma_tile_shape = coord[
         1, BN // (cluster_shape[0] // config.cta_group), BK
-    )
+    ]
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
@@ -265,9 +266,9 @@ def grouped_block_scaled_matmul[
     ](ctx, b_template)
 
     # C matrix TMA
-    comptime c_tma_tile_shape = Index(
+    comptime c_tma_tile_shape = coord[
         1, config.output_tile_shape[0], config.output_tile_shape[1]
-    )
+    ]
     var c_tma_op = create_tma_tile[
         KernelType.CTileLayout,
         KernelType.CDescLayout,
@@ -276,26 +277,26 @@ def grouped_block_scaled_matmul[
     ](ctx, c_template)
 
     # Scaling factors TMA
-    comptime sfa_tma_tile_shape = Index(
+    comptime sfa_tma_tile_shape = coord[
         1,
         BM // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]
     var sfa_tma_op = create_tma_tile[
         KernelType.SFATileLayout,
         KernelType.SFADescLayout,
         sfa_tma_tile_shape,
     ](ctx, sfa_template)
 
-    comptime sfb_tma_tile_shape = Index(
+    comptime sfb_tma_tile_shape = coord[
         1,
-        MMA_N // SF_MN_GROUP_SIZE,
+        align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]
     var sfb_tma_op = create_tma_tile[
         KernelType.SFBTileLayout,
         KernelType.SFBDescLayout,

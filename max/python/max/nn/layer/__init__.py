@@ -12,15 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from .layer import (
-    FlattenableGraphInput,
     Layer,
     Module,
     Shardable,
-    SubgraphInput,
-    _flatten_graph_inputs,
     add_layer_hook,
     clear_hooks,
-    recursive_named_layers,
 )
 from .layer_list import LayerList
 
@@ -31,5 +27,4 @@ __all__ = [
     "Shardable",
     "add_layer_hook",
     "clear_hooks",
-    "recursive_named_layers",
 ]

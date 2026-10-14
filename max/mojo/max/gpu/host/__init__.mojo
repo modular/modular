@@ -40,4 +40,5 @@ from .device_graph import (
     DeviceGraphCache,
     DeviceGraphInput,
     DeviceGraphNode,
+    StableAddr,
 )

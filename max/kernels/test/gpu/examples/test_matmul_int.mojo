@@ -21,7 +21,7 @@ from std.memory import (
     unsafe_memset_zero,
     unsafe_stack_allocation,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 
 comptime TILE_SZ_A = 128
 comptime TILE_SZ_B = 16
@@ -40,9 +40,9 @@ def matmul(
     var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
-    var a = TileTensor(a_ptr, row_major(Coord(m, k)))
-    var b = TileTensor(b_ptr, row_major(Coord(k, n)))
-    var c = TileTensor(c_ptr, row_major(Coord(m, n)))
+    var a = TileTensor(a_ptr, row_major(m, k))
+    var b = TileTensor(b_ptr, row_major(k, n))
+    var c = TileTensor(c_ptr, row_major(m, n))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix

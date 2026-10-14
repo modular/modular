@@ -16,6 +16,7 @@ from spmv_utils import CSCMatrix, generate_sparse_matrix, spmv_cpu, verify
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
+from std.math import ceildiv
 
 
 @fieldwise_init
@@ -146,7 +147,7 @@ def main() raises:
     )
 
     var blockSize = 256
-    var numBlocks = (cols + blockSize - 1) // blockSize
+    var numBlocks = ceildiv(cols, blockSize)
 
     ctx.enqueue_function[spmv_csc_kernel](
         d_cscMatrix,

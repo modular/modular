@@ -40,13 +40,11 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.math import align_up, ceildiv
-from std.memory import AddressSpace
 from std.sys import simd_width_of
 from std.utils import StaticTuple
 
 from layout import (
     Coord,
-    Idx,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -59,7 +57,6 @@ from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
 )
-from structured_kernels.amd_tile_io import RegTileLoader
 
 from .block_scaled_preshuffle_loaders import (
     PreshuffledBLoader,
@@ -225,13 +222,13 @@ struct MXFP4MoERoutedMatmul[
         comptime if Self.enable_swizzle:
             comptime num_pid_n = ceildiv(N, Self.BN)
             var num_pid_m = _size_expert_ids
-            var wgid_raw = Int(block_idx.y) * num_pid_n + Int(block_idx.x)
+            var wgid_raw = block_idx.y * num_pid_n + block_idx.x
             var pid = _xcd_wgm_swizzle(wgid_raw, num_pid_m, num_pid_n)
             bx = pid[0]
             by_n = pid[1]
         else:
-            bx = Int(block_idx.y)
-            by_n = Int(block_idx.x)
+            bx = block_idx.y
+            by_n = block_idx.x
         var bx_m = bx * Self.sort_block_m
 
         # NOTE: flydsl-style routing producers can elide empty experts
@@ -275,14 +272,14 @@ struct MXFP4MoERoutedMatmul[
 
         # ---- Loaders ----
         var b_loader = PreshuffledBLoader[N=N, K_BYTES=K_BYTES](
-            TileTensor(b_pre_expert.ptr, b_pre_expert.layout)
+            b_pre_expert.reshape(b_pre_expert.layout)
         )
         var sfa_loader = PreshuffledScaleLoader[
             MN_padded=Self.sort_block_m, K_SCALES=K_SCALES
-        ](TileTensor(sfa_pre_block.ptr, sfa_pre_block.layout))
+        ](sfa_pre_block.reshape(sfa_pre_block.layout))
         var sfb_loader = PreshuffledScaleLoader[
             MN_padded=N_padded_scale, K_SCALES=K_SCALES
-        ](TileTensor(sfb_pre_expert.ptr, sfb_pre_expert.layout))
+        ](sfb_pre_expert.reshape(sfb_pre_expert.layout))
         var a_bc = make_amd_buffer_resource(a_tt)
 
         # ---- SMEM for A ----
@@ -297,9 +294,8 @@ struct MXFP4MoERoutedMatmul[
         comptime a_loads_per_tile = Self.BM // load_thread_rows
         comptime load_layout = row_major[load_thread_rows, load_thread_cols]()
 
-        var thread_idx_x = Int(thread_idx.x)
-        var row_thread = thread_idx_x // load_thread_cols
-        var col_thread = thread_idx_x % load_thread_cols
+        var thread_idx_x = thread_idx.x
+        var row_thread, col_thread = divmod(thread_idx_x, load_thread_cols)
 
         # Decode (t, s) per row this thread will load. Cached across K-iters.
         # TOKEN_ID:   A_row = t        (stage1; multiple slots share the same A row)

@@ -163,9 +163,6 @@ def test_unified_mtp_inkling_inputs_dataclass_imports() -> None:
         UnifiedMTPInklingInputs,
     )
 
-    assert (
-        "host_input_row_offsets" in UnifiedMTPInklingInputs.__dataclass_fields__
-    )
     assert "draft_conv_pools" in UnifiedMTPInklingInputs.__dataclass_fields__
     assert "draft_tokens" in UnifiedMTPInklingInputs.__dataclass_fields__
     assert "image_embeddings" in UnifiedMTPInklingInputs.__dataclass_fields__

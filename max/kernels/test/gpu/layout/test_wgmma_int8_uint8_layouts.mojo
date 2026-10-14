@@ -23,49 +23,57 @@ from max.gpu.compute.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import IntTuple, Layout, LayoutTensor
+from layout import TensorLayout, Coord, Idx, TileTensor, row_major
+from layout.tile_layout import Layout as TileLayout
+from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from std.memory import bitcast
 
 
 def wgmma_kernel[
+    ASmemLayout: TensorLayout,
+    BSmemLayout: TensorLayout,
     M: Int,
     N: Int,
     K: Int,
     WMMA_M: Int,
     WMMA_N: Int,
     WMMA_K: Int,
-    smem_operand_a_layout: Layout,
-    smem_operand_b_layout: Layout,
+    smem_operand_a_layout: ASmemLayout,
+    smem_operand_b_layout: BSmemLayout,
     a_type: DType,
     b_type: DType,
 ](
-    operand_a: LayoutTensor[a_type, Layout.row_major(M, K), MutAnyOrigin],
-    operand_b: LayoutTensor[b_type, Layout.row_major(K, N), MutAnyOrigin],
-    result_c: LayoutTensor[.int32, Layout.row_major(M, N), MutAnyOrigin],
+    operand_a: TileTensor[a_type, type_of(row_major[M, K]()), MutAnyOrigin],
+    operand_b: TileTensor[b_type, type_of(row_major[K, N]()), MutAnyOrigin],
+    result_c: TileTensor[.int32, type_of(row_major[M, N]()), MutAnyOrigin],
 ):
-    var smem_operand_a = LayoutTensor[
-        a_type,
-        smem_operand_a_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
+    comptime assert (
+        K == WMMA_K
+    ), "Each case loads one complete shared-memory tile"
+    comptime assert ASmemLayout.all_dims_known
+    comptime assert BSmemLayout.all_dims_known
+    comptime assert operand_a.rank == operand_a.flat_rank == 2
+    comptime assert operand_b.rank == operand_b.flat_rank == 2
+    comptime assert type_of(operand_a).LayoutType.shape_known
+    comptime assert type_of(operand_b).LayoutType.shape_known
+    comptime assert result_c.rank == result_c.flat_rank == 2
+    var smem_operand_a = stack_allocation[
+        dtype=a_type, address_space=.SHARED, alignment=128
+    ](smem_operand_a_layout)
 
-    var smem_operand_b = LayoutTensor[
-        b_type,
-        smem_operand_b_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
+    var smem_operand_b = stack_allocation[
+        dtype=b_type, address_space=.SHARED, alignment=128
+    ](smem_operand_b_layout)
 
     var c_reg = SIMD[.uint32, 4](0)
 
     for k_i in range(K // WMMA_K):
-        var operand_a_tile = operand_a.tile[M, WMMA_K](0, k_i)
-        var operand_b_tile = operand_b.tile[WMMA_K, N](k_i, 0)
-        var operand_a_sm_tile = smem_operand_a.tile[M, WMMA_K](0, k_i)
-        var operand_b_sm_tile = smem_operand_b.tile[WMMA_K, N](k_i, 0)
+        var operand_a_tile = operand_a.tile[M, WMMA_K](Coord(0, k_i))
+        var operand_b_tile = operand_b.tile[WMMA_K, N](Coord(k_i, 0))
+        var operand_a_sm_tile = smem_operand_a
+        var operand_b_sm_tile = smem_operand_b
 
         if thread_idx.x == 0:
             operand_a_sm_tile.copy_from(operand_a_tile)
@@ -92,14 +100,13 @@ def wgmma_kernel[
 
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-D.png
-    # Each warp updates a 16x8 tile, and within each tile,
-    # every thread updates a 1x2 vector. The resulting distribution layout
-    # is as follows:
+    # Each warp updates a 16x8 tile. Each thread writes two 1x2 row
+    # fragments separated by eight rows.
     var c0 = bitcast[.int32, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](warp_id(), 0)
+        result_c.tile[16, 8](Coord(warp_id(), 0))
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id())
+        .distribute[row_major[8, 4]()](lane_id())
     )
     th_local_res[0, 0][0] = c0[0]
     th_local_res[0, 0][1] = c0[1]
@@ -180,29 +187,34 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext) raises:
     comptime a_type = DType.int8
     comptime b_type = DType.int8
 
-    var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
-    arange(lhs.tensor(), end=9)
-    # print(lhs.tensor())
+    var lhs = HostDeviceTileTensor[a_type, type_of(row_major[M, K]())](
+        row_major[M, K](), ctx
+    )
+    arange(lhs.host_tensor(), end=9)
 
-    var rhs = ManagedLayoutTensor[b_type, Layout.row_major(K, N)](ctx)
-    arange(rhs.tensor(), end=5)
-    # print(rhs.tensor())
+    var rhs = HostDeviceTileTensor[b_type, type_of(row_major[K, N]())](
+        row_major[K, N](), ctx
+    )
+    arange(rhs.host_tensor(), end=5)
 
-    var res = ManagedLayoutTensor[.int32, Layout.row_major(M, N)](ctx)
+    var res = HostDeviceTileTensor[.int32, type_of(row_major[M, N]())](
+        row_major[M, N](), ctx
+    )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    comptime a_smem_layout = Layout(
-        IntTuple(IntTuple(8, 8), IntTuple(16, 2)),
-        IntTuple(IntTuple(16, 128), IntTuple(1, 1024)),
+    comptime a_smem_layout = TileLayout(
+        Coord(Coord(Idx[8], Idx[8]), Coord(Idx[16], Idx[2])),
+        Coord(Coord(Idx[16], Idx[128]), Coord(Idx[1], Idx[1024])),
     )
-    # print_layout(a_smem_layout)
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    comptime b_smem_layout = Layout(
-        IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
+    comptime b_smem_layout = TileLayout(
+        Coord(Coord(Idx[16], Idx[2]), Idx[8]),
+        Coord(Coord(Idx[1], Idx[128]), Idx[16]),
     )
-    # print_layout(b_smem_layout)
 
     comptime kernel = wgmma_kernel[
+        type_of(a_smem_layout),
+        type_of(b_smem_layout),
         M,
         N,
         K,
@@ -214,15 +226,18 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext) raises:
         a_type=a_type,
         b_type=b_type,
     ]
+    lhs.to_device()
+    rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor(),
-        rhs.device_tensor(),
-        res.device_tensor(),
+        lhs.device_tensor().as_unsafe_any_origin(),
+        rhs.device_tensor().as_unsafe_any_origin(),
+        res.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor())
+    res.to_host()
+    print(res.host_tensor())
     _ = lhs^
     _ = rhs^
     _ = res^
@@ -301,29 +316,34 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext) raises:
     comptime a_type = DType.uint8
     comptime b_type = DType.uint8
 
-    var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
-    arange(lhs.tensor(), end=9)
-    # print(lhs.tensor())
+    var lhs = HostDeviceTileTensor[a_type, type_of(row_major[M, K]())](
+        row_major[M, K](), ctx
+    )
+    arange(lhs.host_tensor(), end=9)
 
-    var rhs = ManagedLayoutTensor[b_type, Layout.row_major(K, N)](ctx)
-    arange(rhs.tensor(), end=5)
-    # print(rhs.tensor())
+    var rhs = HostDeviceTileTensor[b_type, type_of(row_major[K, N]())](
+        row_major[K, N](), ctx
+    )
+    arange(rhs.host_tensor(), end=5)
 
-    var res = ManagedLayoutTensor[.int32, Layout.row_major(M, N)](ctx)
+    var res = HostDeviceTileTensor[.int32, type_of(row_major[M, N]())](
+        row_major[M, N](), ctx
+    )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    comptime a_smem_layout = Layout(
-        IntTuple(IntTuple(8, 8), IntTuple(16, 2)),
-        IntTuple(IntTuple(16, 128), IntTuple(1, 1024)),
+    comptime a_smem_layout = TileLayout(
+        Coord(Coord(Idx[8], Idx[8]), Coord(Idx[16], Idx[2])),
+        Coord(Coord(Idx[16], Idx[128]), Coord(Idx[1], Idx[1024])),
     )
-    # print_layout(a_smem_layout)
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    comptime b_smem_layout = Layout(
-        IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
+    comptime b_smem_layout = TileLayout(
+        Coord(Coord(Idx[16], Idx[2]), Idx[8]),
+        Coord(Coord(Idx[1], Idx[128]), Idx[16]),
     )
-    # print_layout(b_smem_layout)
 
     comptime kernel = wgmma_kernel[
+        type_of(a_smem_layout),
+        type_of(b_smem_layout),
         M,
         N,
         K,
@@ -335,15 +355,18 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext) raises:
         a_type=a_type,
         b_type=b_type,
     ]
+    lhs.to_device()
+    rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor(),
-        rhs.device_tensor(),
-        res.device_tensor(),
+        lhs.device_tensor().as_unsafe_any_origin(),
+        rhs.device_tensor().as_unsafe_any_origin(),
+        res.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor())
+    res.to_host()
+    print(res.host_tensor())
     _ = lhs^
     _ = rhs^
     _ = res^
@@ -422,31 +445,38 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext) raises:
     comptime a_type = DType.int8
     comptime b_type = DType.uint8
 
-    var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
-    var lhs_tensor = lhs.tensor()
+    var lhs = HostDeviceTileTensor[a_type, type_of(row_major[M, K]())](
+        row_major[M, K](), ctx
+    )
+    var lhs_tensor = lhs.host_tensor()
     arange(lhs_tensor, end=9)
     print(lhs_tensor)
 
-    var rhs = ManagedLayoutTensor[b_type, Layout.row_major(K, N)](ctx)
-    var rhs_tensor = rhs.tensor()
+    var rhs = HostDeviceTileTensor[b_type, type_of(row_major[K, N]())](
+        row_major[K, N](), ctx
+    )
+    var rhs_tensor = rhs.host_tensor()
     arange(rhs_tensor, end=5)
     print(rhs_tensor)
 
-    var res = ManagedLayoutTensor[.int32, Layout.row_major(M, N)](ctx)
+    var res = HostDeviceTileTensor[.int32, type_of(row_major[M, N]())](
+        row_major[M, N](), ctx
+    )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    comptime a_smem_layout = Layout(
-        IntTuple(IntTuple(8, 8), IntTuple(16, 2)),
-        IntTuple(IntTuple(16, 128), IntTuple(1, 1024)),
+    comptime a_smem_layout = TileLayout(
+        Coord(Coord(Idx[8], Idx[8]), Coord(Idx[16], Idx[2])),
+        Coord(Coord(Idx[16], Idx[128]), Coord(Idx[1], Idx[1024])),
     )
-    # print_layout(a_smem_layout)
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    comptime b_smem_layout = Layout(
-        IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
+    comptime b_smem_layout = TileLayout(
+        Coord(Coord(Idx[16], Idx[2]), Idx[8]),
+        Coord(Coord(Idx[1], Idx[128]), Idx[16]),
     )
-    # print_layout(b_smem_layout)
 
     comptime kernel = wgmma_kernel[
+        type_of(a_smem_layout),
+        type_of(b_smem_layout),
         M,
         N,
         K,
@@ -458,15 +488,18 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext) raises:
         a_type=a_type,
         b_type=b_type,
     ]
+    lhs.to_device()
+    rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor(),
-        rhs.device_tensor(),
-        res.device_tensor(),
+        lhs.device_tensor().as_unsafe_any_origin(),
+        rhs.device_tensor().as_unsafe_any_origin(),
+        res.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor())
+    res.to_host()
+    print(res.host_tensor())
     _ = lhs^
     _ = rhs^
     _ = res^
@@ -545,31 +578,38 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext) raises:
     comptime a_type = DType.uint8
     comptime b_type = DType.int8
 
-    var lhs = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
-    var lhs_tensor = lhs.tensor()
+    var lhs = HostDeviceTileTensor[a_type, type_of(row_major[M, K]())](
+        row_major[M, K](), ctx
+    )
+    var lhs_tensor = lhs.host_tensor()
     arange(lhs_tensor, end=9)
     print(lhs_tensor)
 
-    var rhs = ManagedLayoutTensor[b_type, Layout.row_major(K, N)](ctx)
-    var rhs_tensor = rhs.tensor()
+    var rhs = HostDeviceTileTensor[b_type, type_of(row_major[K, N]())](
+        row_major[K, N](), ctx
+    )
+    var rhs_tensor = rhs.host_tensor()
     arange(rhs_tensor, end=5)
     print(rhs_tensor)
 
-    var res = ManagedLayoutTensor[.int32, Layout.row_major(M, N)](ctx)
+    var res = HostDeviceTileTensor[.int32, type_of(row_major[M, N]())](
+        row_major[M, N](), ctx
+    )
 
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-A.png
-    comptime a_smem_layout = Layout(
-        IntTuple(IntTuple(8, 8), IntTuple(16, 2)),
-        IntTuple(IntTuple(16, 128), IntTuple(1, 1024)),
+    comptime a_smem_layout = TileLayout(
+        Coord(Coord(Idx[8], Idx[8]), Coord(Idx[16], Idx[2])),
+        Coord(Coord(Idx[16], Idx[128]), Coord(Idx[1], Idx[1024])),
     )
-    # print_layout(a_smem_layout)
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N32-core-matrices-B.png
-    comptime b_smem_layout = Layout(
-        IntTuple(IntTuple(16, 2), 8), IntTuple(IntTuple(1, 128), 16)
+    comptime b_smem_layout = TileLayout(
+        Coord(Coord(Idx[16], Idx[2]), Idx[8]),
+        Coord(Coord(Idx[1], Idx[128]), Idx[16]),
     )
-    # print_layout(b_smem_layout)
 
     comptime kernel = wgmma_kernel[
+        type_of(a_smem_layout),
+        type_of(b_smem_layout),
         M,
         N,
         K,
@@ -581,15 +621,18 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext) raises:
         a_type=a_type,
         b_type=b_type,
     ]
+    lhs.to_device()
+    rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor(),
-        rhs.device_tensor(),
-        res.device_tensor(),
+        lhs.device_tensor().as_unsafe_any_origin(),
+        rhs.device_tensor().as_unsafe_any_origin(),
+        res.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
     ctx.synchronize()
-    print(res.tensor())
+    res.to_host()
+    print(res.host_tensor())
     _ = lhs^
     _ = rhs^
     _ = res^

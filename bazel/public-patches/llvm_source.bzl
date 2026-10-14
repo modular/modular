@@ -4,9 +4,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "4154b56ccc70220dca3fa1226fc8a24bafd90ac3"
+LLVM_COMMIT = "8d4fc8f1d17e64e1826346a0230a87b50ec371e4"
 
-LLVM_SHA = "611bc362c18f6b502b0d599be48680cf2b4fbfbe191de935d45afcb0634d25fd"
+LLVM_SHA = "49ee2a64a7e1111ff00218981d39e00ac1314170624aeafbef5645b598abb792"
 # END_GENERATED
 
 PATCHES = [
@@ -23,14 +23,34 @@ PATCHES = [
     # https://github.com/llvm/llvm-project/pull/188978
     # https://github.com/llvm/llvm-project/issues/190255
     "//bazel/public-patches:llvm-elf-extractor-local-copy.patch",
-    # Revert the config.bzl musl/gnu select() from llvm/llvm-project#207295,
-    # which keys HAVE_BACKTRACE/BACKTRACE_HEADER/HAVE_MALLINFO on
-    # @llvm//platforms/config:{musl,gnu}. That package is not present in the
-    # repo produced by our llvm_configure module extension, so the select()
-    # fails to resolve ("No repository visible as '@llvm'"). Restore the
-    # unconditional glibc/macOS defines, which are correct for our builds
-    # (we do not target musl).
+    # Revert llvm/llvm-project#218490, which changed ELFSectionHeaderInfo's
+    # section_name from ConstString to std::string. ConstString is a pointer
+    # into a never-freed intern pool; std::string owns its buffer, so the
+    # header info now frees memory and reintroduces the same corrupted
+    # double-linked list on teardown that the patch above fixes. Regenerated
+    # over llvm/llvm-project#224170 and llvm/llvm-project#224407, which moved
+    # Section names to std::string as well; keeping only the header info on
+    # ConstString is still enough to avoid the crash.
+    # TODO(MOTO-1590): drop once the ownership is sound across DSO boundaries.
+    "//bazel/public-patches:llvm-revert-lldb-elf-section-name-string.patch",
+    # Drop the overlay's @rules_cc//cc/libc:{musl,glibc} select()s: the
+    # config.bzl HAVE_BACKTRACE/BACKTRACE_HEADER/HAVE_MALLINFO defines
+    # (llvm/llvm-project#207295, #223549) and the Support musl stack-size
+    # linkopt (llvm/llvm-project#223989). Those labels need rules_cc >= 0.2.25;
+    # we pin 0.2.18, so they do not resolve. The unconditional glibc/macOS
+    # defines are correct for our builds (we do not target musl). Drop this
+    # once rules_cc is bumped to 0.2.25 or newer.
     "//bazel/public-patches:llvm-config-musl-select.patch",
+    # llvm/llvm-project#225158 gives the llvm_libxml2_enabled config_setting
+    # group visibility to clang, lld/test and lldb, but leaves its match_any
+    # members private. Bazel checks the members' visibility from the consuming
+    # target, so lldb:ConfigHeader fails to see llvm_libxml2_auto. Let the
+    # three members inherit the package's public default.
+    "//bazel/public-patches:llvm-libxml2-config-setting-visibility.patch",
+    # Default the overlay's feature flags to what every build wants, so no rc
+    # flag names an @llvm-project label. Parsing such a flag fetches the LLVM
+    # source before analysis can start.
+    "//bazel/public-patches:llvm-flag-defaults.patch",
 ]
 
 def _llvm_source_impl(module_ctx):

@@ -13,7 +13,7 @@
 
 """End-to-end tests for reshape-into-epilogue fusion under advanced fusion.
 
-Every graph here is compiled with ``MAX_GC_USE_ADV_FUSION`` set, exercising
+Every graph here exercises
 ``MOToMAP`` + ``ReshapeEpilogueFuser`` end to end: a reshape between a
 fused-output producer and a downstream elementwise op folds into the
 producer's epilogue as a ``mogg.index.reshape`` store-index transform (the
@@ -34,9 +34,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def test_matmul_reshape_add_static(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_matmul_reshape_add_static(session: InferenceSession) -> None:
     """`reshape(matmul(a, b), [4]) + bias`, all static: the flatten folds into
     the matmul's epilogue store index. Mirrors `matmul-reshape-add-epilogue-fusion.mlir`.
     """
@@ -62,9 +60,7 @@ def test_matmul_reshape_add_static(
     )
 
 
-def test_matmul_reshape_add_dynamic_batch(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_matmul_reshape_add_dynamic_batch(session: InferenceSession) -> None:
     """`reshape(matmul(a, b), [M, 2, 2]) + bias` with a dynamic OUTER (batch)
     dim `M`: it never enters a stride or a needed modulo, so the store-index
     transform needs no runtime shape. Mirrors
@@ -94,9 +90,7 @@ def test_matmul_reshape_add_dynamic_batch(
     )
 
 
-def test_matmul_reshape_add_inner_dynamic(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_matmul_reshape_add_inner_dynamic(session: InferenceSession) -> None:
     """`reshape(matmul(a, b), [N, 2]) + bias` with an INNER dynamic dim `N`:
     `[2, N] -> [N, 2]` re-linearizes across `N`, so the transform reads the
     runtime shapes threaded into the epilogue functor. Mirrors
@@ -125,7 +119,7 @@ def test_matmul_reshape_add_inner_dynamic(
 
 
 def test_reduce_max_reshape_add_non_accumulating(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """Reshape fused into a NON-accumulating fused-output epilogue: `reduce.max`
     never touches the output pointer during its own compute, isolating the

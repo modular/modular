@@ -44,14 +44,6 @@ def first[T: Movable](ref xs: List[T]) -> ref[xs[0]] T:
 
 
 # Literals / Trivial values: a fixed-width scalar is a one-lane SIMD.
-def test_int_simd_aliases() raises:
-    var i32: Int32 = 5
-    var s: SIMD[
-        DType.int32, 1
-    ] = i32  # no conversion: Int32 IS SIMD[DType.int32, 1]
-    assert_equal(Int(s), 5)
-
-
 # var owns; ref refers and writes through.
 def test_var_owns_ref_refers() raises:
     var data: List[Int] = [1, 2, 3]
@@ -73,8 +65,8 @@ def test_var_assignment() raises:
     ref r = lst[0]
     var copied = r  # copy out of a reference
     assert_equal(copied.v, 7)
-    var moved = made^  # transfer (last use of made)
-    assert_equal(moved.v, 1)
+    var transferred = made^  # transfer (last use of made)
+    assert_equal(transferred.v, 1)
 
 
 # Mutability: mut writes through; imm borrows.
@@ -150,8 +142,59 @@ def test_consuming_iteration() raises:
     assert_equal(total, 6)
 
 
+# --- opting out: pinned and linear types ---
+struct Handle(not Movable):
+    var fd: Int
+
+    def __init__(out self, fd: Int):
+        self.fd = fd
+
+
+struct Lease(not Deinitable else "call 'release()' to return the lease"):
+    var id: Int
+
+    def __init__(out self, id: Int):
+        self.id = id
+
+    def release(deinit self) -> Int:  # the only way to end a Lease
+        return self.id
+
+
+def test_opt_outs() raises:
+    var h = Handle(3)  # pinned in place, still usable
+    assert_equal(h.fd, 3)
+    var lease = Lease(7)
+    assert_equal(lease^.release(), 7)
+
+
+# --- captures use the argument conventions ---
+def test_captures() raises:
+    var n = 10
+    var s = String("hi")
+    var t = String("moved")
+
+    def peek() {imm n} -> Int:
+        return n
+
+    def bump() {mut n}:
+        n += 1
+
+    def keep() {var s} -> String:
+        s += "!"
+        return s
+
+    def take() {var t^} -> String:
+        return t
+
+    bump()
+    assert_equal(n, 11)  # mut writes back
+    assert_equal(peek(), 11)
+    assert_equal(keep(), "hi!")  # var owns a copy
+    assert_equal(s, "hi")  # the original is untouched
+    assert_equal(take(), "moved")  # var ...^ owns the original
+
+
 def main() raises:
-    test_int_simd_aliases()
     test_var_owns_ref_refers()
     test_var_assignment()
     test_mut_and_read()
@@ -160,3 +203,5 @@ def main() raises:
     test_returns()
     test_views()
     test_consuming_iteration()
+    test_opt_outs()
+    test_captures()

@@ -10,7 +10,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: @nonnull_arg
 // CHECK-SAME: !llvm.ptr {llvm.nonnull, llvm.noundef}
 kgen.func @nonnull_arg(%arg0: !kgen.pointer<scalar<f32>, 0, nonnull>) {
-  kgen.return
+  hlcf.return
 }
 
 // Nullable pointer does NOT get nonnull attribute (but gets noundef from
@@ -19,14 +19,14 @@ kgen.func @nonnull_arg(%arg0: !kgen.pointer<scalar<f32>, 0, nonnull>) {
 // CHECK-SAME: !llvm.ptr {llvm.noundef}
 // CHECK-NOT: llvm.nonnull
 kgen.func @nullable_arg(%arg0: !kgen.pointer<scalar<f32>>) {
-  kgen.return
+  hlcf.return
 }
 
 // Non-null pointer with non-default address space.
 // CHECK-LABEL: @nonnull_addrspace
 // CHECK-SAME: !llvm.ptr<1> {llvm.nonnull, llvm.noundef}
 kgen.func @nonnull_addrspace(%arg0: !kgen.pointer<scalar<f32>, 1, nonnull>) {
-  kgen.return
+  hlcf.return
 }
 
 // Non-null pointer return type gets nonnull attribute.
@@ -34,7 +34,7 @@ kgen.func @nonnull_addrspace(%arg0: !kgen.pointer<scalar<f32>, 1, nonnull>) {
 // CHECK-SAME: -> (!llvm.ptr {llvm.nonnull, llvm.noundef})
 kgen.func @return_nonnull() -> !kgen.pointer<scalar<f32>, 0, nonnull> {
   %ptr = builtin.unrealized_conversion_cast to !kgen.pointer<scalar<f32>, 0, nonnull>
-  kgen.return %ptr : !kgen.pointer<scalar<f32>, 0, nonnull>
+  hlcf.return %ptr : !kgen.pointer<scalar<f32>, 0, nonnull>
 }
 
 // Nullable pointer return does NOT get nonnull attribute.
@@ -43,7 +43,7 @@ kgen.func @return_nonnull() -> !kgen.pointer<scalar<f32>, 0, nonnull> {
 // CHECK-NOT: llvm.nonnull
 kgen.func @return_nullable() -> !kgen.pointer<scalar<f32>> {
   %ptr = builtin.unrealized_conversion_cast to !kgen.pointer<scalar<f32>>
-  kgen.return %ptr : !kgen.pointer<scalar<f32>>
+  hlcf.return %ptr : !kgen.pointer<scalar<f32>>
 }
 
 // Non-null arg and return attributes coexist correctly.
@@ -51,7 +51,7 @@ kgen.func @return_nullable() -> !kgen.pointer<scalar<f32>> {
 // CHECK-SAME: (%arg0: !llvm.ptr {llvm.nonnull, llvm.noundef}) -> (!llvm.ptr {llvm.nonnull, llvm.noundef})
 kgen.func @nonnull_arg_and_return(%arg0: !kgen.pointer<scalar<f32>, 0, nonnull>)
     -> !kgen.pointer<scalar<f32>, 0, nonnull> {
-  kgen.return %arg0 : !kgen.pointer<scalar<f32>, 0, nonnull>
+  hlcf.return %arg0 : !kgen.pointer<scalar<f32>, 0, nonnull>
 }
 
 }

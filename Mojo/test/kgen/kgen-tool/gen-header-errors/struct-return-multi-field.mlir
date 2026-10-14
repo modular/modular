@@ -7,5 +7,5 @@
 // expected-error @below {{during header emission for this function}}
 kgen.func export @twoElemStruct(%arg0: i32) cabi -> !kgen.struct<(i32, i32)> {
   %0 = kgen.param.constant: struct<(i32, i32)> = <{ 0, 0 }>
-  kgen.return %0 : !kgen.struct<(i32, i32)>
+  hlcf.return %0 : !kgen.struct<(i32, i32)>
 }

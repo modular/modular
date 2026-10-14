@@ -65,6 +65,16 @@
     "status": 302
   },
   {
+    "source": "/docs/(?:stdlib|lib)/?",
+    "dest": "/docs/std/",
+    "status": 302
+  },
+  {
+    "source": "/docs/(?:stdlib|lib)/(.*)",
+    "dest": "/docs/std/{0}",
+    "status": 302
+  },
+  {
     "source": "/nightly/releases/(.*)",
     "dest": "/releases/{0}",
     "status": 301

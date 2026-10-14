@@ -16,19 +16,17 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
-from typing import Any
+from dataclasses import replace
+from typing import Any, ClassVar
 
-from max.driver import Buffer
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, Graph, TensorValue
+from max.graph import Graph, TensorValue
 from max.nn.kv_cache import (
-    KVCacheInputs,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
+    recurrent_leaf,
 )
+from max.nn.sampling.penalties import LogitPenalties
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.interfaces.pipeline_model import (
     GraphPipelineModelWithKVCache,
 )
@@ -39,7 +37,10 @@ from typing_extensions import override
 
 from ..qwen3_5.model import _SCALE_SUFFIXES, Qwen3_5Model
 from ..qwen3_5.model_config import Qwen3_5Config
-from ..qwen3_5.state_cache import attn_cache
+from ..qwen3_5.state_cache import STATE_CACHE_KEY, attn_cache
+from .batch_processor import UnifiedMTPQwen3_5BatchProcessor
+from .model_config import UnifiedMTPQwen3_5Config
+from .spec_state import POSITION_IDS, graph_kv_params, state_tail
 from .unified_mtp_qwen3_5 import UnifiedMTPQwen3_5
 
 logger = logging.getLogger("max.pipelines")
@@ -51,60 +52,18 @@ _DRAFT_PREFIX = "draft."
 _TARGET_PREFIX = "target."
 
 
-@dataclass
-class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs):
-    """Inputs for the fused Qwen3.5 MTP graph.
-
-    The prefix and the spec-decode tail follow the canonical unified ordering;
-    everything after the bitmask triple is this architecture's state-pool tail,
-    which no other unified MTP graph has.
-    """
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    host_input_row_offsets: Buffer
-    return_n_logits: Buffer
-    data_parallel_splits: Buffer
-    signal_buffers: list[Buffer]
-    batch_context_lengths: list[Buffer]
-    live_conv_pools: list[Buffer]
-    live_recurrent_pools: list[Buffer]
-    live_conv_row_ids: list[Buffer]
-    live_recurrent_row_ids: list[Buffer]
-    shadow_conv_pools: list[Buffer]
-    shadow_recurrent_pools: list[Buffer]
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        assert self.kv_cache_inputs is not None
-        prefix = (
-            self.tokens,
-            self.input_row_offsets,
-            self.host_input_row_offsets,
-            self.return_n_logits,
-            self.data_parallel_splits,
-            *self.signal_buffers,
-            *self.kv_cache_inputs.flatten(),
-            *self.batch_context_lengths,
-        )
-        return (
-            prefix
-            + self._spec_decode_tail_buffers(include_in_thinking_phase=True)
-            + (
-                *self.live_conv_pools,
-                *self.live_recurrent_pools,
-                *self.live_conv_row_ids,
-                *self.live_recurrent_row_ids,
-                *self.shadow_conv_pools,
-                *self.shadow_recurrent_pools,
-            )
-        )
-
-
 class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
     """Qwen3.5 with MTP: merge, verify, roll the state back, and draft."""
 
+    batch_processor_cls: ClassVar[type[UnifiedMTPQwen3_5BatchProcessor]] = (
+        UnifiedMTPQwen3_5BatchProcessor
+    )
+    # The cache is built from this class, so it must be the one that declares
+    # the verify ring.
+    model_config_cls: ClassVar[type[Any]] = UnifiedMTPQwen3_5Config
+
     _draft_state_dict: dict[str, Any]
+    _fused_nn_model: UnifiedMTPQwen3_5
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs["return_logits"] = ReturnLogits.VARIABLE
@@ -115,12 +74,23 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Compiles the one fused graph.
 
-        The base architecture's ``load_model`` also compiles a vision encoder
-        and allocates the MAX-side state cache. Neither applies here: the spec
-        graph is text-only, and its pools (including the shadows) are supplied
-        by the serving engine.
+        Skips the base architecture's vision encoder, since this graph is
+        text-only.
         """
         return GraphPipelineModelWithKVCache.load_model(self, session)
+
+    @override
+    def _wire_batch_processor(
+        self, model: Model, model_config: Qwen3_5Config
+    ) -> None:
+        """Tells the batch processor whether the graph declares positions."""
+        super()._wire_batch_processor(model, model_config)
+        assert isinstance(
+            self._batch_processor, UnifiedMTPQwen3_5BatchProcessor
+        )
+        self._batch_processor.mrope_enabled = (
+            self._fused_nn_model.target.mrope_enabled
+        )
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
@@ -170,15 +140,25 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
         # The rollback reads the verify pass's per-layer state-kernel inputs,
         # which cannot cross a subgraph boundary.
         config.use_subgraphs = False
-        # The spec graph is text-only; a vision encoder here would be compiled
-        # and never called.
+        # No encoder here: it ran before the tokens this graph verifies ever
+        # reached it, so compiling one would build a tower nothing calls. The
+        # positions are a separate matter -- a request whose context holds an
+        # image needs 3-axis positions for every token after it -- so M-RoPE
+        # survives the clear.
+        config.mrope_without_encoder = config.vision_config is not None
         config.vision_config = None
 
-        # Attention only: this graph declares its own state pools in
-        # ``input_types``.
+        # The allocated cache keeps the state child. The graph signature is
+        # built from ``graph_kv_params``, which drops it.
         attn = attn_cache(self.kv_params)
+        state = recurrent_leaf(self.kv_params)
+        assert state is not None, "expected a recurrent state child"
         self.kv_params = MultiKVCacheParams.from_params(
-            {"target": attn, "draft": replace(attn, num_layers=1)}
+            {
+                "target": attn,
+                "draft": replace(attn, num_layers=1),
+                STATE_CACHE_KEY: state,
+            }
         )
         return config
 
@@ -222,94 +202,56 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
         )
         weights_registry = nn_model.state_dict()
         self.state_dict = weights_registry
+        self._fused_nn_model = nn_model
 
-        kv_params = self.kv_params
-        assert isinstance(kv_params, MultiKVCacheParams)
+        kv_params = graph_kv_params(self.kv_params)
         num_devices = len(self.devices)
 
         with Graph(
             GRAPH_NAME, input_types=nn_model.input_types(kv_params)
         ) as graph:
-            (
-                tokens,
-                input_row_offsets,
-                host_input_row_offsets,
-                return_n_logits,
-                data_parallel_splits,
-                *rest,
-            ) = graph.inputs
-            it = iter(rest)
-            signal_buffers = [next(it).buffer for _ in range(num_devices)]
-
-            kv_tree = kv_params.unflatten_kv_inputs(it)
-            assert isinstance(kv_tree, MultiKVCacheInputs)
-            target_leaf = kv_tree.children["target"]
-            draft_leaf = kv_tree.children["draft"]
-            assert isinstance(target_leaf, KVCacheInputs)
-            assert isinstance(draft_leaf, KVCacheInputs)
-
-            # Consumed by the canonical signature but unused: Qwen3.5 has no
-            # sparse-attention budget to bound.
-            for _ in range(num_devices):
-                next(it)
-
-            draft_tokens = next(it).tensor
-            seed = next(it).tensor
-            temperature = next(it).tensor
-            top_k = next(it).tensor
-            max_k = next(it).tensor
-            top_p = next(it).tensor
-            min_top_p = next(it).tensor
-            in_thinking_phase = next(it).tensor
-
-            pinned_bitmask: TensorValue | None = None
-            wait_payload: BufferValue | None = None
-            device_bitmask_scratch: BufferValue | None = None
-            if nn_model.enable_structured_output:
-                pinned_bitmask = next(it).tensor
-                wait_payload = next(it).buffer
-                device_bitmask_scratch = next(it).buffer
+            graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
+            # Qwen3.5 declares no sparse-attention budget, so
+            # batch_context_lengths goes unread.
+            trailing = iter(graph_inputs.trailing)
 
             # The state tail, in the order ``input_types`` declares it.
-            def per_device_buffers() -> list[BufferValue]:
-                return [next(it).buffer for _ in range(num_devices)]
+            state = state_tail(trailing, nn_model.state_regions, num_devices)
 
-            def per_device_tensors() -> list[TensorValue]:
-                return [next(it).tensor for _ in range(num_devices)]
+            # Declared last by ``input_types`` and only when the target runs
+            # M-RoPE, so it is consumed after the whole state tail.
+            position_ids: TensorValue | None = None
+            if nn_model.target.mrope_enabled:
+                position_ids = next(trailing).tensor
 
-            live_conv_pools = per_device_buffers()
-            live_recurrent_pools = per_device_buffers()
-            live_conv_row_ids = per_device_tensors()
-            live_recurrent_row_ids = per_device_tensors()
-            shadow_conv_pools = per_device_buffers()
-            shadow_recurrent_pools = per_device_buffers()
+            penalties: LogitPenalties | None = None
+            if nn_model.logit_penalties:
+                penalties = LogitPenalties.from_inputs(
+                    [next(trailing).tensor for _ in range(4)]
+                )
 
             outputs = nn_model(
-                tokens=tokens.tensor,
-                input_row_offsets=input_row_offsets.tensor,
-                draft_tokens=draft_tokens,
-                signal_buffers=signal_buffers,
-                target_kv=list(target_leaf.inputs),
-                draft_kv=list(draft_leaf.inputs),
-                return_n_logits=return_n_logits.tensor,
-                host_input_row_offsets=host_input_row_offsets.tensor,
-                data_parallel_splits=data_parallel_splits.tensor,
-                seed=seed,
-                temperature=temperature,
-                top_k=top_k,
-                max_k=max_k,
-                top_p=top_p,
-                min_top_p=min_top_p,
-                in_thinking_phase=in_thinking_phase,
-                live_conv_pools=live_conv_pools,
-                live_recurrent_pools=live_recurrent_pools,
-                live_conv_row_ids=live_conv_row_ids,
-                live_recurrent_row_ids=live_recurrent_row_ids,
-                shadow_conv_pools=shadow_conv_pools,
-                shadow_recurrent_pools=shadow_recurrent_pools,
-                pinned_bitmask=pinned_bitmask,
-                wait_payload=wait_payload,
-                device_bitmask_scratch=device_bitmask_scratch,
+                graph_inputs.tokens,
+                graph_inputs.input_row_offsets,
+                graph_inputs.draft_tokens,
+                kv_collections=graph_inputs.kv("target"),
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                signal_buffers=graph_inputs.signal_buffers,
+                host_input_row_offsets=graph_inputs.host_offsets,
+                data_parallel_splits=graph_inputs.dp_splits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+                extra={**state, POSITION_IDS: position_ids},
+                penalties=penalties,
             )
             graph.output(*outputs)
 

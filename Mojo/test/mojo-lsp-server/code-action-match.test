@@ -1,0 +1,131 @@
+// RUN: mojo-lsp-server -mojo-test < %s | FileCheck -strict-whitespace %s
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"processId":123,"rootPath":"lit","capabilities":{},"trace":"off"}}
+// -----
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+  "uri":"test:///foo.mojo",
+  "languageId":"mojo",
+  "version":1,
+  "text":"def foo(x: Optional[Int]):\n    match x:\n    case .Some(_):\n        pass\n"
+}}}
+// CHECK: "method": "textDocument/publishDiagnostics",
+// CHECK: "message": "'match' is not exhaustive; missing case for 'None'",
+// CHECK-NEXT: "range": {
+// CHECK-NEXT:   "end": {
+// CHECK-NEXT:     "character": 9,
+// CHECK-NEXT:     "line": 1
+// CHECK-NEXT:   },
+// CHECK-NEXT:   "start": {
+// CHECK-NEXT:     "character": 4,
+// CHECK-NEXT:     "line": 1
+// CHECK-NEXT:   }
+// CHECK-NEXT: },
+// CHECK-NEXT: "severity": 2,
+// -----
+// The action is a plain refactoring: passing the warning in context adds no
+// quick fix, and yields the same refactor as with no diagnostic at all.
+{"jsonrpc":"2.0","id":1,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///foo.mojo"
+  },
+  "range":{
+    "start":{"line":1,"character":4}, "end":{"line":1,"character":9}
+  },
+  "context":{
+    "diagnostics":[{
+      "range":{"start":{"line":1,"character":4}, "end":{"line":1,"character":9}},
+      "message":"'match' is not exhaustive; missing case for 'None'",
+      "severity":2,
+      "source":"mojo"
+    }],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 1
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": [
+// CHECK-NEXT:    {
+// CHECK-NEXT:      "edit": {
+// CHECK-NEXT:        "changes": {
+// CHECK-NEXT:          "test:///foo.mojo": [
+// CHECK-NEXT:            {
+// CHECK-NEXT:              "newText": "\n    case .None:\n        pass",
+// CHECK-NEXT:              "range": {
+// CHECK-NEXT:                "end": {
+// CHECK-NEXT:                  "character": 12,
+// CHECK-NEXT:                  "line": 3
+// CHECK-NEXT:                },
+// CHECK-NEXT:                "start": {
+// CHECK-NEXT:                  "character": 12,
+// CHECK-NEXT:                  "line": 3
+// CHECK-NEXT:                }
+// CHECK-NEXT:              }
+// CHECK-NEXT:            }
+// CHECK-NEXT:          ]
+// CHECK-NEXT:        }
+// CHECK-NEXT:      },
+// CHECK-NEXT:      "kind": "refactor",
+// CHECK-NEXT:      "title": "Add missing cases"
+// CHECK-NEXT:    }
+// CHECK-NEXT:  ]
+// -----
+// Without the diagnostic, the cursor on the match header is enough.
+{"jsonrpc":"2.0","id":2,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///foo.mojo"
+  },
+  "range":{
+    "start":{"line":1,"character":11}, "end":{"line":1,"character":11}
+  },
+  "context":{
+    "diagnostics":[],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 2
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": [
+// CHECK-NEXT:    {
+// CHECK-NEXT:      "edit": {
+// CHECK-NEXT:        "changes": {
+// CHECK-NEXT:          "test:///foo.mojo": [
+// CHECK-NEXT:            {
+// CHECK-NEXT:              "newText": "\n    case .None:\n        pass",
+// CHECK-NEXT:              "range": {
+// CHECK-NEXT:                "end": {
+// CHECK-NEXT:                  "character": 12,
+// CHECK-NEXT:                  "line": 3
+// CHECK-NEXT:                },
+// CHECK-NEXT:                "start": {
+// CHECK-NEXT:                  "character": 12,
+// CHECK-NEXT:                  "line": 3
+// CHECK-NEXT:                }
+// CHECK-NEXT:              }
+// CHECK-NEXT:            }
+// CHECK-NEXT:          ]
+// CHECK-NEXT:        }
+// CHECK-NEXT:      },
+// CHECK-NEXT:      "kind": "refactor",
+// CHECK-NEXT:      "title": "Add missing cases"
+// CHECK-NEXT:    }
+// CHECK-NEXT:  ]
+// -----
+// The cursor inside a case body is not on the match.
+{"jsonrpc":"2.0","id":3,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///foo.mojo"
+  },
+  "range":{
+    "start":{"line":3,"character":8}, "end":{"line":3,"character":8}
+  },
+  "context":{
+    "diagnostics":[],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 3
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": []
+// -----
+{"jsonrpc":"2.0","id":10,"method":"shutdown"}
+// -----
+{"jsonrpc":"2.0","method":"exit"}

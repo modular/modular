@@ -1070,9 +1070,9 @@ void JITExecutionUnit::PopulateSectionList(
     if (!record.size)
       continue;
     sectionList.AddSection(std::make_shared<lldb_private::Section>(
-        objFile->GetModule(), objFile, record.sectionId,
-        ConstString(record.name), record.sectType, record.processAddress,
-        record.size, record.hostAddress, record.size, 0, record.permissions));
+        objFile->GetModule(), objFile, record.sectionId, record.name,
+        record.sectType, record.processAddress, record.size, record.hostAddress,
+        record.size, 0, record.permissions));
   }
 }
 

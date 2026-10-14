@@ -26,7 +26,7 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from std.collections.optional import Optional, OptionalReg
+from std.collections.optional import Optional
 from std.collections.string import StaticString
 from std.collections.string.string_span import (
     _get_kgen_string,
@@ -58,7 +58,7 @@ from std.memory.unsafe import bitcast
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
-from std._gpu._utils import (
+from max.gpu._utils import (
     to_i16,
     to_i32,
     to_i64,
@@ -68,10 +68,7 @@ from std._gpu._utils import (
     to_llvm_shared_cluster_mem_ptr,
 )
 
-from std._gpu.intrinsics import Scope
-
-# Re-exports from the standard library
-from std._gpu.intrinsics import CacheOperation
+from max.gpu.intrinsics import Scope, CacheOperation
 
 # ===-----------------------------------------------------------------------===#
 # CacheEviction
@@ -79,7 +76,7 @@ from std._gpu.intrinsics import CacheOperation
 
 
 @fieldwise_init
-struct CacheEviction(Equatable, TrivialRegisterPassable):
+struct CacheEviction(EnumLike, Equatable, TrivialRegisterPassable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -136,6 +133,30 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
     - Streaming operations with no data reuse
     """
 
+    comptime _enum_case_names = ParameterList.of[
+        "EVICT_NORMAL".value,
+        "EVICT_FIRST".value,
+        "EVICT_LAST".value,
+        "EVICT_UNCHANGED".value,
+        "NO_ALLOCATE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "CacheEviction has no payload"
+
     def __eq__(self, other: Self) -> Bool:
         """Tests if two CacheEviction instances are equal.
 
@@ -176,7 +197,7 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Fill(Equatable, TrivialRegisterPassable, Writable):
+struct Fill(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -194,6 +215,28 @@ struct Fill(Equatable, TrivialRegisterPassable, Writable):
 
     comptime NAN = Self(2)
     """Fill memory with NaN values. Useful for debugging floating point computations."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "NONE".value,
+        "ZERO".value,
+        "NAN".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Fill has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         """Tests if two Fill instances have the same fill pattern.
@@ -231,7 +274,7 @@ struct Fill(Equatable, TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct Consistency(Equatable, TrivialRegisterPassable, Writable):
+struct Consistency(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -264,6 +307,29 @@ struct Consistency(Equatable, TrivialRegisterPassable, Writable):
 
     Ensures all previous memory operations are ordered before this operation.
     Paired with acquire operations for synchronization."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "WEAK".value,
+        "RELAXED".value,
+        "ACQUIRE".value,
+        "RELEASE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Consistency has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         """Tests if two Consistency instances are equal.
@@ -317,7 +383,7 @@ struct Consistency(Equatable, TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
+struct ReduceOp(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -356,6 +422,31 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
     """Bitwise XOR reduction operation.
 
     Performs bitwise XOR across all inputs."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "ADD".value,
+        "MIN".value,
+        "MAX".value,
+        "AND".value,
+        "OR".value,
+        "XOR".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ReduceOp has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         """Tests if two ReduceOp instances are equal.
@@ -463,23 +554,24 @@ def _mark_eviction[
             - Non-zero handle for fractional L2 eviction policy.
     """
 
-    comptime if eviction_policy == CacheEviction.EVICT_NORMAL:
-        return 0
-    elif eviction_policy == CacheEviction.EVICT_LAST:
-        return inlined_assembly[
-            "createpolicy.fractional.L2::evict_last.b64 $0;",
-            UInt64,
-            constraints="=l",
-        ]()
-    else:
-        comptime assert (
-            eviction_policy == CacheEviction.EVICT_FIRST
-        ), "invalid eviction policy, only support normal, first, and last"
-        return inlined_assembly[
-            "createpolicy.fractional.L2::evict_first.b64 $0;",
-            UInt64,
-            constraints="=l",
-        ]()
+    comptime match eviction_policy:
+        case == CacheEviction.EVICT_NORMAL:
+            return 0
+        case == CacheEviction.EVICT_LAST:
+            return inlined_assembly[
+                "createpolicy.fractional.L2::evict_last.b64 $0;",
+                UInt64,
+                constraints="=l",
+            ]()
+        case _:
+            comptime assert (
+                eviction_policy == CacheEviction.EVICT_FIRST
+            ), "invalid eviction policy, only support normal, first, and last"
+            return inlined_assembly[
+                "createpolicy.fractional.L2::evict_first.b64 $0;",
+                UInt64,
+                constraints="=l",
+            ]()
 
 
 @inline(.nodebug)
@@ -540,11 +632,11 @@ def async_copy[
         comptime n_scalars = size // size_of[dtype]()
         var n_src_scalars = src_size // Int32(size_of[dtype]())
 
-        comptime if fill:
+        comptime if case .Some(fill_value) = fill:
             for i in range(n_src_scalars):
                 dst.unsafe_store(i, src.unsafe_load(i))
             for i in range(Int(n_src_scalars), n_scalars):
-                dst.unsafe_store(i, fill.value())
+                dst.unsafe_store(i, fill_value)
         else:
             comptime for i in range(n_scalars):
                 dst.unsafe_store(i, src.unsafe_load(i))
@@ -588,7 +680,6 @@ def async_copy[
         ), "Non zero filling is supported only for 16B access."
 
         # Pack filling values into 4B registers.
-        @__parameter
         @inline(.always)
         def _i32_repr[fill: Scalar[dtype]]() -> Int32:
             comptime if size_of[dtype]() == 1:
@@ -2683,8 +2774,8 @@ def _load_impl[
         comptime assert read_only == False
         return ptr.unsafe_load[width=width]()
 
-    comptime if prefetch_size:
-        comptime assert prefetch_size.value() in (64, 128, 256)
+    comptime if case .Some(prefetch_bytes) = prefetch_size:
+        comptime assert prefetch_bytes in (64, 128, 256)
 
     comptime bytes_to_load = size_of[dtype]() * width
     comptime dtype_bitwidth = bit_width_of[dtype]()
@@ -3431,18 +3522,19 @@ def _get_type_mnemonic[dtype: DType]() -> StaticString:
     This internal utility function converts floating point DTypes into their
     corresponding string mnemonics used in GPU assembly instructions.
     """
-    if dtype == .float32:
-        return "f32"
-    elif dtype == .float16:
-        return "f16"
-    elif dtype == .bfloat16:
-        return "bf16"
-    elif dtype == .float64:
-        return "f64"
-    elif dtype == .float8_e4m3fn:
-        return "e4m3"
-    elif dtype == .float8_e5m2:
-        return "e5m2"
+    match dtype:
+        case .float32:
+            return "f32"
+        case .float16:
+            return "f16"
+        case .bfloat16:
+            return "bf16"
+        case .float64:
+            return "f64"
+        case .float8_e4m3fn:
+            return "e4m3"
+        case .float8_e5m2:
+            return "e5m2"
 
     return "unknown dtype mnemonic"
 

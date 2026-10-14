@@ -23,6 +23,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -50,16 +51,18 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "10",
+        "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -85,12 +88,13 @@ modular_py_test(
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "10",
+        "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -122,6 +126,7 @@ modular_py_test(
     ],
     target_compatible_with = ["//:amd_gpu"],
     deps = [
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

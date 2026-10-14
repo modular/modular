@@ -38,12 +38,12 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import fence_async_view_proxy
 from max.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
-from layout import Layout, LayoutTensor
+from layout import Coord, TileTensor, row_major
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import TMATensorTile, create_tma_tile
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
-from std.utils.index import IndexList
 
 comptime M = 128
 comptime N = 64
@@ -55,17 +55,15 @@ comptime ITERS = (M * N) // ELEMS_PER_ITER  # 8192 / 512 == 16
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 def tma_store_uint32_kernel[
-    tile_shape: IndexList[2],
-    desc_shape: IndexList[2],
-](tma_tile: TMATensorTile[.uint32, 2, tile_shape, desc_shape]):
-    comptime smem_layout = Layout.row_major(M, N)
-    var smem = LayoutTensor[
-        .uint32,
-        smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    tile_shape: Coord,
+    desc_shape: Coord,
+](tma_tile: TMATensorTile[.uint32, tile_shape, desc_shape]):
+    var smem = TileTensor(
+        unsafe_stack_allocation[
+            M * N, UInt32, address_space=.SHARED, alignment=128
+        ](),
+        row_major[M, N](),
+    )
 
     var tid = thread_idx.x
     # Lane offsets 0,1,2,3 packed into the SIMD vector. value == row-major
@@ -78,7 +76,7 @@ def tma_store_uint32_kernel[
         # threads write 32 contiguous uint32 == one full sweep over all 32
         # banks.
         var base = UInt32(it * ELEMS_PER_ITER) + UInt32(tid) * UInt32(VEC)
-        smem.ptr.store(Int(base), SIMD[.uint32, VEC](base) + iota)
+        smem.unsafe_ptr().store(Int(base), SIMD[.uint32, VEC](base) + iota)
 
     barrier()
     fence_async_view_proxy()
@@ -91,12 +89,12 @@ def tma_store_uint32_kernel[
 
 
 def test_tma_swizzle_none_uint32_store(ctx: DeviceContext) raises:
-    comptime layout = Layout.row_major(M, N)
-    var dst = ManagedLayoutTensor[.uint32, layout](ctx)
+    var dst = HostDeviceTileTensor[.uint32](row_major[M, N](), ctx)
 
     # Seed the destination with a distinct ramp so a missing/partial store
     # cannot pass on stale data.
-    arange(dst.tensor(), 100001)
+    arange(dst.host_tensor(), 100001)
+    dst.to_device()
 
     var tma_tensor = create_tma_tile[
         M, N, swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
@@ -116,12 +114,11 @@ def test_tma_swizzle_none_uint32_store(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    var dst_host = dst.tensor()
+    dst.to_host()
+    var dst_host = dst.host_tensor()
     for i in range(M):
         for j in range(N):
             assert_equal(dst_host[i, j], UInt32(i * N + j))
-
-    _ = dst^
 
 
 def main() raises:

@@ -32,7 +32,6 @@ from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
     Idx,
     RowMajorLayout,
     TensorLayout,
@@ -665,11 +664,5 @@ def _to_batched_3d(
     comptime L = type_of(tensor).LayoutType
     comptime assert L.rank == 2, "expected rank-2 TileTensor"
     return tensor.reshape(
-        row_major(
-            Coord(
-                Idx[1],
-                tensor.layout.shape[0](),
-                tensor.layout.shape[1](),
-            )
-        )
+        row_major(Idx[1], tensor.layout.shape[0](), tensor.layout.shape[1]())
     )

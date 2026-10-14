@@ -16,16 +16,12 @@ from std.sys import size_of, simd_width_of
 from std.itertools import product
 from std.utils.coord import _coerce_dynamic
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from layout.coord import DynamicCoord
 from std.collections import Optional
 from comm import Signal, MAX_GPUS
 from comm.sync import enable_p2p, init_signal_buffer
-from comm.reducescatter import (
-    reducescatter,
-    ReduceScatterConfig,
-    elementwise_epilogue_type,
-)
+from comm.reducescatter import reducescatter, ReduceScatterConfig
 from internal_utils._testing import test_value_for_gpu_element
 from max.gpu.host import (
     DeviceBuffer,
@@ -135,9 +131,6 @@ def reducescatter_test[
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for gpu_idx in range(ngpus):
         if not use_multimem:
@@ -165,12 +158,12 @@ def reducescatter_test[
             list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -264,28 +257,39 @@ def reducescatter_test[
             rebind[SIMD[dtype, _width]](-val),
         )
 
-    # `reducescatter`'s output is a world-view `Array`, not a `StaticTuple`;
-    # convert once (the actual write goes through `outputs_lambda` above,
-    # which still reads the `StaticTuple` directly).
+    # `reducescatter`'s outputs are world-view `Array`s, not a `StaticTuple`;
+    # convert once (`outputs_lambda` above still reads the `StaticTuple`
+    # directly).
     var out_bufs_arr = Array[OutputTileType, ngpus](
         fill_with=lambda (k: Int) -> OutputTileType: out_bufs[k]
     )
+    comptime OutputLayoutType = type_of(out_bufs[0].layout)
+    var out_layouts = Array[OutputLayoutType, ngpus](
+        fill_with=lambda (k: Int) -> OutputLayoutType: out_bufs[k].layout
+    )
 
     comptime for i in range(ngpus):
-        reducescatter[
-            ngpus=ngpus,
-            output_lambda=Optional[elementwise_epilogue_type](
-                outputs_lambda[input_index=i, ...]
-            ) if use_custom_epilogue else None,
-            axis=axis,
-            use_multimem=use_multimem,
-        ](
-            in_bufs,
-            out_bufs_arr,
-            rank_sigs,
-            list_of_ctx[i],
-            my_rank=Optional[Int](i),
-        )
+        comptime if use_custom_epilogue:
+            reducescatter[
+                ngpus=ngpus,
+                output_lambda=outputs_lambda[input_index=i, ...],
+                axis=axis,
+                use_multimem=use_multimem,
+            ](
+                in_bufs,
+                out_layouts,
+                rank_sigs,
+                list_of_ctx[i],
+                my_rank=Optional[Int](i),
+            )
+        else:
+            reducescatter[ngpus=ngpus, axis=axis, use_multimem=use_multimem](
+                in_bufs,
+                out_bufs_arr,
+                rank_sigs,
+                list_of_ctx[i],
+                my_rank=Optional[Int](i),
+            )
 
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -469,9 +473,6 @@ def grouped_reducescatter_test[
     var host_res = List[HostBuffer[dtype]](capacity=ngpus)
 
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for gpu_idx in range(ngpus):
         var group_rows = rows_first if gpu_idx < group_size else rows_second
@@ -514,12 +515,12 @@ def grouped_reducescatter_test[
             list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[gpu_idx], list_of_ctx[gpu_idx])
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -665,7 +666,6 @@ def grouped_reducescatter_test[
     _ = res_bufs_list^
 
 
-@__parameter
 def run_reducescatter_sweep[use_multimem: Bool]() raises:
     """Run reduce-scatter tests across 1D and 2D configurations."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
@@ -679,9 +679,9 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
         range(len(test_1d_lengths)),
         range(2),
     ):
-        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
-        comptime ngpus = rebind[Int](test_gpu_counts[ngpus_idx])
-        comptime length = rebind[Int](test_1d_lengths[length_idx])
+        comptime dtype = test_dtypes[dtype_idx]
+        comptime ngpus = test_gpu_counts[ngpus_idx]
+        comptime length = test_1d_lengths[length_idx]
         comptime use_custom_epilogue = epilogue_idx == 1
 
         if DeviceContext.number_of_devices() < ngpus:
@@ -715,14 +715,10 @@ def run_reducescatter_sweep[use_multimem: Bool]() raises:
         range(len(test_2d_shapes)),
         range(2),
     ):
-        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
-        comptime ngpus = rebind[Int](test_gpu_counts[ngpus_idx])
-        comptime M = rebind[type_of(test_2d_shapes[0])](
-            test_2d_shapes[shape_idx]
-        )[0]
-        comptime D = rebind[type_of(test_2d_shapes[0])](
-            test_2d_shapes[shape_idx]
-        )[1]
+        comptime dtype = test_dtypes[dtype_idx]
+        comptime ngpus = test_gpu_counts[ngpus_idx]
+        comptime M = test_2d_shapes[shape_idx][0]
+        comptime D = test_2d_shapes[shape_idx][1]
         comptime use_custom_epilogue = epilogue_idx == 1
 
         if DeviceContext.number_of_devices() < ngpus:

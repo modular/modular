@@ -62,25 +62,20 @@ from std.utils.numerics import get_accum_type
 
 
 from layout import (
-    UNKNOWN_VALUE,
     Idx,
-    Layout,
-    LayoutTensor,
     TensorEngine,
     TileTensor,
 )
 from layout.coord import Coord
-from layout.tile_layout import (
-    Layout as TileLayout,
-    RowMajorLayout,
-    TensorLayout,
-    row_major,
-)
+from layout.tile_layout import Layout as TileLayout, TensorLayout, row_major
 
 from linalg.arch.apple.mma import MmaOpApple
 
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+)
 
 comptime NEG_INF = Float32(-3.0e38)
 
@@ -443,9 +438,9 @@ def fa_prefill_apple_core[
     # longest poles don't form the makespan tail; light low-row tiles backfill the
     # grid drain.
     var num_q_tiles = ceildiv(_max_prompt_len, NumSimdgroups * SQ)
-    var q_tile_id = (num_q_tiles - 1) - Int(block_idx.x)
-    var head_id = Int(block_idx.y)
-    var batch_id = Int(block_idx.z)
+    var q_tile_id = (num_q_tiles - 1) - block_idx.x
+    var head_id = block_idx.y
+    var batch_id = block_idx.z
     var kv_head = head_id // _group
     var sg = Int(warp_id())  # this simdgroup's slot in the threadgroup
     var lane = Int(lane_id())
@@ -509,9 +504,15 @@ def fa_prefill_apple_core[
     var q_layout_val = TileLayout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
-    var q_tile = TileTensor[q_type, type_of(q_layout_val), ImmutAnyOrigin](
-        ptr=q.ptr + q_offset + q_load_row0 * q_row_stride,
-        layout=q_layout_val,
+    # Offsetting through the engine keeps `q`'s engine on the view; the `ptr=`
+    # constructor would pin this tile to `DefaultEngine`.
+    var q_tile = q.OffsetViewType[
+        TypeList.of[Scalar[q.linear_idx_type]](), type_of(q_layout_val)
+    ](
+        q._offset_storage(
+            Scalar[q.linear_idx_type](q_offset + q_load_row0 * q_row_stride)
+        ),
+        q_layout_val,
     )
 
     # KV token stride (within a page): difference of two consecutive key
@@ -654,18 +655,18 @@ def fa_prefill_apple_core[
             comptime k_align = align_of[Scalar[k_t.dtype]]()
             comptime if DEPTH_MMAS % 2 == 0:
                 comptime for sp in range(DEPTH_MMAS // 2):
-                    var qlo = (
-                        q_tile.ptr + rb * q_row_stride + 32 * sp + 2 * cb
-                    ).load[width=8, alignment=q_align]()
-                    var qhi = (
-                        q_tile.ptr + (rb + 8) * q_row_stride + 32 * sp + 2 * cb
-                    ).load[width=8, alignment=q_align]()
-                    var klo = (
-                        k_tile.ptr + rb * kv_row_stride + 32 * sp + 2 * cb
-                    ).load[width=8, alignment=k_align]()
-                    var khi = (
-                        k_tile.ptr + (rb + 8) * kv_row_stride + 32 * sp + 2 * cb
-                    ).load[width=8, alignment=k_align]()
+                    var qlo = q_tile.raw_load[width=8, alignment=q_align](
+                        rb * q_row_stride + 32 * sp + 2 * cb
+                    )
+                    var qhi = q_tile.raw_load[width=8, alignment=q_align](
+                        (rb + 8) * q_row_stride + 32 * sp + 2 * cb
+                    )
+                    var klo = k_tile.raw_load[width=8, alignment=k_align](
+                        rb * kv_row_stride + 32 * sp + 2 * cb
+                    )
+                    var khi = k_tile.raw_load[width=8, alignment=k_align](
+                        (rb + 8) * kv_row_stride + 32 * sp + 2 * cb
+                    )
                     _mma_apple_transposable(
                         score_col[0],
                         qlo.slice[4, offset=0]().join(qhi.slice[4, offset=0]()),
@@ -844,11 +845,13 @@ def fa_prefill_apple_core[
     var out_layout_val = TileLayout(
         Coord(Idx[SQ], Idx[Depth]), Coord(q_row_stride, Idx[1])
     )
-    var out_tile = TileTensor[
-        output_type, type_of(out_layout_val), MutAnyOrigin
+    var out_tile = output.OffsetViewType[
+        TypeList.of[Scalar[output.linear_idx_type]](), type_of(out_layout_val)
     ](
-        ptr=output.ptr + out_offset + q_row0 * q_row_stride,
-        layout=out_layout_val,
+        output._offset_storage(
+            Scalar[output.linear_idx_type](out_offset + q_row0 * q_row_stride)
+        ),
+        out_layout_val,
     )
     # Vectorized store: the lane owns two contiguous width-4 depth runs (rows `rb`
     # and `rb+8`), so store each row-half in one `width=4` cast-and-store instead
@@ -864,12 +867,12 @@ def fa_prefill_apple_core[
         comptime assert o_sub.flat_rank == 2, "output sub-tile must be 2D"
         var frag = output_accum[ni]
         if lo_ok:
-            (o_sub.ptr + off_lo).store(
-                frag.slice[4, offset=0]().cast[output_type]()
+            o_sub.raw_store(
+                off_lo, frag.slice[4, offset=0]().cast[output_type]()
             )
         if hi_ok:
-            (o_sub.ptr + off_hi).store(
-                frag.slice[4, offset=4]().cast[output_type]()
+            o_sub.raw_store(
+                off_hi, frag.slice[4, offset=4]().cast[output_type]()
             )
 
 
@@ -890,12 +893,12 @@ def fa_prefill_apple[
     _is_cache_length_accurate: Bool = False,
     num_simdgroups: Int = 4,
 ](
-    q: LayoutTensor[mut=False, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, address_space=.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
-    output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    valid_length: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -904,19 +907,14 @@ def fa_prefill_apple[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, q.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
 ) raises:
     """Host launcher for the Apple M5 flash-attention prefill kernel.
 
     Mirrors `mha_gpu_naive`'s `MHAOperand` overload so `flash_attention_dispatch`
     routes to it like the fallback, and specializes one kernel per supported
     `depth` (a multiple of 16 up to `FA_PREFILL_APPLE_MAX_HEAD_DIM`). The external
-    `LayoutTensor` ABI is converted to `TileTensor` at the enqueue boundary so the
-    kernel is TileTensor-only.
+    tensor operands remain native through the enqueue boundary.
 
     Parameters:
         output_type: The dtype of the output tensor (inferred).
@@ -977,39 +975,16 @@ def fa_prefill_apple[
     comptime NumNMmas = DEFAULT_NUM_N_MMAS
     comptime SQ = MMA_DIM
 
-    # Flatten the LayoutTensor ABI to 1D TileTensors; the kernel bakes the
+    # Flatten to 1-D views; the kernel bakes the
     # ragged/BSHD + q_row0 offset into each per-simdgroup tile base.
     var q_flat = TileTensor(
-        q.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(Coord(Int(q.size()))),
+        q.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+        row_major(q.num_elements()),
     )
     var output_flat = TileTensor(
-        output.ptr.as_unsafe_any_origin(),
-        row_major(Coord(Int(output.size()))),
+        output.unsafe_ptr().as_unsafe_any_origin(),
+        row_major(output.num_elements()),
     )
-    var valid_length_flat = TileTensor(
-        valid_length.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(Coord(Int(valid_length.size()))),
-    )
-
-    # Sink weights as a nullable `OptionalReg[TileTensor]` (not a dangling
-    # pointer). None when sink=False; converted to a TileTensor so the kernel
-    # stays TileTensor-only and indexes by head_id.
-    var sink_layout_val = row_major(Coord(num_heads))
-    comptime SinkTile = TileTensor[
-        q_type, type_of(sink_layout_val), ImmutAnyOrigin
-    ]
-    var sink_tile: OptionalReg[SinkTile]
-    comptime if sink:
-        var sw = sink_weights.value()
-        sink_tile = OptionalReg[SinkTile](
-            SinkTile(
-                sw.ptr.as_imm().as_unsafe_any_origin(),
-                sink_layout_val,
-            )
-        )
-    else:
-        sink_tile = None
 
     # MODULAR_APPLE_FA_PREFILL_NUM_SIMDGROUPS={4,8,16,32} overrides the
     # simdgroups-per-threadgroup at runtime; otherwise the `num_simdgroups`
@@ -1021,8 +996,7 @@ def fa_prefill_apple[
         comptime D = di * MMA_DIM
         if depth == D:
 
-            @__parameter
-            def _enqueue[sg: Int]() raises:
+            def _enqueue[sg: Int]() raises {var}:
                 comptime core_kernel = fa_prefill_apple_core[
                     q_type,
                     output_type,
@@ -1032,12 +1006,12 @@ def fa_prefill_apple[
                     mask_t,
                     type_of(q_flat).LayoutType,
                     type_of(output_flat).LayoutType,
-                    type_of(valid_length_flat).LayoutType,
-                    type_of(sink_layout_val),
+                    type_of(valid_length).LayoutType,
+                    ImmutTileTensor1D[q_type].LayoutType,
                     type_of(output_flat).Engine,
                     type_of(q_flat).Engine,
-                    type_of(valid_length_flat).Engine,
-                    SinkTile.Engine,
+                    type_of(valid_length).Engine,
+                    ImmutTileTensor1D[q_type].Engine,
                     ragged=ragged,
                     sink=sink,
                     _use_valid_length=_use_valid_length,
@@ -1053,8 +1027,8 @@ def fa_prefill_apple[
                     k,
                     v,
                     mask_functor,
-                    valid_length_flat,
-                    sink_tile,
+                    valid_length.as_unsafe_any_origin(),
+                    sink_weights,
                     scale,
                     Int32(batch_size),
                     Int32(max_prompt_len),
@@ -1066,17 +1040,17 @@ def fa_prefill_apple[
                     block_dim=sg * WARP_SIZE,
                 )
 
-            @__parameter
-            def _dispatch[sg: Int]() raises:
+            def _dispatch[sg: Int]() raises {var}:
                 _enqueue[sg]()
 
-            if sg_env == "4":
-                _dispatch[4]()
-            elif sg_env == "8":
-                _dispatch[8]()
-            elif sg_env == "16":
-                _dispatch[16]()
-            elif sg_env == "32":
-                _dispatch[32]()
-            else:
-                _dispatch[num_simdgroups]()
+            match sg_env:
+                case "4":
+                    _dispatch[4]()
+                case "8":
+                    _dispatch[8]()
+                case "16":
+                    _dispatch[16]()
+                case "32":
+                    _dispatch[32]()
+                case _:
+                    _dispatch[num_simdgroups]()

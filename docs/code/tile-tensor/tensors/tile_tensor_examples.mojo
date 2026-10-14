@@ -240,8 +240,8 @@ def split_static_example() raises:
     var tensor = TileTensor(data, row_major[4, 4]())
 
     # Split into 2 equal halves along axis 0. Split views are immutable,
-    # so call as_immut() first.
-    var halves = tensor.as_immut().split[2]()
+    # so call as_imm() first.
+    var halves = tensor.as_imm().split[2]()
     # end-split-static-example
     assert_equal(halves[0][0, 0], 0)
     assert_equal(halves[1][0, 0], 8)
@@ -254,7 +254,7 @@ def split_dynamic_example() raises:
 
     # Return a single runtime-sized partition: split axis 0 into 4 parts
     # and take partition index 1.
-    var partition = tensor.as_immut().split[axis=0](4, 1)
+    var partition = tensor.as_imm().split[axis=0](4, 1)
     # end-split-dynamic-example
     assert_equal(partition.layout.shape[0]().value(), 2)
     assert_equal(partition[0, 0], 4)

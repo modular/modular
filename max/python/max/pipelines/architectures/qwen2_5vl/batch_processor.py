@@ -22,7 +22,7 @@ import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.parallel import ParallelArrayOps
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -285,7 +285,7 @@ class Qwen2_5VLBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Qwen2_5VLTextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""

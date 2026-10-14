@@ -126,8 +126,15 @@ class PixelGenerationSampledRequest(SampledRequest):
 
 MessageSource = Literal["user", "assistant", "system"]
 
-# Which user turn(s) of a multi-turn session get images.
-ImageTurn = Literal["first", "last", "every"]
+# Which user turn(s) of a multi-turn session an augmentation may act on.
+#
+# The selector is shared; the unit each augmentation's fraction draws in is
+# not. Draw per session when the payload persists into later turns, per turn
+# when it does not: images ride in the message history, a response_format is
+# per-request. That also decides whether "first" survives a warmed session --
+# the prefix loop resends its images but never sets response_format
+# (CENG-1086).
+TurnSelector = Literal["first", "last", "every"]
 
 
 @dataclass
@@ -141,6 +148,13 @@ class SessionMessage:
     # Any image tokens are already counted in `num_tokens`, so consumers
     # must not add them again.
     images: list[OpenAIImage] = field(default_factory=list)
+    # Constrains this turn's response when set. Only a "user" message carries
+    # one; an assistant message is replayed history and asks the server for
+    # nothing.
+    response_format: ResponseFormat | None = None
+    # Sent as this turn's chat-completions ``tools`` field. Like
+    # ``response_format``, only a "user" message carries one.
+    tools: list[dict[str, Any]] | None = None
 
 
 @dataclass

@@ -2,6 +2,9 @@
 
 A comprehensive guide for compiler engineers new to the KGEN/Mojo codebase.
 
+**Resources:**
+[Dec 2025 Onsite Walkthrough Live](https://www.youtube.com/watch?v=tWWgCxRKuYo)
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -11,7 +14,7 @@ A comprehensive guide for compiler engineers new to the KGEN/Mojo codebase.
 5. [Phase 3: Pre-Elaboration Optimization](#phase-3-pre-elaboration-optimization)
 6. [Phase 4: Elaboration (Monomorphization)](#phase-4-elaboration-monomorphization)
 7. [Phase 5: Post-Elaboration Lowering & Optimization](#phase-5-post-elaboration-lowering--optimization)
-8. [Phase 6: Lowering to LLVM](#phase-6-lowering-to-llvm)`
+8. [Phase 6: Lowering to LLVM](#phase-6-lowering-to-llvm)
 9. [Mojo Packages and Precompiled Files](#mojo-packages-and-precompiled-files)
 10. [Debug Information](#debug-information)
     - [Parametric Debug Info](#parametric-debug-info)
@@ -320,7 +323,7 @@ elaborator caching).
 | `kgen.struct.instance`  | Concrete struct type (post-elaboration) |
 | `kgen.call`             | Function call                           |
 | `kgen.param.constant`   | Parameter value materialization         |
-| `kgen.param.if`         | Compile-time conditional                |
+| `hlcf.comptime.if`      | Compile-time conditional                |
 
 #### Generators: Function and Struct
 
@@ -344,14 +347,14 @@ generators**.
 kgen.generator @add<rhs>(%lhs: index) -> index {
   %0 = kgen.param.constant = <rhs>
   %1 = index.add %lhs, %0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 # After elaboration: concrete function
 kgen.func @"add<42>"(%lhs: index) -> index {
   %0 = index.constant 42
   %1 = index.add %lhs, %0
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 ```
 
@@ -481,7 +484,7 @@ For compile-time code evaluation, KGEN includes an **interpreter**:
 # The `apply` operator triggers interpretation
 kgen.func @call_it() {
   %result = kgen.param.constant = <apply(:() -> index @call_me)>
-  kgen.return
+  hlcf.return
 }
 ```
 
@@ -876,7 +879,7 @@ mechanism. A `DIScopeAttr` (such as `DISubprogramAttr` or
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 kgen.func @foo() {
-  kgen.return loc(fused<#subprogram>["foo.mojo":12:5])
+  hlcf.return loc(fused<#subprogram>["foo.mojo":12:5])
 } loc(fused<#subprogram>["foo.mojo":10:1])
 ```
 
@@ -1200,7 +1203,7 @@ The IR with full debug info looks like:
 kgen.func @"add(::Int,::Int)"(%a: !Int, %b: !Int) -> !Int {
   %sum = ...  // a + b computation
   debuginfo.value #result_var = %sum : !Int loc(fused<#subprogram>["example.mojo":2:5])
-  kgen.return %sum : !Int loc(fused<#subprogram>["example.mojo":3:5])
+  hlcf.return %sum : !Int loc(fused<#subprogram>["example.mojo":3:5])
 } loc(fused<#subprogram>["example.mojo":1:1])
 ```
 
@@ -1405,4 +1408,5 @@ def foo():
 
 - [Region-Based Control Flow in MLIR (starts at 5:24)](https://youtu.be/vvVR3FyU9TE?si=0j2MgCRJXNX-1enj&t=324)
 - [Mojo Compiler Overview (first 18 mins)](https://www.youtube.com/watch?v=Invd_dxC2RU)
+- [Mojo's Attribute-Based Expression System](https://www.youtube.com/watch?v=4DKInnobCjY)
 - [Mojo DebugInfo (starts at 10:47)](https://youtu.be/9jfukpjCPIg?si=lSz9ZN_AbzsnVcm8&t=647)

@@ -79,6 +79,9 @@ logger = logging.getLogger("max.pipelines")
 
 
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
+"""A :class:`Pipeline` with its input and output types erased, used where
+the registry handles pipelines of any variant.
+"""
 
 
 @dataclass(frozen=True)
@@ -112,7 +115,7 @@ def get_pipeline_for_task(
     """Returns the pipeline class for the given task and config.
 
     Args:
-        task: The pipeline task (e.g. text generation, embeddings).
+        task: The pipeline task (such as text generation, embeddings).
         pipeline_config: Pipeline configuration (may select speculative path).
 
     Returns:
@@ -126,7 +129,7 @@ def get_pipeline_for_task(
         if (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
-            or pipeline_config.speculative.is_dflash()
+            or pipeline_config.speculative.is_block_draft()
         ):
             return OverlapTextGenerationPipeline[TextContext]
         else:
@@ -472,7 +475,7 @@ class PipelineRegistry:
 
         Args:
             architecture_name: The architecture class name to look up
-                (e.g. ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
+                (such as ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
             prefer_module_v3: Whether to use the ModuleV3 architecture variant.
                 When ``False`` (default), uses the standard graph API architecture name.
                 When ``True``, appends the ``_ModuleV3`` suffix to look up the
@@ -1070,7 +1073,10 @@ class PipelineRegistry:
             )
         if len(matching_tasks) == 1:
             return matching_tasks[0]
-        if arch := self.architectures.get(architecture_name):
+        # The lookup may fall back to another variant, e.g. `<name>_ModuleV3`.
+        if arch := self.retrieve_architecture(architecture_name):
+            if arch.name != architecture_name:
+                return self.retrieve_pipeline_task(arch.name)
             return arch.task
         raise ValueError(
             f"Architecture '{architecture_name}' not found in registry"

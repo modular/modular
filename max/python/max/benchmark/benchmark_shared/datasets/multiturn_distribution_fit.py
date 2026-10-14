@@ -14,7 +14,7 @@
 """Build multiturn :class:`ChatSamples` from a pool of user texts and CLI distributions.
 
 Used when ``--fit-distributions`` is set so real datasets (instruct-coder,
-agentic-code, etc.) match ``--random-*`` and ``--delay-between-chat-turns``
+agentic-code and so on) match ``--random-*`` and ``--delay-between-chat-turns``
 the same way as :class:`RandomBenchmarkDataset` multiturn mode.
 """
 
@@ -376,7 +376,9 @@ def _build_sessions(
     )
     max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
 
-    pool_lens = pool.encode_lens(list(user_text_pool))
+    pool_lens = pool.encode_lens(
+        list(user_text_pool), desc=f"{log_prefix}: tokenizing text pool"
+    )
     filtered_user_texts = [
         t
         for t, n in zip(user_text_pool, pool_lens, strict=False)
@@ -503,7 +505,11 @@ def _build_sessions(
 
     sessions: list[ChatSession] = []
     truncated_turns: list[int] = []
-    for result in pool.map(_build_session, session_args_list):
+    for result in pool.map(
+        _build_session,
+        session_args_list,
+        desc=f"{log_prefix}: building sessions",
+    ):
         if result.session is not None:
             sessions.append(result.session)
         if result.truncated_at_turn is not None:

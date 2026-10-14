@@ -16,9 +16,14 @@
 from std.collections import Array
 from std.collections.optional import Optional
 
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    TensorEngine,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.tile_layout import Layout
-from layout.coord import _CoordToDynamic
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
@@ -45,25 +50,18 @@ from std.sys import (
     simd_width_of,
     size_of,
     align_of,
-    has_amd_gpu_accelerator,
     is_amd_gpu,
 )
 
 from internal_utils import Table
 
 from .device_query import GB, KB, dispatch_select_comm_config
-from .relay import (
-    RELAY_ARCH,
-    RelayTuningConfig,
-    _relay_pairs,
-    _relay_slice_vectors,
-)
+from .relay import RelayTuningConfig, _relay_pairs, _relay_slice_vectors
 from .sync import (
     MAX_GPUS,
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    circular_add,
     is_p2p_enabled,
 )
 
@@ -80,6 +78,7 @@ comptime elementwise_epilogue_type = def[
 def _load_reduce[
     dtype: DType,
     in_tile_layout: TensorLayout,
+    in_engine: TensorEngine,
     //,
     ngpus: Int,
     simd_width: Int,
@@ -90,7 +89,7 @@ def _load_reduce[
 ](
     elem_idx: Int,
     in_tiles: Array[
-        TileTensor[dtype, in_tile_layout, ImmutAnyOrigin],
+        TileTensor[dtype, in_tile_layout, ImmutAnyOrigin, Engine=in_engine],
         1 if use_multimem else ngpus,
     ],
 ) -> SIMD[dtype, simd_width]:
@@ -303,6 +302,7 @@ struct ReduceScatterConfig[
 def _reduce_scatter_impl[
     dtype: DType,
     in_tile_layout: TensorLayout,
+    in_engine: TensorEngine,
     //,
     ngpus: Int,
     *,
@@ -313,10 +313,10 @@ def _reduce_scatter_impl[
     use_multimem: Bool = False,
 ](
     in_tiles: Array[
-        TileTensor[dtype, in_tile_layout, ImmutAnyOrigin],
+        TileTensor[dtype, in_tile_layout, ImmutAnyOrigin, Engine=in_engine],
         1 if use_multimem else ngpus,
     ],
-    out_buf: TileTensor[mut=True, dtype, ...],
+    output_layout: Some[TensorLayout],
     # TODO(KERN-2526): pass config here
     num_elements: Int,
     thread_stride: Int,
@@ -342,9 +342,9 @@ def _reduce_scatter_impl[
             use_multimem=use_multimem,
         ](c, in_tiles)
 
-        # Note idx2crd only works here because out_buf is compact
+        # Note idx2crd only works here because the output is compact
         output_lambda[width=simd_width, alignment=alignment](
-            out_buf.layout.idx2crd(c),
+            output_layout.idx2crd(c),
             reduced_result,
         )
 
@@ -369,7 +369,7 @@ def _reducescatter_kernel[
         TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    out_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
+    output_layout: out_layout,
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     axis_size: Int32,
     unit_numel: Int32,
@@ -399,12 +399,22 @@ def _reducescatter_kernel[
             rank_sigs, my_sig, _my_rank
         )
 
-        # Round-robin access pattern to balance NVLink traffic across GPUs.
+        # Accumulate peers in canonical rank order (0, 1, 2, ...).
+        #
+        # An earlier version rotated the order by the destination rank
+        # (`circular_add(_my_rank, i)`) to stagger which peer each GPU reads
+        # first and balance NVLink traffic. But a reduce-scatter's destination
+        # rank is a function of the row index, so the same logical row was
+        # summed in a different peer order depending on where it landed: a
+        # legal reassociation that still made identical inputs produce
+        # different float results across destination shards (one bf16 ULP,
+        # amplified downstream). The sum of an element must depend on its
+        # `ngpus` input values alone, so every destination accumulates in the
+        # same canonical order. The fused `reducescatter_rmsnorm` and the
+        # relay kernel below keep the same order for bit-consistency.
         comptime TileType = TileTensor[dtype, in_layout, ImmutAnyOrigin]
         var reordered = Array[_, num_buffers](
-            fill_with_unrolled=lambda [i: Int]() -> TileType: in_bufs[
-                circular_add[num_buffers](_my_rank, i)
-            ]
+            fill_with_unrolled=lambda [i: Int]() -> TileType: in_bufs[i]
         )
 
         var u_start = config.rank_unit_start(_my_rank)
@@ -425,38 +435,36 @@ def _reducescatter_kernel[
 
             _reduce_scatter_impl[
                 ngpus, output_lambda=output_lambda, use_multimem=use_multimem
-            ](flat_tiles, out_buf, n_elements, config.stride)
+            ](flat_tiles, output_layout, n_elements, config.stride)
         else:
             # 2D axis-aware: slice + reverse for coalesced access.
-            comptime InputTile = TileTensor[dtype, in_layout, ImmutAnyOrigin]
-            comptime DynShapeTypes = _CoordToDynamic[
-                InputTile.linear_idx_type, in_layout._shape_types
-            ]
-            comptime RevLayout = Layout[
-                DynShapeTypes.reverse(),
-                in_layout._stride_types.reverse(),
-            ]
-            comptime SlicedRevTile = TileTensor[
-                dtype, RevLayout, ImmutAnyOrigin
+            comptime assert (
+                in_layout.rank == 2
+            ), "axis-aware reduce-scatter expects a rank-2 input layout"
+            # Both axes slice both dimensions, so either one names the type.
+            comptime SlicedTile = type_of(
+                reordered[0][u_start : u_start + n_units, :]
+            )
+            comptime SlicedRevTile = SlicedTile.ViewType[
+                Layout[
+                    SlicedTile.LayoutType._shape_types.reverse(),
+                    SlicedTile.LayoutType._stride_types.reverse(),
+                ]
             ]
 
             def sliced_tiles_at[i: Int]() {imm} -> SlicedRevTile:
                 comptime if axis == 0:
                     # Scatter along rows.
-                    var sliced = reordered[i].slice(
-                        (u_start, u_start + n_units),
-                        (0, Int(reordered[0].dim[1]())),
-                    )
+                    var sliced = reordered[i][u_start : u_start + n_units, :]
                     return SlicedRevTile(
                         sliced._storage, sliced.layout.reverse()
                     )
                 else:
                     # axis == 1: scatter along columns.
                     var col_start = u_start * simd_width
-                    var sliced = reordered[i].slice(
-                        (0, Int(reordered[0].dim[0]())),
-                        (col_start, col_start + n_units * simd_width),
-                    )
+                    var sliced = reordered[i][
+                        :, col_start : col_start + n_units * simd_width
+                    ]
                     return SlicedRevTile(
                         sliced._storage, sliced.layout.reverse()
                     )
@@ -467,7 +475,7 @@ def _reducescatter_kernel[
 
             _reduce_scatter_impl[
                 ngpus, output_lambda=output_lambda, use_multimem=use_multimem
-            ](sliced_tiles, out_buf, n_elements, config.stride)
+            ](sliced_tiles, output_layout, n_elements, config.stride)
 
         _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
             rank_sigs, my_sig, _my_rank
@@ -526,8 +534,8 @@ def _reducescatter_relay_kernel[
     # rank is the pair-local rank folded by the group width.
     var group_rank = _my_rank % ngpus
 
-    var bid = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var bid = block_idx.x
+    var tid = thread_idx.x
     var _relay_percent = Int(relay_percent)
 
     # Synchronize before reading. The domain spans both groups because a
@@ -551,12 +559,13 @@ def _reducescatter_relay_kernel[
 
         for idx in range(bid * BLOCK_SIZE + tid, span, stride):
             var elem_idx = idx * simd_width
-            # Rotate the source order by rank, as the plain kernel does, so
-            # the group's reads do not all queue on the same peer first.
+            # Canonical source order (see the plain kernel): every
+            # destination must sum its peers in the same order, or identical
+            # inputs give shard-dependent float results.
             var accum = SIMD[accum_type, simd_width](0)
             comptime for i in range(ngpus):
                 accum += (
-                    in_ptrs[circular_add[ngpus](group_rank, i)]
+                    in_ptrs[i]
                     .address_space_cast[_target_address_space]()
                     .load[
                         width=simd_width,
@@ -596,7 +605,7 @@ def _reducescatter_relay_kernel[
         # already is between ranks, since the plain kernel rotates too.
         var relay_bid = bid - Int(num_direct_blocks)
         var dst = relay_bid % ngpus
-        var blocks_per_dst = (Int(grid_dim.x) - Int(num_direct_blocks)) // ngpus
+        var blocks_per_dst = (grid_dim.x - Int(num_direct_blocks)) // ngpus
         var dst_block = relay_bid // ngpus
 
         # Each destination's partition is split on its own length, so a
@@ -625,18 +634,16 @@ def _reducescatter_relay_kernel[
             _target_address_space
         ]()
 
-        # Rotate the source order by the DESTINATION's rank, which is the
-        # order that destination's own direct blocks use. Relayed and
-        # directly-reduced values then come out of the same sequence of
-        # adds, so the result is bit-identical to the plain kernel's --
-        # which the fused reduce-scatter + norm op is tested against.
+        # Canonical source order (see the plain kernel): the same order the
+        # destination's own direct blocks use, so relayed and
+        # directly-reduced values come out of the same sequence of adds and
+        # the result is bit-identical to the plain kernel's -- which the
+        # fused reduce-scatter + norm op is tested against.
         # Hoisted for the same reason as `dst_ptr`: a runtime index into
         # the table inside the loop would stage it through scratch.
         comptime SrcPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
         var src_ptrs = Array[_, ngpus](
-            fill_with_unrolled=lambda [g: Int]() -> SrcPtrType: peer_in_ptrs[
-                circular_add[ngpus](dst, g)
-            ]
+            fill_with_unrolled=lambda [g: Int]() -> SrcPtrType: peer_in_ptrs[g]
         )
 
         # Operands a thread batches before reducing: the read links and the
@@ -765,7 +772,7 @@ def _reducescatter_p2p_relay[
     # `ngpus`-wide grouped barrier and this one advance the same counters at
     # different rates and hang the node.
     comptime relay_domain_id = 0 if 2 * ngpus == MAX_GPUS else 2 * ngpus
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # A relay block only runs if some partition in the relay world is long
     # enough to split. Both groups see both length sets, so they agree on the
@@ -832,7 +839,6 @@ def _reducescatter_p2p[
     out_origin: MutOrigin,
     *,
     axis: Int = 0,
-    output_lambda: Optional[elementwise_epilogue_type] = None,
     has_residual: Bool = False,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
@@ -855,7 +861,12 @@ def _reducescatter_p2p[
         Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus]
     ] = None,
 ) raises:
-    """Performs reducescatter using peer-to-peer access for a single GPU.
+    """Performs reducescatter using peer-to-peer access for a single GPU,
+    storing reduced values straight to this device's output buffer.
+
+    A caller epilogue takes `_reducescatter_launch` instead: the relay path
+    below finishes a value into a peer's output and cannot run that peer's
+    epilogue, so it is only an option when there is none.
 
     World view vs. group: `ngpus` is the total number of devices in the
     world; `list_of_in_bufs`, `output_buffers`, and `rank_sigs` carry every
@@ -875,7 +886,6 @@ def _reducescatter_p2p[
         out_layout: Layout of the output TileTensors.
         out_origin: Origin of the output TileTensors.
         axis: Scatter axis.
-        output_lambda: Elementwise epilogue function to apply to reduced values.
         has_residual: Fold `residuals` into every reduced value.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: Whether multimem optimization is enabled. Only valid
@@ -923,49 +933,16 @@ def _reducescatter_p2p[
     var loc_rank = my_rank - group_start
     var output_buffer = output_buffers[my_rank]
 
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
-    comptime BLOCK_SIZE = 256
-    comptime num_buffers = 1 if use_multimem else group_size
-
-    # Grid size based on max per-GPU elements (rank 0 has most).
+    # Partition geometry the relay below and the residual fold both read.
     var config_for_grid = ReduceScatterConfig[dtype, group_size](
         axis_size, unit_numel, 0
     )
-    var max_rank_elements = config_for_grid.rank_num_elements(0)
-
-    # We guard against max_rank_elements % simd_width != 0 in reducescatter
-    var grid_size = min(
-        max_num_blocks,
-        ceildiv(max_rank_elements // simd_width, BLOCK_SIZE),
-    )
-
-    # Erase origin to ImmutAnyOrigin for the kernel, slicing down to this
-    # device's GROUP.
-    # TODO(KERN-2526): is this necessary?
-    comptime KernelInputType = TileTensor[dtype, in_layout, ImmutAnyOrigin]
-    var kernel_in_bufs = Array[_, num_buffers](
-        fill_with=lambda (i: Int) -> KernelInputType: KernelInputType(
-            list_of_in_bufs[0 if use_multimem else group_start + i]
-            ._storage.as_imm()
-            .as_unsafe_any_origin(),
-            list_of_in_bufs[0 if use_multimem else group_start + i].layout,
-        )
-    )
-
-    # This device's GROUP's signal pointers, re-indexed to [0, group_size).
-    # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
-    )
-    comptime for i in range(group_size):
-        group_sigs[i] = rank_sigs[group_start + i]
 
     # Relay path: with an even number of groups, adjacent groups pair off and
     # act as reduce nodes for each other over the inter-group links a grouped
     # collective leaves idle. Gated on an arch it has been measured on, and off
-    # for a caller epilogue -- a relay finishes a value into a peer's output
-    # and cannot run that peer's epilogue -- and off for multimem, whose
-    # single fused input leaves a relay nothing per-source to reduce.
+    # for multimem, whose single fused input leaves a relay nothing per-source
+    # to reduce. This path never has a caller epilogue (see the docstring).
     #
     # Also off for a nonzero `axis`. Nothing below is axis-specific: a relay
     # locates a peer's partition by the running sum of that group's output
@@ -978,7 +955,6 @@ def _reducescatter_p2p[
         _relay_pairs[ngpus, group_size](ctx.default_device_info.version)
         and axis == 0
         and not use_multimem
-        and not output_lambda
     )
     comptime if _use_relay:
         var pair_base = ualign_down(my_rank, 2 * group_size)
@@ -1028,11 +1004,11 @@ def _reducescatter_p2p[
         ](pair_max_numel * size_of[dtype]())
 
         if pair_max_numel > 0 and recipe.relay_percent > 0:
-            var relay_sigs = Array[
-                UnsafePointer[Signal, MutAnyOrigin], 2 * group_size
-            ](uninitialized=True)
-            for i in range(2 * group_size):
-                relay_sigs[i] = rank_sigs[pair_base + i]
+            var relay_sigs = Array[_, 2 * group_size](
+                fill_with=lambda (i: Int) -> Pointer[
+                    Signal, MutAnyOrigin
+                ]: rank_sigs[pair_base + i]
+            )
 
             # A relay folds the DESTINATION's residual, so the peer group's
             # copies travel with its inputs. The kernel reads none of this
@@ -1062,15 +1038,6 @@ def _reducescatter_p2p[
                 my_rank - pair_base,
             )
 
-    # Only reachable for a relay pair whose partner carried the work, and
-    # whose size the table declined to relay: this group has nothing of its
-    # own to reduce, and a zero-width grid is not a legal launch.
-    if max_rank_elements == 0:
-        return
-
-    # Storing straight to the output is the epilogue when the caller supplied
-    # none. Keeping the `Optional` this far down is what lets the relay path
-    # above see that there is no caller epilogue for a relay to honour.
     # Storing to the output is the epilogue when the caller supplied none.
     # With `has_residual` it also folds the residual, in the same order the
     # relay kernel uses: `val` arrives already rounded to `dtype`, so the add
@@ -1105,7 +1072,104 @@ def _reducescatter_p2p[
                 coords, val.cast[dtype]()
             )
 
-    comptime actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
+    _reducescatter_launch[
+        dtype,
+        ngpus,
+        axis=axis,
+        output_lambda=default_output_lambda,
+        pdl_level=pdl_level,
+        use_multimem=use_multimem,
+        group_size=group_size,
+    ](
+        list_of_in_bufs,
+        output_buffer.layout,
+        rank_sigs,
+        max_num_blocks,
+        ctx,
+        my_rank,
+        axis_size,
+        unit_numel,
+    )
+
+
+@inline(.always)
+def _reducescatter_launch[
+    dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    *,
+    axis: Int,
+    output_lambda: elementwise_epilogue_type,
+    pdl_level: PDLLevel,
+    use_multimem: Bool,
+    group_size: Int,
+](
+    list_of_in_bufs: Array[
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
+    ],
+    output_layout: out_layout,
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    max_num_blocks: Int,
+    ctx: DeviceContext,
+    my_rank: Int,
+    axis_size: Int,
+    unit_numel: Int,
+) raises:
+    """Launches the reduce-scatter kernel, handing every reduced value to
+    `output_lambda`.
+
+    Takes this device's output as a layout, not a tensor: the kernel reads
+    only its geometry, and `output_lambda` owns every write.
+    """
+    comptime domain_id = 0 if group_size == ngpus else group_size
+    var group_start = ualign_down(my_rank, group_size)
+    var loc_rank = my_rank - group_start
+
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
+    comptime BLOCK_SIZE = 256
+    comptime num_buffers = 1 if use_multimem else group_size
+
+    # Grid size based on max per-GPU elements (rank 0 has most).
+    var config_for_grid = ReduceScatterConfig[dtype, group_size](
+        axis_size, unit_numel, 0
+    )
+    var max_rank_elements = config_for_grid.rank_num_elements(0)
+
+    # We guard against max_rank_elements % simd_width != 0 in reducescatter
+    var grid_size = min(
+        max_num_blocks,
+        ceildiv(max_rank_elements // simd_width, BLOCK_SIZE),
+    )
+
+    # Erase origin to ImmutAnyOrigin for the kernel, slicing down to this
+    # device's GROUP.
+    # TODO(KERN-2526): is this necessary?
+    comptime KernelInputType = TileTensor[dtype, in_layout, ImmutAnyOrigin]
+    var kernel_in_bufs = Array[_, num_buffers](
+        fill_with=lambda (i: Int) -> KernelInputType: KernelInputType(
+            list_of_in_bufs[0 if use_multimem else group_start + i]
+            ._storage.as_imm()
+            .as_unsafe_any_origin(),
+            list_of_in_bufs[0 if use_multimem else group_start + i].layout,
+        )
+    )
+
+    # This device's GROUP's signal pointers, re-indexed to [0, group_size).
+    # Byte-identical to `rank_sigs` for a full-world collective.
+    var group_sigs = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> Pointer[
+            Signal, MutAnyOrigin
+        ]: rank_sigs[group_start + i]
+    )
+
+    # Reachable when this group has no input but its relay partner does (and
+    # the partner did not relay this group's share): there is nothing of its
+    # own to reduce, and a zero-width grid is not a legal launch.
+    if max_rank_elements == 0:
+        return
 
     comptime kernel = _reducescatter_kernel[
         dtype,
@@ -1114,7 +1178,7 @@ def _reducescatter_p2p[
         group_size,
         axis=axis,
         BLOCK_SIZE=BLOCK_SIZE,
-        output_lambda=actual_output_lambda,
+        output_lambda=output_lambda,
         use_multimem=use_multimem,
         domain_id=domain_id,
     ]
@@ -1122,7 +1186,7 @@ def _reducescatter_p2p[
     # Launch the kernel
     ctx.enqueue_function[kernel](
         kernel_in_bufs,
-        output_buffer,
+        output_layout,
         group_sigs,
         Int32(axis_size),
         Int32(unit_numel),
@@ -1133,102 +1197,31 @@ def _reducescatter_p2p[
     )
 
 
-@__parameter
-def reducescatter[
+@inline(.always)
+def _reducescatter_plan[
     dtype: DType,
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
-    out_layout: TensorLayout,
-    out_origin: MutOrigin,
-    output_lambda: Optional[elementwise_epilogue_type] = None,
-    has_residual: Bool = False,
-    pdl_level: PDLLevel = PDLLevel(),
     *,
-    axis: Int = 0,
-    use_multimem: Bool = False,
-    group_size: Int = ngpus,
+    axis: Int,
+    use_multimem: Bool,
+    group_size: Int,
 ](
     input_buffers: Array[
         TileTensor[dtype, in_layout, in_origin],
         1 if use_multimem else ngpus,
     ],
-    output_buffers: Array[
-        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
-    ],
-    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    output_layout: Some[TensorLayout],
     ctx: DeviceContext,
-    _max_num_blocks: Optional[Int] = None,
-    my_rank: Optional[Int] = None,
-    residuals: Optional[
-        Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus]
-    ] = None,
-) raises:
-    """Per-device reducescatter operation with axis-aware scatter.
+    global_rank: Int,
+    _max_num_blocks: Optional[Int],
+) raises -> Optional[Tuple[Int, Int, Int]]:
+    """Partitions this device's group and validates its output geometry.
 
-    Performs a reduce-scatter across multiple GPUs: each GPU reduces its assigned
-    partition from all input buffers and writes the result to its output buffer.
-
-    World view vs. group
-    - `ngpus` is the TOTAL number of devices in the world; `input_buffers`,
-      `output_buffers`, and `rank_sigs` carry every device's data, indexed by
-      GLOBAL device rank.
-    - `group_size` (defaults to `ngpus`) is the number of devices that actually
-      cooperate on one reduce-scatter. It must evenly divide `ngpus`. Devices
-      `[g*group_size, (g+1)*group_size)` form group `g`; this call's group is
-      derived from `my_rank`.
-    - `my_rank` is this device's GLOBAL rank in `[0, ngpus)`, not its rank
-      within the group -- the group-local rank is derived internally.
-
-    Parameters:
-        dtype: Data dtype of tensor elements.
-        ngpus: Total number of devices in the world.
-        in_layout: Layout of the input TileTensors.
-        in_origin: Origin of the input TileTensors.
-        out_layout: Layout of the output TileTensors.
-        out_origin: Origin of the output TileTensors.
-        output_lambda: Optional elementwise epilogue function. If not provided,
-            reduced values are stored directly to this device's output buffer.
-        has_residual: Fold `residuals` into every reduced value, after the
-            reduction is rounded to `dtype` and with the add itself in the
-            accumulate type -- the order an unfused residual add would give.
-        pdl_level: Control PDL behavior for the kernel.
-        axis: Scatter axis. 0 to scatter along rows (default), 1 to scatter along columns.
-            Requires 2D row-major inputs when axis >= 0.
-        use_multimem: If True, use hardware-accelerated multimem reduction.
-            Currently only valid with 1D input and a full-world collective
-            (`group_size == ngpus`).
-        group_size: Number of devices per independent reduce-scatter group.
-            Must evenly divide `ngpus`. Defaults to `ngpus` (one full-world
-            group, byte-identical to the pre-grouping behavior).
-
-    Args:
-        input_buffers: Input TileTensors from ALL `ngpus` devices (peer access
-            required), indexed by GLOBAL device rank. When use_multimem is
-            True, a single multimem-mapped TileTensor.
-        output_buffers: Output TileTensors for ALL `ngpus` devices' partitions
-            of reduced data, indexed by GLOBAL device rank. Every slot must
-            name a real buffer: a grouped reduce-scatter may hand part of a
-            partition to the paired group, whose GPUs finish the sum and write
-            that partition directly, so peer slots are not spare.
-        rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
-            device rank.
-        ctx: Device context for THIS GPU.
-        _max_num_blocks: Optional maximum number of thread blocks to launch.
-            If not specified, uses an arch-specific default (128 on AMD,
-            else MAX_NUM_BLOCKS_UPPER_BOUND).
-        my_rank: Optional GLOBAL rank of THIS GPU in `[0, ngpus)`. Defaults to
-            the physical device id, which is only correct when devices
-            `0..ngpus-1` map 1:1 onto physical device ids.
-        residuals: Every device's residual tensor, indexed by GLOBAL device
-            rank; required when `has_residual` and ignored otherwise. Each has
-            the same shape as that device's input, and a device folds only the
-            slice covering its own partition.
-
-    Raises:
-        Error: If P2P access is not available between GPUs (always required;
-            a grouped reduce-scatter has no non-P2P fallback).
-        Error: If input buffer size is not a multiple of SIMD width.
+    Returns:
+        `(axis_size, unit_numel, max_num_blocks)` for the launch, or `None`
+        when the whole relay pair is empty and there is nothing to launch.
     """
     comptime assert (
         group_size >= 2
@@ -1236,7 +1229,7 @@ def reducescatter[
     comptime assert (
         ngpus % group_size == 0
     ), "group_size must evenly divide ngpus"
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     comptime tensor_rank = in_layout.rank
 
     # Validate axis and rank combination.
@@ -1254,9 +1247,7 @@ def reducescatter[
     # This device's group. `group_start` is 0 for a full-world collective
     # (group_size == ngpus), so every group_start-relative read below is
     # byte-identical to the pre-grouping `input_buffers[0]` in that case.
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
     var group_start = ualign_down(global_rank, group_size)
-    var output_buffer = output_buffers[global_rank]
 
     # Return early only if the whole relay pair is empty. Reads come from THIS
     # DEVICE'S GROUP, not world index 0 -- sibling groups may carry different
@@ -1277,7 +1268,7 @@ def reducescatter[
             pair_empty = False
             break
     if pair_empty:
-        return
+        return None
 
     var num_elements = input_buffers[group_start].num_elements()
 
@@ -1328,16 +1319,16 @@ def reducescatter[
     )
     var expected_numel = config_check.rank_num_elements(loc_rank)
     comptime if tensor_rank == 1:
-        if output_buffer.num_elements() != expected_numel:
+        if output_layout.product() != expected_numel:
             raise Error(
                 "output buffer has "
-                + String(output_buffer.num_elements())
+                + String(output_layout.product())
                 + " elements, expected "
                 + String(expected_numel)
             )
     else:
         comptime assert (
-            output_buffer.rank == 2
+            type_of(output_layout).rank == 2
         ), "axis >= 0 requires 2D output buffer"
         var n_units = config_check.rank_units(loc_rank)
         var expected_rows = n_units if axis == 0 else Int(
@@ -1347,8 +1338,8 @@ def reducescatter[
             Int(input_buffers[group_start].layout.shape[1]().value()) if axis
             == 0 else n_units * simd_width
         )
-        var out_rows = Int(output_buffer.dim[0]())
-        var out_cols = Int(output_buffer.dim[1]())
+        var out_rows = Int(output_layout.shape[0]().value())
+        var out_cols = Int(output_layout.shape[1]().value())
         if out_rows != expected_rows or out_cols != expected_cols:
             raise Error(
                 "output buffer shape ("
@@ -1365,11 +1356,122 @@ def reducescatter[
     # AMD P2P reduce-scatter is PCIe-fabric-bound: ~128 blocks saturate it
     # (CDNA4: 166.5 vs 148.8 GB/s at 1024); more only adds barrier overhead.
     comptime _default_num_blocks = (
-        128 if has_amd_gpu_accelerator() else MAX_NUM_BLOCKS_UPPER_BOUND
+        128 if ctx.target.is_amd_gpu() else MAX_NUM_BLOCKS_UPPER_BOUND
     )
-    var max_num_blocks = (
-        _max_num_blocks.value() if _max_num_blocks else _default_num_blocks
+    var max_num_blocks = _max_num_blocks.or_else(_default_num_blocks)
+    return (axis_size, unit_numel, max_num_blocks)
+
+
+def reducescatter[
+    dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
+    has_residual: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    axis: Int = 0,
+    use_multimem: Bool = False,
+    group_size: Int = ngpus,
+](
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
+    ],
+    output_buffers: Array[
+        TileTensor[mut=True, dtype, out_layout, out_origin], ngpus
+    ],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    ctx: DeviceContext,
+    _max_num_blocks: Optional[Int] = None,
+    my_rank: Optional[Int] = None,
+    residuals: Optional[
+        Array[ImmPointer[Scalar[dtype], ImmutAnyOrigin], ngpus]
+    ] = None,
+) raises:
+    """Per-device reducescatter operation with axis-aware scatter.
+
+    Performs a reduce-scatter across multiple GPUs: each GPU reduces its assigned
+    partition from all input buffers and writes the result to its output buffer.
+
+    World view vs. group
+    - `ngpus` is the TOTAL number of devices in the world; `input_buffers`,
+      `output_buffers`, and `rank_sigs` carry every device's data, indexed by
+      GLOBAL device rank.
+    - `group_size` (defaults to `ngpus`) is the number of devices that actually
+      cooperate on one reduce-scatter. It must evenly divide `ngpus`. Devices
+      `[g*group_size, (g+1)*group_size)` form group `g`; this call's group is
+      derived from `my_rank`.
+    - `my_rank` is this device's GLOBAL rank in `[0, ngpus)`, not its rank
+      within the group -- the group-local rank is derived internally.
+
+    Parameters:
+        dtype: Data dtype of tensor elements.
+        ngpus: Total number of devices in the world.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        out_layout: Layout of the output TileTensors.
+        out_origin: Origin of the output TileTensors.
+        has_residual: Fold `residuals` into every reduced value, after the
+            reduction is rounded to `dtype` and with the add itself in the
+            accumulate type -- the order an unfused residual add would give.
+        pdl_level: Control PDL behavior for the kernel.
+        axis: Scatter axis. 0 to scatter along rows (default), 1 to scatter along columns.
+            Requires 2D row-major inputs when axis >= 0.
+        use_multimem: If True, use hardware-accelerated multimem reduction.
+            Currently only valid with 1D input and a full-world collective
+            (`group_size == ngpus`).
+        group_size: Number of devices per independent reduce-scatter group.
+            Must evenly divide `ngpus`. Defaults to `ngpus` (one full-world
+            group, byte-identical to the pre-grouping behavior).
+
+    Args:
+        input_buffers: Input TileTensors from ALL `ngpus` devices (peer access
+            required), indexed by GLOBAL device rank. When use_multimem is
+            True, a single multimem-mapped TileTensor.
+        output_buffers: Output TileTensors for ALL `ngpus` devices' partitions
+            of reduced data, indexed by GLOBAL device rank. Every slot must
+            name a real buffer: a grouped reduce-scatter may hand part of a
+            partition to the paired group, whose GPUs finish the sum and write
+            that partition directly, so peer slots are not spare.
+        rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
+            device rank.
+        ctx: Device context for THIS GPU.
+        _max_num_blocks: Optional maximum number of thread blocks to launch.
+            If not specified, uses an arch-specific default (128 on AMD,
+            else MAX_NUM_BLOCKS_UPPER_BOUND).
+        my_rank: Optional GLOBAL rank of THIS GPU in `[0, ngpus)`. Defaults to
+            the physical device id, which is only correct when devices
+            `0..ngpus-1` map 1:1 onto physical device ids.
+        residuals: Every device's residual tensor, indexed by GLOBAL device
+            rank; required when `has_residual` and ignored otherwise. Each has
+            the same shape as that device's input, and a device folds only the
+            slice covering its own partition.
+
+    Raises:
+        Error: If P2P access is not available between GPUs (always required;
+            a grouped reduce-scatter has no non-P2P fallback).
+        Error: If input buffer size is not a multiple of SIMD width.
+    """
+    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var plan = _reducescatter_plan[
+        dtype,
+        ngpus,
+        axis=axis,
+        use_multimem=use_multimem,
+        group_size=group_size,
+    ](
+        input_buffers,
+        output_buffers[global_rank].layout,
+        ctx,
+        global_rank,
+        _max_num_blocks,
     )
+    if not plan:
+        return
+    var axis_size, unit_numel, max_num_blocks = plan.value()
 
     # Hand the collective the whole world plus the group width, and let it
     # derive the group-local slice, rank, and barrier domain itself.
@@ -1377,7 +1479,6 @@ def reducescatter[
         dtype,
         ngpus,
         axis=axis,
-        output_lambda=output_lambda,
         has_residual=has_residual,
         pdl_level=pdl_level,
         use_multimem=use_multimem,
@@ -1392,4 +1493,104 @@ def reducescatter[
         axis_size,
         unit_numel,
         residuals,
+    )
+
+
+def reducescatter[
+    dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    //,
+    output_lambda: elementwise_epilogue_type,
+    pdl_level: PDLLevel = PDLLevel(),
+    *,
+    axis: Int = 0,
+    use_multimem: Bool = False,
+    group_size: Int = ngpus,
+](
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
+    ],
+    output_layouts: Array[out_layout, ngpus],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    ctx: DeviceContext,
+    _max_num_blocks: Optional[Int] = None,
+    my_rank: Optional[Int] = None,
+) raises:
+    """Per-device reducescatter that hands every reduced value to an epilogue.
+
+    The same collective as the overload that takes `output_buffers`, for a
+    caller whose epilogue owns every write -- such as a graph op whose output
+    is fused. Each device's output is given as a layout, so the collective
+    never sees a pointer it could write through.
+
+    Parameters:
+        dtype: Data dtype of tensor elements.
+        ngpus: Total number of devices in the world.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        out_layout: Layout of every device's output.
+        output_lambda: Epilogue that receives each reduced value and its
+            output coordinates.
+        pdl_level: Control PDL behavior for the kernel.
+        axis: Scatter axis. 0 to scatter along rows (default), 1 to scatter
+            along columns.
+        use_multimem: If True, use hardware-accelerated multimem reduction.
+        group_size: Number of devices per independent reduce-scatter group.
+            Must evenly divide `ngpus`. Defaults to `ngpus`.
+
+    Args:
+        input_buffers: Input TileTensors from ALL `ngpus` devices, indexed by
+            GLOBAL device rank.
+        output_layouts: Every device's output layout, indexed by GLOBAL device
+            rank. This device's entry is validated against its partition.
+        rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
+            device rank.
+        ctx: Device context for THIS GPU.
+        _max_num_blocks: Optional maximum number of thread blocks to launch.
+        my_rank: Optional GLOBAL rank of THIS GPU in `[0, ngpus)`. Defaults to
+            the physical device id.
+
+    Raises:
+        Error: If P2P access is not available between GPUs.
+        Error: If the input or output shapes do not partition evenly.
+    """
+    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var plan = _reducescatter_plan[
+        dtype,
+        ngpus,
+        axis=axis,
+        use_multimem=use_multimem,
+        group_size=group_size,
+    ](
+        input_buffers,
+        output_layouts[global_rank],
+        ctx,
+        global_rank,
+        _max_num_blocks,
+    )
+    if not plan:
+        return
+    var axis_size, unit_numel, max_num_blocks = plan.value()
+
+    _reducescatter_launch[
+        dtype,
+        ngpus,
+        axis=axis,
+        output_lambda=output_lambda,
+        pdl_level=pdl_level,
+        use_multimem=use_multimem,
+        group_size=group_size,
+    ](
+        input_buffers,
+        output_layouts[global_rank],
+        rank_sigs,
+        max_num_blocks,
+        ctx,
+        global_rank,
+        axis_size,
+        unit_numel,
     )

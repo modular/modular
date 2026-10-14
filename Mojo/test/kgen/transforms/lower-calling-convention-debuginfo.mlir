@@ -5,7 +5,7 @@
 
 kgen.func @main() -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none> loc(#loc)
-  kgen.return %none : !kgen.none loc(#loc)
+  hlcf.return %none : !kgen.none loc(#loc)
 } loc(#loc)
 
 // CHECK: !debuginfo.subroutine<() -> ()

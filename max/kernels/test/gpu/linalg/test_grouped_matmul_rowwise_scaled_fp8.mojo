@@ -32,16 +32,8 @@ multi-expert ragged batch, sparse expert-id routing, and a production-ish
 Llama-4-Scout gate/up shape.
 """
 
-from std.collections import Optional
-from std.sys import align_of
-
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul import grouped_matmul_rowwise_dynamic_scaled_fp8
@@ -105,12 +97,12 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     var b_scales_size = num_experts * N
 
     # KUT TileTensor shapes.
-    var a_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[K]))
-    var b_tt_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    var c_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[N]))
-    var a_scales_kut_shape = row_major(Coord(Int(total_num_tokens), Idx[1]))
-    var a_scales_ref_shape = row_major(Coord(Idx[1], Int(total_num_tokens)))
-    var b_scales_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[1]))
+    var a_tt_shape = row_major(total_num_tokens, Idx[K])
+    var b_tt_shape = row_major(Idx[num_experts], Idx[N], Idx[K])
+    var c_tt_shape = row_major(total_num_tokens, Idx[N])
+    var a_scales_kut_shape = row_major(total_num_tokens, Idx[1])
+    var a_scales_ref_shape = row_major(Idx[1], total_num_tokens)
+    var b_scales_shape = row_major(Idx[num_experts], Idx[N], Idx[1])
 
     # Host allocations.
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
@@ -191,11 +183,11 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     var c_device_ref_tt = TileTensor(c_device_ref_buffer, c_tt_shape)
     var a_offsets_device_tt = TileTensor(
         a_offsets_device_buffer,
-        row_major(Coord(Int(num_active_experts + 1))),
+        row_major(num_active_experts + 1),
     )
     var expert_ids_device_tt = TileTensor(
         expert_ids_device_buffer,
-        row_major(Coord(Int(num_active_experts))),
+        row_major(num_active_experts),
     )
     var a_scales_kut_device_tt = TileTensor(
         a_scales_kut_device_buffer, a_scales_kut_shape
@@ -215,28 +207,20 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     ctx.enqueue_copy(a_scales_ref_device_buffer, a_scales_ref_host_ptr)
     ctx.enqueue_copy(b_scales_device_buffer, b_scales_host_ptr)
 
-    # Reference path (LayoutTensor) - distinct code from the KUT.
-    var a_ref = a_device_tt.to_layout_tensor()
-    var b_ref = b_device_tt.to_layout_tensor()
-    var c_ref = c_device_ref_tt.to_layout_tensor()
-    var a_scales_ref = a_scales_ref_device_tt.to_layout_tensor()
-    var b_scales_ref = b_scales_device_tt.to_layout_tensor()
-    var a_offsets_ref = a_offsets_device_tt.to_layout_tensor()
-    var expert_ids_ref = expert_ids_device_tt.to_layout_tensor()
-
+    # Reference path - distinct code from the KUT.
     naive_blockwise_scaled_fp8_grouped_matmul[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
         scales_granularity_mnk=Index(1, 1, K),
     ](
-        c_ref,
-        a_ref,
-        b_ref,
-        a_scales_ref,
-        b_scales_ref,
-        a_offsets_ref,
-        expert_ids_ref,
+        c_device_ref_tt,
+        a_device_tt,
+        b_device_tt,
+        a_scales_ref_device_tt,
+        b_scales_device_tt,
+        a_offsets_device_tt,
+        expert_ids_device_tt,
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,

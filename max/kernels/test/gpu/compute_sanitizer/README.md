@@ -74,7 +74,10 @@ Knobs: `CS_JOBS` (local parallelism), `CS_GPU` (pin to one physical GPU),
   `--mojocopt=--debug-level --mojocopt=line-tables`. `full` (`-G`) disables
   `ptxas` optimization and perturbs timing, which both slows the run and can
   *hide* the very races we hunt; `line-tables` keeps `-O` and still attributes
-  findings to Mojo source.
+  findings to Mojo source. The exceptions are the attention tests in
+  `NO_LINE_TABLES_TARGETS` in `run_sanitizer.sh`. Their line-tables compile
+  exceeds the remote executor's memory, so they run in a separate bazel
+  invocation without line tables. Their findings lack source lines.
 - **Pool disable for `memcheck`/`initcheck`.** These two add the landed build
   flag `--//:gpu_disable_memory_manager` (the harness does this automatically),
   which makes each buffer a 1:1 `cuMemAlloc` so the sanitizer sees true

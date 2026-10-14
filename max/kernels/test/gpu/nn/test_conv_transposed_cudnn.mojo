@@ -113,9 +113,7 @@ def test_conv_transposed_cudnn[
         ),
         TileTensor(
             filter_host_ptr,
-            row_major(
-                Coord(IndexList[5](1, 1, kernel_len, out_channels, in_channels))
-            ),
+            row_major(1, 1, kernel_len, out_channels, in_channels),
         ),
         stride,
         dilation,
@@ -176,9 +174,7 @@ def test_conv_transposed_cudnn[
         ),  # dy (input grad)
         TileTensor(
             d_filter,
-            row_major(
-                Coord(IndexList[4](in_channels, out_channels, 1, kernel_len))
-            ),
+            row_major(in_channels, out_channels, 1, kernel_len),
         ),  # w (filter)
         TileTensor(
             d_output,

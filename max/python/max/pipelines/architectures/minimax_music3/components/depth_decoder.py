@@ -243,12 +243,7 @@ class DepthDecoder(Module[..., Tensor]):
         summed = self.semantic_embeddings(codes[:, :1]) + F.sum(
             self.embed_codes(codes[:, 1:]), axis=1
         )
-        scale = F.constant(
-            self.config.num_codebooks**-0.5,
-            summed.dtype,
-            device=summed.device,
-        )
-        return summed * scale
+        return summed * self.config.num_codebooks**-0.5
 
     def forward(self, inputs_embeds: Tensor) -> Tensor:
         """Runs the depth sequence and normalizes every position's output.

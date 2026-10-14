@@ -39,9 +39,9 @@ def compute_vision_freqs_cis(
     Args:
         pixel_position_ids: Integer (x, y) grid coordinates, shape
             ``[total_patches, ndim]``, dtype int32.
-        head_dim: Total per-head dimension (e.g. 72 for Gemma4).
+        head_dim: Total per-head dimension (such as 72 for Gemma4).
         ndim: Number of spatial dimensions (2 for height/width RoPE).
-        theta: RoPE base frequency (e.g. 10000.0).
+        theta: RoPE base frequency (such as 10000.0).
         dtype: Output dtype for cos/sin values (typically bfloat16).
         device: Target device for the output tensor.
 
@@ -151,7 +151,7 @@ def apply_multidimensional_rope(
             evenly divisible by ``2 * ndim``.
         freqs_cis: Frequency tensor of shape ``(..., head_dim // 2, 2)`` where
             the last axis holds ``[cos, sin]``.
-        ndim: Number of spatial dimensions (e.g. 2 for height/width).
+        ndim: Number of spatial dimensions (such as 2 for height/width).
 
     Returns:
         Tensor with the same shape as ``x``, with per-dim RoPE applied.

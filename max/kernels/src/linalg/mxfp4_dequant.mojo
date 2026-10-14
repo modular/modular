@@ -23,7 +23,6 @@ from std.math import ceildiv
 from max.gpu import block_idx, thread_idx, grid_dim, block_dim
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import GPUInfo
-from std.sys.info import _accelerator_arch
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -32,12 +31,10 @@ from max.gpu.primitives.grid_controls import (
 from std.utils import StaticTuple
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from layout import TensorEngine, TileTensor
-from layout.coord import Coord, Idx
+from layout.coord import Coord
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
 from max.algorithm.functional import elementwise
-from std.utils.coord import Coord, coord_to_index_list
-from std.utils.index import Index, IndexList
 from std.sys.info import simd_width_of
 
 
@@ -186,7 +183,7 @@ def dequant_mxfp4[
         "num_cols must be a multiple of ELEMENTS_PER_THREAD (8)",
     )
     comptime num_max_threads = 512
-    comptime _gpu = GPUInfo.from_name[_accelerator_arch()]()
+    comptime _gpu = GPUInfo.default_accelerator()
     comptime num_SMs = _gpu.sm_count
 
     var num_col_threads = ceildiv(num_cols, ELEMENTS_PER_THREAD)

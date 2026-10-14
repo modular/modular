@@ -79,11 +79,11 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kernels import (
+    MXFP6_LANE_BYTES,
     dynamic_block_scaled_matmul_amd,
     dynamic_block_scaled_matmul_mxfp6,
-)
-from max.pipelines.weights.block_scaled_preshuffle import (
-    shuffle_block_scaled_b_dense_arrays,
+    preshuffle_block_scaled_b,
+    preshuffle_block_scaled_b_scales,
 )
 
 # aiter MXFP4 Triton GEMM (`_gemm_afp4wfp4_kernel`). JIT/compile on first use.
@@ -387,6 +387,44 @@ def _check_close(
 # ----------------------------------------------------------------------------
 
 
+def _compile_dense_preshuffle(
+    n: int, k_bytes: int, k_scales: int
+) -> Callable[[torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]]:
+    """Compiles the preb permutation of one dense MXFP6 ``[N, K]`` weight.
+
+    Returns a function that permutes a ``[N, K_BYTES]`` weight and its
+    ``[N, K_SCALES]`` E8M0 scales (both uint8-viewed) on the GPU.
+    """
+    gpu = DeviceRef.GPU()
+    with Graph(
+        "dense_mxfp6_preshuffle",
+        input_types=[
+            TensorType(DType.uint8, shape=[1, n, k_bytes], device=gpu),
+            TensorType(DType.uint8, shape=[1, n, k_scales], device=gpu),
+        ],
+    ) as graph:
+        b, b_s = (inp.tensor for inp in graph.inputs)
+        graph.output(
+            preshuffle_block_scaled_b(b, lane_bytes=MXFP6_LANE_BYTES),
+            preshuffle_block_scaled_b_scales(b_s),
+        )
+    model = InferenceSession(devices=[Accelerator()]).load(graph)
+
+    def run(
+        b: torch.Tensor, b_s: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        out_b, out_s = model.execute(
+            Buffer.from_dlpack(b.view(torch.uint8).reshape(1, n, k_bytes)),
+            Buffer.from_dlpack(b_s.view(torch.uint8).reshape(1, n, k_scales)),
+        )
+        return (
+            torch.from_dlpack(out_b).reshape(n, k_bytes),
+            torch.from_dlpack(out_s).reshape(n, k_scales),
+        )
+
+    return run
+
+
 def bench_matmul_max(
     m: int,
     n: int,
@@ -410,11 +448,11 @@ def bench_matmul_max(
     distinct rotating weight buffer (total > L2). A single replay sweeps all
     `ncopies` cold-HBM GEMMs; per-op latency = whole-graph time / ncopies.
 
-    `preshuffled_b` (MXFP6 only) preshuffles every rotating B weight copy and
-    its scales on the CPU (numpy, via `shuffle_block_scaled_b_dense_arrays`)
-    before the timed graph replay -- the one-time, load-time cost a real
-    checkpoint pays once via `preshuffle_block_scaled_b_dense`, so it must
-    stay out of the per-op measurement below.
+    `preshuffled_b` (MXFP6 only) permutes every rotating B weight copy and
+    its scales with :func:`_compile_dense_preshuffle` before the timed graph
+    replay. A real checkpoint's weights are constants, whose permutation the
+    graph compiler hoists into model init, so it must stay out of the per-op
+    measurement below; these weights are graph inputs, so it runs separately.
     """
     if preshuffled_b and dtype != "mxfp6":
         raise ValueError("preshuffled_b is only implemented for mxfp6")
@@ -436,12 +474,13 @@ def bench_matmul_max(
     # the un-shuffled bytes. `b_gpu_t`/`b_s_gpu_t` are what actually go on the
     # wire to the graph -- preshuffled copies when `preshuffled_b`.
     b_gpu_t, b_s_gpu_t = b_t, b_s_t
-    if preshuffled_b:
-        b_gpu_np, b_s_gpu_np = shuffle_block_scaled_b_dense_arrays(
-            b_t.cpu().numpy(), b_s_t.cpu().numpy()
-        )
-        b_gpu_t = torch.from_numpy(b_gpu_np).to(b_t.device)
-        b_s_gpu_t = torch.from_numpy(b_s_gpu_np).to(b_s_t.device)
+    preshuffle = (
+        _compile_dense_preshuffle(n, k_bytes, k // _SCALE_BLOCK)
+        if preshuffled_b
+        else None
+    )
+    if preshuffle is not None:
+        b_gpu_t, b_s_gpu_t = preshuffle(b_t, b_s_t)
 
     def _gen_weight_copy() -> torch.Tensor:
         if dtype == "mxfp8":
@@ -455,14 +494,10 @@ def bench_matmul_max(
             bt = torch.randint(
                 0, 256, (n, k_bytes), dtype=torch.uint8, device="cuda"
             )
-        if preshuffled_b:
-            # The B-scale argument only picks the shuffle's output shape
-            # here; every rotating copy shares one already-shuffled
-            # `b_s_gpu_t` graph input, so this result is discarded.
-            bt_np, _ = shuffle_block_scaled_b_dense_arrays(
-                bt.cpu().numpy(), b_s_t.cpu().numpy()
-            )
-            bt = torch.from_numpy(bt_np).cuda()
+        if preshuffle is not None:
+            # Every rotating copy shares one already-permuted `b_s_gpu_t`
+            # graph input, so the scales permuted here are discarded.
+            bt, _ = preshuffle(bt, b_s_t)
         return bt
 
     a_type = TensorType(elem_dtype, shape=[m, k_bytes], device=DeviceRef.GPU())
@@ -801,10 +836,11 @@ def main() -> None:
         "--preshuffled_b",
         "--preshuffled-b",
         action="store_true",
-        help="mxfp6/modular_max only. Preshuffle B and its scales on the CPU "
-        "before the timed replay and dispatch through "
+        help="mxfp6/modular_max only. Preshuffle B and its scales on the GPU, "
+        "in a separate untimed graph, before the timed replay and dispatch "
+        "through "
         "`mxfp6_block_scaled_matmul_amd`'s preshuffled-B path -- the M > 64 "
-        "load-path fix. See `preshuffle_block_scaled_b_dense`.",
+        "load-path fix. See `preshuffle_block_scaled_b`.",
     )
     args, _ = parser.parse_known_args()
 

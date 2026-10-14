@@ -103,23 +103,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
             DType.int32
         ]()
 
-        var x_strides = x.strides()
-        var weight_strides = weight.strides()
-        var output_strides = output.strides()
-        var conv_state_strides = conv_state.strides()
-
-        var x_batch_stride = UInt32(x_strides[0])
-        var x_dim_stride = UInt32(x_strides[1])
-        var x_seqlen_stride = UInt32(x_strides[2])
-        var weight_dim_stride = UInt32(weight_strides[0])
-        var weight_width_stride = UInt32(weight_strides[1])
-        var conv_state_batch_stride = UInt32(conv_state_strides[0])
-        var conv_state_dim_stride = UInt32(conv_state_strides[1])
-        var conv_state_seqlen_stride = UInt32(conv_state_strides[2])
-        var out_batch_stride = UInt32(output_strides[0])
-        var out_dim_stride = UInt32(output_strides[1])
-        var out_seqlen_stride = UInt32(output_strides[2])
-
         var has_conv_state_indices = conv_state_indices.dim_size(0) > 0
         var has_cache_seqlens = cache_seqlens.dim_size(0) > 0
         var has_bias = bias.dim_size(0) > 0
@@ -149,17 +132,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 cache_seqlens_tt,
                 conv_state_indices_tt,
                 output_tt,
-                x_batch_stride,
-                x_dim_stride,
-                x_seqlen_stride,
-                weight_dim_stride,
-                weight_width_stride,
-                conv_state_batch_stride,
-                conv_state_dim_stride,
-                conv_state_seqlen_stride,
-                out_batch_stride,
-                out_dim_stride,
-                out_seqlen_stride,
                 silu_activation,
                 PAD_SLOT_ID,
                 has_conv_state_indices,
@@ -171,255 +143,212 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
             comptime BLOCK_DIM = 128
             var silu_activation_int8 = Int8(silu_activation)
 
-            if width == 1:
-                comptime kWidth = 1
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_varlen_update_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        conv_state_tt.dtype,
-                        cache_seqlens_tt.dtype,
-                        conv_state_indices_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        conv_state_tt.LayoutType,
-                        cache_seqlens_tt.LayoutType,
-                        conv_state_indices_tt.LayoutType,
-                        output_tt.LayoutType,
-                        x_tt.Engine,
-                        weight_tt.Engine,
-                        bias_tt.Engine,
-                        conv_state_tt.Engine,
-                        cache_seqlens_tt.Engine,
-                        conv_state_indices_tt.Engine,
-                        output_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(batch),
-                    Int32(dim),
-                    Int32(seqlen),
-                    Int32(state_len),
-                    x_tt,
-                    weight_tt,
-                    bias_tt,
-                    conv_state_tt,
-                    cache_seqlens_tt,
-                    conv_state_indices_tt,
-                    output_tt,
-                    x_batch_stride,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    conv_state_batch_stride,
-                    conv_state_dim_stride,
-                    conv_state_seqlen_stride,
-                    out_batch_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
-                    silu_activation_int8,
-                    PAD_SLOT_ID,
-                    Int8(has_conv_state_indices),
-                    Int8(has_cache_seqlens),
-                    Int8(has_bias),
-                    grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-                    block_dim=(BLOCK_DIM,),
-                )
-            elif width == 2:
-                comptime kWidth = 2
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_varlen_update_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        conv_state_tt.dtype,
-                        cache_seqlens_tt.dtype,
-                        conv_state_indices_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        conv_state_tt.LayoutType,
-                        cache_seqlens_tt.LayoutType,
-                        conv_state_indices_tt.LayoutType,
-                        output_tt.LayoutType,
-                        x_tt.Engine,
-                        weight_tt.Engine,
-                        bias_tt.Engine,
-                        conv_state_tt.Engine,
-                        cache_seqlens_tt.Engine,
-                        conv_state_indices_tt.Engine,
-                        output_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(batch),
-                    Int32(dim),
-                    Int32(seqlen),
-                    Int32(state_len),
-                    x_tt,
-                    weight_tt,
-                    bias_tt,
-                    conv_state_tt,
-                    cache_seqlens_tt,
-                    conv_state_indices_tt,
-                    output_tt,
-                    x_batch_stride,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    conv_state_batch_stride,
-                    conv_state_dim_stride,
-                    conv_state_seqlen_stride,
-                    out_batch_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
-                    silu_activation_int8,
-                    PAD_SLOT_ID,
-                    Int8(has_conv_state_indices),
-                    Int8(has_cache_seqlens),
-                    Int8(has_bias),
-                    grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-                    block_dim=(BLOCK_DIM,),
-                )
-            elif width == 3:
-                comptime kWidth = 3
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_varlen_update_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        conv_state_tt.dtype,
-                        cache_seqlens_tt.dtype,
-                        conv_state_indices_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        conv_state_tt.LayoutType,
-                        cache_seqlens_tt.LayoutType,
-                        conv_state_indices_tt.LayoutType,
-                        output_tt.LayoutType,
-                        x_tt.Engine,
-                        weight_tt.Engine,
-                        bias_tt.Engine,
-                        conv_state_tt.Engine,
-                        cache_seqlens_tt.Engine,
-                        conv_state_indices_tt.Engine,
-                        output_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(batch),
-                    Int32(dim),
-                    Int32(seqlen),
-                    Int32(state_len),
-                    x_tt,
-                    weight_tt,
-                    bias_tt,
-                    conv_state_tt,
-                    cache_seqlens_tt,
-                    conv_state_indices_tt,
-                    output_tt,
-                    x_batch_stride,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    conv_state_batch_stride,
-                    conv_state_dim_stride,
-                    conv_state_seqlen_stride,
-                    out_batch_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
-                    silu_activation_int8,
-                    PAD_SLOT_ID,
-                    Int8(has_conv_state_indices),
-                    Int8(has_cache_seqlens),
-                    Int8(has_bias),
-                    grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-                    block_dim=(BLOCK_DIM,),
-                )
-            elif width == 4:
-                comptime kWidth = 4
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_varlen_update_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        conv_state_tt.dtype,
-                        cache_seqlens_tt.dtype,
-                        conv_state_indices_tt.dtype,
-                        kWidth,
-                        BLOCK_DIM,
-                        x_tt.LayoutType,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        conv_state_tt.LayoutType,
-                        cache_seqlens_tt.LayoutType,
-                        conv_state_indices_tt.LayoutType,
-                        output_tt.LayoutType,
-                        x_tt.Engine,
-                        weight_tt.Engine,
-                        bias_tt.Engine,
-                        conv_state_tt.Engine,
-                        cache_seqlens_tt.Engine,
-                        conv_state_indices_tt.Engine,
-                        output_tt.Engine,
-                    ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(batch),
-                    Int32(dim),
-                    Int32(seqlen),
-                    Int32(state_len),
-                    x_tt,
-                    weight_tt,
-                    bias_tt,
-                    conv_state_tt,
-                    cache_seqlens_tt,
-                    conv_state_indices_tt,
-                    output_tt,
-                    x_batch_stride,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    conv_state_batch_stride,
-                    conv_state_dim_stride,
-                    conv_state_seqlen_stride,
-                    out_batch_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
-                    silu_activation_int8,
-                    PAD_SLOT_ID,
-                    Int8(has_conv_state_indices),
-                    Int8(has_cache_seqlens),
-                    Int8(has_bias),
-                    grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-                    block_dim=(BLOCK_DIM,),
-                )
-            else:
-                raise Error(
-                    "Unsupported kernel width: only widths 1, 2, 3, 4 are"
-                    " supported"
-                )
+            match width:
+                case 1:
+                    comptime kWidth = 1
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_varlen_update_gpu[
+                            x_tt.dtype,
+                            weight_tt.dtype,
+                            bias_tt.dtype,
+                            output_tt.dtype,
+                            conv_state_tt.dtype,
+                            cache_seqlens_tt.dtype,
+                            conv_state_indices_tt.dtype,
+                            kWidth,
+                            BLOCK_DIM,
+                            x_tt.LayoutType,
+                            weight_tt.LayoutType,
+                            bias_tt.LayoutType,
+                            conv_state_tt.LayoutType,
+                            cache_seqlens_tt.LayoutType,
+                            conv_state_indices_tt.LayoutType,
+                            output_tt.LayoutType,
+                            x_tt.Engine,
+                            weight_tt.Engine,
+                            bias_tt.Engine,
+                            conv_state_tt.Engine,
+                            cache_seqlens_tt.Engine,
+                            conv_state_indices_tt.Engine,
+                            output_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        Int32(batch),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(state_len),
+                        x_tt,
+                        weight_tt,
+                        bias_tt,
+                        conv_state_tt,
+                        cache_seqlens_tt,
+                        conv_state_indices_tt,
+                        output_tt,
+                        silu_activation_int8,
+                        PAD_SLOT_ID,
+                        Int8(has_conv_state_indices),
+                        Int8(has_cache_seqlens),
+                        Int8(has_bias),
+                        grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
+                        block_dim=(BLOCK_DIM,),
+                    )
+                case 2:
+                    comptime kWidth = 2
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_varlen_update_gpu[
+                            x_tt.dtype,
+                            weight_tt.dtype,
+                            bias_tt.dtype,
+                            output_tt.dtype,
+                            conv_state_tt.dtype,
+                            cache_seqlens_tt.dtype,
+                            conv_state_indices_tt.dtype,
+                            kWidth,
+                            BLOCK_DIM,
+                            x_tt.LayoutType,
+                            weight_tt.LayoutType,
+                            bias_tt.LayoutType,
+                            conv_state_tt.LayoutType,
+                            cache_seqlens_tt.LayoutType,
+                            conv_state_indices_tt.LayoutType,
+                            output_tt.LayoutType,
+                            x_tt.Engine,
+                            weight_tt.Engine,
+                            bias_tt.Engine,
+                            conv_state_tt.Engine,
+                            cache_seqlens_tt.Engine,
+                            conv_state_indices_tt.Engine,
+                            output_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        Int32(batch),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(state_len),
+                        x_tt,
+                        weight_tt,
+                        bias_tt,
+                        conv_state_tt,
+                        cache_seqlens_tt,
+                        conv_state_indices_tt,
+                        output_tt,
+                        silu_activation_int8,
+                        PAD_SLOT_ID,
+                        Int8(has_conv_state_indices),
+                        Int8(has_cache_seqlens),
+                        Int8(has_bias),
+                        grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
+                        block_dim=(BLOCK_DIM,),
+                    )
+                case 3:
+                    comptime kWidth = 3
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_varlen_update_gpu[
+                            x_tt.dtype,
+                            weight_tt.dtype,
+                            bias_tt.dtype,
+                            output_tt.dtype,
+                            conv_state_tt.dtype,
+                            cache_seqlens_tt.dtype,
+                            conv_state_indices_tt.dtype,
+                            kWidth,
+                            BLOCK_DIM,
+                            x_tt.LayoutType,
+                            weight_tt.LayoutType,
+                            bias_tt.LayoutType,
+                            conv_state_tt.LayoutType,
+                            cache_seqlens_tt.LayoutType,
+                            conv_state_indices_tt.LayoutType,
+                            output_tt.LayoutType,
+                            x_tt.Engine,
+                            weight_tt.Engine,
+                            bias_tt.Engine,
+                            conv_state_tt.Engine,
+                            cache_seqlens_tt.Engine,
+                            conv_state_indices_tt.Engine,
+                            output_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        Int32(batch),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(state_len),
+                        x_tt,
+                        weight_tt,
+                        bias_tt,
+                        conv_state_tt,
+                        cache_seqlens_tt,
+                        conv_state_indices_tt,
+                        output_tt,
+                        silu_activation_int8,
+                        PAD_SLOT_ID,
+                        Int8(has_conv_state_indices),
+                        Int8(has_cache_seqlens),
+                        Int8(has_bias),
+                        grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
+                        block_dim=(BLOCK_DIM,),
+                    )
+                case 4:
+                    comptime kWidth = 4
+                    var compiled_func = gpu_ctx.compile_function[
+                        causal_conv1d_varlen_update_gpu[
+                            x_tt.dtype,
+                            weight_tt.dtype,
+                            bias_tt.dtype,
+                            output_tt.dtype,
+                            conv_state_tt.dtype,
+                            cache_seqlens_tt.dtype,
+                            conv_state_indices_tt.dtype,
+                            kWidth,
+                            BLOCK_DIM,
+                            x_tt.LayoutType,
+                            weight_tt.LayoutType,
+                            bias_tt.LayoutType,
+                            conv_state_tt.LayoutType,
+                            cache_seqlens_tt.LayoutType,
+                            conv_state_indices_tt.LayoutType,
+                            output_tt.LayoutType,
+                            x_tt.Engine,
+                            weight_tt.Engine,
+                            bias_tt.Engine,
+                            conv_state_tt.Engine,
+                            cache_seqlens_tt.Engine,
+                            conv_state_indices_tt.Engine,
+                            output_tt.Engine,
+                        ]
+                    ]()
+                    gpu_ctx.enqueue_function(
+                        compiled_func,
+                        Int32(batch),
+                        Int32(dim),
+                        Int32(seqlen),
+                        Int32(state_len),
+                        x_tt,
+                        weight_tt,
+                        bias_tt,
+                        conv_state_tt,
+                        cache_seqlens_tt,
+                        conv_state_indices_tt,
+                        output_tt,
+                        silu_activation_int8,
+                        PAD_SLOT_ID,
+                        Int8(has_conv_state_indices),
+                        Int8(has_cache_seqlens),
+                        Int8(has_bias),
+                        grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
+                        block_dim=(BLOCK_DIM,),
+                    )
+                case _:
+                    raise Error(
+                        "Unsupported kernel width: only widths 1, 2, 3, 4 are"
+                        " supported"
+                    )
         else:
             raise Error("Unsupported target device")
 
@@ -493,15 +422,6 @@ struct CausalConv1DVarlenStates:
         var x_tt = x.to_tile_tensor[.int32]()
         var cu_seqlens_tt = cu_seqlens.to_tile_tensor[.int32]()
 
-        var x_strides = x.strides()
-        var states_strides = states.strides()
-
-        var x_seqlen_stride = UInt32(x_strides[0])
-        var x_dim_stride = UInt32(x_strides[1])
-        var states_batch_stride = UInt32(states_strides[0])
-        var states_dim_stride = UInt32(states_strides[1])
-        var states_seqlen_stride = UInt32(states_strides[2])
-
         comptime if is_cpu[target]():
             causal_conv1d_varlen_states_cpu[
                 x_tt.dtype,
@@ -515,11 +435,6 @@ struct CausalConv1DVarlenStates:
                 x_tt,
                 cu_seqlens_tt,
                 states_tt,
-                x_seqlen_stride,
-                x_dim_stride,
-                states_batch_stride,
-                states_dim_stride,
-                states_seqlen_stride,
             )
         elif is_gpu[target]():
             var gpu_ctx = ctx
@@ -548,11 +463,6 @@ struct CausalConv1DVarlenStates:
                 x_tt,
                 cu_seqlens_tt,
                 states_tt,
-                x_seqlen_stride,
-                x_dim_stride,
-                states_batch_stride,
-                states_dim_stride,
-                states_seqlen_stride,
                 grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM,),
             )

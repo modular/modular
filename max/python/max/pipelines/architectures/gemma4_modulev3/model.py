@@ -17,12 +17,13 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_dtype
+from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
@@ -213,9 +214,12 @@ class Gemma4Model(
     ) -> Callable[..., Any]:
         n_devices = len(self.devices)
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
-        with F.lazy(), default_dtype(model_config.dtype):
+        with (
+            F.lazy(),
+            default_dtype(model_config.dtype),
+            default_device(mesh),
+        ):
             language_nn = Gemma4(model_config, self.kv_params, mesh)
-            language_nn.to(mesh)
 
         assert isinstance(self._batch_processor, Gemma4ModuleV3BatchProcessor)
         input_types = self._batch_processor.get_language_symbolic_inputs(
@@ -301,7 +305,7 @@ class Gemma4Model(
             model_inputs.input_row_offsets,
             model_inputs.vision_embeddings[0],
             model_inputs.vision_scatter_indices[0],
-            *kv_cache_inputs.flatten(),
+            *tree.leaves(kv_cache_inputs),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(

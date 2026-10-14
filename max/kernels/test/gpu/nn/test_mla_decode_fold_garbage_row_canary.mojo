@@ -57,12 +57,11 @@ and MiniMax-M2 if configured for MLA) -- not specific to MiniMax-M3, which
 uses dense (non-MLA) attention and the already-fixed kernel.
 """
 
-from std.math import ceildiv, sqrt
 from std.random import randn, seed
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext, HostBuffer
-from layout import Idx, LayoutTensor, RuntimeLayout, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,

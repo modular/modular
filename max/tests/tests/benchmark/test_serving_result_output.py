@@ -14,9 +14,12 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 import pytest
+from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 from max.benchmark.benchmark_shared.datasets.image_augmentation import (
     generate_random_image,
 )
@@ -37,6 +40,7 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.serving_result_output import (
+    BenchmarkRunResultLabels,
     PercentileRow,
     _image_dimensions,
     _image_long_side,
@@ -45,6 +49,7 @@ from max.benchmark.benchmark_shared.serving_result_output import (
     format_percentile_table,
     print_benchmark_summary,
     print_workload_stats,
+    save_result_json,
 )
 
 
@@ -184,13 +189,20 @@ def test_format_gpu_statistics_title_names_device_count() -> None:
     )
 
 
-def _gpu_benchmark_result() -> BenchmarkResult:
+def _gpu_benchmark_result(
+    tool_request_rate: float | None = None,
+    tool_call_response_rate: float | None = None,
+    image_request_rate: float | None = None,
+    lora_request_rate: float | None = None,
+    gpu_utilization_by_group: dict[str, list[float]] | None = None,
+) -> BenchmarkResult:
     return BenchmarkResult(
         task_type="text",
         max_concurrency=8,
         peak_gpu_memory_mib=[40000.0, 40500.0],
         available_gpu_memory_mib=[39000.0, 38500.0],
         gpu_utilization=[95.0, 97.0],
+        gpu_utilization_by_group=gpu_utilization_by_group or {},
         text_data=TextGenAggregates(
             duration=60.0,
             completed=100,
@@ -203,8 +215,49 @@ def _gpu_benchmark_result() -> BenchmarkResult:
             max_output=200,
             max_total=300,
             global_cached_token_rate=0.42,
+            tool_request_rate=tool_request_rate,
+            tool_call_response_rate=tool_call_response_rate,
+            image_request_rate=image_request_rate,
+            lora_request_rate=lora_request_rate,
         ),
     )
+
+
+def _print_summary(result: BenchmarkResult) -> None:
+    print_benchmark_summary(
+        metrics=result,
+        request_rate=float("inf"),
+        max_concurrency=8,
+        achieved_request_rate=1.66,
+        collect_gpu_stats=True,
+        collect_cpu_stats=False,
+    )
+
+
+def test_print_benchmark_summary_prints_request_mix_section(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(
+        _gpu_benchmark_result(
+            tool_request_rate=0.68,
+            tool_call_response_rate=0.5,
+            image_request_rate=0.2,
+            lora_request_rate=0.0,
+        )
+    )
+    out = capsys.readouterr().out
+    assert out.index("Request Mix") < out.index("Tool-offering requests:")
+    assert re.search(r"Tool-offering requests:\s+68\.00%", out)
+    assert re.search(r"of which called a tool:\s+50\.00%", out)
+    assert re.search(r"Image-carrying requests:\s+20\.00%", out)
+    assert "LoRA-routed requests:" not in out
+
+
+def test_print_benchmark_summary_omits_request_mix_when_unused(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(_gpu_benchmark_result(tool_request_rate=0.0))
+    assert "Request Mix" not in capsys.readouterr().out
 
 
 def test_print_benchmark_summary_tabulates_gpu_stats(
@@ -240,6 +293,31 @@ def test_print_benchmark_summary_tabulates_gpu_stats(
     )
     assert util is not None
     assert float(util.group(1).strip()) == 96.0
+    assert "GPU utilization, prefill" not in out
+
+
+def test_print_benchmark_summary_splits_gpu_utilization_by_role(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A disaggregated run adds one utilization row per role and node."""
+    print_benchmark_summary(
+        metrics=_gpu_benchmark_result(
+            gpu_utilization_by_group={
+                "prefill": [95.0],
+                "decode node 1": [97.0],
+            }
+        ),
+        request_rate=float("inf"),
+        max_concurrency=8,
+        achieved_request_rate=1.66,
+        collect_gpu_stats=True,
+        collect_cpu_stats=False,
+    )
+    out = capsys.readouterr().out
+    for label, mean in (("prefill", 95.0), ("decode node 1", 97.0)):
+        row = re.search(rf"│\s*GPU utilization, {label} \(%\)\s*│([^│]+)│", out)
+        assert row is not None, label
+        assert float(row.group(1).strip()) == mean
 
 
 def _make_request(
@@ -332,3 +410,64 @@ def test_image_long_side_none_for_corrupt_data() -> None:
         "image_url": {"url": "data:image/jpeg;base64,not-valid-base64!!"},
     }
     assert _image_long_side(image) is None
+
+
+def test_save_result_json_writes_labels_in_base_layout(
+    tmp_path: Path,
+) -> None:
+    """Labels land in the base layout with the iteration's rate and concurrency."""
+    config = ServingBenchmarkConfig(model="myorg/model", metadata=["tp=2"])
+    result = BenchmarkResult(
+        task_type="text",
+        max_concurrency=4,
+        text_data=TextGenAggregates(
+            duration=1.0,
+            completed=2,
+            failures=0,
+            request_throughput=2.0,
+            total_input=10,
+            total_output=7,
+            nonempty_response_chunks=7,
+            max_input=5,
+            max_output=4,
+            max_total=9,
+            global_cached_token_rate=0.0,
+            output_lens=[3, 4],
+        ),
+    )
+    path = tmp_path / "result.json"
+
+    save_result_json(
+        str(path),
+        BenchmarkRunResultLabels.from_config(
+            config,
+            benchmark_task="text-generation",
+            model_id="myorg/model",
+            tokenizer_id="myorg/tokenizer",
+        ),
+        result,
+        request_rate=2.5,
+        record_max_concurrency=4,
+    )
+
+    data = json.loads(path.read_text())
+    assert list(data)[:13] == [
+        "date",
+        "backend",
+        "benchmark_task",
+        "model_id",
+        "tokenizer_id",
+        "num_prompts",
+        "dataset_name",
+        "client_args",
+        "request_rate",
+        "burstiness",
+        "max_concurrency",
+        "max_concurrent_conversations",
+        "tp",
+    ]
+    assert data["tokenizer_id"] == "myorg/tokenizer"
+    assert data["tp"] == "2"
+    assert data["client_args"]["model"] == "myorg/model"
+    assert data["client_args"]["request_rate"] == "2.5"
+    assert data["client_args"]["max_concurrency"] == 4

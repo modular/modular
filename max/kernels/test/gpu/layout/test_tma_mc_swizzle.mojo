@@ -18,10 +18,16 @@ from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from max.gpu.host import DeviceContext, Dim
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import cluster_idx, thread_idx
-from max.gpu.memory import fence_mbarrier_init
-from layout import Layout, LayoutTensor
+from layout import (
+    Coord,
+    MixedLayout,
+    TileTensor,
+    coord,
+    row_major,
+    stack_allocation,
+)
 from layout._fillers import arange, random
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
     SharedMemBarrier,
@@ -32,32 +38,29 @@ from layout.tma_async import (
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
-from std.utils.index import Index, IndexList
-
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 def tma_swizzle_multicast_load_kernel[
     dtype: DType,
-    layout: Layout,
-    cluster_tile_layout: Layout,
-    subcluster_tile_rank: Int,
-    subcluster_tile_shape: IndexList[subcluster_tile_rank],
-    desc_shape: IndexList[subcluster_tile_rank],
+    layout: MixedLayout,
+    cluster_tile_layout: MixedLayout,
+    subcluster_tile_shape: Coord,
+    desc_shape: Coord,
     CLUSTER_M: Int,
     CLUSTER_N: Int,
 ](
-    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[
-        dtype, subcluster_tile_rank, subcluster_tile_shape, desc_shape
-    ],
+    dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
+    tma_tile: TMATensorTile[dtype, subcluster_tile_shape, desc_shape],
 ):
-    comptime cluster_tileM = cluster_tile_layout.shape[0].value()
-    comptime cluster_tileN = cluster_tile_layout.shape[1].value()
-    comptime expected_bytes = cluster_tile_layout.size() * size_of[dtype]()
+    comptime cluster_tileM = type_of(cluster_tile_layout).static_shape[0]
+    comptime cluster_tileN = type_of(cluster_tile_layout).static_shape[1]
+    comptime expected_bytes = Int(cluster_tile_layout.product()) * size_of[
+        dtype
+    ]()
 
-    comptime subcluster_tileM = subcluster_tile_shape[0]
-    comptime subcluster_tileN = subcluster_tile_shape[1]
+    comptime subcluster_tileM = Int(subcluster_tile_shape[0].value())
+    comptime subcluster_tileN = Int(subcluster_tile_shape[1].value())
 
     var block_rank = block_rank_in_cluster()
     var rank_m, rank_n = divmod(Int(block_rank), CLUSTER_N)
@@ -65,13 +68,9 @@ def tma_swizzle_multicast_load_kernel[
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
     var tma_multicast_mask = (1 << CLUSTER_SIZE) - 1
 
-    var tile = LayoutTensor[
-        dtype,
-        cluster_tile_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    var tile = stack_allocation[dtype, address_space=.SHARED, alignment=128](
+        row_major[cluster_tileM, cluster_tileN]()
+    )
 
     barrier()
 
@@ -86,7 +85,7 @@ def tma_swizzle_multicast_load_kernel[
 
     barrier()
 
-    # we use cluster_sync() together with a mbarrier init fence to ensure cluster-wide visibility of the mbarrier initialization
+    # Make the initialized barrier visible across the cluster.
     cluster_sync()
     fence_mbarrier_init()
 
@@ -98,12 +97,13 @@ def tma_swizzle_multicast_load_kernel[
         var slice_cord_x = cluster_idx.x * cluster_tileN + (
             rank_n * subcluster_tileN
         )
-        var copy_offset = (
-            UInt32(subcluster_tileM * subcluster_tileN) * block_rank
+        var tile_slice = (
+            tile.reshape(row_major[cluster_tileM * cluster_tileN]())
+            .tile[subcluster_tileM * subcluster_tileN](Int(block_rank))
+            .reshape(row_major[subcluster_tileM, subcluster_tileN]())
         )
-
         tma_tile.async_multicast_load(
-            type_of(tile)(tile.ptr + copy_offset),
+            tile_slice,
             mbar[0],
             (slice_cord_x, slice_cord_y),
             UInt16(tma_multicast_mask),
@@ -113,7 +113,7 @@ def tma_swizzle_multicast_load_kernel[
 
     mbar[0].wait()
 
-    # we use another cluster_sync() to ensure that none of CTAs in the cluster doesn’t exit prematurely while the other is still waiting for the multicast load to complete.
+    # Keep every CTA alive until all multicast recipients have finished.
     cluster_sync()
     fence_mbarrier_init()
 
@@ -126,40 +126,41 @@ def tma_swizzle_multicast_load_kernel[
 
 def test_tma_multicast_swizzle[
     dtype: DType,
-    shape: IndexList[2],
-    cluster_tile_shape: IndexList[2],
+    shape: Coord,
+    cluster_tile_shape: Coord,
     CLUSTER_M: Int,
     CLUSTER_N: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext) raises:
-    comptime tileM = cluster_tile_shape[0]
-    comptime tileN = cluster_tile_shape[1]
-    comptime subcluster_tile_shape = Index(
+    comptime shapeM = Int(shape[0].value())
+    comptime shapeN = Int(shape[1].value())
+    comptime tileM = Int(cluster_tile_shape[0].value())
+    comptime tileN = Int(cluster_tile_shape[1].value())
+    comptime subcluster_tile_shape = coord[
         tileM // CLUSTER_M, tileN // CLUSTER_N
-    )
+    ]
 
-    comptime layout = Layout.row_major(shape[0], shape[1])
-    var src = ManagedLayoutTensor[dtype, layout](ctx)
-    var dst = ManagedLayoutTensor[dtype, layout](ctx)  # FIX THIS
+    comptime layout = row_major[shapeM, shapeN]()
+    var src = HostDeviceTileTensor[dtype](layout, ctx)
+    var dst = HostDeviceTileTensor[dtype](layout, ctx)
 
     comptime if dtype == .float8_e4m3fn:
-        random(src.tensor())
-        random(dst.tensor())
+        random(src.host_tensor())
+        random(dst.host_tensor())
     else:
-        arange(src.tensor(), 0)
-        arange(dst.tensor(), 0)
+        arange(src.host_tensor(), 0)
+        arange(dst.host_tensor(), 0)
+
+    src.to_device()
+    dst.to_device()
 
     var tma_tensor = create_tensor_tile[
         subcluster_tile_shape, swizzle_mode=swizzle_mode
     ](ctx, src.device_tensor())
 
     # print test info
-    comptime tile_size = _idx_product[
-        type_of(tma_tensor).rank, type_of(tma_tensor).tile_shape
-    ]()
-    comptime desc_size = _idx_product[
-        type_of(tma_tensor).rank, type_of(tma_tensor).desc_shape
-    ]()
+    comptime tile_size = _idx_product[type_of(tma_tensor).tile_shape]()
+    comptime desc_size = _idx_product[type_of(tma_tensor).desc_shape]()
     comptime use_multiple_loads = tile_size > desc_size
     comptime test_name = "test " + String(dtype) + (
         " multiple " if use_multiple_loads else " single "
@@ -169,8 +170,7 @@ def test_tma_multicast_swizzle[
     comptime kernel = tma_swizzle_multicast_load_kernel[
         dtype=type_of(tma_tensor).dtype,
         layout=layout,
-        cluster_tile_layout=Layout.row_major(tileM, tileN),
-        subcluster_tile_rank=type_of(tma_tensor).rank,
+        cluster_tile_layout=row_major[tileM, tileN](),
         subcluster_tile_shape=type_of(tma_tensor).tile_shape,
         desc_shape=type_of(tma_tensor).desc_shape,
         CLUSTER_M=CLUSTER_M,
@@ -180,8 +180,8 @@ def test_tma_multicast_swizzle[
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(
-            (shape[1] // cluster_tile_shape[1]) * CLUSTER_N,
-            (shape[0] // cluster_tile_shape[0]) * CLUSTER_M,
+            (shapeN // tileN) * CLUSTER_N,
+            (shapeM // tileM) * CLUSTER_M,
         ),
         block_dim=(1),
         cluster_dim=Dim(CLUSTER_N, CLUSTER_M, 1),
@@ -189,28 +189,30 @@ def test_tma_multicast_swizzle[
 
     ctx.synchronize()
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    comptime descM = type_of(tma_tensor).desc_shape[0]
-    comptime descN = type_of(tma_tensor).desc_shape[1]
+    comptime descM = Int(
+        type_of(tma_tensor).desc_shape.element_types[0].static_value.value()
+    )
+    comptime descN = Int(
+        type_of(tma_tensor).desc_shape.element_types[1].static_value.value()
+    )
     comptime desc_tile_size = descM * descN
 
-    var desc_tile = LayoutTensor[
-        dtype, Layout.row_major(descM, descN), MutAnyOrigin
-    ].stack_allocation()
+    var desc_tile = stack_allocation[dtype](row_major[descM, descN]())
 
-    var src_host = src.tensor()
-    var dst_host = dst.tensor()
+    dst.to_host()
+    var desc_flat = desc_tile.reshape(row_major[desc_tile_size]())
+    comptime assert desc_flat.flat_rank == 1
+
+    var src_host = src.host_tensor()
+    var dst_host = dst.host_tensor()
 
     comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
-    var dest_tile = LayoutTensor[
-        dtype, Layout.row_major(tileM, tileN), MutAnyOrigin
-    ].stack_allocation()
-    var src_tile = LayoutTensor[
-        dtype, Layout.row_major(tileM, tileN), MutAnyOrigin
-    ].stack_allocation()
+    var dest_tile = stack_allocation[dtype](row_major[tileM, tileN]())
+    var src_tile = stack_allocation[dtype](row_major[tileM, tileN]())
 
-    for dest_tile_m in range(shape[0] // tileM):
-        for dest_tile_n in range(shape[1] // tileN):
+    for dest_tile_m in range(shapeM // tileM):
+        for dest_tile_n in range(shapeN // tileN):
             dest_tile.copy_from(
                 dst_host.tile[tileM, tileN](dest_tile_m, dest_tile_n)
             )
@@ -218,7 +220,9 @@ def test_tma_multicast_swizzle[
                 src_host.tile[tileM, tileN](dest_tile_m, dest_tile_n)
             )
 
-            var dst_tile_ptr = dest_tile.ptr
+            var dst_flat = dest_tile.reshape(row_major[tileM * tileN]())
+            comptime assert dst_flat.flat_rank == 1
+            var dst_tile_offset = 0
             for desc_tile_m in range(tileM // descM):
                 for desc_tile_n in range(tileN // descN):
                     desc_tile.copy_from(
@@ -227,10 +231,10 @@ def test_tma_multicast_swizzle[
                     for i in range(desc_tile_size):
                         var desc_idx = swizzle(i)
                         assert_equal(
-                            desc_tile.ptr[desc_idx].cast[.float64](),
-                            dst_tile_ptr[i].cast[.float64](),
+                            desc_flat[desc_idx].cast[.float64](),
+                            dst_flat[dst_tile_offset + i].cast[.float64](),
                         )
-                    dst_tile_ptr += desc_tile_size
+                    dst_tile_offset += desc_tile_size
 
     _ = src^
     _ = dst^
@@ -241,24 +245,24 @@ def main() raises:
         print("bfloat16 single tma w/ no swizzle multicast")
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 8),
-            cluster_tile_shape=Index(16, 8),
+            shape=coord[32, 8],
+            cluster_tile_shape=coord[16, 8],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 32),
-            cluster_tile_shape=Index(16, 16),
+            shape=coord[32, 32],
+            cluster_tile_shape=coord[16, 16],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(8, 32),
-            cluster_tile_shape=Index(8, 16),
+            shape=coord[8, 32],
+            cluster_tile_shape=coord[8, 16],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -267,24 +271,24 @@ def main() raises:
         print("bfloat16 multi tma w/ no swizzle multicast")
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 16),
-            cluster_tile_shape=Index(16, 16),
+            shape=coord[32, 16],
+            cluster_tile_shape=coord[16, 16],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 64),
-            cluster_tile_shape=Index(16, 32),
+            shape=coord[32, 64],
+            cluster_tile_shape=coord[16, 32],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(8, 64),
-            cluster_tile_shape=Index(8, 32),
+            shape=coord[8, 64],
+            cluster_tile_shape=coord[8, 32],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -293,24 +297,24 @@ def main() raises:
         print("bfloat16 single tma w/ 32B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 16),
-            cluster_tile_shape=Index(16, 16),
+            shape=coord[32, 16],
+            cluster_tile_shape=coord[16, 16],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 64),
-            cluster_tile_shape=Index(16, 32),
+            shape=coord[32, 64],
+            cluster_tile_shape=coord[16, 32],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(8, 64),
-            cluster_tile_shape=Index(8, 32),
+            shape=coord[8, 64],
+            cluster_tile_shape=coord[8, 32],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
@@ -319,24 +323,24 @@ def main() raises:
         print("bfloat16 multi tma w/ 32B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 32),
-            cluster_tile_shape=Index(16, 32),
+            shape=coord[32, 32],
+            cluster_tile_shape=coord[16, 32],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 128),
-            cluster_tile_shape=Index(16, 64),
+            shape=coord[32, 128],
+            cluster_tile_shape=coord[16, 64],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(8, 128),
-            cluster_tile_shape=Index(8, 64),
+            shape=coord[8, 128],
+            cluster_tile_shape=coord[8, 64],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
@@ -345,24 +349,24 @@ def main() raises:
         print("bfloat16 single tma w/ 64B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 32),
-            cluster_tile_shape=Index(16, 32),
+            shape=coord[32, 32],
+            cluster_tile_shape=coord[16, 32],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 128),
-            cluster_tile_shape=Index(16, 64),
+            shape=coord[32, 128],
+            cluster_tile_shape=coord[16, 64],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(8, 128),
-            cluster_tile_shape=Index(8, 64),
+            shape=coord[8, 128],
+            cluster_tile_shape=coord[8, 64],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
@@ -371,24 +375,24 @@ def main() raises:
         print("bfloat16 multi tma w/ 64B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 64),
-            cluster_tile_shape=Index(16, 64),
+            shape=coord[32, 64],
+            cluster_tile_shape=coord[16, 64],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 256),
-            cluster_tile_shape=Index(16, 128),
+            shape=coord[32, 256],
+            cluster_tile_shape=coord[16, 128],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(8, 256),
-            cluster_tile_shape=Index(8, 128),
+            shape=coord[8, 256],
+            cluster_tile_shape=coord[8, 128],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
@@ -397,24 +401,24 @@ def main() raises:
         print("bfloat16 single tma w/ 128B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 64),
-            cluster_tile_shape=Index(16, 64),
+            shape=coord[32, 64],
+            cluster_tile_shape=coord[16, 64],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 256),
-            cluster_tile_shape=Index(16, 128),
+            shape=coord[32, 256],
+            cluster_tile_shape=coord[16, 128],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(8, 256),
-            cluster_tile_shape=Index(8, 128),
+            shape=coord[8, 256],
+            cluster_tile_shape=coord[8, 128],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
@@ -423,24 +427,24 @@ def main() raises:
         print("bfloat16 multi tma w/ 128B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 128),
-            cluster_tile_shape=Index(16, 128),
+            shape=coord[32, 128],
+            cluster_tile_shape=coord[16, 128],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(32, 512),
-            cluster_tile_shape=Index(16, 256),
+            shape=coord[32, 512],
+            cluster_tile_shape=coord[16, 256],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.bfloat16,
-            shape=Index(8, 512),
-            cluster_tile_shape=Index(8, 256),
+            shape=coord[8, 512],
+            cluster_tile_shape=coord[8, 256],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
@@ -449,24 +453,24 @@ def main() raises:
         print("float8_e4m3fn single tma w/ no swizzle multicast")
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(32, 16),
-            cluster_tile_shape=Index(16, 16),
+            shape=coord[32, 16],
+            cluster_tile_shape=coord[16, 16],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(32, 64),
-            cluster_tile_shape=Index(16, 32),
+            shape=coord[32, 64],
+            cluster_tile_shape=coord[16, 32],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(8, 64),
-            cluster_tile_shape=Index(8, 32),
+            shape=coord[8, 64],
+            cluster_tile_shape=coord[8, 32],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -475,24 +479,24 @@ def main() raises:
         print("float8_e4m3fn single tma w/ 32B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(32, 32),
-            cluster_tile_shape=Index(16, 32),
+            shape=coord[32, 32],
+            cluster_tile_shape=coord[16, 32],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(32, 128),
-            cluster_tile_shape=Index(16, 64),
+            shape=coord[32, 128],
+            cluster_tile_shape=coord[16, 64],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(8, 128),
-            cluster_tile_shape=Index(8, 64),
+            shape=coord[8, 128],
+            cluster_tile_shape=coord[8, 64],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
@@ -501,24 +505,24 @@ def main() raises:
         print("float8_e4m3fn single tma w/ 64B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(32, 64),
-            cluster_tile_shape=Index(16, 64),
+            shape=coord[32, 64],
+            cluster_tile_shape=coord[16, 64],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(32, 256),
-            cluster_tile_shape=Index(16, 128),
+            shape=coord[32, 256],
+            cluster_tile_shape=coord[16, 128],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(8, 256),
-            cluster_tile_shape=Index(8, 128),
+            shape=coord[8, 256],
+            cluster_tile_shape=coord[8, 128],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
@@ -527,24 +531,24 @@ def main() raises:
         print("float8_e4m3fn single tma w/ 128B swizzle multicast")
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(32, 128),
-            cluster_tile_shape=Index(16, 128),
+            shape=coord[32, 128],
+            cluster_tile_shape=coord[16, 128],
             CLUSTER_M=2,
             CLUSTER_N=1,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(32, 512),
-            cluster_tile_shape=Index(16, 256),
+            shape=coord[32, 512],
+            cluster_tile_shape=coord[16, 256],
             CLUSTER_M=2,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
         test_tma_multicast_swizzle[
             DType.float8_e4m3fn,
-            shape=Index(8, 512),
-            cluster_tile_shape=Index(8, 256),
+            shape=coord[8, 512],
+            cluster_tile_shape=coord[8, 256],
             CLUSTER_M=1,
             CLUSTER_N=2,
             swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,

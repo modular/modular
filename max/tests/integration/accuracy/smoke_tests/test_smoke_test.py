@@ -146,6 +146,21 @@ def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
     assert "--ep-size" not in cmd
 
 
+def test_max_enables_vmm_on_amd_up_to_4_gpus(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+
+    def vmm(gpu_spec: tuple[str, int]) -> str | None:
+        _, env = smoke_test.get_server_cmd(
+            "max", "Qwen/Qwen3-8B", gpu_spec=gpu_spec
+        )
+        return env.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM")
+
+    assert vmm(("AMD MI355X", 1)) == "1"
+    assert vmm(("AMD MI355X", 4)) == "1"
+    assert vmm(("AMD MI355X", 8)) is None
+    assert vmm(("NVIDIA B200", 4)) is None
+
+
 def test_vllm_minimax_keeps_flashinfer_workaround(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -154,10 +169,11 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     # MiniMaxAI/MiniMax-M2.7 has no MODEL_RECIPES entry anymore (retired from
     # CI), but the "minimax-m2" vLLM workaround this test targets is specific
     # to that architecture family, so pass the still-present recipe directly.
-    cmd, env = smoke_test.get_server_cmd(
+    cmd, _ = smoke_test.get_server_cmd(
         "vllm",
         "MiniMaxAI/MiniMax-M2.7",
         recipe_path="max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
+        serve_image="vllm/vllm-openai:v0.27.1",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -168,7 +184,28 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     assert "--data-parallel-size=8" in cmd
     assert "--attention-backend" in cmd
     assert "FLASH_ATTN" in cmd
-    assert env["VLLM_USE_FLASHINFER_MOE_FP8"] == "0"
+    assert "VLLM_USE_FLASHINFER_MOE_FP8=0" in cmd
+
+
+def test_container_args_per_vendor(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    monkeypatch.setenv("HF_TOKEN", "hf_secret")
+
+    for image, wanted, unwanted in (
+        ("vllm/vllm-openai:v0.27.1", "nvidia.com/gpu=all", "/dev/kfd"),
+        ("vllm/vllm-openai-rocm:v0.27.1", "/dev/kfd", "nvidia.com/gpu=all"),
+    ):
+        cmd, _ = smoke_test.get_server_cmd(
+            "vllm",
+            "meta-llama/Llama-3.1-8B-Instruct",
+            serve_image=image,
+            gpu_spec=("NVIDIA B200", 1),
+        )
+
+        assert wanted in cmd
+        assert unwanted not in cmd
+        assert "hf_secret" not in " ".join(cmd)
+        assert any(a.endswith("/root/.cache/huggingface/hub:ro") for a in cmd)
 
 
 def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
@@ -179,6 +216,7 @@ def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
     cmd, _ = smoke_test.get_server_cmd(
         "vllm",
         "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        serve_image="vllm/vllm-openai:v0.27.1",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -195,6 +233,7 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -215,6 +254,7 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/DeepSeek-V3.1-NVFP4__fp8kv",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -233,6 +273,7 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "meta-llama/Llama-3.1-8B-Instruct__dflash",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -268,6 +309,31 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     cfg_idx = cmd.index("--config-file")
     assert cmd[cfg_idx + 1] == recipe_path
     assert "--trust-remote-code" not in cmd
+
+
+def test_max_ci_validates_every_request(monkeypatch: MonkeyPatch) -> None:
+    """A smoke run built from the checkout validates requests, not just init."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: True)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max-ci", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--eager-usage-validator" in cmd
+    assert cmd[cmd.index("--eager-usage-validator") + 1] == "enabled"
+
+
+def test_released_max_does_not_get_eager_usage_validator(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """The flag is newer than the wheels ``max`` installs, so it stays off."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--eager-usage-validator" not in cmd
 
 
 def test_merge_serve_extra_args_appends_when_absent() -> None:

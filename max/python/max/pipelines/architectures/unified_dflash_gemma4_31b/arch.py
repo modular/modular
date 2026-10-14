@@ -54,10 +54,6 @@ unified_dflash_gemma4_31b_arch = SupportedArchitecture(
     batching=UnifiedDflashGemma4_31BBatchProcessor,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    # Backend resolution runs after the registry rewrites the arch name, so
-    # the base gemma4 arch's declaration never applies here; pin it or tool
-    # grammars silently fall through to the global default.
-    default_structured_output_backend="xgrammar",
     checkpoint_draft_width=dflash_draft_width,
 )
 

@@ -18,13 +18,16 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+)
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
@@ -113,9 +116,7 @@ def max_flash_attention_with_sinks(
             sink_weights = inputs[2].tensor
 
             # Fetch KV cache
-            kv_collection = kv_params.unflatten_kv_inputs(
-                iter(inputs[3:])
-            ).inputs[0]
+            kv_collection = kv_params.unflatten_kv_inputs(iter(inputs[3:]))[0]
 
             # Layer index
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -154,7 +155,7 @@ def max_flash_attention_with_sinks(
         q_tensor,
         offsets_tensor,
         sinks_tensor,
-        *kv_cache_inputs.flatten(),
+        *tree.leaves(kv_cache_inputs),
     )[0]
 
     return cast(Buffer, result).to(CPU()).to_numpy()

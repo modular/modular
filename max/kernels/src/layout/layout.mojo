@@ -1407,8 +1407,8 @@ def tile_to_shape(
         tiler_shape.append(a // b)
 
     var new_order: IntTuple
-    if order:
-        new_order = order.value()
+    if case .Some(order) = order:
+        new_order = order
     else:
         new_order = prefix_product(tiler_shape)  # default to column major
     var tiler = make_ordered_layout(tiler_shape, new_order)
@@ -1639,8 +1639,7 @@ def format_layout[W: Writer](layout: Layout, mut writer: W):
         writer: The writer to output the formatted layout to.
     """
 
-    @__parameter
-    def _write_divider(column_count: Int, cell_width: Int):
+    def _write_divider(column_count: Int, cell_width: Int) {mut writer}:
         for _ in range(column_count):
             writer.write("+")
             for _ in range(cell_width):

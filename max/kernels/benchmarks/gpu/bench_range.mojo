@@ -32,7 +32,6 @@ from max.benchmark import bencher_iter_custom
 from max.gpu.host import DeviceContext
 from std.benchmark import (
     Bench,
-    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,

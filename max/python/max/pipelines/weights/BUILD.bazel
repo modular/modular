@@ -8,6 +8,7 @@ modular_py_library(
         ["**/*.py"],
         exclude = [
             "quantize_checkpoint_main.py",
+            "rounding_error_main.py",
         ],
     ),
     ignore_extra_deps = [
@@ -53,6 +54,21 @@ modular_py_binary(
         requirement("torch"),
     ],
     main = "quantize_checkpoint_main.py",
+    deps = [
+        ":weights",
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "check_rounding_error",
+    srcs = ["rounding_error_main.py"],
+    ignore_extra_deps = [
+        requirement("safetensors"),
+        requirement("torch"),
+    ],
+    main = "rounding_error_main.py",
     deps = [
         ":weights",
         requirement("safetensors"),

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Literal, cast
 
+from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import BufferValue, Dim, StaticDim, TensorType, TensorValue, ops
 
@@ -26,6 +27,7 @@ __all__ = [
     "KdaBetaMode",
     "KdaGateMode",
     "KdaStateLayout",
+    "kda_chunk",
     "kda_decode",
 ]
 
@@ -40,6 +42,99 @@ KdaStateLayout = Literal["K_FIRST", "V_FIRST"]
 
 _SUPPORTED_HEAD_DIMS = ((32, 32), (128, 128))
 """``(key_head_dim, value_head_dim)`` pairs the op is compiled for."""
+
+_AMD_CHUNK_HEAD_DIM = 128
+"""Key and value head width of the AMD ``kda_chunk`` path."""
+
+_AMD_CHUNK_ARCH = "gfx950"
+"""The only AMD architecture the ``kda_chunk`` path is built for."""
+
+
+def _is_amd_chunk_arch() -> bool:
+    """Reports whether the accelerator is the AMD ``kda_chunk`` target."""
+    return accelerator_architecture_name().startswith(_AMD_CHUNK_ARCH)
+
+
+def kda_chunk_supports_head_dims(
+    key_head_dim: int, value_head_dim: int
+) -> bool:
+    """Reports whether ``kda_chunk`` is compiled for this head-dim pair.
+
+    Callers that can fall back to the sequential recurrence should ask this
+    before routing to :func:`kda_chunk`, which raises on an unsupported pair.
+    On an AMD accelerator only gfx950 runs ``kda_chunk``, and only at
+    ``(128, 128)`` with as many key heads as value heads (``Hk == Hv``),
+    which this helper cannot see and the caller must ensure.
+
+    Args:
+        key_head_dim: Per-head key width.
+        value_head_dim: Per-head value width.
+
+    Returns:
+        ``True`` when the pair is one the op is compiled for.
+    """
+    if accelerator_api() == "hip":
+        return (
+            _is_amd_chunk_arch()
+            and key_head_dim == value_head_dim == _AMD_CHUNK_HEAD_DIM
+        )
+    return (key_head_dim, value_head_dim) in _SUPPORTED_HEAD_DIMS
+
+
+def _check_amd_chunk_contract(
+    q: TensorValue,
+    v: TensorValue,
+    raw_gate: TensorValue,
+    state_pool: BufferValue,
+    *,
+    output_dtype: DType,
+    gate_mode: KdaGateMode,
+    use_computebound: bool,
+) -> None:
+    """Rejects what the AMD ``kda_chunk`` path does not implement.
+
+    The op would reject these too, but at graph compile time or execution,
+    with a diagnostic that names a Mojo parameter rather than the argument.
+    """
+    if not _is_amd_chunk_arch():
+        raise ValueError(
+            f"kda_chunk on AMD requires {_AMD_CHUNK_ARCH}, got "
+            f"{accelerator_architecture_name()}"
+        )
+    if gate_mode != "safe":
+        raise ValueError(
+            f"kda_chunk on AMD supports gate_mode='safe' only, got {gate_mode!r}"
+        )
+    if use_computebound:
+        raise ValueError("kda_chunk on AMD has no compute-bound variant")
+    if (
+        q.dtype != DType.bfloat16
+        or output_dtype != DType.bfloat16
+        or raw_gate.dtype != DType.float32
+        or state_pool.dtype != DType.float32
+    ):
+        raise ValueError(
+            "kda_chunk on AMD takes bf16 q/k/v/output and fp32 gates/state, "
+            f"got q {q.dtype}, output {output_dtype}, raw_gate "
+            f"{raw_gate.dtype}, state_pool {state_pool.dtype}"
+        )
+    _check_rank(3, q=q, v=v)
+    dims = (q.shape[1], q.shape[2], v.shape[1], v.shape[2])
+    if all(isinstance(d, StaticDim) for d in dims):
+        got = tuple(int(d) for d in dims)
+        num_key_heads, key_head_dim, num_value_heads, value_head_dim = got
+        if (
+            key_head_dim != _AMD_CHUNK_HEAD_DIM
+            or value_head_dim != _AMD_CHUNK_HEAD_DIM
+            or num_key_heads != num_value_heads
+        ):
+            raise ValueError(
+                "kda_chunk on AMD requires key_head_dim == value_head_dim == "
+                f"{_AMD_CHUNK_HEAD_DIM} and num_key_heads == num_value_heads, "
+                "got (num_key_heads, key_head_dim, num_value_heads, "
+                f"value_head_dim) = {got}"
+            )
+
 
 KDA_GATE_LOWER_BOUND = -5.0
 """Hard-coded lower bound for ``gate_mode="safe"``."""
@@ -87,6 +182,7 @@ def _check_dtypes(
 
 
 def _check_shapes(
+    op_name: str,
     q: TensorValue,
     k: TensorValue,
     v: TensorValue,
@@ -145,7 +241,10 @@ def _check_shapes(
     # wrong transposes the state rather than failing a shape check.
     pool_axes = (state_pool.shape[2], state_pool.shape[3])
     expected = (
-        (key_head_dim, value_head_dim)
+        (
+            key_head_dim,
+            value_head_dim,
+        )
         if state_layout == "K_FIRST"
         else (value_head_dim, key_head_dim)
     )
@@ -160,7 +259,7 @@ def _check_shapes(
     ):
         if int(cu_seqlens.shape[0]) != int(state_indices.shape[0]) + 1:
             raise ValueError(
-                f"expected cu_seqlens to hold one more entry than "
+                "expected cu_seqlens to hold one more entry than "
                 f"state_indices, was {cu_seqlens.shape[0]} and "
                 f"{state_indices.shape[0]}"
             )
@@ -170,9 +269,27 @@ def _check_shapes(
     ):
         if int(num_value_heads) % int(num_key_heads):
             raise ValueError(
-                f"expected v's head count to be divisible by q's, so that a "
+                "expected v's head count to be divisible by q's, so that a "
                 f"value head maps to a key head, but got {num_value_heads} "
                 f"and {num_key_heads}"
+            )
+
+    # The kernels index the pool at 64 bits but take its strides as 32-bit
+    # values, so one slot (every head of one request) must stay below 2**32
+    # elements. The slot count is a runtime dim; the slab binding in
+    # max.nn.kv_cache.cache_params bounds it.
+    if all(
+        isinstance(d, StaticDim)
+        for d in (num_value_heads, key_head_dim, value_head_dim)
+    ):
+        slot_elements = (
+            int(num_value_heads) * int(key_head_dim) * int(value_head_dim)
+        )
+        if slot_elements >= 2**32:
+            raise ValueError(
+                f"{op_name}: a state_pool slot holds {slot_elements} "
+                "elements, but the kernel addresses a slot with 32-bit "
+                "strides, so it must hold fewer than 2**32"
             )
 
     if isinstance(key_head_dim, StaticDim) and isinstance(
@@ -181,9 +298,89 @@ def _check_shapes(
         pair = (int(key_head_dim), int(value_head_dim))
         if pair not in _SUPPORTED_HEAD_DIMS:
             raise ValueError(
-                f"kda_decode is compiled for (key_head_dim, value_head_dim) "
+                f"{op_name} is compiled for (key_head_dim, value_head_dim) "
                 f"in {list(_SUPPORTED_HEAD_DIMS)}, got {pair}"
             )
+
+
+def _kda_recurrence(
+    op_name: Literal["kda_decode", "kda_chunk"],
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    raw_gate: TensorValue,
+    beta_logits: TensorValue,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    *,
+    output_dtype: DType,
+    gate_mode: KdaGateMode,
+    beta_mode: KdaBetaMode,
+    state_layout: KdaStateLayout,
+    use_computebound: bool = False,
+) -> TensorValue:
+    """Shared implementation for ``kda_decode`` and ``kda_chunk``."""
+    _check_dtypes(
+        q,
+        k,
+        v,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_indices,
+    )
+    _check_shapes(
+        op_name,
+        q,
+        k,
+        v,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        state_layout,
+    )
+    total_tokens, num_value_heads, value_head_dim = v.shape
+    parameters: dict[str, bool | int | str | DType] = {
+        "gate_mode": gate_mode,
+        "beta_mode": beta_mode,
+        "state_layout": state_layout,
+    }
+    if op_name == "kda_chunk":
+        parameters["use_computebound"] = use_computebound
+    results = ops.inplace_custom(
+        op_name,
+        v.device,
+        [
+            ops.unsqueeze(q, 0),
+            ops.unsqueeze(k, 0),
+            ops.unsqueeze(v, 0),
+            ops.unsqueeze(raw_gate, 0),
+            ops.unsqueeze(beta_logits, 0),
+            a_log,
+            dt_bias,
+            cu_seqlens,
+            state_pool,
+            state_indices,
+        ],
+        [
+            TensorType(
+                output_dtype,
+                [1, total_tokens, num_value_heads, value_head_dim],
+                v.device,
+            )
+        ],
+        parameters=parameters,
+    )
+    return ops.squeeze(cast(TensorValue, results[0]), 0)
 
 
 def kda_decode(
@@ -237,18 +434,8 @@ def kda_decode(
             extents disagree. The kernel's own shape guards are
             ``debug_assert``, so they are absent from a production build.
     """
-    _check_dtypes(
-        q,
-        k,
-        v,
-        raw_gate,
-        beta_logits,
-        a_log,
-        dt_bias,
-        cu_seqlens,
-        state_indices,
-    )
-    _check_shapes(
+    return _kda_recurrence(
+        "kda_decode",
         q,
         k,
         v,
@@ -259,35 +446,101 @@ def kda_decode(
         cu_seqlens,
         state_pool,
         state_indices,
-        state_layout,
+        output_dtype=output_dtype,
+        gate_mode=gate_mode,
+        beta_mode=beta_mode,
+        state_layout=state_layout,
     )
-    total_tokens, num_value_heads, value_head_dim = v.shape
-    results = ops.inplace_custom(
-        "kda_decode",
-        v.device,
-        [
-            ops.unsqueeze(q, 0),
-            ops.unsqueeze(k, 0),
-            ops.unsqueeze(v, 0),
-            ops.unsqueeze(raw_gate, 0),
-            ops.unsqueeze(beta_logits, 0),
-            a_log,
-            dt_bias,
-            cu_seqlens,
+
+
+def kda_chunk(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    raw_gate: TensorValue,
+    beta_logits: TensorValue,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    *,
+    output_dtype: DType,
+    use_computebound: bool = False,
+    gate_mode: KdaGateMode = "original",
+    beta_mode: KdaBetaMode = "logits",
+    state_layout: KdaStateLayout = "K_FIRST",
+) -> TensorValue:
+    """Runs the KDA chunk-parallel prefill recurrence, mutating ``state_pool``.
+
+    This is the chunk-parallel prefill path: same recurrence as
+    ``kda_decode`` but evaluated in parallel across 16-token chunks.  It is
+    intended for multi-token sequences; single-token decode should stay on
+    ``kda_decode``.
+
+    ``use_computebound=True`` selects the fused compute-bound kernel instead
+    of the L1/L2/L3 pipeline on supported shapes.
+
+    On an AMD accelerator (gfx950 only) the op runs a separate pipeline over
+    64-token chunks with a narrower contract: ``key_head_dim ==
+    value_head_dim == 128``, ``num_key_heads == num_value_heads``,
+    ``gate_mode="safe"``, bf16 ``q``/``k``/``v`` and output, fp32 gates and
+    state, and ``use_computebound=False``.
+
+    Args:
+        q: ``[total_tokens, num_key_heads, key_head_dim]``.
+        k: ``[total_tokens, num_key_heads, key_head_dim]``.
+        v: ``[total_tokens, num_value_heads, value_head_dim]``.
+        raw_gate: ``[total_tokens, num_value_heads, key_head_dim]``
+            forget-gate pre-activation, before ``dt_bias`` is added.
+        beta_logits: ``[total_tokens, num_value_heads]``.
+        a_log: ``[num_value_heads]``.
+        dt_bias: ``[num_value_heads, key_head_dim]``.
+        cu_seqlens: ``[batch_size + 1]`` int32 exclusive prefix offsets.
+        state_pool: ``[max_slots, num_value_heads, key_head_dim,
+            value_head_dim]`` mutable pool, laid out per ``state_layout``.
+        state_indices: ``[batch_size]`` int32 pool slot per sequence.
+        output_dtype: Dtype of the returned tensor.
+        use_computebound: Whether to dispatch the fused compute-bound kernel.
+        gate_mode: Forget-gate form; see :data:`KDA_GATE_LOWER_BOUND` before
+            selecting ``"safe"``.
+        beta_mode: Whether the kernel applies the sigmoid to ``beta_logits``.
+        state_layout: Pool axis order; must match how the pool was allocated.
+
+    Returns:
+        ``[total_tokens, num_value_heads, value_head_dim]``.
+
+    Raises:
+        ValueError: If the dtype groupings bind no kernel, the ranks and
+            extents disagree, or, on AMD, the arguments fall outside the AMD
+            contract. The kernel's own shape guards are ``debug_assert`` on
+            NVIDIA, so they are absent from a production build.
+    """
+    if accelerator_api() == "hip":
+        _check_amd_chunk_contract(
+            q,
+            v,
+            raw_gate,
             state_pool,
-            state_indices,
-        ],
-        [
-            TensorType(
-                output_dtype,
-                [1, total_tokens, num_value_heads, value_head_dim],
-                v.device,
-            )
-        ],
-        parameters={
-            "gate_mode": gate_mode,
-            "beta_mode": beta_mode,
-            "state_layout": state_layout,
-        },
+            output_dtype=output_dtype,
+            gate_mode=gate_mode,
+            use_computebound=use_computebound,
+        )
+    return _kda_recurrence(
+        "kda_chunk",
+        q,
+        k,
+        v,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        output_dtype=output_dtype,
+        gate_mode=gate_mode,
+        beta_mode=beta_mode,
+        state_layout=state_layout,
+        use_computebound=use_computebound,
     )
-    return ops.squeeze(cast(TensorValue, results[0]), 0)

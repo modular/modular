@@ -35,7 +35,7 @@ comptime FP6_BYTES_PER_GROUP = 3
 
 
 @fieldwise_init
-struct FP6Format(Equatable, TrivialRegisterPassable):
+struct FP6Format(EnumLike, Equatable, TrivialRegisterPassable):
     """Selects between the two OCP MX FP6 element encodings.
 
     The numeric parameters returned by the accessors below are the entire
@@ -47,6 +47,27 @@ struct FP6Format(Equatable, TrivialRegisterPassable):
 
     comptime E2M3 = Self(0)
     comptime E3M2 = Self(1)
+
+    comptime _enum_case_names = ParameterList.of[
+        "E2M3".value,
+        "E3M2".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "FP6Format has no payload"
 
     def __init__(out self, value: Int):
         self._value = Int32(value)
@@ -274,8 +295,9 @@ def decode_fp6_to_f32[
     - The sign bit (code bit 5) is OR'd into float32 bit 31 after the select,
       so `-0` decodes to `0x80000000` and matches the table's `-0.0`.
 
-    Unlike `decode_e2m1_to_f32_inject` in `fp4_utils`, this never forms a
-    denormal float32 intermediate, so it is correct on flush-to-zero targets.
+    Unlike an exponent-injection decode in float32 (see `decode_e2m1_to_f16`
+    in `fp4_utils`), this never forms a denormal float32 intermediate, so it is
+    correct on flush-to-zero targets.
 
     Parameters:
         width: SIMD width (lane count) of the code vector.

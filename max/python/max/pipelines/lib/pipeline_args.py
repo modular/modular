@@ -123,7 +123,7 @@ class PipelineArgs(ConfigFileModel):
     ``profiling``) and a small number of cohesive sub-config objects
     (``kv_cache``, ``lora``, ``speculative``, ``draft_model``).
 
-    Multi-component pipelines (e.g. diffusion) that require a pre-built
+    Multi-component pipelines (such as diffusion) that require a pre-built
     :class:`~max.pipelines.lib.model_manifest.ModelManifest` may pass
     ``models=<manifest>`` to the constructor. That manifest is stored as a
     private override and used verbatim by :meth:`PipelineConfig.from_args`
@@ -170,8 +170,7 @@ class PipelineArgs(ConfigFileModel):
     tokenizer_impl: str | None = Field(
         default=None,
         description=(
-            "Cascade only: import path of the TokenizerWorker subclass to "
-            "construct for text-generation pipelines, as "
+            "Import path of an alternative tokenizer implementation, as "
             "``'module.path:ClassName'``. Left unset, uses the HuggingFace "
             "tokenizer."
         ),
@@ -270,6 +269,18 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    header_only_weights: bool = Field(
+        default=False,
+        description=(
+            "Stand in header-only, zero-filled sparse copies of the safetensors "
+            "checkpoint, built from the remote files' headers, instead of "
+            "downloading the weights. Compilation only needs tensor names, "
+            "shapes and dtypes, so this makes ``warm-cache --target`` "
+            "independent of checkpoint size. Only valid with ``--target`` "
+            "(compile-only mode); safetensors repos only."
+        ),
+    )
+
     vision_config_overrides: dict[str, Any] = Field(
         default_factory=dict,
         description=("Model-specific vision configuration overrides."),
@@ -298,8 +309,8 @@ class PipelineArgs(ConfigFileModel):
     chat_template: Path | None = Field(
         default=None,
         description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config."
+            "Path to an optional custom chat template that overrides the one "
+            "from the Hugging Face model config."
         ),
     )
 
@@ -451,7 +462,7 @@ class PipelineArgs(ConfigFileModel):
 
         Owns the full flat-to-nested routing for CLI and legacy callers:
 
-        - Flat sub-config kwargs (e.g. ``max_batch_size``, ``enable_lora``,
+        - Flat sub-config kwargs (such as ``max_batch_size``, ``enable_lora``,
           ``num_speculative_tokens``) are nested under their sub-config
           section (``runtime``, ``lora``, ``speculative``, ...) before the
           ``--config-file`` merge, so CLI flags and config-file subtrees
@@ -460,14 +471,14 @@ class PipelineArgs(ConfigFileModel):
           schema shape) is folded into the flat model fields; explicit CLI
           kwargs win per field, ``--model-override`` entries win over both.
         - ``draft_``-prefixed kwargs build :attr:`draft_model`, inheriting
-          ``trust_remote_code``/``device_specs``/``data_parallel_degree``
-          from the target model when unset.
-        - Multi-component (e.g. diffusion) model paths are detected via
+          ``trust_remote_code``/``device_specs``/``data_parallel_degree``/
+          ``header_only_weights`` from the target model when unset.
+        - Multi-component (such as diffusion) model paths are detected via
           :meth:`ModelManifest.from_model_path` and carried as a manifest
           override.
 
         Args:
-            **kwargs: Flat keyword arguments, e.g. ``model_path``,
+            **kwargs: Flat keyword arguments, for example, ``model_path``,
                 ``kv_cache_size``, ``enable_lora``.
 
         Returns:
@@ -577,39 +588,43 @@ class PipelineArgs(ConfigFileModel):
                 **{**draft_model_kwarg, **component_overrides.get("draft", {})}
             )
 
-        # TODO(SERVSYS-1325): skipped under ``--cascade`` because the
-        # Cascade entrypoint re-resolves the model via ``from_args`` and accepts
-        # Cascade-reserved paths (``echo:``, ``dummy_*``) the HF probe rejects.
-        # This drops multi-component manifest detection for cascade -- harmless
-        # today (no cascade diffusion factory), but fix by moving the probe out
-        # of ``from_flat_kwargs`` to a caller that knows the serving mode.
-        cascade = bool(kwargs.get("cascade"))
-        if manifest is None and model_kwarg is None and not cascade:
+        if manifest is None and model_kwarg is None:
             model_path = kwargs.get("model_path")
             if model_path:
-                # KV-cache CLI flags are excluded from the probe, matching
-                # the flat path's historical behavior: they are merged into
-                # the main model's kv_cache during from_args(), and diffusion
-                # manifests forbid extra kwargs.
-                probe_kwargs = _strip_default_model_kwargs(
-                    {
-                        field: value
-                        for field, value in kwargs.items()
-                        if field in MAXModelConfig.model_fields
-                        and field not in ("model_path", "kv_cache")
-                    }
-                )
-                if isinstance(kwargs.get("kv_cache"), KVCacheConfig):
-                    probe_kwargs["kv_cache"] = kwargs["kv_cache"]
-                    probe_kwargs = _strip_default_model_kwargs(probe_kwargs)
-                revision = probe_kwargs.pop("huggingface_model_revision", None)
-                probe = ModelManifest.from_model_path(
-                    model_path,
-                    revision=revision,
-                    **probe_kwargs,
-                )
-                if "main" not in probe:
-                    manifest = probe
+                # TODO(Cascade): unskip this probe when Cascade gets rid of dummy pipelines
+                if kwargs.get("cascade"):
+                    _logger.warning(
+                        "HuggingFace manifest probing is disabled under "
+                        "``--cascade``; multi-component model detection is skipped "
+                        "for %r.",
+                        kwargs["model_path"],
+                    )
+                else:
+                    # KV-cache CLI flags are excluded from the probe, matching
+                    # the flat path's historical behavior: they are merged into
+                    # the main model's kv_cache during from_args(), and diffusion
+                    # manifests forbid extra kwargs.
+                    probe_kwargs = _strip_default_model_kwargs(
+                        {
+                            field: value
+                            for field, value in kwargs.items()
+                            if field in MAXModelConfig.model_fields
+                            and field not in ("model_path", "kv_cache")
+                        }
+                    )
+                    if isinstance(kwargs.get("kv_cache"), KVCacheConfig):
+                        probe_kwargs["kv_cache"] = kwargs["kv_cache"]
+                        probe_kwargs = _strip_default_model_kwargs(probe_kwargs)
+                    revision = probe_kwargs.pop(
+                        "huggingface_model_revision", None
+                    )
+                    probe = ModelManifest.from_model_path(
+                        model_path,
+                        revision=revision,
+                        **probe_kwargs,
+                    )
+                    if "main" not in probe:
+                        manifest = probe
         elif manifest is not None and "main" in manifest:
             # An explicitly passed manifest is the canonical model source, so
             # flat model kwargs and kv-cache flags must be merged into it --
@@ -688,3 +703,13 @@ class PipelineArgs(ConfigFileModel):
                     "for draft model"
                 )
             draft_kwargs["data_parallel_degree"] = data_parallel_degree
+
+        if "header_only_weights" not in draft_kwargs:
+            # A compile-only run stands in stubs for the whole pipeline, so
+            # the draft model cannot be the one model that downloads weights.
+            if target_kwargs.get("header_only_weights"):
+                _logger.info(
+                    "Inheriting header_only_weights=True from target model "
+                    "for draft model"
+                )
+                draft_kwargs["header_only_weights"] = True

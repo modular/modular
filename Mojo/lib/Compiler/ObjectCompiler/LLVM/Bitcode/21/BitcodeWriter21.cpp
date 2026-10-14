@@ -429,6 +429,10 @@ private:
                            SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDIProperty(const DIProperty *N, SmallVectorImpl<uint64_t> &Record,
                        unsigned Abbrev);
+  void writeDILayerLoc(const DILayerLoc *N, SmallVectorImpl<uint64_t> &Record,
+                       unsigned Abbrev);
+  void writeDILayerLocList(const DILayerLocList *N,
+                           SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDIImportedEntity(const DIImportedEntity *N,
                              SmallVectorImpl<uint64_t> &Record,
                              unsigned Abbrev);
@@ -2551,6 +2555,21 @@ void ModuleBitcodeWriter::writeDIProperty(const DIProperty *,
   llvm_unreachable("DIProperty cannot be encoded in this bitcode version");
 }
 
+// DILocation irlayers postdate this bitcode format, whose readers have no
+// METADATA_LAYERLOC or METADATA_LAYERLOC_LIST record. Mojo debug info never
+// builds them.
+void ModuleBitcodeWriter::writeDILayerLoc(const DILayerLoc *,
+                                          SmallVectorImpl<uint64_t> &,
+                                          unsigned) {
+  llvm_unreachable("DILayerLoc cannot be encoded in this bitcode version");
+}
+
+void ModuleBitcodeWriter::writeDILayerLocList(const DILayerLocList *,
+                                              SmallVectorImpl<uint64_t> &,
+                                              unsigned) {
+  llvm_unreachable("DILayerLocList cannot be encoded in this bitcode version");
+}
+
 void ModuleBitcodeWriter::writeDIImportedEntity(
     const DIImportedEntity *N, SmallVectorImpl<uint64_t> &Record,
     unsigned Abbrev) {
@@ -3934,7 +3953,7 @@ void ModuleBitcodeWriter::writeFunction(
         // Write out non-instruction debug information attached to this
         // instruction. Write it after the instruction so that it's easy to
         // re-attach to the instruction reading the records in.
-        for (DbgRecord &DR : I.DebugMarker->getDbgRecordRange()) {
+        for (DbgRecord &DR : I.getDbgMarker()->getDbgRecordRange()) {
           if (DbgLabelRecord *DLR = dyn_cast<DbgLabelRecord>(&DR)) {
             Vals.push_back(VE.getMetadataID(&*DLR->getDebugLoc()));
             Vals.push_back(VE.getMetadataID(DLR->getLabel()));

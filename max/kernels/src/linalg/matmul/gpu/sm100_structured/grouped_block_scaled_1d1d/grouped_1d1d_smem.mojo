@@ -23,8 +23,6 @@ the standard GroupedBlockScaledSmem:
 Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
 """
 
-from std.sys import size_of
-
 from ..block_scaled.block_scaled_smem import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from structured_kernels.pipeline_storage import (

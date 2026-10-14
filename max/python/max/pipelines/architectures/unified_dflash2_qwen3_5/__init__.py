@@ -13,17 +13,12 @@
 """Qwen3.5 fused with a DFlash2 block drafter for speculative decoding."""
 
 from .arch import unified_dflash2_qwen3_5_arch
-from .model import (
-    GRAPH_NAME,
-    UnifiedDflash2Qwen3_5Inputs,
-    UnifiedDflash2Qwen3_5Model,
-)
+from .model import GRAPH_NAME, UnifiedDflash2Qwen3_5Model
 from .model_config import UnifiedDflash2Qwen3_5Config
 
 __all__ = [
     "GRAPH_NAME",
     "UnifiedDflash2Qwen3_5Config",
-    "UnifiedDflash2Qwen3_5Inputs",
     "UnifiedDflash2Qwen3_5Model",
     "unified_dflash2_qwen3_5_arch",
 ]

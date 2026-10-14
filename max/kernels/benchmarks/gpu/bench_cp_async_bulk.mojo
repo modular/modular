@@ -41,14 +41,9 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.gpu import (
-    block_idx,
-    grid_dim as gpu_grid_dim,
-    thread_idx,
-    warp_id,
-)
+from max.gpu import block_idx, grid_dim as gpu_grid_dim, warp_id
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext
 from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,
@@ -115,7 +110,7 @@ def bulk_memcpy_kernel[
     var src_g = src.address_space_cast[.GLOBAL]()
     var dst_g = dst.address_space_cast[.GLOBAL]()
 
-    var first = Int(block_idx.x) * NUM_WARPS + w
+    var first = block_idx.x * NUM_WARPS + w
     var stride = Int(gpu_grid_dim.x) * NUM_WARPS
     var my_total = max(0, (Int(total_chunks) - first + stride - 1) // stride)
 

@@ -21,5 +21,5 @@ kgen.generator @declref_sugar() {
   // CHECK-NEXT: <{n}>
   // GENERIC-NEXT: #lit.struct<{_mlir_value = n}>
   kgen.param.constant: @S = <{n}>
-  kgen.return
+  hlcf.return
 }

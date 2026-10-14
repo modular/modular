@@ -34,6 +34,7 @@ modular_py_test(
         "//max/python/max/pipelines/modeling",
         "//max/tests/integration/test_common:mocks",
         requirement("jinja2"),
+        requirement("numpy"),
         requirement("pytest-asyncio"),
         requirement("pillow"),
         # transformers 5.12 gates the Idefics3 PIL image processor behind the

@@ -13,13 +13,16 @@
 """Tests for token_sampler (basic sampling without structured output)."""
 
 import numpy as np
+import numpy.typing as npt
 import pytest
-from max.driver import Buffer
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
-from max.pipelines.context import SamplingParams
+from max.pipelines.context import SamplingParams, TextContext, TokenBuffer
 from max.pipelines.lib import SamplingConfig, token_sampler
+from max.pipelines.request import RequestID
+from max.pipelines.sampling import SamplerInputs
 
 
 @pytest.fixture(scope="module")
@@ -383,3 +386,156 @@ def test_top_k_zero_selects_all(
 
     # Control row: top_k=1 deterministically samples the argmax (token 0).
     assert set(batch_sampled_tokens[1]) == {0}
+
+
+PADDED_VOCAB_SIZE = 32
+UNPADDED_VOCAB_SIZE = 24
+
+
+@pytest.fixture(scope="module")
+def padded_vocab_token_sampler(session: InferenceSession) -> Model:
+    """token_sampler for an lm_head padded past the tokenizer vocab."""
+    device_ref = DeviceRef.from_device(session.devices[0])
+    sampling_config = SamplingConfig(
+        in_dtype=DType.float32,
+        out_dtype=DType.float32,
+    )
+    graph = token_sampler(
+        sampling_config,
+        device=device_ref,
+        unpadded_vocab_size=UNPADDED_VOCAB_SIZE,
+    )
+    return session.load(graph)
+
+
+def test_padded_vocab_tail_never_sampled(
+    session: InferenceSession, padded_vocab_token_sampler: Model
+) -> None:
+    """Padding rows must lose even when they dominate the raw logits."""
+    device = session.devices[0]
+    # Unmasked, the padding would win with probability ~1 - 24 * e^-100.
+    logits_np = np.zeros((2, PADDED_VOCAB_SIZE), dtype=np.float32)
+    logits_np[:, UNPADDED_VOCAB_SIZE:] = 100.0
+    logits_np[:, 5] = 1.0
+
+    # Row 0 is greedy; row 1 samples the whole vocab at temperature 1.
+    top_k_np = np.array([1, PADDED_VOCAB_SIZE], dtype=np.int64)
+    tokens = padded_vocab_token_sampler(
+        Buffer.from_dlpack(logits_np).to(device),
+        Buffer(shape=(2, 0), dtype=DType.int64, device=device),
+        Buffer.from_numpy(top_k_np).to(device),
+        Buffer.from_numpy(np.array(PADDED_VOCAB_SIZE, dtype=np.int64)),
+        Buffer.from_numpy(np.ones(2, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.ones(2, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+        Buffer.from_numpy(np.zeros(2, dtype=np.float32)).to(device),
+        Buffer.from_numpy(np.zeros(2, dtype=np.uint64)).to(device),
+    )[0]
+    assert isinstance(tokens, Buffer)
+    tokens_np = tokens.to_numpy()
+    assert tokens_np[0] == 5, "greedy row must pick the real argmax"
+    assert (tokens_np < UNPADDED_VOCAB_SIZE).all(), tokens_np
+
+
+DEFAULT_K_VOCAB_SIZE = 1024
+NUM_DEFAULT_K_SEEDS = 32
+# The rank an all-default (``top_k=-1``) batch samples within: the whole
+# vocabulary on GPU, the 255-wide cap of the CPU kernel.
+_UNRESTRICTED_K = {"gpu": DEFAULT_K_VOCAB_SIZE, "cpu": 255}
+
+
+@pytest.fixture(scope="module")
+def cpu_token_sampler(session: InferenceSession) -> Model:
+    sampling_config = SamplingConfig(
+        in_dtype=DType.float32,
+        out_dtype=DType.float32,
+    )
+    return session.load(token_sampler(sampling_config, device=DeviceRef.CPU()))
+
+
+def _contexts(top_ks: list[int], seed: int) -> list[TextContext]:
+    return [
+        TextContext(
+            request_id=RequestID(),
+            max_length=8,
+            tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
+            sampling_params=SamplingParams(top_k=top_k, seed=seed),
+        )
+        for top_k in top_ks
+    ]
+
+
+def _sample_rows(
+    sampler: Model, device: Device, top_ks: list[int], seed: int
+) -> npt.NDArray[np.int64]:
+    """Samples one token per row with inputs from ``SamplerInputs.create``."""
+    batch_size = len(top_ks)
+    inputs = SamplerInputs.create(_contexts(top_ks, seed), device)
+    # Strictly decreasing but nearly flat: token ``i`` is the ``i``-th most
+    # likely, and every token keeps enough mass to be drawn.
+    logits = np.tile(
+        -1e-3 * np.arange(DEFAULT_K_VOCAB_SIZE, dtype=np.float32),
+        (batch_size, 1),
+    )
+    tokens = sampler(
+        Buffer.from_numpy(logits).to(device),
+        Buffer(shape=(batch_size, 0), dtype=DType.int64, device=device),
+        *inputs.as_list(),
+    )[0]
+    assert isinstance(tokens, Buffer)
+    return tokens.to_numpy().reshape(batch_size)
+
+
+@pytest.mark.parametrize(
+    ("top_ks", "expected_max_k"),
+    [
+        ([1, -1], -1),
+        ([50, -1], -1),
+        ([-1, -1], -1),
+        ([3, 7], 7),
+        ([1, 1], 1),
+    ],
+)
+def test_sampler_inputs_max_k(top_ks: list[int], expected_max_k: int) -> None:
+    """``max_k`` is ``-1`` whenever any row has no top-k limit."""
+    inputs = SamplerInputs.create(_contexts(top_ks, seed=0), CPU())
+    assert inputs.max_k.to_numpy().item() == expected_max_k
+
+
+@pytest.mark.parametrize("target", ["gpu", "cpu"])
+@pytest.mark.parametrize("explicit_k", [1, 50, 500])
+def test_default_top_k_row_ignores_batch_mates(
+    session: InferenceSession,
+    basic_token_sampler: Model,
+    cpu_token_sampler: Model,
+    target: str,
+    explicit_k: int,
+) -> None:
+    """A ``top_k=-1`` row samples as if every row in its batch were default.
+
+    The kernel resolves a row's ``-1`` against the batch ``max_k``, so a
+    batch-wide maximum handed the row its batch-mate's ``top_k``: next to a
+    greedy request it decoded greedily. The explicit row must keep exactly
+    its own ``top_k`` either way.
+    """
+    if target == "gpu":
+        sampler, device = basic_token_sampler, session.devices[0]
+    else:
+        sampler, device = cpu_token_sampler, CPU()
+    unrestricted_k = _UNRESTRICTED_K[target]
+
+    explicit_tokens = []
+    default_tokens = []
+    for seed in range(NUM_DEFAULT_K_SEEDS):
+        mixed = _sample_rows(sampler, device, [explicit_k, -1], seed)
+        all_default = _sample_rows(sampler, device, [-1, -1], seed)
+        assert mixed[1] == all_default[1], f"seed {seed}"
+        explicit_tokens.append(int(mixed[0]))
+        default_tokens.append(int(mixed[1]))
+
+    assert all(0 <= t < explicit_k for t in explicit_tokens)
+    if explicit_k > unrestricted_k:
+        assert max(explicit_tokens) >= unrestricted_k
+    assert all(0 <= t < unrestricted_k for t in default_tokens)
+    if explicit_k < unrestricted_k:
+        assert max(default_tokens) >= explicit_k

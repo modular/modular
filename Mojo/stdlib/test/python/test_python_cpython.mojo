@@ -21,8 +21,6 @@ from std.python._cpython import (
     PyModuleDef,
     PyObject,
     PyObjectPtr,
-    Py_TPFLAGS_LONG_SUBCLASS,
-    Py_TPFLAGS_LIST_SUBCLASS,
 )
 from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.testing import (
@@ -114,6 +112,8 @@ def _test_object_protocol_api(cpy: CPython) raises:
 
     assert_true(cpy.PyObject_Str(n))
     assert_equal(cpy.PyObject_Hash(n), 42)
+    assert_equal(cpy.PySequence_Contains(l, n), 0)
+    assert_equal(cpy.PySequence_Contains(l, z), 1)
     assert_equal(cpy.PyObject_IsTrue(n), 1)
     assert_true(cpy.PyObject_Type(n))
     assert_equal(cpy.PyObject_Length(l), 1)
@@ -121,6 +121,8 @@ def _test_object_protocol_api(cpy: CPython) raises:
     assert_equal(cpy.PyObject_GetItem(l, z), z)
     assert_equal(cpy.PyObject_SetItem(l, z, n), 0)
     assert_equal(cpy.PyObject_GetItem(l, z), n)
+    assert_equal(cpy.PySequence_Contains(l, n), 1)
+    assert_equal(cpy.PySequence_Contains(l, z), 0)
 
     var it = cpy.PyObject_GetIter(l)
     assert_true(it)

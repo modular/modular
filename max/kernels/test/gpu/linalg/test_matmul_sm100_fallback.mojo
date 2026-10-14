@@ -17,7 +17,6 @@ from std.sys import align_of, size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
@@ -51,14 +50,12 @@ def test_matmul_sm100_fallback[
     BK: Int = 64,
     use_epilogue: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType,) raises:
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
@@ -112,24 +109,23 @@ def test_matmul_sm100_fallback[
         ")",
     )
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[store_alignment=alignment](
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        c_tensor.store[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
 
     # Initialize matmul operands
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 
@@ -162,15 +158,11 @@ def test_matmul_sm100_fallback[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )

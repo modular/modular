@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+from max import tree
 from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -31,9 +32,8 @@ from max.graph import (
 from max.graph.buffer_utils import cast_tensors_to
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
-    KVCacheInputs,
-    MultiKVCacheInputs,
-    RecurrentStateInputs,
+    KVCacheInputsPerDevice,
+    RecurrentStateInputsPerDevice,
     recurrent_leaf,
 )
 from max.pipelines.context import ImageMetadata
@@ -75,6 +75,10 @@ class Qwen3_5Inputs(Llama3Inputs):
     Present only when the graph was built with M-RoPE wired in; see
     ``Qwen3_5.mrope_enabled``."""
 
+    vision_inputs_in_graph: bool = True
+    """Whether the graph declares the vision-merge inputs. False for
+    text-only checkpoints, which compile no vision encoder and so take none."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         return (
@@ -83,14 +87,18 @@ class Qwen3_5Inputs(Llama3Inputs):
             self.return_n_logits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
             # Set by the pipeline's vision seam (``finalize_vision_inputs``)
             # on every prepared batch, empties included.
-            *self.vision_embeddings,
-            *self.vision_scatter_indices,
+            *(self.vision_embeddings if self.vision_inputs_in_graph else ()),
+            *(
+                self.vision_scatter_indices
+                if self.vision_inputs_in_graph
+                else ()
+            ),
             *(
                 ()
                 if self.decoder_position_ids is None
@@ -223,18 +231,24 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             language_graph = self._build_language_graph(
                 state_dict, module=module
             )
-            assert self._vision_state_dict is not None
-            vision_graph = self._build_vision_graph(module=module)
+            # Text-only checkpoints have no vision tower, hence no vision graph.
+            vision_graph = (
+                self._build_vision_graph(module=module)
+                if self._vision_state_dict is not None
+                else None
+            )
             timer.mark_build_complete()
             models = session.load_all(
                 module,
                 weights_registry={
                     **self.state_dict,
-                    **self._vision_state_dict,
+                    **(self._vision_state_dict or {}),
                 },
             )
             model = models[language_graph.name]
-            self.vision_model = models[vision_graph.name]
+            self.vision_model = (
+                models[vision_graph.name] if vision_graph is not None else None
+            )
 
         if self._num_linear_layers > 0 and not is_virtual_device_mode():
             self.check_state_budget()
@@ -540,6 +554,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         self._mrope_enabled = nn_model.mrope_enabled
         if isinstance(self._batch_processor, Qwen3_5BatchProcessor):
             self._batch_processor.mrope_enabled = self._mrope_enabled
+            self._batch_processor.vision_enabled = has_vision
         position_ids_count = 1 if nn_model.mrope_enabled else 0
 
         with Graph(
@@ -566,11 +581,13 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             kv_cache_inputs = variadic_args[kv_start : kv_start + kv_count]
             kv_tree = self.kv_params.unflatten_kv_inputs(iter(kv_cache_inputs))
 
-            assert isinstance(kv_tree, MultiKVCacheInputs)
-            attn_inputs = kv_tree.children[ATTN_CACHE_KEY]
-            assert isinstance(attn_inputs, KVCacheInputs)
-            kv_collections = list(attn_inputs.inputs)
-            state = kv_tree.children[STATE_CACHE_KEY]
+            assert isinstance(kv_tree, dict)
+            kv_collections = tree.leaves(
+                kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
+            )
+            state = tree.leaves(
+                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            )
 
             idx = kv_start + kv_count
 
@@ -591,7 +608,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 variadic_args[idx].tensor if position_ids_count else None
             )
 
-            assert isinstance(state, RecurrentStateInputs), (
+            assert state, (
                 "Qwen3.5 graph requires linear attention layers; the cache"
                 " declared no recurrent state child"
             )
@@ -601,7 +618,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
                 signal_buffers,
-                list(state.inputs),
+                list(state),
                 image_embeddings_g,
                 image_token_indices_g,
                 position_ids_g,

@@ -20,20 +20,14 @@ Maps HuggingFace checkpoint keys to the MAX module state_dict keys for:
 Two top-level adapters correspond to the two architectures in ``arch.py``:
 
 - :func:`convert_kimik2_5_safetensor_state_dict` —
-  ``KimiK25ForConditionalGeneration`` (e.g. nvidia/Kimi-K2.5-NVFP4).
+  ``KimiK25ForConditionalGeneration`` (such as nvidia/Kimi-K2.5-NVFP4).
   Uses ``mm_projector.*`` projector naming; drops ``.k_scale``/``.v_scale``.
 - :func:`convert_kimivl_safetensor_state_dict` —
-  ``KimiVLForConditionalGeneration`` (e.g. moonshotai/Kimi-VL-A3B).
+  ``KimiVLForConditionalGeneration`` (such as moonshotai/Kimi-VL-A3B).
   Uses ``multi_modal_projector.*`` projector naming.
 
 Both adapters share :func:`_convert_merged_state_dict`, which processes
 vision and language keys in a single loop over the raw checkpoint.
-
-For MXFP4 checkpoints the model calls
-:func:`~max.pipelines.weights.mxfp4_preshuffle.preshuffle_mxfp4_b_experts`
-on the post-adapter state dict to lay expert ``B`` bytes out in
-``Shuffler.b_5d_grouped_layout`` for the AMD preb grouped-matmul kernel.
-The preshuffle is pure-numpy on CPU.
 """
 
 from __future__ import annotations

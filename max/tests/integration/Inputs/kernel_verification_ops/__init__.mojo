@@ -272,7 +272,7 @@ struct ExternalCubinVecAdd:
 
         var length = output.dim_size(0)
         var block_dim = 32
-        var grid_dim = (length + block_dim - 1) // block_dim
+        var grid_dim = ceildiv(length, block_dim)
 
         # Execute the external cubin kernel
         gpu_ctx.enqueue_function(

@@ -29,7 +29,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
-from std.memory import alloc, dealloc, unsafe_stack_allocation
+from std.memory import alloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 from std.atomic import Atomic
 from std.sys import simd_width_of
@@ -38,7 +38,6 @@ from std.utils.numerics import isinf, isnan
 from std.math import ceildiv
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 from extensibility import InputTensor, OutputTensor
 
 
@@ -137,7 +136,6 @@ def nan_check_count[
         var out_nan_ptr = nan_count_out.unsafe_ptr()
         var out_inf_ptr = inf_count_out.unsafe_ptr()
 
-        @__parameter
         @__name(t"nan_check_zero_counts")
         def zero_counts(
             nan_ptr: UnsafePointer[Int32, MutAnyOrigin],

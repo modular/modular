@@ -256,8 +256,6 @@ def fa4_mma[
     # Key-split and non-WS keep `PARTIAL_K`.
     comptime CUT_LAST_TILE = PARTIAL_K or config.ws_shared_key
 
-    # `tmem_addr` passed in by register (read once post-barrier in the kernel
-    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var q_smem = smem.q_smem()
 
     var s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
@@ -386,7 +384,6 @@ def fa4_mma[
     # CALL, the only thing that makes the hoist safe: a captured `v_eff_keys`
     # read pre-rebase would over-count by the window start and run P@V over V
     # pages the producer never loaded (`0 * stale-NaN = NaN`).
-    @__parameter
     @inline(.always)
     def _vkm_tile0(v_eff: UInt32) -> UInt32:
         """Loaded `MMA_K` blocks of KV tile 0.
@@ -397,7 +394,6 @@ def fa4_mma[
         """
         return ceildiv(min(v_eff, UInt32(BN)), UInt32(UMMA1Type.MMA_K))
 
-    @__parameter
     @inline(.always)
     def _vkm_final(v_eff: UInt32, total_iters: UInt32) -> UInt32:
         """Loaded `MMA_K` blocks of the LAST KV tile.

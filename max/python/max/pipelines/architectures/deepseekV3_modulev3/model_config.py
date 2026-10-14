@@ -181,6 +181,16 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            # A V3.2 indexer cache paired with this one carries these too, and
+            # the pair must agree.
+            speculative_method=pipeline_config.speculative.speculative_method
+            if pipeline_config.speculative
+            else None,
+            num_draft_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
+            if pipeline_config.speculative
+            else 0,
         )
 
     @staticmethod

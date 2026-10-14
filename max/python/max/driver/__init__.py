@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Device programming for MAX: allocate buffers, manage devices, and
+dispatch work through device queues.
+"""
+
 import contextlib
 from collections.abc import Iterator
 
@@ -20,6 +24,7 @@ from max._core.driver import (
     DeviceEvent,
     HostHazardError,
     LaunchTraceEntry,
+    SymmetricPool,
     Usage,
     __unsafe_pack_py_host_func,
     begin_launch_trace,
@@ -39,9 +44,7 @@ from max._core_types.driver import DLPackArray
 
 from .buffer import (
     Buffer,
-    DevicePinnedBuffer,
-    _unsafe_alloc_fast_pinned_buffer,
-    _unsafe_free_fast_pinned_buffer,
+    _ChunkedStagingRegion,
     batch_inplace_copy,
     copy_pinned_to_destinations,
     load_max_buffer,
@@ -62,6 +65,16 @@ from .driver import (
     scan_available_devices,
 )
 
+# nb::exception types cannot carry a docstring from C++, so document the
+# exception at its re-export here.
+HostHazardError.__doc__ = """Raised when host code waits on a completion whose producer failed.
+
+Host-hazard tracking orders host access behind the device work that writes a
+buffer. When that work fails, the completion is poisoned, and waiting on it
+(or touching the buffers it covers) raises this error without blocking.
+The message carries the failed producer's rendered traceback.
+"""
+
 
 @contextlib.contextmanager
 def launch_trace() -> Iterator[list[LaunchTraceEntry]]:
@@ -76,16 +89,30 @@ def launch_trace() -> Iterator[list[LaunchTraceEntry]]:
     recorded :class:`LaunchTraceEntry` values once the block exits, in
     enqueue order across all streams.
 
-    Yields:
-        The operations enqueued within the block. Empty until the block
-        exits.
+    For example, capture the device operations a block of code enqueues on
+    an accelerator:
 
     .. code-block:: python
 
-        with max.driver.launch_trace() as entries:
-            buffer.inplace_copy_from(src)
-            model.execute(buffer)
-        # `entries` is populated here.
+        import numpy as np
+
+        from max import driver
+        from max.dtype import DType
+
+        device = (
+            driver.Accelerator() if driver.accelerator_count() else driver.CPU()
+        )
+        src = driver.Buffer.from_numpy(np.zeros(4, dtype=np.float32))
+        dst = driver.Buffer(dtype=DType.float32, shape=[4], device=device)
+
+        with driver.launch_trace() as entries:
+            dst.inplace_copy_from(src)
+
+        print(len(entries))
+
+    Yields:
+        The operations enqueued within the block. Empty until the block
+        exits.
     """
     entries: list[LaunchTraceEntry] = []
     begin_launch_trace()
@@ -103,11 +130,11 @@ __all__ = [
     "DLPackArray",
     "Device",
     "DeviceEvent",
-    "DevicePinnedBuffer",
     "DeviceQueue",
     "DeviceSpec",
     "HostHazardError",
     "LaunchTraceEntry",
+    "SymmetricPool",
     "Usage",
     "accelerator_api",
     "accelerator_architecture_name",

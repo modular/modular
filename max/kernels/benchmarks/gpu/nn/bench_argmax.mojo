@@ -19,9 +19,8 @@ matters on hosts where the SM clock cannot be pinned.
 
 from std.random import random_float64, seed
 from std.sys import get_defined_dtype, size_of
-from std.sys.info import size_of as _size_of
 
-from algorithm.reductions import reduce_argmax
+from builtin_kernels.rowwise_reductions import reduce_argmax
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -32,10 +31,9 @@ from std.benchmark import (
 )
 from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
-from layout import Coord, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, row_major
 from nn.argmaxmin_gpu import argmax_gpu
 from nn.topk import topk_gpu
-from std.utils.index import IndexList
 
 
 def bench_argmax[
@@ -52,15 +50,9 @@ def bench_argmax[
     ctx.enqueue_copy(in_dev, in_host)
     ctx.synchronize()
 
-    var in_tensor = TileTensor(
-        in_dev, row_major(Coord(IndexList[2](batch, num_elements)))
-    )
-    var out_tensor = TileTensor(
-        out_dev, row_major(Coord(IndexList[2](batch, 1)))
-    )
-    var vals_tensor = TileTensor(
-        vals_dev, row_major(Coord(IndexList[2](batch, 1)))
-    )
+    var in_tensor = TileTensor(in_dev, row_major(batch, num_elements))
+    var out_tensor = TileTensor(out_dev, row_major(batch, 1))
+    var vals_tensor = TileTensor(vals_dev, row_major(batch, 1))
 
     var num_bytes = batch * num_elements * size_of[Scalar[dtype]]()
     var suffix = String("/N=", num_elements, "/batch=", batch, "/", dtype)
@@ -95,7 +87,7 @@ def bench_argmax[
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
-    var in_shape = Coord(IndexList[2](batch, num_elements))
+    var in_shape = Coord(batch, num_elements)
 
     @inline(.always)
     def launch_rowwise(

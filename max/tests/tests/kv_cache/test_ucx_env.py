@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 from pathlib import Path
 
@@ -108,20 +109,38 @@ def test_local_ib_device_picks_pcie_closest(
     assert got == "mlx5_same_bridge:1"
 
 
+def _remove_ib_device(ib: Path, name: str) -> None:
+    for child in sorted((ib / name).rglob("*"), reverse=True):
+        child.unlink() if child.is_symlink() or child.is_file() else child.rmdir()
+    (ib / name).rmdir()
+
+
 def test_local_ib_device_skips_non_infiniband(
     fake_sysfs: tuple[Path, Path], tmp_path: Path
 ) -> None:
-    # Remove the two mlx5 devices sharing the root so only mlx5_far (IB) and
-    # efa_0 (Ethernet) remain; the Ethernet device must never be chosen.
+    # Without mlx5_same_bridge, efa_0 (Ethernet) ties mlx5_same_root on PCIe
+    # distance and sorts first; the Ethernet device must never be chosen.
     pci_devices, ib = fake_sysfs
-    for name in ("mlx5_same_bridge", "mlx5_same_root"):
-        for child in sorted((ib / name).rglob("*"), reverse=True):
-            child.unlink() if child.is_symlink() or child.is_file() else child.rmdir()
-        (ib / name).rmdir()
+    _remove_ib_device(ib, "mlx5_same_bridge")
     got = local_ib_device(
         "0000:65:00.0", pci_devices_root=pci_devices, ib_class_root=ib
     )
-    assert got == "mlx5_far:1"
+    assert got == "mlx5_same_root:1"
+
+
+def test_local_ib_device_skips_other_root_complex(
+    fake_sysfs: tuple[Path, Path], tmp_path: Path
+) -> None:
+    # Only mlx5_far (under pci0000:00, not the GPU's pci0000:60) is left. HGX
+    # B200 NVLink-management ConnectX-7 ports look like this: active IB, but
+    # GPUDirect into the GPU through them fails, so they must not be pinned.
+    pci_devices, ib = fake_sysfs
+    _remove_ib_device(ib, "mlx5_same_bridge")
+    _remove_ib_device(ib, "mlx5_same_root")
+    got = local_ib_device(
+        "0000:65:00.0", pci_devices_root=pci_devices, ib_class_root=ib
+    )
+    assert got is None
 
 
 def test_local_ib_device_none_when_no_ib(tmp_path: Path) -> None:
@@ -237,3 +256,93 @@ def test_configure_ucx_env_skips_without_verbs_devices(
     configure_ucx_env(_FakeDevice(api="cuda", id=0))
     assert "UCX_TLS" not in os.environ
     assert "UCX_NET_DEVICES" not in os.environ
+
+
+@pytest.mark.parametrize(
+    ("flavor", "pinned"), [("cuda", False), ("cuda-verbs", True)]
+)
+def test_configure_ucx_env_gates_on_plugin_flavor(
+    flavor: str, pinned: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # uverbs nodes exist either way; only the verbs flavor carries rc, so the
+    # plain flavor must leave UCX its tcp fallback. configure_ucx_env writes
+    # os.environ directly, so give it a copy that monkeypatch will restore.
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    monkeypatch.delenv("UCX_TLS", raising=False)
+    monkeypatch.delenv("UCX_NET_DEVICES", raising=False)
+    (tmp_path / "uverbs0").write_text("")
+    monkeypatch.setattr(_ucx_env, "_VERBS_DEV_ROOT", tmp_path)
+    monkeypatch.setattr(_ucx_env, "_gpu_pci_bus_id", lambda _: "0000:65:00.0")
+    monkeypatch.setattr(_ucx_env, "local_ib_device", lambda _: "mlx5_0:1")
+    monkeypatch.setenv("NIXL_PLUGIN_DIR", str(tmp_path / "nixl" / flavor))
+    configure_ucx_env(_FakeDevice(api="cuda", id=0))
+    assert ("UCX_NET_DEVICES" in os.environ) == pinned
+    assert ("UCX_TLS" in os.environ) == pinned
+
+
+def _patch_topology(
+    monkeypatch: pytest.MonkeyPatch,
+    pci_devices: Path,
+    ib: Path,
+    tmp_path: Path,
+) -> None:
+    """Points configure_ucx_env's NIC probe at a fake sysfs and a usable GPU."""
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    for var in ("UCX_TLS", "UCX_NET_DEVICES", "NIXL_PLUGIN_DIR"):
+        monkeypatch.delenv(var, raising=False)
+    # Empty verbs mapping: don't filter by exposure, whatever the host has.
+    no_verbs = tmp_path / "no_verbs"
+    monkeypatch.setattr(_ucx_env, "_verbs_usable", lambda: True)
+    monkeypatch.setattr(_ucx_env, "_gpu_pci_bus_id", lambda _: "0000:65:00.0")
+    monkeypatch.setattr(
+        _ucx_env,
+        "local_ib_device",
+        functools.partial(
+            local_ib_device,
+            pci_devices_root=pci_devices,
+            ib_class_root=ib,
+            verbs_dev_root=no_verbs,
+            verbs_class_root=no_verbs,
+        ),
+    )
+    monkeypatch.setattr(
+        _ucx_env,
+        "_ib_devices",
+        functools.partial(
+            _ucx_env._ib_devices,
+            ib_class_root=ib,
+            verbs_dev_root=no_verbs,
+            verbs_class_root=no_verbs,
+        ),
+    )
+
+
+def test_configure_ucx_env_avoids_ib_on_other_root_complex(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_sysfs: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    # The AWS B200 pod layout: both IB devices sit under a different root
+    # complex than the GPU. Pinning one made UCX GPUDirect into the GPU over it
+    # and fail intranode DI with NIXL_ERR_REMOTE_DISCONNECT; keep UCX off IB.
+    pci_devices, ib = fake_sysfs
+    _remove_ib_device(ib, "mlx5_same_bridge")
+    _remove_ib_device(ib, "mlx5_same_root")
+    _patch_topology(monkeypatch, pci_devices, ib, tmp_path)
+    configure_ucx_env(_FakeDevice(api="cuda", id=0))
+    assert os.environ["UCX_TLS"] == "^ib"
+    assert "UCX_NET_DEVICES" not in os.environ
+
+
+def test_configure_ucx_env_pins_same_root_complex_ib(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_sysfs: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    # Internode IB hosts (e.g. Hydra) have a NIC under the GPU's root complex;
+    # that one is still pinned alongside the rc TLS default.
+    pci_devices, ib = fake_sysfs
+    _patch_topology(monkeypatch, pci_devices, ib, tmp_path)
+    configure_ucx_env(_FakeDevice(api="cuda", id=0))
+    assert os.environ["UCX_NET_DEVICES"] == "mlx5_same_bridge:1"
+    assert "rc" in os.environ["UCX_TLS"].split(",")

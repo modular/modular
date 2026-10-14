@@ -17,7 +17,7 @@ from std.testing import TestSuite
 from std.compile import compile_info
 from max.gpu import thread_idx
 from std.memory import unsafe_stack_allocation
-from std.sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
+from std.sys.info import _cdna_4_or_newer, CompilationTarget
 from std.sys.compile import SanitizeAddress
 
 from max.gpu import barrier
@@ -76,7 +76,6 @@ def test_data_layout_llvm() raises:
 
 
 def test_data_layout_asm() raises:
-    @__parameter
     def my_func(src: Pointer[Int32, ImmutAnyOrigin]):
         var a = unsafe_stack_allocation[20, Int32, address_space=.SHARED]()
         a[unsafe_offset=thread_idx.x] = src[unsafe_offset=0]
@@ -100,14 +99,13 @@ def test_cross_compile() raises:
 
     comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
-    @__parameter
     def test_kernel():
         comptime assert (
             _cdna_4_or_newer()
         ), "test_kernel is only supported on CDNA4+"
 
     var asm = compile_info[test_kernel, target=MI355X_TARGET]()
-    assert_true("amdgcn-amd-amdhsa-unknown-gfx950" in asm)
+    assert_true("amdgpu9.50-amd-amdhsa-unknown-gfx950" in asm)
 
 
 def main() raises:

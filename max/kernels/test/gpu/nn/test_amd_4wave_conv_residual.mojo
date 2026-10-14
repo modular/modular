@@ -26,9 +26,8 @@ iteration in `main()`. PyTorch-like tolerance per dtype.
 from max.gpu.host import DeviceContext
 from std.random import rand
 from std.testing import assert_equal
-from std.utils import IndexList
 
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 
 from nn.conv.gpu.amd.amd_4wave_conv_residual import (
     amd_4wave_conv_fprop_with_residual,
@@ -42,16 +41,14 @@ from nn.conv.gpu.nvidia.sm100.conv_config import Conv2dProblemShape
 # trivially in-register, real bias-per-channel would index by
 # coords[1] = C_out). Used to validate the SM100-style ordering
 # `D = lambda(Conv(A,B)) + beta * C`.
-@__parameter
 @inline(.always)
 def _bias_compute_lambda[
     _dtype: DType,
     _width: SIMDLength,
     *,
     alignment: Int = 1,
-](coords: IndexList[2], val: SIMD[_dtype, _width]) capturing -> SIMD[
-    _dtype, _width
-]:
+](coords: Coord, val: SIMD[_dtype, _width]) capturing -> SIMD[_dtype, _width]:
+    comptime assert coords.rank == 2, "the matmul epilogue contract is rank 2"
     return val + SIMD[_dtype, _width](0.5)
 
 

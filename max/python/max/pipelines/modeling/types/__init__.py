@@ -64,10 +64,15 @@ from .reasoning import (
 )
 from .task import InputModality, PipelineTask
 from .tokenizer import (
+    ChatEncoderOutcomesProbe,
+    LabelScoringTokenizer,
     PipelineTokenizer,
+    PreprocessCacheStatsProbe,
     PreprocessedImageProbe,
+    TokenIds,
     TokenizerEncoded,
     UnboundContextType,
+    VisionPreprocessCacheStats,
 )
 from .tool_parsing import (
     ParsedToolCall,
@@ -86,6 +91,7 @@ from .utils import (
 PipelinesFactory = Callable[
     [], Pipeline[PipelineInputsType, PipelineOutputType]
 ]
+"""Callable with no arguments that constructs a configured pipeline."""
 
 __all__ = [
     "DUMMY_REQUEST_ID",
@@ -93,6 +99,7 @@ __all__ = [
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
     "BatchType",
+    "ChatEncoderOutcomesProbe",
     "CompletedBatchStats",
     "EmbeddingsContext",
     "EmbeddingsGenerationContextType",
@@ -100,6 +107,7 @@ __all__ = [
     "EmbeddingsGenerationOutput",
     "ImageContentPart",
     "InputModality",
+    "LabelScoringTokenizer",
     "LogitsProcessor",
     "MessageContent",
     "OpenResponsesRequest",
@@ -117,6 +125,7 @@ __all__ = [
     "PipelineTokenizer",
     "PipelinesFactory",
     "PixelGenerationInputs",
+    "PreprocessCacheStatsProbe",
     "PreprocessedImageProbe",
     "ProcessorInputs",
     "ReasoningParser",
@@ -132,10 +141,12 @@ __all__ = [
     "TextGenerationRequestFunction",
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
+    "TokenIds",
     "TokenizerEncoded",
     "ToolParser",
     "UnboundContextType",
     "VideoContentPart",
+    "VisionPreprocessCacheStats",
     "msgpack_numpy_decoder",
     "msgpack_numpy_encoder",
     "msgpack_numpy_oob_decoder",

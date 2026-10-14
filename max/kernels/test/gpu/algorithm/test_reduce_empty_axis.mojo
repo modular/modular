@@ -60,7 +60,7 @@ tier at many.
 
 from std.sys import align_of
 
-from algorithm.reductions import (
+from builtin_kernels.rowwise_reductions import (
     reduce_argmax,
     reduce_max,
     reduce_mean,

@@ -42,18 +42,23 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
   // Typically, this is a LIT struct type.
   if (auto resolvedType =
           sugarDynCast<LIT::StructType>(typeParam.getTypeValue())) {
-    ASTDecl &astDecl =
-        shared.declResolver->getDeclForTypeSymbol(resolvedType.getSymbol());
-    auto structDeclOp = cast<StructDeclOp>(astDecl.getIfOperation());
+    // Decls from a bytecode package are registered lazily, so the struct may
+    // not have been seen yet: resolve it on demand rather than assuming that
+    // whoever produced this type already forced it.
+    ASTDecl *structDecl = shared.resolveAndGetTypeDecl(
+        resolvedType.getSymbol(), shared.getTopLevelDecl().getLoc());
+    assert(structDecl);
+    auto structDeclOp = cast<StructDeclOp>(structDecl->getIfOperation());
 
-    if (failed(shared.declResolver->resolveBody(astDecl, astDecl.getLoc())))
+    if (failed(shared.declResolver->resolveBody(*structDecl,
+                                                structDecl->getLoc())))
       return failure();
 
     // Return the decl. instance is null since this is not an IREvaluator
     // context.
     return ResolvedStructHandle{
         cast<StructDeclInterface>(structDeclOp.getOperation()),
-        resolvedType.getParamValues(), &astDecl,
+        resolvedType.getParamValues(), structDecl,
         /*instance=*/nullptr};
   }
   return failure();

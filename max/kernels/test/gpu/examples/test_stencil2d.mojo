@@ -46,8 +46,8 @@ def stencil2d(
     var tidx = global_idx.x
     var tidy = global_idx.y
 
-    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
-    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
+    var a = TileTensor(a_ptr, row_major(arr_size))
+    var b = TileTensor(b_ptr, row_major(arr_size))
 
     if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
         var idx = tidy * num_cols + tidx
@@ -89,8 +89,8 @@ def stencil2d_smem(
     var lindex_x = thread_idx.x + 1
     var lindex_y = thread_idx.y + 1
 
-    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
-    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
+    var a = TileTensor(a_ptr, row_major(arr_size))
+    var b = TileTensor(b_ptr, row_major(arr_size))
 
     var a_shared_ptr = unsafe_stack_allocation[
         (BLOCK_DIM + 2) * (BLOCK_DIM + 2),

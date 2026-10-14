@@ -152,7 +152,10 @@ class SafetensorWeights(Weights):
 
     def items(self):  # noqa: ANN201
         """Iterates through all allocable weights that start with the prefix."""
-        for name in self._tensors:
+        # Sorted because `_tensors` is a set, whose order varies between
+        # processes, and a graph built by walking this declares its weights in
+        # this order.
+        for name in sorted(self._tensors):
             if name.startswith(self.name):
                 yield (
                     name,

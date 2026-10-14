@@ -148,7 +148,7 @@ async def test_open_context_runs_pipeline(transport: Transport) -> None:
         )
         tokens = [token async for token in pipeline.generate(req)]
 
-    assert tokens == [GenAITextChunk(text="A")] * 5
+    assert tokens == [GenAITextChunk(text="A", num_tokens=1)] * 5
 
 
 @pytest.mark.asyncio
@@ -192,4 +192,4 @@ async def test_open_context_runs_pipeline_multi_cpu_worker() -> None:
         )
         for _ in range(2 * 3):
             tokens = [token async for token in pipeline.generate(req)]
-            assert tokens == [GenAITextChunk(text="A")] * 5
+            assert tokens == [GenAITextChunk(text="A", num_tokens=1)] * 5

@@ -21,10 +21,11 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
 from max.config import ConfigFileModel
-from max.driver import accelerator_api
+from max.driver import SymmetricPool, accelerator_api, load_devices
 from max.engine import InferenceSession
-from max.nn.comm import Signals
+from max.nn.comm import MulticastPool, Signals
 from max.pipelines.diffusion.config import resolve_denoising_cache
+from max.pipelines.kv_cache.config import KVCacheConfig, is_fp4_kv_cache_format
 from max.pipelines.lib._model_components import (
     architecture_name_for,
     updated_component,
@@ -35,10 +36,6 @@ from max.pipelines.lib.arch_lookup import (
     find_architecture,
     import_custom_architectures,
     select_speculator,
-)
-from max.pipelines.lib.host_memory import (
-    _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY,
-    _host_memory_limit,
 )
 from max.pipelines.lib.interfaces import (
     ArchConfig,
@@ -55,8 +52,10 @@ from max.pipelines.sampling import (
     DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE,
     DEFAULT_STRUCTURED_OUTPUT_BACKEND,
     SamplingConfig,
+    ToolCallPolicy,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.support.host_memory import host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     BaseModel,
@@ -80,6 +79,10 @@ from .profiling_config import ProfilingConfig
 
 logger = logging.getLogger("max.pipelines")
 
+# The preprocessed-media caches live in host memory, and their multi-GiB
+# defaults can OOM a small container.
+_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY = 0.25
+
 # ModelManifest is a dict[str, MAXModelConfig] subclass with extra methods.
 # cyclopts (CLI framework) only recognizes plain dict types via typing.get_origin(),
 # which returns None for concrete subclasses. At runtime, Pydantic sees
@@ -97,7 +100,7 @@ else:
 def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     """Return the Pydantic model class for a field annotation, if any.
 
-    Unwraps ``Optional``/``Union`` annotations (e.g. ``KVCacheConfig | None``)
+    Unwraps ``Optional``/``Union`` annotations (such as ``KVCacheConfig | None``)
     and returns the first :class:`~pydantic.BaseModel` subclass found. Returns
     ``None`` for non-model annotations such as ``dict[str, Any]`` or ``str``,
     so plain data dicts are never treated as nested config sub-models.
@@ -230,11 +233,9 @@ def _resolve_default_structured_output_backend(
     Resolution order (highest precedence first):
 
     1. An explicit user choice (``sampling.structured_output_backend`` is
-       not ``None``) always wins -- including an explicit ``"xgrammar"`` on
-       an architecture that pins ``"llguidance"``.
+       not ``None``) always wins.
     2. Otherwise, if the resolved ``SupportedArchitecture`` declares a
-       ``default_structured_output_backend`` (e.g. Gemma 3 / MiniMax-M2 pin
-       ``"llguidance"``), use it.
+       ``default_structured_output_backend``, use it.
     3. Otherwise, fall back to the global default ``"xgrammar"``.
 
     Runs whenever construction resolves an architecture, so the field is
@@ -305,6 +306,24 @@ def _is_eligible_for_overlap_serve_optimizations(
         and not lora
         and model.default_device_spec.device_type != "cpu"
     )
+
+
+def _validate_kv_cache_format(kv_cache: KVCacheConfig, arch: Any) -> None:
+    """Raises when ``arch`` does not implement the requested KV cache format.
+
+    Args:
+        kv_cache: The main model's KV cache config.
+        arch: The main model's resolved architecture.
+
+    Raises:
+        ValueError: If ``kv_cache_format`` is ``float4_e2m1fn`` and ``arch``
+            has not opted in with ``supports_nvfp4_kv_cache``.
+    """
+    fmt = kv_cache.kv_cache_format
+    if is_fp4_kv_cache_format(fmt) and not arch.supports_nvfp4_kv_cache:
+        raise ValueError(
+            f"kv_cache_format '{fmt}' is not supported by {arch.name}."
+        )
 
 
 def _resolve_overlap_and_device_graph_capture(
@@ -461,7 +480,7 @@ def _resolve_preprocess_cache_budgets(
     ):
         return configured
 
-    host_bytes = _host_memory_limit()
+    host_bytes = host_memory_limit()
     if host_bytes is None:
         logger.debug(
             "Could not determine host memory; leaving the preprocessed-"
@@ -652,6 +671,20 @@ def _select_declared_speculator(
     return select_speculator(target, speculative.speculative_method, draft_arch)
 
 
+def _require_dspark(speculative: SpeculativeConfig, draft_arch: str) -> None:
+    """Refuses a DSpark draft under any method but ``dspark``.
+
+    Each fused DSpark graph runs a DSpark draft step, which a DFlash, Eagle
+    or MTP draft loop does not match.
+    """
+    if not speculative.is_dspark():
+        raise ValueError(
+            f"The {draft_arch} draft is a DSpark draft and requires"
+            " --speculative-method dspark, got"
+            f" {speculative.speculative_method!r}."
+        )
+
+
 def _apply_speculative_target_architecture(
     speculative: SpeculativeConfig | None, models: Mapping[str, MAXModelConfig]
 ) -> Speculator | None:
@@ -712,6 +745,7 @@ def _apply_speculative_target_architecture(
             # Speculators-format DSpark drafters (e.g.
             # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
             # generic architectures: ["DSparkDraftModel"].
+            _require_dspark(speculative, draft_archs[0])
             target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
         elif (
             speculative.is_dflash()
@@ -733,7 +767,21 @@ def _apply_speculative_target_architecture(
             else None
         )
         if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
+            _require_dspark(speculative, draft_archs[0])
             target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
+    # Kimi K3's speculators-format DSpark drafter (
+    # RedHatAI/Kimi-K3-speculator.dspark) declares the same generic
+    # architectures: ["DSparkDraftModel"] the Gemma4 arm keys on; the
+    # verifier it names is what picks the fused graph apart.
+    if target_archs[0] == "KimiK3ForConditionalGeneration":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if draft_archs and draft_archs[0] == "DSparkDraftModel":
+            _require_dspark(speculative, draft_archs[0])
+            target_archs[0] = "UnifiedDSparkKimiK3ForCausalLM"
     if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
         draft_archs = (
             draft_model.huggingface_config.architectures
@@ -748,6 +796,11 @@ def _apply_speculative_target_architecture(
             # M3 target + MHA (Llama-style) Eagle3 draft. The v0 Eagle3
             # path forbids block-sparse attention.
             target_archs[0] = "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
+        elif draft_archs and draft_archs[0] == "DSparkMiniMaxDraftModel":
+            _require_dspark(speculative, draft_archs[0])
+            target_archs[0] = (
+                "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
+            )
     if target_archs[0] == "Qwen3_5ForConditionalGeneration":
         # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
         # there is no separate draft model. Qwen3.5 shares the arch name
@@ -934,6 +987,18 @@ class PipelineConfig(ConfigFileModel):
     )
     """Whether to run eager verification before device graph replay."""
 
+    tokenizer_impl: str | None = Field(
+        default=None,
+        description=(
+            "Import path of an alternative tokenizer implementation, as "
+            "``'module.path:ClassName'``, that encodes rendered chat prompts "
+            "for a checkpoint whose ``tokenizer.json`` it reproduces. Left "
+            "unset, or when it cannot be imported or does not match the "
+            "checkpoint, uses the HuggingFace tokenizer."
+        ),
+    )
+    """Import path of an alternative tokenizer implementation, if any."""
+
     models: _ModelsType = Field(
         default_factory=ModelManifest,
         description="The model manifest containing all model configs keyed by role.",
@@ -955,7 +1020,7 @@ class PipelineConfig(ConfigFileModel):
         """Normalize dash-keyed dicts from cyclopts CLI parsing to underscores.
 
         When cyclopts parses CLI args like ``--pipeline.models.main.model-path``,
-        it produces nested dicts with dash-separated keys (e.g.
+        it produces nested dicts with dash-separated keys (such as
         ``{"main": {"model-path": "value"}}``).  Pydantic expects underscore-
         separated field names, so we normalise before validation.
 
@@ -963,12 +1028,12 @@ class PipelineConfig(ConfigFileModel):
         ``--pipeline.models.main.kv-cache.kv-cache-format`` resolve to
         ``{"main": {"kv_cache": {"kv_cache_format": ...}}}``. Recursion is
         schema-aware: it only descends into keys whose field is a Pydantic
-        model, leaving plain data dicts (e.g. ``vision_config_overrides``)
+        model, leaving plain data dicts (such as ``vision_config_overrides``)
         untouched so legitimately-dashed data keys are preserved.
 
         Raises:
             ValueError: If two keys at the same level normalize to the same
-                field name (e.g. mixing ``kv-cache`` and ``kv_cache``), which
+                field name (such as mixing ``kv-cache`` and ``kv_cache``), which
                 would otherwise silently drop one of the values.
         """
 
@@ -1156,20 +1221,29 @@ class PipelineConfig(ConfigFileModel):
         server-generated and gated on having a parser that can both produce
         the grammar and parse the resulting output).
 
-        Tool-call constrained decoding can be turned off independently via
-        ``sampling.enable_tool_call_constrained_decode``: when that is
-        ``False`` the tool parser still parses tool calls out of generated
-        text, but no grammar is generated and the bitmask path is not needed
-        on its account.
+        Tool-call constrained decoding is off when ``sampling.tool_call_policy``
+        is ``FORCE_UNCONSTRAINED``: the tool parser still parses tool calls out
+        of generated text, but no grammar is generated and the bitmask path is
+        not needed on its account.
+
+        Always ``False`` on a ``prefill_only`` worker. Under disaggregated
+        inference the decode worker discards prefill's token for a
+        constrained request and re-samples it under its own matcher, so any grammar prefill
+        enforced would be discarded. Returning ``False`` here also keeps a
+        prefill worker launched without ``--enable-structured-output`` from
+        raising on a ``json_schema`` request the decode worker admitted.
 
         Drives whether model / sampler graphs are compiled with a bitmask
         input and whether the D2H pinned buffer is allocated. Distinct from
         ``sampling.enable_structured_output``, which is the user-facing
         flag and only gates honoring user-supplied JSON schemas.
         """
+        if self.runtime.pipeline_role == "prefill_only":
+            return False
         return self.sampling.enable_structured_output or (
             self.runtime.tool_parser is not None
-            and self.sampling.enable_tool_call_constrained_decode
+            and self.sampling.tool_call_policy
+            is not ToolCallPolicy.FORCE_UNCONSTRAINED
         )
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
@@ -1193,6 +1267,61 @@ class PipelineConfig(ConfigFileModel):
                 "BLASST_LOG_THRESHOLD_MAG",
                 int(os.environ.get("BLASST_LOG_THRESHOLD_MAG", "13000")),
             )
+        if self._disable_vendor_blas_fallback():
+            session._set_mojo_define("MODULAR_DISABLE_VENDOR_FALLBACK", "true")
+
+    def _disable_vendor_blas_fallback(self) -> bool:
+        """Returns whether to compile kernels without the vendor-BLAS fallback.
+
+        ``_matmul_gpu`` reads ``MODULAR_DISABLE_VENDOR_FALLBACK`` through
+        ``get_defined_bool``, so it is a kernel-compile define and an
+        environment variable alone never reaches the kernels serve compiles.
+        Forwarding ``runtime.disable_vendor_blas_fallback`` here is what makes
+        the documented escape hatch work.
+
+        It is forced on for HIP + device graph capture: the fallback's first
+        GEMM constructs the hipBLASLt handle, and ``hipblasLtCreate`` zeroes a
+        25 MiB workspace with a legacy-stream ``hipMemset`` and calls
+        ``exit(1)`` when that fails. Inside a capture region that memset
+        returns ``hipErrorStreamCaptureImplicit``, so the model worker dies
+        instead of raising. MAX's own kernels cover the same shapes.
+        """
+        return self.runtime.disable_vendor_blas_fallback or bool(
+            self.runtime.device_graph_capture and accelerator_api() == "hip"
+        )
+
+    def multicast_pool_bytes(self) -> int:
+        """Returns the per-device symmetric multicast pool bytes, or ``0``.
+
+        The pool backs NVSwitch (NVLS) allreduce. This is the single place the
+        sizing inputs are read, so the allocation site and the memory estimate
+        cannot disagree; ``0`` means no pool is created and collectives stay
+        peer-to-peer.
+
+        Returns:
+            Per-device pool bytes, or ``0`` when no pool will be allocated.
+        """
+        if not MulticastPool.ENABLED:
+            return 0
+        hidden_size = getattr(self.model.huggingface_config, "hidden_size", 0)
+        if not isinstance(hidden_size, int):
+            return 0
+        capacity = MulticastPool.capacity_bytes(
+            num_devices=len(self.model.device_specs),
+            num_tokens=self.runtime.max_batch_input_tokens,
+            hidden_size=hidden_size,
+        )
+        if capacity == 0:
+            return 0
+        # A multi-GPU box without NVSwitch cannot back a pool; charging for
+        # one the driver will refuse would shrink the KV cache for nothing.
+        devices = load_devices(self.model.device_specs)
+        if not SymmetricPool.is_supported(devices):
+            return 0
+        # The driver rounds the reservation up to its allocation granularity
+        # (2 MiB per GPU on current hardware), well inside the estimate's own
+        # margin, so the request is charged as is.
+        return capacity
 
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None
@@ -1207,6 +1336,9 @@ class PipelineConfig(ConfigFileModel):
         broadcast (see ``rust_kv/kv-tier-connector/src/copy_engine.rs``), so they
         contribute no additional term here.
 
+        The per-GPU symmetric multicast pool backing NVLS allreduce is
+        charged alongside, when :meth:`multicast_pool_bytes` is non-zero.
+
         Returns 0 for single-device pipelines.
 
         Args:
@@ -1219,7 +1351,7 @@ class PipelineConfig(ConfigFileModel):
         ngpus = len(self.model.device_specs)
         if ngpus <= 1:
             return 0
-        return Signals.NUM_BYTES * ngpus
+        return (Signals.NUM_BYTES + self.multicast_pool_bytes()) * ngpus
 
     def _validate_repo_access(self) -> None:
         """Validates that every model's repo was provided and is accessible.
@@ -1522,6 +1654,8 @@ class PipelineConfig(ConfigFileModel):
             )
             if arch_name is not None and arch is None:
                 raise ValueError(f"No architecture found for {arch_name}")
+            if arch is not None:
+                _validate_kv_cache_format(models["main"].kv_cache, arch)
             if arch is not None and speculator is not None:
                 arch = speculator.derive()
 
@@ -1606,6 +1740,7 @@ class PipelineConfig(ConfigFileModel):
             speculative=speculative,
             task=args.task,
             debug_verify_replay=args.debug_verify_replay,
+            tokenizer_impl=args.tokenizer_impl,
             **top_level,
         )
 
@@ -1644,26 +1779,6 @@ class PipelineConfig(ConfigFileModel):
     # We still avoid pickling `transformers` objects via `MAXModelConfig`'s
     # custom pickling hooks (it drops `_huggingface_config`), so `PipelineConfig`
     # should rely on the BaseModel implementation.
-
-
-def _parse_flag_bool(value: str, flag_name: str) -> bool:
-    if value.lower() == "true":
-        return True
-    elif value.lower() == "false":
-        return False
-    else:
-        raise ValueError(
-            f"Invalid boolean value: {value} for flag: {flag_name}"
-        )
-
-
-def _parse_flag_int(value: str, flag_name: str) -> int:
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise ValueError(
-            f"Invalid integer value: {value} for flag: {flag_name}"
-        ) from exc
 
 
 PrometheusMetricsMode = Literal[

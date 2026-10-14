@@ -42,6 +42,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 from huggingface_hub import hf_hub_download
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -286,7 +287,7 @@ def compiled_draft(
             anchor_tokens,
             *kv_inputs,
         ) = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
 
         ctx_hidden = draft.project_target_hidden(ctx_features.tensor)
         draft.materialize_kv(
@@ -369,7 +370,7 @@ def _execute_max_draft(
             Buffer.from_numpy(np.array([anchor_token], dtype=np.int64)).to(
                 device
             ),
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
         )
     finally:
         kv_manager.release(context)

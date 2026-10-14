@@ -267,11 +267,14 @@ comptime error_message_macos: List[Tuple[ErrNo, String]] = [
 
 
 def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]() raises:
-    comptime for i in range(len(error_message)):
-        var errno, msg = materialize[error_message[i]]()
+    # Loop at runtime. A `comptime for` unrolls both asserts once per entry,
+    # which made this one of the slowest stdlib tests to compile.
+    var messages = materialize[error_message]()
+    for entry in messages:
+        var errno = entry[0]
         set_errno(errno)
         assert_equal(get_errno(), errno)
-        assert_equal(String(errno), msg)
+        assert_equal(String(errno), entry[1])
     set_errno(ErrNo.SUCCESS)
 
 

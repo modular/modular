@@ -1,10 +1,12 @@
 # Full accuracy eval suite
 
-One `workflow_dispatch` of
+One dispatch of
 [`fullAccuracyEval.yaml`](../../../../../.github/workflows/fullAccuracyEval.yaml)
-runs the complete accuracy eval suite against a build and produces one
+evaluates the complete accuracy eval suite against a build and produces one
 consolidated `results.json` plus a score table in the run's step summary.
-MiniMax M3 is the first profile.
+MiniMax M3 is the first profile. The suite runs only when dispatched; scheduled
+accuracy tracking runs in
+[`mcloudEvalConfig.yaml`](../../../../../.github/workflows/mcloudEvalConfig.yaml).
 
 ## Trigger a run
 
@@ -46,7 +48,7 @@ One job per dataset, all in parallel, each on its own runner:
 
 | Toggle                        | Jobs                                                |
 |-------------------------------|-----------------------------------------------------|
-| run_text                      | aime25, gpqa, hle, aa-lcr, aa-omniscience           |
+| run_text                      | aime25, aime26, gpqa, hle, aa-lcr, aa-omniscience   |
 | run_scicode                   | scicode                                             |
 | run_multimodal                | mmmu-pro, omnidocbench, mmmu-video                  |
 | run_agent_class (default off) | agent-class (SWE-bench + GAIA health check)         |
@@ -69,6 +71,8 @@ it; its artifacts land in the same run when it finishes.
 - Per-dataset artifacts keep the full `results.jsonl` + `score.json`
   detail, prefixed by the job that produced them (`aime25-`, `scicode-`,
   `mmmu-video-`, ...).
+- Every run also mirrors its downloaded GitHub artifacts to
+  `s3://modular-ci-prod-artifact-bucket/full-accuracy-eval/run_id=<run-id>/attempt=<run-attempt>/`.
 
 ## Re-run a failed piece
 

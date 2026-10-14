@@ -13,6 +13,7 @@
 """Tests for mla_indexer_ragged_float8_paged."""
 
 from max.gpu.host import DeviceContext, HostBuffer
+from kv_cache.paged_sparse_kv_index_remap import PagedKVRemap
 from kv_cache.types import (
     KVCacheStaticParams,
     KVCollectionT,
@@ -24,40 +25,49 @@ from nn.attention.gpu.mla_index_fp8 import (
 )
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
+    _INDEX_SWIZZLE,
+    KTMATileT,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
+from nn.attention.gpu.sparse_index_fp8_sm100_prefill import _FOLD_DTYPE
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     KVCacheScalesMHAOperand,
 )
 from nn.attention.mha_mask import MaskName
-from std.math import ceildiv, clamp
+from nn.topk_bitonic import _elems_per_16b
+from std.math import align_up, ceildiv, clamp, log
+from std.sys import size_of
 from std.random import rand, random_ui64
 from std.sys.info import _has_blackwell_tcgen05
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
+from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from std.utils.index import IndexList
 from std.testing import assert_almost_equal, assert_true
 from std.collections import Set
 
 
 def _score_paged_sm100[
+    out_dtype: DType,
+    output_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    //,
     num_heads: Int,
     depth: Int,
     KCollectionT: KVCollectionT,
 ](
-    output: TileTensor[.float32, ...],
-    q: TileTensor[mut=False, .float8_e4m3fn, ...],
-    q_s: TileTensor[mut=False, .float32, ...],
-    input_row_offsets: TileTensor[mut=False, .uint32, ...],
+    output: MutTileTensor[out_dtype, output_layout, _],
+    q: ImmTileTensor[.float8_e4m3fn, q_layout, _],
+    q_s: ImmTileTensor[.float32, qs_layout, _],
+    input_row_offsets: ImmTileTensor[.uint32, iro_layout, _],
     k_collection: KCollectionT,
     batch_size: Int,
     max_seq_len: Int,
@@ -71,6 +81,9 @@ def _score_paged_sm100[
     var k_cache = k_collection.get_key_cache(0)
     var k_op = KVCacheMHAOperand(k_cache)
     var ks_op = KVCacheScalesMHAOperand(k_cache)
+    var k_tma_tile = rebind[KTMATileT[DType.float8_e4m3fn, _BM_KEY, depth]](
+        k_cache.create_paged_tma_tile[_INDEX_SWIZZLE, BN=_BM_KEY, BK=depth](ctx)
+    )
     fp8_index_score_sm100[
         DType.float8_e4m3fn,
         type_of(k_op),
@@ -88,6 +101,7 @@ def _score_paged_sm100[
         q_s,
         k_op,
         ks_op,
+        k_tma_tile,
         input_row_offsets,
         batch_size,
         max_seq_len,
@@ -105,12 +119,19 @@ def test_mla_index_fp8_paged_variable_lengths[
     mask_name: StaticString = MaskName.NULL.name,
     strict_complete: Bool = False,
     check_scores: Bool = False,
+    check_selection: Bool = False,
+    exp_score_tail: Bool = False,
     kpool: Int = 1,
+    num_layers: Int = 1,
+    layer_idx: Int = 0,
+    check_remap: Bool = False,
+    check_physical_only: Bool = False,
 ](
     seq_lens: List[Int],
     cache_lens: List[Int],
     ctx: DeviceContext,
     metadata_cache_len: Int = 0,
+    scores_budget_bytes: Int = _SCORES_BUDGET_BYTES,
 ) raises:
     """Test mla_indexer_ragged_float8_paged with variable-length sequences.
 
@@ -136,9 +157,35 @@ def test_mla_index_fp8_paged_variable_lengths[
             paged TMA row mapping (page_size / LUT) reads the wrong K rows, so
             this catches it -- coverage the index-only checks and
             `test_index_fp8` (page_size == 0) never exercise.
+        check_selection: When True (B200 only, NULL mask), additionally grade
+            `output_indices` against an exact host top-k over the same f32
+            reference. A logit tolerance cannot answer whether the bf16 fold
+            still picks the right keys -- that is a ranking decision -- so this
+            is the gate for flipping `FP8_INDEX_FOLD_DTYPE`. Read the printed
+            `SELGATE` line under both fold settings: the f32 arm is the floor,
+            and it is never zero because fp8 inputs tie constantly.
+        exp_score_tail: When True, reshape the per-key scale from uniform to an
+            exponential tail before scoring. A uniform scale packs the top-k
+            into well under 1% of the peak score -- below the fold's own drift
+            -- so the selection is undecidable by construction and any
+            agreement number it produces is an artifact of the stimulus. Only
+            meaningful with `check_selection`.
         kpool: Tokens per pooled cache row. With `kpool > 1` the cache rows are
             pooled keys, so the indexer selects pool ids and each token's
             candidate count is its visible-token count floored by `kpool`.
+        num_layers: Layers the cache's parent tensor holds. The scale pool's
+            block stride is `num_layers * page_size`, so at one layer it
+            equals `page_size` and the flat scale descriptor degenerates to
+            the contiguous case; more than one is what exercises the split.
+        layer_idx: Which layer's rows the op addresses.
+        check_remap: When True, also write each selection's physical row in
+            a second ("MLA") cache whose lookup table differs from the
+            indexer's and marks some pages unmapped, and compare it slot by
+            slot against a host remap of the logical output.
+        check_physical_only: When True (with `check_remap`), run the remap
+            again without writing the logical indices, and check that the
+            physical rows match the first run's and the logical output is
+            untouched.
 
     Args:
         seq_lens: Length of each sequence (new tokens) per batch item.
@@ -150,6 +197,8 @@ def test_mla_index_fp8_paged_variable_lengths[
             far above every row's real length; the op must produce identical
             indices while touching only live score slots. Must be at least
             the real maximum. Incompatible with `check_scores`.
+        scores_budget_bytes: Forwarded to the op; a small value scores the
+            batch in several row windows.
     """
     comptime use_causal_mask = mask_name != MaskName.NULL.name
     var batch_size = len(seq_lens)
@@ -195,17 +244,27 @@ def test_mla_index_fp8_paged_variable_lengths[
         assert (
             metadata_cache_len == 0
         ), "check_scores assumes the metadata equals the real maximum"
+    comptime if check_selection:
+        assert (
+            metadata_cache_len == 0
+        ), "check_selection assumes the metadata equals the real maximum"
+        # The host reference walks keys one per cache row; a pool is a
+        # different candidate and the grading below would compare two
+        # different index spaces.
+        assert kpool == 1, "check_selection does not model kpool > 1"
+        assert (
+            not use_causal_mask
+        ), "check_selection's host reference is NULL-mask only"
 
     comptime kv_params = KVCacheStaticParams(
         num_heads=1,  # MLA uses single head for K
         head_size=depth,
         is_mla=True,
     )
-    comptime num_layers = 1
 
     # Calculate number of pages needed (based on max sequence)
     var total_num_keys_max = max_cache_len + max_seq_len
-    var pages_per_seq = (total_num_keys_max + page_size - 1) // page_size
+    var pages_per_seq = ceildiv(total_num_keys_max, page_size)
     var num_blocks = batch_size * pages_per_seq + 10  # Extra blocks
 
     # Q tensor: [total_seq_len, num_heads, depth]
@@ -252,10 +311,6 @@ def test_mla_index_fp8_paged_variable_lengths[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    comptime k_block_layout = Layout.row_major[6]()
-    var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
-        k_shape
-    )
     var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
     )
@@ -278,12 +333,20 @@ def test_mla_index_fp8_paged_variable_lengths[
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
+    comptime if exp_score_tail:
+        # `rand` gives U[0,1), and a score is (relu-summed heads) x this scale,
+        # so the selected top_k sit within top_k/num_keys of the peak -- under
+        # 1% on any sparse shape, the same order as the bf16 fold's own drift.
+        # A uniform tail therefore cannot separate "the ranking moved" from "the
+        # ranking was never decidable"; `spread_min` in the SELGATE line reports
+        # which. -log(1-u) stretches the head the way attention scores do.
+        with ks_block_device.map_to_host() as ks_tail_host:
+            for i in range(ks_shape.flattened_length()):
+                var u = Float64(ks_tail_host[i])
+                ks_tail_host[i] = Float32(-log(1.0 - min(u, 0.999999)))
+
     # Page lookup tables
-    comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
 
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
@@ -299,42 +362,58 @@ def test_mla_index_fp8_paged_variable_lengths[
                 paged_lut_set.add(block_idx)
                 k_lut_host[bs * pages_per_seq + page_idx] = UInt32(block_idx)
 
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_shape = IndexList[1](batch_size)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_layout
-    ].row_major(cache_lengths_shape)
 
-    comptime ks_block_layout = Layout.row_major[6]()
-    var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
-        ks_shape
-    )
-    var k_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         DType.float8_e4m3fn,
         kv_params,
         page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=128,
-    ](
-        LayoutTensor[.float8_e4m3fn, k_block_layout](
-            k_block_device,
-            k_block_runtime_layout,
+    ]
+    var k_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            TileTensor(
+                k_block_device,
+                row_major(
+                    Int64(num_blocks),
+                    Idx[1],
+                    Int64(num_layers),
+                    Idx[page_size],
+                    Idx[kv_params.num_heads],
+                    Idx[kv_params.head_size],
+                ),
+            ).as_unsafe_any_origin()
         ),
-        LayoutTensor[mut=False, .uint32, cache_lengths_layout](
-            cache_lengths_device,
-            cache_lengths_runtime_layout,
-        ),
-        LayoutTensor[mut=False, .uint32, paged_lut_layout](
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(
             k_lut_device,
-            paged_lut_runtime_layout,
-        ),
+            row_major(Int64(batch_size), Int64(paged_lut_shape[1])),
+        )
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(max_seq_len),  # max_seq_length (new tokens)
         # max_cache_length (cached tokens), optionally frozen far above the
         # real maximum as a captured decode graph would bake it.
         UInt32(metadata_cache_len if metadata_cache_len > 0 else max_cache_len),
-        LayoutTensor[.float32, ks_block_layout](
-            ks_block_device,
-            ks_block_runtime_layout,
+        rebind[Collection.scales_tt_type](
+            TileTensor(
+                ks_block_device,
+                row_major(
+                    Int64(num_blocks),
+                    Idx[1],
+                    Int64(num_layers),
+                    Idx[page_size],
+                    Idx[kv_params.num_heads],
+                    Idx[head_dim_granularity],
+                ),
+            ).as_unsafe_any_origin()
         ),
     )
 
@@ -366,27 +445,182 @@ def test_mla_index_fp8_paged_variable_lengths[
         row_major(total_seq_len, top_k),
     )
 
-    mla_indexer_ragged_float8_paged[
-        DType.float8_e4m3fn,
-        type_of(k_collection),
-        num_heads,
-        depth,
-        top_k,
-        mask_name,
-        kpool=kpool,
-    ](
-        o_tile,
-        q_tile,
-        qs_tile,
-        input_row_offsets_tile,
-        k_collection,
-        UInt32(0),  # layer_idx
-        ctx,
+    # The MLA cache's own block-id space: a different page count, a table
+    # unrelated to the indexer's, and every third page unmapped.
+    var mla_num_pages = num_blocks + 7
+    var mla_lut_host = List[UInt32](capacity=batch_size * pages_per_seq)
+    for i in range(batch_size * pages_per_seq):
+        mla_lut_host.append(
+            UInt32(mla_num_pages) if i % 3
+            == 2 else UInt32((i * 5 + 3) % mla_num_pages)
+        )
+    var mla_lut_device = ctx.enqueue_create_buffer[.uint32](
+        batch_size * pages_per_seq
     )
+    with mla_lut_device.map_to_host() as buf:
+        for i in range(batch_size * pages_per_seq):
+            buf[i] = mla_lut_host[i]
+    var phys_device = ctx.enqueue_create_buffer[.int32](total_output_size)
+    phys_device.enqueue_fill(Int32(-2))
+
+    comptime if check_remap:
+        comptime assert kpool == 1, "a remap needs token positions"
+        mla_indexer_ragged_float8_paged[
+            DType.float8_e4m3fn,
+            type_of(k_collection),
+            num_heads,
+            depth,
+            top_k,
+            mask_name,
+            kpool=kpool,
+            write_logical=True,
+        ](
+            o_tile,
+            q_tile,
+            qs_tile,
+            input_row_offsets_tile,
+            k_collection,
+            UInt32(layer_idx),
+            ctx,
+            PagedKVRemap[page_size](
+                phys_device.unsafe_ptr(),
+                mla_lut_device.unsafe_ptr(),
+                pages_per_seq,
+                batch_size,
+                UInt32(mla_num_pages),
+            ),
+            scores_budget_bytes,
+        )
+    else:
+        mla_indexer_ragged_float8_paged[
+            DType.float8_e4m3fn,
+            type_of(k_collection),
+            num_heads,
+            depth,
+            top_k,
+            mask_name,
+            kpool=kpool,
+        ](
+            o_tile,
+            q_tile,
+            qs_tile,
+            input_row_offsets_tile,
+            k_collection,
+            UInt32(layer_idx),
+            ctx,
+            scores_budget_bytes,
+        )
 
     ctx.synchronize()
     ctx.enqueue_copy(o_ptr, o_device)
     ctx.synchronize()
+
+    comptime if check_remap:
+        var phys_host = ctx.enqueue_create_host_buffer[.int32](
+            total_output_size
+        )
+        ctx.enqueue_copy(phys_host, phys_device)
+        ctx.synchronize()
+        var tok = 0
+        var n_mapped = 0
+        for b in range(batch_size):
+            for _ in range(seq_lens[b]):
+                for k_idx in range(top_k):
+                    var i = tok * top_k + k_idx
+                    var t = Int(o_ptr[i])
+                    var expected = Int32(-1)
+                    if t >= 0 and t // page_size < pages_per_seq:
+                        var blk = mla_lut_host[
+                            b * pages_per_seq + t // page_size
+                        ]
+                        if Int(blk) < mla_num_pages:
+                            expected = Int32(
+                                Int(blk) * page_size + t % page_size
+                            )
+                            n_mapped += 1
+                    assert_true(
+                        phys_host[i] == expected,
+                        String(
+                            "remap: token ",
+                            tok,
+                            " slot ",
+                            k_idx,
+                            " logical ",
+                            t,
+                            " physical ",
+                            phys_host[i],
+                            " expected ",
+                            expected,
+                        ),
+                    )
+                tok += 1
+        # The table maps two pages in three, so a run that selected anything
+        # must have produced mapped rows; zero means the check was vacuous.
+        assert_true(
+            n_mapped > 0 or total_output_size == 0, "remap check was vacuous"
+        )
+
+        comptime if check_physical_only:
+            var phys_only_device = ctx.enqueue_create_buffer[.int32](
+                total_output_size
+            )
+            phys_only_device.enqueue_fill(Int32(-2))
+            var untouched_device = ctx.enqueue_create_buffer[.int32](
+                total_output_size
+            )
+            untouched_device.enqueue_fill(Int32(-3))
+            mla_indexer_ragged_float8_paged[
+                DType.float8_e4m3fn,
+                type_of(k_collection),
+                num_heads,
+                depth,
+                top_k,
+                mask_name,
+                kpool=kpool,
+                write_logical=False,
+            ](
+                TileTensor(untouched_device, row_major(total_seq_len, top_k)),
+                q_tile,
+                qs_tile,
+                input_row_offsets_tile,
+                k_collection,
+                UInt32(layer_idx),
+                ctx,
+                PagedKVRemap[page_size](
+                    phys_only_device.unsafe_ptr(),
+                    mla_lut_device.unsafe_ptr(),
+                    pages_per_seq,
+                    batch_size,
+                    UInt32(mla_num_pages),
+                ),
+                scores_budget_bytes,
+            )
+            var phys_only_host = ctx.enqueue_create_host_buffer[.int32](
+                total_output_size
+            )
+            var untouched_host = ctx.enqueue_create_host_buffer[.int32](
+                total_output_size
+            )
+            ctx.enqueue_copy(phys_only_host, phys_only_device)
+            ctx.enqueue_copy(untouched_host, untouched_device)
+            ctx.synchronize()
+            for i in range(total_output_size):
+                assert_true(
+                    untouched_host[i] == -3,
+                    String("physical-only run wrote logical slot ", i),
+                )
+            _assert_same_selection(
+                phys_host,
+                phys_only_host,
+                total_seq_len,
+                top_k,
+                "skipping the logical indices",
+            )
+            _ = phys_only_device
+            _ = untouched_device
+        _ = phys_host
+    _ = mla_lut_device
+    _ = phys_device
 
     # Build a mapping from global token index to its valid candidate range.
     # With causal mask: num_keys = cache_len + local_seq_idx + 1
@@ -470,7 +704,7 @@ def test_mla_index_fp8_paged_variable_lengths[
                 )
             global_token_idx += 1
 
-    comptime if check_scores:
+    comptime if check_scores or check_selection:
         # tcgen05-only, so B200 only; on H100 this case still ran the scalar
         # fallback + the index checks above.
         comptime if _has_blackwell_tcgen05():
@@ -483,9 +717,9 @@ def test_mla_index_fp8_paged_variable_lengths[
 
             _score_paged_sm100[num_heads, depth, type_of(k_collection)](
                 sc_tile,
-                q_tile.as_immut(),
-                qs_tile.as_immut(),
-                input_row_offsets_tile.as_immut(),
+                q_tile.as_imm(),
+                qs_tile.as_imm(),
+                input_row_offsets_tile.as_imm(),
                 k_collection,
                 batch_size,
                 max_seq_len,
@@ -497,6 +731,17 @@ def test_mla_index_fp8_paged_variable_lengths[
             ctx.enqueue_copy(sc_host, sc_buf)
             ctx.synchronize()
 
+            # The bf16 fold rounds each of `num_heads` accumulate steps to an
+            # 8-bit mantissa, so the drift against this f32 reference is by
+            # design. The loose bound still catches a wrong K row or a dropped
+            # relu; whether the top-k picks the same keys is `check_selection`.
+            # Read the printed `max_rel`, do not just watch the assert pass.
+            comptime score_rtol = (
+                1e-2 if _FOLD_DTYPE == DType.float32 else 1e-1
+            )
+            var max_rel = Float32(0)
+            var sel = _SelStats()
+
             # Host reference over the paged layout: page = key // page_size,
             # offset = key % page_size, block = LUT[batch, page]. A wrong TMA
             # row mapping in the scorer reads different K rows -> mismatch.
@@ -507,9 +752,11 @@ def test_mla_index_fp8_paged_variable_lengths[
                         for b in range(batch_size):
                             var nk = cache_lens[b] + seq_lens[b]
                             for _ in range(seq_lens[b]):
+                                var host_scores = List[Float32](
+                                    capacity=nk if check_selection else 0
+                                )
                                 for key in range(nk):
-                                    var page = key // page_size
-                                    var off = key % page_size
+                                    var page, off = divmod(key, page_size)
                                     var blk = Int(
                                         lut_host[b * pages_per_seq + page]
                                     )
@@ -530,14 +777,93 @@ def test_mla_index_fp8_paged_variable_lengths[
                                             max(dot, Float32(0))
                                             * qs_ptr[g * num_heads + h]
                                         )
+                                    var want = score * kscale
+                                    comptime if check_selection:
+                                        host_scores.append(want)
+                                    var got = sc_host[
+                                        g * total_num_keys_max + key
+                                    ]
                                     assert_almost_equal(
-                                        sc_host[g * total_num_keys_max + key],
-                                        score * kscale,
+                                        got,
+                                        want,
                                         atol=1e-2,
-                                        rtol=1e-2,
+                                        rtol=score_rtol,
+                                    )
+                                    if abs(want) > 1e-6:
+                                        max_rel = max(
+                                            max_rel, abs(got - want) / abs(want)
+                                        )
+                                comptime if check_selection:
+                                    _grade_selection_row(
+                                        host_scores, o_ptr, g, top_k, sel
                                     )
                                 g += 1
+            print(
+                "    scores vs host f32 reference: fold=",
+                _FOLD_DTYPE,
+                " max_rel=",
+                max_rel,
+                sep="",
+            )
+
+            # bf16 OUTPUT arm. Not bit-exact against the f32 buffer: the
+            # prefill kernel's accumulator width depends on `out_dtype` (4 vs 8
+            # chains at nh=64), so the two arms fold in different orders. Held
+            # to the same bound the f32 arm meets against the host reference.
+            var bf_buf = ctx.enqueue_create_buffer[.bfloat16](sc_size)
+            var bf_tile = TileTensor(
+                bf_buf, row_major(total_seq_len, total_num_keys_max)
+            )
+            _score_paged_sm100[num_heads, depth, type_of(k_collection)](
+                bf_tile,
+                q_tile.as_imm(),
+                qs_tile.as_imm(),
+                input_row_offsets_tile.as_imm(),
+                k_collection,
+                batch_size,
+                max_seq_len,
+                total_num_keys_max,
+                ctx,
+            )
+            ctx.synchronize()
+            var bf_host = ctx.enqueue_create_host_buffer[.bfloat16](sc_size)
+            ctx.enqueue_copy(bf_host, bf_buf)
+            ctx.synchronize()
+
+            # Written slots only. Past a row's key bound neither scorer writes,
+            # so the two buffers hold their own untouched fill and comparing
+            # them would test `enqueue_fill`, not the kernel.
+            var g_bf = 0
+            var bf_rel = Float32(0)
+            for b in range(batch_size):
+                var nk = cache_lens[b] + seq_lens[b]
+                for _ in range(seq_lens[b]):
+                    for key in range(nk):
+                        var idx = g_bf * total_num_keys_max + key
+                        var got = bf_host[idx].cast[.float32]()
+                        var want = sc_host[idx]
+                        assert_almost_equal(
+                            got,
+                            want,
+                            atol=1e-2,
+                            rtol=score_rtol,
+                            msg=String("bf16 scores, row ", g_bf, " key ", key),
+                        )
+                        if abs(want) > 1e-6:
+                            bf_rel = max(bf_rel, abs(got - want) / abs(want))
+                    g_bf += 1
+            print("    bf16 out vs f32 out: max_rel=", bf_rel, sep="")
+            _ = bf_buf
             _ = sc_buf
+
+            comptime if check_selection:
+                sel.report(
+                    num_heads,
+                    total_seq_len,
+                    top_k,
+                    exp_score_tail,
+                    max_rel,
+                )
 
     print("  Test passed!")
 
@@ -550,6 +876,176 @@ def test_mla_index_fp8_paged_variable_lengths[
     _ = qs_device
     _ = input_row_offsets_device
     _ = o_device
+
+
+struct _SelStats(Copyable, Movable):
+    """Accumulated top-k selection quality against an exact host reference."""
+
+    var rows: Int
+    var slots: Int
+    var below: Int
+    var rows_below: Int
+    var count_mismatch: Int
+    var deficit_sum: Float64
+    var deficit_max: Float32
+    var gap_max: Float32
+    var spread_min: Float32
+    var fp_a: Int
+    var fp_b: Int
+
+    def __init__(out self):
+        self.rows = 0
+        self.slots = 0
+        self.below = 0
+        self.rows_below = 0
+        self.count_mismatch = 0
+        self.deficit_sum = 0.0
+        self.deficit_max = 0.0
+        self.gap_max = 0.0
+        self.spread_min = Float32.MAX
+        self.fp_a = 0
+        self.fp_b = 0
+
+    def report(
+        self,
+        num_heads: Int,
+        total_seq_len: Int,
+        top_k: Int,
+        exp_score_tail: Bool,
+        score_max_rel: Float32,
+    ) raises:
+        """Print one machine-readable line per cell.
+
+        `score_max_rel` is the fold witness, not a result: a cell whose scores
+        are unmoved by `FP8_INDEX_FOLD_DTYPE` (the K-resident scorer does not
+        fold) reports ~2e-7 here, and its selection numbers then say nothing
+        about the fold. `spread_min` is the stimulus witness: the tighter the
+        selected scores sit against the peak, the less any disagreement means.
+        """
+        print(
+            "SELGATE fold=",
+            _FOLD_DTYPE,
+            " nh=",
+            num_heads,
+            " rows=",
+            total_seq_len,
+            " top_k=",
+            top_k,
+            " exp_tail=",
+            exp_score_tail,
+            " score_max_rel=",
+            score_max_rel,
+            " slots=",
+            self.slots,
+            " below=",
+            self.below,
+            " rows_below=",
+            self.rows_below,
+            " count_mismatch=",
+            self.count_mismatch,
+            " deficit_mean=",
+            self.deficit_sum / Float64(max(self.rows, 1)),
+            " deficit_max=",
+            self.deficit_max,
+            " gap_max=",
+            self.gap_max,
+            " spread_min=",
+            self.spread_min,
+            " fp=",
+            self.fp_a,
+            ":",
+            self.fp_b,
+            sep="",
+        )
+        # A wall, not an expectation: the limit sits two orders of magnitude
+        # above what either fold arm forfeits, so it fires only on a broken
+        # selection. Drift shows up in the printed numbers, not in this assert.
+        assert_true(
+            self.deficit_max <= 0.01,
+            String(
+                "top-k selection forfeited ",
+                self.deficit_max,
+                " of the ideal score mass on one row (limit 0.01) at fold ",
+                _FOLD_DTYPE,
+            ),
+        )
+
+
+def _grade_selection_row(
+    host_scores: List[Float32],
+    selected: HostBuffer[.int32],
+    row: Int,
+    top_k: Int,
+    mut stats: _SelStats,
+) raises:
+    """Grade one token row's selection against an exact host top-k.
+
+    Set equality is the wrong assertion here: fp8 inputs make exact score ties
+    routine, so two selectors disagree on membership while forfeiting nothing.
+    The metrics are therefore threshold- and mass-based. `below` counts picks
+    STRICTLY under the true k-th score, so a tie at the threshold is not a
+    finding; `deficit` is the fraction of ideal score mass the selection gave
+    up, which is what actually propagates into attention; `gap` measures how
+    far the worst pick fell below the threshold as a fraction of the selected
+    range, which catches one bad key that a mass average would dilute away.
+    """
+    var nk = len(host_scores)
+    var eff = min(top_k, nk)
+
+    def _desc(lhs: Float32, rhs: Float32) -> Bool:
+        return lhs > rhs
+
+    var ranked = List[Float32](capacity=nk)
+    for i in range(nk):
+        ranked.append(host_scores[i])
+    sort(ranked, _desc)
+
+    var s_top = ranked[0]
+    var thresh = ranked[eff - 1]
+    var mass_ideal = Float64(0)
+    for i in range(eff):
+        mass_ideal += Float64(ranked[i])
+
+    var picked = Set[Int]()
+    for k in range(top_k):
+        var v = Int(selected[row * top_k + k])
+        if v >= 0:
+            picked.add(v)
+
+    var mass_got = Float64(0)
+    var below = 0
+    var min_taken = thresh
+    for idx in picked:
+        var s = host_scores[idx]
+        mass_got += Float64(s)
+        min_taken = min(min_taken, s)
+        if s < thresh:
+            below += 1
+        # Order-independent fingerprint: unchanged by tie ORDER, changed by any
+        # change to the selected SET. Two fold arms reporting the same value
+        # picked the same keys everywhere.
+        stats.fp_a += idx + 1
+        stats.fp_b += (idx + 1) * (idx + 1)
+
+    stats.rows += 1
+    stats.slots += eff
+    stats.below += below
+    if below > 0:
+        stats.rows_below += 1
+    if len(picked) != eff:
+        stats.count_mismatch += 1
+
+    var deficit = Float32(
+        (mass_ideal - mass_got) / max(mass_ideal, Float64(1e-12))
+    )
+    stats.deficit_sum += Float64(deficit)
+    stats.deficit_max = max(stats.deficit_max, deficit)
+
+    var sel_range = max(s_top - thresh, Float32(1e-12))
+    stats.gap_max = max(stats.gap_max, (thresh - min_taken) / sel_range)
+    stats.spread_min = min(
+        stats.spread_min, (s_top - thresh) / max(s_top, Float32(1e-12))
+    )
 
 
 def _assert_same_selection(
@@ -729,10 +1225,6 @@ def test_mla_index_frozen_metadata_equivalence[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    comptime k_block_layout = Layout.row_major[6]()
-    var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
-        k_shape
-    )
     var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
     )
@@ -748,21 +1240,13 @@ def test_mla_index_frozen_metadata_equivalence[
         kv_params.num_heads,
         head_dim_granularity,
     )
-    comptime ks_block_layout = Layout.row_major[6]()
-    var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
-        ks_shape
-    )
     var ks_block_device = ctx.enqueue_create_buffer[.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_shape = IndexList[2](batch_size, lut_pages_per_seq)
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
@@ -776,11 +1260,7 @@ def test_mla_index_frozen_metadata_equivalence[
                     block_idx
                 )
 
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_shape = IndexList[1](batch_size)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_layout
-    ].row_major(cache_lengths_shape)
 
     var total_output_size = total_seq_len * top_k
     var o_ref_device = ctx.enqueue_create_buffer[.int32](total_output_size)
@@ -796,30 +1276,54 @@ def test_mla_index_frozen_metadata_equivalence[
 
     for run in range(2):
         var metadata_cache = max_cache_len if run == 0 else frozen_cache_len
-        var k_collection = PagedKVCacheCollection[
+        comptime Collection = PagedKVCacheCollection[
             DType.float8_e4m3fn,
             kv_params,
             page_size,
+            MutAnyOrigin,
+            ImmutAnyOrigin,
+            ImmutAnyOrigin,
+            MutAnyOrigin,
             scale_dtype_=DType.float32,
             quantization_granularity_=128,
-        ](
-            LayoutTensor[.float8_e4m3fn, k_block_layout](
-                k_block_device,
-                k_block_runtime_layout,
+        ]
+        var k_collection = Collection(
+            rebind[Collection.blocks_tt_type](
+                TileTensor(
+                    k_block_device,
+                    row_major(
+                        Int64(num_blocks),
+                        Idx[1],
+                        Int64(num_layers),
+                        Idx[page_size],
+                        Idx[kv_params.num_heads],
+                        Idx[kv_params.head_size],
+                    ),
+                ).as_unsafe_any_origin()
             ),
-            LayoutTensor[mut=False, .uint32, cache_lengths_layout](
-                cache_lengths_device,
-                cache_lengths_runtime_layout,
-            ),
-            LayoutTensor[mut=False, .uint32, paged_lut_layout](
+            TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+            .as_imm()
+            .as_unsafe_any_origin(),
+            TileTensor(
                 k_lut_device,
-                paged_lut_runtime_layout,
-            ),
+                row_major(Int64(batch_size), Int64(paged_lut_shape[1])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin(),
             UInt32(max_seq_len),
             UInt32(metadata_cache),
-            LayoutTensor[.float32, ks_block_layout](
-                ks_block_device,
-                ks_block_runtime_layout,
+            rebind[Collection.scales_tt_type](
+                TileTensor(
+                    ks_block_device,
+                    row_major(
+                        Int64(num_blocks),
+                        Idx[1],
+                        Int64(num_layers),
+                        Idx[page_size],
+                        Idx[kv_params.num_heads],
+                        Idx[head_dim_granularity],
+                    ),
+                ).as_unsafe_any_origin()
             ),
         )
         var o_tile = TileTensor(
@@ -875,11 +1379,16 @@ def test_mla_index_chunked_equivalence[
     page_size: Int,
     top_k: Int,
     mask_name: StaticString,
+    scores_dtype: DType = DType.float32,
+](
+    seq_lens: List[Int],
+    cache_lens: List[Int],
+    ctx: DeviceContext,
     budget_bytes: Int,
-](seq_lens: List[Int], cache_lens: List[Int], ctx: DeviceContext,) raises:
+) raises:
     """Chunking the score matrix must not change which indices are selected.
 
-    The op materializes `total_seq_len x max_num_keys` f32 scores, which is what
+    The op materializes `total_seq_len x max_num_keys` scores, which is what
     caps `--max-batch-input-tokens`; past a byte budget it scores one row window
     at a time into a single reused buffer. That is a cost change only, so the
     unchunked run IS the oracle here: same inputs, same dispatch route (routing
@@ -923,9 +1432,16 @@ def test_mla_index_chunked_equivalence[
         max_cache_len = max(max_cache_len, cache_lens[i])
 
     # Mirrors the launcher's own sizing, so the assert below sees what it sees.
-    var max_num_keys = max_cache_len + max_seq_len
+    # The row stride follows the score dtype, so a budget that chunks at f32
+    # may admit every row at bf16; that is what the `num_chunks >= 2` assert
+    # below catches.
+    var max_num_keys = align_up(
+        max_cache_len + max_seq_len, _elems_per_16b[scores_dtype]()
+    )
     var rows_per_chunk = clamp(
-        budget_bytes // (max_num_keys * 4), 1, total_seq_len
+        budget_bytes // (max_num_keys * size_of[scores_dtype]()),
+        1,
+        total_seq_len,
     )
     var num_chunks = ceildiv(total_seq_len, rows_per_chunk)
 
@@ -945,6 +1461,8 @@ def test_mla_index_chunked_equivalence[
         max_cache_len,
         "top_k:",
         top_k,
+        "scores_dtype:",
+        scores_dtype,
         "rows_per_chunk:",
         rows_per_chunk,
         "chunks:",
@@ -1005,10 +1523,6 @@ def test_mla_index_chunked_equivalence[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    comptime k_block_layout = Layout.row_major[6]()
-    var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
-        k_shape
-    )
     var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
     )
@@ -1024,21 +1538,13 @@ def test_mla_index_chunked_equivalence[
         kv_params.num_heads,
         head_dim_granularity,
     )
-    comptime ks_block_layout = Layout.row_major[6]()
-    var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
-        ks_shape
-    )
     var ks_block_device = ctx.enqueue_create_buffer[.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
@@ -1049,11 +1555,7 @@ def test_mla_index_chunked_equivalence[
                     1 + bs * pages_per_seq + page_idx
                 )
 
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     var cache_lengths_shape = IndexList[1](batch_size)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_layout
-    ].row_major(cache_lengths_shape)
 
     var total_output_size = total_seq_len * top_k
     var o_ref_device = ctx.enqueue_create_buffer[.int32](total_output_size)
@@ -1067,30 +1569,55 @@ def test_mla_index_chunked_equivalence[
         input_row_offsets_device, row_major(batch_size + 1)
     )
 
-    var k_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         DType.float8_e4m3fn,
         kv_params,
         page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=128,
-    ](
-        LayoutTensor[.float8_e4m3fn, k_block_layout](
-            k_block_device,
-            k_block_runtime_layout,
+    ]
+
+    var k_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            TileTensor(
+                k_block_device,
+                row_major(
+                    Int64(num_blocks),
+                    Idx[1],
+                    Int64(num_layers),
+                    Idx[page_size],
+                    Idx[kv_params.num_heads],
+                    Idx[kv_params.head_size],
+                ),
+            ).as_unsafe_any_origin()
         ),
-        LayoutTensor[mut=False, .uint32, cache_lengths_layout](
-            cache_lengths_device,
-            cache_lengths_runtime_layout,
-        ),
-        LayoutTensor[mut=False, .uint32, paged_lut_layout](
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(
             k_lut_device,
-            paged_lut_runtime_layout,
-        ),
+            row_major(Int64(batch_size), Int64(paged_lut_shape[1])),
+        )
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[.float32, ks_block_layout](
-            ks_block_device,
-            ks_block_runtime_layout,
+        rebind[Collection.scales_tt_type](
+            TileTensor(
+                ks_block_device,
+                row_major(
+                    Int64(num_blocks),
+                    Idx[1],
+                    Int64(num_layers),
+                    Idx[page_size],
+                    Idx[kv_params.num_heads],
+                    Idx[head_dim_granularity],
+                ),
+            ).as_unsafe_any_origin()
         ),
     )
 
@@ -1102,6 +1629,7 @@ def test_mla_index_chunked_equivalence[
         depth,
         top_k,
         mask_name,
+        scores_dtype,
     ](
         o_ref_tile,
         q_tile,
@@ -1123,7 +1651,7 @@ def test_mla_index_chunked_equivalence[
         depth,
         top_k,
         mask_name,
-        budget_bytes,
+        scores_dtype,
     ](
         o_chunked_tile,
         q_tile,
@@ -1132,6 +1660,7 @@ def test_mla_index_chunked_equivalence[
         k_collection,
         UInt32(0),
         ctx,
+        budget_bytes,
     )
     ctx.synchronize()
 
@@ -1177,6 +1706,52 @@ def main() raises:
             seq_lens=[16, 32, 8, 64],
             cache_lens=[64, 128, 32, 96],
             ctx=ctx,
+        )
+
+        # Fused physical-row remap: the top-k writes each selection's row in a
+        # second cache's block-id space. Rows shorter than `top_k` exercise the
+        # `-1` tails, the deep caches span several pages, and the 64-head
+        # cases take the SM100 scorer while the 128-head one takes the scalar
+        # fallback; the remap lives in the top-k either way.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=128,
+            depth=128,
+            page_size=64,
+            top_k=16,
+            mask_name=MaskName.NULL.name,
+            check_remap=True,
+        ](
+            seq_lens=[16, 32, 8, 64],
+            cache_lens=[64, 128, 32, 96],
+            ctx=ctx,
+        )
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=128,
+            top_k=128,
+            mask_name=MaskName.CAUSAL.name,
+            check_remap=True,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[300, 64, 500, 50],
+            ctx=ctx,
+        )
+        # Several score row windows, so the remap's output is advanced past
+        # row 0 for every window but the first.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=128,
+            top_k=128,
+            mask_name=MaskName.CAUSAL.name,
+            check_remap=True,
+            check_physical_only=True,
+        ](
+            seq_lens=[40, 33, 24, 17],
+            cache_lens=[128, 192, 256, 320],
+            ctx=ctx,
+            scores_budget_bytes=23040,
         )
 
         # Test with very short sequences (edge case: some num_keys < top_k)
@@ -1287,6 +1862,23 @@ def main() raises:
         ](
             seq_lens=[3, 2],
             cache_lens=[600, 300],
+            ctx=ctx,
+        )
+
+        # The cases above stay under nh=64's prefill gate (16 token blocks), so
+        # this is the one that holds the prefill kernel's bf16 output to the
+        # f32 one rounded: max_seq_len 40 is 20 two-token blocks, and the
+        # 9-token entry ends on a partial block.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[40, 9],
+            cache_lens=[300, 160],
             ctx=ctx,
         )
 
@@ -1476,6 +2068,100 @@ def main() raises:
             ctx=ctx,
         )
 
+        # ===== Top-k SELECTION gate: a 0.5-0.8% score drift is a RANKING
+        # decision, which `check_scores`' tolerance cannot judge. These grade
+        # `output_indices` against an exact host top-k. Each shape appears at
+        # both stimuli because a uniform key scale packs the selected scores
+        # inside the fold's own drift; `spread_min` reports how much room the
+        # stimulus left, and `score_max_rel` whether the fold reached this
+        # route at all. =====
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_selection=True,
+        ](
+            seq_lens=[32, 32],
+            cache_lens=[2048, 2048],
+            ctx=ctx,
+        )
+
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_selection=True,
+            exp_score_tail=True,
+        ](
+            seq_lens=[32, 32],
+            cache_lens=[2048, 2048],
+            ctx=ctx,
+        )
+
+        # Same gate on the decode geometry (few tokens, deep cache). nh=32 is
+        # unified onto the folded kernel (`UNIFY` in `fp8_index_score_sm100`),
+        # so both shapes fold; what differs is the key split, and with it the
+        # accumulation order the fold rounds.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_selection=True,
+        ](
+            seq_lens=[6, 4],
+            cache_lens=[12000, 12000],
+            ctx=ctx,
+        )
+
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_selection=True,
+            exp_score_tail=True,
+        ](
+            seq_lens=[6, 4],
+            cache_lens=[12000, 12000],
+            ctx=ctx,
+        )
+
+        # The shipped `top_k`. The `top_k=64` cases above are more sensitive
+        # (threshold far out in the tail) but are not what production runs.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=2048,
+            mask_name=MaskName.NULL.name,
+            check_selection=True,
+        ](
+            seq_lens=[6, 4],
+            cache_lens=[12000, 12000],
+            ctx=ctx,
+        )
+
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=2048,
+            mask_name=MaskName.NULL.name,
+            check_selection=True,
+            exp_score_tail=True,
+        ](
+            seq_lens=[6, 4],
+            cache_lens=[12000, 12000],
+            ctx=ctx,
+        )
+
         # Causal over a split key range. `check_scores` cannot cover this: it
         # scores through `_score_paged_sm100`, which passes causal=False.
         test_mla_index_fp8_paged_variable_lengths[
@@ -1598,9 +2284,8 @@ def main() raises:
         #   (A) topk_gpu stage-2 dynamic shared memory exceeded the device
         #       per-block limit once max_k = min(top_k, ctx) reached ~2000,
         #       crashing the launch with CUDA_ERROR_INVALID_VALUE.
-        #   (B) fill_invalid_topk_kernel only covered the first 1024 output
-        #       columns, leaving columns [1024, top_k) as garbage when
-        #       top_k > 1024.
+        #   (B) the -1 padding only covered the first 1024 output columns,
+        #       leaving columns [1024, top_k) as garbage when top_k > 1024.
         # Each case mixes a long sequence (drives max_num_keys past the old
         # smem cliff -> exercises A) with a short sequence whose token needs
         # -1 padding spanning columns >1024 (-> exercises B).
@@ -1880,11 +2565,11 @@ def main() raises:
                 page_size=128,
                 top_k=128,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=23040,
             ](
                 seq_lens=[40, 33, 24, 17],
                 cache_lens=[128, 192, 256, 320],
                 ctx=ctx,
+                budget_bytes=23040,
             )
 
             test_mla_index_chunked_equivalence[
@@ -1893,11 +2578,11 @@ def main() raises:
                 page_size=128,
                 top_k=128,
                 mask_name=MaskName.NULL.name,
-                budget_bytes=23040,
             ](
                 seq_lens=[40, 33, 24, 17],
                 cache_lens=[128, 192, 256, 320],
                 ctx=ctx,
+                budget_bytes=23040,
             )
 
             # Key-split prefill route: few token blocks (3 <= 4) against a cache
@@ -1908,11 +2593,11 @@ def main() raises:
                 page_size=128,
                 top_k=2048,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=131168,
             ](
                 seq_lens=[6, 5, 4, 3],
                 cache_lens=[8192, 8192, 8192, 8192],
                 ctx=ctx,
+                budget_bytes=131168,
             )
 
             # K-resident route: 7 token tiles is above the key-split ceiling and
@@ -1923,11 +2608,11 @@ def main() raises:
                 page_size=128,
                 top_k=64,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=5380,
             ](
                 seq_lens=[13, 11, 9, 7],
                 cache_lens=[128, 256, 128, 256],
                 ctx=ctx,
+                budget_bytes=5380,
             )
 
             # Degenerate window: one row per chunk, so every chunk starts inside
@@ -1938,11 +2623,11 @@ def main() raises:
                 page_size=128,
                 top_k=64,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=16,
             ](
                 seq_lens=[13, 11, 9, 7],
                 cache_lens=[128, 256, 128, 256],
                 ctx=ctx,
+                budget_bytes=16,
             )
 
             # A single request whose rows alone exceed the budget -- the case a
@@ -1953,11 +2638,11 @@ def main() raises:
                 page_size=128,
                 top_k=32,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=6144,
             ](
                 seq_lens=[64],
                 cache_lens=[128],
                 ctx=ctx,
+                budget_bytes=6144,
             )
 
             # ---- Production scale. Everything above is a toy shape whose
@@ -1978,11 +2663,11 @@ def main() raises:
                 page_size=128,
                 top_k=2048,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=_SCORES_BUDGET_BYTES,
             ](
                 seq_lens=[512, 512, 512, 512],
                 cache_lens=[76000, 60000, 45000, 30000],
                 ctx=ctx,
+                budget_bytes=_SCORES_BUDGET_BYTES,
             )
 
             # One long sequence: every chunk boundary falls deep inside a single
@@ -1993,11 +2678,25 @@ def main() raises:
                 page_size=128,
                 top_k=2048,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=64 * 1024 * 1024,
             ](
                 seq_lens=[2048],
                 cache_lens=[32768],
                 ctx=ctx,
+                budget_bytes=64 * 1024 * 1024,
+            )
+
+            test_mla_index_chunked_equivalence[
+                num_heads=64,
+                depth=128,
+                page_size=128,
+                top_k=2048,
+                mask_name=MaskName.CAUSAL.name,
+                scores_dtype=DType.bfloat16,
+            ](
+                seq_lens=[2048],
+                cache_lens=[32768],
+                ctx=ctx,
+                budget_bytes=32 * 1024 * 1024,
             )
 
             # nh=32 PREFILL route, unreachable at toy sizes: its gate wants
@@ -2009,15 +2708,29 @@ def main() raises:
                 page_size=128,
                 top_k=2048,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=4 * 1024 * 1024,
             ](
                 seq_lens=[2048],
                 cache_lens=[0],
                 ctx=ctx,
+                budget_bytes=4 * 1024 * 1024,
+            )
+
+            test_mla_index_chunked_equivalence[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=2048,
+                mask_name=MaskName.CAUSAL.name,
+                scores_dtype=DType.bfloat16,
+            ](
+                seq_lens=[2048],
+                cache_lens=[0],
+                ctx=ctx,
+                budget_bytes=2 * 1024 * 1024,
             )
 
             # 2048 requests of one token: the ragged metadata at batch scale,
-            # where `fill_invalid`/`row_bounds` walk 2048 entries per token.
+            # where the top-k's row bound scans 2048 offsets per token.
             var many_lens = List[Int]()
             var many_cache = List[Int]()
             for i in range(2048):
@@ -2029,11 +2742,11 @@ def main() raises:
                 page_size=128,
                 top_k=2048,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=8 * 1024 * 1024,
             ](
                 seq_lens=many_lens,
                 cache_lens=many_cache,
                 ctx=ctx,
+                budget_bytes=8 * 1024 * 1024,
             )
 
             # Head-sharded indexer: N_TOKENS is 32 here, so a 4-row window is a
@@ -2044,11 +2757,11 @@ def main() raises:
                 page_size=128,
                 top_k=1024,
                 mask_name=MaskName.CAUSAL.name,
-                budget_bytes=32096,
             ](
                 seq_lens=[6, 5, 4, 3],
                 cache_lens=[2000, 2000, 2000, 2000],
                 ctx=ctx,
+                budget_bytes=32096,
             )
 
         # ===== Pooled candidates (kpool > 1) =====
@@ -2110,7 +2823,7 @@ def main() raises:
 
             # Fewer tokens than one pool: no candidate exists, so every
             # output slot must be the invalid sentinel rather than garbage.
-            # `effective_k` is 0 on this path, which no other case reaches.
+            # Every row bound is 0 on this path, which no other case reaches.
             test_mla_index_fp8_paged_variable_lengths[
                 num_heads=32,
                 depth=128,
@@ -2136,6 +2849,102 @@ def main() raises:
             ](
                 seq_lens=[4, 2],
                 cache_lens=[2048, 1024],
+                ctx=ctx,
+            )
+
+            # ===== GLM-5.3-Flash serve geometry =====
+            # What the running model actually launches, which no case above
+            # reaches: `top_k` is 512 (the served indexer's output row stride),
+            # the cache is empty, and the prompt is long enough to span several
+            # pools. `nh=32` sets UNIFY, so every one of these takes the
+            # warp-specialized prefill scorer regardless of length.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[48],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # Same, at the 16-token prompt the failing probe sent.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[16],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # Isolates `top_k`: identical shape, the tested-above 64.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[48],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # A prompt spanning many pages, still against an empty cache.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+            ](
+                seq_lens=[2048],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # The served indexer's parent tensor holds 11 layers, and every
+            # case above holds one. That is not cosmetic here: the scale pool's
+            # block stride is `num_layers * page_size`, so at one layer it
+            # equals `page_size` and the flat scale TMA descriptor degenerates
+            # to the contiguous case. Eleven layers is what the model launches.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+                num_layers=11,
+            ](
+                seq_lens=[48],
+                cache_lens=[0],
+                ctx=ctx,
+            )
+
+            # A layer off the base, where the scale window starts mid-block.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=32,
+                depth=128,
+                page_size=128,
+                top_k=512,
+                mask_name=MaskName.CAUSAL.name,
+                kpool=4,
+                num_layers=11,
+                layer_idx=5,
+            ](
+                seq_lens=[48],
+                cache_lens=[0],
                 ctx=ctx,
             )
 

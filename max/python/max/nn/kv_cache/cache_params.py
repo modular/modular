@@ -15,25 +15,38 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import OrderedDict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import cached_property
-from typing import Any, Literal, Protocol, TypeGuard, runtime_checkable
+from typing import (
+    Any,
+    ClassVar,
+    Literal,
+    Protocol,
+    TypeGuard,
+    TypeVar,
+    runtime_checkable,
+)
 
 import numpy as np
+from max import tree
 from max._kv_cache_ops import (
     mha_decode_num_partitions,
     mla_dispatch_args_scalar,
 )
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max._kv_core import LeafShape
+from max.driver import Buffer, Device
 from max.dtype import DType
+from max.experimental.sharding import TensorLayout
 from max.graph import (
     BufferType,
     BufferValue,
     DeviceRef,
     TensorType,
     TensorValue,
+    ops,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
@@ -41,16 +54,16 @@ from max.support.math import ceildiv
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheInputsPerDevice,
-    MultiKVCacheInputs,
     RecurrentLeafInputs,
-    RecurrentStateInputs,
     RecurrentStateInputsPerDevice,
-    RecurrentStateRegion,
 )
 from .utils import (
+    ATTN_DISPATCH_METADATA,
+    DRAFT_ATTN_DISPATCH_METADATA,
     AttnKeyInterface,
+    DispatchMetadataSpec,
+    GraphInputStagingInterface,
     MHAAttnKey,
     MLAAttnKey,
     MSAAttnKey,
@@ -63,10 +76,13 @@ from .utils import (
 # on max.nn (BUILD.bazel), so importing back would create a circular
 # bazel dependency. The two definitions are structurally identical
 # Literals, so mypy treats them as the same type at use sites.
-SpeculativeMethod = Literal["eagle", "mtp", "dflash", "dflash2"]
+SpeculativeMethod = Literal["eagle", "mtp", "dflash", "dflash2", "dspark"]
 
-KVHashAlgo = Literal["ahash64", "sha256", "sha256_64"]
+KVHashAlgo = Literal["ahash64", "sha256"]
 """Supported hash algorithms for KV-cache block identity."""
+
+HostStagingAlloc = Literal["registered", "driver"]
+"""How a tiered KV connector allocates its pinned host staging region."""
 
 logger = logging.getLogger("max.pipelines")
 
@@ -88,9 +104,16 @@ class KVCacheGroupId:
     ``recurrent`` names a cache whose entry is a state rather than a span of
     tokens. It shares the page pool, the prefix cache and the eviction order
     with the attention caches.
+
+    ``scratch`` names a cache that is never published: one block per request,
+    drawn when the request first grows and freed when it is released. It
+    draws from the same page pool as the others, so its bytes stay fungible
+    with theirs and admission counts them, but it carries no hash and so
+    takes no part in prefix hits, commits, eviction order or an external
+    tier.
     """
 
-    type: Literal["full", "sliding_window", "recurrent"]
+    type: Literal["full", "sliding_window", "recurrent", "scratch"]
     window_size: int = -1
 
     def __post_init__(self):
@@ -98,13 +121,22 @@ class KVCacheGroupId:
             if self.window_size != -1:
                 raise ValueError("Window size must be -1 for full groups.")
         elif self.type == "sliding_window":
-            if self.window_size <= 0:
+            # A window of 1 reads no history back: the query token attends to
+            # itself alone, so every block is a prefix hit that attention
+            # never looks at. The prefix rules used to serve that as a 100%
+            # hit; they no longer carry the case, so it is rejected here
+            # instead (SERVOPT-1627).
+            if self.window_size <= 1:
                 raise ValueError(
-                    "Window size must be positive for sliding window groups."
+                    "Window size must be greater than 1 for sliding window"
+                    f" groups, got {self.window_size}."
                 )
         elif self.type == "recurrent":
             if self.window_size != -1:
                 raise ValueError("Window size must be -1 for recurrent groups.")
+        elif self.type == "scratch":
+            if self.window_size != -1:
+                raise ValueError("Window size must be -1 for scratch groups.")
 
     def is_sliding_window(self) -> bool:
         return self.type == "sliding_window"
@@ -113,12 +145,95 @@ class KVCacheGroupId:
         return self.type == "full"
 
     def blocks_in_window(self, page_size: int) -> int:
+        if self.is_scratch():
+            raise ValueError(
+                "a scratch group has no window: it holds one block per request,"
+                " and nothing downstream of a window should reach it"
+            )
         if self.is_full():
             return -1
         return ceildiv(self.window_size - 1, page_size)
 
+    def prefix_hit_shape(self, page_size: int) -> LeafShape:
+        """Returns the prefix-hit rule a leaf of this shape answers with.
+
+        Args:
+            page_size: Tokens per block, which turns ``window_size`` into a
+                block count.
+
+        Returns:
+            The shape :mod:`max._kv_core`'s prefix-hit functions take.
+        """
+        if self.is_scratch():
+            return LeafShape.scratch()
+        if self.is_recurrent():
+            return LeafShape.recurrent()
+        if self.is_full():
+            return LeafShape.full()
+        return LeafShape.sliding_window(self.blocks_in_window(page_size))
+
+    def longest_hit(self, page_size: int, resident: Sequence[bool]) -> int:
+        """How much of ``resident`` a leaf of this shape can reuse.
+
+        Residency in, prefix length out. The answer is counted from the start
+        even for a shape that only reads the tail of it, so the caller can
+        compare shapes against one another, which
+        :func:`max._kv_core.longest_joint_prefix_hit` does to settle what a
+        whole tree serves at once.
+
+        ``len(resident)`` bounds the candidate, so narrowing means passing a
+        shorter view, not recomputing residency.
+
+        Computing eligible Prefix Cache hits for sliding window differs greatly
+        from full attn. Recall that the window size includes the query token.
+        Say the query token is idx=42 and the window size is 10. This means
+        that the query token will attend to tokens from idx=32 to idx=41.
+
+        For a concrete example:
+
+        .. code-block:: text
+
+            [X]: Token is in Prefix Cache
+             . : Token is not in Prefix Cache
+             ^ : Eligible Prefix Cache hit
+
+              Tokens [A]  [B]   .   [D]  [E]  [F]   .    .   [I]  [J]  [K]  [L]  [M]
+            w_size=2  ^    ^         ^    ^    ^              ^    ^    ^    ^    ^
+            w_size=3  ^    ^              ^    ^                   ^    ^    ^    ^
+            w_size=4  ^    ^                   ^                        ^    ^    ^
+            w_size=5  ^    ^                                                 ^    ^
+            w_size=6  ^    ^                                                      ^
+            w_size=7  ^    ^
+
+        Notice that as window_size increases, the number of indices eligible for
+        a cache hit decreases. Additionally, we can count consecutive runs of
+        window_size-1 tokens to determine eligibility. For example, [DEF] is a
+        run of 3 tokens so token F is a valid cache hit for w_size=4 and below.
+
+        Additionally, partial window cache hits is possible if the run starts from
+        the start of sequence. For example, [A] and [AB] are valid cache hits for
+        any window size.
+
+        window_size=1 is not a case this has to serve: ``__post_init__``
+        rejects it, since a query token attending to no historical tokens
+        would make every block a hit attention never reads back.
+
+        The rule itself is
+        :meth:`max._kv_core.LeafShape.longest_hit`, applied to
+        :meth:`prefix_hit_shape`, so MAX and Mach share one copy.
+
+        Args:
+            page_size: Tokens per block, which turns ``window_size`` into a
+                block count.
+            resident: Whether each block of the chain is held, positionally.
+        """
+        return self.prefix_hit_shape(page_size).longest_hit(resident)
+
     def is_recurrent(self) -> bool:
         return self.type == "recurrent"
+
+    def is_scratch(self) -> bool:
+        return self.type == "scratch"
 
     @classmethod
     def full(cls) -> KVCacheGroupId:
@@ -128,6 +243,10 @@ class KVCacheGroupId:
     def recurrent(cls) -> KVCacheGroupId:
         return cls(type="recurrent")
 
+    @classmethod
+    def scratch(cls) -> KVCacheGroupId:
+        return cls(type="scratch")
+
     def __repr__(self) -> str:
         if self.type == "full":
             return "full_group"
@@ -135,6 +254,8 @@ class KVCacheGroupId:
             return f"sliding_window_group({self.window_size})"
         elif self.type == "recurrent":
             return "recurrent_group"
+        elif self.type == "scratch":
+            return "scratch_group"
 
 
 class KVConnectorType(str, Enum):
@@ -142,7 +263,8 @@ class KVConnectorType(str, Enum):
 
     Set on the connector config's ``type`` field to control whether evicted
     cache pages stay on device only, tier across host and disk, or route
-    through a distributed block store.
+    through a distributed block store. MAX currently supports only
+    :attr:`null`.
     """
 
     null = "null"
@@ -151,8 +273,9 @@ class KVConnectorType(str, Enum):
     tiered = "tiered"
     """Tiers evicted pages across host memory and disk.
 
-    Requires ``enable_prefix_caching``, ``host_offload_max_gb``,
-    and a ``disk_offload_dir`` on the connector config.
+    MAX currently doesn't support this connector type.
+
+    Requires ``enable_prefix_caching``.
 
     .. deprecated::
         A backward-compatible alias for :attr:`rust_tiered`; the Python
@@ -163,16 +286,30 @@ class KVConnectorType(str, Enum):
     """Tiers evicted pages across host memory and disk, backed by the Rust
     ``kv_tier_connector`` extension.
 
+    MAX currently doesn't support this connector type.
+
     The only host/disk tiered implementation, and what :attr:`tiered` now
     resolves to: it runs its copies and disk I/O on Rust threads (no GIL
     contention) and overlaps onloads with GPU compute via asynchronous
-    transfer handles. Requires ``enable_prefix_caching``,
-    ``host_offload_max_gb``, and a ``disk_offload_dir`` on the connector
-    config. Raises on non-CUDA/HIP devices.
+    transfer handles. Requires ``enable_prefix_caching``. Raises on
+    non-CUDA/HIP devices.
+    """
+
+    mojo_tiered = "mojo_tiered"
+    """Tiers evicted pages across host memory and disk, backed by the Mojo
+    ``kv_tier_mojo`` extension.
+
+    MAX currently doesn't support this connector type.
+
+    The same host and disk tiers as :attr:`rust_tiered`, behind the same
+    connector, and available only in builds that ship the extension.
+    Requires ``enable_prefix_caching``. Raises on non-CUDA/HIP devices.
     """
 
     dkv = "dkv"
     """Routes pages through a distributed KV block store.
+
+    MAX currently doesn't support this connector type.
 
     Requires a ``block_store_endpoint`` on the connector config.
     """
@@ -200,6 +337,16 @@ class KVConnectorConfigInterface(Protocol):
         ...
 
     @property
+    def host_staging_alloc(self) -> HostStagingAlloc:
+        """Whether the host tier registers host memory or driver-allocates it."""
+        ...
+
+    @property
+    def host_staging_mlock(self) -> bool:
+        """Whether the registered host staging region is locked with ``mlock``."""
+        ...
+
+    @property
     def disk_offload_max_gb(self) -> float | None:
         """Disk budget in GiB; ``None`` sizes it from the device pool."""
         ...
@@ -212,6 +359,16 @@ class KVConnectorConfigInterface(Protocol):
     @property
     def num_disk_workers(self) -> int:
         """Disk I/O worker threads for the tiered connectors."""
+        ...
+
+    @property
+    def num_h2d_onload_lanes(self) -> int:
+        """Concurrent H2D onload lanes for the rust_tiered connector."""
+        ...
+
+    @property
+    def use_disk_direct_io(self) -> bool:
+        """Whether the disk tier's file I/O bypasses the page cache."""
         ...
 
     @property
@@ -230,9 +387,13 @@ class NullKVConnectorConfig:
 
     type: KVConnectorType = KVConnectorType.null
     host_offload_max_gb: float | None = None
+    host_staging_alloc: HostStagingAlloc = "registered"
+    host_staging_mlock: bool = False
     disk_offload_max_gb: float | None = None
     disk_offload_dir: str | None = None
     num_disk_workers: int = 32
+    num_h2d_onload_lanes: int = 1
+    use_disk_direct_io: bool = False
     block_store_endpoint: str | None = None
 
 
@@ -260,8 +421,24 @@ def _validate_is_2d_uint8_buffer(buffer: Buffer) -> None:
 # the `create_index_scale_tma_tile` assert in `kv_cache/types.mojo`.
 _SCALE_TMA_ALIGN_BYTES = 16
 
+# Recurrent-state kernels take pool row ids as int32.
+_MAX_INT32_ROW_ID = 2**31 - 1
+
 PACKED_PAGE_STRIDE = -1
 """``page_stride`` sentinel meaning the pages are packed."""
+
+
+def packed_page_stride(like: Any) -> Any:
+    """Returns the packed ``page_stride`` sentinel, typed to match ``like``."""
+    if isinstance(like, Buffer):
+        return Buffer.from_numpy(np.array([PACKED_PAGE_STRIDE], dtype=np.int64))
+    if isinstance(like, BufferType):
+        return TensorType(DType.int64, shape=[1], device=DeviceRef.CPU())
+    if isinstance(like, TensorLayout):
+        return TensorLayout(DType.int64, [1], DeviceRef.CPU())
+    return ops.constant(
+        [PACKED_PAGE_STRIDE], DType.int64, device=DeviceRef.CPU()
+    )
 
 
 def _page_stride_buffer(pages: Buffer) -> Buffer:
@@ -398,7 +575,7 @@ class KVCacheMemory:
     device order.
 
     ``replicated`` indicates that all buffers hold identical bytes. This is true
-    for certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
+    for certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, and so on.
     """
 
     replicated: bool
@@ -453,11 +630,6 @@ class KVCacheBufferInterface(Protocol):
     """Interface for a KV cache buffer (single leaf or a tree of leaves)."""
 
     @property
-    def total_num_pages(self) -> int:
-        """Returns the total number of pages."""
-        ...
-
-    @property
     def all_buffers(self) -> list[Buffer]:
         """Returns all buffers."""
         ...
@@ -471,18 +643,12 @@ class KVCacheBufferInterface(Protocol):
 class MultiKVCacheBuffer(KVCacheBufferInterface):
     """A tree of KVCache buffers for one data-parallel replica.
 
-    ``children`` maps a cache name (e.g. ``"target"``/``"draft"`` for
+    ``children`` maps a cache name (such as ``"target"``/``"draft"`` for
     speculative decoding, or ``"sliding"``/``"global"`` for hybrid models) to
     that cache's buffer for this replica.
     """
 
     children: dict[str, KVCacheBufferInterface]
-
-    @property
-    def total_num_pages(self) -> int:
-        """Returns the total number of pages."""
-        first = next(iter(self.children.values()))
-        return first.total_num_pages
 
     @property
     def all_buffers(self) -> list[Buffer]:
@@ -517,7 +683,7 @@ class KVCacheBuffer(KVCacheBufferInterface):
 
     ``replicates_kv_across_tp`` is ``True`` when the KV data is replicated
     identically across TP shards and ``False`` when it is sharded. The data is
-    replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
+    replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, and so on.
     """
 
     leaf_id: str = field(kw_only=True)
@@ -554,11 +720,6 @@ class KVCacheBuffer(KVCacheBufferInterface):
     :attr:`values_per_layer`). ``scales[shard]`` aliases
     ``scales_per_layer[shard][0]``. ``None`` for a single multi-layer scale
     buffer or an unquantized cache."""
-    is_jenga: bool = False
-    """Whether this buffer is associated with Jenga KV cache
-
-    TODO: Delete this field after reworking KVCacheBufferInterface.
-    """
 
     def __post_init__(self) -> None:
         all_buffers = self.all_buffers
@@ -615,9 +776,7 @@ class KVCacheBuffer(KVCacheBufferInterface):
         if len(unique_shapes) > 1:
             raise ValueError("All values must have the same shape")
 
-        unique_is_pinned = {
-            isinstance(b, DevicePinnedBuffer) for b in all_buffers
-        }
+        unique_is_pinned = {b.pinned for b in all_buffers}
         if len(unique_is_pinned) > 1:
             raise ValueError(
                 "All values (and scales if present) must be either all pinned "
@@ -638,24 +797,11 @@ class KVCacheBuffer(KVCacheBufferInterface):
         if len(unique_shapes) > 1:
             raise ValueError("All scales must have the same shape")
 
-        # Allow the number of pages to be different between values / scales only
-        # for Jenga KV cache.
-        # TODO: Get rid of this hack.
-        unique_num_pages = {b.shape[0] for b in all_buffers}
-        if not self.is_jenga and len(unique_num_pages) > 1:
-            raise ValueError(
-                "Values and scales must have the same number of pages"
-            )
         for value, scale in zip(self.values, self.scales, strict=True):
             if value.device != scale.device:
                 raise ValueError(
                     "Corresponding values and scales must be on the same device"
                 )
-
-    @property
-    def total_num_pages(self) -> int:
-        """Returns the total number of pages across all values and scales."""
-        return self.values[0].shape[0]
 
     @property
     def all_buffers(self) -> list[Buffer]:
@@ -700,7 +846,7 @@ class RecurrentStateBuffer(KVCacheBufferInterface):
     """One replica's recurrent state pool, viewed as the pages it holds."""
 
     pages: dict[str, list[Buffer]]
-    """Each state leaf's ``[num_blocks, bytes_per_state]`` uint8 pages, one
+    """Each state leaf's ``[num_blocks, bytes_per_page]`` uint8 pages, one
     buffer per device."""
 
     def __post_init__(self) -> None:
@@ -709,11 +855,6 @@ class RecurrentStateBuffer(KVCacheBufferInterface):
         for leaf_id, buffers in self.pages.items():
             if not buffers:
                 raise ValueError(f"state leaf {leaf_id!r} has no device pages")
-
-    @property
-    def total_num_pages(self) -> int:
-        """Returns the first leaf's block count, including the null block."""
-        return next(iter(self.pages.values()))[0].shape[0]
 
     @property
     def all_buffers(self) -> list[Buffer]:
@@ -728,18 +869,24 @@ class RecurrentStateBuffer(KVCacheBufferInterface):
         }
 
 
+FP4_KV_CACHE_QUANTIZATION_GRANULARITY = 16
+
+
 @dataclass
 class KVCacheQuantizationConfig:
     """Configuration for KVCache quantization.
 
-    Currently only FP8 Quantization is supported.
+    Supports FP8 and int8 values with per-block scales, and NVFP4: ``uint8``
+    storage packing two E2M1 values per byte with E4M3 scales.
     """
 
     scale_dtype: DType = DType.float32
     """Data type of quantization scales, if quantization is enabled"""
 
     quantization_granularity: int = 128
-    """Block-size used for KVCache quantization along head-dimension (e.g. 128)."""
+    """Block-size used for KVCache quantization along head-dimension, such as 128.
+
+    Counted in logical elements, so a packed NVFP4 cache uses 16."""
 
 
 @dataclass(frozen=True)
@@ -750,8 +897,9 @@ class BatchCharacteristics:
     decode forward should prepare its attention dispatch metadata *for*, which
     may exceed the batch's real per-request values.
 
-    ``PagedKVCacheManager.runtime_inputs`` uses it to resolve the dispatch
-    key once: e.g. for graph-capture replay, ``max_cache_valid_length`` is
+    :meth:`~max.pipelines.kv_cache.PagedKVCacheManager.runtime_inputs` uses
+    it to resolve the dispatch
+    key once. For example, for graph-capture replay, ``max_cache_valid_length`` is
     aligned up to a cache length recorded during capture and every data-parallel
     replica must run the identical captured graph. The batch's real values must
     not exceed these.
@@ -805,7 +953,19 @@ class KVLeafRegion:
     needs more alignment than a row gives. Defaults to 1 for leaves not
     addressed by row."""
 
-    def blocks_to_reserve(self, num_blocks: int) -> int:
+    @property
+    def cacheable(self) -> bool:
+        """Whether this leaf's blocks are addressed by content.
+
+        False makes the leaf invisible to everything keyed on a hash: prefix
+        hits, commits, and both directions of an external tier. It still
+        draws from the pool and still counts against admission.
+        """
+        return not self.group_id.is_scratch()
+
+    def blocks_to_reserve(
+        self, num_blocks: int, *, enable_prefix_caching: bool
+    ) -> int:
         """Returns how many blocks one request draws to fill ``num_blocks`` slots.
 
         Fewer than ``num_blocks`` when some slots hold the null block: a
@@ -873,12 +1033,18 @@ class PagedKVLeafRegion(KVLeafRegion):
     page_size: int
     """Number of tokens per page."""
 
-    def blocks_to_reserve(self, num_blocks: int) -> int:
-        """Returns ``num_blocks``, capped by the window when the leaf has one."""
+    def blocks_to_reserve(
+        self, num_blocks: int, *, enable_prefix_caching: bool
+    ) -> int:
+        """Returns ``num_blocks``, capped by the window when the leaf has one.
+
+        A sliding-window leaf only needs the pages holding the tokens its
+        window looks back at, plus the page it is writing now.
+        """
         if self.group_id.is_full():
             return num_blocks
         return min(
-            num_blocks, ceildiv(self.group_id.window_size, self.page_size)
+            num_blocks, self.group_id.blocks_in_window(self.page_size) + 1
         )
 
     def staged_input_shapes(
@@ -904,24 +1070,76 @@ class PagedKVLeafRegion(KVLeafRegion):
 
 
 @dataclass(frozen=True)
+class RecurrentStateRegion:
+    """Shape and dtype of one kind of recurrent state, for one pool leaf."""
+
+    leaf_id: str
+    num_layers: int
+    row_shape: tuple[int, ...]
+    """Shape of one layer's state, per device."""
+    dtype: DType
+    scratch: bool = False
+    """Whether the region is per-request scratch rather than a checkpoint.
+
+    A scratch region is drawn once per request and never published, so it is
+    invisible to prefix hits, to eviction order and to an external tier, and
+    its block does not rotate at a page boundary. Its rows are addressed
+    exactly like a published state's, so a kernel reads it the same way.
+    """
+
+    @property
+    def rows_dim(self) -> str:
+        """Symbolic dim naming this leaf's row count."""
+        return f"{self.leaf_id.replace('/', '_')}_rows"
+
+    @property
+    def row_elements(self) -> int:
+        """Elements in one layer's state."""
+        return math.prod(self.row_shape)
+
+    @property
+    def pool_key(self) -> str:
+        """Key the leaf's flat pool view is staged under."""
+        return f"{self.leaf_id}/pool"
+
+    @property
+    def bytes_per_page(self) -> int:
+        """Bytes one page of this leaf holds on one device."""
+        return self.num_layers * self.row_elements * self.dtype.size_in_bytes
+
+    def rows_of(self, page: int) -> range:
+        """Returns the rows a page's layers occupy, layer ``l`` at index ``l``."""
+        base = page * self.num_layers
+        return range(base, base + self.num_layers)
+
+
+@dataclass(frozen=True)
 class RecurrentKVLeafRegion(KVLeafRegion):
     """A leaf addressed by row: one block holds one request's whole state."""
 
     region: RecurrentStateRegion
     """The state region that names this leaf and sizes its rows."""
 
-    def blocks_to_reserve(self, num_blocks: int) -> int:
-        """Returns two: the live block, and at most one checkpoint behind it."""
-        return 2
+    def blocks_to_reserve(
+        self, num_blocks: int, *, enable_prefix_caching: bool
+    ) -> int:
+        """Returns the live block, and a checkpoint behind it with caching on.
+
+        Without prefix caching a state never checkpoints.
+        """
+        return 2 if enable_prefix_caching else 1
 
     def staged_input_shapes(
         self, batch_size: int, num_blocks: int
     ) -> Mapping[str, tuple[tuple[int, ...], DType]]:
-        """Returns the row tensor each layer indexes.
+        """Returns the row table each layer slices.
 
-        ``num_blocks`` is unused: a state is addressed by row, not by block.
+        The table is layer-major, one layer per row, so a layer's slice is a
+        contiguous row and the graph keeps it a view instead of materializing
+        a gather kernel. ``num_blocks`` is unused: a state is addressed by
+        row, not by block.
         """
-        rows = (batch_size, self.region.num_layers)
+        rows = (self.region.num_layers, batch_size)
         return {self.region.leaf_id: (rows, DType.uint32)}
 
     def write_staged_inputs(
@@ -933,7 +1151,7 @@ class RecurrentKVLeafRegion(KVLeafRegion):
         live = into[self.region.leaf_id]
         for batch_idx, blocks in enumerate(plans):
             (block,) = blocks
-            live[batch_idx] = self.region.rows_of(block)
+            live[:, batch_idx] = self.region.rows_of(block)
 
     def bound_row_copies(
         self, src: int, dst: int
@@ -951,19 +1169,75 @@ class RecurrentKVLeafRegion(KVLeafRegion):
         return {self.region.pool_key: self.region.rows_of(block)}
 
 
+@dataclass(frozen=True)
+class ScratchKVLeafRegion(RecurrentKVLeafRegion):
+    """A row-addressed leaf drawn once per request and never published.
+
+    Addressed exactly like :class:`RecurrentKVLeafRegion`, one row per layer,
+    but its block does not rotate at a page boundary and carries no hash, so
+    a request holds the same one from its first forward to its release.
+    """
+
+    def blocks_to_reserve(
+        self, num_blocks: int, *, enable_prefix_caching: bool
+    ) -> int:
+        """Returns one: the block the request holds for its whole life."""
+        return 1
+
+
+class CacheLeafKind(Enum):
+    """What a child of a cache tree holds."""
+
+    ATTENTION = "attention"
+    """Keys and values a span of tokens wrote, read through an attention op."""
+
+    RECURRENT = "recurrent"
+    """One fixed-size state carrying every token before it."""
+
+
 @runtime_checkable
 class CacheLeafParamInterface(Protocol):
-    """What every child of a cache tree contributes: leaves, inputs, cost.
-
-    How the pool itself is configured belongs to
-    :class:`KVCacheParamInterface`; a child of this type draws from a pool
-    rather than describing one.
-    """
+    """What every child of a cache tree contributes: leaves, inputs, cost."""
 
     data_parallel_degree: int
     """Degree of data parallelism."""
     devices: Sequence[DeviceRef]
     """Devices to use for the cache."""
+
+    page_size: int
+    """Tokens a block covers, or zero where this child declares no pool."""
+
+    @property
+    def bytes_per_block(self) -> int:
+        """Number of bytes per cache block.
+
+        Zero for a cache whose entry is not a span of tokens.
+        """
+        ...
+
+    kv_connector_config: KVConnectorConfigInterface
+    speculative_method: SpeculativeMethod | None
+    num_draft_tokens: int
+
+    @property
+    def enable_prefix_caching(self) -> bool: ...
+
+    @property
+    def enable_dp_cross_replica_prefix_copy(self) -> bool: ...
+
+    @property
+    def kv_hash_algo(self) -> KVHashAlgo: ...
+
+    @property
+    def kv_hash_seed(self) -> bytes | None: ...
+
+    @property
+    def replicates_kv_across_tp(self) -> bool: ...
+
+    @property
+    def leaf_kind(self) -> CacheLeafKind:
+        """What this child holds."""
+        ...
 
     @property
     def n_devices(self) -> int:
@@ -972,7 +1246,7 @@ class CacheLeafParamInterface(Protocol):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> KVCacheInputsInterface[TensorType, BufferType]:
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for this cache.
 
         Args:
@@ -984,11 +1258,11 @@ class CacheLeafParamInterface(Protocol):
 
     def flattened_kv_inputs(self) -> list[TensorType | BufferType]:
         """Flattens the symbolic inputs for this cache."""
-        return self.get_symbolic_inputs().flatten()
+        return tree.leaves(self.get_symbolic_inputs())
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> KVCacheInputsInterface[TensorValue, BufferValue]:
+    ) -> KVCacheInputs[TensorValue, BufferValue]:
         """Unflattens the symbolic inputs for this cache."""
         ...
 
@@ -997,25 +1271,30 @@ class CacheLeafParamInterface(Protocol):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+        *,
+        staging: GraphInputStagingInterface | None = None,
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Builds the runtime cache inputs spanning all replicas.
 
         ``assignments`` and ``buffers`` are indexed by data-parallel replica.
-        Returns a single :class:`KVCacheInputs` leaf (or a
-        :class:`MultiKVCacheInputs` tree) whose leaves each hold every
-        ``(replica, TP shard)`` device's inputs."""
+        Returns the :class:`KVCacheInputs` pytree (a tuple of per-device
+        leaves, or a dict of named subtrees for multi-cache models) whose
+        leaves each hold one ``(replica, TP shard)`` device's inputs."""
+        ...
+
+    def staged_dispatch_metadata(
+        self, _prefix: str = ""
+    ) -> Mapping[str, DispatchMetadataSpec]:
+        """The dispatch metadata this tree stages, keyed by name in a replica.
+
+        Empty for a kernel that reads it on the host: nothing is transferred,
+        so there is nothing to stage. ``_prefix`` keeps the leaves of a tree
+        apart, the same way :meth:`leaves` does.
+        """
         ...
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns the leaves this cache contributes to the pool."""
-        ...
-
-    @property
-    def bytes_per_block(self) -> int:
-        """Number of bytes per cache block.
-
-        Zero for a cache whose entry is not a span of tokens.
-        """
         ...
 
     def allocate_buffers(
@@ -1093,11 +1372,11 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
 
         Zero when speculative decoding is disabled; one for autoregressive
         drafts (``eagle``, ``mtp``); equal to ``num_draft_tokens`` for block
-        drafts (``dflash``, ``dflash2``).
+        drafts (``dflash``, ``dflash2``, ``dspark``).
         """
         if self.speculative_method is None:
             return 0
-        elif self.speculative_method in ("dflash", "dflash2"):
+        elif self.speculative_method in ("dflash", "dflash2", "dspark"):
             return self.num_draft_tokens
         elif self.speculative_method in ("mtp", "eagle"):
             return 1
@@ -1113,7 +1392,7 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
 
     @property
     def kv_hash_seed(self) -> bytes | None:
-        """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``.
+        """Resolved 32-byte cluster seed for ``sha256``.
         ``None`` for ``ahash64``."""
         ...
 
@@ -1127,6 +1406,30 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
         """Returns the tensor parallel degree."""
         ...
 
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec | None:
+        """Returns the spec of the metadata :meth:`resolve_attn_key` packs.
+
+        ``None`` when this cache resolves a tree of keys rather than one, so
+        a caller cannot size a single input for it.
+        """
+        return None
+
+    def staged_dispatch_metadata(
+        self, _prefix: str = ""
+    ) -> Mapping[str, DispatchMetadataSpec]:
+        """The dispatch metadata this cache stages, keyed by name.
+
+        Empty for a kernel that reads it on the host. A draft key under
+        speculative decoding is a second input of the same shape.
+        """
+        spec = self.dispatch_metadata_spec()
+        if spec is None or not spec.on_device:
+            return {}
+        staged = {_prefix + ATTN_DISPATCH_METADATA: spec}
+        if self.speculative_method is not None:
+            staged[_prefix + DRAFT_ATTN_DISPATCH_METADATA] = spec
+        return staged
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -1135,7 +1438,7 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
     ) -> AttnKeyInterface:
         """Resolves the decode dispatch shape for the given shape.
 
-        Returns an ``AttnKeyInterface`` for a single cache, or a
+        Returns an :class:`AttnKeyInterface` for a single cache, or a
         ``MultiAttnKey`` tree mirroring the cache tree.
         """
         ...
@@ -1171,6 +1474,8 @@ class KVCacheParams(KVCacheParamInterface):
     head_dim: int
     """Dimensionality of each attention head."""
 
+    leaf_kind: ClassVar[CacheLeafKind] = CacheLeafKind.ATTENTION
+
     num_layers: int
     """Number of layers in the model."""
 
@@ -1192,7 +1497,7 @@ class KVCacheParams(KVCacheParamInterface):
     instead of one ``[..., num_layers, ...]`` multi-layer buffer.
 
     Each attention dispatch then binds only its own per-layer buffer, so the
-    pool total can exceed a per-allocation size cap (e.g. a device's maximum
+    pool total can exceed a per-allocation size cap (such as a device's maximum
     single allocation) while every individual buffer stays under it. Defaults
     to ``False`` (one multi-layer buffer), keeping all other backends and
     models byte-identical."""
@@ -1201,7 +1506,7 @@ class KVCacheParams(KVCacheParamInterface):
     """Hash algorithm used for KV-cache block identity."""
 
     kv_hash_seed: bytes | None = None
-    """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``. ``None``
+    """Resolved 32-byte cluster seed for ``sha256``. ``None``
     for ``ahash64``.
 
     Set by ``KVCacheConfig.to_params`` via ``resolve_kv_hash_seed``.
@@ -1299,11 +1604,25 @@ class KVCacheParams(KVCacheParamInterface):
         if connector in (
             KVConnectorType.tiered,
             KVConnectorType.rust_tiered,
+            KVConnectorType.mojo_tiered,
         ):
             if not self.enable_prefix_caching:
                 raise ValueError(
                     f"KV connector '{connector.value}' requires prefix"
                     " caching to be enabled"
+                )
+
+        if self.is_nvfp4_kv_cache:
+            assert self.kvcache_quant_config is not None
+            if (
+                self.kvcache_quant_config.quantization_granularity
+                != FP4_KV_CACHE_QUANTIZATION_GRANULARITY
+            ):
+                raise ValueError(
+                    "An NVFP4 KV cache has one scale per"
+                    f" {FP4_KV_CACHE_QUANTIZATION_GRANULARITY} elements, got a"
+                    " quantization granularity of"
+                    f" {self.kvcache_quant_config.quantization_granularity}."
                 )
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
@@ -1354,12 +1673,35 @@ class KVCacheParams(KVCacheParamInterface):
         return self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
 
     @property
+    def is_nvfp4_kv_cache(self) -> bool:
+        """Whether the cache stores packed NVFP4: ``uint8`` values holding two
+        E2M1 elements each, with E4M3 scales."""
+        return (
+            self.dtype == DType.uint8
+            and self.kvcache_quant_config is not None
+            and self.kvcache_quant_config.scale_dtype == DType.float8_e4m3fn
+        )
+
+    @property
+    def storage_head_dim(self) -> int:
+        """Returns the stored width of one head row in ``dtype`` elements.
+
+        Equals :attr:`head_dim` except for packed NVFP4, which stores two
+        elements per byte.
+        """
+        if self.is_nvfp4_kv_cache:
+            return self.head_dim // 2
+        return self.head_dim
+
+    @property
     def quantized_kv_cache(self) -> bool:
         """Returns whether KV cache quantization is enabled."""
         # Supported quantized-KV storage schemes: FP8_E4M3 (fp32 / e8m0 scales)
         # and int8 (fp16 per-block absmax scales).
         if self.kvcache_quant_config is None:
             return False
+        if self.is_nvfp4_kv_cache:
+            return True
         value_dtypes = (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
@@ -1425,6 +1767,8 @@ class KVCacheParams(KVCacheParamInterface):
             return "bf16"
         elif self.dtype == DType.float8_e4m3fn:
             return "f8_m4e3fn"
+        elif self.is_nvfp4_kv_cache:
+            return "nvfp4"
         else:
             return "f32"
 
@@ -1458,7 +1802,7 @@ class KVCacheParams(KVCacheParamInterface):
             self.num_layers,
             self.slots_per_page,
             self.n_kv_heads_per_device,
-            self.head_dim,
+            self.storage_head_dim,
         ]
 
     @property
@@ -1484,9 +1828,10 @@ class KVCacheParams(KVCacheParamInterface):
         """
         assert self.kvcache_quant_config is not None
         shape_per_block = self.shape_per_block
-        # The final dimension is ceil(head_dim / quantization_granularity).
+        # The final dimension is ceil(head_dim / quantization_granularity),
+        # both in logical elements.
         granularity = self.kvcache_quant_config.quantization_granularity
-        shape_per_block[4] = math.ceil(shape_per_block[4] / granularity)
+        shape_per_block[4] = math.ceil(self.head_dim / granularity)
         return shape_per_block
 
     @property
@@ -1528,7 +1873,7 @@ class KVCacheParams(KVCacheParamInterface):
         """Returns one value row, ``num_heads * head_size * dtype_size``."""
         return (
             self.n_kv_heads_per_device
-            * self.head_dim
+            * self.storage_head_dim
             * self.dtype.size_in_bytes
         )
 
@@ -1566,7 +1911,7 @@ class KVCacheParams(KVCacheParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> KVCacheInputs[TensorType, BufferType]:
+    ) -> tuple[KVCacheInputsPerDevice[TensorType, BufferType], ...]:
         """Computes the symbolic inputs for the KV cache.
 
         Args:
@@ -1584,13 +1929,23 @@ class KVCacheParams(KVCacheParamInterface):
                 replica_idx, prefix, namespace
             )
             input_symbols.extend(symbols)
-        return KVCacheInputs(inputs=input_symbols)
+        return tuple(input_symbols)
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> KVCacheInputs[TensorValue, BufferValue]:
+    ) -> tuple[KVCacheInputsPerDevice[TensorValue, BufferValue], ...]:
         """Unflattens the KV cache inputs from a graph-input iterator."""
-        return self.get_symbolic_inputs().unflatten(it)
+        return tuple(
+            tree.leaves(
+                tree.unflatten(self._kv_symbolic_treedef, it, exact=False),
+                leaf=KVCacheInputsPerDevice,
+            )
+        )
 
     def allocate_buffers(
         self, total_num_pages: int, _prefix: str = ""
@@ -1611,6 +1966,7 @@ class KVCacheParams(KVCacheParamInterface):
             if connector in (
                 KVConnectorType.tiered,
                 KVConnectorType.rust_tiered,
+                KVConnectorType.mojo_tiered,
                 KVConnectorType.dkv,
             ):
                 # KVCacheBuffer.all_buffers / to_memory enumerate only the
@@ -1715,7 +2071,6 @@ class KVCacheParams(KVCacheParamInterface):
 
     def _build_kvcache_inputs_per_device(
         self,
-        device: Device,
         blocks: Buffer,
         cache_lengths: Buffer,
         lookup_table: Buffer,
@@ -1725,12 +2080,13 @@ class KVCacheParams(KVCacheParamInterface):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        max_cache_valid_length: int,
         blocks_per_layer: list[Buffer] | None = None,
         scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
+        attention_dispatch_metadata: Buffer,
+        draft_attention_dispatch_metadata: Buffer | None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         raise NotImplementedError
 
@@ -1739,7 +2095,9 @@ class KVCacheParams(KVCacheParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+        *,
+        staging: GraphInputStagingInterface | None = None,
+    ) -> tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...]:
         """Builds the runtime KV-cache leaf spanning all replicas.
 
         ``assignments`` and ``buffers`` are indexed by data-parallel replica.
@@ -1748,7 +2106,9 @@ class KVCacheParams(KVCacheParamInterface):
         same replica-major order as :meth:`get_symbolic_inputs`.
         """
         tp_shards: list[KVCacheInputsPerDevice[Buffer, Buffer]] = []
-        for assignment, buffer in zip(assignments, buffers, strict=True):
+        for replica_idx, (assignment, buffer) in enumerate(
+            zip(assignments, buffers, strict=True)
+        ):
             assert isinstance(buffer, KVCacheBuffer)
             bc = assignment.batch_characteristics
             batch_size = bc.batch_size
@@ -1765,6 +2125,29 @@ class KVCacheParams(KVCacheParamInterface):
                 else None
             )
 
+            # Staged once per replica rather than per shard: the shards
+            # of a replica read the same dispatch shape, so it is one host
+            # write fanned out to each of them.
+            devices = [blocks.device for blocks in buffer.values]
+            attn_metadata = target_key.dispatch_metadata_buffers(
+                staging,
+                name=f"{replica_idx}/{_prefix}{ATTN_DISPATCH_METADATA}",
+                devices=devices,
+                max_cache_valid_length=max_cl,
+            )
+            draft_attn_metadata = (
+                draft_key.dispatch_metadata_buffers(
+                    staging,
+                    name=(
+                        f"{replica_idx}/{_prefix}{DRAFT_ATTN_DISPATCH_METADATA}"
+                    ),
+                    devices=devices,
+                    max_cache_valid_length=max_cl,
+                )
+                if draft_key is not None
+                else None
+            )
+
             for i, (cl, luts, blocks) in enumerate(
                 zip(
                     assignment.cache_lengths_by_device,
@@ -1773,7 +2156,6 @@ class KVCacheParams(KVCacheParamInterface):
                     strict=True,
                 )
             ):
-                device = blocks.device
                 lut = luts[buffer.leaf_id]
                 kv_scales = (
                     buffer.scales[i] if buffer.scales is not None else None
@@ -1795,7 +2177,6 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 tp_shards.append(
                     self._build_kvcache_inputs_per_device(
-                        device,
                         blocks,
                         cl,
                         lut,
@@ -1805,7 +2186,12 @@ class KVCacheParams(KVCacheParamInterface):
                         scales_lut,
                         target_key,
                         draft_key,
-                        max_cl,
+                        attention_dispatch_metadata=attn_metadata[i],
+                        draft_attention_dispatch_metadata=(
+                            draft_attn_metadata[i]
+                            if draft_attn_metadata is not None
+                            else None
+                        ),
                         # Read off the buffers rather than recomputed, so the
                         # distance the kernel addresses with is the one the
                         # allocation was built with.
@@ -1819,7 +2205,7 @@ class KVCacheParams(KVCacheParamInterface):
                         scales_per_layer=scales_per_layer,
                     )
                 )
-        return KVCacheInputs(inputs=tp_shards)
+        return tuple(tp_shards)
 
     def unflatten_basic_kv_tree(
         self, it: Iterator[Any]
@@ -1849,23 +2235,31 @@ class KVCacheParams(KVCacheParamInterface):
         return _prefix + str(self.group_id)
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
-        """Returns the leaves of the KV cache."""
+        """Returns the leaves of the KV cache.
+
+        A leaf reports what one device holds, the unit a slab tiles in, where
+        :attr:`bytes_per_block` counts a block across the whole replica. The
+        division is exact: that figure is this one times the degree.
+        """
         leaf_id = self.leaf_id(_prefix)
         leaves = {
             leaf_id: PagedKVLeafRegion(
                 leaf_id=leaf_id,
                 group_id=self.group_id,
-                bytes_per_page=self.bytes_per_value_block,
+                bytes_per_page=self.bytes_per_value_block
+                // self.tensor_parallel_degree,
                 row_bytes=self.row_bytes,
                 page_size=self.page_size,
             )
         }
 
         if self.quantized_kv_cache:
-            leaves[_scales_leaf_id(leaf_id)] = PagedKVLeafRegion(
-                leaf_id=_scales_leaf_id(leaf_id),
+            scales_id = _scales_leaf_id(leaf_id)
+            leaves[scales_id] = PagedKVLeafRegion(
+                leaf_id=scales_id,
                 group_id=self.group_id,
-                bytes_per_page=self.bytes_per_scale_block,
+                bytes_per_page=self.bytes_per_scale_block
+                // self.tensor_parallel_degree,
                 row_bytes=math.lcm(
                     self.scale_row_bytes, _SCALE_TMA_ALIGN_BYTES
                 ),
@@ -1939,7 +2333,6 @@ class KVCacheParams(KVCacheParamInterface):
             values_packed=values_packed,
             scales=scales,
             scales_packed=scales_packed,
-            is_jenga=True,
         )
 
 
@@ -1988,6 +2381,10 @@ class MHAKVCacheParams(KVCacheParams):
         """Whether every device holds identical KV state."""
         return False
 
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
+        """Returns the spec :class:`MHAAttnKey` packs into."""
+        return MHAAttnKey.dispatch_metadata_spec()
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -2003,7 +2400,7 @@ class MHAKVCacheParams(KVCacheParams):
             max_cache_valid_length: Maximum valid cache length in the batch.
 
         Returns:
-            The resolved ``AttnKeyInterface``
+            The resolved :class:`AttnKeyInterface`.
         """
         device = self._primary_device
         if batch_size <= 0 or device is None:
@@ -2036,10 +2433,7 @@ class MHAKVCacheParams(KVCacheParams):
         return _filter_tiny_cache_lengths(probe_lengths, self.num_draft_tokens)
 
     def _attn_metadata_buffer(self, device: DeviceRef) -> TensorType:
-        # MHA decode kernels read a 4-int dispatch buffer on the host (CPU),
-        # matching ``MHAAttnKey.pack_into_buffer``. ``device`` is accepted so
-        # subclasses can emit device-resident metadata of a different shape.
-        return TensorType(DType.int64, shape=[4], device=DeviceRef.CPU())
+        return MHAAttnKey.dispatch_metadata_spec().tensor_type(device)
 
     def _get_symbolic_inputs_for_replica(
         self, replica_idx: int, prefix: str, page_namespace: str = ""
@@ -2047,6 +2441,10 @@ class MHAKVCacheParams(KVCacheParams):
         devices = self.devices_per_replica[replica_idx]
         # Sibling cache groups may size their page pools independently.
         page_dim = page_namespace + "total_num_pages"
+        # A Jenga pool tiles one slab at every leaf's own page size, so a
+        # quantized leaf holds more scale pages than value pages. A legacy pool
+        # binds the two counts equal, which a separate symbol still accepts.
+        scale_page_dim = page_namespace + "total_num_scale_pages"
 
         def _blocks_per_layer(
             device: DeviceRef,
@@ -2075,7 +2473,7 @@ class MHAKVCacheParams(KVCacheParams):
             return [
                 BufferType(
                     self.kv_cache_scale_dtype,
-                    shape=[page_dim, *self.shape_per_layer_scale_block],
+                    shape=[scale_page_dim, *self.shape_per_layer_scale_block],
                     device=device,
                 )
                 for _ in range(self.num_layers)
@@ -2096,11 +2494,21 @@ class MHAKVCacheParams(KVCacheParams):
                 device=device,
             )
 
+        def _lookup_table(device: DeviceRef) -> TensorType:
+            return TensorType(
+                DType.uint32,
+                shape=[
+                    prefix + "batch_size",
+                    prefix + page_namespace + "max_num_pages",
+                ],
+                device=device,
+            )
+
         return [
             KVCacheInputsPerDevice(
                 kv_blocks=_kv_blocks(device),
                 # Read off the buffer's stride when the inputs are bound.
-                page_stride_input=TensorType(
+                page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 ),
                 cache_lengths=TensorType(
@@ -2108,14 +2516,7 @@ class MHAKVCacheParams(KVCacheParams):
                     shape=[prefix + "batch_size"],
                     device=device,
                 ),
-                lookup_table=TensorType(
-                    DType.uint32,
-                    shape=[
-                        prefix + "batch_size",
-                        prefix + page_namespace + "max_num_pages",
-                    ],
-                    device=device,
-                ),
+                lookup_table=_lookup_table(device),
                 max_prompt_length=TensorType(
                     DType.uint32,
                     shape=[1],
@@ -2131,7 +2532,7 @@ class MHAKVCacheParams(KVCacheParams):
                     # Per-layer buffers alias ``kv_scales`` to a single-layer
                     # scale (mirrors ``_kv_blocks`` for the KV data).
                     shape=[
-                        page_dim,
+                        scale_page_dim,
                         *(
                             self.shape_per_layer_scale_block
                             if self.per_layer_buffers
@@ -2143,9 +2544,14 @@ class MHAKVCacheParams(KVCacheParams):
                 if self.quantized_kv_cache
                 else None,
                 # Present exactly when the scales are.
-                scales_page_stride_input=TensorType(
+                scales_page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 )
+                if self.quantized_kv_cache
+                else None,
+                # Scales share the values' block-id space, so their lookup table
+                # matches ``lookup_table``. Present exactly when the scales are.
+                scales_lookup_table=_lookup_table(device)
                 if self.quantized_kv_cache
                 else None,
                 attention_dispatch_metadata=self._attn_metadata_buffer(device),
@@ -2162,7 +2568,6 @@ class MHAKVCacheParams(KVCacheParams):
 
     def _build_kvcache_inputs_per_device(
         self,
-        device: Device,
         blocks: Buffer,
         cache_lengths: Buffer,
         lookup_table: Buffer,
@@ -2172,31 +2577,26 @@ class MHAKVCacheParams(KVCacheParams):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        max_cache_valid_length: int,
         blocks_per_layer: list[Buffer] | None = None,
         scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
+        attention_dispatch_metadata: Buffer,
+        draft_attention_dispatch_metadata: Buffer | None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
-            page_stride_input=page_stride,
+            page_stride=page_stride,
             cache_lengths=cache_lengths,
             lookup_table=lookup_table,
             max_prompt_length=max_prompt_length,
             max_cache_length=max_cache_length,
             kv_scales=kv_scales,
-            scales_page_stride_input=scales_page_stride,
+            scales_page_stride=scales_page_stride,
             scales_lookup_table=scales_lookup_table,
-            attention_dispatch_metadata=target_key.pack_into_buffer(
-                device, max_cache_valid_length
-            ),
-            draft_attention_dispatch_metadata=draft_key.pack_into_buffer(
-                device, max_cache_valid_length
-            )
-            if draft_key is not None
-            else None,
+            attention_dispatch_metadata=attention_dispatch_metadata,
+            draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
             kv_blocks_per_layer=blocks_per_layer,
             kv_scales_per_layer=scales_per_layer,
         )
@@ -2240,6 +2640,10 @@ class MLAKVCacheParams(KVCacheParams):
         """Returns the query attention heads on one device."""
         return max(self.num_q_heads // self.tensor_parallel_degree, 1)
 
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
+        """Returns the spec :class:`MLAAttnKey` packs into."""
+        return MLAAttnKey.dispatch_metadata_spec()
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -2255,7 +2659,7 @@ class MLAKVCacheParams(KVCacheParams):
             max_cache_valid_length: Maximum valid cache length in the batch.
 
         Returns:
-            The resolved ``AttnKeyInterface``
+            The resolved :class:`AttnKeyInterface`.
         """
         device = self._primary_device
         if batch_size <= 0 or device is None:
@@ -2302,6 +2706,20 @@ class MLAKVCacheParams(KVCacheParams):
         devices = self.devices_per_replica[replica_idx]
         # Sibling cache groups may size their page pools independently.
         page_dim = page_namespace + "total_num_pages"
+        # A Jenga pool tiles one slab at every leaf's own page size, so a
+        # quantized leaf holds more scale pages than value pages. A legacy pool
+        # binds the two counts equal, which a separate symbol still accepts.
+        scale_page_dim = page_namespace + "total_num_scale_pages"
+
+        def _lookup_table(device: DeviceRef) -> TensorType:
+            return TensorType(
+                DType.uint32,
+                shape=[
+                    prefix + "batch_size",
+                    prefix + page_namespace + "max_num_pages",
+                ],
+                device=device,
+            )
 
         return [
             KVCacheInputsPerDevice(
@@ -2311,7 +2729,7 @@ class MLAKVCacheParams(KVCacheParams):
                     device=device,
                 ),
                 # Read off the buffer's stride when the inputs are bound.
-                page_stride_input=TensorType(
+                page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 ),
                 cache_lengths=TensorType(
@@ -2319,14 +2737,7 @@ class MLAKVCacheParams(KVCacheParams):
                     shape=[prefix + "batch_size"],
                     device=device,
                 ),
-                lookup_table=TensorType(
-                    DType.uint32,
-                    shape=[
-                        prefix + "batch_size",
-                        prefix + page_namespace + "max_num_pages",
-                    ],
-                    device=device,
-                ),
+                lookup_table=_lookup_table(device),
                 max_prompt_length=TensorType(
                     DType.uint32,
                     shape=[1],
@@ -2339,24 +2750,28 @@ class MLAKVCacheParams(KVCacheParams):
                 ),
                 kv_scales=BufferType(
                     self.kv_cache_scale_dtype,
-                    shape=[page_dim, *self.shape_per_scale_block],
+                    shape=[scale_page_dim, *self.shape_per_scale_block],
                     device=device,
                 )
                 if self.quantized_kv_cache
                 else None,
                 # Present exactly when the scales are.
-                scales_page_stride_input=TensorType(
+                scales_page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
                 )
                 if self.quantized_kv_cache
                 else None,
+                # Scales share the values' block-id space, so their lookup table
+                # matches ``lookup_table``. Present exactly when the scales are.
+                scales_lookup_table=_lookup_table(device)
+                if self.quantized_kv_cache
+                else None,
                 # MLA decode kernels read a 3-int dispatch buffer on the
-                # accelerator, matching ``MLAAttnKey.pack_into_buffer``.
-                attention_dispatch_metadata=TensorType(
-                    DType.int64, shape=[3], device=device
+                attention_dispatch_metadata=MLAAttnKey.dispatch_metadata_spec().tensor_type(
+                    device
                 ),
-                draft_attention_dispatch_metadata=TensorType(
-                    DType.int64, shape=[3], device=device
+                draft_attention_dispatch_metadata=MLAAttnKey.dispatch_metadata_spec().tensor_type(
+                    device
                 )
                 if self.speculative_method is not None
                 else None,
@@ -2374,7 +2789,6 @@ class MLAKVCacheParams(KVCacheParams):
 
     def _build_kvcache_inputs_per_device(
         self,
-        device: Device,
         blocks: Buffer,
         cache_lengths: Buffer,
         lookup_table: Buffer,
@@ -2384,12 +2798,13 @@ class MLAKVCacheParams(KVCacheParams):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        max_cache_valid_length: int,
         blocks_per_layer: list[Buffer] | None = None,
         scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
+        attention_dispatch_metadata: Buffer,
+        draft_attention_dispatch_metadata: Buffer | None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
         # MLA never uses per-layer buffers; the parameters exist only to match
         # the base signature threaded by ``build_runtime_inputs``.
@@ -2399,22 +2814,16 @@ class MLAKVCacheParams(KVCacheParams):
         assert draft_key is None or isinstance(draft_key, MLAAttnKey)
         return KVCacheInputsPerDevice(
             kv_blocks=blocks,
-            page_stride_input=page_stride,
+            page_stride=page_stride,
             cache_lengths=cache_lengths,
             lookup_table=lookup_table,
             max_prompt_length=max_prompt_length,
             max_cache_length=max_cache_length,
             kv_scales=kv_scales,
-            scales_page_stride_input=scales_page_stride,
+            scales_page_stride=scales_page_stride,
             scales_lookup_table=scales_lookup_table,
-            attention_dispatch_metadata=target_key.pack_into_buffer(
-                device, max_cache_valid_length
-            ),
-            draft_attention_dispatch_metadata=draft_key.pack_into_buffer(
-                device, max_cache_valid_length
-            )
-            if draft_key is not None
-            else None,
+            attention_dispatch_metadata=attention_dispatch_metadata,
+            draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
             mla_num_partitions=Buffer.from_numpy(
                 np.array([target_key.num_partitions], dtype=np.int64)
             ),
@@ -2434,6 +2843,10 @@ class MSAKVCacheParams(MHAKVCacheParams):
     # metadata in its kernel. Once the indexer graph is migrated to a dedicated
     # MSA input record, drop ``attention_dispatch_metadata`` from the symbolic
     # and runtime inputs entirely instead of carrying the 1-int placeholder.
+    def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
+        """Returns the spec :class:`MSAAttnKey` packs into."""
+        return MSAAttnKey.dispatch_metadata_spec()
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -2450,8 +2863,7 @@ class MSAKVCacheParams(MHAKVCacheParams):
         return [1, max_cache_length]
 
     def _attn_metadata_buffer(self, device: DeviceRef) -> TensorType:
-        # ``MSAAttnKey.pack_into_buffer`` emits a single sentinel int.
-        return TensorType(DType.int64, shape=[1], device=DeviceRef.CPU())
+        return MSAAttnKey.dispatch_metadata_spec().tensor_type(device)
 
 
 @dataclass
@@ -2459,13 +2871,15 @@ class RecurrentStateParams(CacheLeafParamInterface):
     """A cache leaf whose entry is a state rather than a span of tokens.
 
     One fixed-size value carrying every token before it, drawn from the same
-    slab, prefix index and eviction order as the attention caches. It
-    declares none of that pool's configuration.
+    slab, prefix index and eviction order as the attention caches.
 
-    A model declares exactly one however many attention caches it has, since
-    a state belongs to the request. Being unique, its regions name the pool's
-    state leaves without a prefix.
+    A cache may hold more than one -- a speculative pair keeps a state for
+    the target and one for the draft. They are told apart by their regions'
+    leaf ids, which name both the pool entry a state binds and the symbolic
+    dim it declares, so each state chooses its own.
     """
+
+    leaf_kind: ClassVar[CacheLeafKind] = CacheLeafKind.RECURRENT
 
     regions: tuple[RecurrentStateRegion, ...]
     """The state leaves one request occupies, in flatten order."""
@@ -2475,6 +2889,24 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     data_parallel_degree: int = 1
     """Degree of data parallelism."""
+
+    page_size: int = 0
+    """Tokens a block covers, set only by a cache with no attention leaf.
+
+    Zero otherwise: the attention leaves beside a state declare the pool, and
+    no page covers zero tokens, so nothing real collides with it.
+    """
+
+    kv_connector_config: KVConnectorConfigInterface = field(
+        default_factory=NullKVConnectorConfig
+    )
+    enable_prefix_caching: bool = False
+    enable_dp_cross_replica_prefix_copy: bool = True
+    kv_hash_algo: KVHashAlgo = "ahash64"
+    kv_hash_seed: bytes | None = None
+    speculative_method: SpeculativeMethod | None = None
+    num_draft_tokens: int = 0
+    """Read only from the leaf a tree takes its pool configuration off."""
 
     def __post_init__(self) -> None:
         if not self.regions:
@@ -2488,6 +2920,15 @@ class RecurrentStateParams(CacheLeafParamInterface):
     def n_devices(self) -> int:
         return len(self.devices)
 
+    @property
+    def tensor_parallel_degree(self) -> int:
+        return self.n_devices // self.data_parallel_degree
+
+    @property
+    def replicates_kv_across_tp(self) -> bool:
+        """False: a state's rows hold one device's shard of the heads."""
+        return False
+
     @cached_property
     def devices_per_replica(self) -> Sequence[Sequence[DeviceRef]]:
         return split_into_groups(self.devices, self.data_parallel_degree)
@@ -2495,7 +2936,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
     @property
     def bytes_per_state(self) -> int:
         """Bytes one request's state occupies on one device, every layer."""
-        return sum(region.bytes_per_state for region in self.regions)
+        return sum(region.bytes_per_page for region in self.regions)
 
     def slab_to_row_views(
         self, slabs: Sequence[Buffer]
@@ -2522,6 +2963,18 @@ class RecurrentStateParams(CacheLeafParamInterface):
                     f"leaf {region.leaf_id!r} has {row_bytes} B rows, which"
                     f" do not tile a {slab.num_elements} B slab"
                 )
+                # The pool itself is indexed at 64 bits, but the row ids the
+                # kernels take are int32 (see the KDA ops in
+                # max.nn.state_space.kimi_delta), so a slab with more rows
+                # than that would silently alias deep rows onto the front.
+                if num_rows > _MAX_INT32_ROW_ID:
+                    raise ValueError(
+                        f"leaf {region.leaf_id!r} would have {num_rows} rows"
+                        f" of {row_bytes} B in a {slab.num_elements} B slab,"
+                        f" but kernels address rows with int32 ids, so at most"
+                        f" {_MAX_INT32_ROW_ID} fit; reduce the KV cache memory"
+                        " budget or use a larger row"
+                    )
                 views[region.leaf_id].append(
                     slab.view(region.dtype, [num_rows, *region.row_shape])
                 )
@@ -2561,7 +3014,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
                 region.leaf_id: [
                     page_view(
                         slab,
-                        (region.bytes_per_state,),
+                        (region.bytes_per_page,),
                         DType.uint8,
                         padded.get(region.leaf_id),
                     )
@@ -2573,26 +3026,64 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> RecurrentStateInputs[TensorType, BufferType]:
+    ) -> tuple[RecurrentStateInputsPerDevice[TensorType, BufferType], ...]:
         """Returns the symbolic inputs for the state leaves.
 
         ``namespace`` is unused: the region ids are already distinct.
         """
-        return RecurrentStateInputs.symbolic(
-            self.regions, self.devices_per_replica
-        )
+
+        def leaf(
+            region: RecurrentStateRegion, device: DeviceRef, batch_dim: str
+        ) -> RecurrentLeafInputs[TensorType, BufferType]:
+            pool_shape: list[str | int] = [region.rows_dim]
+            pool_shape.extend(region.row_shape)
+            rows_shape: list[str | int] = [region.num_layers, batch_dim]
+            return RecurrentLeafInputs(
+                pool=BufferType(region.dtype, shape=pool_shape, device=device),
+                live_row_ids=TensorType(
+                    DType.uint32, shape=rows_shape, device=device
+                ),
+            )
+
+        per_device: list[
+            RecurrentStateInputsPerDevice[TensorType, BufferType]
+        ] = []
+        for replica_idx, devices in enumerate(self.devices_per_replica):
+            batch_dim = f"replica_{replica_idx}_batch_size"
+            for device in devices:
+                per_device.append(
+                    RecurrentStateInputsPerDevice(
+                        leaves=tuple(
+                            leaf(region, device, batch_dim)
+                            for region in self.regions
+                        ),
+                    )
+                )
+        return tuple(per_device)
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> RecurrentStateInputs[TensorValue, BufferValue]:
-        return self.get_symbolic_inputs().unflatten(it)
+    ) -> tuple[RecurrentStateInputsPerDevice[TensorValue, BufferValue], ...]:
+        return tuple(
+            tree.leaves(
+                tree.unflatten(self._kv_symbolic_treedef, it, exact=False),
+                leaf=RecurrentStateInputsPerDevice,
+            )
+        )
 
     def build_runtime_inputs(
         self,
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> RecurrentStateInputs[Buffer, Buffer]:
+        *,
+        staging: GraphInputStagingInterface | None = None,
+    ) -> tuple[RecurrentStateInputsPerDevice[Buffer, Buffer], ...]:
         """Gathers this forward's state rows, replica-major.
 
         ``buffers`` is unused: a state's pool is staged in the assignment
@@ -2615,7 +3106,6 @@ class RecurrentStateParams(CacheLeafParamInterface):
                         )
                     leaves.append(
                         RecurrentLeafInputs(
-                            region=region,
                             pool=staged[region.pool_key],
                             live_row_ids=staged[region.leaf_id],
                         )
@@ -2623,64 +3113,165 @@ class RecurrentStateParams(CacheLeafParamInterface):
                 inputs.append(
                     RecurrentStateInputsPerDevice(leaves=tuple(leaves))
                 )
-        return RecurrentStateInputs(inputs=inputs)
+        return tuple(inputs)
+
+    def staged_dispatch_metadata(
+        self, _prefix: str = ""
+    ) -> Mapping[str, DispatchMetadataSpec]:
+        """Nothing: a state cache resolves no attention dispatch."""
+        return {}
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns one pool leaf per state leaf, each one state wide.
 
+        A region marked ``scratch`` lands in the scratch group rather than the
+        recurrent one, so the same tree can declare a published state and the
+        per-request scratch that rides beside it.
+
         ``_prefix`` is unused, so the pool key and the name a layer asks for
         stay the same string.
         """
-        return {
-            region.leaf_id: RecurrentKVLeafRegion(
+
+        def leaf(region: RecurrentStateRegion) -> KVLeafRegion:
+            cls = (
+                ScratchKVLeafRegion if region.scratch else RecurrentKVLeafRegion
+            )
+            group_id = (
+                KVCacheGroupId.scratch()
+                if region.scratch
+                else KVCacheGroupId.recurrent()
+            )
+            return cls(
                 leaf_id=region.leaf_id,
-                group_id=KVCacheGroupId.recurrent(),
-                bytes_per_page=region.bytes_per_state,
+                group_id=group_id,
+                bytes_per_page=region.bytes_per_page,
                 region=region,
             )
-            for region in self.regions
-        }
+
+        return {region.leaf_id: leaf(region) for region in self.regions}
+
+
+def recurrent_leaves(
+    params: CacheLeafParamInterface,
+) -> list[RecurrentStateParams]:
+    """Returns every state a cache keeps, in tree order."""
+    if isinstance(params, RecurrentStateParams):
+        return [params]
+    if isinstance(params, MultiKVCacheParams):
+        return [
+            state
+            for child in params.children.values()
+            for state in recurrent_leaves(child)
+        ]
+    return []
 
 
 def recurrent_leaf(
     params: CacheLeafParamInterface,
 ) -> RecurrentStateParams | None:
-    """Returns the one state a cache keeps, or ``None`` if it keeps none."""
-    if isinstance(params, RecurrentStateParams):
-        return params
-    if isinstance(params, MultiKVCacheParams):
-        for child in params.children.values():
-            state = recurrent_leaf(child)
-            if state is not None:
-                return state
-    return None
+    """Returns the first state a cache keeps, or ``None`` if it keeps none."""
+    states = recurrent_leaves(params)
+    return states[0] if states else None
 
 
 def _is_attention(
     child: CacheLeafParamInterface,
 ) -> TypeGuard[KVCacheParamInterface]:
-    """Returns whether an attention op reads this child of a cache tree.
-
-    A structural test, so it answers for any implementation.
-
-    TODO(brodriguez): this separates the two kinds of leaf a cache can hold
-    today. A third kind would need a marker of its own, since a structural
-    test only sees the members a class happens to have.
-    """
-    return isinstance(child, KVCacheParamInterface)
+    """Returns whether an attention op reads this child of a cache tree."""
+    return child.leaf_kind is CacheLeafKind.ATTENTION
 
 
-def _pool_defining_child(
+def _agreed_pool(
     children: Mapping[str, CacheLeafParamInterface],
-) -> KVCacheParamInterface:
-    """Returns the child a tree reads the pool's configuration off."""
-    for child in children.values():
-        if _is_attention(child):
-            return child
-    raise ValueError(
-        "MultiKVCacheParams requires at least one attention cache: the page"
-        " size and pool configuration are read off it."
-    )
+) -> CacheLeafParamInterface:
+    """Returns a child the pool's configuration is read off.
+
+    Every child that declares one must agree, so which is returned cannot
+    matter.
+
+    Raises:
+        ValueError: If no child declares a pool, or if two disagree.
+    """
+    params = [child for child in children.values() if child.page_size]
+    if not params:
+        raise ValueError(
+            "A cache tree takes its page size and pool configuration from a"
+            " child that declares one, and none of these does."
+        )
+    first = params[0]
+    page_sizes = {p.page_size for p in params}
+    if len(page_sizes) > 1:
+        raise ValueError(
+            f"All params must use the same page size, got: {page_sizes}"
+        )
+
+    data_parallel_degrees = {p.data_parallel_degree for p in params}
+    if len(data_parallel_degrees) > 1:
+        raise ValueError(
+            "All params must use the same data parallel degree, got:"
+            f" {data_parallel_degrees}"
+        )
+
+    devices = {tuple(p.devices) for p in params}
+    if len(devices) > 1:
+        raise ValueError(
+            f"All params must use the same number of devices, got: {devices}"
+        )
+
+    enable_prefix_caching = {p.enable_prefix_caching for p in params}
+    if len(enable_prefix_caching) > 1:
+        raise ValueError(
+            "All params must use the same enable_prefix_caching, got:"
+            f" {enable_prefix_caching}"
+        )
+
+    enable_dp_cross_replica_prefix_copy = {
+        p.enable_dp_cross_replica_prefix_copy for p in params
+    }
+    if len(enable_dp_cross_replica_prefix_copy) > 1:
+        raise ValueError(
+            "All params must use the same"
+            " enable_dp_cross_replica_prefix_copy, got:"
+            f" {enable_dp_cross_replica_prefix_copy}"
+        )
+
+    # ``KVConnectorConfig`` is not hashable, so compare by equality against
+    # the first rather than collapsing into a set.
+    if any(p.kv_connector_config != first.kv_connector_config for p in params):
+        raise ValueError(
+            "All params must use the same kv_connector_config, got:"
+            f" {[p.kv_connector_config for p in params]}"
+        )
+
+    speculative_methods = {p.speculative_method for p in params}
+    if len(speculative_methods) > 1:
+        raise ValueError(
+            "All params must use the same speculative_method, got:"
+            f" {speculative_methods}"
+        )
+
+    num_draft_tokens_set = {p.num_draft_tokens for p in params}
+    if len(num_draft_tokens_set) > 1:
+        raise ValueError(
+            "All params must use the same num_draft_tokens, got:"
+            f" {num_draft_tokens_set}"
+        )
+
+    kv_hash_algos = {p.kv_hash_algo for p in params}
+    if len(kv_hash_algos) > 1:
+        raise ValueError(
+            f"All params must use the same kv_hash_algo, got: {kv_hash_algos}"
+        )
+
+    kv_hash_seeds = {p.kv_hash_seed for p in params}
+    if len(kv_hash_seeds) > 1:
+        raise ValueError(
+            f"All params must use the same kv_hash_seed, got: {kv_hash_seeds}"
+        )
+    return first
+
+
+_Child = TypeVar("_Child", bound=CacheLeafParamInterface)
 
 
 @dataclass(frozen=True)
@@ -2689,7 +3280,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     Children may be leaf :class:`KVCacheParams` instances or nested
     :class:`MultiKVCacheParams` subtrees, so arbitrarily deep hierarchies
-    are supported (e.g. ``{target: {sliding, mla}, draft: mha}``). The
+    are supported (such as ``{target: {sliding, mla}, draft: mha}``). The
     whole tree is consumed through the :class:`KVCacheParamInterface` —
     callers never need to know how many blocks that is.
 
@@ -2703,6 +3294,15 @@ class MultiKVCacheParams(KVCacheParamInterface):
     :class:`KVCacheParams` or :class:`RecurrentStateParams` instances, or
     nested :class:`MultiKVCacheParams` trees."""
 
+    @property
+    def leaf_kind(self) -> CacheLeafKind:
+        """Attention where the subtree holds any, else recurrent."""
+        return (
+            CacheLeafKind.ATTENTION
+            if self._attention_children
+            else CacheLeafKind.RECURRENT
+        )
+
     page_size: int
     """Number of tokens per page, a value every child cache must share."""
     data_parallel_degree: int
@@ -2712,6 +3312,14 @@ class MultiKVCacheParams(KVCacheParamInterface):
     kv_connector_config: KVConnectorConfigInterface
     """The KV connector's type and settings, a value every child must
     share."""
+    enable_prefix_caching: bool = False
+    """Whether prefix caching is enabled, a value every child must share."""
+    enable_dp_cross_replica_prefix_copy: bool = True
+    """Whether a DP cross-replica prefix copy may serve a hit."""
+    kv_hash_algo: KVHashAlgo = "ahash64"
+    """Hash algorithm used for block identity."""
+    kv_hash_seed: bytes | None = None
+    """Resolved cluster seed for ``sha256``."""
     speculative_method: SpeculativeMethod | None = None
     """Speculative decoding method propagated from ``SpeculativeConfig``."""
     num_draft_tokens: int = 0
@@ -2727,7 +3335,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         Children may be leaf :class:`KVCacheParams` instances, one
         :class:`RecurrentStateParams`, or nested
         :class:`MultiKVCacheParams` trees, enabling arbitrarily deep KV
-        cache hierarchies (e.g. ``{target: {sliding, mla}, draft: mha}``).
+        cache hierarchies (such as ``{target: {sliding, mla}, draft: mha}``).
         All children must share the same ``page_size``,
         ``data_parallel_degree``, ``n_devices``, and
         ``kv_connector_config`` values.
@@ -2747,13 +3355,19 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """
         if len(params) == 0:
             raise ValueError("MultiKVCacheParams requires at least one param.")
-        first = _pool_defining_child(params)
+        first = _agreed_pool(params)
         return cls(
             children=dict(params),
             page_size=first.page_size,
             data_parallel_degree=first.data_parallel_degree,
             devices=first.devices,
             kv_connector_config=first.kv_connector_config,
+            enable_prefix_caching=first.enable_prefix_caching,
+            enable_dp_cross_replica_prefix_copy=(
+                first.enable_dp_cross_replica_prefix_copy
+            ),
+            kv_hash_algo=first.kv_hash_algo,
+            kv_hash_seed=first.kv_hash_seed,
             speculative_method=first.speculative_method,
             num_draft_tokens=first.num_draft_tokens,
         )
@@ -2765,103 +3379,34 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 "MultiKVCacheParams requires at least one param set."
             )
 
-        states = [
-            key
-            for key, child in self.children.items()
-            if isinstance(child, RecurrentStateParams)
-        ]
-        if len(states) > 1:
-            raise ValueError(
-                f"Found {sorted(states)} recurrent states but only 0 or 1 is"
-                " allowed."
-            )
-        nested = [
-            key
-            for key, child in self.children.items()
-            if key not in states and recurrent_leaf(child) is not None
-        ]
-        if nested:
-            raise ValueError(
-                f"Subtrees {sorted(nested)} declare a recurrent state; it must"
-                " be declared on the root cache."
-            )
+        # A leaf id keys the pool's leaves and names the symbolic dim sizing
+        # its rows, so a duplicate collides in both.
+        seen: dict[str, str] = {}
+        for key, child in self.children.items():
+            for state in recurrent_leaves(child):
+                for region in state.regions:
+                    clash = seen.setdefault(region.leaf_id, key)
+                    if clash != key:
+                        raise ValueError(
+                            f"Recurrent states {clash!r} and {key!r} both"
+                            f" declare leaf {region.leaf_id!r}; give each"
+                            " state its own leaf ids."
+                        )
 
-        # Only the caches that define the pool have to agree on it.
-        first = _pool_defining_child(self.children)
-        params: list[KVCacheParamInterface] = list(
-            self._attention_children.values()
-        )
-        page_sizes = {p.page_size for p in params}
-        if len(page_sizes) > 1:
-            raise ValueError(
-                f"All params must use the same page size, got: {page_sizes}"
-            )
+    def child(self, key: str, kind: type[_Child]) -> _Child:
+        """Returns the child at ``key`` as the ``kind`` it must be.
 
-        data_parallel_degrees = {p.data_parallel_degree for p in params}
-        if len(data_parallel_degrees) > 1:
-            raise ValueError(
-                "All params must use the same data parallel degree, got:"
-                f" {data_parallel_degrees}"
+        Raises:
+            KeyError: If the tree has no child at ``key``.
+            TypeError: If the child at ``key`` is not a ``kind``.
+        """
+        child = self.children[key]
+        if not isinstance(child, kind):
+            raise TypeError(
+                f"Cache child {key!r} is a {type(child).__name__}, but the"
+                f" caller reads it as a {kind.__name__}."
             )
-
-        devices = {tuple(p.devices) for p in params}
-        if len(devices) > 1:
-            raise ValueError(
-                f"All params must use the same number of devices, got: {devices}"
-            )
-
-        enable_prefix_caching = {p.enable_prefix_caching for p in params}
-        if len(enable_prefix_caching) > 1:
-            raise ValueError(
-                "All params must use the same enable_prefix_caching, got:"
-                f" {enable_prefix_caching}"
-            )
-
-        enable_dp_cross_replica_prefix_copy = {
-            p.enable_dp_cross_replica_prefix_copy for p in params
-        }
-        if len(enable_dp_cross_replica_prefix_copy) > 1:
-            raise ValueError(
-                "All params must use the same"
-                " enable_dp_cross_replica_prefix_copy, got:"
-                f" {enable_dp_cross_replica_prefix_copy}"
-            )
-
-        # ``KVConnectorConfig`` is not hashable, so compare by equality against
-        # the first rather than collapsing into a set.
-        if any(
-            p.kv_connector_config != first.kv_connector_config for p in params
-        ):
-            raise ValueError(
-                "All params must use the same kv_connector_config, got:"
-                f" {[p.kv_connector_config for p in params]}"
-            )
-
-        speculative_methods = {p.speculative_method for p in params}
-        if len(speculative_methods) > 1:
-            raise ValueError(
-                "All params must use the same speculative_method, got:"
-                f" {speculative_methods}"
-            )
-
-        num_draft_tokens_set = {p.num_draft_tokens for p in params}
-        if len(num_draft_tokens_set) > 1:
-            raise ValueError(
-                "All params must use the same num_draft_tokens, got:"
-                f" {num_draft_tokens_set}"
-            )
-
-        kv_hash_algos = {p.kv_hash_algo for p in params}
-        if len(kv_hash_algos) > 1:
-            raise ValueError(
-                f"All params must use the same kv_hash_algo, got: {kv_hash_algos}"
-            )
-
-        kv_hash_seeds = {p.kv_hash_seed for p in params}
-        if len(kv_hash_seeds) > 1:
-            raise ValueError(
-                f"All params must use the same kv_hash_seed, got: {kv_hash_seeds}"
-            )
+        return child
 
     @cached_property
     def _attention_children(self) -> dict[str, KVCacheParamInterface]:
@@ -2873,39 +3418,9 @@ class MultiKVCacheParams(KVCacheParamInterface):
         }
 
     @property
-    def _first(self) -> KVCacheParamInterface:
-        """Returns the child the pool's configuration is read off.
-
-        An attention child, so the answer does not fall to dict order.
-        """
-        return _pool_defining_child(self.children)
-
-    @property
     def n_devices(self) -> int:
         """Returns the number of devices."""
         return len(self.devices)
-
-    @property
-    def enable_prefix_caching(self) -> bool:
-        """Whether prefix caching is enabled (shared across all caches)."""
-        return self._first.enable_prefix_caching
-
-    @property
-    def enable_dp_cross_replica_prefix_copy(self) -> bool:
-        """Whether DP cross-replica prefix copies are enabled (shared across
-        all caches)."""
-        return self._first.enable_dp_cross_replica_prefix_copy
-
-    @property
-    def kv_hash_algo(self) -> KVHashAlgo:
-        """Hash algorithm used for KV-cache block identity."""
-        return self._first.kv_hash_algo
-
-    @property
-    def kv_hash_seed(self) -> bytes | None:
-        """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``.
-        ``None`` for ``ahash64``."""
-        return self._first.kv_hash_seed
 
     @property
     def bytes_per_block(self) -> int:
@@ -2918,24 +3433,32 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     def get_symbolic_inputs(
         self, namespace: str = ""
-    ) -> MultiKVCacheInputs[TensorType, BufferType]:
+    ) -> dict[str, KVCacheInputs[TensorType, BufferType]]:
         """Returns the symbolic inputs for the KV cache tree.
 
         Each child inherits a distinct namespace so sibling groups' page-pool
         dims stay independent; nested subtrees compose the prefix.
         """
-        return MultiKVCacheInputs(
-            children={
-                k: p.get_symbolic_inputs(namespace=f"{namespace}{k}_")
-                for k, p in self.children.items()
-            },
+        # OrderedDict: the graph declares its inputs in child-declaration order
+        # (children, then state), and tree.flatten preserves an OrderedDict's
+        # order rather than sorting keys like a plain dict.
+        return OrderedDict(
+            (k, p.get_symbolic_inputs(namespace=f"{namespace}{k}_"))
+            for k, p in self.children.items()
         )
+
+    @cached_property
+    def _kv_symbolic_treedef(self) -> tree.TreeDef:
+        # TODO(SERVOPT-1505): avoid flattening symbolic inputs only to retain TreeDef for unflatten.
+        return tree.flatten(self.get_symbolic_inputs())[1]
 
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
-    ) -> MultiKVCacheInputs[TensorValue, BufferValue]:
+    ) -> dict[str, KVCacheInputs[TensorValue, BufferValue]]:
         """Unflattens the KV cache inputs from a graph-input iterator."""
-        return self.get_symbolic_inputs().unflatten(it)
+        inputs = tree.unflatten(self._kv_symbolic_treedef, it, exact=False)
+        assert isinstance(inputs, dict)
+        return inputs
 
     def unflatten_basic_kv_tree(
         self, it: Iterator[Any]
@@ -2947,25 +3470,35 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
         Returns one entry per attention child, in declaration order.
         """
-        tree = self.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
+        kv_tree = self.unflatten_kv_inputs(it)
         out: list[list[KVCacheInputsPerDevice[TensorValue, BufferValue]]] = []
         for key in self._attention_children:
-            child = tree.children[key]
-            if not isinstance(child, KVCacheInputs):
+            child = kv_tree[key]
+            # A nested (height > 1) child unflattens to a dict subtree, not the
+            # flat per-device tuple this shortcut requires.
+            if not isinstance(child, tuple):
                 raise ValueError("Unable to flatten nested KV tree")
-            out.append(list(child.inputs))
+            out.append(tree.leaves(child, leaf=KVCacheInputsPerDevice))
         return tuple(out)
 
     @property
     def replicates_kv_across_tp(self) -> bool:
-        """Whether every device holds identical KV state."""
-        return self._first.replicates_kv_across_tp
+        """Whether every device holds identical KV state.
+
+        A leaf's own answer, not the tree's: an MHA leaf shards its heads
+        where an MLA one replicates its latent, so siblings can differ.
+        """
+        attention = list(self._attention_children.values())
+        if attention:
+            return attention[0].replicates_kv_across_tp
+        states = recurrent_leaves(self)
+        assert states, "a cache tree holds attention leaves or state leaves"
+        return states[0].replicates_kv_across_tp
 
     @property
     def tensor_parallel_degree(self) -> int:
         """Returns the tensor parallel degree."""
-        return self._first.tensor_parallel_degree
+        return self.n_devices // self.data_parallel_degree
 
     def resolve_attn_key(
         self,
@@ -3025,7 +3558,9 @@ class MultiKVCacheParams(KVCacheParamInterface):
         assignments: Sequence[KVCacheAssignments],
         buffers: Sequence[KVCacheBufferInterface],
         _prefix: str = "",
-    ) -> KVCacheInputsInterface[Buffer, Buffer]:
+        *,
+        staging: GraphInputStagingInterface | None = None,
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Builds the runtime KV-cache tree spanning all replicas.
 
         Each child builds itself from every replica's assignment plus that
@@ -3039,16 +3574,32 @@ class MultiKVCacheParams(KVCacheParamInterface):
         for buffer in buffers:
             assert isinstance(buffer, MultiKVCacheBuffer)
             multi_buffers.append(buffer)
-        return MultiKVCacheInputs(
-            children={
-                k: p.build_runtime_inputs(
+        # OrderedDict so the runtime tree flattens in the same
+        # child-declaration order the graph declared its inputs (see
+        # get_symbolic_inputs).
+        return OrderedDict(
+            (
+                k,
+                p.build_runtime_inputs(
                     assignments,
                     [b.children[k] for b in multi_buffers if k in b.children],
                     _prefix=_prefix + k + ".",
-                )
-                for k, p in self.children.items()
-            },
+                    # The prefix is what keeps the children's metadata apart;
+                    # without it they would stage under the one name.
+                    staging=staging,
+                ),
+            )
+            for k, p in self.children.items()
         )
+
+    def staged_dispatch_metadata(
+        self, _prefix: str = ""
+    ) -> Mapping[str, DispatchMetadataSpec]:
+        """The metadata every child stages, under the child's own prefix."""
+        staged: dict[str, DispatchMetadataSpec] = {}
+        for name, child in self.children.items():
+            staged.update(child.staged_dispatch_metadata(_prefix + name + "."))
+        return staged
 
     def leaves(self, _prefix: str = "") -> Mapping[str, KVLeafRegion]:
         """Returns the leaves of every child, prefixed by the child's name."""
@@ -3099,7 +3650,7 @@ def spec_decode_cache_slack(params: KVCacheParamInterface) -> int:
     A speculative-decode step can over-speculate past the per-request
     ``max_seq_len`` cap into this slack (the KV pool reserves it beyond
     ``max_seq_len``), so any per-request sizing derived from ``max_seq_len``
-    -- the pool's page budget, the sparse-indexer score scratch, etc. -- must
+    -- the pool's page budget, the sparse-indexer score scratch and so on -- must
     add it. Centralized here so ``_compute_seq_len``, pool sizing, and
     ``OverlapTextGenerationPipeline._effective_max_cache_length`` stay in sync.
 
@@ -3140,11 +3691,14 @@ def compute_num_device_blocks(
         available_cache_memory: The amount of cache memory available across all devices.
         max_batch_size: The maximum batch size, or None.
         max_seq_len: The maximum sequence length, or None.
-        require_max_seq_len_fits: When True, raise instead of warn if a single
-            request at ``max_seq_len`` cannot fit in the allocable device
-            blocks. Memory estimation deliberately probes oversized configs,
-            so only the actual cache-allocation path should set this.
-        include_null_block: Whether to include room for the null block.
+        require_max_seq_len_fits: When True, raise if a single request at
+            ``max_seq_len`` cannot fit in the allocable device blocks. Set
+            only when allocating a uniform pool; memory estimation probes
+            oversized configs on purpose.
+        include_null_block: Whether to include room for the null block. The
+            limited path adds it to the required total; the unlimited path
+            reserves one allocable block for it. A budget that leaves no
+            request page after the null block raises.
 
     Returns:
         The number of blocks that can be allocated for a single replica.
@@ -3164,6 +3718,23 @@ def compute_num_device_blocks(
         if include_null_block:
             max_total_blocks += 1
 
+    if params.bytes_per_block == 0:
+        # Nothing here costs per token, so memory does not divide into equal
+        # blocks. Every leaf plateaus instead -- a state keeps its live block
+        # and one checkpoint however long a request runs.
+        slots = ceildiv(max_seq_len, params.page_size) if max_seq_len else 1
+        per_request = max(
+            (
+                leaf.blocks_to_reserve(
+                    slots, enable_prefix_caching=params.enable_prefix_caching
+                )
+                for leaf in params.leaves().values()
+            ),
+            default=0,
+        )
+        blocks = per_request * (max_batch_size or 1)
+        return blocks + 1 if include_null_block else blocks
+
     # Compute total number of blocks allocatable based on available memory.
     available_cache_memory_per_replica = (
         available_cache_memory // params.data_parallel_degree
@@ -3174,6 +3745,10 @@ def compute_num_device_blocks(
 
     if max_total_blocks is not None:
         num_blocks = min(num_allocable_blocks, max_total_blocks)
+    elif include_null_block:
+        # The unlimited path sizes the whole pool for requests. Reserve the
+        # null block's page so the capacity it reports leaves room for it.
+        num_blocks = num_allocable_blocks - 1
     else:
         num_blocks = num_allocable_blocks
 
@@ -3196,6 +3771,21 @@ def compute_num_device_blocks(
             f"{cache_memory_str} are available{across_x_devices_str}."
         )
 
+    if include_null_block:
+        # The null block holds no request. The limited path counts it in
+        # num_blocks; the unlimited path already reserved its page out.
+        request_blocks = (
+            num_blocks - 1 if max_total_blocks is not None else num_blocks
+        )
+        if request_blocks < 1:
+            two_pages_str = to_human_readable_bytes(2 * params.bytes_per_block)
+            raise RuntimeError(
+                "Insufficient cache memory to allocate the null block plus"
+                " a single request page.\nThe null block and one request page"
+                f" require {two_pages_str} but only {cache_memory_str} are"
+                f" available{across_x_devices_str}."
+            )
+
     if max_batch_size is not None and max_batch_size > num_allocable_blocks:
         memory_needed_str = to_human_readable_bytes(
             max_batch_size * params.bytes_per_block
@@ -3208,8 +3798,11 @@ def compute_num_device_blocks(
             f" ({cache_memory_str}{across_x_devices_str})."
         )
 
+    # A page of every leaf per slot is the uniform pool's cost model, so only
+    # its allocator may judge whether a request fits.
     if (
-        max_blocks_per_req is not None
+        require_max_seq_len_fits
+        and max_blocks_per_req is not None
         and max_blocks_per_req > num_allocable_blocks
     ):
         memory_needed_str = to_human_readable_bytes(
@@ -3221,24 +3814,20 @@ def compute_num_device_blocks(
             if slack > 0
             else ""
         )
-        msg = (
+        raise RuntimeError(
             "Insufficient cache memory to support a batch containing one"
             f" request at the max sequence length of {max_seq_len} tokens"
             f"{slack_str}. Need to allocate at least {max_blocks_per_req} pages"
             f" ({memory_needed_str}), but only have enough memory for"
             f" {num_allocable_blocks} pages"
             f" ({cache_memory_str}{across_x_devices_str})."
+            " A request approaching the max sequence length would"
+            " exhaust the KV cache and crash the model worker. Reduce"
+            " --max-length to at most"
+            f" {num_allocable_blocks * params.page_size} or increase the"
+            " available KV cache memory (e.g. raise"
+            " --device-memory-utilization)."
         )
-        if require_max_seq_len_fits:
-            raise RuntimeError(
-                msg + " A request approaching the max sequence length would"
-                " exhaust the KV cache and crash the model worker. Reduce"
-                " --max-length to at most"
-                f" {num_allocable_blocks * params.page_size} or increase the"
-                " available KV cache memory (e.g. raise"
-                " --device-memory-utilization)."
-            )
-        logger.warning(msg)
 
     return num_blocks
 
@@ -3268,28 +3857,33 @@ def estimated_memory_size(
         params=params,
         include_null_block=include_null_block,
     )
-    return (
-        num_device_blocks * params.bytes_per_block * params.data_parallel_degree
+    bytes_per_block = params.bytes_per_block or (
+        sum(leaf.bytes_per_page for leaf in params.leaves().values())
+        * params.tensor_parallel_degree
     )
+    return num_device_blocks * bytes_per_block * params.data_parallel_degree
 
 
 def compute_max_seq_len_fitting_in_cache(
     params: KVCacheParamInterface,
     available_cache_memory: int,
     include_null_block: bool = False,
-) -> int:
+) -> int | None:
     """Computes the maximum sequence length that can fit in the available memory.
 
     Args:
         available_cache_memory: The amount of cache memory available across
             all devices.
         include_null_block: Whether to include room for the null block.
+            Reserves one page of the reported capacity for it.
 
     Returns:
-        The maximum sequence length that can fit in the available cache memory.
+        The maximum sequence length that fits, or None where no length
+        exhausts the cache. A recurrent state costs the same however long a
+        request runs, which is what the manager reports once it exists.
     """
     if params.bytes_per_block == 0:
-        raise ValueError("bytes_per_block cannot be zero")
+        return None
     num_blocks = compute_num_device_blocks(
         params=params,
         available_cache_memory=available_cache_memory,

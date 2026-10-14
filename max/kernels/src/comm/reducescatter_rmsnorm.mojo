@@ -42,7 +42,7 @@ from max.gpu import (
     grid_dim,
     thread_idx,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -71,7 +71,7 @@ comptime RS_NORM_FUSE_THRESHOLD = 128 * 6144 * size_of[DType.bfloat16]()
 
 # Stand-in layout for a disengaged optional residual (mirrors
 # `allreduce_residual_rmsnorm.mojo`): never indexed, so it carries no storage.
-comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx[0], Idx[0])))
+comptime _ZeroSizedLayout = type_of(row_major(Idx[0], Idx[0]))
 
 
 # --- GPU Kernel ---
@@ -158,14 +158,14 @@ def _reducescatter_rmsnorm_kernel[
     var my_start = config.rank_unit_start(my_rank)
     var my_count = config.rank_units(my_rank)
 
-    # Round-robin peer order (RS's `circular_add`): peer 0 is self, so accum
-    # from 0 over all peers is bit-for-bit RS's `accum = peer[0]` init (AMD
-    # non-multimem).
+    # Canonical peer order (RS's canonical rank order): every destination
+    # sums the peers as 0, 1, 2, ... so an element's sum depends on its
+    # `ngpus` input values alone, not on the destination shard. `accum`
+    # starts at 0 and adds peer 0 first, which is bit-for-bit RS's
+    # `accum = peer[0]` init followed by the rest (adding zero is exact).
     comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
     var ptrs = Array[_, ngpus](
-        fill_with_unrolled=lambda [i: Int]() -> PtrType: src_ptrs[
-            (my_rank + i) % ngpus
-        ]
+        fill_with_unrolled=lambda [i: Int]() -> PtrType: src_ptrs[i]
     )
 
     # Gamma is a model weight, not predecessor output, so it can be loaded ahead
@@ -536,7 +536,7 @@ def reducescatter_rmsnorm[
     # divisibility below.
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
-    comptime simd_width = simd_width_of[in_dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime max_supported_cols = WARP_SIZE * simd_width * max_warps_per_block
     if cols > max_supported_cols:
         raise Error(
@@ -604,11 +604,11 @@ def reducescatter_rmsnorm[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
+    var group_sigs = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> Pointer[
+            Signal, MutAnyOrigin
+        ]: rank_sigs[group_start + i]
     )
-    comptime for i in range(group_size):
-        group_sigs[i] = rank_sigs[group_start + i]
 
     _reducescatter_rmsnorm_launch[
         simd_width,
@@ -643,7 +643,7 @@ def _dispatch_rs_norm[
     in_layout: TensorLayout,
     in_origin: Origin,
     //,
-    two_launch: def() raises capturing -> None,
+    TwoLaunchFuncType: def() raises -> None,
     has_residual: Bool = False,
     group_size: Int = ngpus,
     pdl_level: PDLLevel = PDLLevel(),
@@ -656,6 +656,7 @@ def _dispatch_rs_norm[
     weight_offset: Scalar[in_dtype],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    two_launch: TwoLaunchFuncType,
     threshold: Int = RS_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,
     residual: _ComptimeConditionalTileTensor[
@@ -691,9 +692,7 @@ def _dispatch_rs_norm[
         ngpus: Total number of devices in the world.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
-        two_launch: Caller-supplied standalone reduce-scatter + RMSNorm closure.
-            It must fold `residual` itself when `has_residual` -- this selector
-            only threads the residual into the FUSED arm.
+        TwoLaunchFuncType: Inferred type of the `two_launch` closure.
         has_residual: Fold `residual` into the fused arm's reduce-scatter sum.
         group_size: Number of devices per independent reduce-scatter group.
             Must evenly divide `ngpus`. Defaults to `ngpus` (one full-world
@@ -712,6 +711,9 @@ def _dispatch_rs_norm[
         rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
             device rank.
         ctx: Device context for this GPU.
+        two_launch: Caller-supplied standalone reduce-scatter + RMSNorm closure.
+            It must fold `residual` itself when `has_residual` -- this selector
+            only threads the residual into the FUSED arm.
         threshold: Per-rank-bytes fuse threshold; fuse at/below, else
             `two_launch`. Defaults to `RS_NORM_FUSE_THRESHOLD`.
         my_rank: Optional GLOBAL rank of THIS GPU in `[0, ngpus)`. Defaults to

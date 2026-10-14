@@ -47,11 +47,10 @@ struct Grayscale:
         img_in: InputTensor[dtype=.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
         def color_to_grayscale[
             simd_width: Int
-        ](idx: Coord) -> SIMD[.uint8, simd_width]:
+        ](idx: Coord) {var} -> SIMD[.uint8, simd_width]:
             var idx_l = coord_to_index_list(idx)
             var row = idx_l[0]
             var col = idx_l[1]
@@ -68,7 +67,7 @@ struct Grayscale:
 
             return min(gray_f32, 255).cast[.uint8]()
 
-        foreach[color_to_grayscale, target=target, simd_width=1](img_out, ctx)
+        foreach[target=target, simd_width=1](color_to_grayscale, img_out, ctx)
 
 
 @register("myadd")
@@ -82,14 +81,15 @@ struct MyAdd:
         B: InputTensor[dtype=type, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
-        def doit[simd_width: Int](idx: Coord) -> SIMD[C.dtype, simd_width]:
+        def doit[
+            simd_width: Int
+        ](idx: Coord) {var} -> SIMD[C.dtype, simd_width]:
             var a = A.load[simd_width](idx)
             var b = B.load[simd_width](idx)
             return a + b
 
-        foreach[doit, target=target](C, ctx)
+        foreach[target=target](doit, C, ctx)
 
 
 @register("parameter_increment")
@@ -102,13 +102,14 @@ struct ParameterIncrement:
         A: InputTensor[dtype=type, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @__parameter
         @inline(.always)
-        def doit[simd_width: Int](idx: Coord) -> SIMD[B.dtype, simd_width]:
+        def doit[
+            simd_width: Int
+        ](idx: Coord) {var} -> SIMD[B.dtype, simd_width]:
             var a = A.load[simd_width](idx)
             return a + type_of(a)(increment)
 
-        foreach[doit, target=target](B, ctx)
+        foreach[target=target](doit, B, ctx)
 
 
 @register("scalar_add")
@@ -121,7 +122,7 @@ struct ScalarAdd:
         A: Scalar[dtype],
         B: Scalar[dtype],
     ) raises:
-        C.store(IndexList[1](0), A + B)
+        C.store((0,), A + B)
 
 
 @register("unsupported_type_op")
@@ -137,9 +138,10 @@ struct UnsupportedTypeOp:
     ) raises:
         # This operation is for testing error handling only
         # The String parameter should cause a validation error
-        @__parameter
         @inline(.always)
-        def copy[simd_width: Int](idx: Coord) -> SIMD[output.dtype, simd_width]:
+        def copy[
+            simd_width: Int
+        ](idx: Coord) {var} -> SIMD[output.dtype, simd_width]:
             return input.load[simd_width](idx)
 
-        foreach[copy, target="cpu"](output, ctx)
+        foreach[target="cpu"](copy, output, ctx)

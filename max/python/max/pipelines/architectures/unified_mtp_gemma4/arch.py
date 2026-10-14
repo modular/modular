@@ -57,5 +57,4 @@ unified_mtp_gemma4_arch = SupportedArchitecture(
     # not auto-enable device graph capture (mirrors the non-MTP gemma4 arch).
     supports_device_graph_capture=False,
     supports_spec_decode_mixed_batches=True,
-    default_structured_output_backend="xgrammar",
 )

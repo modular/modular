@@ -59,7 +59,6 @@ If FP8 fails -> K loader / mma_QK chain is wrong. The mismatch pattern
 from max.gpu import lane_id, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import AddressSpace
 from std.testing import assert_true
 
 from layout.tile_layout import row_major
@@ -152,7 +151,7 @@ def kernel_qk_chain[
 
     # ---- K SMEM allocation + cooperative fill from gmem image -------------
     var k_smem = tt_stack_allocation[T, address_space=.SHARED](smem_layout_k)
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     comptime _smem_total = _K_SLOT_ROWS * _K_SUB_COLS
     var i = tid
     while i < _smem_total:

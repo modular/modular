@@ -13,20 +13,70 @@
 
 from std.math import exp
 
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from std.random import rand
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
     causal_conv1d_varlen_states_cpu,
 )
-from std.testing import TestSuite, assert_almost_equal
+from std.testing import (
+    TestSuite,
+    assert_almost_equal,
+    assert_equal,
+    assert_true,
+)
 
 from std.utils.index import Index, IndexList
 
 
 # Constants
 comptime PAD_SLOT_ID: Int32 = -1
+
+
+def _conv_cpu[
+    dtype: DType,
+    //,
+    silu_activation: Bool,
+    use_residual: Bool = False,
+    channels_last: Bool = False,
+](
+    x: TileTensor[mut=False, dtype, ...],
+    weight: TileTensor[mut=False, dtype, ...],
+    bias: TileTensor[mut=False, dtype, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    cache_indices: TileTensor[mut=False, .uint32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
+    conv_states: TileTensor[mut=True, ...],
+    output: TileTensor[mut=True, dtype, ...],
+):
+    """Runs the CPU conv with reader functions over these tensors.
+
+    An empty `cache_indices` maps sequence `b` to slot `b`, as in the op.
+    """
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](i: Int, j: Int) {var x} -> SIMD[dtype, width]:
+        return x.load[width=width]((i, j))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices} -> SIMD[.uint32, width]:
+        if Int(cache_indices.dim[0]()) == 0:
+            return SIMD[.uint32, width](UInt32(b))
+        return cache_indices.load[width=width]((b,))
+
+    causal_conv1d_varlen_fwd_cpu[silu_activation, use_residual, channels_last](
+        weight,
+        bias,
+        query_start_loc,
+        has_initial_state,
+        conv_states,
+        output,
+        x_fn,
+        slot_fn,
+    )
 
 
 @inline(.always)
@@ -90,7 +140,7 @@ def run_varlen_causal_conv1d_fwd[
         query_start_loc_tt.raw_store(i + 1, Int32(cumsum))
 
     # cache_indices: (batch,) - identity mapping
-    var cache_indices_heap = List(length=batch, fill=Int32(0))
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
     var cache_indices_tt = TileTensor(
         cache_indices_heap,
         row_major(
@@ -98,7 +148,7 @@ def run_varlen_causal_conv1d_fwd[
         ),
     )
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Int32(i))
+        cache_indices_tt.raw_store(i, UInt32(i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
@@ -147,27 +197,11 @@ def run_varlen_causal_conv1d_fwd[
     var weight_width_stride: UInt32 = 1
     var out_dim_stride: UInt32 = UInt32(total_seqlen)
     var out_seqlen_stride: UInt32 = 1
-    var conv_states_batch_stride: UInt32 = UInt32(dim * state_len)
-    var conv_states_dim_stride: UInt32 = UInt32(state_len)
-    var conv_states_width_stride: UInt32 = 1
 
-    var silu_activation = activation == "silu"
+    comptime silu_activation = activation == "silu"
 
     # Test kernel
-    causal_conv1d_varlen_fwd_cpu[
-        dtype,
-        dtype,
-        dtype,
-        dtype,
-        DType.int32,
-        DType.int32,
-        DType.bool,
-        dtype,
-    ](
-        dim,
-        total_seqlen,
-        width,
-        batch,
+    _conv_cpu[silu_activation,](
         x_tt,
         weight_tt,
         bias_tt,
@@ -176,21 +210,6 @@ def run_varlen_causal_conv1d_fwd[
         has_initial_state_tt,
         conv_states_tt,
         output_tt,
-        x_dim_stride,
-        x_seqlen_stride,
-        weight_dim_stride,
-        weight_width_stride,
-        out_dim_stride,
-        out_seqlen_stride,
-        conv_states_batch_stride,
-        conv_states_dim_stride,
-        conv_states_width_stride,
-        silu_activation,
-        PAD_SLOT_ID,
-        True,  # has_cache_indices
-        True,  # has_initial_state_flag
-        True,  # has_conv_states
-        True,  # has_bias
     )
 
     # Reference implementation
@@ -379,17 +398,6 @@ def run_varlen_causal_conv1d_update[
         cache_seqlens_tt,
         conv_state_indices_tt,
         output_tt2,
-        x_batch_stride,
-        x_dim_stride,
-        x_seqlen_stride,
-        weight_dim_stride,
-        weight_width_stride,
-        conv_state_batch_stride,
-        conv_state_dim_stride,
-        conv_state_seqlen_stride,
-        out_batch_stride,
-        out_dim_stride,
-        out_seqlen_stride,
         silu_activation,
         PAD_SLOT_ID,
         True,  # has_conv_state_indices
@@ -576,11 +584,6 @@ def run_varlen_causal_conv1d_states[
         x_tt3,
         cu_seqlens_tt,
         states_tt,
-        x_seqlen_stride,
-        x_dim_stride,
-        states_batch_stride,
-        states_dim_stride,
-        states_seqlen_stride,
     )
 
     # Reference implementation
@@ -654,10 +657,10 @@ def run_conv_state_writeback[
     for i in range(batch + 1):
         query_start_loc_tt.raw_store(i, Int32(i * seqlen))
 
-    var cache_indices_heap = List(length=batch, fill=Int32(0))
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
     var cache_indices_tt = TileTensor(cache_indices_heap, row_major(batch))
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Int32(i))
+        cache_indices_tt.raw_store(i, UInt32(i))
 
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](True))
     var has_initial_state_tt = TileTensor(
@@ -683,20 +686,7 @@ def run_conv_state_writeback[
                 conv_states_tt.raw_store(idx, value)
                 initial_tt.raw_store(idx, value)
 
-    causal_conv1d_varlen_fwd_cpu[
-        dtype,
-        dtype,
-        dtype,
-        dtype,
-        DType.int32,
-        DType.int32,
-        DType.bool,
-        dtype,
-    ](
-        dim,
-        total_seqlen,
-        width,
-        batch,
+    _conv_cpu[False,](
         x_tt,
         weight_tt,
         bias_tt,
@@ -705,21 +695,6 @@ def run_conv_state_writeback[
         has_initial_state_tt,
         conv_states_tt,
         output_tt,
-        UInt32(total_seqlen),  # x_dim_stride
-        UInt32(1),  # x_seqlen_stride
-        UInt32(width),  # weight_dim_stride
-        UInt32(1),  # weight_width_stride
-        UInt32(total_seqlen),  # out_dim_stride
-        UInt32(1),  # out_seqlen_stride
-        UInt32(dim * state_len),  # conv_states_batch_stride
-        UInt32(state_len),  # conv_states_dim_stride
-        UInt32(1),  # conv_states_width_stride
-        False,  # silu_activation
-        PAD_SLOT_ID,
-        True,  # has_cache_indices
-        True,  # has_initial_state_flag
-        True,  # has_conv_states
-        True,  # has_bias
     )
 
     # Expected: the last `state_len` of `initial ++ chunk`, per (b, d).
@@ -748,6 +723,63 @@ def run_conv_state_writeback[
                     expected,
                     rtol=0.001,
                 )
+
+
+# =============================================================================
+# Regression test: `conv_states` addressing past a 32-bit offset
+# =============================================================================
+
+
+def test_conv_states_pool_offset_avoids_32bit_wrap() raises:
+    """`conv_states` pool addressing must not wrap at 2**32 elements.
+
+    Reproduces the MXSERV-520 overflow: once Inkling's conv state moved onto
+    the recurrent cache group, a layer indexes the whole per-device Jenga
+    slab instead of a `max_batch_size`-row buffer. The measured slab is 2531
+    huge pages x 26.25 MiB = 64.88 GiB; at `dim=4096` channels and
+    `state_len=3` (width 4) that is 1,417,344 rows x 12,288 elements/row,
+    1.74e10 elements total -- over 4x past `2**32`.
+
+    Materializing that pool here (>16 GiB) is impractical, so this reproduces
+    the identical offset arithmetic without the memory: `dim`/`state_len` fix
+    the per-row size exactly as the real pool has it, `cache_idx` is the real
+    deepest-row index from the measured slab, and both formulas below are
+    pure integer arithmetic over a `Layout`'s shape/stride metadata -- no
+    pointer is ever dereferenced, so no backing allocation is needed.
+
+    Before the fix (`varlen_causal_conv1d.mojo`'s 9 sites), the kernel formed
+    this offset by hand in `UInt32`:
+    `UInt32(cache_idx) * UInt32(conv_states_batch_stride) + ...`, which wraps
+    for this `cache_idx` (asserted below). After the fix, the kernel indexes
+    `conv_states.load(Coord(cache_idx, d, state_idx))` /
+    `.store(Coord(...), ...)`, which forms the offset at `conv_states`'s own
+    `linear_idx_type` -- 64-bit for a dynamic, `GENERIC`-address-space pool
+    per `_get_index_type` (`layout/tile_tensor.mojo`) -- so it no longer
+    wraps. This test drives that exact `Layout.__call__[linear_idx_type=...]`
+    step `TileTensor.load`/`.store` use internally.
+    """
+    var dim = 4096
+    var state_len = 3
+    var cache_idx = 1_417_343  # deepest row of the measured 1,417,344-row slab
+
+    var conv_states_batch_stride = UInt32(dim * state_len)  # 12288
+    var true_offset = UInt64(cache_idx) * UInt64(conv_states_batch_stride)
+    assert_true(
+        true_offset > UInt64(UInt32.MAX),
+        "test setup must actually cross the 32-bit boundary",
+    )
+
+    var wrapped_offset = UInt32(cache_idx) * conv_states_batch_stride
+    assert_true(
+        UInt64(wrapped_offset) != true_offset,
+        "expected the hand-rolled UInt32 product to wrap",
+    )
+
+    var pool_layout = row_major(cache_idx + 1, dim, state_len)
+    var computed_offset = pool_layout[linear_idx_type=DType.int64](
+        Coord(cache_idx, 0, 0)
+    )
+    assert_equal(UInt64(computed_offset), true_offset)
 
 
 # =============================================================================

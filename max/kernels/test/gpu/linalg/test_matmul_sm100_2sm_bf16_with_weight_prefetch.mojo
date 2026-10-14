@@ -25,7 +25,12 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import (
+    TileTensor,
+    CoordLike,
+    row_major,
+    Idx,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -68,14 +73,12 @@ def test_blackwell_matmul_with_weight_prefetch[
         t" swapAB={swapAB} prefetch_tiles_n={prefetch_tiles_n}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -103,8 +106,8 @@ def test_blackwell_matmul_with_weight_prefetch[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

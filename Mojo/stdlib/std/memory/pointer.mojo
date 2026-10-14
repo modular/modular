@@ -177,6 +177,34 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+comptime OptionalMutPointer[
+    T: AnyType,
+    origin: MutOrigin,
+    *,
+    address_space: AddressSpace = .GENERIC,
+] = OptionalPointer[T, origin, address_space=address_space]
+"""An optional (nullable) mutable `Pointer`.
+
+Parameters:
+    T: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
+comptime OptionalImmPointer[
+    T: AnyType,
+    origin: ImmOrigin,
+    *,
+    address_space: AddressSpace = .GENERIC,
+] = OptionalPointer[T, origin, address_space=address_space]
+"""An optional (nullable) immutable `Pointer`.
+
+Parameters:
+    T: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
 comptime OpaquePointer[
     mut: Bool,
     //,
@@ -368,9 +396,8 @@ struct Pointer[
     if random_float64() > 0.5:
         maybe_ptr = alloc(layout).unsafe_leak()
 
-    # Check for absence, then unwrap to use the pointer.
-    if maybe_ptr:
-        var ptr = maybe_ptr.value()
+    # Unwrap the pointer only if it is present.
+    if case .Some(ptr) = maybe_ptr:
         ptr.write(42)
         print(ptr[])  # => 42
         dealloc(
@@ -1247,10 +1274,8 @@ struct Pointer[
         ```
         """
         comptime alignment = align_of[Self.T]()
-        comptime if CurrentPlugin.unsafe_dangling_fn:
-            comptime address = CurrentPlugin.unsafe_dangling_fn.value()[
-                alignment
-            ]()
+        comptime if case .Some(dangling_fn) = CurrentPlugin.unsafe_dangling_fn:
+            comptime address = dangling_fn[alignment]()
             comptime assert (
                 address != 0
             ), "Pointer cannot be constructed with address 0"
@@ -2476,7 +2501,7 @@ struct Pointer[
         from std.memory.alloc import alloc, dealloc, Layout
 
         @fieldwise_init
-        struct Pinned(Movable where False):
+        struct Pinned(not Movable):
             var value: Int
 
         var allocation = alloc(Layout[Pinned].single())

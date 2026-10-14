@@ -113,6 +113,7 @@ struct RangeSink {
                            uint32_t color);
   void (*rangeEnd)();
   void (*registerCurrentThread)();
+  bool (*requestBurst)(StringRef reason);
 };
 
 // Why a sink is being requested; the integration decides per request kind
@@ -212,8 +213,17 @@ void disable();
 // the backend is not yet ready.
 void activatePendingTrace();
 
-// Block until the most recent disable()'s trace has been serialized.
+// Block until the most recent disable()'s trace has been serialized, along
+// with any step-window burst still being written in the background.
 void waitForTrace();
+
+// Asks a repeating step-window capture for an extra burst, opened now, for
+// an event the periodic schedule would likely miss (`reason` labels it in
+// the trace, e.g. "prefill"). Returns true iff a burst opened: requests are
+// honored only between bursts, after the first scheduled one, at most once
+// per gap, and only when the burst can close before the next scheduled one
+// is prepared. A single predicted branch when profiling is disabled.
+bool requestBurst(StringRef reason);
 
 // Returns the message recorded by the most recent trace stop — disable() or
 // a daemon-driven stop — or empty when the trace was written successfully

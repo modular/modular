@@ -13,7 +13,7 @@
 
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
-from layout import IntTuple, Layout, LayoutTensor
+from layout import ComptimeInt, RowMajorLayout, TileTensor
 from std.python import Python, PythonObject
 from std.testing import assert_true
 
@@ -25,7 +25,8 @@ def contains_fastdiv_div_sequence(asm: String, width: Int = 32) raises -> Bool:
     var w = String(width)
     var fastdiv_pattern = String(
         r"ld\.global\.b" + w + r"\s+[^;]+;\s*"
-        r"mov\.b" + w + r"\s+[^;]+;\s*"
+        # The magic constant may be folded into `mul.hi` as an immediate.
+        r"(?:mov\.b" + w + r"\s+[^;]+;\s*)?"
         r"mul\.hi\.u" + w + r"\s+[^;]+;\s*"
         r"sub\.s" + w + r"\s+[^;]+;\s*"
         r"shr\.u" + w + r"\s+[^;]+;\s*"
@@ -51,9 +52,8 @@ def contains_power_of_2_sequence(asm: String, width: Int = 32) raises -> Bool:
 
 def fast_div_kernel[
     dtype: DType,
-    layout: Layout,
     divisor: Int,
-](input: LayoutTensor[dtype, layout, MutAnyOrigin],):
+](input: TileTensor[dtype, RowMajorLayout[ComptimeInt[1]], MutAnyOrigin],):
     comptime fast_div = FastDiv[dtype](divisor)
     var x = input[0]
     var result = rebind[Scalar[fast_div.uint_type]](x) / fast_div
@@ -61,11 +61,9 @@ def fast_div_kernel[
 
 
 def main() raises:
-    comptime layout = Layout(IntTuple(1))
-
     # Test uint32 FastDiv.
-    comptime kernel_u32_pow2 = fast_div_kernel[.uint32, layout, 4]
-    comptime kernel_u32_div = fast_div_kernel[.uint32, layout, 3]
+    comptime kernel_u32_pow2 = fast_div_kernel[.uint32, 4]
+    comptime kernel_u32_div = fast_div_kernel[.uint32, 3]
 
     var asm = _compile_code[
         kernel_u32_pow2,
@@ -80,8 +78,8 @@ def main() raises:
     assert_true(contains_fastdiv_div_sequence(asm))
 
     # Test uint64 FastDiv.
-    comptime kernel_u64_pow2 = fast_div_kernel[.uint64, layout, 4]
-    comptime kernel_u64_div = fast_div_kernel[.uint64, layout, 3]
+    comptime kernel_u64_pow2 = fast_div_kernel[.uint64, 4]
+    comptime kernel_u64_div = fast_div_kernel[.uint64, 3]
 
     asm = _compile_code[
         kernel_u64_pow2,

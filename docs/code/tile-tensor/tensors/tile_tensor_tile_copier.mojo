@@ -41,7 +41,7 @@ def tile_copier_example() raises:
 
     def kernel(tensor: TileTensor[dtype, type_of(input_layout), MutAnyOrigin]):
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         comptime tile_layout = row_major[block_size, block_size]()
         var shared_tile = stack_allocation[dtype, address_space=.SHARED](

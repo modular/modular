@@ -20,7 +20,6 @@ from std.memory import unsafe_memcmp
 """
 
 from std.math import iota
-from std.memory.unsafe_pointer import unsafe_cast
 from std.traits import (
     IsTriviallyCopyable,
     IsTriviallyDeinitable,

@@ -17,6 +17,7 @@
 
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/CODialect/COUtils.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/ParametricInterpreterState.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -70,7 +71,7 @@ Operation *LIT::findOpProcessingRaise(Block *currentBlock) {
         // needs a finally but isn't itself in a throwing region.
         auto &exceptRegion = tryOp.getExceptRegion();
         if (exceptRegion.empty() || exceptRegion.front().empty() ||
-            !isa<UnreachableOp>(exceptRegion.front().front()))
+            !isa<HLCF::UnreachableOp>(exceptRegion.front().front()))
           return tryOp;
       }
     }
@@ -382,7 +383,7 @@ static LogicalResult verifyCallOp(OpT op, FuncType sig, ValueRange operands,
              << expected.size() << " " << kind << "s but got " << types.size();
     }
     for (auto [i, type, exp] : llvm::enumerate(types, expected)) {
-      if (type == exp)
+      if (isEqualCanon(type, exp))
         continue;
       return op.emitOpError("callee expected call ")
              << kind << " #" << i << " to be " << exp << " but got " << type;
@@ -736,13 +737,11 @@ TypedAttr FnOp::getFuncLiteralGenerator(
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
                                        fullSig.getParamListAttrs());
-  if (!bindings || llvm::all_of(bindings, [](TypedAttr binding) {
-        return isa<UnboundAttr>(binding);
-      })) {
+  if (!bindings || llvm::all_of(bindings, llvm::IsaPred<UnboundAttr>)) {
     // If all the provided bindings are unbound, return the original generator.
-    // FIXME: this is a hack to avoid the bug when UnboundAttr erased type
-    // dependencies, which results in BindParamsAttr being folded in a wrong
-    // way.
+    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
+    // type dependencies, which results in BindParamsAttr being folded in a
+    // wrong way.
     //
     // E.g.,
     //
@@ -1102,10 +1101,10 @@ void FnOp::print(OpAsmPrinter &p) {
   // Don't print the following in lit.fn.
   SmallVector<StringRef> ignoredAttrNames(
       (ArrayRef<StringRef>(disallowedAttrNames)));
-  if (getLLVMMetadataArray().empty())
-    ignoredAttrNames.push_back(getLLVMMetadataArrayAttrName());
-  if (getLLVMArgMetadataArray().empty())
-    ignoredAttrNames.push_back(getLLVMArgMetadataArrayAttrName());
+  if (getFnAttrs().empty())
+    ignoredAttrNames.push_back(getFnAttrsAttrName());
+  if (getFnArgAttrs().empty())
+    ignoredAttrNames.push_back(getFnArgAttrsAttrName());
   if (!isImplicitConversion())
     ignoredAttrNames.push_back(getImplicitConversionAttrName());
 
@@ -1131,13 +1130,13 @@ LogicalResult FnOp::verify() {
   if (failed(verifyInlineLevel(*this, getInlineLevelAttr())))
     return failure();
 
-  if ((getLLVMMetadataArray().size() & 1) != 0)
-    return emitOpError("expected an even number elements in LLVMMetadataArray");
-  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
-      !argsArray.empty() && argsArray.size() != getNumArguments()) {
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+  if ((getFnAttrs().size() & 1) != 0)
+    return emitOpError("expected an even number elements in fnAttrs");
+  if (ArrayAttr argAttrs = getFnArgAttrs();
+      !argAttrs.empty() && argAttrs.size() != getNumArguments()) {
+    return emitOpError("fnArgAttrs size does not equal number of "
                        "arguments, got ")
-           << argsArray.size();
+           << argAttrs.size();
   }
 
   // Check that the number of argument labels matches the number of argument
@@ -1375,6 +1374,16 @@ void StructDeclOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
     types.push_back(TypeParamAttr::get(field.getType(), metaType));
 }
 
+FailureOr<ArrayAttr> StructDeclOp::getAnnotations(std::optional<int> fieldIdx) {
+  if (!fieldIdx.has_value())
+    return getAnnotationsAttr();
+
+  for (auto [idx, field] : llvm::enumerate(getFieldDecls()))
+    if (static_cast<int>(idx) == *fieldIdx)
+      return field.getAnnotationsAttr();
+  return failure();
+}
+
 /// Verify the debuginfo scope of an op that must be a top-level declaration.
 static LogicalResult verifyTopLevelLocScope(Operation *op) {
   Location loc = op->getLoc();
@@ -1409,10 +1418,22 @@ DebugInfo::DIScopeAttr StructDeclOp::getLocScope() {
   return getTopLevelScope(*this);
 }
 
-/// Verify that there are no duplicate field names.
+/// Verify that there are no duplicate field or enum case names.
 LogicalResult StructDeclOp::verifyRegions() {
   SmallDenseMap<StringAttr, StructFieldOp, 8> seenFields;
+  SmallDenseMap<StringAttr, EnumCaseOp, 8> seenCases;
   for (Operation &op : getFields().front()) {
+    if (auto enumCase = dyn_cast<EnumCaseOp>(&op)) {
+      auto [it, inserted] =
+          seenCases.try_emplace(enumCase.getNameAttr(), enumCase);
+      if (!inserted) {
+        auto diag = enumCase.emitError("duplicate enum case ")
+                    << enumCase.getNameAttr();
+        diag.attachNote(it->second.getLoc()) << "see previous declaration here";
+        return failure();
+      }
+      continue;
+    }
     auto field = dyn_cast<StructFieldOp>(&op);
     if (!field)
       continue;
@@ -1435,12 +1456,25 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         TypeAttr::get(TraitType::get(ctx, {})),
         /*isSynthetic=*/{},
         /*nonmaterializableTarget=*/{}, /*moveInit=*/{},
-        /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
+        /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureThunkKey=*/{},
         /*docString=*/{}, /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
-        /*minAlignment=*/{}, /*convention=*/{}, /*definesClosure=*/{},
-        /*registerPassableConstraint=*/{});
+        /*minAlignment=*/{}, /*convention=*/{},
+        /*registerPassableConstraint=*/{}, /*annotations=*/{},
+        /*isEnum=*/{});
   result.regions[0]->push_back(new Block());
+}
+
+//===----------------------------------------------------------------------===//
+// EnumCaseOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult EnumCaseOp::verify() {
+  if (!cast<StructDeclOp>((*this)->getParentOp()).isEnum())
+    return emitOpError("expected to be in the body of an enum");
+  if (getName().empty())
+    return emitOpError("expected a non-empty case name");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1475,7 +1509,7 @@ Type StructFieldOp::getReboundType(StructType structSelfType,
 void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
                           StringAttr name, Type type) {
   build(builder, odsState, name, type, /*docString=*/{}, /*isDocHidden=*/false,
-        /*allowLegacyAnyOrigin=*/false);
+        /*allowLegacyAnyOrigin=*/false, /*annotations=*/{});
 }
 
 void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
@@ -2050,19 +2084,16 @@ DebugInfo::DIScopeAttr TraitDeclOp::getLocScope() {
 void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
   MLIRContext *ctx = builder.getContext();
-  UnitAttr none;
   build(builder, result, name, /*sym_visibility=*/nullptr,
         TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}),
         TypeAttr::get(TraitType::get(ctx, {})),
         TraitSymbolArrayAttr::get(ctx, {}),
         /*convention=*/TypeConvention::Unspecified,
-        /*definesClosure=*/none,
         /*docString=*/{},
         /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{},
-        /*linearTypeErrorMsg*/ {}, /*closureSignature*/ {},
-        /*sourceName=*/{});
+        /*linearTypeErrorMsg*/ {}, /*sourceName=*/{});
   result.regions[0]->push_back(new Block());
 }
 
@@ -2556,4 +2587,5 @@ LogicalResult EndFnOp::verify() {
 
 // Provide the autogenerated implementation guts for the Op classes.
 #define GET_OP_CLASSES
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/LITDialect/LIT.cpp.inc"

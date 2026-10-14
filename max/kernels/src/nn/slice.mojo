@@ -15,7 +15,7 @@
 from std.math import clamp
 
 from max.algorithm import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, coord_to_index_list
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
@@ -416,7 +416,7 @@ def sliced_add[
         c.store[width](idx, out_val)
 
     comptime if target == "gpu":
-        comptime compile_target = get_gpu_target()
+        comptime compile_target = ctx.target
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[

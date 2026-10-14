@@ -12,11 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.string.string_span import _get_kgen_string
+from std.sys.info import CompilationTarget
 
-from ._trait import MaxPluginHooks
+from ._trait import MaxPlugin, MaxPluginHooks
 
 
-struct CudaMaxPlugin(MaxPluginHooks):
+struct CudaMaxPlugin(MaxPlugin):
     """Provides default MAX behavior for CUDA targets."""
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["cuda"]()
+    comptime HookFor[target: CompilationTarget] = CudaMaxPluginHooks[target]
+
+
+struct CudaMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
+    pass

@@ -23,15 +23,14 @@ helper on the struct.
 """
 
 from std.collections import OptionalReg
-from std.math import ceildiv
+from std.math import ceildiv, recip
 from std.math.constants import log2e
 from std.math.uutils import udivmod
 from std.memory import bitcast, unsafe_stack_allocation
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
-from std.sys import align_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of
 from std.sys.intrinsics import readfirstlane
 from max.gpu import block_idx, lane_id, thread_idx
-from max.gpu.sync import barrier
 from layout import TileTensor
 from layout import row_major
 from layout.swizzle import Swizzle
@@ -46,7 +45,7 @@ from layout.tensor_core import num_matrix_reg
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
-from std.utils import Index, IndexList
+from std.utils import Index
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .softmax import Softmax
@@ -374,8 +373,11 @@ struct Attention[
             or Self.amd_structured_config.double_buffer_k_only
         ) else 1
     )
+    # V SMEM must cover the wider of K depth and output depth: MLA prefill has
+    # depth=qk_nope < output_depth=v_head_dim (GLM 192<256), or V truncates.
+    comptime _v_smem_depth = max(Self.depth, Self.output_depth)
     comptime _v_smem_physical_depth = ceildiv(
-        Self.depth, Self._bk_smem
+        Self._v_smem_depth, Self._bk_smem
     ) * Self._bk_smem
     comptime _v_smem_size = (
         Self.BN if Self.amd_structured_config.full_kv else Self.BK
@@ -644,11 +646,20 @@ struct Attention[
         # output store (below `query_rows` whenever the batch is non-uniform OR
         # the fold padded the tile). Token-strided rows
         # keep that: the SRD bound `(rows-1)*stride0 + depth` stops short of row
-        # `seq_len`, a full token stride later. Other paths keep the comptime
-        # `query_rows` / prefill `min(BM, ...)` byte-identically.
+        # `seq_len`, a full token stride later. MHA decode keeps the comptime
+        # `query_rows` and prefill its per-tile `min(BM, ...)`.
         var valid_rows: UInt32
         comptime if Self._fold_active and Self.q_seq_len > 1:
             valid_rows = UInt32(Self.heads_inner) * UInt32(seq_len)
+        elif Self.token_gen and Self.mla_mode:
+            # The bound is relative to this head tile, so cap it at the rows
+            # the tile owns; otherwise a partial last tile (24 heads at BM=16)
+            # spills into the next batch's or split's heads.
+            valid_rows = min(
+                UInt32(Self.BM),
+                UInt32(Self.query_rows)
+                - UInt32(Self.q_tile_idx()) * UInt32(Self.BM),
+            )
         elif Self.token_gen:
             valid_rows = UInt32(Self.query_rows)
         else:
@@ -823,8 +834,7 @@ struct Attention[
         not_last_iter: Bool,
     ):
         @inline(.always)
-        @__parameter
-        def _mask_apply_impl(masked: Bool):
+        def _mask_apply_impl(masked: Bool) {imm}:
             MaskTileOp[
                 accum_type=Self.accum_type,
                 token_gen=Self.token_gen,
@@ -912,6 +922,14 @@ struct Attention[
             warp_scratch,
         )
 
+    @inline(.always)
+    def _seed_inv_scale(self) -> Scalar[Self.accum_type]:
+        # A zero scale (uniform attention) makes any seed consistent; avoid
+        # `recip(0)` turning the seed into NaN.
+        if self.scale == 0:
+            return 1
+        return recip(self.scale)
+
     # --- Split online softmax (for MLA double-buffered kernel) ---
 
     @inline(.always)
@@ -970,7 +988,9 @@ struct Attention[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
-        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.calculate_qk_max[unscale_seed=True](
+            score_tile, warp_scratch, self._seed_inv_scale()
+        )
         self.softmax.exp_scaled[start=0, stride=2](score_tile, self.scale)
 
     @inline(.always)
@@ -1016,7 +1036,9 @@ struct Attention[
             2 * Int(Self.num_warps_n), Int(Self.WM)
         ](0, 0)
         var score_tile = self.p_reg_buffer.stage_tile[stage]()
-        self.softmax.calculate_qk_max(score_tile, warp_scratch)
+        self.softmax.calculate_qk_max[unscale_seed=True](
+            score_tile, warp_scratch, self._seed_inv_scale()
+        )
         self.softmax.exp_pkfma[start=0, stride=2](score_tile, self.scale)
 
     @inline(.always)
@@ -1234,7 +1256,7 @@ struct Attention[
             var lane = Int(lane_id())
             var lane_row = lane % Self.mma_shape[0]
             var live_rows = Int(Self.heads_inner) * Int(self.seq_len)
-            var head_base = Int(block_idx.y) * Self._fold_head_base_stride
+            var head_base = block_idx.y * Self._fold_head_base_stride
             comptime for m_mma in range(Self.num_m_mmas):
                 var r = (
                     self.warp_row * Self.WM

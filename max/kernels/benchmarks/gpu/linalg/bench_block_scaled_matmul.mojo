@@ -40,11 +40,7 @@ from linalg.block_scaled_quantization import block_scaled_matmul
 from layout import (
     CoordLike,
     Coord,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     Idx,
     row_major,
 )
@@ -63,7 +59,6 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
 )
 from linalg.utils import elementwise_compute_lambda_type
-from std.utils import IndexList
 from max.gpu.primitives import block
 
 
@@ -220,8 +215,8 @@ def verify_matmul[
         c_device_ref_nd,
         a_device_nd,
         b_device_nd,
-        a_scales=a_scales.as_immut(),
-        b_scales=b_scales.as_immut(),
+        a_scales=a_scales.as_imm(),
+        b_scales=b_scales.as_imm(),
         transpose_b=True,
         c_row_major=True,
     )
@@ -481,8 +476,8 @@ def bench_matmul[
             c,
             a,
             b,
-            a_scales=a_scales.as_immut(),
-            b_scales=b_scales.as_immut(),
+            a_scales=a_scales.as_imm(),
+            b_scales=b_scales.as_imm(),
             transpose_b=True,
             c_row_major=True,
         )
@@ -511,11 +506,14 @@ def bench_matmul[
             width: Int,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             comptime assert c.flat_rank >= 2
-            var x = c.load[width=width](Coord(idx)).cast[_dtype]()
+            var x = c.load[width=width](idx).cast[_dtype]()
             var y = val * x
             return y
 
@@ -691,11 +689,11 @@ def bench_mxfp4_amd[
     var a_scales_size = M * K_SCALES
     var b_scales_size = N_VAL * K_SCALES
 
-    var a_shape = row_major(Coord(M, Idx[K_PACKED]))
-    comptime b_shape = row_major(Coord(Idx[N_VAL], Idx[K_PACKED]))
-    var c_shape = row_major(Coord(M, Idx[N_VAL]))
-    var sfa_shape = row_major(Coord(M, Idx[K_SCALES]))
-    comptime sfb_shape = row_major(Coord(Idx[N_VAL], Idx[K_SCALES]))
+    var a_shape = row_major(M, Idx[K_PACKED])
+    comptime b_shape = row_major(Idx[N_VAL], Idx[K_PACKED])
+    var c_shape = row_major(M, Idx[N_VAL])
+    var sfa_shape = row_major(M, Idx[K_SCALES])
+    comptime sfb_shape = row_major(Idx[N_VAL], Idx[K_SCALES])
 
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[.uint8](a_size, simd_size, ctx)
@@ -713,13 +711,8 @@ def bench_mxfp4_amd[
     cb_sfa.init_scales_on_device(init_type, ctx)
     cb_sfb.init_scales_on_device(init_type, ctx)
 
-    # 2D scale layouts for hipBLASLt. M is dynamic (UNKNOWN_VALUE),
-    # N and K_SCALES are comptime-known.
-    comptime sfa_layout = Layout.row_major(UNKNOWN_VALUE, K_SCALES)
-    comptime sfb_layout = Layout.row_major(N_VAL, K_SCALES)
-
-    # Run hipBLASLt on the given tensors. Repacks 2D uint8 scales into
-    # 2D LayoutTensors and calls the handle-taking vendor_blas entry.
+    # Run hipBLASLt on the given tensors via the handle-taking vendor_blas
+    # entry. The 2D scale tiles are passed through as-is.
     @inline(.always)
     def run_vendor_blas(
         ctx: DeviceContext,
@@ -729,27 +722,17 @@ def bench_mxfp4_amd[
         sfa: TileTensor[.float8_e8m0fnu, ...],
         sfb: TileTensor[.float8_e8m0fnu, ...],
     ) raises {imm}:
-        var sfa_lt = LayoutTensor[.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin](
-            rebind[ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfa.ptr),
-            RuntimeLayout[sfa_layout].row_major(
-                IndexList[2](Int(sfa.dim[0]()), Int(sfa.dim[1]()))
-            ),
-        )
-        var sfb_lt = LayoutTensor[.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin](
-            rebind[ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin]](sfb.ptr),
-            RuntimeLayout[sfb_layout].row_major(
-                IndexList[2](Int(sfb.dim[0]()), Int(sfb.dim[1]()))
-            ),
-        )
         with ctx.push_context() as cur_ctx:
-            vendor_blas.matmul[scales_type=DType.float8_e8m0fnu](
+            vendor_blas.matmul[
+                scales_type=DType.float8_e8m0fnu, has_scales=True
+            ](
                 cur_ctx,
                 vendor_blas._get_global_handle[.uint8](ctx),
                 c,
                 a,
                 b,
-                a_scales=sfa_lt,
-                b_scales=sfb_lt,
+                a_scales=sfa.as_imm(),
+                b_scales=sfb.as_imm(),
                 transpose_b=True,
                 c_row_major=True,
             )

@@ -76,8 +76,8 @@ comptime tile_b_layout = row_major[TILE_K, TILE_N]()
 
 
 def tiled_matmul_kernel(
-    matrix_a: TileTensor[float_dtype, type_of(matrix_a_layout), MutAnyOrigin],
-    matrix_b: TileTensor[float_dtype, type_of(matrix_b_layout), MutAnyOrigin],
+    matrix_a: TileTensor[float_dtype, type_of(matrix_a_layout), ImmutAnyOrigin],
+    matrix_b: TileTensor[float_dtype, type_of(matrix_b_layout), ImmutAnyOrigin],
     matrix_c: TileTensor[float_dtype, type_of(matrix_c_layout), MutAnyOrigin],
 ):
     # Thread and block indices

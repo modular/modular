@@ -12,11 +12,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/Compiler/SaveAsmOutput.h"
+#include "Mojo/Support/NameMangling.h"
+#include "Target/TargetTraits.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/xxhash.h"
+#include "llvm/TargetParser/Triple.h"
 #include <cassert>
 
 namespace M::KGEN {
@@ -82,6 +85,27 @@ std::string offloadOutputPath(llvm::StringRef prefix,
 //===----------------------------------------------------------------------===//
 // Pending offload writes
 //===----------------------------------------------------------------------===//
+
+ErrorOrSuccess
+queueOffloadWrite(TargetInfoAttr target, EmitAs kind, mlir::StringAttr rawName,
+                  llvm::StringRef content, llvm::StringMap<int> &nameCountMap,
+                  llvm::SmallVectorImpl<mlir::NamedAttribute> &pendingWrites) {
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(llvm::Triple(target.getTripleStr()));
+  if (traitsOr.isError())
+    return Error(traitsOr.getError());
+  llvm::StringRef ext = (*traitsOr)->extensionFor(kind);
+  constexpr size_t kFileNameMaxChars = 64;
+  std::string fileName =
+      reserveOffloadOutputBaseName(
+          sanitizeSymbolToUnderscores(rawName, kFileNameMaxChars), ext,
+          nameCountMap) +
+      ext.str();
+  mlir::MLIRContext *ctx = target.getContext();
+  pendingWrites.push_back({mlir::StringAttr::get(ctx, fileName),
+                           mlir::StringAttr::get(ctx, content)});
+  return success();
+}
 
 ErrorOrSuccess flushOffloadWrites(mlir::ModuleOp module,
                                   llvm::StringRef outputPrefix) {

@@ -44,7 +44,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
     def __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NOT: __deinit__
         # CHECK: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
-        # CHECK-NEXT: kgen.return [[FALSE]]
+        # CHECK-NEXT: hlcf.return [[FALSE]]
         return
 
     def noop(self):
@@ -113,10 +113,10 @@ def thing_that_raises(c: __mlir_type.`!kgen.scalar<bool>`) raises -> MemExample:
     # CHECK-NEXT: }
     somethingThatRaises()
 
-    # CHECK-NEXT:   hlcf.elif %c {
+    # CHECK-NEXT:   hlcf.if %c {
     # CHECK-NEXT:      = lit.call {{.*}}__init__
     # CHECK-NOT:       __deinit__
-    # CHECK: kgen.return
+    # CHECK: hlcf.return
     if c:
         return MemExample()
     # CHECK-NEXT:  } else {
@@ -189,7 +189,7 @@ def context_mgr_exit_raises() raises:
     # CHECK-NEXT: lit.try
     # CHECK-NEXT:   [[DID_ERR:%.*]] = lit.ref.load %__with_exc__
     # CHECK-NEXT:   lifetime.end %__with_exc__
-    # CHECK-NEXT:   hlcf.elif [[DID_ERR]]
+    # CHECK-NEXT:   hlcf.if [[DID_ERR]]
     # CHECK-NEXT:     [[IMM:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT:     [[BOOL:%.*]] = lit.var.decl
     # CHECK-NEXT:     lit.var.lifetime.start %__finally_error__
@@ -242,7 +242,7 @@ def propagate_reg_error() raises:
     # CHECK-NEXT: %none = kgen.param.constant: none
     # CHECK-NEXT: lit.ref.store %none, %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
-    # CHECK-NEXT: kgen.return [[FALSE]]
+    # CHECK-NEXT: hlcf.return [[FALSE]]
 
 
 # CHECK-LABEL: lit.struct.decl @BigRegExample
@@ -262,7 +262,7 @@ struct BigRegExample(RegisterPassable):
         # CHECK-NEXT: lit.ref.store [[B]], [[B_REF]]
         self.b = RegExample()
         # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: scalar<bool> = <false>
-        # CHECK-NEXT: kgen.return [[FALSE]]
+        # CHECK-NEXT: hlcf.return [[FALSE]]
 
 
 struct MyStringReturningCtx(Movable):
@@ -430,7 +430,7 @@ struct InitFieldsDestroyedInThrowingConstructor(Movable where False):
     # CHECK-LABEL: lit.fn @"__init__(!kgen.scalar<bool>)"
     def __init__(out self, cond: __mlir_type.`!kgen.scalar<bool>`) raises:
         self = InitFieldsDestroyedInThrowingConstructor()
-        # CHECK:      hlcf.elif %cond {
+        # CHECK:      hlcf.if %cond {
         # CHECK-NEXT:   lit.call {{.*}}__deinit__{{.*}}(%self)
         # CHECK-NEXT:   lit.call {{.*}}::@Error::@"__init__
         # CHECK-NEXT:   kgen.param.constant

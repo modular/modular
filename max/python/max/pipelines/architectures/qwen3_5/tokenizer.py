@@ -18,17 +18,14 @@ from typing import Any
 
 from max.pipelines.architectures.qwen3vl_moe.tokenizer import Qwen3VLTokenizer
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import resolve_single_special_token
+from max.pipelines.lib.tokenizer import ReasoningDelimitersMixin
 from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
 
-_THINK_START_TOKEN = "<think>"
-_THINK_END_TOKEN = "</think>"
 
-
-class Qwen3_5Tokenizer(Qwen3VLTokenizer):
+class Qwen3_5Tokenizer(ReasoningDelimitersMixin, Qwen3VLTokenizer):
     """Tokenizer for Qwen3.5 multimodal models.
 
     Inherits full image-processing pipeline from :class:`Qwen3VLTokenizer` and
@@ -36,6 +33,9 @@ class Qwen3_5Tokenizer(Qwen3VLTokenizer):
     :class:`~max.pipelines.modeling.types.ReasoningPipelineTokenizer` by
     resolving the ``<think>``/``</think>`` delimiter token IDs at construction.
     """
+
+    # Text-only checkpoints (model_type "qwen3_5_text") carry no vision config.
+    _requires_vision_config = False
 
     def __init__(
         self,
@@ -57,22 +57,7 @@ class Qwen3_5Tokenizer(Qwen3VLTokenizer):
             trust_remote_code=trust_remote_code,
             **unused_kwargs,
         )
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_START_TOKEN
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_END_TOKEN
-        )
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<think>`` (opens a Qwen3.5 reasoning span)."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``</think>`` (closes a Qwen3.5 reasoning span)."""
-        return self._reasoning_end_token_id
+        self._resolve_reasoning_delimiters(self.delegate)
 
     def apply_chat_template(
         self,

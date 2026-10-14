@@ -36,16 +36,14 @@
 
 using namespace M;
 
-// Create the `llvm::opt::PrecomputedOptTable` class that LLVMOption needs for
+// Create the `llvm::opt::OptTable` class that LLVMOption needs for
 // option parsing.
 #define DRIVER_OPTIONS_PATH "DriverOptions.inc"
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct DriverOptTable : public llvm::opt::PrecomputedOptTable {
-  DriverOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct DriverOptTable : public llvm::opt::OptTable {
+  DriverOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 } // namespace
 

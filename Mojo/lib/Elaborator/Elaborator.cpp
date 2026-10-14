@@ -55,13 +55,11 @@ using namespace KGEN;
 using namespace AsyncRT;
 
 /// Short living attribute that is needed to set on KGEN::FuncOp or
-/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVMetadata
+/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVM attributes
 /// after concretization and will be removed from the operation, therefore won't
 /// survive Elaborator.
-static constexpr StringRef kLLVMMetadataArrayAttrName =
-    "kgen.elaborator.llvm_metadata_array";
-static constexpr StringRef kLLVMArgMetadataArrayAttrName =
-    "kgen.elaborator.llvm_arg_metadata_array";
+static constexpr StringRef kFnAttrsAttrName = "kgen.elaborator.fn_attrs";
+static constexpr StringRef kFnArgAttrsAttrName = "kgen.elaborator.fn_arg_attrs";
 
 //===----------------------------------------------------------------------===//
 // InterpreterCache
@@ -320,8 +318,8 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
 /// Convert llvm metadata array attrs into dicts by treating every pair of
 /// attributes in the array as (key, value) pairs, where the key is always a
 /// StringAttr.
-static ErrorTreeOr<DictionaryAttr>
-concretizeLLVMMetadataArrays(Location loc, ArrayAttr array) {
+static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
+                                                              ArrayAttr array) {
   NamedAttrList llvmMetadata;
   DenseSet<StringAttr> seenMetadataNames;
   for (int i = 0, e = array.size(); i < e; i += 2) {
@@ -360,32 +358,31 @@ static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
     op->setAttrs(newAttrs);
 
   if (auto func = dyn_cast<FuncOp>(op)) {
-    if (auto llvmMetadataArray = dyn_cast_or_null<ArrayAttr>(
-            func->getAttr(kLLVMMetadataArrayAttrName))) {
+    if (auto fnAttrs =
+            dyn_cast_or_null<ArrayAttr>(func->getAttr(kFnAttrsAttrName))) {
       ErrorTreeOr<DictionaryAttr> result =
-          concretizeLLVMMetadataArrays(op->getLoc(), llvmMetadataArray);
+          concretizeLLVMFnAttrArrays(op->getLoc(), fnAttrs);
       if (result.isError()) {
         parent->setToError(result.takeError());
         return ElaborationState::error();
       }
-      func.setLLVMMetadataAttr(result.takeValue());
-      func->removeAttr(kLLVMMetadataArrayAttrName);
+      func.setFnAttrsAttr(result.takeValue());
+      func->removeAttr(kFnAttrsAttrName);
     }
-    if (auto llvmArgMetadataArray = dyn_cast_or_null<ArrayAttr>(
-            func->getAttr(kLLVMArgMetadataArrayAttrName))) {
-      SmallVector<Attribute> resultArray;
-      for (Attribute perArgMetadataArray : llvmArgMetadataArray) {
-        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMMetadataArrays(
-            op->getLoc(), cast<ArrayAttr>(perArgMetadataArray));
+    if (auto argAttrs =
+            dyn_cast_or_null<ArrayAttr>(func->getAttr(kFnArgAttrsAttrName))) {
+      SmallVector<Attribute> resultAttrs;
+      for (Attribute perArgAttrArray : argAttrs) {
+        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMFnAttrArrays(
+            op->getLoc(), cast<ArrayAttr>(perArgAttrArray));
         if (result.isError()) {
           parent->setToError(result.takeError());
           return ElaborationState::error();
         }
-        resultArray.push_back(result.takeValue());
+        resultAttrs.push_back(result.takeValue());
       }
-      func.setLLVMArgMetadataAttr(
-          ArrayAttr::get(op->getContext(), resultArray));
-      func->removeAttr(kLLVMArgMetadataArrayAttrName);
+      func.setFnArgAttrsAttr(ArrayAttr::get(op->getContext(), resultAttrs));
+      func->removeAttr(kFnArgAttrsAttrName);
     }
   }
 
@@ -935,10 +932,10 @@ static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
 
 static LogicalResult
 concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
-  // Location concretization cannot yield and restart. Suppress blocker
-  // registration for this node while concretizing locations. Empty
+  // Location concretization cannot yield and restart. Add a blocker to ensure
+  // no blockers are set for this node while concretizing locations. Empty
   // concretization results will result in UnknownLoc.
-  inode->suppressBlockers = true;
+  inode->blocker = std::make_pair(inode->inst.getLoc(), nullptr);
   for (Operation &op : scope) {
     op.walk([&](Operation *op) {
       if (failed(concretizeLocOf(*op, inode)))
@@ -960,7 +957,7 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
         }
       }
       // When elaboration is complete, only the first block in any region is
-      // valid (any other block may be illegal, e.g. due to how kgen.param.if
+      // valid (any other block may be illegal, e.g. due to how hlcf.comptime.if
       // is handled). So we only need to go through the region arguments.
       for (Region &r : op->getRegions()) {
         for (BlockArgument arg : r.getArguments())
@@ -975,7 +972,7 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
       return WalkResult::advance();
     });
   }
-  inode->suppressBlockers = false;
+  inode->blocker.reset();
   return success(!inode->error);
 }
 
@@ -986,7 +983,7 @@ static LogicalResult concretizeLocsInScope(Block &scope, ImplNode *inode) {
 }
 
 //===----------------------------------------------------------------------===//
-// Elaborator::processParamIfOp
+// Elaborator::processComptimeIfOp
 //===----------------------------------------------------------------------===//
 
 /// We always erase this op and its nested scopes from the parameter graph -
@@ -1003,13 +1000,14 @@ static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
   // `ParameterUseDefGraph::calculate` flattens the graph so that the top-level
   // `nestedScopes` map holds the scopes for ALL nesting depths (see the comment
   // in `ParameterUseDefGraph::dump`: "Nested graphs are actually contained on
-  // the top-level map"), and `copy` preserves that flattening when `param.for`
-  // unrolling clones scopes. So every scope to erase is a key in the top-level
-  // map, and erasing a key drops its whole sub-graph. We therefore only need a
-  // direct, keyed erase against `regionsWithinOp` rather than scanning every
-  // scope and walking each one's ancestor chain — the latter was quadratic in
-  // the size of the enclosing function (every param.if/param.for resolution
-  // rescanned the whole function's scope graph).
+  // the top-level map"), and `copy` preserves that flattening when
+  // `comptime.for` unrolling clones scopes. So every scope to erase is a key in
+  // the top-level map, and erasing a key drops its whole sub-graph. We
+  // therefore only need a direct, keyed erase against `regionsWithinOp` rather
+  // than scanning every scope and walking each one's ancestor chain — the
+  // latter was quadratic in the size of the enclosing function (every
+  // comptime.if/comptime.for resolution rescanned the whole function's scope
+  // graph).
   llvm::SmallPtrSet<Region *, 8> regionsWithinOp;
   for (Region &r : op->getRegions())
     regionsWithinOp.insert(&r);
@@ -1040,18 +1038,23 @@ static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
   }
 }
 
-ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
-  // Check the condition expression.
-  Attribute value;
-  HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
+ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
+                                                 HLCF::ComptimeIfOp op) {
+  // Select the live arm: first true condition's then, else the final else.
+  size_t liveRegion = op.getNumRegions() - 1;
+  for (auto [idx, attr] : llvm::enumerate(op.getCondAttrs())) {
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), cast<TypedAttr>(attr));
+    if (cast<SIMDAttr>(value).getAsBool()) {
+      liveRegion = idx;
+      break;
+    }
+  }
 
-  // Take whichever branch the condition indicated, and simply inline those ops
-  // then elaborate them. We can do this by splicing the op list into the parent
-  // block. We splice it this way to avoid remapping the ops when we process
-  // them later.
-  bool resultBool = cast<SIMDAttr>(value).getAsBool();
-  // Get the appropriate region.
-  Region &toProcess = op->getRegion(!resultBool);
+  // Take the selected arm and simply inline those ops then elaborate them. We
+  // can do this by splicing the op list into the parent block. We splice it
+  // this way to avoid remapping the ops when we process them later.
+  Region &toProcess = op->getRegion(liveRegion);
 
   // Push a new node and skip over the current frame until it completes.
   ImplNode::WorkItem item{{}, nullptr, parent->getEvaluator()};
@@ -1059,17 +1062,17 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [resultBool, debug = config.elaborateDebugInfo](
+  item.onComplete = [liveRegion, debug = config.elaborateDebugInfo](
                         ImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
     ImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
-    auto op = cast<ParamIfOp>(parentFrame.ops.back());
+    auto op = cast<HLCF::ComptimeIfOp>(parentFrame.ops.back());
 
     // Splice the ops into the parent. Grab the terminator before the iterators
     // invalidate.
     Block::iterator iter = op->getIterator();
-    Block &block = op->getRegion(!resultBool).front();
+    Block &block = op->getRegion(liveRegion).front();
 
     // First update the locations if necessary
     if (debug) {
@@ -1081,8 +1084,8 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
     op->getBlock()->getOperations().splice(iter, block.getOperations());
 
     // Update the values for the result parameters and do other processing
-    // necessary for param.yield.
-    if (auto yieldOp = dyn_cast<ParamYieldOp>(terminator)) {
+    // necessary for comptime.yield.
+    if (auto yieldOp = dyn_cast<HLCF::ComptimeYieldOp>(terminator)) {
       // RAUW the op's results with the terminator's inputs.
       op->getResults().replaceAllUsesWith(yieldOp.getOperands());
 
@@ -1090,7 +1093,7 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
       terminator->erase();
     } else if (auto hlcfTerm =
                    dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
-      // If it's an kgen.return op, we have to split the block after the return.
+      // If it's an hlcf.return op, we have to split the block after the return.
       hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
       // Drop all uses of the if op because any of its uses will be null and
       // void at this point.
@@ -1115,11 +1118,11 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 }
 
 //===----------------------------------------------------------------------===//
-// Elaborator::processParamForOp
+// Elaborator::processComptimeForOp
 //===----------------------------------------------------------------------===//
 
 // Take a look at the HLCF::Loop operation generated by unrolling one iteration
-// of a kgen.param.for. If the loop is pointless, we can inline it into the
+// of a hlcf.comptime.for. If the loop is pointless, we can inline it into the
 // containing region to reduce control flow complexity from downstream passes.
 //
 // This returns true if the rest of the containing logic is dead.
@@ -1190,8 +1193,8 @@ static bool simplifyParamForLoop(HLCF::LoopOp loop, HLCF::LoopOp outerLoop) {
   return false;
 }
 
-ElaborationState Elaborator::processParamForOp(ImplNode *parent,
-                                               ParamForOp op) {
+ElaborationState Elaborator::processComptimeForOp(ImplNode *parent,
+                                                  HLCF::ComptimeForOp op) {
   // First, concretize the iterator value and the hasnext/getnext expressions.
   Attribute initial, hasNext, getNextIter;
   HANDLE_EVALUATOR_CONC(initial, parent, op.getLoc(), op.getInitial());
@@ -1199,9 +1202,9 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   HANDLE_EVALUATOR_CONC(getNextIter, parent, op.getLoc(), op.getGetNextIter());
 
   // Get the result types of the for loop.  These are the values passed from
-  // kgen.param.for.break/continue across loop iterations and to the result of
-  // the kgen.param.for.  These are created by mem2reg promoting stack objects
-  // in the body of the loop.
+  // hlcf.comptime.for.break/continue across loop iterations and to the result
+  // of the hlcf.comptime.for.  These are created by mem2reg promoting stack
+  // objects in the body of the loop.
   SmallVector<Type> resultTypes;
   for (Type type : op.getResultTypes())
     HANDLE_EVALUATOR_CONC(resultTypes.emplace_back(), parent, op.getLoc(),
@@ -1319,10 +1322,10 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   }
 
   // The else body should be unreachable after LowerSemanticCF.
-  assert(isa<UnreachableOp>(op.getElseRegion().front().front()) &&
-         "LowerSemanticCF didn't lower the else block of param.for?");
+  assert(isa<HLCF::UnreachableOp>(op.getElseRegion().front().front()) &&
+         "LowerSemanticCF didn't lower the else block of comptime.for?");
 
-  // Lower the `kgen.param.for` into an outer loop and wrapper loops for each
+  // Lower the `hlcf.comptime.for` into an outer loop and wrapper loops for each
   // generated iteration. This way, we can lower `continue` to a break to the
   // wrapper loop to model exiting a single iteration and lower `break` to a
   // break to the outer loop to model exiting the whole loop.
@@ -1337,12 +1340,12 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   // end of this function.
   parent->stack.back().ops.pop_back();
 
-  // Add a worklist item to delete the param.for op when all the iterations are
-  // processed and done and cleanup the result IR.
+  // Add a worklist item to delete the comptime.for op when all the iterations
+  // are processed and done and cleanup the result IR.
   ImplNode::WorkItem finalItem{{}, nullptr, parent->getEvaluator()};
   finalItem.onComplete = [op, parent,
                           outerLoop](ImplNode *node) mutable -> LogicalResult {
-    // Remove the original kgen.param.for now that it has been lowered.
+    // Remove the original hlcf.comptime.for now that it has been lowered.
     recursivelyEraseFromNestedScopes(parent, op);
     op.erase();
 
@@ -1356,7 +1359,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     // Check to see if we can simplify the final outer loop.
     simplifyParamForLoop(outerLoop, outerLoop);
 
-    // Each iteration of the kgen.param.for will be turned into a nested
+    // Each iteration of the hlcf.comptime.for will be turned into a nested
     // hlcf.loop and many of them will be trivial (no breaks/continues out of
     // them other than the final one).  Clean up the IR to improve compile time.
     return success();
@@ -1364,7 +1367,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   parent->stack.push_back(std::move(finalItem));
 
   // Upon completion of elaboration of each such generated loop, replace the
-  // `kgen.param.for` terminators with the appropriate HLCF ones.
+  // `hlcf.comptime.for` terminators with the appropriate HLCF ones.
   auto makeCompletion =
       [debug = config.elaborateDebugInfo,
        outerLabel](Region &region) -> std::function<LogicalResult(ImplNode *)> {
@@ -1376,17 +1379,17 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
 
       auto thisLoop = cast<HLCF::LoopOp>(region.getParentOp());
 
-      // Replace the `kgen.param.for` terminators with the HLCF equivalent.
+      // Replace the `hlcf.comptime.for` terminators with runtime variants.
       region.walk([&](Operation *op) {
-        if (isa<ParamForOp>(op))
+        if (isa<HLCF::ComptimeForOp>(op))
           return WalkResult::skip();
-        if (isa<ParamForBreakOp>(op)) {
+        if (isa<HLCF::ComptimeForBreakOp>(op)) {
           IRRewriter b{OpBuilder(op)};
           b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(),
                                               outerLabel);
           return WalkResult::advance();
         }
-        if (isa<ParamForContinueOp>(op)) {
+        if (isa<HLCF::ComptimeForContinueOp>(op)) {
           IRRewriter b{OpBuilder(op)};
           b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(),
                                               thisLoop.getLabelAttr());
@@ -1536,15 +1539,12 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
 }
 
 void Elaborator::processImplNodeTask(ImplNode *inode) {
-  // Hold a resume guard for the duration of the pass so blocker completions
-  // cannot re-run the node while it is still being processed.
-  inode->pendingResumes.fetch_add(1);
   // Process the node. If processing the node got pre-empted, then return. It
   // will get scheduled again later.
   // If processImplNode returns success, it means the node is either fully
   // processed or in error state, no more to do here so we can complete it.
   // Otherwise, it means the node is being suspended and will be resumed later
-  // once its blockers are done.
+  // once its blocker is done.
   if (succeeded(processImplNode(inode))) {
     // Only increment numWorkItems if inode is not in error state because we
     // don't put an errored-out node's dependencies back onto the worklist. This
@@ -1556,15 +1556,6 @@ void Elaborator::processImplNodeTask(ImplNode *inode) {
       g.numWorkItems.fetch_add(1);
     completeImplNodeProcessing(inode);
   }
-  // Release the guard. If every registered blocker completed while this pass
-  // ran, re-run the node here — no resume is left to do it. The nested
-  // invocation signals the worklist once, so back it with a work item.
-  if (inode->pendingResumes.fetch_sub(1) == 1 && !inode->done &&
-      !inode->blockers.empty() && !inode->parent->getIsError()) {
-    inode->blockers.clear();
-    g.numWorkItems.fetch_add(1);
-    processImplNodeTask(inode);
-  }
   // Signal the worklist that the work is complete.
   if (!inode->parent->getIsError())
     signalWorklist();
@@ -1573,25 +1564,6 @@ void Elaborator::processImplNodeTask(ImplNode *inode) {
 void Elaborator::scheduleImplNode(ImplNode *inode) {
   cpuDevice.getWorkQueue()->addTask(
       [inode, this] { processImplNodeTask(inode); });
-}
-
-void Elaborator::registerBlocker(ImplNode *inode, Location from,
-                                 ParamNode *genNode) {
-  inode->blockers.emplace_back(from, genNode);
-  inode->pendingResumes.fetch_add(1);
-  genNode->andThenAsync([inode, this] {
-    // Re-process only once every registered blocker has completed and no
-    // processing pass is in flight (a pass holds a guard count).
-    if (inode->pendingResumes.fetch_sub(1) == 1) {
-      inode->blockers.clear();
-      processImplNodeTask(inode);
-      return;
-    }
-    // Another blocker completion or the in-flight pass resumes the node;
-    // consume the work item added for this waiter on callee completion.
-    if (!inode->parent->getIsError())
-      signalWorklist();
-  });
 }
 
 LogicalResult Elaborator::processImplNode(ImplNode *inode) {
@@ -1674,10 +1646,10 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
     return processRebindOp(node, rebindOp);
   if (auto assertOp = dyn_cast<ParamAssertOp>(op))
     return processParamAssertOp(node, assertOp);
-  if (auto ifOp = dyn_cast<ParamIfOp>(op))
-    return processParamIfOp(node, ifOp);
-  if (auto forOp = dyn_cast<ParamForOp>(op))
-    return processParamForOp(node, forOp);
+  if (auto ifOp = dyn_cast<HLCF::ComptimeIfOp>(op))
+    return processComptimeIfOp(node, ifOp);
+  if (auto forOp = dyn_cast<HLCF::ComptimeForOp>(op))
+    return processComptimeForOp(node, forOp);
   if (auto call = dyn_cast<GeneratorUserOpInterface>(op))
     return processCallOp(node, call);
   if (auto compileOffload = dyn_cast<CompileOffloadOp>(op))
@@ -1762,7 +1734,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     //   kgen.call @foo<() -> y>()
     //   %0 = kgen.param.constant = <y>
     //   kgen.param.result_bind<2>
-    //   kgen.return
+    //   hlcf.return
     // }
     // ```
     //
@@ -1773,9 +1745,13 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // In multi-threaded execution, call resolution is also deferred as late as
     // possible. This maximizes parallelism on the expansion graph (without
     // intra-node parallelism) while correctly handling recursion.
-    if (addWaiter && !inode->suppressBlockers) {
+    if (addWaiter && !inode->blocker.has_value()) {
       if (genNode->state.addWaiter()) {
-        registerBlocker(inode, from, genNode);
+        inode->blocker = std::make_pair(from, genNode);
+        genNode->andThenAsync([inode, this] {
+          inode->blocker.reset();
+          processImplNodeTask(inode);
+        });
         return ElaborationState::skipNode();
       }
       // Raced with node completion.
@@ -1817,16 +1793,18 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
         generatorOp.getDecorators(), DictionaryAttr::get(b.getContext())));
     cast<FuncOp>(*instance).setInlineLevelAttr(
         generatorOp.getInlineLevelAttr());
-    // Process LLVM metadata recorded in the generator by fusing names and
-    // values from the LLVMetadataName and LLVMMetadataValue dictionaries.
     auto newFunc = cast<FuncOp>(*instance);
-    if (!generatorOp.getLLVMMetadataArray().empty()) {
-      newFunc->setAttr(kLLVMMetadataArrayAttrName,
-                       generatorOp.getLLVMMetadataArray());
-    }
-    if (!generatorOp.getLLVMArgMetadataArray().empty()) {
-      newFunc->setAttr(kLLVMArgMetadataArrayAttrName,
-                       generatorOp.getLLVMArgMetadataArray());
+    if (!generatorOp.getFnAttrs().empty())
+      newFunc->setAttr(kFnAttrsAttrName, generatorOp.getFnAttrs());
+    if (!generatorOp.getFnArgAttrs().empty())
+      newFunc->setAttr(kFnArgAttrsAttrName, generatorOp.getFnArgAttrs());
+    // The instance is created with an empty discardable dictionary; forward
+    // the offload target-attribute dictionary so the target backend can read
+    // it off the compiled kernel function.
+    if (auto targetAttrs = generatorOp->getDiscardableAttr(
+            CompileOffloadOp::getTargetAttrsForwardedAttrName())) {
+      newFunc->setAttr(CompileOffloadOp::getTargetAttrsForwardedAttrName(),
+                       targetAttrs);
     }
     instantiateBody = true;
   } else {
@@ -1936,10 +1914,14 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
                           std::move(evaluator)};
   newFuncNode->stack.push_back(std::move(item));
 
-  if (addWaiter && !inode->suppressBlockers) {
+  if (addWaiter && !inode->blocker.has_value()) {
     [[maybe_unused]] bool added = genNode->state.addWaiter();
     assert(added);
-    registerBlocker(inode, from, genNode);
+    inode->blocker = std::make_pair(from, genNode);
+    genNode->andThenAsync([inode, this] {
+      inode->blocker.reset();
+      processImplNodeTask(inode);
+    });
   }
   g.numWorkItems.fetch_add(1);
   scheduleImplNode(newFuncNode);
@@ -1993,17 +1975,41 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
   // the elaborator invocation will fail due to multiple implementations of a
   // primary generator, and the functor will return an error.
 
+  DictionaryAttr targetAttrs = op.getTargetAttrsAttr();
+
   targetOffloadInfos.modify([&](auto &info) {
-    std::string groupKey =
-        emissionOptionsStr.str() + emissionLinkOptionsStr.str();
-    OffloadInfo::Group &offloadInfo = info[target].groups[groupKey];
+    OffloadInfo::Group &offloadInfo =
+        info[target].groups[makeOffloadGroupKey(op)];
     offloadInfo.emissionOptions = emissionOptionsStr;
     offloadInfo.emissionLinkOptions = emissionLinkOptionsStr;
+    offloadInfo.targetAttrs = targetAttrs;
 
     // Slice out a pre-elaboration module for the new target to compile for.
     ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
     exportedSymbols.insert_or_assign(func.getSymNameAttr(),
                                      ExportKind::Exported);
+
+    if (targetAttrs) {
+      // Function symbols referenced only from `target_attrs` (e.g. window
+      // transform functions) have no SSA use in the slice, so a `NotExported`
+      // entry would be DCEd; export them.
+      //
+      // `insert_or_assign` upgrades a symbol the param replacers below reached
+      // first, and `Exported` is external linkage in the artifact, not just
+      // liveness. That is deliberate -- reachable only through an attribute,
+      // the symbol has nothing else to keep it alive -- but it does mean the
+      // same callee linked differently depending on how it is referenced.
+      mlir::AttrTypeWalker attrWalker;
+      attrWalker.addWalk([&](SymbolConstantAttr ref) {
+        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
+                                         ExportKind::Exported);
+      });
+      attrWalker.addWalk([&](FuncSymbolAttr ref) {
+        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
+                                         ExportKind::Exported);
+      });
+      attrWalker.walk(targetAttrs);
+    }
 
     // Make sure to slice out anything referenced in the input parameters. When
     // generator references are instantiated in the standalone module, they are
@@ -2362,7 +2368,7 @@ struct GraphEdge {
   /// In the graph edge, this ParamNode represents the caller node.
   ParamNode *pnode;
   /// This is the index into the concatenated range over
-  /// `[*dependencies, *blockers]` pointing to the callee ParamNode.
+  /// `[*dependencies, blocker]` pointing to the callee ParamNode.
   size_t depIdx;
 
   /// This function returns the callee ParamNode by indexing into the
@@ -2371,7 +2377,7 @@ struct GraphEdge {
     auto &inode = pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].second;
-    return inode.blockers[depIdx - inode.dependencies.size()].second;
+    return inode.blocker->second;
   }
   /// Return the location on the callee side representing where the edge
   /// originates from, to be used for diagnostic reporting.
@@ -2379,7 +2385,7 @@ struct GraphEdge {
     auto &inode = pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].first;
-    return inode.blockers[depIdx - inode.dependencies.size()].first;
+    return inode.blocker->first;
   }
   /// Return true if this edge is a blocker/interpreter edge.
   bool isBlockerEdge() const {
@@ -2410,7 +2416,7 @@ struct GraphEdge {
   GraphEdge end() const {
     ParamNode *next = getPointee();
     ImplNode &inode = next->impl;
-    return {next, inode.dependencies.size() + inode.blockers.size()};
+    return {next, inode.dependencies.size() + inode.blocker.has_value()};
   }
 
   /// GraphEdge is its own iterator.
@@ -2518,9 +2524,6 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
   // These are the nodes we are going to reschedule at the end.
   std::vector<ImplNode *> reschedule;
-  // Suspended SCC members are woken by their blocker resumes rather than a
-  // reschedule, so progress is not implied by `reschedule` alone.
-  bool brokeScc = false;
 
   // Early increment since we will modify the graph as we go.
   for (auto sccIt = llvm::scc_begin(graph); !sccIt.isAtEnd();) {
@@ -2552,8 +2555,15 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       break;
     }
 
+    // We can not re-schedule a scc if any of its node has a blocker, in that
+    // case, the scc must have been blocked by another scc, and can only be
+    // waken up indirectly through the blocker.
+    if (llvm::any_of(sccNodes, [](ParamNode *node) {
+          return node->impl.blocker.has_value();
+        })) {
+      continue;
+    }
     // Now, we break all the edges in the SCC for each node in the SCC.
-    brokeScc = true;
     for (ParamNode *node : sccNodes) {
       ImplNode *inode = &node->impl;
       std::vector<std::pair<Location, ParamNode *>> newDeps;
@@ -2564,17 +2574,13 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
           inode->sccRemovedDeps.push_back(dep);
       }
 
-      // A node suspended on blockers still holds its unconsumed processing
-      // count and is re-run by its blocker resume, so it gets neither a
-      // reschedule nor the extra count reserved for the rescheduled pass.
-      bool suspended = inode->pendingResumes.load() > 0;
+      // Decrement the number of dependencies and set the new dependencies.
       inode->numDependencies -=
-          (inode->dependencies.size() - newDeps.size() - (suspended ? 0 : 1));
+          (inode->dependencies.size() - newDeps.size() - 1);
       inode->dependencies = std::move(newDeps);
       inode->sccCh = AsyncValueRef<Chain>::allocate(cpuDevice);
       sccChains.push_back(inode->sccCh.copy());
-      if (!suspended)
-        reschedule.push_back(inode);
+      reschedule.push_back(inode);
     }
 
     // When all of them are done as individual nodes, they will reset their
@@ -2594,7 +2600,7 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
     g.numWorkItems.fetch_add(1);
     scheduleImplNode(inode);
   }
-  return brokeScc || !reschedule.empty();
+  return !reschedule.empty();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2613,12 +2619,7 @@ static WalkResult rewriteCompileOffloadOp(
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
   TargetInfoAttr target =
       cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
-  StringRef emissionOptionsStr =
-      cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
-  StringRef emissionLinkOptionsStr =
-      cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
-  std::string groupKey =
-      emissionOptionsStr.str() + emissionLinkOptionsStr.str();
+  std::string groupKey = makeOffloadGroupKey(op);
 
   auto targetIter = compiledOffload.find(target);
   if (targetIter == compiledOffload.end()) {

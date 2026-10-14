@@ -13,6 +13,9 @@
 
 import dataclasses
 
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
@@ -53,9 +56,9 @@ gemma4_arch = SupportedArchitecture(
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    default_structured_output_backend="xgrammar",
     memory_planner=Gemma4MemoryPlanner,
     supports_device_graph_capture=False,
+    cascade_pipeline_factory=CommonTextGenPipeline,
 )
 
 

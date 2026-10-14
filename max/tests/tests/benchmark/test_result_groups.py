@@ -112,9 +112,25 @@ def test_text_groups_cover_expected_sections() -> None:
     assert groups.diagnostics.num_outliers_rejected == 2
 
 
+def test_request_mix_group_holds_the_mix_rates() -> None:
+    text_data = _text_result().text_data
+    assert text_data is not None
+    groups = _text_result(
+        text_data=text_data.model_copy(
+            update={"tool_request_rate": 0.68, "tool_call_response_rate": 0.65}
+        )
+    ).result_groups
+    assert groups is not None
+    assert groups.request_mix is not None
+    assert groups.request_mix.tool_request_rate == 0.68
+    assert groups.request_mix.tool_call_response_rate == 0.65
+    assert "tool_request_rate" not in type(groups.summary).model_fields
+
+
 def test_pixel_groups_have_no_text_only_sections() -> None:
     groups = _pixel_result().result_groups
     assert groups is not None
+    assert groups.request_mix is None
 
     assert groups.summary.total_generated_outputs == 10
     assert groups.summary.mean_ttft_ms is None

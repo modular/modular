@@ -75,9 +75,9 @@ max serve \
 ```
 
 When data parallelism is active, `--max-batch-size` sets the maximum batch size
-**per replica**, not across the whole server. For example,
+**per replica**, not across the whole MAX serving instance. For example,
 `--data-parallel-degree 8` with `--max-batch-size 32` allows up to 32 requests
-per replica and 256 requests across the server.
+per replica and 256 requests across the MAX serving instance.
 
 ### Expert parallelism
 
@@ -153,16 +153,14 @@ distributed deployment for you.
 
 ## Tune parallelism
 
-After choosing a strategy, use the following flags to tune the behavior. The
-**Config** column shows the config class each flag maps to when you configure a
-pipeline programmatically.
+After choosing a strategy, use the following flags to tune the behavior.
 
-| Flag                                    | Description                                                                                                                                                                                                          | Config                                                                               |
-|-----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| `--ep-use-allreduce`                    | Uses allreduce for cross-device communication in expert parallelism. Performance depends on the model and interconnect, so benchmark your deployment first.                                                          | [`PipelineRuntimeConfig`](/api/python/generated/max.pipelines.PipelineRuntimeConfig) |
-| `--eplb-profile`                        | Enables expert-parallel load balancing (EPLB) MoE routing histogram profiling. You can also set the `MAX_SERVE_EPLB_PROFILE` environment variable. See [Environment variables](/environment-variables).              | [`PipelineRuntimeConfig`](/api/python/generated/max.pipelines.PipelineRuntimeConfig) |
-| `--eplb-replicas-per-gpu`               | Adds redundant expert replicas per GPU to reduce routing imbalance when EPLB is active. The default, `0`, adds no replication. Setting `k` adds `k` extra replicas per GPU; total redundant slots = k * ep_size.     | [`PipelineRuntimeConfig`](/api/python/generated/max.pipelines.PipelineRuntimeConfig) |
-| `--enable-dp-cross-replica-prefix-copy` | Lets MAX serve a prefix-cache hit that lives on the GPU of another data-parallel replica by copying the block device-to-device. Enabled by default. See [Prefix caching with PagedAttention](/serve/prefix-caching). | [`KVCacheConfig`](/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/)       |
+| Flag                                    | Description                                                                                                                                                                                                          |
+|-----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `--ep-use-allreduce`                    | Uses allreduce for cross-device communication in expert parallelism. Performance depends on the model and interconnect, so benchmark your deployment first.                                                          |
+| `--eplb-profile`                        | Enables expert-parallel load balancing (EPLB) MoE routing histogram profiling. You can also set the `MAX_SERVE_EPLB_PROFILE` environment variable. See [Environment variables](/environment-variables).              |
+| `--eplb-replicas-per-gpu`               | Adds redundant expert replicas per GPU to reduce routing imbalance when EPLB is active. The default, `0`, adds no replication. Setting `k` adds `k` extra replicas per GPU; total redundant slots = k * ep_size.     |
+| `--enable-dp-cross-replica-prefix-copy` | Lets MAX serve a prefix-cache hit that lives on the GPU of another data-parallel replica by copying the block device-to-device. Enabled by default. See [Prefix caching with PagedAttention](/serve/prefix-caching). |
 
 :::caution
 

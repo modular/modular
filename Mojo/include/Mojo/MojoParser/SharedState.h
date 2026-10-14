@@ -19,12 +19,15 @@
 #ifndef KGEN_MOJOPARSER_SHAREDSTATE_H
 #define KGEN_MOJOPARSER_SHAREDSTATE_H
 
+#include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/LITDialect/OriginTrackable.h"
 #include "Mojo/MojoParser/IRValues.h"
 #include "Mojo/MojoParser/ModuleSpec.h"
 #include "Mojo/MojoParser/MojoDiags.h"
+#include "Mojo/Support/TriBool.h"
 
+#include "Support/BumpAllocator.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -103,11 +106,6 @@ private:
   StringRef spelling;
 };
 
-/// Store a list of parameter captures per closure type.
-using ClosureParamCapture = std::pair<StringAttr, Type>;
-using ClosureParamCaptures =
-    DenseMap<StringAttr, SmallVector<ClosureParamCapture>>;
-
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
 enum class DeclResolvedness : uint8_t {
@@ -153,8 +151,21 @@ public:
   /// skip extension lookups entirely in scopes that have none.
   const mlir::StringAttr extensionsScopeMarker;
 
+  /// Returns the name a scope registers extensions of `targetName` under
+  /// ("extension:<targetName>"). Distinct targets with the same leaf name share
+  /// it, so lookups must still check the extension's target symbol.
+  mlir::StringAttr getExtensionName(llvm::StringRef targetName) const {
+    return mlir::StringAttr::get(extensionsScopeMarker.getContext(),
+                                 llvm::Twine(extensionsScopeMarker.getValue()) +
+                                     targetName);
+  }
+
   /// This is used to efficiently walk MLIR types to find embedded origins.
   CachedOriginFinder cachedOriginFinder;
+
+  /// Caches for the parameter helpers, shared with every other state on this
+  /// context.
+  std::shared_ptr<KGEN::CompilerCaches> compilerCaches;
 
   /// Find all ParamDeclRefAttr's in side the type at the current scope.
   void collectParamRefsInType(Type type,
@@ -206,34 +217,13 @@ public:
   FileLineColLoc createLocation(StringRef filename, unsigned line,
                                 unsigned column);
 
-  /// Allocate an expression node into the persistent bump pointer allocator.
-  template <typename T, typename... Args>
-  T *allocPersistent(Args &&...args) {
-    void *node = persistentAllocator.Allocate(sizeof(T), llvm::Align::Of<T>());
-    return new (node) T(std::forward<Args>(args)...);
-  }
+  /// Stores memory that lives as long as the global parser.
+  BumpAllocator persistentAllocator;
 
-  /// memcpy the specified ArrayRef into the persistent allocator and return a
-  /// pointer to the new data.  This cannot be used with things that have
-  /// non-trivial copyctors/dtors because the expression allocator does run
-  /// destructors.
-  template <typename T>
-  ArrayRef<T> getPersistentCopy(ArrayRef<T> elements) {
-    if (elements.empty())
-      return elements;
-
-    size_t dataSize = sizeof(T) * elements.size();
-    T *result = static_cast<T *>(
-        persistentAllocator.Allocate(dataSize, llvm::Align::Of<T>()));
-    memcpy((void *)result, elements.data(), dataSize);
-    return ArrayRef<T>(result, elements.size());
-  }
-
-  /// memcpy the specified string data into the persistent allocator.
-  StringRef getPersistentCopy(StringRef str) {
-    auto result = getPersistentCopy(ArrayRef<char>(str.data(), str.size()));
-    return StringRef(result.data(), result.size());
-  }
+  /// Stores expression trees and other statement-scoped parser data. Do not
+  /// allocate anything into this that would outlive the current statement being
+  /// parsed.
+  BumpAllocator stmtAllocator;
 
   /// Lookup an operation inside the symbol table of the container decl.
   Operation *lookupSymbolIn(ASTDecl *container, StringAttr name);
@@ -251,10 +241,6 @@ public:
   /// torn down.  This can be used to allocate BlockArgument's that may or may
   /// not get used in the future.
   Block &getArgumentOwningBlock();
-
-  /// Delete this decl and the operation associated with it. Handles all the
-  /// related bookkeeping.
-  void deleteDecl(ASTDecl &decl);
 
   //===--------------------------------------------------------------------===//
   // Name Lookup
@@ -349,8 +335,10 @@ public:
   /// Import the specified module or package, returning the decl. Always returns
   /// a valid decl, even if a corresponding module or package could not be
   /// found.
+  ///
+  /// Non-null \p importer records dep edges to the module and its ancestors.
   ASTDecl &importModule(const ImportPath &path, PackageOp currentPackage,
-                        llvm::SMLoc loc);
+                        llvm::SMLoc loc, ASTDecl *importer = nullptr);
 
   /// Return true if the package has a nested module with the given name in the
   /// module-state cache. The package body must be resolved before calling this
@@ -407,10 +395,31 @@ public:
   /// Returns null if resolution fails.
   ASTDecl *resolveAndGetFuncDecl(SymbolRefAttr symbol, SMLoc loc);
 
+  /// The same, for a type (struct/trait) symbol.
+  ///
+  /// TODO: it seems that declResolver->getDeclForTypeSymbol() is very unsafe to
+  /// call: We didn't enforce the invariance to ensure when a symbol ref is
+  /// materialize from bytecode, the decl must have be registered as well. We
+  /// should probably delete `getDeclForTypeSymbol` and switch to the more
+  /// conservative path here.
+  ASTDecl *resolveAndGetTypeDecl(SymbolRefAttr symbol, SMLoc loc);
+
   /// Finalize any imported bytecode modules. This should be called after all
   /// decls have been resolved, as this will erase bytecode operations attached
   /// to decls that have not been resolved.
   LogicalResult finalizeImportedBytecodeModules();
+
+  //===--------------------------------------------------------------------===//
+  // Module Dependency Graph
+
+  /// Whether experimental incremental parsing is enabled. Dep edges are only
+  /// recorded, and the dep graph only built, when it is.
+  bool isIncrParsingEnabled() const { return incrParsingEnabled; }
+
+  /// Record a dep edge `importer` -> `imported`, attributed to each end's
+  /// nearest enclosing file module or package. No-ops if either end has no
+  /// module state or is erroneous.
+  void recordDepEdge(ASTDecl *importer, ASTDecl *imported);
 
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
@@ -518,6 +527,11 @@ public:
                                         llvm::SMLoc rsquareLoc,
                                         ArrayRef<Operand> operands);
 
+  /// Notify the parser listener, if present, that a `match` statement leaves
+  /// values uncovered, and of the arms that would cover them.
+  void notifyListenerOnMatchMissingCases(llvm::SMRange matchRange,
+                                         SMLoc insertLoc, StringRef arms);
+
   //===--------------------------------------------------------------------===//
   // Builtin Module
 
@@ -552,6 +566,12 @@ public:
   ASTType getBuiltinSliceType(llvm::SMLoc loc, StringRef name);
   ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
 
+  /// Look up a named type's declaration in the given module, caching the
+  /// result. This emits a diagnostic and returns null if the name does not
+  /// resolve to a type.
+  ASTDecl *getCachedBuiltinTypeDecl(const ImportPath &path, StringRef name,
+                                    llvm::SMLoc loc);
+
   /// Lookup a builtin special function overload set.
   ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context,
                                          const ImportPath &modulePath,
@@ -562,29 +582,21 @@ public:
   struct Impl;
   Impl &getImpl() const { return *impl; }
 
-  /// Given a signature [Int](y:Int) -> Int for example, return the trait. If
-  /// there is not a trait already generated, the compiler will generate the
-  /// following:
-  ///  trait Closure_Int_yInt_Int(Movable, AnyType):
-  ///      def __call__(mut self, y: Int) -> Int:
-  ///         ...
-  ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
-                                   FnTypeGeneratorType sig);
-
   /// Get or create the universal closure trait, we don't care about the
   /// signatures and we can adapt the trait to any signature.
   ASTDecl *getUniversalParametricClosureTrait();
+
+  FnTypeGeneratorType getClosureFnSig(TraitSymbolAttr closureInst);
+  // Get the closure fn sig without self, this is the signature that we used to
+  // test closure compatibility. We can not simply replace `Self` here, since
+  // the closure trait might not be lined up, in that case, we need a extension
+  FnTypeGeneratorType getClosureFnSigWithoutSelf(TraitSymbolAttr closureInst);
 
   bool isUniversalParametricClosureTrait(TraitSymbolAttr symbol);
   bool isUniversalParametricClosureTrait(ASTDecl *trait) {
     return trait == getUniversalParametricClosureTrait();
   }
 
-  /// Get or create a struct that defines conformance of targetTrait in terms of
-  /// sourceTrait.
-  ASTDecl *getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
-                                TraitDeclOp targetTrait, ASTType sourceMetaType,
-                                ASTDecl *moduleDecl);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
@@ -594,6 +606,25 @@ public:
   /// types within the provided module, or creates one if needed.
   FnOp getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
                                 SMLoc useLoc);
+
+  /// Function used to create a synthesized closure-support struct.
+  using CreateClosureStructFn = function_ref<StructDeclOp()>;
+
+  /// This gets the extension struct that supplies `tgtClosureInst`'s
+  /// conformance by bridging through `srcClosureInst`, or creates one if
+  /// needed.
+  StructDeclOp getOrCreateParamClosureExtension(Attribute key,
+                                                CreateClosureStructFn create);
+
+  /// This gets the wrapper struct that inflates a function symbol into a
+  /// closure, or creates one if needed.
+  StructDeclOp getOrCreateInflatedClosure(Attribute key,
+                                          CreateClosureStructFn create);
+
+  /// This gets the `__device_type` companion struct of the closure storage, or
+  /// creates one if needed.
+  StructDeclOp getOrCreateClosureDeviceType(Attribute key,
+                                            CreateClosureStructFn create);
 
   /// Given a scope that refers to a nested function, return the set of captured
   /// values. The name of the capture is paired with the metadata.
@@ -611,37 +642,18 @@ public:
   void setDefaultCaptureForScope(ASTDecl &scope,
                                  CaptureConvention defaultConvention);
 
-  /// Return the captured parameters map for all closures defined in the
-  /// function represented by \p op. Returns nullptr if no captures have been
-  /// registered for this op.
-  ClosureParamCaptures *getClosureParamCapturesForOp(Operation *op);
-
-  /// Look up the captures registered for the closure named \p closureName as
-  /// visible from \p startOp.
-  ArrayRef<ClosureParamCapture>
-  lookupClosureCaptureFromOp(Operation *startOp, StringAttr closureName);
-  /// Set the captured parameters map for a given function.
-  void setClosureParamCaptures(ASTDecl &functionDecl,
-                               ClosureParamCaptures closureParamCaptures);
-
-  /// Add an entry to the captured closures map of the given function.
-  void addClosureParamCaptures(ASTDecl &functionDecl, StringAttr closureName,
-                               SmallVector<ClosureParamCapture> captures);
-
   /// These two methods are used to memoize whether a type is implicitly
   /// convertible to another type, which includes overload resolution etc.
-  std::optional<bool> getCachedImplicitConvertibility(ASTType from, ASTType to);
+  TriBool getCachedImplicitConvertibility(ASTType from, ASTType to);
   void cacheImplicitConvertibility(ASTType from, ASTType to,
                                    bool isConvertible);
 
   /// These two methods memoize ASTDecl::doesNominalTypeConformTo for the
   /// common, assumption-free case, keyed by (type decl, required trait,
   /// concrete type). Only definitive (yes/no) results are cached; `unknown` is
-  /// phase-dependent and never stored. `conforms` is the `yes`/`no` result as a
-  /// bool.
-  std::optional<bool> getCachedNominalConformance(const ASTDecl *decl,
-                                                  TraitType trait,
-                                                  ASTType concreteType);
+  /// phase-dependent and never stored.
+  TriBool getCachedNominalConformance(const ASTDecl *decl, TraitType trait,
+                                      ASTType concreteType);
   void cacheNominalConformance(const ASTDecl *decl, TraitType trait,
                                ASTType concreteType, bool conforms);
 
@@ -662,10 +674,6 @@ private:
   /// from a module and caching the result.
   ASTType getCachedBuiltinType(const ImportPath &path, StringRef name,
                                llvm::SMLoc loc);
-  /// Look up a builtin type decl; either by finding it in the cache or
-  /// resolving it from a module and caching the result.
-  ASTDecl *getCachedBuiltinTypeDecl(const ImportPath &path, StringRef name,
-                                    llvm::SMLoc loc);
 
   /// Open (and lex-prepare) the module source file at the given path within the
   /// source manager, reusing an already-open buffer if present. Returns null
@@ -685,12 +693,14 @@ private:
   /// registered under it and this one is a redundant copy.
   bool tryRegisterConversionThunk(Attribute key, FnOp thunk);
 
-  /// This is used for memory that lives as long as the global parser does.
-  llvm::BumpPtrAllocator persistentAllocator;
-
   /// A flag indicating if prebuilt packages should not be considered during
   /// parsing.
   bool disablePrebuiltPackages = false;
+
+  /// Whether experimental incremental parsing is enabled. Currently always
+  /// false; a follow-up wires it to a parser-config option and tool flag
+  /// alongside the incremental parsing cache.
+  bool incrParsingEnabled = false;
 
   /// If true, auto-import the builtin package.
   bool useBuiltinModule = true;

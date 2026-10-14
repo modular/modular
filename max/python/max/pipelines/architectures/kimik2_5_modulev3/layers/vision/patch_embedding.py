@@ -31,8 +31,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.conv import Conv2d
-from max.experimental.sharding.action import ActionSet
-from max.experimental.sharding.cost import force_replicated_action_set
+from max.experimental.sharding import AxisAssignment, replicated_rows
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.nn.kernels import (
@@ -46,9 +45,9 @@ def _learnable_2d_interp_pos_emb_rule(
     grid_thws: TensorLayout,
     time_weight: TensorLayout,
     *extras: Any,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Replicated on every operand: the vision tower is not sharded."""
-    return force_replicated_action_set(x, weight, grid_thws, time_weight)
+    return replicated_rows(x, weight, grid_thws, time_weight)
 
 
 learnable_2d_interp_pos_emb = F.functional(

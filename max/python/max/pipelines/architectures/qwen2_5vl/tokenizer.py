@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
@@ -43,6 +44,7 @@ from max.pipelines.lib import (
     VisionPreprocessCache,
     float32_to_bfloat16_as_uint16,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import encode_dkv_cache_hint
@@ -50,6 +52,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    VisionPreprocessCacheStats,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -307,17 +310,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             VisionPreprocessCache.for_images(pipeline_config.runtime)
         )
 
-        # Initialize EOS token IDs
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
-
-        if eos_token_id := getattr(config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._eos_token_ids.update(eos_token_id)
 
         self.image_token_id = config.image_token_id
         self.video_token_id = config.video_token_id
@@ -430,6 +425,16 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             )
 
         raise ValueError(f"{request} does not provide messages or prompt.")
+
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's :class:`PreprocessCacheStatsProbe` snapshot.
+
+        Image only: this architecture caches no preprocessed video, so the
+        ``video`` key is structurally absent rather than reported as zero.
+        """
+        return {"image": self._preprocess_cache.stats()}
 
     def _preprocess_image(
         self, image_hash: int | None, image: Image.Image

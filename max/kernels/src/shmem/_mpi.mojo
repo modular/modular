@@ -20,7 +20,7 @@ from std.ffi import (
     c_int,
     RTLD,
 )
-from std.sys.info import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from std.sys import default_accelerator
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -30,7 +30,7 @@ comptime MPI_LIBRARY = _Global["MPI_LIBRARY", _init_mpi_dylib]
 
 
 def mpi_lib_name() -> String:
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         return "nvshmem_bootstrap_mpi.so.3"
     else:
         return "libmpi.so"
@@ -50,7 +50,7 @@ def _init_mpi_dylib() -> OwnedDLHandle:
     var flags = RTLD.NOW | RTLD.GLOBAL
 
     # AMD interaction with libmpi needs the handle to stay alive after MPI_Finalize
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         flags = flags | RTLD.NODELETE
 
     try:

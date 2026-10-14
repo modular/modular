@@ -18,6 +18,9 @@ memory specifications, thread organization, and performance characteristics.
 """
 
 
+from std.sys.info import _TargetType, _accelerator_arch, _current_target
+
+
 @__doc_inline
 from std._gpu.host.info import (
     AcceleratorArchitectureFamily,
@@ -39,7 +42,6 @@ from std._gpu.host._builtin_targets import (
     AMDCDNA3Family,
     AMDCDNA4Family,
     AMDRDNAFamily,
-    AppleMetalFamily,
     B100,
     B200,
     B300,
@@ -54,16 +56,7 @@ from std._gpu.host._builtin_targets import (
     MI300A,
     MI300X,
     MI355X,
-    MetalM1,
-    MetalM1Metal4,
-    MetalM2,
-    MetalM2Metal4,
-    MetalM3,
-    MetalM3Metal4,
-    MetalM4,
-    MetalM4Metal4,
-    MetalM5,
-    MetalM5Metal4,
+    MI455X,
     NvidiaAdaFamily,
     NvidiaAmpereDatacenterFamily,
     NvidiaAmpereEmbeddedFamily,
@@ -94,15 +87,53 @@ from std._gpu.host._builtin_targets import (
     TeslaP100,
 )
 
-from std._gpu.host.info import _empty_target
+
+@__doc_inline
+from std._plugin.metal.metal_targets import (
+    AppleMetalFamily,
+    MetalM1,
+    MetalM1Metal4,
+    MetalM2,
+    MetalM2Metal4,
+    MetalM3,
+    MetalM3Metal4,
+    MetalM4,
+    MetalM4Metal4,
+    MetalM5,
+    MetalM5Metal4,
+)
+
+from std._gpu.host.info import (
+    _empty_target,
+    _encode_device_types_with_host_layout,
+)
 
 from std._gpu.host._builtin_targets import (
     _a100_target,
     _h100_target,
-    _metal_m1_target,
-    _metal_m2_target,
     _mi300x_target,
     _mi355x_target,
     _is_sm10x_gpu,
     _is_sm12x_gpu,
 )
+from std._plugin.metal.metal_targets import (
+    _metal_m1_target,
+    _metal_m2_target,
+)
+
+
+@inline(.always)
+def _device_type_encoder_target() -> _TargetType:
+    """Returns the target a `DeviceTypeEncoder` encodes for.
+
+    Encoded field offsets have to match the layout the device reads them with.
+
+    Returns:
+        The target to compute device type layout with.
+    """
+    comptime if _accelerator_arch() == "":
+        return _current_target()
+    elif _encode_device_types_with_host_layout:
+        return _current_target()
+    else:
+        return get_gpu_target()._mlir_value

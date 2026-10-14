@@ -21,7 +21,7 @@ from std.math.uutils import umod, ufloordiv
 
 
 trait CoordLike(
-    Defaultable, ImplicitlyCopyable, TrivialRegisterPassable, Writable
+    Defaultable, ImplicitlyCopyable, Intable, TrivialRegisterPassable, Writable
 ):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
@@ -84,8 +84,17 @@ trait CoordLike(
         """
         ...
 
+    @inline(.always)
+    def __int__(self) -> Int:
+        """Convert this coordinate to an `Int`.
 
-struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
+        Returns:
+            The coordinate's scalar value as an `Int`.
+        """
+        return Int(self.value())
+
+
+struct ComptimeInt[val: Int](CoordLike):
     """Compile-time known index value.
 
     Parameters:
@@ -173,72 +182,6 @@ Parameters:
 """
 
 
-# ===-----------------------------------------------------------------------===#
-# _All — "keep this dimension" marker for TileTensor.__getitem__
-# ===-----------------------------------------------------------------------===#
-
-
-struct _All(CoordLike, TrivialRegisterPassable):
-    """Marker type meaning "keep this entire dimension" in a select operation.
-
-    Used with `TileTensor.__getitem__` to indicate that a dimension should be
-    preserved in the output rather than collapsed at a specific index.
-    Uses `static_value = -2` as a sentinel distinct from `Scalar`'s `-1`.
-
-    Example:
-
-    ```
-    # From a 4D tensor (batch, N, heads, head_dim),
-    # fix batch and heads, keep N and head_dim:
-    var result = tensor.slice(batch_idx, All, head_idx, All)
-    # result is a 2D tensor (N, head_dim)
-    ```
-    """
-
-    comptime ParamListType = Coord[Self].element_types
-    """The element types (Self for scalar types)."""
-
-    comptime _ParamListType = Self.ParamListType.values
-    """The low-level parameter list of element types."""
-
-    comptime static_value: Int = -2
-    """Sentinel value distinguishing `_All` from `Scalar` (-1) and `ComptimeInt` (>=0)."""
-
-    comptime DTYPE = DType.int
-
-    comptime is_static_value = True
-
-    def __init__(out self):
-        pass
-
-    @staticmethod
-    @inline(.nodebug)
-    def __len__() -> Int:
-        return 1
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write("All")
-
-    def write_repr_to(self, mut writer: Some[Writer]):
-        writer.write("All")
-
-    @inline(.nodebug)
-    def product(self) -> Scalar[Self.DTYPE]:
-        return Scalar[Self.DTYPE](1)
-
-    @inline(.nodebug)
-    def value(self) -> Scalar[Self.DTYPE]:
-        return Scalar[Self.DTYPE](-2)
-
-    @inline(.nodebug)
-    def tuple(var self) -> Coord[*Self.ParamListType]:
-        comptime assert False, "_All is not a tuple type"
-
-
-comptime All = _All()
-"""Marker value meaning "keep this entire dimension" in `TileTensor.__getitem__`."""
-
-
 @fieldwise_init("implicit")
 struct Coord[*element_types: CoordLike](
     CoordLike, DevicePassable, Sized, Writable
@@ -285,9 +228,6 @@ struct Coord[*element_types: CoordLike](
 
     comptime is_flat = Self.rank == Self.flat_rank
     """If the `Coord` contains nested items."""
-
-    comptime contains_slices = Self.element_types.contains[type_of(All)]()
-    """If the `Coord` contains the `All` symbol."""
 
     var _storage: _RegTuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
@@ -468,47 +408,6 @@ struct Coord[*element_types: CoordLike](
             Never returns; aborts at compile time.
         """
         comptime assert False, "Coord is not a value type"
-
-    @inline(.nodebug)
-    def inner_product[
-        *other_types: CoordLike
-    ](self, other: Coord[*other_types]) -> Int:
-        """Calculate the inner product with another CoordLike.
-
-        Parameters:
-            other_types: The types of the other value.
-
-        Args:
-            other: The other value to compute inner product with.
-
-        Returns:
-            The inner product of the two values.
-        """
-        comptime assert Self.__len__() == Coord[*other_types].__len__(), (
-            "Length of Coord ("
-            + String(Self.__len__())
-            + ") and Coord[*other_types] ("
-            + String(Coord[*other_types].__len__())
-            + ") must match"
-        )
-        var result = 0
-
-        comptime for i in range(Self.__len__()):
-            comptime T = Self.element_types[i]
-            comptime U = other_types[i]
-
-            comptime if T.is_tuple and U.is_tuple:
-                result += Coord(self[i]).inner_product(Coord(other[i]))
-            elif T.is_value and U.is_value:
-                result += Int(self[i].value()) * Int(other[i].value())
-            else:
-                comptime assert False, String(
-                    "Element ",
-                    i,
-                    " of Coord must both be a tuple or both be a value",
-                )
-
-        return result
 
     @inline(.nodebug)
     def __eq__[
@@ -754,6 +653,54 @@ struct Coord[*element_types: CoordLike](
 
         return result
 
+    @inline(.always)
+    def replace_dynamic[
+        dtype: DType, //, at: Int
+    ](mut self, value: Scalar[dtype]):
+        """Assign a runtime `value` to an already-dynamic element, in place.
+
+        `value` must already have the element's own dtype, so the assignment
+        cannot truncate or wrap; convert at the call site to narrow.
+
+        Parameters:
+            dtype: The dtype of `value`, which must match the element's.
+            at: The index of the element to assign to.
+
+        Args:
+            value: The runtime value to store.
+
+        Constraints:
+            - `at` must be a valid element index.
+            - The `Coord` must be flat. A nested element reports `DType.int`
+              and is not static, so the other checks would not reject it.
+            - The element at `at` must not be statically known; use `replace`
+              to overwrite a static element, which yields a new `Coord` type.
+            - `dtype` must equal the dtype of the element at `at`.
+
+        Examples:
+            ```mojo
+            from std.utils.coord import Coord, ComptimeInt
+            var c = Coord(ComptimeInt[3](), Int64(0))
+            c.replace_dynamic[1](Int64(7))
+            # c is Coord(ComptimeInt[3](), Int64(7))
+            ```
+        """
+        comptime assert (
+            0 <= at < Self.__len__()
+        ), "`at` must be a valid element index"
+        comptime assert (
+            Self.is_flat
+        ), "`Coord.replace_dynamic` only supports flat `Coord`s"
+        comptime ElemT = Self.element_types[at]
+        comptime assert not ElemT.is_static_value, (
+            "cannot assign a runtime value to a statically known element; use"
+            " `replace` to overwrite it with a value of a different type"
+        )
+        comptime assert (
+            dtype == ElemT.DTYPE
+        ), "`value` must have the dtype of the element at `at`"
+        self[at] = rebind[ElemT](value)
+
     def write_to(self, mut w: Some[Writer]):
         """Write this `Coord` to a `Writer`.
 
@@ -916,9 +863,10 @@ def crd2idx[
     """Calculate the linear index from a coordinate tuple.
 
     The dot product is computed at `out_type` precision (each `coord * stride`
-    term is evaluated after narrowing both operands to `out_type`). Callers
-    that pick a narrow `out_type` (e.g. `uint32`) are responsible for ensuring
-    every per-dim product and their sum fit in that type. The default
+    term is evaluated after narrowing both operands to `out_type`), and so is
+    splitting a scalar coordinate across a mode's sub-modes. Callers that pick
+    a narrow `out_type` (e.g. `uint32`) are responsible for ensuring the
+    coordinate, every per-dim product and their sum fit in that type. The default
     `DType.int64` is wide enough for realistic layouts. See `_crd2idx_flat`.
 
     Parameters:
@@ -962,25 +910,29 @@ def crd2idx[
 
             return result
         else:  # "int" tuple tuple
-            var crd_int: Int
+            # Split in `out_type`, like the dot product: an `Int` divide would
+            # widen every narrow index to 64 bits.
+            var crd_val: Scalar[out_type]
 
             comptime if Index.is_tuple:
-                crd_int = 0 if crd_len == 0 else Int(crd.tuple()[0].value())
+                crd_val = 0 if crd_len == 0 else Scalar[out_type](
+                    crd.tuple()[0].value()
+                )
             else:
-                crd_int = 0 if crd_len == 0 else Int(crd.value())
+                crd_val = 0 if crd_len == 0 else Scalar[out_type](crd.value())
 
             comptime last_elem_idx = shape_len - 1
 
             comptime for i in range(last_elem_idx):
                 var quotient, remainder = divmod(
-                    crd_int, Int(shape_t[i].product())
+                    crd_val, Scalar[out_type](shape_t[i].product())
                 )
                 result += crd2idx[out_type=out_type](
                     remainder, shape_t[i], stride_t[i]
                 )
-                crd_int = quotient
+                crd_val = quotient
             return result + crd2idx[out_type=out_type](
-                crd_int, shape_t[last_elem_idx], stride_t[last_elem_idx]
+                crd_val, shape_t[last_elem_idx], stride_t[last_elem_idx]
             )
     else:
         comptime if crd_len > 1:
@@ -1730,11 +1682,10 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         # Move each element into the tuple storage.
-        @__parameter
-        def init_elt[idx: Int](var elt: Self.element_types[idx]):
+        def init_elt[idx: Int](var elt: Self.element_types[idx]) {mut self}:
             Pointer(to=self[idx]).write(elt)
 
-        args^.consume_elements[init_elt]()
+        args^.consume_elements(init_elt)
 
     @always_inline("builtin")
     @staticmethod

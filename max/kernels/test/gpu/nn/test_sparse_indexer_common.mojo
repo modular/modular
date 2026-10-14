@@ -39,10 +39,9 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import min
 from std.random import rand
 from std.testing import assert_equal, assert_true
-from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf, nan
 
-from layout import TensorLayout, TileTensor, row_major
+from layout import Coord, TensorLayout, TileTensor, row_major
 
 from nn.attention.gpu.sparse_indexer_common import block_select_topk
 
@@ -67,14 +66,8 @@ def _select_test_kernel[
     var k = Int(k_dev)
     comptime assert scores.flat_rank == 2 and out_idxs.flat_rank == 2
     var row = block_idx.x
-    var s_lt = scores.to_layout_tensor()
-    var o_lt = out_idxs.to_layout_tensor()
-    var scores_row = rebind[MutPointer[Float32, MutAnyOrigin]](
-        s_lt.ptr_at_offset(Index(row, 0))
-    )
-    var out_row = rebind[MutPointer[Int32, MutAnyOrigin]](
-        o_lt.ptr_at_offset(Index(row, 0))
-    )
+    var scores_row = scores.ptr_at_offset(Coord(row, 0))
+    var out_row = out_idxs.ptr_at_offset(Coord(row, 0))
     block_select_topk[.float32, DType.int32](scores_row, num_blocks, k, out_row)
 
 

@@ -212,8 +212,7 @@ struct KBufferRDNA[
         if Int(tid) >= num_busy:
             return
 
-        var tr = Int(tid) // Self._thread_cols
-        var tc = Int(tid) % Self._thread_cols
+        var tr, tc = divmod(Int(tid), Self._thread_cols)
 
         var src = self.load_tile.tile[Self._per_stage_rows, Self.simd_width](
             tile_id, 0
@@ -397,7 +396,7 @@ struct VBufferRDNA[
         self.gmem_tile = gmem_tile
         self.strip_idx = 0
         self.current_stage = 0
-        self.remaining_rows = total_rows.value() if total_rows else Int.MAX
+        self.remaining_rows = total_rows.or_else(Int.MAX)
 
     @inline(.always)
     @staticmethod

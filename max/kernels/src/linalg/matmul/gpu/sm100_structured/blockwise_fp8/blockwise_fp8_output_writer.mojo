@@ -31,7 +31,7 @@ from max.gpu.sync import named_barrier
 from layout import (
     ComptimeInt,
     Coord,
-    CoordLike,
+    DefaultEngine,
     Idx,
     TensorLayout,
     TileTensor,
@@ -154,9 +154,8 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @inline(.always)
     def write[
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -170,15 +169,12 @@ struct BlockwiseFP8TileWriter[
             _,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_rank, c_tile_shape, c_desc_shape
-        ],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         c_coord: Tuple[Int, Int],
     ):
         """Write accumulated register tiles to GMEM via double-buffered SMEM.
 
         Parameters:
-            c_rank: Rank of the C output tensor.
             c_tile_shape: Tile shape of the C output tensor.
             c_desc_shape: Descriptor shape of the C output tensor.
             cluster_size: Size of the threadblock cluster for the matmul.
@@ -189,7 +185,7 @@ struct BlockwiseFP8TileWriter[
             c_tma_op: TMA tensor tile descriptor for the C store.
             c_coord: (M, N) tile coordinate of this C tile in the output tensor.
         """
-        Self._write_impl[c_rank, c_tile_shape, c_desc_shape, cluster_size](
+        Self._write_impl[c_tile_shape, c_desc_shape, cluster_size](
             accum, c_tiles, c_tma_op, c_coord
         )
 
@@ -198,9 +194,8 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @inline(.always)
     def _write_impl[
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -214,9 +209,7 @@ struct BlockwiseFP8TileWriter[
             _,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_rank, c_tile_shape, c_desc_shape
-        ],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         c_coord: Tuple[Int, Int],
     ):
         """Internal implementation for writing accumulated register tiles."""
@@ -285,7 +278,7 @@ struct BlockwiseFP8TileWriter[
                 Self.stageN,  # stage_contiguous_size
                 Self.c_swizzle,
             ]
-            StoreExec.execute[c_rank, c_tile_shape, c_desc_shape](
+            StoreExec.execute[c_tile_shape, c_desc_shape](
                 c_smem_tile,
                 store_coords,
                 c_tma_op,
@@ -294,7 +287,6 @@ struct BlockwiseFP8TileWriter[
             )
             tma_wait_pipelined[
                 Self.c_type,
-                c_rank,
                 c_tile_shape,
                 c_desc_shape,
                 stage == Self.num_stages - 1,
@@ -476,7 +468,12 @@ struct BlockwiseFP8TileWriter[
         c_smem_layout: TensorLayout,
     ](
         c_smem_tile: TileTensor[
-            Self.c_type, c_smem_layout, MutAnyOrigin, address_space=.SHARED
+            Self.c_type,
+            c_smem_layout,
+            MutAnyOrigin,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
+            Engine=DefaultEngine[element_width=1],
+            address_space=.SHARED,
         ],
         c_tensor: TileTensor[
             mut=True, Self.c_type, LayoutType=c_tensor_layout, ...

@@ -288,6 +288,88 @@ def test_dispatch_block_scaled_nv_basic() -> None:
     assert len(graph.output_types) == NUM_DEVICES * 6
 
 
+def test_dispatch_block_scaled_nv_dyn_global_scales_basic() -> None:
+    """Dynamic-global-scale NVFP4 dispatch takes no input scales and adds a
+    per-row BF16 scale output, for 7 output groups per device."""
+    token_last_dim = HIDDEN_SIZE // 2
+    input_types: list[Type[Any]] = [
+        *_per_device_types(DType.bfloat16, [NUM_TOKENS, HIDDEN_SIZE]),
+        *_per_device_types(DType.int32, [NUM_TOKENS, TOP_K]),
+        *_host_ptr_types(),
+        *_buffer_types(),
+    ]
+
+    output_types_per_device = [
+        [
+            TensorType(
+                dtype=DType.uint8,
+                shape=[MAX_RECV_TOKENS, token_last_dim],
+                device=dev,
+            ),
+            TensorType(
+                dtype=DType.uint8,
+                shape=[MAX_RECV_TOKENS, HIDDEN_SIZE, 1, 1, 1],
+                device=dev,
+            ),
+            TensorType(
+                dtype=DType.bfloat16, shape=[MAX_RECV_TOKENS], device=dev
+            ),
+            TensorType(
+                dtype=DType.uint32, shape=[N_LOCAL_EXPERTS + 1], device=dev
+            ),
+            TensorType(dtype=DType.uint32, shape=[N_LOCAL_EXPERTS], device=dev),
+            TensorType(dtype=DType.int32, shape=[N_LOCAL_EXPERTS], device=dev),
+            TensorType(
+                dtype=DType.int32, shape=[MAX_RECV_TOKENS, 2], device=dev
+            ),
+        ]
+        for dev in DEVICES
+    ]
+
+    n = NUM_DEVICES
+    with Graph("nvfp4_dyn_dispatch", input_types=input_types) as graph:
+        idx = 0
+        input_tokens = [graph.inputs[idx + i].tensor for i in range(n)]
+        idx += n
+        topk_ids = [graph.inputs[idx + i].tensor for i in range(n)]
+        idx += n
+        send_ptrs = graph.inputs[idx].tensor
+        recv_ptrs = graph.inputs[idx + 1].tensor
+        recv_count_ptrs = graph.inputs[idx + 2].tensor
+        idx += 3
+        counters = [graph.inputs[idx + i].buffer for i in range(n)]
+
+        results = ops.distributed_ep.dispatch_block_scaled_nv_dyn_global_scales(
+            input_tokens,
+            topk_ids,
+            send_ptrs,
+            recv_ptrs,
+            recv_count_ptrs,
+            counters,
+            output_types_per_device,
+            **_common_kwargs(),
+        )
+
+        assert len(results) == NUM_DEVICES
+        assert all(len(t) == 7 for t in results)
+        for dev, per_device in zip(DEVICES, results, strict=True):
+            rowwise_scales = per_device[2]
+            assert rowwise_scales.dtype == DType.bfloat16
+            assert rowwise_scales.shape == [MAX_RECV_TOKENS]
+            assert rowwise_scales.device == dev
+
+        flat: list[Any] = []
+        for per_device in results:
+            flat.extend(per_device)
+        graph.output(*flat)
+
+    assert len(graph.output_types) == NUM_DEVICES * 7
+    assert (
+        "mo.distributed.ep.dispatch.block.scaled.nv.dyn_global_scales"
+        in str(graph)
+    )
+
+
 # -----------------------------------------------------------------------
 # Combine
 # -----------------------------------------------------------------------

@@ -19,7 +19,6 @@ from std.memory import OwnedPointer
 ```
 """
 
-from std.builtin.rebind import downcast
 from std.format._utils import (
     Repr,
     FormatStruct,

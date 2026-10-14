@@ -51,7 +51,6 @@ Mirrors the structure of `nn.conv.gpu.amd.dispatch`.
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
-from std.math.uutils import udivmod
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
@@ -272,7 +271,7 @@ def dispatch_amd_4wave_conv3d[
     comptime _shapes_ok = (
         _C_in >= _simd_w and _C_out >= 64 and _Q > 1 and _R > 0 and _S > 0
     )
-    # Gate the entire dispatch body — including the `@__parameter` closure
+    # Gate the entire dispatch body — including the nested closure
     # definitions below — on `_shapes_ok`. Mojo type-checks closure
     # bodies even past a `comptime if not _shapes_ok: return False`
     # early-return, so a shape that we *intend* to decline (e.g.
@@ -384,11 +383,10 @@ def dispatch_amd_4wave_conv3d[
         # -------- Static vs runtime-HW dispatch --------------------
         comptime if _all_dhw_static:
 
-            @__parameter
             @inline(.always)
             def _launch_static[
                 stride_v: Int, pad_d_c: Int, pad_hw_c: Int
-            ]() raises -> Bool:
+            ]() raises {imm} -> Bool:
                 comptime _eff_Q = _Q
                 comptime _eff_R = _R
                 comptime _eff_S = _S
@@ -571,11 +569,10 @@ def dispatch_amd_4wave_conv3d[
             # Dynamic-DHW path. Materialize the runtime input dims and
             # output dims, then call the kernel via use_runtime_hw=True.
 
-            @__parameter
             @inline(.always)
             def _launch_runtime[
                 stride_v: Int, pad_d_c: Int, pad_hw_c: Int
-            ]() raises:
+            ]() raises {imm}:
                 var _rt_N = Int(input.dim[0]())
                 var _rt_D = Int(input.dim[1]())
                 var _rt_H = Int(input.dim[2]())

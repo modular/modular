@@ -21,14 +21,14 @@ import sys
 from collections.abc import Generator
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tokenizer import (
@@ -75,7 +75,12 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.request import register_request
 from max.serve.router import _image_resolution
+from max.serve.router._disconnect import (
+    ClientDisconnected,
+    raise_on_disconnect,
+)
 from max.serve.router._image_resolution import (
     _decode_data_uri_base64,
     decode_and_validate_images,
@@ -88,14 +93,20 @@ from max.serve.router.openai_routes import (
     _batch_id,
     _coerce_positive_float,
     _coerce_positive_int,
+    _conversation_turn,
+    _convert_chat_completion_tools_to_token_generator_tools,
     _create_response_format,
     _get_cache_salt,
     _process_chat_log_probabilities,
+    _record_request_feature_metrics,
     _resolve_grammar_constraints,
     _set_batch_id_attributes,
+    _tool_choice_label,
     get_tool_parser,
     openai_create_chat_completion,
+    openai_create_completion,
     openai_parse_chat_completion_request,
+    record_request_end,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -113,6 +124,8 @@ from openai.types.chat.chat_completion_stream_options_param import (
 )
 from PIL import Image
 from pydantic import AnyUrl, ValidationError
+from sse_starlette.sse import AppStatus
+from starlette.types import Message, Scope
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -1136,8 +1149,8 @@ def test_process_chat_log_probabilities_with_logprobs() -> None:
     # Simulate a token with log probabilities
     token_log_probs = [-0.5, -1.2]  # Log probs for 2 tokens
     top_log_probs = [
-        {"hello": -0.5, "world": -1.0, "foo": -2.0},  # Top 3 for token 1
-        {"bar": -1.2, "baz": -1.5, "qux": -2.5},  # Top 3 for token 2
+        {1: ("hello", -0.5), 2: ("world", -1.0), 3: ("foo", -2.0)},
+        {4: ("bar", -1.2), 5: ("baz", -1.5), 6: ("qux", -2.5)},
     ]
 
     outputs = [
@@ -1147,6 +1160,7 @@ def test_process_chat_log_probabilities_with_logprobs() -> None:
             token_count=2,
             token_log_probabilities=token_log_probs,
             top_log_probabilities=top_log_probs,
+            sampled_tokens=["hello", "bar"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1180,14 +1194,16 @@ def test_process_chat_log_probabilities_multiple_outputs() -> None:
             decoded_tokens="a",
             token_count=1,
             token_log_probabilities=[-0.1],
-            top_log_probabilities=[{"a": -0.1, "b": -0.5}],
+            top_log_probabilities=[{1: ("a", -0.1), 2: ("b", -0.5)}],
+            sampled_tokens=["a"],
         ),
         TokenGeneratorOutput(
             status=GenerationStatus.END_OF_SEQUENCE,
             decoded_tokens="b",
             token_count=1,
             token_log_probabilities=[-0.2],
-            top_log_probabilities=[{"b": -0.2, "c": -0.8}],
+            top_log_probabilities=[{2: ("b", -0.2), 3: ("c", -0.8)}],
+            sampled_tokens=["b"],
         ),
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1214,7 +1230,10 @@ def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
             decoded_tokens="x",
             token_count=1,
             token_log_probabilities=[-1.0],
-            top_log_probabilities=[{"x": -1.0, "y": -0.5, "z": -2.0}],
+            top_log_probabilities=[
+                {1: ("x", -1.0), 2: ("y", -0.5), 3: ("z", -2.0)}
+            ],
+            sampled_tokens=["x"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1234,6 +1253,44 @@ def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
     assert top_logprobs[2].logprob == -2.0
 
 
+def test_process_chat_log_probabilities_tied_sampled_token() -> None:
+    """Test that the entry names the sampled token when its logprob is tied."""
+    outputs = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens=".b",
+            token_count=2,
+            token_log_probabilities=[-0.725921630859375, -0.5],
+            top_log_probabilities=[
+                {
+                    1: (",", -0.725921630859375),
+                    2: (".", -0.725921630859375),
+                    3: ("x", -2.0),
+                },
+                {4: ("b", -0.5), 5: ("a", -0.25), 6: ("c", -3.0)},
+            ],
+            sampled_tokens=[".", "b"],
+        )
+    ]
+    result = _process_chat_log_probabilities(outputs)
+
+    content = result.content
+    assert content is not None
+    assert len(content) == 2
+    assert content[0].token == "."
+    assert content[0].bytes == [46]
+    assert content[0].logprob == -0.725921630859375
+    assert [t.token for t in content[0].top_logprobs] == [",", ".", "x"]
+
+    assert content[1].token == "b"
+    assert content[1].logprob == -0.5
+    assert [(t.token, t.logprob) for t in content[1].top_logprobs] == [
+        ("a", -0.25),
+        ("b", -0.5),
+        ("c", -3.0),
+    ]
+
+
 def test_process_chat_log_probabilities_bytes_encoding() -> None:
     """Test that token bytes are correctly encoded as UTF-8."""
     outputs = [
@@ -1242,7 +1299,8 @@ def test_process_chat_log_probabilities_bytes_encoding() -> None:
             decoded_tokens="é",
             token_count=1,
             token_log_probabilities=[-0.3],
-            top_log_probabilities=[{"é": -0.3}],
+            top_log_probabilities=[{1: ("é", -0.3)}],
+            sampled_tokens=["é"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1367,6 +1425,7 @@ def _make_mock_request() -> Mock:
     mock_request.request_path = "/v1/chat/completions"
     mock_request.sampling_params = Mock()
     mock_request.sampling_params.stop = []
+    mock_request.messages = []
     return mock_request
 
 
@@ -1467,7 +1526,8 @@ async def test_openai_chat_completion_cancels_disconnected_request(
         # wait for request to reach backend
         req = await asyncio.wait_for(request_queue.get(), timeout=1.0)
         assert req.request_id == RequestID("disconnect-test")
-        request_started.set()
+        # receive() stays pending: this covers cancelling the handler, and the
+        # tests below cover a disconnect seen through receive().
 
         # simulate disconnection
         session.cancel()
@@ -1475,6 +1535,225 @@ async def test_openai_chat_completion_cancels_disconnected_request(
         # expect cancellation request to backend
         cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
         assert cancel == [RequestID("disconnect-test")]
+
+
+def _echo_pipeline() -> tuple[
+    TokenGeneratorPipeline,
+    _WritableQueue[BaseContext],
+    _WritableQueue[list[RequestID]],
+]:
+    """Builds an echo pipeline whose worker never answers, so a request stays
+    in flight until it is cancelled."""
+    request_queue = _WritableQueue[BaseContext]()
+    cancel_queue = _WritableQueue[list[RequestID]]()
+    model_worker = ZmqModelWorkerProxy(
+        request_queue=request_queue,
+        response_queue=asyncio.Queue[Any](),
+        cancel_queue=cancel_queue,
+    )
+    pipeline = TokenGeneratorPipeline(
+        model_name="echo",
+        tokenizer=EchoPipelineTokenizer(),
+        model_worker=model_worker,
+    )
+    return pipeline, request_queue, cancel_queue
+
+
+def _chat_request_body() -> bytes:
+    return json.dumps(
+        simple_openai_request(model_name="echo", content="test data")
+    ).encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_non_streaming_cancels_on_disconnect(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+) -> None:
+    """A non-streaming request is cancelled when its client disconnects.
+
+    Starlette never cancels a plain endpoint, so unlike the test above the
+    handler task is left running: only the disconnect itself may stop it.
+    """
+    request_started = asyncio.Event()
+    pipeline, request_queue, cancel_queue = _echo_pipeline()
+    mock_request = _make_disconnect_request(
+        pipeline=pipeline,
+        pipeline_config=mock_pipeline_config,
+        request_started=request_started,
+        body=_chat_request_body(),
+    )
+
+    session = asyncio.create_task(openai_create_chat_completion(mock_request))
+    req = await asyncio.wait_for(request_queue.get(), timeout=1.0)
+    assert req.request_id == RequestID("disconnect-test")
+    request_started.set()
+
+    cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+    assert cancel == [RequestID("disconnect-test")]
+    # The request_session middleware turns this into the 499.
+    with pytest.raises(ClientDisconnected):
+        await asyncio.wait_for(session, timeout=1.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        pytest.param("/v1/chat/completions", None, id="chat"),
+        pytest.param(
+            "/v1/completions",
+            json.dumps({"model": "echo", "prompt": "test data"}).encode(),
+            id="completions",
+        ),
+    ],
+)
+async def test_non_streaming_cancels_behind_middleware(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+    path: str,
+    body: bytes | None,
+) -> None:
+    """The disconnect reaches the route through the request_session
+    middleware, whose BaseHTTPMiddleware wrapper drops the disconnect for a
+    non-blocking ``Request.is_disconnected()``, and the middleware answers
+    it with a 499."""
+    pipeline, request_queue, cancel_queue = _echo_pipeline()
+    app = FastAPI()
+    app.state.pipeline = pipeline
+    app.state.pipeline_config = mock_pipeline_config
+    app.state.settings = Settings(
+        api_types=[APIType.OPENAI], use_heartbeat=False
+    )
+    register_request(app)
+    app.add_api_route(
+        "/v1/chat/completions",
+        openai_create_chat_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+    app.add_api_route(
+        "/v1/completions",
+        openai_create_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+
+    client_gone = asyncio.Event()
+    messages: list[Message] = [
+        {
+            "type": "http.request",
+            "body": body if body is not None else _chat_request_body(),
+            "more_body": False,
+        }
+    ]
+
+    async def receive() -> Message:
+        if messages:
+            return messages.pop(0)
+        await client_gone.wait()
+        return {"type": "http.disconnect"}
+
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8000),
+        "app": app,
+    }
+    call = asyncio.create_task(app(scope, receive, send))
+    req = await asyncio.wait_for(request_queue.get(), timeout=5.0)
+    client_gone.set()
+
+    cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+    assert cancel == [req.request_id]
+    await asyncio.wait_for(call, timeout=1.0)
+    assert sent[0]["status"] == 499
+    # A completions request is keyed per prompt as "<request id>_<index>".
+    headers = dict(sent[0]["headers"])
+    assert (
+        headers[b"x-request-id"].decode() == req.request_id.value.split("_")[0]
+    )
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_non_streaming_maps_errors(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+) -> None:
+    """An error from the completion still reaches the route's own mapping
+    while the disconnect watch runs beside it."""
+    pipeline, _, _ = _echo_pipeline()
+    mock_request = _make_disconnect_request(
+        pipeline=pipeline,
+        pipeline_config=mock_pipeline_config,
+        request_started=asyncio.Event(),
+        body=_chat_request_body(),
+    )
+
+    with (
+        patch.object(
+            OpenAIChatResponseGenerator,
+            "complete",
+            AsyncMock(side_effect=InputError("bad request")),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await asyncio.wait_for(
+            openai_create_chat_completion(mock_request), timeout=1.0
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "bad request"
+
+
+def _watched_request(*messages: Message | Exception) -> Mock:
+    pending = list(messages)
+
+    async def receive() -> Message:
+        if not pending:
+            await asyncio.Event().wait()
+        message = pending.pop(0)
+        if isinstance(message, Exception):
+            raise message
+        return message
+
+    request = Mock()
+    request.receive = receive
+    request.state = SimpleNamespace(request_id="watch-test")
+    return request
+
+
+@pytest.mark.asyncio
+async def test_raise_on_disconnect_raises_after_body_messages() -> None:
+    request = _watched_request(
+        {"type": "http.request", "body": b"", "more_body": False},
+        {"type": "http.disconnect"},
+    )
+
+    with pytest.raises(ClientDisconnected):
+        await asyncio.wait_for(raise_on_disconnect(request), timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_raise_on_disconnect_returns_when_receive_fails() -> None:
+    """A failed watch leaves the request running rather than abandoning it."""
+    request = _watched_request(RuntimeError("receive failed"))
+
+    await asyncio.wait_for(raise_on_disconnect(request), timeout=1.0)
 
 
 @pytest.mark.asyncio
@@ -1671,6 +1950,116 @@ async def test_openai_chat_completion_usage_present_with_max_tokens_one(
     assert response.usage.total_tokens == 12
 
 
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        pytest.param([], None, id="no_messages"),
+        pytest.param(["user"], "first", id="opening_turn"),
+        pytest.param(["system", "user"], "first", id="system_prompt_only"),
+        pytest.param(
+            ["system", "user", "assistant", "user"], "later", id="second_turn"
+        ),
+        pytest.param(
+            ["user", "assistant", "tool"], "later", id="tool_result_turn"
+        ),
+    ],
+)
+def test_conversation_turn(
+    roles: list[Literal["system", "user", "assistant", "tool"]],
+    expected: str | None,
+) -> None:
+    messages = [
+        TextGenerationRequestMessage(role=role, content="x") for role in roles
+    ]
+    assert _conversation_turn(messages) == expected
+
+
+def test_record_request_end_labels_input_tokens_with_the_turn() -> None:
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end("/v1/chat/completions", 1.0, 3, 10, "later")
+
+    metrics_mock.input_tokens.assert_called_once_with(10)
+    metrics_mock.input_tokens_per_request.assert_called_once_with(10, "later")
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_reports_the_conversation_turn() -> None:
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="done",
+            token_count=1,
+            prompt_token_count=9,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+    mock_request = _make_mock_request()
+    mock_request.messages = [
+        TextGenerationRequestMessage(role="user", content="hi"),
+        TextGenerationRequestMessage(role="assistant", content="hello"),
+        TextGenerationRequestMessage(role="user", content="again"),
+    ]
+
+    with (
+        patch("max.serve.router.openai_routes.METRICS", MagicMock()),
+        patch("max.serve.router.openai_routes.record_request_start"),
+        patch("max.serve.router.openai_routes.record_request_end") as end_mock,
+    ):
+        await OpenAIChatResponseGenerator(mock_pipeline).complete(
+            [mock_request]
+        )
+
+    assert end_mock.call_count == 1
+    assert end_mock.call_args.args[3] == 9
+    assert end_mock.call_args.args[4] == "later"
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        pytest.param(["user"], "first", id="opening_turn"),
+        pytest.param(["user", "assistant", "user"], "later", id="second_turn"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_pretokenized_chat_completion_reports_the_conversation_turn(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    roles: list[str],
+    expected: str,
+) -> None:
+    # The orchestrator sends prompt_tokens beside the messages, and the
+    # route drops the messages from the token request it builds.
+    # sse-starlette binds this event to the first streaming test's loop
+    # (sysid/sse-starlette#59).
+    monkeypatch.setattr(AppStatus, "should_exit_event", None)
+    request = {
+        "model": "echo",
+        "messages": [{"role": role, "content": "hi"} for role in roles],
+        "prompt_tokens": [101, 202, 303],
+        "stream": stream,
+    }
+
+    with patch("max.serve.router.openai_routes.record_request_end") as end_mock:
+        async with AsyncTestClient(app, timeout=20.0) as client:
+            response = await client.post(
+                "/v1/chat/completions", json=request, stream=stream
+            )
+            assert response.status_code == 200
+            if stream:
+                async for _ in response.iter_content(1024):
+                    pass
+
+    assert end_mock.call_count == 1
+    assert end_mock.call_args.args[4] == expected
+
+
 def _all_reasoning_chunks(
     status: GenerationStatus,
 ) -> list[TokenGeneratorOutput]:
@@ -1801,6 +2190,68 @@ async def test_tool_parse_failure_does_not_leak_structural_marker(
     assert choice.message.content == "I'll get the weather for Paris first."
 
 
+_QWEN_WEATHER_CALL = (
+    "<tool_call>\n<function=get_weather>\n"
+    "<parameter=city>\nParis\n</parameter>\n"
+    "</function>\n</tool_call>\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("status", "decoded", "expected_finish_reason"),
+    [
+        pytest.param(
+            GenerationStatus.MAXIMUM_LENGTH,
+            _QWEN_WEATHER_CALL * 2
+            + "<tool_call>\n<function=get_weather>\n<parameter=city>\nPa",
+            "length",
+            id="truncated_after_complete_calls",
+        ),
+        pytest.param(
+            GenerationStatus.END_OF_SEQUENCE,
+            _QWEN_WEATHER_CALL * 2,
+            "tool_calls",
+            id="natural_stop",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_call_finish_reason_reports_length_truncation(
+    patch_openai_metrics: None,
+    status: GenerationStatus,
+    decoded: str,
+    expected_finish_reason: str,
+) -> None:
+    """Regression (fuzz-found): a forced tool call that loops until
+    ``max_tokens`` used to come back with ``finish_reason="tool_calls"``,
+    so a client could not tell the output was truncated. The complete calls
+    are still returned, but the finish reason must say ``length``."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=status,
+                decoded_tokens=decoded,
+                token_count=64,
+                prompt_token_count=5,
+            )
+        ]
+    )
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=Qwen3_5ToolParser(),
+        parse_tool_calls=True,
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.finish_reason == expected_finish_reason
+    assert choice.message.tool_calls is not None
+    assert len(choice.message.tool_calls) == 2
+
+
 async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,
@@ -1844,7 +2295,7 @@ async def _run_completion_stream(
     mock_pipeline = Mock()
     mock_pipeline.model_name = "test-model"
 
-    async def mock_next_token_chunk(request: Any) -> Any:
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
         async def _gen() -> Any:
             for chunk in chunks:
                 yield chunk
@@ -1892,6 +2343,67 @@ async def _run_stream_with_kimi_tool_parser(
         async for p in await generator.stream(mock_request)
         if isinstance(p, str) and p != "[DONE]"
     ]
+
+
+@pytest.mark.asyncio
+async def test_stream_emits_content_withheld_as_a_partial_marker(
+    patch_openai_metrics: None,
+) -> None:
+    """A reply ending in the marker's first byte is never truncated.
+
+    The parser withholds that byte while a later token could still complete
+    the marker. Nothing can complete it once generation is done, so the
+    router flushes it on the terminal chunk rather than dropping a character
+    the model wrote.
+    """
+    lead = str.__str__(KimiToolParser().SECTION_BEGIN)[0]
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="answer",
+            token_count=1,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_tokens=lead,
+            token_count=1,
+            prompt_token_count=5,
+        ),
+    ]
+    responses = await _run_stream_with_kimi_tool_parser(chunks)
+    content = "".join(r.choices[0].delta.content or "" for r in responses)
+
+    assert content == f"answer{lead}"
+
+
+@pytest.mark.asyncio
+async def test_stream_does_not_flush_tool_call_markup_as_content(
+    patch_openai_metrics: None,
+) -> None:
+    """The terminal flush must never turn tool-call structure into content."""
+    # The complete SECTION_BEGIN marker, not a prefix of it, so the parser
+    # enters the tool-call region and the flush must stay silent.
+    section = str.__str__(KimiToolParser().SECTION_BEGIN)
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="answer",
+            token_count=1,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_tokens=section,
+            token_count=1,
+            prompt_token_count=5,
+        ),
+    ]
+    responses = await _run_stream_with_kimi_tool_parser(chunks)
+    content = "".join(r.choices[0].delta.content or "" for r in responses)
+
+    assert content == "answer"
+    assert section not in content
 
 
 _STREAM_REASONING_CHUNKS = [
@@ -2186,7 +2698,7 @@ async def test_openai_completion_stream_accounts_reasoning_tokens_for_metrics() 
     mock_pipeline = Mock()
     mock_pipeline.model_name = "test-model"
 
-    async def mock_next_token_chunk(request: Any) -> Any:
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
         async def _gen() -> Any:
             for chunk in chunks:
                 yield chunk
@@ -2848,8 +3360,7 @@ def test_create_response_format_boolean_schema_false() -> None:
     """A boolean schema ``false`` (matches nothing) de-sugars to the
     unsatisfiable ``{"anyOf": [False]}``, which the worker rejects as a 400 --
     no output can satisfy it. (``{"anyOf": [False]}`` is used over
-    ``{"not": {}}`` because llguidance lacks ``not`` and reports a misleading
-    error.)"""
+    ``{"not": {}}`` for broad grammar-backend compatibility.)"""
     result = _create_response_format(
         {
             "type": "json_schema",
@@ -3296,7 +3807,9 @@ async def test_chat_completion_logprobs_with_overlap_scheduler_rejected_by_defau
         response = await client.post("/v1/chat/completions", json=body)
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["error"]["message"].lower()
+    message = response.json()["error"]["message"]
+    assert "--no-enable-overlap-scheduler --force" in message
+    assert "--allow-unsupported-logprobs" in message
 
 
 @pytest.mark.asyncio
@@ -3387,7 +3900,9 @@ async def test_completion_logprobs_with_overlap_scheduler_rejected_by_default(
         )
 
     assert response.status_code == 400
-    assert "overlap" in response.json()["error"]["message"].lower()
+    message = response.json()["error"]["message"]
+    assert "--no-enable-overlap-scheduler --force" in message
+    assert "--allow-unsupported-logprobs" in message
 
 
 @pytest.mark.asyncio
@@ -3759,3 +4274,576 @@ async def test_parse_chat_completion_reasoning_content_key_and_precedence() -> (
         request_both, wrap_content=False, settings=settings
     )
     assert parsed_both.messages[0].reasoning_content == "wins"
+
+
+_WEATHER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
+def _feature_metrics_request(**extra: Any) -> CreateChatCompletionRequest:
+    return CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            **extra,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_choice", "expected"),
+    [
+        (None, "auto"),
+        ("auto", "auto"),
+        ("required", "required"),
+        ("none", "none"),
+        ({"type": "function", "function": {"name": "get_weather"}}, "named"),
+        ("a_choice_openai_added_later", "other"),
+    ],
+)
+def test_tool_choice_label(tool_choice: Any, expected: str) -> None:
+    """Every tool_choice maps to a bounded label; a named choice hides the name."""
+    assert _tool_choice_label(tool_choice) == expected
+
+
+def test_empty_tools_array_is_truthy_but_converts_to_empty_list() -> None:
+    """Pins the trap the feature counter has to route around.
+
+    ``CreateChatCompletionRequest.tools`` is a lazily-validated pydantic
+    ``Iterable``: it is truthy even for ``tools: []``, and iterating it
+    consumes it. The converted list is the only safe thing to test.
+    """
+    request = _feature_metrics_request(tools=[])
+    assert bool(request.tools) is True
+    assert (
+        _convert_chat_completion_tools_to_token_generator_tools(request.tools)
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_choice", "expected_choice"),
+    [
+        (None, "auto"),
+        ("auto", "auto"),
+        ("required", "required"),
+        ({"type": "function", "function": {"name": "get_weather"}}, "named"),
+    ],
+)
+def test_record_request_feature_metrics_counts_declared_tools(
+    tool_choice: Any, expected_choice: str
+) -> None:
+    request = _feature_metrics_request(
+        tools=[_WEATHER_TOOL], tool_choice=tool_choice
+    )
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools
+    )
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(tools, request)
+    mock_metrics.tool_call_requests.assert_called_once_with(expected_choice)
+    mock_metrics.tool_call_tools_per_request.assert_called_once_with(1)
+    mock_metrics.structured_output_requests.assert_not_called()
+
+
+@pytest.mark.parametrize("tools", [None, []])
+def test_record_request_feature_metrics_ignores_absent_tools(
+    tools: list[Any] | None,
+) -> None:
+    """An absent or empty converted tools list records nothing.
+
+    The ``tool_choice="none"`` case is the route's job, not the helper's, and
+    is covered by ``test_chat_completion_tool_choice_none_records_no_tool_metrics``.
+    """
+    request = _feature_metrics_request(tools=[_WEATHER_TOOL])
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(tools, request)
+    mock_metrics.tool_call_requests.assert_not_called()
+    mock_metrics.tool_call_tools_per_request.assert_not_called()
+
+
+def test_record_request_feature_metrics_reports_tool_inventory_size() -> None:
+    """The histogram carries the declared tool count, not just its presence."""
+    request = _feature_metrics_request(
+        tools=[
+            {
+                "type": "function",
+                "function": {"name": f"tool_{i}", "parameters": {}},
+            }
+            for i in range(7)
+        ]
+    )
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools
+    )
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(tools, request)
+    mock_metrics.tool_call_tools_per_request.assert_called_once_with(7)
+
+
+@pytest.mark.parametrize(
+    ("response_format", "expected_kind"),
+    [
+        ({"type": "json_object"}, "json_object"),
+        (
+            {
+                "type": "json_schema",
+                "json_schema": {"name": "s", "schema": {"type": "object"}},
+            },
+            "json_schema",
+        ),
+    ],
+)
+def test_record_request_feature_metrics_counts_response_format(
+    response_format: dict[str, Any], expected_kind: str
+) -> None:
+    request = _feature_metrics_request(response_format=response_format)
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(None, request)
+    mock_metrics.structured_output_requests.assert_called_once_with(
+        expected_kind
+    )
+    mock_metrics.tool_call_requests.assert_not_called()
+
+
+def test_record_request_feature_metrics_ignores_text_response_format() -> None:
+    """``text`` is the unconstrained default, so it is not structured output."""
+    request = _feature_metrics_request(response_format={"type": "text"})
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(None, request)
+    mock_metrics.structured_output_requests.assert_not_called()
+
+
+def test_record_request_feature_metrics_counts_both_features() -> None:
+    """A request using both features is counted once under each."""
+    request = _feature_metrics_request(
+        tools=[_WEATHER_TOOL],
+        tool_choice="required",
+        response_format={"type": "json_object"},
+    )
+    tools = _convert_chat_completion_tools_to_token_generator_tools(
+        request.tools
+    )
+    with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+        _record_request_feature_metrics(tools, request)
+    mock_metrics.tool_call_requests.assert_called_once_with("required")
+    mock_metrics.structured_output_requests.assert_called_once_with(
+        "json_object"
+    )
+
+
+def _tool_request_payload(**extra: Any) -> dict[str, Any]:
+    return {
+        "model": "echo",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [_WEATHER_TOOL],
+        **extra,
+    }
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_records_tool_metrics(app) -> None:  # noqa: ANN001
+    """A request declaring tools is counted on the way through the route."""
+    async with AsyncTestClient(app) as client:
+        with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+            response = await client.post(
+                "/v1/chat/completions", json=_tool_request_payload()
+            )
+    assert response.status_code == 200
+    mock_metrics.tool_call_requests.assert_called_once_with("auto")
+    mock_metrics.tool_call_tools_per_request.assert_called_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_tool_choice_none_records_no_tool_metrics(
+    app,  # noqa: ANN001
+) -> None:
+    """``tool_choice="none"`` clears the tools list, so nothing is counted.
+
+    Exercised through the route rather than the helper: the suppression lives
+    in the route's tools derivation, so a helper-only test would keep passing
+    if that derivation stopped clearing the list.
+    """
+    async with AsyncTestClient(app) as client:
+        with patch("max.serve.router.openai_routes.METRICS") as mock_metrics:
+            response = await client.post(
+                "/v1/chat/completions",
+                json=_tool_request_payload(tool_choice="none"),
+            )
+    assert response.status_code == 200
+    mock_metrics.tool_call_requests.assert_not_called()
+    mock_metrics.tool_call_tools_per_request.assert_not_called()
+
+
+# ============================================================================
+# Tests for return_token_ids
+# ============================================================================
+
+
+_PROMPT_IDS = [101, 102, 103]
+
+
+def _token_id_pipeline(chunks: list[TokenGeneratorOutput]) -> Mock:
+    """Mock pipeline replaying ``chunks`` through stream() and complete()."""
+    pipeline = Mock()
+    pipeline.model_name = "test-model"
+    pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
+        async def _gen() -> Any:
+            for chunk in chunks:
+                yield chunk
+
+        return _gen()
+
+    pipeline.next_token_chunk = AsyncMock(side_effect=mock_next_token_chunk)
+    return pipeline
+
+
+async def _raw_stream_payloads(generator: Any, request: Mock) -> list[str]:
+    """The SSE payloads a generator emits, before parsing.
+
+    Absence of a field is only observable on the wire, so the omission tests
+    read the raw JSON rather than a re-validated model, which would
+    resurrect every unset field as ``None``.
+    """
+    return [
+        payload
+        async for payload in await generator.stream(request)
+        if isinstance(payload, str) and payload != "[DONE]"
+    ]
+
+
+def _content_only_turn() -> list[TokenGeneratorOutput]:
+    """A two-chunk turn with ids on both chunks and the prompt on the first."""
+    return [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens="hello",
+            token_count=1,
+            prompt_token_count=3,
+            token_ids=[11],
+            prompt_token_ids=_PROMPT_IDS,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_tokens=" world",
+            token_count=2,
+            prompt_token_count=3,
+            token_ids=[12, 13],
+        ),
+    ]
+
+
+def _turn_with_a_suppressed_chunk() -> list[TokenGeneratorOutput]:
+    """A turn whose middle chunk has no user-visible delta.
+
+    The middle chunk is what a reasoning parser produces when every token in
+    it was a structural delimiter: the route drops it rather than pushing an
+    empty packet, so its ids have nowhere to ride but the next chunk.
+    """
+    return [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens="thinking",
+            reasoning_token_count=1,
+            token_count=0,
+            prompt_token_count=3,
+            token_ids=[11],
+            prompt_token_ids=_PROMPT_IDS,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            token_count=0,
+            reasoning_token_count=1,
+            prompt_token_count=3,
+            token_ids=[12],
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=" more",
+            reasoning_token_count=1,
+            decoded_tokens="answer",
+            token_count=1,
+            prompt_token_count=3,
+            token_ids=[13, 14],
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("extra", "parse_reasoning"),
+    [
+        ({}, True),
+        ({"reasoning_split": True}, True),
+        ({"reasoning_split": False}, False),
+    ],
+)
+async def test_completion_reasoning_split_controls_reasoning_parser(
+    app,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    extra: dict[str, bool],
+    parse_reasoning: bool,
+) -> None:
+    """``/v1/completions`` keeps the reasoning parser unless the request sends
+    ``reasoning_split=False``."""
+    # sse-starlette binds this event to the first streaming test's loop
+    # (sysid/sse-starlette#59).
+    monkeypatch.setattr(AppStatus, "should_exit_event", None)
+    method = "next_token_chunk" if stream else "all_tokens"
+    original = getattr(TokenGeneratorPipeline, method)
+    calls: list[dict[str, Any]] = []
+
+    async def spy(self, request, **kwargs):  # noqa: ANN001, ANN202
+        calls.append(kwargs)
+        return await original(self, request, **kwargs)
+
+    with patch.object(TokenGeneratorPipeline, method, spy):
+        async with AsyncTestClient(app) as client:
+            response = await client.post(
+                "/v1/completions",
+                json={"model": "echo", "prompt": "hi", "stream": stream}
+                | extra,
+            )
+
+    assert response.status_code == 200
+    assert calls == [{"parse_reasoning": parse_reasoning}]
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_keeps_reasoning_parser(
+    patch_openai_metrics: None,
+) -> None:
+    pipeline = _token_id_pipeline(_content_only_turn())
+    request = _make_mock_request()
+    generator = OpenAIChatResponseGenerator(pipeline)
+
+    await _raw_stream_payloads(generator, request)
+    await generator.complete([request])
+
+    pipeline.next_token_chunk.assert_awaited_once_with(request)
+    pipeline.all_tokens.assert_awaited_once_with(request)
+
+
+def test_return_token_ids_defaults_to_off() -> None:
+    """The flag is opt-in, so an unmodified request must not request ids."""
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "m", "messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert request.return_token_ids is False
+
+    asked = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "m",
+            "messages": [{"role": "user", "content": "hi"}],
+            "return_token_ids": True,
+        }
+    )
+    assert asked.return_token_ids is True
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_omits_token_ids_unless_requested(
+    patch_openai_metrics: None,
+) -> None:
+    """A client that didn't opt in must see an unchanged wire format.
+
+    Leaving the fields at ``None`` is not sufficient: serialized as ``null``
+    they are still two new keys on every choice, so ``TokenIdsMixin`` has to
+    drop them from the payload entirely.
+    """
+    generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(_content_only_turn())
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.token_ids is None
+    assert choice.prompt_token_ids is None
+    dumped = response.model_dump()["choices"][0]
+    assert "token_ids" not in dumped
+    assert "prompt_token_ids" not in dumped
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_returns_token_ids(
+    patch_openai_metrics: None,
+) -> None:
+    """Non-streaming ids are every generated id, plus the prompt once."""
+    generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(_content_only_turn()), return_token_ids=True
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.token_ids == [11, 12, 13]
+    assert choice.prompt_token_ids == _PROMPT_IDS
+    dumped = response.model_dump()["choices"][0]
+    assert dumped["token_ids"] == [11, 12, 13]
+    assert dumped["prompt_token_ids"] == _PROMPT_IDS
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "chunks",
+    [
+        pytest.param(_content_only_turn(), id="content_only"),
+        pytest.param(
+            _turn_with_a_suppressed_chunk(), id="with_suppressed_chunk"
+        ),
+    ],
+)
+async def test_chat_stream_token_ids_match_non_streaming(
+    chunks: list[TokenGeneratorOutput],
+    patch_openai_metrics: None,
+) -> None:
+    """Concatenated streamed ids must equal the non-streaming ids.
+
+    This is the invariant the feature rests on: a caller reconstructing a
+    turn from the SSE deltas has to end up with the same id sequence the
+    non-streaming route would have handed them. It can break in two
+    directions -- a dropped chunk (one the route suppressed because its delta
+    was empty) or a double-reported one (a boundary chunk emits a reasoning
+    delta and a content delta for the same generated tokens).
+    """
+    expected = [
+        token
+        for chunk in chunks
+        if chunk.token_ids
+        for token in chunk.token_ids
+    ]
+
+    complete_generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(chunks), return_token_ids=True
+    )
+    completed = await complete_generator.complete([_make_mock_request()])
+
+    stream_generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(chunks), return_token_ids=True
+    )
+    streamed = [
+        CreateChatCompletionStreamResponse.model_validate_json(payload)
+        for payload in await _raw_stream_payloads(
+            stream_generator, _make_mock_request()
+        )
+    ]
+
+    streamed_ids = [
+        token
+        for response in streamed
+        for choice in response.choices
+        if choice.token_ids
+        for token in choice.token_ids
+    ]
+    assert streamed_ids == expected
+    assert completed.choices[0].token_ids == expected
+
+    # The prompt is sent once, not repeated on every delta.
+    prompts = [
+        choice.prompt_token_ids
+        for response in streamed
+        for choice in response.choices
+        if choice.prompt_token_ids is not None
+    ]
+    assert prompts == [_PROMPT_IDS]
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_omits_token_ids_unless_requested(
+    patch_openai_metrics: None,
+) -> None:
+    """No id keys on any delta when the client didn't ask."""
+    generator = OpenAIChatResponseGenerator(
+        _token_id_pipeline(_content_only_turn())
+    )
+    payloads = await _raw_stream_payloads(generator, _make_mock_request())
+
+    assert payloads
+    for payload in payloads:
+        for choice in json.loads(payload)["choices"]:
+            assert "token_ids" not in choice
+            assert "prompt_token_ids" not in choice
+
+
+@pytest.mark.asyncio
+async def test_completion_returns_token_ids(
+    patch_openai_metrics: None,
+) -> None:
+    """Legacy /v1/completions carries the ids on its choice too."""
+    request = _make_mock_request()
+    request.request_path = "/v1/completions"
+    generator = OpenAICompletionResponseGenerator(
+        _token_id_pipeline(_content_only_turn()), return_token_ids=True
+    )
+    response = await generator.complete([request])
+
+    choice = response.choices[0]
+    assert choice.token_ids == [11, 12, 13]
+    assert choice.prompt_token_ids == _PROMPT_IDS
+
+
+@pytest.mark.asyncio
+async def test_completion_stream_token_ids_match_non_streaming(
+    patch_openai_metrics: None,
+) -> None:
+    """Same streamed-equals-complete invariant for legacy /v1/completions."""
+    chunks = _content_only_turn()
+    expected = [11, 12, 13]
+
+    request = _make_mock_request()
+    request.request_path = "/v1/completions"
+    generator = OpenAICompletionResponseGenerator(
+        _token_id_pipeline(chunks), return_token_ids=True
+    )
+    streamed = [
+        CompletionStreamResponse.model_validate_json(payload)
+        for payload in await _raw_stream_payloads(generator, request)
+    ]
+
+    streamed_ids = [
+        token
+        for response in streamed
+        for choice in response.choices
+        if choice.token_ids
+        for token in choice.token_ids
+    ]
+    assert streamed_ids == expected
+    prompts = [
+        choice.prompt_token_ids
+        for response in streamed
+        for choice in response.choices
+        if choice.prompt_token_ids is not None
+    ]
+    assert prompts == [_PROMPT_IDS]
+
+
+@pytest.mark.asyncio
+async def test_completion_stream_omits_token_ids_unless_requested(
+    patch_openai_metrics: None,
+) -> None:
+    """Regression guard for the legacy streaming payload specifically.
+
+    Unlike the chat stream, this path serializes without ``exclude_none``, so
+    ``TokenIdsMixin`` is the only thing keeping ``"token_ids": null`` off
+    every chunk of an endpoint that predates the feature.
+    """
+    request = _make_mock_request()
+    request.request_path = "/v1/completions"
+    generator = OpenAICompletionResponseGenerator(
+        _token_id_pipeline(_content_only_turn())
+    )
+    payloads = await _raw_stream_payloads(generator, request)
+
+    assert payloads
+    for payload in payloads:
+        for choice in json.loads(payload)["choices"]:
+            assert "token_ids" not in choice
+            assert "prompt_token_ids" not in choice

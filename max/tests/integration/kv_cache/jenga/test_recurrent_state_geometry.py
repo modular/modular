@@ -65,7 +65,7 @@ def gated_delta_regions(
 
 def state_pages(regions: Sequence[RecurrentStateRegion]) -> dict[str, int]:
     """The page each state leaf is tiled at: one whole state, unpadded."""
-    return {region.leaf_id: region.bytes_per_state for region in regions}
+    return {region.leaf_id: region.bytes_per_page for region in regions}
 
 
 def row_bytes(region: RecurrentStateRegion) -> int:

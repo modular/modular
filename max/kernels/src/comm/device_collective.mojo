@@ -16,6 +16,10 @@ from std.collections import Array, Optional
 from std.runtime._asyncrt import TaskGroup
 
 from max.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host._kernel_load_gate import (
+    CollectiveEnqueueScope,
+    CollectiveGate,
+)
 from max.runtime.asyncrt import task_id_for_device
 
 
@@ -24,30 +28,79 @@ def _launch_device_collective[
     num_devices: Int,
     F: def[Int]() raises -> None,
 ](func: F, var dev_ctxs: Array[DeviceContext, num_devices]) raises:
-    """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
+    """Dispatch async tasks to call func[i]() for each device in dev_ctxs.
+
+    The tasks run concurrently, one per device affinity worker, because each
+    collective kernel spins at a device-side barrier until all peers arrive.
+
+    The tasks are dispatched only once this collective owns the kernel-load
+    gate, which holds off unrelated kernel loads until every device has been
+    enqueued, and the last task releases it. This frame never holds the gate
+    while it waits.
+
+    `func` must not wait or launch a collective of its own: a nested
+    collective would queue behind this one and never be granted, and a wait
+    would let other work run on a thread registered as this collective's.
+
+    Parameters:
+        num_devices: Number of devices participating in the collective.
+        F: Type of the per-device launch function.
+
+    Args:
+        func: Per-device launch function, called once with each device index.
+        dev_ctxs: Contexts of the participating devices.
+    """
+
+    comptime assert num_devices > 0, "a collective needs at least one device"
 
     # One Optional[Error] slot per device; None means no error.
     # Each task writes only to its own index, so there is no data race.
     var errors = Array[Optional[Error], num_devices](fill=Optional[Error]())
 
+    # Resolved here because the deferred dispatch below cannot raise.
+    var worker_ids = Array[Int, num_devices](fill=-1)
+    comptime for i in range(num_devices):
+        worker_ids[i] = task_id_for_device(Int(dev_ctxs[i].id()))
+
+    var gate = CollectiveGate(dev_ctxs[0], num_devices)
+    var tg = TaskGroup()
+    # The deferred dispatch adds tasks to the group it runs in. The group
+    # outlives it, which the origin checker cannot see through the capture.
+    var group = Pointer(to=tg).unsafe_origin_cast[MutUntrackedOrigin]()
+
     # Wrap the launch function in a Mojo async function which does not raise.
     @inline(.always)
-    @__parameter
-    async def wrapper[index: Int]() -> None:
-        try:
-            func[index]()
-        except e:
-            errors[index] = e^
+    __async def wrapper[index: Int]() {mut errors, mut gate, imm} -> None:
+        # Lets this worker's own loads through the gate its collective holds.
+        with CollectiveEnqueueScope(dev_ctxs[index]):
+            try:
+                func[index]()
+            except e:
+                errors[index] = e^
+        gate.enqueue_done()
 
-    # Set up a task group to launch the tasks in parallel.
-    var tg = TaskGroup()
-    comptime for i in range(num_devices):
-        # Dispatch to the worker thread that has affinity for this device.
-        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()))
-        tg._create_task(wrapper[i](), desired_worker_id=worker_id)
+    # Dispatch to the worker threads that have affinity for each device.
+    @inline(.always)
+    def dispatch() {imm}:
+        comptime for i in range(num_devices):
+            group[]._create_task(wrapper[i](), desired_worker_id=worker_ids[i])
 
-    # Wait for all tasks to complete.
+    @inline(.always)
+    __async def dispatch_when_granted() {imm} -> None:
+        __await gate
+        dispatch()
+
+    if gate.try_acquire():
+        dispatch()
+    else:
+        # Counted by the group from now, so the wait below also covers the
+        # tasks it adds once granted.
+        tg.create_task(dispatch_when_granted())
+
+    # Holds nothing while it waits, so a task this wait runs may take the gate.
     tg.wait()
+    # The tasks reference `gate` until the last of them releases it.
+    _ = gate.grant
 
     # Re-raise the first error encountered.
     comptime for i in range(num_devices):
@@ -64,6 +117,14 @@ def _launch_device_collective[
 
     `DeviceContextArray` overload. Forwards to the `Array` overload
     by unpacking the array's underlying storage.
+
+    Parameters:
+        num_devices: Number of devices participating in the collective.
+        F: Type of the per-device launch function.
+
+    Args:
+        func: Per-device launch function, called once with each device index.
+        dev_ctxs: Contexts of the participating devices.
     """
 
     comptime assert (
@@ -73,6 +134,6 @@ def _launch_device_collective[
     _launch_device_collective[num_devices](
         func,
         rebind[Array[DeviceContext, num_devices]](
-            dev_ctxs.device_contexts^
+            dev_ctxs.device_contexts
         ).copy(),
     )

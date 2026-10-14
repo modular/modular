@@ -11,6 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/POPDialect/POPOps.h"
@@ -21,6 +22,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 //===----------------------------------------------------------------------===//
 // ApplyInlinerPass
@@ -45,7 +48,7 @@ struct FunctionTrait {
   ///
   /// ```mlir
   /// kgen.generator @anything(%arg0: !SomeType) -> !SomeType {
-  ///   kgen.return %arg0 : !SomeType
+  ///   hlcf.return %arg0 : !SomeType
   /// }
   /// ```
   ///
@@ -60,7 +63,7 @@ struct FunctionTrait {
   /// kgen.generator @anything(%value: !SomeType,
   ///         %result: !kgen.pointer<!SomeType> byref_result) -> !kgen.none {
   ///   pop.store %value, %result
-  ///   kgen.return %none
+  ///   hlcf.return %none
   /// }
   /// ```
   ///
@@ -74,7 +77,7 @@ struct FunctionTrait {
   /// ```mlir
   /// kgen.generator @constant() -> !SomeType {
   ///   %0 = kgen.param.constant: !SomeType = <...>
-  ///   kgen.return %0 : !SomeType
+  ///   hlcf.return %0 : !SomeType
   /// }
   /// ```
   ///

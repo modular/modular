@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable, Sequence
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -34,7 +35,10 @@ from max.nn.comm.allreduce import Allreduce
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import MoE, MoEQuantized
@@ -484,7 +488,7 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         signal_buffer_types = signals.input_types()
 
         # KV cache inputs
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # EP inputs
         ep_input_types: list[TensorType | BufferType] = []

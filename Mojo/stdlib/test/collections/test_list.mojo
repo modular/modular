@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import size_of
-from std.memory import forget_deinit
 
 from test_utils import (
     CopyCountedStruct,
@@ -80,6 +79,33 @@ def test_list() raises:
     assert_equal(3, list[len(list) - 2])
     list[len(list) - 1] = 7
     assert_equal(7, list[len(list) - 1])
+
+
+def test_list_pattern_starred_element() raises:
+    var values: List[Int] = [1, 2, 3, 4, 5, 6]
+
+    var [a, b, *middle, e, f] = values
+    assert_equal(a, 1)
+    assert_equal(b, 2)
+    assert_equal(len(middle), 2)
+    assert_equal(middle[0], 3)
+    assert_equal(middle[1], 4)
+    assert_equal(e, 5)
+    assert_equal(f, 6)
+
+    var [first, *tail] = values
+    assert_equal(first, 1)
+    assert_equal(len(tail), 5)
+    assert_equal(tail[4], 6)
+
+    var [*head, last] = values
+    assert_equal(len(head), 5)
+    assert_equal(head[0], 1)
+    assert_equal(last, 6)
+
+    var [*all_values] = values
+    assert_equal(len(all_values), 6)
+    assert_equal(all_values[5], 6)
 
 
 struct WeirdList[T: AnyType]:
@@ -877,12 +903,12 @@ def _test_list_iter_bounds[
     for i in range(list_len):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
-        assert_equal(list_len - i, upper.value())
+        assert_equal(Optional(list_len - i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 def test_list_iter_bounds() raises:
@@ -1270,7 +1296,7 @@ def _test_copyinit_trivial_types[dt: DType]() raises:
     var test_current_size = 1
 
     comptime for sizes_index in range(len(sizes)):
-        comptime current_size = rebind[Int](sizes[sizes_index])
+        comptime current_size = sizes[sizes_index]
         var x = List[Scalar[dt]]()
         for i in range(current_size):
             x.append(Scalar[dt](i))
@@ -1297,7 +1323,7 @@ def test_copyinit_trivial_types_dtypes() raises:
     )
 
     comptime for index_dtype in range(len(dtypes)):
-        _test_copyinit_trivial_types[rebind[DType](dtypes[index_dtype])]()
+        _test_copyinit_trivial_types[dtypes[index_dtype]]()
 
 
 def test_list_comprehension() raises:
@@ -1424,7 +1450,7 @@ def test_overaligned_struct_realloc() raises:
         assert_equal(l[i].x, Float32(i))
 
 
-struct Pinned(Movable where False):
+struct Pinned(not Movable):
     pass
 
 

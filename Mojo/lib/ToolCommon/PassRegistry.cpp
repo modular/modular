@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/Compiler/KGENCompiler.h"
+#include "Mojo/DepGraphDialect/DepGraphPasses.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
@@ -35,6 +36,7 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerArgPromotion();
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
+  KGEN::registerDecomposeFunctionArguments();
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerEliminateDuplicateFunctions();
   KGEN::registerEnsureNoParameters();
@@ -75,6 +77,7 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerStripParserMetadata();
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();
+  DepGraph::registerDepGraphPasses();
 
   // Passes that require a runtime.
   mlir::registerPass([cacheBaseExtra] {

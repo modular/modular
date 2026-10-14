@@ -93,6 +93,7 @@ class Qwen3EmbeddingModel(ModuleV3PipelineModel[TextContext]):
             adapter=adapter,
             return_logits=return_logits,
             memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
         self.model = self.load_model()
 

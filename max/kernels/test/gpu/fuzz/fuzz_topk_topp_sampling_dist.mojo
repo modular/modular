@@ -407,19 +407,19 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, check: Bool) raises:
         top_p_val=top_p,
         rng_seed=TileTensor(seed_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         top_k_arr=TileTensor(top_k_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         top_p_arr=TileTensor(top_p_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         temperature=TileTensor(temp_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         min_p=TileTensor(min_p_dev, row_major(rows))
         .as_unsafe_any_origin()
-        .as_immut(),
+        .as_imm(),
         out_dist=TileTensor(
             dist_dev, row_major(rows, d)
         ).as_unsafe_any_origin(),
@@ -468,19 +468,19 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, check: Bool) raises:
             top_p_val=top_p,
             rng_seed=TileTensor(seed_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_k_arr=TileTensor(top_k_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_p_arr=TileTensor(top_p_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             temperature=TileTensor(temp_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             min_p=TileTensor(min_p_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
         )
         var tokens2_host = ctx.enqueue_create_host_buffer[out_idx_type](rows)
         ctx.enqueue_copy(tokens2_host, tokens2_dev)

@@ -73,7 +73,12 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from ....utils_gpu import block_swizzle
 from ..tile_scheduler import RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
@@ -81,7 +86,6 @@ from ....structuring import RegTile
 
 # Shared types from SM100 tile_types
 from structured_kernels.tile_types import (
-    SMemTile,
     SMemTileArrayWithLayout,
     SMemTileArray2DRowMajor,
 )
@@ -254,10 +258,6 @@ struct HopperMatmulSM90Kernel[
     use_tma_store: Bool = False,
     promotion_frequency: Int = 1,
     pdl_level: PDLLevel = PDLLevel(),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     hilbert_swizzle: Bool = False,
     k_group_size: Int = 1,
     swapAB: Bool = False,
@@ -301,8 +301,6 @@ struct HopperMatmulSM90Kernel[
         promotion_frequency: How often FP8 accumulation is promoted to
             higher precision.
         pdl_level: Programmatic Dependency Launch (PDL) level.
-        elementwise_lambda_fn: Optional epilogue function.
-        elementwise_compute_lambda_fn: Optional compute function.
         hilbert_swizzle: Whether Hilbert-curve thread block scheduling is
             used.
         k_group_size: Number of K-dimension tiles loaded and consumed per
@@ -530,7 +528,6 @@ struct HopperMatmulSM90Kernel[
             Tuple of (local_warp_group_idx, c_reg_tile, final_c_reg_tile).
         """
 
-        @__parameter
         def num_regs() -> Int:
             if Self.num_consumer == 1:
                 return 256
@@ -614,11 +611,14 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @inline(.always)
     def consumer_output[
-        custom_elementwise_lambda_fn: Optional[
-            elementwise_epilogue_type
-        ] = Self.elementwise_lambda_fn
+        EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+        ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+        //,
+        *,
+        has_epilogue_fn: Bool = False,
+        has_compute_fn: Bool = False,
     ](
-        c_tma_op: TMATensorTile[Self.c_type, _, _, _],
+        c_tma_op: TMATensorTile[Self.c_type, _, _],
         c: TileTensor[mut=True, Self.c_type, address_space=.GENERIC, ...],
         c_tile: Self.SMem.CTile,
         output_reg_tile: Self.AccumRegTile,
@@ -627,13 +627,17 @@ struct HopperMatmulSM90Kernel[
         local_thread_idx: Int,
         block_y: Int,
         block_x: Int,
+        epilogue_fn: EpilogueFnType = no_epilogue_fn,
+        compute_fn: ComputeFnType = no_compute_fn,
     ):
         """Handle consumer output by writing GEMM results to global memory.
 
         Parameters:
-            custom_elementwise_lambda_fn: Optional epilogue function applied
-                to output elements (defaults to the struct's
-                `elementwise_lambda_fn`).
+            EpilogueFnType: Type of `epilogue_fn` (inferred).
+            ComputeFnType: Type of `compute_fn` (inferred).
+            has_epilogue_fn: Whether `epilogue_fn` stores the output.
+            has_compute_fn: Whether `compute_fn` maps each output before it
+                is stored.
 
         Args:
             c_tma_op: TMA descriptor for the output matrix C, used for TMA
@@ -649,6 +653,10 @@ struct HopperMatmulSM90Kernel[
             local_thread_idx: Thread index within the consumer warp group.
             block_y: Block-level M coordinate (row) of the output tile.
             block_x: Block-level N coordinate (column) of the output tile.
+            epilogue_fn: Stores each output element at its coordinates in
+                `c` when `has_epilogue_fn` is set.
+            compute_fn: Maps each output element at its coordinates in `c`
+                when `has_compute_fn` is set.
         """
         var matmul_tile_writer = MatmulTileWriter[
             BM=Self.BM,
@@ -657,8 +665,6 @@ struct HopperMatmulSM90Kernel[
             wgmma_shape=Self.wgmma_shape,
             num_consumer=Self.num_consumer,
             use_tma_store=Self.use_tma_store,
-            elementwise_lambda_fn=custom_elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=Self.elementwise_compute_lambda_fn,
             swapAB=Self.swapAB,
         ](
             c.as_unsafe_any_origin(),
@@ -669,32 +675,27 @@ struct HopperMatmulSM90Kernel[
             block_y,
             block_x,
         )
-        matmul_tile_writer.write_tile(c_tma_op, output_reg_tile)
+        matmul_tile_writer.write_tile[
+            has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+        ](c_tma_op, output_reg_tile, epilogue_fn, compute_fn)
 
     @staticmethod
     @inline(.always)
     def build_tma_loaders[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
         //,
     ](
-        a_tma_op: TMATensorTile[
-            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
-        ],
-        b_tma_op: TMATensorTile[
-            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
-        ],
+        a_tma_op: TMATensorTile[Self.a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[Self.b_type, b_tile_shape, b_desc_shape],
         rank_m: Int,
         rank_n: Int,
     ) -> Tuple[
         TileLoaderTMA[
             origin_of(a_tma_op),
             Self.a_type,
-            a_tma_rank,
             a_tile_shape,
             a_desc_shape,
             BK=Self.BK,
@@ -704,7 +705,6 @@ struct HopperMatmulSM90Kernel[
         TileLoaderTMA[
             origin_of(b_tma_op),
             Self.b_type,
-            b_tma_rank,
             b_tile_shape,
             b_desc_shape,
             BK=Self.BK,
@@ -806,10 +806,9 @@ struct HopperMatmulSM90Kernel[
         b_tiles: Self.SMem.BTileArray,
     ):
         @inline(.always)
-        @__parameter
         def producer_loop[
             num_pipeline_stages_to_unroll: Int,
-        ](k_iter: Int):
+        ](k_iter: Int) {mut pipeline, imm}:
             comptime for j in range(num_pipeline_stages_to_unroll):
                 var k_offset = k_coord + (
                     k_iter * Self.num_pipeline_stages + (j * Self.k_group_size)
@@ -879,28 +878,23 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     def run[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        c_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        c_tile_shape: IndexList[c_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
-        c_desc_shape: IndexList[c_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        c_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
+        c_desc_shape: Coord,
         a_tensor_layout: TensorLayout,
         b_tensor_layout: TensorLayout,
         c_tensor_layout: TensorLayout,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        has_epilogue_fn: Bool,
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool,
     ](
-        a_tma_op: TMATensorTile[
-            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
-        ],
-        b_tma_op: TMATensorTile[
-            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
-        ],
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
-        ],
+        a_tma_op: TMATensorTile[Self.a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[Self.b_type, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         a: TileTensor[
             Self.a_type, a_tensor_layout, ImmutAnyOrigin, Engine=Self.a_engine
         ],
@@ -911,6 +905,8 @@ struct HopperMatmulSM90Kernel[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
         lut_ptr: UnsafePointer[UInt32, MutAnyOrigin],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         """Main kernel entry point for matrix multiplication.
 
@@ -922,12 +918,6 @@ struct HopperMatmulSM90Kernel[
         achieving high throughput on Hopper GPUs.
 
         Parameters:
-            a_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix A.
-            b_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix B.
-            c_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix C.
             a_tile_shape: Shape of each A tile loaded by TMA.
             b_tile_shape: Shape of each B tile loaded by TMA.
             c_tile_shape: Shape of each C tile stored by TMA.
@@ -940,6 +930,12 @@ struct HopperMatmulSM90Kernel[
             a_tensor_layout: Memory layout of input matrix A.
             b_tensor_layout: Memory layout of input matrix B.
             c_tensor_layout: Memory layout of output matrix C.
+            EpilogueFnType: Type of `epilogue_fn`.
+            has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
+                with `host_arg=epilogue_fn`.
+            ComputeFnType: Type of `compute_fn`.
+            has_compute_fn: Whether `compute_fn` maps each output before it
+                is stored. Launch with `host_arg2=compute_fn`.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -949,6 +945,10 @@ struct HopperMatmulSM90Kernel[
             b: Input matrix B.
             c: Output matrix C.
             lut_ptr: Lookup table for Hilbert curve block scheduling (optional).
+            epilogue_fn: Stores each output element at its `(row, col)` in
+                `c` when `has_epilogue_fn` is set.
+            compute_fn: Maps each output element at its `(row, col)` in `c`
+                when `has_compute_fn` is set.
         """
         comptime K = Self.b_layout.static_shape[1]
         comptime num_k_iters = ceildiv(K, Self.BK)
@@ -1038,7 +1038,9 @@ struct HopperMatmulSM90Kernel[
                 == .float8_e4m3fn else c_reg_tile
             )
 
-            Self.consumer_output(
+            Self.consumer_output[
+                has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+            ](
                 c_tma_op,
                 c,
                 smem.c_tile(),
@@ -1048,6 +1050,8 @@ struct HopperMatmulSM90Kernel[
                 thread_idx.x - WARPGROUP_SIZE,
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
+                epilogue_fn,
+                compute_fn,
             )
 
         Self.finalize_kernel()
@@ -1066,44 +1070,35 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     def run_splitk[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        c_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        c_tile_shape: IndexList[c_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
-        c_desc_shape: IndexList[c_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        c_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
+        c_desc_shape: Coord,
         splits: Int,
         raster_order: RasterOrder,
         c_tensor_layout: TensorLayout,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        has_epilogue_fn: Bool,
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool,
     ](
-        a_tma_op: TMATensorTile[
-            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
-        ],
-        b_tma_op: TMATensorTile[
-            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
-        ],
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
-        ],
+        a_tma_op: TMATensorTile[Self.a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[Self.b_type, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         c: TileTensor[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
         workspace_ptr: UnsafePointer[Scalar[Self.accum_type], MutAnyOrigin],
         locks_ptr: UnsafePointer[UInt8, MutAnyOrigin],
         problem_shape: IndexList[3],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         """Split-K variant of the kernel for better load balancing on small problems.
 
         Parameters:
-            a_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix A.
-            b_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix B.
-            c_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix C.
             a_tile_shape: Shape of each A tile loaded by TMA.
             b_tile_shape: Shape of each B tile loaded by TMA.
             c_tile_shape: Shape of each C tile stored by TMA.
@@ -1119,6 +1114,12 @@ struct HopperMatmulSM90Kernel[
             raster_order: Tile rasterization order used by the split-K
                 scheduler to assign output tiles to blocks.
             c_tensor_layout: Memory layout of output matrix C.
+            EpilogueFnType: Type of `epilogue_fn`.
+            has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
+                with `host_arg=epilogue_fn`.
+            ComputeFnType: Type of `compute_fn`.
+            has_compute_fn: Whether `compute_fn` maps each output before it
+                is stored. Launch with `host_arg2=compute_fn`.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -1130,6 +1131,10 @@ struct HopperMatmulSM90Kernel[
             locks_ptr: Pointer to the lock array coordinating split-K
                 synchronization across blocks.
             problem_shape: Full GEMM problem dimensions `[M, N, K]`.
+            epilogue_fn: Stores each output element at its `(row, col)` in
+                `c` when `has_epilogue_fn` is set.
+            compute_fn: Maps each output element at its `(row, col)` in `c`
+                when `has_compute_fn` is set.
         """
         comptime K = Self.b_layout.static_shape[1]
         comptime num_k_iters = K // Self.BK
@@ -1264,7 +1269,10 @@ struct HopperMatmulSM90Kernel[
                     var block_y = Int(work_tile_info.m)
                     var block_x = Int(work_tile_info.n)
 
-                    Self.consumer_output(
+                    Self.consumer_output[
+                        has_epilogue_fn=has_epilogue_fn,
+                        has_compute_fn=has_compute_fn,
+                    ](
                         c_tma_op,
                         c,
                         smem.c_tile(),
@@ -1274,6 +1282,8 @@ struct HopperMatmulSM90Kernel[
                         thread_idx.x - WARPGROUP_SIZE,
                         block_y,
                         block_x,
+                        epilogue_fn,
+                        compute_fn,
                     )
 
                 # Get next work tile
@@ -1295,28 +1305,23 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     def run_grouped[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        c_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        c_tile_shape: IndexList[c_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
-        c_desc_shape: IndexList[c_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        c_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
+        c_desc_shape: Coord,
         AOffsetsLayout: TensorLayout,
         ExpertIdsLayout: TensorLayout,
         c_tensor_layout: TensorLayout,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        has_epilogue_fn: Bool,
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool,
     ](
-        a_tma_op: TMATensorTile[
-            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
-        ],
-        b_tma_op: TMATensorTile[
-            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
-        ],
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
-        ],
+        a_tma_op: TMATensorTile[Self.a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[Self.b_type, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         a_offsets: TileTensor[
             mut=False,
             .uint32,
@@ -1334,6 +1339,8 @@ struct HopperMatmulSM90Kernel[
         c: TileTensor[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         """Grouped matmul variant for MoE (Mixture of Experts) models.
 
@@ -1341,12 +1348,6 @@ struct HopperMatmulSM90Kernel[
         The a_offsets array indicates token boundaries for each expert.
 
         Parameters:
-            a_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix A.
-            b_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix B.
-            c_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix C.
             a_tile_shape: Shape of each A tile loaded by TMA.
             b_tile_shape: Shape of each B tile loaded by TMA.
             c_tile_shape: Shape of each C tile stored by TMA.
@@ -1359,6 +1360,12 @@ struct HopperMatmulSM90Kernel[
             AOffsetsLayout: Memory layout of the `a_offsets` tensor.
             ExpertIdsLayout: Memory layout of the `expert_ids` tensor.
             c_tensor_layout: Memory layout of output matrix C.
+            EpilogueFnType: Type of `epilogue_fn`.
+            has_epilogue_fn: Whether `epilogue_fn` stores the output. Launch
+                with `host_arg=epilogue_fn`.
+            ComputeFnType: Type of `compute_fn`.
+            has_compute_fn: Whether `compute_fn` maps each output before it
+                is stored. Launch with `host_arg2=compute_fn`.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -1372,6 +1379,10 @@ struct HopperMatmulSM90Kernel[
                 this block, and -1 marks an inactive block whose output
                 is zeroed.
             c: Output matrix C.
+            epilogue_fn: Stores each output element at its `(row, col)` in
+                `c` when `has_epilogue_fn` is set.
+            compute_fn: Maps each output element at its `(row, col)` in `c`
+                when `has_compute_fn` is set.
         """
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
@@ -1490,36 +1501,64 @@ struct HopperMatmulSM90Kernel[
 
             # C tile for current expert.
             var c_by_expert = TileTensor(
-                c._offset_storage(Coord(a_start_row * UInt32(N))),
-                row_major(Coord(Int(M), Idx[N])),
+                c._offset_storage(Coord(Int(a_start_row) * N)),
+                row_major(M, Idx[N]),
             )
 
-            @__parameter
-            def elementwise_epilogue_fn_wrapper[
-                dtype: DType, width: SIMDLength, *, alignment: Int = 1
-            ](idx: IndexList[2], val: SIMD[dtype, width]):
-                comptime if Self.elementwise_lambda_fn:
-                    comptime elementwise_epilogue = Self.elementwise_lambda_fn.value()
-                    var batch_idx = IndexList[2](
-                        Int(a_start_row + UInt32(idx[0])), idx[1]
-                    )
-                    elementwise_epilogue(batch_idx, val)
+            comptime if has_compute_fn or has_epilogue_fn:
+                # `c_by_expert` indexes this group's rows from 0; the
+                # epilogues take rows of all of `c`.
+                var c_ptr = c.ptr
 
-            Self.consumer_output[
-                Optional[elementwise_epilogue_type](
-                    elementwise_epilogue_fn_wrapper
-                ) if Self.elementwise_lambda_fn else None
-            ](
-                c_tma_op,
-                c_by_expert,
-                smem.c_tile(),
-                output_reg_tile,
-                warp_group_thread_idx,
-                local_warp_group_idx,
-                thread_idx.x - WARPGROUP_SIZE,
-                block_idx_swizzle[1],
-                block_idx_swizzle[0],
-            )
+                @inline(.always)
+                def group_epilogue_fn[
+                    dtype: DType, width: SIMDLength, *, alignment: Int
+                ](idx: Coord, val: SIMD[dtype, width]) {
+                    var epilogue_fn, var compute_fn, var c_ptr, var a_start_row
+                }:
+                    comptime assert (
+                        idx.rank == 2
+                    ), "the matmul epilogue contract is rank 2"
+                    var row = Int(a_start_row) + Int(idx[0].value())
+                    var col = Int(idx[1].value())
+                    var row_idx = Coord(row, col)
+                    comptime if has_compute_fn:
+                        (c_ptr + row * N + col).store[alignment=alignment](
+                            rebind[SIMD[Self.c_type, width]](
+                                compute_fn[dtype, width, alignment=alignment](
+                                    row_idx, val
+                                )
+                            )
+                        )
+                    else:
+                        epilogue_fn[dtype, width, alignment=alignment](
+                            row_idx, val
+                        )
+
+                Self.consumer_output[has_epilogue_fn=True](
+                    c_tma_op,
+                    c_by_expert,
+                    smem.c_tile(),
+                    output_reg_tile,
+                    warp_group_thread_idx,
+                    local_warp_group_idx,
+                    thread_idx.x - WARPGROUP_SIZE,
+                    block_idx_swizzle[1],
+                    block_idx_swizzle[0],
+                    group_epilogue_fn,
+                )
+            else:
+                Self.consumer_output(
+                    c_tma_op,
+                    c_by_expert,
+                    smem.c_tile(),
+                    output_reg_tile,
+                    warp_group_thread_idx,
+                    local_warp_group_idx,
+                    thread_idx.x - WARPGROUP_SIZE,
+                    block_idx_swizzle[1],
+                    block_idx_swizzle[0],
+                )
 
         Self.finalize_kernel()
 
@@ -1572,10 +1611,9 @@ struct HopperMatmulSM90Kernel[
         comptime num_remaining_k_iters = num_k_iters % Self.num_pipeline_stages
 
         @inline(.always)
-        @__parameter
         def consumer_loop[
             num_pipeline_stages_to_unroll: Int,
-        ]():
+        ]() {mut pipeline, mut fp8_promotion_iter, imm}:
             comptime for _ in range(num_pipeline_stages_to_unroll):
                 # Acquire consumer stage (waits for producer)
                 var stage = pipeline.acquire_consumer()
@@ -1621,10 +1659,10 @@ struct HopperMatmulSM90Kernel[
                         fp8_promotion_iter -= Self.promotion_frequency
 
         comptime if num_remaining_k_iters == 0:
-            for k_iter in range(num_full_k_iters):
+            for _ in range(num_full_k_iters):
                 consumer_loop[Self.adjusted_num_pipeline_stages]()
         else:
-            for k_iter in range(num_full_k_iters - 1):
+            for _ in range(num_full_k_iters - 1):
                 consumer_loop[Self.adjusted_num_pipeline_stages]()
             consumer_loop[num_remaining_k_iters // Self.k_group_size]()
 

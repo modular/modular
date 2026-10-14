@@ -50,7 +50,6 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from std.utils import IndexList
 
 
 def _verify_buffers_gpu[
@@ -442,10 +441,13 @@ def bench_matmul[
             width: Int,
             *,
             alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        ](idx: Coord, val: SIMD[_dtype, width]) capturing -> SIMD[
             _dtype, width
         ]:
-            var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var x = tensor_c.load[width=width](idx).cast[_dtype]()
             var y = val * x
             return y
 
@@ -458,8 +460,11 @@ def bench_matmul[
         @__copy_capture(tensor_c)
         def normal_elementwise_epilogue[
             dtype: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-            tensor_c.store[width=width]((idx[0], idx[1]), val.cast[c_type]())
+        ](idx: Coord, val: SIMD[dtype, width]) capturing -> None:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            tensor_c.store[width=width](idx, val.cast[c_type]())
 
         comptime optional_normal_lambda_fn = Optional[
             elementwise_epilogue_type

@@ -86,3 +86,10 @@ This guideline exists for the following reasons:
 
 Smaller pull requests mean less work for maintainers and faster reviews and
 merges for contributors. It's a win-win.
+
+## Keep each pull request to one contribution
+
+Along with keeping a pull request small, keep it inside a single
+[contribution area](contribution-areas.md). A pull request that changes the
+standard library shouldn't also change the compiler, and neither should carry
+an unrelated documentation edit along for the ride.

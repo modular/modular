@@ -38,7 +38,7 @@ struct CondRPMove[T: Movable & Deinitable](
 # CHECK-IR-SAME: ) ->
 # CHECK-IR-NOT:  memoryOnly
 # CHECK-IR-SAME: no_inline
-# CHECK-IR-NEXT: kgen.return %arg0
+# CHECK-IR-NEXT: hlcf.return %arg0
 @no_inline
 def do_move(var x: CondRPMove[Int]) -> CondRPMove[Int]:
     return x^

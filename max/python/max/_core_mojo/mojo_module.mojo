@@ -113,7 +113,9 @@ def _mojo_block_hasher[
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base.unsafe_offset(block_idx * block_size)
         var hash_ptr_bytes = hash_ptr_ints.unsafe_bitcast[Byte]()
-        var token_hash = hash_seeded_bytes(hash_ptr_bytes, num_bytes, seed)
+        var token_hash = hash_seeded_bytes(
+            Span[Byte, _](unsafe_ptr=hash_ptr_bytes, length=num_bytes), seed
+        )
         var pair_to_hash = SIMD[.uint64, 2](UInt64(prev_hash), token_hash)
         var curr_hash = hash_seeded(pair_to_hash, seed)
         # Convert the hash result to a Python object and store it in our

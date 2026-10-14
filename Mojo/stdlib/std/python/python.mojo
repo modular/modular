@@ -28,7 +28,6 @@ from ._cpython import (
     Py_file_input,
     Py_ssize_t,
     PyMethodDef,
-    PyObjectPtr,
 )
 from .python_object import PythonObject
 

@@ -395,14 +395,14 @@ def test_none_implicit_conversion() raises:
     assert_equal(String(b), "None")
 
     # Function argument.
-    def takes_python_object(obj: PythonObject) raises -> String:
-        return String(obj)
+    var takes_python_object = lambda (
+        obj: PythonObject
+    ) raises -> String: String(obj)
 
     assert_equal(takes_python_object(None), "None")
 
     # Return value.
-    def returns_none() -> PythonObject:
-        return None
+    var returns_none = lambda () -> PythonObject: None
 
     assert_true(returns_none() is Python.none())
 
@@ -612,6 +612,26 @@ def test_contains_dunder() raises:
     var only_iter = p.evaluate("OnlyIter()")
     assert_true(7 in only_iter)
     assert_false(9 in only_iter)
+
+    # A user-defined `__contains__` takes precedence over iteration.
+    _ = p.eval(
+        "class ContainsOnly:\n"
+        "  def __contains__(self, value):\n"
+        "    return value == 'hit'"
+    )
+    var contains_only = p.evaluate("ContainsOnly()")
+    assert_true("hit" in contains_only)
+    assert_false("miss" in contains_only)
+
+    # An error raised by a user-defined `__contains__` propagates.
+    _ = p.eval(
+        "class ContainsRaises:\n"
+        "  def __contains__(self, value):\n"
+        "    raise ValueError('boom')"
+    )
+    var contains_raises = p.evaluate("ContainsRaises()")
+    with assert_raises(contains="boom"):
+        _ = "hit" in contains_raises
 
 
 @fieldwise_init

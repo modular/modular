@@ -22,7 +22,7 @@ from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 
 from max.gpu import WARP_SIZE, global_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import (
     _GEMV_MULTIROW_ROWS,
@@ -30,7 +30,6 @@ from linalg.gemv import (
     gemv_kernel_vector_multirow,
 )
 from linalg.utils import elementwise_epilogue_type
-from std.utils import IndexList
 
 
 def _fill[
@@ -70,7 +69,7 @@ def test_matches_one_row_kernel[
     c_type: DType, dtype: DType, N: Int, K: Int, *, with_epilogue: Bool = False
 ](ctx: DeviceContext, seed: Int) raises:
     """Runs both kernels on the same inputs and requires identical outputs."""
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     comptime check_bounds_k = K % (WARP_SIZE * simd_width) != 0
     comptime rows_per_warp = _GEMV_MULTIROW_ROWS
     comptime warps_per_block = 8
@@ -102,21 +101,21 @@ def test_matches_one_row_kernel[
     _fill_launch[dtype](act_dev, K, seed + 1, ctx)
     _fill_launch[c_type](bias_dev, N, seed + 2, ctx)
 
-    var w = TileTensor[mut=False](w_dev, row_major(Coord(Idx[N], Idx[K])))
-    var act = TileTensor[mut=False](act_dev, row_major(Coord(Idx[1], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(Idx[1], Idx[N])))
-    var bias = TileTensor[mut=False](bias_dev, row_major(Coord(Idx[1], Idx[N])))
+    var w = TileTensor[mut=False](w_dev, row_major(Idx[N], Idx[K]))
+    var act = TileTensor[mut=False](act_dev, row_major(Idx[1], Idx[K]))
+    var c = TileTensor(c_dev, row_major(Idx[1], Idx[N]))
+    var bias = TileTensor[mut=False](bias_dev, row_major(Idx[1], Idx[N]))
 
     @__parameter
     @inline(.always)
     @__copy_capture(c, bias)
     def bias_epilogue[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         c.store[width=width](
-            (idx[0], idx[1]),
-            val.cast[c_type]()
-            + bias.load[width=width](Coord(idx)).cast[c_type](),
+            idx,
+            val.cast[c_type]() + bias.load[width=width](idx).cast[c_type](),
         )
 
     comptime epilogue = Optional[elementwise_epilogue_type](
@@ -200,7 +199,7 @@ def test_matches_host_reference[
     Inputs are small integers, so the f32 accumulation is exact and the host
     result is independent of summation order.
     """
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     comptime check_bounds_k = K % (WARP_SIZE * simd_width) != 0
     comptime rows_per_warp = _GEMV_MULTIROW_ROWS
     comptime warps_per_block = 8
@@ -218,9 +217,9 @@ def test_matches_host_reference[
     _fill_launch[dtype, integral=True](act_dev, K, 13, ctx)
     c_dev.enqueue_fill(Scalar[c_type](-1))
 
-    var w = TileTensor[mut=False](w_dev, row_major(Coord(Idx[N], Idx[K])))
-    var act = TileTensor[mut=False](act_dev, row_major(Coord(Idx[1], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(Idx[1], Idx[N])))
+    var w = TileTensor[mut=False](w_dev, row_major(Idx[N], Idx[K]))
+    var act = TileTensor[mut=False](act_dev, row_major(Idx[1], Idx[K]))
+    var c = TileTensor(c_dev, row_major(Idx[1], Idx[N]))
 
     comptime multirow_kernel = gemv_kernel_vector_multirow[
         c_type,

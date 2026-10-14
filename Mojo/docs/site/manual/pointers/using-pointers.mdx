@@ -215,16 +215,14 @@ valid, non-null pointer pointing to the allocated space. The allocated space is
 
 To initialize allocated memory, `Pointer` provides the
 [`unsafe_write()`](/docs/std/memory/pointer/Pointer/#unsafe_write)
-method, which moves a value into the pointer's memory location:
+method, which writes a value into the pointer's memory location:
 
 ```mojo no-test
 str_ptr.unsafe_write(my_string^)
 ```
 
-Note that to move the value, you usually need to add the transfer sigil (`^`),
-unless the value is an
-[implicitly copyable](/docs/std/traits/copyable/ImplicitlyCopyable/) type (like
-`Int`) or a newly-constructed, "owned" value:
+To transfer the value's ownership, use the transfer sigil (`^`) unless the
+value is unowned, such as newly constructed or newly copied:
 
 ```mojo
 str_ptr.unsafe_write("Owned string")

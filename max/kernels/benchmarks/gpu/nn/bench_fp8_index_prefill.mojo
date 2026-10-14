@@ -42,7 +42,8 @@ enough to clear the 448-token-tile gate), which is the configuration whose
 """
 
 from std.random import rand, seed
-from std.sys import get_defined_int
+from std.sys import bit_width_of, get_defined_int
+from std.builtin.dtype import _uint_type_of_width
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
@@ -54,14 +55,15 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    Coord,
+    TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
+from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
+    _BM_KEY,
+    _INDEX_SWIZZLE,
     SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
@@ -69,8 +71,8 @@ from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     KVCacheScalesMHAOperand,
 )
-from nn.attention.mha_mask import MaskName
-from std.math import ceildiv
+from std.math import ceildiv, log
+from std.memory import bitcast
 from std.utils.index import IndexList
 
 
@@ -80,14 +82,20 @@ from std.utils.index import IndexList
 # a TYPE parameter, makes their origins provably disjoint -- the test's
 # `_score_paged_sm100` does the same -- so the scorer call lives here.
 def _launch_scorer[
+    out_dtype: DType,
+    o_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    iro_layout: TensorLayout,
+    //,
     num_heads: Int,
     depth: Int,
     KCollectionT: KVCollectionT,
 ](
-    o_tile: TileTensor[.float32, ...],
-    q_tile: TileTensor[mut=False, .float8_e4m3fn, ...],
-    qs_tile: TileTensor[mut=False, .float32, ...],
-    input_row_offsets_tile: TileTensor[mut=False, .uint32, ...],
+    o_tile: MutTileTensor[out_dtype, o_layout, _],
+    q_tile: ImmTileTensor[KCollectionT.CacheType.dtype, q_layout, _],
+    qs_tile: ImmTileTensor[.float32, qs_layout, _],
+    input_row_offsets_tile: ImmTileTensor[.uint32, iro_layout, _],
     k_collection: KCollectionT,
     batch_size: Int,
     seq_len: Int,
@@ -97,8 +105,11 @@ def _launch_scorer[
     var k_cache = k_collection.get_key_cache(0)
     var k_op = KVCacheMHAOperand(k_cache)
     var ks_op = KVCacheScalesMHAOperand(k_cache)
+    var k_tma_tile = k_cache.create_paged_tma_tile[
+        _INDEX_SWIZZLE, BN=_BM_KEY, BK=depth
+    ](ctx)
     fp8_index_score_sm100[
-        DType.float8_e4m3fn,
+        KCollectionT.CacheType.dtype,
         type_of(k_op),
         type_of(ks_op),
         num_heads,
@@ -116,6 +127,7 @@ def _launch_scorer[
         qs_tile,
         k_op,
         ks_op,
+        k_tma_tile,
         input_row_offsets_tile,
         batch_size,
         seq_len,
@@ -125,10 +137,16 @@ def _launch_scorer[
     )
 
 
+def _exp_quantile(mean: Int, i: Int, n: Int) -> Int:
+    """Returns the `(i + 0.5) / n` quantile of an exponential with `mean`."""
+    return Int(-Float64(mean) * log(1.0 - (Float64(i) + 0.5) / Float64(n)))
+
+
 def _run_name[
     num_heads: Int,
     depth: Int,
     page_size: Int,
+    out_dtype: DType,
 ](
     batch_size: Int,
     seq_len: Int,
@@ -136,6 +154,9 @@ def _run_name[
     max_num_keys: Int,
     spread: Int,
     label: String,
+    dist: Int = 0,
+    seq_dist: Int = 0,
+    cache_cap: Int = 0,
 ) -> String:
     var kind = String("fp8_index_score_sm100_prefill")
     if label.byte_length() > 0:
@@ -150,7 +171,11 @@ def _run_name[
         "seq_len=", seq_len, ", ",
         "cache_len=", cache_len, ", ",
         "max_num_keys=", max_num_keys, ", ",
-        "spread=", spread,
+        "spread=", spread, ", ",
+        "out_dtype=", out_dtype,
+        String(", dist=", dist) if dist != 0 else String(),
+        String(", seq_dist=", seq_dist) if seq_dist != 0 else String(),
+        String(", cache_cap=", cache_cap) if cache_cap != 0 else String(),
     )
     # fmt: on
 
@@ -159,16 +184,21 @@ def execute_fp8_index_prefill[
     num_heads: Int,
     depth: Int,
     page_size: Int,
+    out_dtype: DType = DType.float32,
 ](
     ctx: DeviceContext,
     mut m: Bench,
     batch_size: Int,
     seq_len: Int,
     cache_len: Int,
-    max_num_keys: Int,
+    var max_num_keys: Int,
     spread: Int = 0,
     label: String = String(),
     run_benchmark: Bool = True,
+    digest: Int = 0,
+    dist: Int = 0,
+    seq_dist: Int = 0,
+    cache_cap: Int = 0,
 ) raises:
     """Benchmark one scorer invocation at one GLM-5.2 prefill shape.
 
@@ -181,7 +211,8 @@ def execute_fp8_index_prefill[
             the pure-prefill causal-cache=0 path that gate admits.
         cache_len: Cached tokens per sequence. 0 reproduces a fresh prefill;
             a nonzero value exercises the chunked-prefill-continuation path.
-        max_num_keys: Score-buffer row stride (>= any entry's key count).
+        max_num_keys: Score-buffer row stride (>= any entry's key count); 0
+            takes the deepest entry's.
         spread: Cache-depth raggedness, in percent of `cache_len`. 0 gives the
             uniform batch. Otherwise entry depths run linearly from
             `cache_len * (1 - spread/100)` to `cache_len * (1 + spread/100)`,
@@ -193,22 +224,70 @@ def execute_fp8_index_prefill[
         run_benchmark: Time the kernel over the harness' iteration loop. False
             launches it exactly once and reports nothing, which is what `ncu`
             wants -- the profiler does its own replay.
+        digest: Nonzero launches once and prints a bit-exact hash of the
+            scores instead of timing.
+        dist: Cache-depth distribution. 0 is the linear grade `spread`
+            describes; 1 draws depths from an exponential distribution with
+            mean `cache_len` (deterministic quantiles, deepest entry last),
+            and `spread` is ignored.
+        seq_dist: New-token distribution. 0 gives every entry `seq_len`; 1
+            draws lengths from an exponential distribution with mean
+            `seq_len`, so most token blocks of the shorter entries are empty.
+        cache_cap: Nonzero clamps every entry's cache depth to at most this,
+            bounding an exponential draw's tail.
     """
-    var total_seq_len = batch_size * seq_len
+    # Per-entry new-token and cache lengths, then the batch maxima every
+    # allocation is sized by, as production's captured-graph metadata is.
+    var seq_lens = List[Int](length=batch_size, fill=seq_len)
+    var cache_lens = List[Int](length=batch_size, fill=cache_len)
+    var lo_cache = cache_len - (cache_len * spread) // 100
+    var hi_cache = cache_len + (cache_len * spread) // 100
+    for i in range(batch_size):
+        if dist == 1:
+            cache_lens[i] = _exp_quantile(cache_len, i, batch_size)
+        elif batch_size > 1:
+            # Linear grade lo -> hi across the batch; a single-entry batch
+            # takes the mean, so `spread` cannot change a batch of one.
+            cache_lens[i] = lo_cache + (hi_cache - lo_cache) * i // (
+                batch_size - 1
+            )
+        if seq_dist == 1:
+            seq_lens[i] = max(1, _exp_quantile(seq_len, i, batch_size))
+        if cache_cap > 0:
+            cache_lens[i] = min(cache_lens[i], cache_cap)
+    var total_seq_len = 0
+    var max_seq_len = 0
+    var keys_per_seq = 0
+    var max_cache = 0
+    for i in range(batch_size):
+        total_seq_len += seq_lens[i]
+        max_seq_len = max(max_seq_len, seq_lens[i])
+        max_cache = max(max_cache, cache_lens[i])
+        keys_per_seq = max(keys_per_seq, cache_lens[i] + seq_lens[i])
 
     comptime kv_params = KVCacheStaticParams(
         num_heads=1, head_size=depth, is_mla=True
     )
     comptime num_layers = 1
 
-    # Pool holds the live token range; the LUT is one page deep per sequence
-    # (the scorer never dereferences past each row's real key count).
+    # Pool and LUT cover every sequence's live key range across all its pages.
+    # The scorer never dereferences past each row's real key count.
     # Deepest entry sets every allocation: the page pool, the LUT width and the
     # cache-collection bound are all batch maxima, exactly as production's
     # captured-graph metadata is.
-    var lo_cache = cache_len - (cache_len * spread) // 100
-    var hi_cache = cache_len + (cache_len * spread) // 100
-    var keys_per_seq = hi_cache + seq_len
+    # Score rows are `max_num_keys` apart, so a deeper entry spills into the
+    # next row and races the CTA that owns it: the output stops being a
+    # function of the inputs.
+    if max_num_keys == 0:
+        max_num_keys = keys_per_seq
+    if max_num_keys < keys_per_seq:
+        raise Error(
+            "max_num_keys="
+            + String(max_num_keys)
+            + " is below the deepest entry's "
+            + String(keys_per_seq)
+            + " keys"
+        )
     var pages_per_seq = ceildiv(keys_per_seq, page_size)
     var num_blocks = batch_size * pages_per_seq + 1
 
@@ -226,20 +305,16 @@ def execute_fp8_index_prefill[
         batch_size + 1
     )
     with input_row_offsets_device.map_to_host() as iro_host:
-        for i in range(batch_size + 1):
-            iro_host[i] = UInt32(i * seq_len)
+        var off = 0
+        for i in range(batch_size):
+            iro_host[i] = UInt32(off)
+            off += seq_lens[i]
+        iro_host[batch_size] = UInt32(off)
 
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with cache_lengths_device.map_to_host() as cl_host:
         for i in range(batch_size):
-            # Linear grade lo -> hi across the batch; a single-entry batch
-            # takes the mean, so `spread` cannot change a batch of one.
-            if batch_size > 1:
-                cl_host[i] = UInt32(
-                    lo_cache + (hi_cache - lo_cache) * i // (batch_size - 1)
-                )
-            else:
-                cl_host[i] = UInt32(cache_len)
+            cl_host[i] = UInt32(cache_lens[i])
 
     var k_shape = IndexList[6](
         num_blocks,
@@ -248,10 +323,6 @@ def execute_fp8_index_prefill[
         page_size,
         kv_params.num_heads,
         kv_params.head_size,
-    )
-    comptime k_block_layout = Layout.row_major[6]()
-    var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
-        k_shape
     )
     var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
@@ -268,21 +339,13 @@ def execute_fp8_index_prefill[
         kv_params.num_heads,
         head_dim_granularity,
     )
-    comptime ks_block_layout = Layout.row_major[6]()
-    var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
-        ks_shape
-    )
     var ks_block_device = ctx.enqueue_create_buffer[.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
@@ -293,41 +356,66 @@ def execute_fp8_index_prefill[
                     1 + bs * pages_per_seq + page_idx
                 )
 
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_shape = IndexList[1](batch_size)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_layout
-    ].row_major(cache_lengths_shape)
-
-    var k_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         DType.float8_e4m3fn,
         kv_params,
         page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=128,
-    ](
-        LayoutTensor[.float8_e4m3fn, k_block_layout](
-            k_block_device,
-            k_block_runtime_layout,
-        ),
-        LayoutTensor[mut=False, .uint32, cache_lengths_layout](
-            cache_lengths_device,
-            cache_lengths_runtime_layout,
-        ),
-        LayoutTensor[mut=False, .uint32, paged_lut_layout](
+    ]
+    comptime blocks_layout_type = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*blocks_layout_type.shape_types]()
+    blocks_shape[0] = Int64(num_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*blocks_layout_type.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var blocks = TileTensor(
+        k_block_device, blocks_layout_type(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
+    comptime assert Collection.scale_dtype == DType.float32
+    comptime scales_layout_type = Collection.scales_tt_layout
+    var scales_shape = Coord[*scales_layout_type.shape_types]()
+    scales_shape[0] = Int64(num_blocks)
+    scales_shape[2] = Int64(num_layers)
+    var scales_strides = Coord[*scales_layout_type.stride_types]()
+    scales_strides[1] = scales_shape[2] * Int64(scales_strides[2].value())
+    scales_strides[0] = Int64(scales_shape[1].value()) * scales_strides[1]
+    var scales = (
+        TileTensor(
+            ks_block_device, scales_layout_type(scales_shape, scales_strides)
+        )
+        .bitcast[Collection.scale_dtype]()
+        .as_unsafe_any_origin()
+    )
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var lookup_table = (
+        TileTensor(
             k_lut_device,
-            paged_lut_runtime_layout,
-        ),
-        UInt32(seq_len),
-        UInt32(hi_cache),
-        LayoutTensor[.float32, ks_block_layout](
-            ks_block_device,
-            ks_block_runtime_layout,
-        ),
+            row_major(Int64(batch_size), Int64(pages_per_seq)),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var k_collection = Collection(
+        blocks,
+        cache_lengths,
+        lookup_table,
+        UInt32(max_seq_len),
+        UInt32(max_cache),
+        scales,
     )
 
     var o_size = total_seq_len * max_num_keys
-    var o_device = ctx.enqueue_create_buffer[.float32](o_size)
+    var o_device = ctx.enqueue_create_buffer[out_dtype](o_size)
     var o_tile = TileTensor(o_device, row_major(total_seq_len, max_num_keys))
     var q_tile = TileTensor(
         q_device, row_major(total_seq_len, num_heads, depth)
@@ -337,12 +425,12 @@ def execute_fp8_index_prefill[
         input_row_offsets_device, row_major(batch_size + 1)
     )
 
-    # Score buffer must start filled (the scorer leaves forbidden slots
-    # untouched; a benchmark that reuses the buffer across iters relies on a
-    # defined baseline). Pre-fill with -inf, the production convention.
-    with o_device.map_to_host() as o_host:
-        for i in range(o_size):
-            o_host[i] = -Float32.MAX
+    # The scorer leaves forbidden slots untouched, so a buffer reused across
+    # iters needs a defined baseline. -inf is the production convention.
+    # On device: a host fill is quadratic in the two axes deep-cache shapes
+    # raise (`total_seq_len * max_num_keys`), and at `s8192 k131072` it runs
+    # past a probe's timeout before the kernel launches once.
+    ctx.enqueue_memset(o_device, -Scalar[out_dtype].MAX)
 
     @inline(.always)
     def kernel_launch(launch_ctx: DeviceContext) raises {mut o_tile, imm}:
@@ -353,7 +441,7 @@ def execute_fp8_index_prefill[
             input_row_offsets_tile,
             k_collection,
             batch_size,
-            seq_len,
+            max_seq_len,
             max_num_keys,
             launch_ctx,
         )
@@ -362,14 +450,50 @@ def execute_fp8_index_prefill[
     def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    if run_benchmark:
+    var name = _run_name[num_heads, depth, page_size, out_dtype](
+        batch_size,
+        seq_len,
+        cache_len,
+        max_num_keys,
+        spread,
+        label,
+        dist,
+        seq_dist,
+        cache_cap,
+    )
+    if digest != 0:
+        # One launch over the -inf fill, hashed bit for bit: two builds of the
+        # scorer agree iff their digests do, `-inf` slots included.
+        kernel_launch(ctx)
+        ctx.synchronize()
+        var h = UInt64(0xCBF29CE484222325)
+        var written = 0
+        with o_device.map_to_host() as oh:
+            var op = oh.unsafe_ptr()
+            for i in range(o_size):
+                var v = op[i]
+                if v != -Scalar[out_dtype].MAX:
+                    written += 1
+                h = (
+                    h
+                    ^ UInt64(
+                        bitcast[
+                            _uint_type_of_width[bit_width_of[out_dtype]()]()
+                        ](v)
+                    )
+                ) * 0x100000001B3
+        print(
+            "#digest",
+            name,
+            ":",
+            hex(h),
+            "written=",
+            written,
+        )
+    elif run_benchmark:
         m.bench_function(
             bench_func,
-            BenchId(
-                _run_name[num_heads, depth, page_size](
-                    batch_size, seq_len, cache_len, max_num_keys, spread, label
-                )
-            ),
+            BenchId(name),
         )
     else:
         kernel_launch(ctx)
@@ -405,22 +529,38 @@ def main() raises:
     var label = String(arg_parse("label", ""))
     # False leaves a single launch for `ncu` to replay.
     var run_benchmark = arg_parse("run_benchmark", True)
+    # Nonzero prints a bit-exact hash of one launch's scores instead of timing.
+    var digest = arg_parse("digest", 0)
+    # 1 draws cache depths / new-token counts from an exponential
+    # distribution; see `execute_fp8_index_prefill`.
+    var dist = arg_parse("dist", 0)
+    var seq_dist = arg_parse("seq_dist", 0)
+    # Nonzero clamps every cache depth to at most this.
+    var cache_cap = arg_parse("cache_cap", 0)
 
     seed(0)
 
     var m = Bench()
     with DeviceContext() as ctx:
-        execute_fp8_index_prefill[num_heads, depth, page_size](
-            ctx,
-            m,
-            batch_size,
-            seq_len,
-            cache_len,
-            max_num_keys,
-            spread,
-            label,
-            run_benchmark,
-        )
+        # Both score dtypes in ONE process: the ratio is paired, so it carries
+        # no cross-run clock or cache drift. The FOLD dtype is a module-level
+        # `-D`, so a fold A/B is still two builds.
+        comptime for out_dtype in [DType.float32, DType.bfloat16]:
+            execute_fp8_index_prefill[num_heads, depth, page_size, out_dtype](
+                ctx,
+                m,
+                batch_size,
+                seq_len,
+                cache_len,
+                max_num_keys,
+                spread,
+                label,
+                run_benchmark,
+                digest,
+                dist,
+                seq_dist,
+                cache_cap,
+            )
 
-    if run_benchmark:
+    if run_benchmark and digest == 0:
         m.dump_report()

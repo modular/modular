@@ -24,7 +24,14 @@ import pytest
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from max.driver import CPU, Accelerator, Buffer, Usage, accelerator_count
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    Usage,
+    accelerator_count,
+    batch_inplace_copy,
+)
 from max.dtype import DType
 
 
@@ -1407,3 +1414,67 @@ def test_unaligned_cross_dtype_view_offsets_storage() -> None:
     # Little-endian: bytes (3, 4) -> 0x0403, bytes (5, 6) -> 0x0605.
     assert as_i16[0].item() == 0x0403
     assert as_i16[1].item() == 0x0605
+
+
+def test_inplace_copy_from_is_a_no_op_between_views_of_one_buffer() -> None:
+    """Same memory on both sides moves nothing, so nothing is enqueued.
+
+    The values cannot show the elision -- both sides name the same bytes --
+    so this pins the correctness half: skipping must leave the buffer alone
+    rather than tear it.
+    """
+    backing = Buffer.from_numpy(np.arange(4, dtype=np.int32))
+
+    backing.inplace_copy_from(backing)
+    np.testing.assert_array_equal(backing.to_numpy(), [0, 1, 2, 3])
+
+    backing[:2].inplace_copy_from(backing[:2])
+    np.testing.assert_array_equal(backing.to_numpy(), [0, 1, 2, 3])
+
+
+def test_inplace_copy_from_still_copies_between_distinct_buffers() -> None:
+    """The elision is for one allocation, not for equal contents."""
+    destination = Buffer.from_numpy(np.zeros(4, dtype=np.int32))
+    source = Buffer.from_numpy(np.arange(4, dtype=np.int32))
+
+    assert destination._data_ptr() != source._data_ptr()
+    destination.inplace_copy_from(source)
+
+    np.testing.assert_array_equal(destination.to_numpy(), [0, 1, 2, 3])
+
+
+def test_batch_inplace_copy_skips_a_zero_byte_pair() -> None:
+    """A zero-byte pair is skipped, and the copy beside it still lands."""
+    backing = Buffer.from_numpy(np.array([42, 7], dtype=np.int64))
+    empty_dst = backing[:0].view(DType.int64, (1, 0))
+    empty_src = Buffer(dtype=DType.int64, shape=(1, 0), device=CPU())
+    other_src = Buffer.from_numpy(np.array([99], dtype=np.int64))
+    other_dst = Buffer.from_numpy(np.zeros(1, dtype=np.int64))
+
+    assert empty_dst.shape == (1, 0)
+    assert empty_src.shape == (1, 0)
+    assert empty_dst._data_ptr() != empty_src._data_ptr()
+
+    batch_inplace_copy([empty_dst, other_dst], [empty_src, other_src])
+
+    np.testing.assert_array_equal(backing.to_numpy(), [42, 7])
+    np.testing.assert_array_equal(other_dst.to_numpy(), [99])
+
+
+def test_batch_inplace_copy_lands_a_repeated_pair() -> None:
+    """A pair repeated in one batch still lands."""
+    src = Buffer.from_numpy(np.array([1, 2, 3, 4], dtype=np.uint32))
+    dst = Buffer.from_numpy(np.zeros(4, dtype=np.uint32))
+
+    batch_inplace_copy([dst, dst[:], dst], [src, src[:], src])
+
+    np.testing.assert_array_equal(dst.to_numpy(), [1, 2, 3, 4])
+
+
+def test_inplace_copy_from_still_copies_an_offset_view() -> None:
+    """Two views of one buffer at different offsets are different memory."""
+    backing = Buffer.from_numpy(np.arange(4, dtype=np.int32))
+
+    backing[:2].inplace_copy_from(backing[2:])
+
+    np.testing.assert_array_equal(backing.to_numpy(), [2, 3, 2, 3])

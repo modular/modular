@@ -29,6 +29,7 @@ from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from layout import Coord, TileTensor, row_major
+from std.math import ceildiv
 
 comptime dtype = DType.float32
 comptime N = 256
@@ -45,17 +46,16 @@ def run_v1_single_static_capture(ctx: DeviceContext) raises:
     out_dev.enqueue_fill(-1.0)
     var out_tt = TileTensor(out_dev, row_major[N]())
 
-    @__parameter
-    @__copy_capture(out_tt)
-    def kernel():
+    def kernel() {var out_tt}:
         var tid = Int(global_idx.x)
         if tid < N:
             out_tt.store[width=1, alignment=align_of[dtype]()](
                 Coord(tid), SIMD[dtype, 1](1.0)
             )
 
-    ctx.enqueue_function[kernel](
-        grid_dim=(N + block_dim - 1) // block_dim,
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=ceildiv(N, block_dim),
         block_dim=block_dim,
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -76,17 +76,16 @@ def run_v2_static_capture_plus_scalar(ctx: DeviceContext) raises:
     var out_tt = TileTensor(out_dev, row_major[N]())
     var scale = Scalar[dtype](7.0)
 
-    @__parameter
-    @__copy_capture(out_tt, scale)
-    def kernel():
+    def kernel() {var out_tt, var scale}:
         var tid = Int(global_idx.x)
         if tid < N:
             out_tt.store[width=1, alignment=align_of[dtype]()](
                 Coord(tid), SIMD[dtype, 1](scale)
             )
 
-    ctx.enqueue_function[kernel](
-        grid_dim=(N + block_dim - 1) // block_dim,
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=ceildiv(N, block_dim),
         block_dim=block_dim,
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -109,9 +108,7 @@ def run_v3_two_static_captures(ctx: DeviceContext) raises:
     var a_tt = TileTensor(a_dev, row_major[N]())
     var b_tt = TileTensor(b_dev, row_major[N]())
 
-    @__parameter
-    @__copy_capture(a_tt, b_tt)
-    def kernel():
+    def kernel() {var a_tt, var b_tt}:
         var tid = Int(global_idx.x)
         if tid < N:
             a_tt.store[width=1, alignment=align_of[dtype]()](
@@ -121,8 +118,9 @@ def run_v3_two_static_captures(ctx: DeviceContext) raises:
                 Coord(tid), SIMD[dtype, 1](3.0)
             )
 
-    ctx.enqueue_function[kernel](
-        grid_dim=(N + block_dim - 1) // block_dim,
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=ceildiv(N, block_dim),
         block_dim=block_dim,
     )
     ctx.enqueue_copy(a_host, a_dev)
@@ -144,17 +142,16 @@ def run_v4_scalar_first_then_static(ctx: DeviceContext) raises:
     var scale = Scalar[dtype](5.0)
     var out_tt = TileTensor(out_dev, row_major[N]())
 
-    @__parameter
-    @__copy_capture(scale, out_tt)
-    def kernel():
+    def kernel() {var scale, var out_tt}:
         var tid = Int(global_idx.x)
         if tid < N:
             out_tt.store[width=1, alignment=align_of[dtype]()](
                 Coord(tid), SIMD[dtype, 1](scale)
             )
 
-    ctx.enqueue_function[kernel](
-        grid_dim=(N + block_dim - 1) // block_dim,
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=ceildiv(N, block_dim),
         block_dim=block_dim,
     )
     ctx.enqueue_copy(out_host, out_dev)

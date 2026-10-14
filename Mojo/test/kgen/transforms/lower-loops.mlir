@@ -26,7 +26,7 @@ kgen.func @induction_var_no_retvals_no_iterargs() {
     kgen.call @foo(%0) : (index) -> ()
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nested_unroll_loops
@@ -76,7 +76,7 @@ kgen.func @nested_unroll_loops() {
     }
     hlcf.for.yield [induction_var (%0 : index)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @loop_carried_dependency
@@ -130,7 +130,7 @@ kgen.func @loop_carried_dependency() {
   }
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @lower_unrolled_inclusive_cmp
@@ -159,7 +159,7 @@ kgen.func @loop_carried_dependency() {
    // CHECK-NEXT: }
    // CHECK-NEXT: kgen.call @foo([[IDX4]]) : (index) -> ()
    // CHECK-NEXT: kgen.call @foo([[IDX5]]) : (index) -> ()
-   // CHECK-NEXT: kgen.return [[IDX5]] : index
+   // CHECK-NEXT: hlcf.return [[IDX5]] : index
 
    %idx0 = index.constant 0
    %idx1 = index.constant 1
@@ -177,7 +177,7 @@ kgen.func @loop_carried_dependency() {
    }
    kgen.call @foo(%idx4) : (index) -> ()
    kgen.call @foo(%idx5) : (index) -> ()
-   kgen.return %idx5 : index
+   hlcf.return %idx5 : index
  }
 
 // hlcf.for with !kgen.scalar<si64> bounds: casts to index before index.cmp.
@@ -203,5 +203,5 @@ kgen.func @pop_scalar_si64_bounds(%lb: !kgen.scalar<si64>, %ub: !kgen.scalar<si6
     %next = pop.add %arg0, %step : !kgen.scalar<si64>
     hlcf.for.yield [induction_var (%next : !kgen.scalar<si64>)] [retvals ()] [iterargs ()]
   }
-  kgen.return
+  hlcf.return
 }

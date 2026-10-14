@@ -25,10 +25,14 @@ future one) share process-wide singletons defined here (or re-exported from
   cache, shared across op types so lazy compiles reuse one session per device.
 - :func:`write_warm_stamp` / :func:`warm_stamp_matches` — marker letting a
   separate lazy process adopt a batched warm instead of compiling target-by-target.
+- :func:`warm_store` — the build-time warm a test names with
+  ``MAX_EAGER_WARM_STORE``, which every family then loads instead of
+  compiling.
 
 This module must not import from ``handlers.py``.
 """
 
+import functools
 import json
 import logging
 import os
@@ -40,7 +44,7 @@ from collections.abc import Callable, Container, Mapping, Sequence
 from dataclasses import dataclass, field
 from math import prod
 from pathlib import Path
-from typing import Any, Protocol, TypeVar
+from typing import Protocol, TypeVar
 
 from max import _core, _eager_policy, engine
 from max._core.engine import get_config_value
@@ -111,7 +115,7 @@ def uint_view_dtype(dtype: DType) -> DType:
         The unsigned integer dtype of the same bit width.
 
     Raises:
-        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
+        NotImplementedError: For sub-byte dtypes (such as ``float4_e2m1fn``), which
             pack multiple elements per byte and so cannot be reinterpreted
             element-for-element as a whole-byte unsigned int.
     """
@@ -192,10 +196,7 @@ DISCOVERED_DEVICES = discover_devices()
 
 
 def device_class_of(device: Device) -> str:
-    """Manifest slot key for *device*: ``"cpu"`` or ``"gpu:{id}"``.
-
-    One source for the device->slot naming, shared by the warm producer
-    (writes slots) and adoption (reads them)."""
+    """Human-readable slot name for *device*: ``"cpu"`` or ``"gpu:{id}"``."""
     return "cpu" if device.label == "cpu" else f"gpu:{device.id}"
 
 
@@ -315,125 +316,54 @@ def warm_stamp_matches() -> bool:
     return current_sku == warmed_sku and current_count <= warmed_count
 
 
-_MANIFEST_NAME = "manifest.json"
-_ADOPT_ASSERTED_ENV = "MODULAR_EAGER_WARM_ADOPT_ASSERTED"
+WARM_STORE_ENV_VAR = "MAX_EAGER_WARM_STORE"
 
 
-def _manifest_path() -> Path | None:
-    """Path to the force-load manifest in MODULAR_DERIVED_PATH, or None."""
-    root = _derived_root()
-    return root / _MANIFEST_NAME if root else None
+def warm_artifact_name(family: str, device: Device) -> str:
+    """Names the artifact holding *family*'s sweep for *device*.
 
-
-def write_manifest(
-    envelope: dict[str, object], entries: list[dict[str, str]]
-) -> bool:
-    """Write the force-load manifest. Returns False if MODULAR_DERIVED_PATH is
-    unset (nowhere to write it)."""
-    path = _manifest_path()
-    if path is None:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"envelope": envelope, "entries": entries}, indent=2)
-    )
-    return True
-
-
-def read_manifest() -> dict[str, Any] | None:
-    """Read the force-load manifest, or None if absent/unreadable."""
-    path = _manifest_path()
-    if path is None:
-        return None
-    try:
-        return json.loads(path.read_text())
-    except (OSError, ValueError):
-        return None
-
-
-def manifest_adoptable(manifest: dict[str, Any]) -> bool:
-    """Whether this process may force-load from the manifest.
-
-    Two manifest kinds, told apart by the envelope's ``gpu`` key:
-
-    - **GPU manifest** (``gpu`` present): adoptable on a box whose accelerator
-      arch matches ``gpu.arch`` and whose device count is *at most* the warmed
-      count. The manifest indexes one MEF per device slot (a CPU MEF, a gpu:0
-      MEF, a gpu:1 MEF; not one combined MEF), so a consumer needing ``k``
-      accelerators force-loads slots ``0..k-1``: a warm made for ``N >= k``
-      slots adopts (extras unused), but one for fewer than ``k`` cannot (those
-      slots were never compiled), so device count is a ceiling, not equality.
-    - **CPU-only manifest** (``gpu`` absent/None): adoptable only on a box with
-      no accelerator (``accelerator_count() == 0``). There is no GPU slot to
-      match, and a box that *does* have an accelerator would need GPU MEFs this
-      warm never built.
-
-    Both kinds also require the asserted-toolchain opt-in (closed-loop CI only),
-    an asserted-mode envelope, and an *exact* host-arch match: a force-loaded
-    MEF's embedded host-ELF kernels are ABI-specific to the host arch (the
-    compiled CPU *target* is a floor, so a coarse host-arch match suffices).
+    One source for the name, shared by the warm producer (which exports one
+    artifact per family and device slot) and adoption (which loads them).
     """
-    if os.environ.get(_ADOPT_ASSERTED_ENV) != "1":
-        return False
-    envelope = manifest.get("envelope", {})
-    if envelope.get("toolchain", {}).get("mode") != "asserted":
-        return False
-    # Coarse: platform.machine() misses cpu_target's microarch level; a sub-v3
-    # x86 host could adopt v3 kernels and SIGILL. A self-enforcing vN check is
-    # deferred, level detection is per-arch (x86 flags; aarch64 core map).
-    if envelope.get("host_arch") != platform.machine():
-        return False
-    gpu = envelope.get("gpu")
-    n = accelerator_count()
-    if gpu is None:
-        # CPU-only manifest: no GPU slot to match, so adoptable only where there
-        # is no accelerator that would need GPU MEFs this warm never built.
-        return n == 0
-    # Device-count ceiling for the manifest path (the stamp path enforces the
-    # same via warm_stamp_matches). Default 0 rejects a manifest missing
-    # device_count (0 < n) instead of a None comparison.
-    if n == 0 or envelope.get("device_count", 0) < n:
-        return False
-    return gpu.get("arch") == accelerator_architecture_name()
+    slot = "cpu" if device.label == "cpu" else f"slot_{device.id}"
+    return f"{family}_{slot}.mef"
 
 
-def manifest_entry_path(
-    manifest: dict[str, Any], family: str, device_class: str
-) -> Path | None:
-    """Absolute path to the MEF for (family, device_class), or None if the
-    manifest has no such entry."""
-    root = _derived_root()
-    if root is None:
+@functools.cache
+def warm_store() -> engine.MefStore | None:
+    """The build-time warm this process was given, or None.
+
+    ``MAX_EAGER_WARM_STORE`` names its directories, separated by
+    ``os.pathsep``: one per warm build action, which the store unions. Once
+    named, a warm is all-or-nothing -- each family loads its artifacts from it
+    or raises -- because a test that compiles after asking for a warm is a test
+    whose warm is broken.
+
+    Raises:
+        FileNotFoundError: If a named directory was not written by the warm.
+    """
+    value = os.environ.get(WARM_STORE_ENV_VAR)
+    if not value:
         return None
-    for entry in manifest.get("entries", []):
-        if (
-            entry.get("family") == family
-            and entry.get("device_class") == device_class
-        ):
-            mef = entry.get("mef")
-            return root / mef if mef else None
-    return None
+    return engine.MefStore.for_import(value.split(os.pathsep))
 
 
 def provisioned() -> bool:
     """Returns whether this process can get its eager op models without
     compiling.
 
-    True when a warm manifest can be force-loaded, or a compatible warm stamp
-    is present — the single definition of "warmed", shared by the
-    import-time gate and ``max warm-interpreter-cache --check``.
+    True when a build-time warm store is named, or a compatible warm stamp is
+    present — the single definition of "warmed", shared by the import-time
+    gate and ``max warm-interpreter-cache --check``.
     """
-    manifest = read_manifest()
-    if manifest is not None and manifest_adoptable(manifest):
-        return True
-    return warm_stamp_matches()
+    return warm_store() is not None or warm_stamp_matches()
 
 
-def adopted_from_manifest(family: str) -> bool:
-    """Whether ``family`` sourced its models from the warm manifest this process,
+def adopted_from_store(family: str) -> bool:
+    """Whether ``family`` loaded its models from the warm store this process,
     rather than a cold or lazy compile."""
     cache = _REGISTRY.get(family)
-    return cache.manifest_adopted if cache is not None else False
+    return cache.store_adopted if cache is not None else False
 
 
 # Serializes lazy first-dispatches so concurrent threads don't race on cache
@@ -464,7 +394,7 @@ class GCFamilySpec(Protocol):
     models.
 
     Each ``*_gc.py`` provides a concrete class implementing this Protocol
-    (e.g. ``matmul_gc._MatmulFamily``); registered once via
+    (such as ``matmul_gc._MatmulFamily``); registered once via
     :func:`register_family` by wrapping it in a :class:`GCOpFamily`.
     Implementations are typically stateless, with methods closing over
     their module's own globals rather than instance state.
@@ -497,13 +427,13 @@ class GCFamilySpec(Protocol):
         concrete, inherited implementation rather than a per-family override
         point -- except for a family whose kernel is restricted to a device
         subset, which must override this to exclude the devices it never
-        builds for: the ``MO_HostOnly`` families (``resize_gc``,
-        ``nonzero_gc``, ``nms_gc``, ``roi_align_gc``) which are CPU-only,
-        since sweeping an accelerator for a host-only op would only produce
-        an empty per-slot module. ``_adopt_from_manifest`` requires a
-        manifest entry for every device this returns, so a family that lists
-        a device it never populates fails adoption entirely. An empty list
-        (none of the family's devices are present) warms as a no-op.
+        builds for: the ``MO_HostOnly`` families (such as ``nms_gc``)
+        which are CPU-only, since sweeping an
+        accelerator for a host-only op would only produce an empty per-slot
+        module. The warm producer fails on a device this returns but builds
+        nothing for, and adoption loads an artifact for every device it
+        returns, so the two agree by construction. An empty list (none of
+        the family's devices are present) warms as a no-op.
         """
         return list(DISCOVERED_DEVICES)
 
@@ -524,8 +454,8 @@ class GCOpFamily:
     """Compiled models, keyed by graph_name."""
     swept: bool = False
     """Whether a whole-matrix sweep or adoption has been attempted."""
-    manifest_adopted: bool = False
-    """Whether the cache was force-loaded from a manifest."""
+    store_adopted: bool = False
+    """Whether the cache was loaded from the warm store."""
 
     @property
     def name(self) -> str:
@@ -552,13 +482,13 @@ class GCOpFamily:
 
     @in_default_mlir_context
     def compile_sweep(self) -> bool:
-        """Force-load an adoptable manifest, else batch-compile every target.
+        """Load the warm store if named, else batch-compile every target.
 
         Returns:
-            True if it batch-compiled; False if it force-loaded the
-            manifest instead, in which case the caller must not stamp.
+            True if it batch-compiled; False if it loaded the warm store
+            instead, in which case the caller must not stamp.
         """
-        if self._adopt_manifest_if_adoptable():
+        if self._adopt_from_store():
             return False
         devices = self.sweep_devices()
         if not devices:
@@ -575,13 +505,13 @@ class GCOpFamily:
     def ensure_swept(self) -> None:
         """Attempt whole-cache adoption once before per-target compilation.
 
-        Force-loads an adoptable manifest, else batch-sweeps a matching warm
+        Loads the warm store if named, else batch-sweeps a matching warm
         stamp — the one path that may batch-compile under
         ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
         """
         if self.swept:
             return
-        if self._adopt_manifest_if_adoptable():
+        if self._adopt_from_store():
             return
         if warm_stamp_matches():
             self.swept = True
@@ -633,7 +563,8 @@ class GCOpFamily:
             The compiled :class:`~max.engine.Model`.
 
         Raises:
-            KeyError: *unsupported_reason*'s message if it returns one.
+            UnsupportedOpVariant: *unsupported_reason*'s message if it
+                returns one.
             EagerLazyCompileDisallowed: if the target is still missing after
                 adoption and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
         """
@@ -643,7 +574,7 @@ class GCOpFamily:
         if unsupported_reason is not None:
             reason = unsupported_reason()
             if reason is not None:
-                raise KeyError(reason)
+                raise _eager_policy.UnsupportedOpVariant(reason)
         with COMPILE_LOCK:
             model = self.cache.get(key)
             if model is not None:
@@ -665,47 +596,36 @@ class GCOpFamily:
             )
             return model
 
-    def _adopt_manifest_if_adoptable(self) -> bool:
-        manifest = read_manifest()
-        if manifest is None or not manifest_adoptable(manifest):
+    def _adopt_from_store(self) -> bool:
+        """Load this family's per-slot artifacts from the warm store.
+
+        Returns:
+            Whether a warm store is named; when it is, every slot loaded.
+
+        Raises:
+            MissingArtifactError: If the warm has no artifact for one of the
+                devices this process sweeps -- more accelerators than were
+                warmed, say.
+        """
+        store = warm_store()
+        if store is None:
             return False
         self.swept = True
-        return self._adopt_from_manifest(manifest)
-
-    def _adopt_from_manifest(self, manifest: dict[str, Any]) -> bool:
-        """Force-load this family's per-slot MEFs named in *manifest*."""
         # Load the slots for exactly the devices the session spans: both come
         # from the one sweep_devices() call, so they can't diverge.
         devices = self.sweep_devices()
         if not devices:
             # Nothing to adopt; avoid the silent default-CPU session.
             return True
-        try:
-            session = engine.InferenceSession(devices=devices)
-            loaded: dict[str, engine.Model] = {}
-            names: list[str] = []
-            for device in devices:
-                device_class = device_class_of(device)
-                mef = manifest_entry_path(manifest, self.name, device_class)
-                if mef is None or not mef.exists():
-                    return False
-                loaded.update(session.load_all(str(mef), weights_registry={}))
-                names.append(mef.name)
-        except Exception:
-            # Loading a .mef re-raises whatever the backend threw, so catch
-            # broadly and fall back to compiling on demand.
-            logger.warning(
-                "Eager warm manifest force-load failed; compiling on demand.",
-                exc_info=True,
+        session = engine.InferenceSession(devices=devices)
+        names = [warm_artifact_name(self.name, device) for device in devices]
+        for name in names:
+            self.cache.update(
+                session.load_all(str(store.artifact(name)), weights_registry={})
             )
-            return False
-        self.cache.update(loaded)
-        self.manifest_adopted = True
-        # Force-load bypasses the keyed cache, so [modular-cache] logging is
-        # silent; this stderr marker signals it ran.
+        self.store_adopted = True
         print(
-            f"[eager-warm] manifest force-load: {self.name} {names}"
-            f" ({len(loaded)} models)",
+            f"[eager-warm] loaded {self.name} from the warm store {names}",
             file=sys.stderr,
             flush=True,
         )

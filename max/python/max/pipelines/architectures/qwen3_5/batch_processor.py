@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
 )
@@ -37,45 +37,45 @@ _MROPE_AXES = 3
 """Temporal, height and width, the three axes M-RoPE positions carry."""
 
 
+def context_position_rows(ctx: TextContext) -> npt.NDArray[np.int64]:
+    """Returns one request's ``[3, active_length]`` M-RoPE positions.
+
+    A prompt whose images are still to be encoded takes its slice of the
+    positions the tokenizer precomputed. Otherwise positions count on from
+    the processed length, offset by the request's rope delta. The two agree
+    past the last image.
+    """
+    rope_delta = 0
+    if isinstance(ctx, Qwen3VLTextAndVisionContext):
+        precomputed = ctx.decoder_position_ids
+        if ctx.needs_vision_encoding and precomputed.shape[1] == len(
+            ctx.tokens
+        ):
+            return precomputed[
+                :,
+                ctx.tokens.processed_length : ctx.tokens.current_position,
+            ]
+        rope_delta = ctx.rope_delta
+    flat = np.arange(ctx.tokens.active_length, dtype=np.int64)
+    return (
+        np.tile(flat, (_MROPE_AXES, 1))
+        + ctx.tokens.processed_length
+        + rope_delta
+    )
+
+
 class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     """Ragged batching with linear-attention state pools and optional vision inputs."""
 
     mrope_enabled: bool = False
     """Whether the compiled graph takes M-RoPE positions. Set by the model."""
 
-    def _decoder_position_ids(self, contexts: Sequence[TextContext]) -> Buffer:
-        """Returns this step's ``[3, total_seq_len]`` M-RoPE positions.
+    vision_enabled: bool = True
+    """Whether the compiled graph takes vision-merge inputs. Set by the model."""
 
-        A prompt whose images are still to be encoded takes the slice of the
-        positions the tokenizer precomputed for the whole prompt. Everything
-        else -- decode steps, and continuations of a prompt whose images are
-        already behind it -- counts on from the processed length, offset by
-        the request's rope delta. Past the last image those two agree, which
-        is what lets a decode step extend the corrected positions without
-        recomputing them.
-        """
-        rows: list[npt.NDArray[np.int64]] = []
-        for ctx in contexts:
-            rope_delta = 0
-            if isinstance(ctx, Qwen3VLTextAndVisionContext):
-                precomputed = ctx.decoder_position_ids
-                if ctx.needs_vision_encoding and precomputed.shape[1] == len(
-                    ctx.tokens
-                ):
-                    rows.append(
-                        precomputed[
-                            :,
-                            ctx.tokens.processed_length : ctx.tokens.current_position,
-                        ]
-                    )
-                    continue
-                rope_delta = ctx.rope_delta
-            flat = np.arange(ctx.tokens.active_length, dtype=np.int64)
-            rows.append(
-                np.tile(flat, (_MROPE_AXES, 1))
-                + ctx.tokens.processed_length
-                + rope_delta
-            )
+    def _decoder_position_ids(self, contexts: Sequence[TextContext]) -> Buffer:
+        """Returns this step's ``[3, total_seq_len]`` M-RoPE positions."""
+        rows = [context_position_rows(ctx) for ctx in contexts]
         return Buffer.from_numpy(
             np.concatenate(rows, axis=1).astype(np.int64)
         ).to(self.runtime.devices[0])
@@ -83,20 +83,16 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3_5Inputs:
         from .model import Qwen3_5Inputs
 
-        base_inputs = super().prepare_initial_token_inputs(
-            replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
-        )
-
         all_contexts = [ctx for batch in replica_batches for ctx in batch]
-        request_ids = [ctx.request_id for ctx in all_contexts]
 
+        # Checked before anything is staged: this batch cannot be served at
+        # all, so there is no point building its inputs first.
+        #
         # TODO(kevinbi): nothing between here and the model worker's main
         # loop catches this, so it ends the worker process rather than the
         # one request that asked for the impossible. Failing just the
@@ -115,6 +111,13 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
                 "and every token after an image would get a flat position."
             )
 
+        base_inputs = super().prepare_initial_token_inputs(
+            replica_batches,
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=return_n_logits,
+        )
+        request_ids = [ctx.request_id for ctx in all_contexts]
+
         return Qwen3_5Inputs(
             tokens=base_inputs.tokens,
             input_row_offsets=base_inputs.input_row_offsets,
@@ -122,6 +125,7 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
             kv_cache_inputs=base_inputs.kv_cache_inputs,
             return_n_logits=base_inputs.return_n_logits,
             request_ids=request_ids,
+            vision_inputs_in_graph=self.vision_enabled,
             decoder_position_ids=(
                 self._decoder_position_ids(all_contexts)
                 if self.mrope_enabled

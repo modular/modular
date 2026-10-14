@@ -14,13 +14,11 @@ from std.math.fast import exp_approx_f32
 from std.math import exp as ref_exp
 from max.algorithm.functional import elementwise
 from max.gpu import *
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from std.testing import *
-from std.utils import Index, IndexList
 from std.utils.coord import Coord
 
 
-@__parameter
 def run_exp_approx_test[
     simd_width: Int
 ](ctx: DeviceContext, *, half_range: Float32, rtol: Float64) raises:
@@ -41,9 +39,9 @@ def run_exp_approx_test[
     var out_buffer = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
 
     @inline(.always)
-    @__copy_capture(out_buffer, in_buffer)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var out_buffer, var in_buffer}:
         var idx = Int(idx0[0].value())
         var v = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
@@ -51,7 +49,7 @@ def run_exp_approx_test[
         )
 
     # Launch elementwise kernel on GPU (width is compile-time parameter)
-    elementwise[func, simd_width, target="gpu"](Coord(length), ctx)
+    elementwise[simd_width, target="gpu"](func, Coord(length), ctx)
 
     # Validate results
     with in_device.map_to_host() as in_host, out_device.map_to_host() as out_host:

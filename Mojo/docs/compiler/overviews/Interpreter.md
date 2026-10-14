@@ -178,12 +178,12 @@ parameter operator in KGEN. For example:
 ```mlir
 kgen.func @call_me() -> index {
   %0 = index.constant 1
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.func @call_it() {
   kgen.param.constant = <apply(:() -> index @call_me)>
-  kgen.return
+  hlcf.return
 }
 ```
 

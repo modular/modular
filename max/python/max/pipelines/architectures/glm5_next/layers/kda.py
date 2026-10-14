@@ -10,36 +10,64 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Per-step inputs to a KDA sublayer."""
+"""Per-step inputs to a GLM-5.3-Flash KDA sublayer.
+
+The decoder layer is generic over each sublayer's bundle, so the KDA bundle
+lives here rather than in a shared dataclass nobody owns. Core builds one per
+KDA layer per step; only the row ids differ between layers.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import NamedTuple
 
+from max import tree
 from max.graph import BufferValue, TensorValue
+from max.nn.kv_cache import RecurrentStateInputsPerDevice
 
-__all__ = ["KdaReplayInputs", "KdaSublayerInputs"]
+from ..state_cache import CONV_LEAF_ID, RECURRENT_LEAF_ID, leaf_inputs
+
+__all__ = [
+    "KdaReplayInputs",
+    "KdaSublayerInputs",
+    "kda_sublayer_inputs",
+]
 
 
-@dataclass(frozen=True, kw_only=True)
+@tree.dataclass(frozen=True, kw_only=True)
 class KdaSublayerInputs:
-    """One KDA layer's inputs on one device."""
+    """One KDA layer's per-step inputs, one entry per device.
+
+    Each pool spans every layer's rows, and the kernels mutate it in place at
+    the rows the ids name, so nothing here is a graph output.
+    """
 
     signal_buffers: list[BufferValue]
     """Allreduce signal buffers for ``o_proj``'s partial sums."""
 
     input_row_offsets: list[TensorValue]
-    """``[batch_size + 1]`` exclusive prefix offsets over the packed tokens."""
+    """``[batch_size + 1]`` exclusive prefix offsets over the packed tokens.
+
+    Cast as each kernel needs it -- the conv op takes uint32 and the
+    recurrence ops take int32 -- so either integer dtype is accepted here.
+    """
 
     conv_pools: list[BufferValue]
-    """``[max_slots, conv_dim, conv_kernel_size - 1]``."""
+    """``[num_rows, conv_dim, conv_kernel_size - 1]``, every layer's rows."""
+
+    conv_row_ids: list[TensorValue]
+    """``[batch_size]`` conv row this layer runs each sequence in."""
 
     recurrent_pools: list[BufferValue]
-    """``[max_slots, num_heads, head_dim, head_dim]``."""
+    """``[num_rows, num_heads, head_dim, head_dim]``, every layer's rows."""
 
-    slot_idx: list[TensorValue]
-    """``[batch_size]`` pool slot per live sequence."""
+    recurrent_row_ids: list[TensorValue]
+    """``[batch_size]`` recurrent row this layer runs each sequence in.
+
+    Its own leaf's rows, not the conv leaf's: the two are separate pool leaves
+    and a block of one names nothing in the other.
+    """
 
 
 class KdaReplayInputs(NamedTuple):
@@ -49,7 +77,13 @@ class KdaReplayInputs(NamedTuple):
     to land the pools on the accepted prefix instead. Every op feeding these
     tensors is causal or pointwise, so re-running the kernels over the accepted
     rows from the pre-verify state reproduces the state the verify pass held at
-    that length.
+    that length -- the argument Qwen3.5's
+    ``unified_mtp_qwen3_5/state_rollback.py`` rests on.
+
+    What does not carry over from Qwen3.5 is the shape of ``raw_gate``: KDA's
+    forget gate is one value per *channel* per head, not one scalar per head,
+    so a rollback that replays a ``[total_tokens, num_heads]`` decay is
+    replaying the wrong tensor.
     """
 
     qkv: TensorValue
@@ -67,3 +101,61 @@ class KdaReplayInputs(NamedTuple):
 
     beta_logits: TensorValue
     """``[total_tokens, num_heads]`` input-gate logits, pre-sigmoid."""
+
+
+def kda_sublayer_inputs(
+    *,
+    kda_layers: Sequence[int],
+    state: Sequence[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
+    signal_buffers: list[BufferValue],
+    input_row_offsets: list[TensorValue],
+) -> dict[int, KdaSublayerInputs]:
+    """Splits the recurrent-state graph inputs into one bundle per KDA layer.
+
+    Every layer shares one pool per leaf per device and differs only in the
+    rows it runs in: the ids arrive folded ``[batch_size, num_kda_layers]``,
+    and KDA layer ``l`` reads column ``l``. That column index is the one thing
+    about this wiring that is wrong silently -- reading the *decoder* index
+    instead of the KDA position binds layer 0's state to layer 3, which is
+    neither a shape error nor a crash, just a worse model. So it is done here,
+    once.
+
+    Args:
+        kda_layers: Decoder indices of the KDA layers, in schedule order --
+            :attr:`Glm5NextConfig.kda_layers`. Position in this sequence is
+            the column a layer reads.
+        state: The recurrent-state inputs, one entry per device.
+        signal_buffers: One per device, shared by every layer.
+        input_row_offsets: One per device, shared by every layer.
+
+    Returns:
+        One bundle per entry of ``kda_layers``, keyed by decoder index.
+
+    Raises:
+        ValueError: If a per-device list does not have one entry per device.
+    """
+    num_devices = len(state)
+    for name, per_device in (
+        ("signal_buffers", signal_buffers),
+        ("input_row_offsets", input_row_offsets),
+    ):
+        if len(per_device) != num_devices:
+            raise ValueError(
+                f"{name} must have one entry per device, got "
+                f"{len(per_device)} for {num_devices} devices."
+            )
+    conv = [leaf_inputs(device, CONV_LEAF_ID) for device in state]
+    recurrent = [leaf_inputs(device, RECURRENT_LEAF_ID) for device in state]
+    return {
+        layer_idx: KdaSublayerInputs(
+            signal_buffers=signal_buffers,
+            input_row_offsets=input_row_offsets,
+            conv_pools=[leaf.pool for leaf in conv],
+            conv_row_ids=[leaf.live_row_id(position) for leaf in conv],
+            recurrent_pools=[leaf.pool for leaf in recurrent],
+            recurrent_row_ids=[
+                leaf.live_row_id(position) for leaf in recurrent
+            ],
+        )
+        for position, layer_idx in enumerate(kda_layers)
+    }

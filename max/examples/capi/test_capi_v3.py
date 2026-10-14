@@ -16,7 +16,7 @@
 This is the new-API counterpart to ``test_capi.py``. It builds the same
 vector-add graph as a :class:`~max.experimental.nn.Module`, compiles it, and
 exports the compiled artifact to a MEF file via the public
-:meth:`~max.experimental.nn.CompiledModel.export_mef`. The resulting
+:meth:`~max.experimental.compilation.CompiledCallable.export_mef`. The resulting
 ``graph.mef`` is consumed by the same ``example.c`` C-API executor, since both
 APIs name graph inputs ``input0``/``input1`` and the output ``output0``.
 

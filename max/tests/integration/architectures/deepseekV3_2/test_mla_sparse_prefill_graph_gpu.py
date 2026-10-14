@@ -37,9 +37,9 @@ from _mla_sparse_graphs import (
     make_multi_kv,
     weights_for,
 )
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession
-from max.nn.kv_cache import MultiKVCacheInputs
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from test_common.mef_precompile import init_from_mef, mefs_from_env
@@ -68,7 +68,7 @@ def test_prefill_from_precompiled_mef(spec: PrefillSpec) -> None:
     kv_manager.claim(context)
     kv_manager.alloc(context)
     kv_ri_pref = kv_manager.runtime_inputs([[context]])
-    assert isinstance(kv_ri_pref, MultiKVCacheInputs)
+    assert isinstance(kv_ri_pref, dict)
 
     t_pref = (
         torch.randn((PREFILL_LEN, HIDDEN_SIZE), dtype=torch.float32) * 0.02
@@ -78,7 +78,7 @@ def test_prefill_from_precompiled_mef(spec: PrefillSpec) -> None:
         np.array([0, PREFILL_LEN], dtype=np.uint32)
     ).to(device)
     out_pref = model.execute(
-        hidden_prefill, row_prefill, *kv_ri_pref.flatten()
+        hidden_prefill, row_prefill, *tree.leaves(kv_ri_pref)
     )[0]
 
     out_t = from_dlpack(out_pref).cpu()
@@ -135,10 +135,10 @@ def test_prefill_only_matches_auto(num_heads: int) -> None:
         kv_manager.claim(context)
         kv_manager.alloc(context)
         kv_ri = kv_manager.runtime_inputs([[context]])
-        assert isinstance(kv_ri, MultiKVCacheInputs)
-        out_buf = model.execute(hidden_prefill, row_prefill, *kv_ri.flatten())[
-            0
-        ]
+        assert isinstance(kv_ri, dict)
+        out_buf = model.execute(
+            hidden_prefill, row_prefill, *tree.leaves(kv_ri)
+        )[0]
         out_t = from_dlpack(out_buf).cpu()
         return (
             out_t.float().numpy()

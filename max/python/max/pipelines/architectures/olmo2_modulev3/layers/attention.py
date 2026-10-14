@@ -168,7 +168,7 @@ class Olmo2Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
             layer_idx=layer_idx,
             n_heads=self.n_heads,
             interleaved=rope.interleaved,
-        )
+        ).rebind_mapping(qkv.mapping)
         q = q.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Step 5: Compute flash attention
@@ -180,7 +180,7 @@ class Olmo2Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
             input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
-        )
+        ).rebind_mapping(q.mapping)
 
         attn_out = F.reshape(attn_out, shape=[total_seq_len, -1])
         return self.o_proj(attn_out)

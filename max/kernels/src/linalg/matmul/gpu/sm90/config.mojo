@@ -134,8 +134,8 @@ struct MatmulConfig[
         # Heuristic: Use 1 consumer group for small M, 2 otherwise
 
         var num_consumer_groups: Int
-        if consumer_groups:
-            num_consumer_groups = consumer_groups.value()
+        if case .Some(consumer_groups) = consumer_groups:
+            num_consumer_groups = consumer_groups
         else:
             num_consumer_groups = 1 if M <= 64 else 2
 
@@ -186,8 +186,8 @@ struct MatmulConfig[
         self.num_pipeline_stages = 4  # Default for compilation
         self.k_group_size = 1
 
-        if k_groups:
-            self.k_group_size = k_groups.value()
+        if case .Some(k_groups) = k_groups:
+            self.k_group_size = k_groups
         else:
             var output_block_size = mma_mn[0] * mma_mn[1]
 
@@ -724,12 +724,7 @@ def build_configs_generic[
     var set = Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]()
 
     for m in range(M_start, M_end):
-        var config = config_fn.__call__[
-            _a_type=a_type,
-            _b_type=b_type,
-            _c_type=c_type,
-            _transpose_b=transpose_b,
-        ](m)
+        var config = config_fn(m)
         if config not in set:
             set.add(config)
 

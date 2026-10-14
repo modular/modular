@@ -106,6 +106,19 @@ _GEMMA_CONFIG = {
 }
 
 
+@contextmanager
+def _temp_repo_dir() -> Iterator[str]:
+    """Yields a temp repo directory with a fixed basename.
+
+    The encoding resolver guesses fp8/fp4 from the repo's basename, so a
+    random tempdir name containing "fp8" or "fp4" would change the result.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_dir = os.path.join(tmpdir, "repo")
+        os.mkdir(repo_dir)
+        yield repo_dir
+
+
 def _make_local_repo(
     tmpdir: str,
     hf_config: dict[str, Any] | None = None,
@@ -297,7 +310,7 @@ class TestArchitectureEncodingResolution:
     def test_resolve_bf16_safetensors_llama(self) -> None:
         """BF16 safetensors with LlamaForCausalLM architecture."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
             )
@@ -314,7 +327,7 @@ class TestArchitectureEncodingResolution:
     def test_resolve_gguf_q4_0_llama(self) -> None:
         """Q4_0 GGUF with LlamaForCausalLM architecture."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
             config = _make_pipeline_config(
                 tmpdir, device_specs=[CPU_DEVICE_SPEC]
@@ -330,7 +343,7 @@ class TestArchitectureEncodingResolution:
     def test_resolve_fp8_safetensors_llama(self) -> None:
         """FP8 safetensors with LlamaForCausalLM architecture."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={"model.safetensors": {"w": "F8_E4M3"}},
@@ -349,7 +362,7 @@ class TestArchitectureEncodingResolution:
         encoding when reconciling file encoding with device capabilities.
         """
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir, safetensors_files={"model.safetensors": {"w": "F32"}}
             )
@@ -370,7 +383,7 @@ class TestArchitectureEncodingResolution:
     def test_resolve_f32_on_cpu_stays_f32(self) -> None:
         """F32 safetensors on CPU should stay F32."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir, safetensors_files={"model.safetensors": {"w": "F32"}}
             )
@@ -419,7 +432,7 @@ class TestDefaultEncodingFallback:
             config=DummyLlamaArchConfig,
         )
         PIPELINE_REGISTRY.register(cpu_arch)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             # Mixed BF16+F32 on CPU: bfloat16 is GPU-only, so resolution can't
             # pick it and falls back to the arch default (float32).
             _make_local_repo(
@@ -456,7 +469,7 @@ class TestEncodingValidation:
         """
         # DUMMY_LLAMA_ARCH intentionally excludes q4_k from supported_encodings
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(tmpdir, gguf_files=["model-Q4_K_M.gguf"])
             with pytest.raises(ValueError, match="not supported by MAX engine"):
                 _make_pipeline_config(tmpdir, device_specs=[CPU_DEVICE_SPEC])
@@ -465,7 +478,7 @@ class TestEncodingValidation:
     def test_explicit_unsupported_encoding_rejected(self) -> None:
         """Explicitly setting an unsupported encoding raises at construction."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
             )
@@ -480,7 +493,7 @@ class TestEncodingValidation:
     def test_encoding_incompatible_with_devices_rejected(self) -> None:
         """A GPU-only encoding on a CPU target raises at construction."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
             )
@@ -507,7 +520,7 @@ class TestArchitectureNotFound:
     def test_unknown_architecture_raises(self) -> None:
         """Unknown architecture in config.json raises at construction."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             unknown_config = dict(_LLAMA_CONFIG)
             unknown_config["architectures"] = ["UnknownModelForCausalLM"]
             _make_local_repo(
@@ -528,7 +541,7 @@ class TestArchitectureNotFound:
     def test_missing_config_json_raises(self) -> None:
         """Missing config.json should raise an error."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             # Write weight files but no config.json
             write_fake_safetensors(os.path.join(tmpdir, "model.safetensors"))
             config = _make_pipeline_config(tmpdir)
@@ -549,7 +562,7 @@ class TestMultiGPUValidation:
         """Architecture without multi_gpu_supported should reject 2 GPUs."""
         # DUMMY_GEMMA_ARCH has multi_gpu_supported=False
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
@@ -574,7 +587,7 @@ class TestMultiGPUValidation:
         """Architecture with multi_gpu_supported should allow 2 GPUs."""
         # DUMMY_LLAMA_ARCH has multi_gpu_supported=True
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
@@ -607,7 +620,7 @@ class TestRopeTypeResolution:
         user override, so an explicit value must pass through unchanged.
         """
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
@@ -622,7 +635,7 @@ class TestRopeTypeResolution:
     def test_rope_type_unset_stays_none(self) -> None:
         """An unset rope_type stays None after resolution (no arch default)."""
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
@@ -644,7 +657,7 @@ class TestStructuredOutputBackendResolution:
             DUMMY_GEMMA_ARCH, default_structured_output_backend="xgrammar"
         )
         PIPELINE_REGISTRY.register(arch)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
@@ -657,12 +670,16 @@ class TestStructuredOutputBackendResolution:
 
     @prepare_registry
     def test_explicit_backend_value_wins(self) -> None:
-        """An explicit user backend is never overridden by the arch default."""
+        """An explicit user backend is never overridden by the arch default.
+
+        The arch default is ``None``; the user explicitly set ``xgrammar``.
+        The resolved value must be the user's choice.
+        """
         arch = dataclasses.replace(
-            DUMMY_GEMMA_ARCH, default_structured_output_backend="xgrammar"
+            DUMMY_GEMMA_ARCH, default_structured_output_backend=None
         )
         PIPELINE_REGISTRY.register(arch)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
@@ -671,11 +688,11 @@ class TestStructuredOutputBackendResolution:
             # Constructing with the field set records it in model_fields_set.
             config = _make_pipeline_config(
                 tmpdir,
-                sampling=SamplingConfig(structured_output_backend="llguidance"),
+                sampling=SamplingConfig(structured_output_backend="xgrammar"),
             )
             with _pipeline_resolve_mocks():
                 config = _plan_memory(config)
-            assert config.sampling.structured_output_backend == "llguidance"
+            assert config.sampling.structured_output_backend == "xgrammar"
 
 
 class TestStructuredOutputAnyWhitespaceResolution:
@@ -688,7 +705,7 @@ class TestStructuredOutputAnyWhitespaceResolution:
             DUMMY_GEMMA_ARCH, default_structured_output_any_whitespace=True
         )
         PIPELINE_REGISTRY.register(arch)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
@@ -706,7 +723,7 @@ class TestStructuredOutputAnyWhitespaceResolution:
             DUMMY_GEMMA_ARCH, default_structured_output_any_whitespace=True
         )
         PIPELINE_REGISTRY.register(arch)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
@@ -728,7 +745,7 @@ class TestStructuredOutputAnyWhitespaceResolution:
         mitigation (0c57a6bd331); the global default must not drift.
         """
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=_GEMMA_CONFIG,
@@ -755,7 +772,7 @@ class TestCacheDtypeResolution:
         from max.pipelines.kv_cache import cache_dtype_for_encoding
 
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
@@ -784,7 +801,7 @@ class TestWeightPathDiscovery:
     def test_sharded_safetensors_discovered(self) -> None:
         """Multiple sharded safetensors should all be discovered."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={
@@ -805,7 +822,7 @@ class TestWeightPathDiscovery:
     def test_safetensors_preferred_over_gguf(self) -> None:
         """When both formats exist, safetensors should be preferred."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
@@ -848,7 +865,7 @@ class TestRequiredArguments:
         )
         PIPELINE_REGISTRY.register(arch_with_required)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
@@ -920,7 +937,7 @@ class TestDGCTaskDisambiguation:
         hf_config = dict(_LLAMA_CONFIG)
         hf_config["architectures"] = [shared_name]
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=hf_config,
@@ -976,7 +993,7 @@ class TestDGCTaskDisambiguation:
         hf_config = dict(_LLAMA_CONFIG)
         hf_config["architectures"] = [shared_name]
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=hf_config,
@@ -1009,7 +1026,7 @@ class TestChatTemplateWiring:
     @prepare_registry
     def test_chat_template_path_reaches_tokenizer(self) -> None:
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
             )
@@ -1033,7 +1050,7 @@ class TestCpuOnlyEncodingDeviceHandling:
     @prepare_registry
     def test_gguf_q4_direct_construction_keeps_raw_devices(self) -> None:
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
             with patch(
                 "max.pipelines.lib.device_specs.scan_available_devices",
@@ -1063,7 +1080,7 @@ class TestCpuOnlyEncodingDeviceHandling:
     @prepare_registry
     def test_gguf_q4_on_explicit_gpu_downcasts_at_construction(self) -> None:
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
             config = _make_pipeline_config(
                 tmpdir, device_specs=[GPU_DEVICE_SPEC]
@@ -1094,7 +1111,7 @@ def test_construction_downcast_warns_once(
     an already-downcast config does not warn again.
     """
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with _temp_repo_dir() as tmpdir:
         _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
         with caplog.at_level(logging.WARNING, logger="max.pipelines"):
             config = _make_pipeline_config(
@@ -1135,7 +1152,7 @@ class TestMemoryPlanDevices:
     @prepare_registry
     def test_memory_plan_carries_resolved_devices(self) -> None:
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
             )
@@ -1153,7 +1170,7 @@ class TestMemoryPlanDevices:
         """For a q4 GGUF model the plan carries the construction-downcast
         CPU set."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
             config = _make_pipeline_config(
                 tmpdir, device_specs=[GPU_DEVICE_SPEC]
@@ -1234,7 +1251,7 @@ class TestConstructionResolution:
     def test_explicit_weight_path(self) -> None:
         """An explicit weight_path is kept — discovery never runs."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={
@@ -1251,7 +1268,7 @@ class TestConstructionResolution:
     @prepare_registry
     def test_discovery_sharded_safetensors(self) -> None:
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={
@@ -1270,7 +1287,7 @@ class TestConstructionResolution:
     def test_safetensors_preferred_over_gguf(self) -> None:
         """Format preference (arch default is gguf; only safetensors match)."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
@@ -1290,7 +1307,7 @@ class TestConstructionResolution:
         populated, and must still see (bfloat16, float32->bfloat16).
         """
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir, safetensors_files={"model.safetensors": {"w": "F32"}}
             )
@@ -1318,7 +1335,7 @@ class TestConstructionResolution:
             default_weights_format=WeightsFormat.safetensors,
         )
         PIPELINE_REGISTRY.register(cpu_arch)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={
@@ -1340,8 +1357,8 @@ class TestConstructionResolution:
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with (
-            tempfile.TemporaryDirectory() as target_dir,
-            tempfile.TemporaryDirectory() as draft_dir,
+            _temp_repo_dir() as target_dir,
+            _temp_repo_dir() as draft_dir,
         ):
             _make_local_repo(
                 target_dir,
@@ -1373,8 +1390,8 @@ class TestConstructionResolution:
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with (
-            tempfile.TemporaryDirectory() as target_dir,
-            tempfile.TemporaryDirectory() as draft_dir,
+            _temp_repo_dir() as target_dir,
+            _temp_repo_dir() as draft_dir,
         ):
             _make_local_repo(
                 target_dir,
@@ -1405,8 +1422,8 @@ class TestConstructionResolution:
         PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH)
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with (
-            tempfile.TemporaryDirectory() as target_dir,
-            tempfile.TemporaryDirectory() as draft_dir,
+            _temp_repo_dir() as target_dir,
+            _temp_repo_dir() as draft_dir,
         ):
             _make_local_repo(
                 target_dir,
@@ -1438,7 +1455,7 @@ class TestConstructionResolution:
         """A user max_length above a bounded architecture's checkpoint limit
         is rejected at construction, where the policy now runs."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
@@ -1451,7 +1468,7 @@ class TestConstructionResolution:
     def test_unknown_arch_rejected_at_construction(self) -> None:
         """A determinable but unregistered architecture fails construction."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             unknown_config = dict(_LLAMA_CONFIG)
             unknown_config["architectures"] = ["UnknownModelForCausalLM"]
             _make_local_repo(
@@ -1488,7 +1505,7 @@ class TestConstructionResolution:
         )
         hf_config = dict(_LLAMA_CONFIG)
         hf_config["architectures"] = ["DeepseekV3ForCausalLM"]
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=hf_config,
@@ -1530,7 +1547,7 @@ class TestConstructionResolution:
         )
         hf_config = dict(_LLAMA_CONFIG)
         hf_config["architectures"] = ["DeepseekV3ForCausalLM"]
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             _make_local_repo(
                 tmpdir,
                 hf_config=hf_config,
@@ -1548,7 +1565,7 @@ class TestConstructionResolution:
     def test_custom_architectures_imported_at_construction(self) -> None:
         """runtime.custom_architectures modules register before the
         construction-time arch lookup, so from_args resolves against them."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with _temp_repo_dir() as tmpdir:
             module_path = os.path.join(tmpdir, "my_custom_arch_mxf517.py")
             with open(module_path, "w") as f:
                 f.write(

@@ -19,7 +19,7 @@ from std.sys.defines import get_defined_int, get_defined_string
 
 from std.benchmark import *
 from std.benchmark import keep
-from layout import Coord, Layout, LayoutTensor, RuntimeLayout
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv.conv_utils import (
     ConvShape,
@@ -36,7 +36,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     comptime filter_type = spec.static_info.filter_type
     comptime output_type = spec.static_info.output_type
 
-    # Alignment in terms of number of elmements.
+    # Alignment in terms of number of elements.
     comptime alignment = 64
     comptime input_align = alignment // size_of[input_type]()
     comptime filter_align = alignment // size_of[filter_type]()
@@ -150,43 +150,36 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
         @inline(.always)
         def bench_fn() {mut counter, imm}:
-            comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
-            comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
-            var input = LayoutTensor[input_type, layout_2](
+            var input = TileTensor(
                 input_ptr.unsafe_offset(
                     (counter % num_copies) * input_alloc_size
                 ),
-                RuntimeLayout[layout_2].row_major(input_shape),
+                row_major(Coord(input_shape)),
             )
-            var filter = LayoutTensor[filter_type, layout_3](
+            var filter = TileTensor(
                 filter_ptr.unsafe_offset(
                     (counter % num_copies) * filter_alloc_size
                 ),
-                RuntimeLayout[layout_3].row_major(packed_filter_shape),
+                row_major(Coord(packed_filter_shape)),
             )
-            var output = LayoutTensor[output_type, layout_2](
+            var output = TileTensor(
                 output_ptr.unsafe_offset(
                     (counter % num_copies) * output_alloc_size
                 ),
-                RuntimeLayout[layout_2].row_major(output_shape),
+                row_major(Coord(output_shape)),
             )
 
             try:
                 ConvDirectNHWC[
-                    layout_2,
-                    layout_3,
-                    layout_2,
+                    input.LayoutType,
+                    filter.LayoutType,
+                    output.LayoutType,
                     input_type,
                     filter_type,
                     output_type,
                     True,
                     ConvInfoStatic[spec.static_info.rank](),
-                ].run(
-                    output,
-                    input,
-                    filter,
-                    conv_shape,
-                )
+                ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
                 counter += 1
 

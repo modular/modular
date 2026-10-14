@@ -33,7 +33,6 @@ bit-exact against the expected slice.
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import AddressSpace
 from std.testing import assert_equal
 from layout import (
     ComptimeInt,
@@ -97,7 +96,7 @@ def kernel_case_a(
 
     # Copy SMEM back out so the host can check it.
     # Thread-parallel: one warp writes all BN*DEPTH elements.
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var total = BN * DEPTH
     var i = tid
     while i < total:
@@ -129,7 +128,7 @@ def kernel_case_b(
     loader.load(dst_smem, src)
     barrier()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var total = BN * DEPTH
     var i = tid
     while i < total:

@@ -48,7 +48,7 @@ from std.random import random_ui64, seed
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp6_utils import (
     FP6Format,
@@ -360,7 +360,7 @@ def _run_preb[
     # plane-split kernel; the tuned 16-byte atom path cannot express it.
     var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, K_BYTES]()
-    ).as_immut()
+    ).as_imm()
     var b_pre_dst_tt = TileTensor(b_pre_d, row_major[num_experts, N, K_BYTES]())
     Shuffler[num_experts].preshuffle_b_planes[
         N=N, K_BYTES=K_BYTES, lane_bytes=FP6_LANE_BYTES
@@ -371,8 +371,8 @@ def _run_preb[
     # every f8f6f4 format.
     var a_sc_raw_u8_tt = TileTensor(
         a_sc_d.unsafe_ptr().bitcast[Scalar[.uint8]](),
-        row_major(Coord(total_tokens, Idx[scale_K])),
-    ).as_immut()
+        row_major(total_tokens, Idx[scale_K]),
+    ).as_imm()
     # A fresh test buffer reads as zeros, which is a *valid* E8M0 exponent --
     # so the pad slots the preshuffle deliberately skips are benign here in a
     # way they are not in production, where the allocator hands back pooled
@@ -384,11 +384,11 @@ def _run_preb[
 
     var a_sc_pre_tt = TileTensor(
         a_sc_pre_d,
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
     )
     var a_off_tt_for_pre = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_immut()
+        a_off_d, row_major(num_active + 1)
+    ).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         a_sc_raw_u8_tt,
         a_sc_pre_tt,
@@ -407,7 +407,7 @@ def _run_preb[
     ctx.synchronize()
     var b_sc_raw_u8_tt = TileTensor(
         b_sc_h.unsafe_ptr().bitcast[UInt8](),
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
+        row_major(Idx[num_experts], Idx[N], Idx[scale_K]),
     )
     Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
         b_sc_raw_u8_tt, b_sc_pre_h
@@ -431,23 +431,21 @@ def _run_preb[
     # Run the preb kernel under test. Scales are the preshuffled buffers;
     # bitcast uint8 ptr -> float8_e8m0fnu to match the dispatcher signature
     # (the kernel bitcasts back to uint8 for V# construction).
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    ).as_immut()
+    var a_tt = TileTensor(a_d, row_major(total_tokens, Idx[K_BYTES])).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[num_experts, N * K_BYTES]()
-    ).as_immut()
+    ).as_imm()
     var a_sc_tt = TileTensor(
         a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    ).as_immut()
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
+    ).as_imm()
     var b_sc_tt = TileTensor(
         b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
-    ).as_immut()
-    var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
-    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
-    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
+    ).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1))
+    var eid_tt = TileTensor(eid_d, row_major(num_active))
+    var c_tt = TileTensor(c_d, row_major(total_tokens, Idx[N]))
 
     # The launcher picks the tile config from (lane_bytes, N, K, etm) and
     # infers the format from the a / a_scales shapes, so it exercises the

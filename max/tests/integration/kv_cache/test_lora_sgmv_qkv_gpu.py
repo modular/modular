@@ -16,6 +16,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -289,12 +290,7 @@ def run_sgmv_qkv_lora_kernel(
         devices=[device_ref],
     )
 
-    # The cache starts zeroed, which the comparison below relies on.
-    kv_runtime_inputs = paged_kv_cache_inputs(
-        kv_params, seq_lens, total_num_pages=32
-    )
-
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs().inputs[0]
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
 
     with Graph(
         "sgmv_qkv_lora_kernel_test",
@@ -317,7 +313,7 @@ def run_sgmv_qkv_lora_kernel(
             TensorType(DType.uint32, ["input_row_offsets"], device=device_ref),
             TensorType(DType.int64, ["lora_end"], device=DeviceRef.CPU()),
             TensorType(DType.int64, [1], device=DeviceRef.CPU()),
-            *kv_symbolic_inputs.flatten(),
+            *tree.leaves(kv_symbolic_inputs),
         ],
     ) as graph:
         (
@@ -334,7 +330,7 @@ def run_sgmv_qkv_lora_kernel(
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_inputs))[0]
 
         q_out = sgmv_qkv_lora_kernel(
             input=x.tensor,
@@ -357,6 +353,13 @@ def run_sgmv_qkv_lora_kernel(
 
     compiled = session.load(graph)
 
+    # Allocated after the load: a precompile record run compiles the graph in
+    # a CPU build action and stops at the first device allocation. The cache
+    # starts zeroed, which the comparison below relies on.
+    kv_runtime_inputs = paged_kv_cache_inputs(
+        kv_params, seq_lens, total_num_pages=32
+    )
+
     # Prepare lora_end_idx array
     lora_end_idx_arr = np.zeros(lora_end_idx, dtype=np.int64)
     if lora_end_idx > 0:
@@ -373,7 +376,7 @@ def run_sgmv_qkv_lora_kernel(
         Buffer.from_numpy(input_row_offsets.astype(np.uint32)).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *kv_runtime_inputs.flatten(),
+        *tree.leaves(kv_runtime_inputs),
     )
 
     q_output = from_dlpack(result[0])

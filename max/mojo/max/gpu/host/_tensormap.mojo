@@ -60,14 +60,15 @@ struct DataType(TrivialRegisterPassable):
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        comptime if dtype == .float32:
-            return Self.FLOAT32
-        elif dtype == .float16:
-            return Self.FLOAT16
-        elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
-            return Self.UINT8
-        else:
-            return Self.BFLOAT16
+        comptime match dtype:
+            case .float32:
+                return Self.FLOAT32
+            case .float16:
+                return Self.FLOAT16
+            case .float8_e4m3fn | .float8_e8m0fnu | .uint8:
+                return Self.UINT8
+            case _:
+                return Self.BFLOAT16
 
 
 @fieldwise_init("implicit")
@@ -160,16 +161,17 @@ struct SwizzleMode(
         Args:
             writer: The writer to output the string representation to.
         """
-        if self._value == 1:
-            writer.write("32B swizzle")
-        elif self._value == 2:
-            writer.write("64B swizzle")
-        elif self._value == 3:
-            writer.write("128B swizzle")
-        elif self._value == 0:
-            writer.write("no swizzle")
-        else:
-            writer.write("invalid swizzle")
+        match self._value:
+            case 1:
+                writer.write("32B swizzle")
+            case 2:
+                writer.write("64B swizzle")
+            case 3:
+                writer.write("128B swizzle")
+            case 0:
+                writer.write("no swizzle")
+            case _:
+                writer.write("invalid swizzle")
 
 
 @fieldwise_init("implicit")

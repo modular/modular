@@ -11,5 +11,5 @@ kgen.func @cse_intrinsic() -> !kgen.scalar<f32> {
   %4 = pop.call_llvm_intrinsic "side_effect_intrinsic", (): () -> !kgen.scalar<f32>
   %5 = pop.add %3, %4 : !kgen.scalar<f32>
   %6 = pop.add %5, %2 : !kgen.scalar<f32>
-  kgen.return %6 : !kgen.scalar<f32>
+  hlcf.return %6 : !kgen.scalar<f32>
 }

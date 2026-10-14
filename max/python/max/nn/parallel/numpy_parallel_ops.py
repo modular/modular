@@ -22,7 +22,12 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    Usage,
+)
 from max.dtype import DType
 
 
@@ -60,7 +65,7 @@ class ParallelArrayOps:
                 pinned buffer on the specified accelerator.
             max_workers: Maximum number of worker threads. Default is 24, which works
                 well for typical server CPUs. Consider setting to match your expected
-                number of arrays (e.g., 20 for up to 20 concurrent copies).
+                number of arrays (such as 20 for up to 20 concurrent copies).
         """
         if accelerator is not None and accelerator.is_host:
             raise ValueError(
@@ -177,10 +182,11 @@ class ParallelArrayOps:
             if self._accelerator is None:
                 return Buffer.from_numpy(first.copy())
             else:
-                out_max: Buffer = DevicePinnedBuffer(
+                out_max: Buffer = Buffer(
                     shape=first.shape,
                     dtype=DType.from_numpy(first.dtype),
                     device=self._accelerator,
+                    usage=Usage.STAGING | Usage.UNTRACKED,
                 )
                 np.copyto(out_max.to_numpy(), first)
                 return out_max
@@ -240,10 +246,11 @@ class ParallelArrayOps:
             device = CPU()
             pinned = False
         if pinned:
-            out_max = DevicePinnedBuffer(
+            out_max = Buffer(
                 shape=out_shape,
                 dtype=max_dtype,
                 device=device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
         else:
             out_max = Buffer(

@@ -18,16 +18,12 @@ Each library should have an associated documentation file to indicate its
 purpose. The current libraries are:
 
 - [ADT](ADT.md)
-- [ASN1](ASN1.md)
 - [Compiler](Compiler.md)
 - [CrashReporting](CrashReporting.md)
-- [Cryptography](Cryptography.md)
 - [DebugInfoDialect](DebugInfoDialect.md)
 - [Driver](Driver.md)
 - [Filesystem](Filesystem.md)
-- [Frameworks](Frameworks.md)
 - [Globals](Globals.md)
-- [HTTP](HTTP.md)
 - [Logging](Logging.md)
 - [MArchTarget](MArchTarget.md)
 - [MDialect](MDialect.md)

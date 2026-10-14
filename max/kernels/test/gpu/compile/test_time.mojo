@@ -24,6 +24,18 @@ from max.gpu.intrinsics import *
 from std.testing import *
 
 
+comptime _GFX10_AND_EARLIER_ARCHS: List[StaticString] = [
+    "gfx942",  # CDNA3
+    "gfx950",  # CDNA4
+    "gfx1033",  # RDNA2
+]
+comptime _GFX11_AND_LATER_ARCHS: List[StaticString] = [
+    "gfx1100",  # RDNA3
+    "gfx1200",  # RDNA4
+    "gfx1250",  # CDNA5
+]
+
+
 def clock_functions():
     _ = perf_counter_ns()
 
@@ -32,12 +44,6 @@ def clock_functions():
 def _verify_clock_functions_nvidia(asm: StringSlice) raises -> None:
     # NVIDIA uses globaltimer for perf_counter_ns (nanosecond resolution).
     assert_true("globaltimer" in asm)
-
-
-@inline(.always)
-def _verify_clock_functions_amd(asm: StringSlice) raises -> None:
-    # AMD uses s_memrealtime for perf_counter_ns (constant-speed clock).
-    assert_true("s_memrealtime" in asm)
 
 
 def test_clock_functions_sm80() raises:
@@ -54,18 +60,20 @@ def test_clock_functions_sm90() raises:
     _verify_clock_functions_nvidia(asm)
 
 
-def test_clock_functions_gfx942() raises:
-    var asm = _compile_code[
-        clock_functions, target=get_gpu_target["gfx942"]()
-    ]().asm
-    _verify_clock_functions_amd(asm)
+def test_clock_functions_gfx10_and_earlier() raises:
+    comptime for target_arch in _GFX10_AND_EARLIER_ARCHS:
+        var asm = _compile_code[
+            clock_functions, target=get_gpu_target[target_arch]()
+        ]().asm
+        assert_true("s_memrealtime" in asm)
 
 
-def test_clock_functions_gfx950() raises:
-    var asm = _compile_code[
-        clock_functions, target=get_gpu_target["gfx950"]()
-    ]().asm
-    _verify_clock_functions_amd(asm)
+def test_clock_functions_gfx11_and_later() raises:
+    comptime for target_arch in _GFX11_AND_LATER_ARCHS:
+        var asm = _compile_code[
+            clock_functions, target=get_gpu_target[target_arch]()
+        ]().asm
+        assert_true("sendmsg(MSG_RTN_GET_REALTIME)" in asm)
 
 
 def global_clock_functions():
@@ -76,12 +84,6 @@ def global_clock_functions():
 def _verify_global_clock_functions_nvidia(asm: StringSlice) raises -> None:
     # NVIDIA uses globaltimer for global_perf_counter_ns.
     assert_true("globaltimer" in asm)
-
-
-@inline(.always)
-def _verify_global_clock_functions_amd(asm: StringSlice) raises -> None:
-    # AMD uses s_memrealtime for global_perf_counter_ns (constant-speed clock).
-    assert_true("s_memrealtime" in asm)
 
 
 def test_global_clock_functions_sm80() raises:
@@ -98,18 +100,20 @@ def test_global_clock_functions_sm90() raises:
     _verify_global_clock_functions_nvidia(asm)
 
 
-def test_global_clock_functions_gfx942() raises:
-    var asm = _compile_code[
-        global_clock_functions, target=get_gpu_target["gfx942"]()
-    ]().asm
-    _verify_global_clock_functions_amd(asm)
+def test_global_clock_functions_gfx10_and_earlier() raises:
+    comptime for target_arch in _GFX10_AND_EARLIER_ARCHS:
+        var asm = _compile_code[
+            global_clock_functions, target=get_gpu_target[target_arch]()
+        ]().asm
+        assert_true("s_memrealtime" in asm)
 
 
-def test_global_clock_functions_gfx950() raises:
-    var asm = _compile_code[
-        global_clock_functions, target=get_gpu_target["gfx950"]()
-    ]().asm
-    _verify_global_clock_functions_amd(asm)
+def test_global_clock_functions_gfx11_and_later() raises:
+    comptime for target_arch in _GFX11_AND_LATER_ARCHS:
+        var asm = _compile_code[
+            global_clock_functions, target=get_gpu_target[target_arch]()
+        ]().asm
+        assert_true("sendmsg(MSG_RTN_GET_REALTIME)" in asm)
 
 
 def time_functions(some_value: Int) -> Int:
@@ -167,14 +171,6 @@ def _verify_sleep_function_nvidia(asm: StringSlice) raises -> None:
     assert_true("bra" in asm, "Expected branch instruction for sleep loop")
 
 
-@inline(.always)
-def _verify_sleep_function_amd(asm: StringSlice) raises -> None:
-    # Verify s_memrealtime is used for timing (constant-speed clock).
-    assert_true("s_memrealtime" in asm, "Expected s_memrealtime for timing")
-    # Verify s_sleep instruction is present.
-    assert_true("s_sleep" in asm, "Expected s_sleep instruction")
-
-
 def test_sleep_function_sm80() raises:
     var asm = _compile_code[
         sleep_function, target=get_gpu_target["sm_80"]()
@@ -189,18 +185,22 @@ def test_sleep_function_sm90() raises:
     _verify_sleep_function_nvidia(asm)
 
 
-def test_sleep_function_gfx942() raises:
-    var asm = _compile_code[
-        sleep_function, target=get_gpu_target["gfx942"]()
-    ]().asm
-    _verify_sleep_function_amd(asm)
+def test_sleep_function_gfx10_and_earlier() raises:
+    comptime for target_arch in _GFX10_AND_EARLIER_ARCHS:
+        var asm = _compile_code[
+            sleep_function, target=get_gpu_target[target_arch]()
+        ]().asm
+        assert_true("s_memrealtime" in asm)
+        assert_true("s_sleep" in asm)
 
 
-def test_sleep_function_gfx950() raises:
-    var asm = _compile_code[
-        sleep_function, target=get_gpu_target["gfx950"]()
-    ]().asm
-    _verify_sleep_function_amd(asm)
+def test_sleep_function_gfx11_and_later() raises:
+    comptime for target_arch in _GFX11_AND_LATER_ARCHS:
+        var asm = _compile_code[
+            sleep_function, target=get_gpu_target[target_arch]()
+        ]().asm
+        assert_true("sendmsg(MSG_RTN_GET_REALTIME)" in asm)
+        assert_true("s_sleep" in asm)
 
 
 def main() raises:

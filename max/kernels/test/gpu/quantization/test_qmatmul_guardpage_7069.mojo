@@ -158,9 +158,9 @@ def main() raises:
         multistage_gemm_q[
             group_size=GROUP_SIZE, pack_factor=PACK_FACTOR, config=config
         ](
-            c_tt.to_layout_tensor(),
-            a_tt.to_layout_tensor(),
-            b_tt.to_layout_tensor(),
+            c_tt,
+            a_tt,
+            b_tt,
             config,
             ctx,
         )

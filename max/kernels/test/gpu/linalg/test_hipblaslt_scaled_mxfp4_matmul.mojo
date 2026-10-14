@@ -17,15 +17,10 @@ from std.math import ceildiv
 from std.memory import bitcast
 from std.random import rand
 from std.sys.intrinsics import llvm_intrinsic
-from std.utils import IndexList
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     CoordLike,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     Idx,
     row_major,
@@ -121,13 +116,13 @@ def test_block_scaled_mxfp4_hipblaslt[
     )
     var k_scales_dim = ceildiv(K, MXFP4_SF_VECTOR_SIZE)
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
+    var a_shape = row_major(m, Idx[KType.static_value // 2])
     var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
+        Idx[NType.static_value], Idx[KType.static_value // 2]
     )
-    var c_shape = row_major(Coord(m, n))
-    var a_scales_shape = row_major(Coord(m, Idx[static_k_scales_dim]))
-    var b_scales_shape = row_major(Coord(n, Idx[static_k_scales_dim]))
+    var c_shape = row_major(m, n)
+    var a_scales_shape = row_major(m, Idx[static_k_scales_dim])
+    var b_scales_shape = row_major(n, Idx[static_k_scales_dim])
 
     var a_scales_size = M * k_scales_dim
     var b_scales_size = N * k_scales_dim
@@ -141,8 +136,8 @@ def test_block_scaled_mxfp4_hipblaslt[
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](a_scales_size)
     var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
@@ -170,8 +165,8 @@ def test_block_scaled_mxfp4_hipblaslt[
     var c_device_nd = TileTensor[mut=True](c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[output_dtype](c_size)
 
-    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -179,47 +174,13 @@ def test_block_scaled_mxfp4_hipblaslt[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    comptime a_scales_layout = Layout.row_major(
-        a_scales_device_nd.static_shape[0], a_scales_device_nd.static_shape[1]
-    )
-    comptime b_scales_layout = Layout.row_major(
-        b_scales_device_nd.static_shape[0], b_scales_device_nd.static_shape[1]
-    )
-
-    var a_scales_lt = LayoutTensor[
-        scales_dtype, a_scales_layout, ImmutAnyOrigin
-    ](
-        rebind[ImmPointer[Scalar[scales_dtype], ImmutAnyOrigin]](
-            a_scales_device_nd._storage
-        ),
-        RuntimeLayout[a_scales_layout].row_major(
-            IndexList[2](
-                Int(a_scales_device_nd.dim[0]()),
-                Int(a_scales_device_nd.dim[1]()),
-            )
-        ),
-    )
-    var b_scales_lt = LayoutTensor[
-        scales_dtype, b_scales_layout, ImmutAnyOrigin
-    ](
-        rebind[ImmPointer[Scalar[scales_dtype], ImmutAnyOrigin]](
-            b_scales_device_nd._storage
-        ),
-        RuntimeLayout[b_scales_layout].row_major(
-            IndexList[2](
-                Int(b_scales_device_nd.dim[0]()),
-                Int(b_scales_device_nd.dim[1]()),
-            )
-        ),
-    )
-
     matmul(
         ctx,
-        c_device_nd.to_layout_tensor(),
-        a_device_nd.to_layout_tensor(),
-        b_device_nd.to_layout_tensor(),
-        a_scales=a_scales_lt,
-        b_scales=b_scales_lt,
+        c_device_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales=a_scales_device_nd,
+        b_scales=b_scales_device_nd,
         transpose_b=True,
         c_row_major=True,
     )

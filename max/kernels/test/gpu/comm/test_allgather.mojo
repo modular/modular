@@ -13,18 +13,14 @@
 
 
 from std.math.uutils import ualign_down
-from std.sys import size_of, has_amd_gpu_accelerator
+from std.sys import size_of
 
 from comm.allgather import allgather
 from comm import Signal
 from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import TileTensor, row_major
 from std.testing import assert_equal, assert_true
 
 
@@ -44,9 +40,6 @@ def all_gather_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     # Calculate temp buffer size for signals.
     var max_length = 0
@@ -79,17 +72,17 @@ def all_gather_test[
             )
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
 
         # Copy to device.
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
 
         host_buffers.append(host_buffer^)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Create output buffers - each device needs ngpus output buffers.
     for device_idx in range(ngpus):
@@ -104,13 +97,13 @@ def all_gather_test[
     # Build TileTensor arrays directly.
     comptime InTileType = type_of(
         TileTensor(in_bufs_list[0], row_major(lengths[0]))
-        .as_immut()
+        .as_imm()
         .as_unsafe_any_origin()
     )
     var tt_in_bufs = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTileType: (
             TileTensor(in_bufs_list[i], row_major(lengths[i]))
-            .as_immut()
+            .as_imm()
             .as_unsafe_any_origin()
         )
     )
@@ -122,8 +115,7 @@ def all_gather_test[
     )
 
     def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
-        var device_idx = i // ngpus
-        var input_idx = i % ngpus
+        var device_idx, input_idx = divmod(i, ngpus)
         return TileTensor(
             out_bufs_list[device_idx][input_idx],
             row_major(lengths[input_idx]),
@@ -138,7 +130,7 @@ def all_gather_test[
             uniform = False
             break
 
-    if uniform and has_amd_gpu_accelerator():
+    if uniform and list_of_ctx.T.target.is_amd_gpu():
         # Reset outputs for vendor test
         for device_idx in range(ngpus):
             for input_idx in range(ngpus):
@@ -234,9 +226,6 @@ def grouped_all_gather_test[
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
     var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for i in range(ngpus):
         var length = lengths[i]
@@ -252,15 +241,15 @@ def grouped_all_gather_test[
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
 
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
         host_buffers.append(host_buffer^)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for device_idx in range(ngpus):
         var group_start = ualign_down(device_idx, group_size)
@@ -276,13 +265,13 @@ def grouped_all_gather_test[
 
     comptime InTileType = type_of(
         TileTensor(in_bufs_list[0], row_major(lengths[0]))
-        .as_immut()
+        .as_imm()
         .as_unsafe_any_origin()
     )
     var tt_in_bufs = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTileType: (
             TileTensor(in_bufs_list[i], row_major(lengths[i]))
-            .as_immut()
+            .as_imm()
             .as_unsafe_any_origin()
         )
     )
@@ -294,8 +283,7 @@ def grouped_all_gather_test[
     )
 
     def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
-        var device_idx = i // group_size
-        var local_idx = i % group_size
+        var device_idx, local_idx = divmod(i, group_size)
         var group_start = ualign_down(device_idx, group_size)
         var input_idx = group_start + local_idx
         return TileTensor(
@@ -375,9 +363,6 @@ def relay_all_gather_test[
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
     var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for i in range(ngpus):
         var length = lengths[i]
@@ -393,15 +378,15 @@ def relay_all_gather_test[
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
 
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffer)
         host_buffers.append(host_buffer^)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for device_idx in range(ngpus):
         var group_start = ualign_down(device_idx, group_size)
@@ -420,13 +405,13 @@ def relay_all_gather_test[
 
     comptime InTileType = type_of(
         TileTensor(in_bufs_list[0], row_major(lengths[0]))
-        .as_immut()
+        .as_imm()
         .as_unsafe_any_origin()
     )
     var tt_in_bufs = Array[_, ngpus](
         fill_with=lambda (i: Int) -> InTileType: (
             TileTensor(in_bufs_list[i], row_major(lengths[i]))
-            .as_immut()
+            .as_imm()
             .as_unsafe_any_origin()
         )
     )
@@ -438,8 +423,7 @@ def relay_all_gather_test[
     )
 
     def tt_out_bufs_at(i: Int) {mut out_bufs_list, imm} -> OutTileType:
-        var device_idx = i // group_size
-        var local_idx = i % group_size
+        var device_idx, local_idx = divmod(i, group_size)
         var group_start = ualign_down(device_idx, group_size)
         return TileTensor(
             out_bufs_list[device_idx][local_idx],

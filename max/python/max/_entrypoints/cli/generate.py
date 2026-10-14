@@ -19,14 +19,14 @@ import asyncio
 import contextlib
 import dataclasses
 import logging
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 import requests
 from max.pipelines import (
     PIPELINE_REGISTRY,
-    GenerateMixin,
     TextAndVisionTokenizer,
+    TextGenerationPipelineInterface,
     TextTokenizer,
 )
 from max.pipelines.context import (
@@ -35,7 +35,12 @@ from max.pipelines.context import (
     SamplingParams,
     TextContext,
 )
-from max.pipelines.lib import PipelineArgs, PipelineConfig
+from max.pipelines.lib import (
+    OverlapTextGenerationPipeline,
+    PipelineArgs,
+    PipelineConfig,
+)
+from max.pipelines.lib.generate import Batch, BatchPipeline
 from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import (
     ImageContentPart,
@@ -66,6 +71,24 @@ class TrackMetrics:
             self.metrics.signpost("first_token")
             self.metrics.prompt_size = len(inputs.context.tokens)
         self.metrics.new_token()
+
+
+async def stream_context(
+    pipeline: BatchPipeline,
+    context: TextContext,
+    on_tokens: Callable[[list[int]], Awaitable[None]],
+) -> None:
+    """Runs ``context`` as a batch of one, awaiting ``on_tokens`` per step.
+
+    Yields to the event loop after every step, so a SIGINT's cancellation
+    lands before the next step and the batch releases the row.
+    """
+    with Batch.from_contexts(pipeline, [context]) as batch:
+        while not batch.done:
+            tokens = batch.step().get(0)
+            if tokens:
+                await on_tokens(tokens)
+            await asyncio.sleep(0)
 
 
 async def stream_text_to_console(
@@ -119,19 +142,41 @@ async def stream_text_to_console(
             sampling_params=sampling_params,
         )
 
+    async def print_decoded(tokens: list[int]) -> None:
+        if print_tokens:
+            decoded = await tokenizer.decode(tokens, skip_special_tokens=True)
+            print(decoded, end="", flush=True)
+
     if metrics:
         metrics.signpost("begin_generation")
     try:
-        assert isinstance(pipeline, GenerateMixin)
-        async for outputs in pipeline.generate_async(request):
-            if print_tokens:
-                decoded = await tokenizer.decode(
-                    outputs[0].tokens, skip_special_tokens=True
-                )
-                print(decoded, end="", flush=True)
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        context = await pipeline.tokenizer.new_context(request)
+        await stream_context(pipeline, context, print_decoded)
     finally:
         if metrics:
             metrics.signpost("end_generation")
+
+
+def _with_debug_defaults(pipeline_args: PipelineArgs) -> PipelineArgs:
+    """Returns ``pipeline_args`` with the generate defaults for unset fields.
+
+    Like transformers, ``max generate`` runs every step normally unless the
+    caller passes ``--device-graph-capture``. It runs one prompt at a time,
+    so it plans for a batch of one, which also keeps graph capture warmup to
+    a single graph.
+    """
+    runtime = pipeline_args.runtime
+    defaults: dict[str, object] = {}
+    if runtime.device_graph_capture is None:
+        defaults["device_graph_capture"] = False
+    if runtime.max_batch_size is None:
+        defaults["max_batch_size"] = 1
+    if not defaults:
+        return pipeline_args
+    return pipeline_args.model_copy(
+        update={"runtime": runtime.model_copy(update=defaults)}
+    )
 
 
 def generate_text_for_pipeline(
@@ -148,11 +193,20 @@ def generate_text_for_pipeline(
     # nsys, ``cudaProfilerStop`` triggers the ``.nsys-rep`` write — delaying
     # it past the metrics report keeps the normal generate output (text +
     # stats) from being buried inside nsys's file-writing progress lines.
-    pipeline_config = PipelineConfig.from_args(pipeline_args)
+    pipeline_config = PipelineConfig.from_args(
+        _with_debug_defaults(pipeline_args)
+    )
     retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
     tokenizer = retrieved.tokenizer
     pipeline = retrieved.factory()
     assert isinstance(pipeline, Pipeline)
+    # Without warmup there are no captured graphs, and every step would run
+    # eagerly despite the flag.
+    if pipeline_config.runtime.device_graph_capture and isinstance(
+        pipeline, OverlapTextGenerationPipeline
+    ):
+        logger.info("Warming up device graph capture")
+        pipeline.warmup_graph_capture()
     log_basic_config(pipeline_config, memory_plan=retrieved.memory_plan)
     logger.info("max_batch_size: %d", pipeline.max_batch_size)
 

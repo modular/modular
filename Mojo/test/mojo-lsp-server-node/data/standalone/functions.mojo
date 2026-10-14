@@ -52,7 +52,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
         def non_capturing_nested_function():
             pass
 
-    async def async_function(mut self):
+    __async def async_function(mut self):
         @__parameter
         def parameter_nested_function():
             pass

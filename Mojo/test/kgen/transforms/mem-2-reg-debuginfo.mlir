@@ -55,7 +55,7 @@ kgen.func @mem2reg_valueop_no_undef(%arg0: index, %arg1: index) {
   debuginfo.value #local_variable = %0 : !kgen.pointer<index> loc(#loc0)
   pop.store %arg0, %0 : !kgen.pointer<index> loc(#loc1)
   pop.store %arg1, %0 : !kgen.pointer<index> loc(#loc2)
-  kgen.return loc(#loc0)
+  hlcf.return loc(#loc0)
 } loc(#loc0)
 
 // CHECK-LABEL: @mem2reg_valueop_with_initial_undef
@@ -69,7 +69,7 @@ kgen.func @mem2reg_valueop_with_initial_undef(%arg0: index, %arg1: index) -> ind
   %1 = pop.load %0 : !kgen.pointer<index> loc(#loc3) // loading undef
   pop.store %arg0, %0 : !kgen.pointer<index> loc(#loc1)
   pop.store %arg1, %0 : !kgen.pointer<index> loc(#loc2)
-  kgen.return %1 : index loc(#loc0)
+  hlcf.return %1 : index loc(#loc0)
 } loc(#loc0)
 
 // CHECK-LABEL: @mem2reg_valueop_with_initial_value
@@ -81,7 +81,7 @@ kgen.func @mem2reg_valueop_with_initial_value(%arg0: index, %arg1: index) {
   pop.store %arg0, %0 : !kgen.pointer<index> loc(#loc0)
   debuginfo.value #local_variable = %0 : !kgen.pointer<index> loc(#loc1)
   pop.store %arg1, %0 : !kgen.pointer<index> loc(#loc2)
-  kgen.return loc(#loc0)
+  hlcf.return loc(#loc0)
 } loc(#loc0)
 
 // CHECK-LABEL: @mem2reg_inlined_aliases
@@ -105,7 +105,7 @@ kgen.func @mem2reg_inlined_aliases(%arg0: index, %arg1: index, %arg2: index, %ar
   pop.store %arg2, %0 : !kgen.pointer<index> loc(#loc201at102at2)
   debuginfo.value #local_variable_struct #agg_expr = %0 : !kgen.pointer<index> loc(#loc3)
   pop.store %arg3, %0 : !kgen.pointer<index> loc(#loc3)
-  kgen.return loc(#loc0)
+  hlcf.return loc(#loc0)
 } loc(#loc0)
 
 // CHECK-LABEL: @mem2reg_inlined_return_value
@@ -117,7 +117,7 @@ kgen.func @mem2reg_inlined_return_value(%arg0: index, %arg1: index) {
   pop.store %arg1, %0 : !kgen.pointer<index> loc(#loc101at2)
   debuginfo.value #local_variable = %0 : !kgen.pointer<index> loc(#loc3)
   pop.store %arg0, %0 : !kgen.pointer<index> loc(#loc3)
-  kgen.return loc(#loc3)
+  hlcf.return loc(#loc3)
 } loc(#loc0)
 
 // CHECK: #[[LOC1_RAW:.*]] = loc("foo.mlir":1:0)

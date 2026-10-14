@@ -18,7 +18,7 @@
 
 """Registers gather, scatter, and indexed-access graph ops backed by the `nn.gather_scatter` kernels."""
 
-from std.math import gcd
+from std.math import ceildiv, gcd
 from std.sys import align_of
 from std.sys.info import simd_width_of
 import extensibility
@@ -27,21 +27,31 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_cpu
-from layout import IntTuple, TileTensor, UNKNOWN_VALUE, coord_to_index_list
+from layout import (
+    Coord,
+    IntTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+)
 from layout.int_tuple import _IntTupleToCoordLike
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout as TileLayout
-from nn.concat import fused_concat, _fused_dual_concat_gpu
+from nn.concat import fused_concat
 from nn.gather_scatter import (
     Axis,
+    _atomic_add,
+    _atomic_reduce,
     ScatterOobIndexStrategy,
     apply_packed_bitmask,
     gather,
     gather_nd,
     gather_nd_shape,
     gather_reduce,
+    gather_sum,
     gather_shape,
     _unsafe_normalize_neg_index as normalize_neg_index,
     scatter_elements,
@@ -76,6 +86,7 @@ from extensibility import (
     OutputVariadicTensors,
 )
 from builtin_primitives.primitives import (
+    _dense_row_major_anchor_stride,
     foreach,
     view_copy_impl,
 )
@@ -133,6 +144,254 @@ def check_axis_in_range[dim_size: Int](idx: Int) raises:
     raise Error("indices must be in range [-dim_size, dim_size)")
 
 
+@inline(.always)
+def _is_shape_index_listed[
+    indices_type: DType
+](
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int,
+    num_indices: Int,
+    rank: Int,
+    position: Int,
+) -> Bool:
+    for j in range(num_indices):
+        if (
+            Int(
+                normalize_neg_index(
+                    indices[unsafe_offset=j * indices_stride], rank
+                )
+            )
+            == position
+        ):
+            return True
+    return False
+
+
+@inline(.always)
+def _check_shape_index[
+    indices_type: DType
+](
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int,
+    j: Int,
+    rank: Int,
+):
+    var index = Int(
+        normalize_neg_index(indices[unsafe_offset=j * indices_stride], rank)
+    )
+    assert (
+        0 <= index < rank
+    ), "Shape indices must be between [-r, r-1] where r is the rank they index."
+    for k in range(j):
+        assert index != Int(
+            normalize_neg_index(indices[unsafe_offset=k * indices_stride], rank)
+        ), "Duplicate shape indices point to the same dimension."
+
+
+@inline(.always)
+def _check_shape_indices[
+    indices_type: DType
+](
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int,
+    num_indices: Int,
+    rank: Int,
+):
+    for j in range(num_indices):
+        _check_shape_index(indices, indices_stride, j, rank)
+
+
+@inline(.always)
+def _count_listed_at_or_below[
+    indices_type: DType
+](
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int,
+    num_indices: Int,
+    rank: Int,
+    position: Int,
+) -> Tuple[Int, Int]:
+    """Returns how many distinct valid listed positions are below `position`,
+    and whether `position` is listed. Out-of-range indices count toward
+    neither, and a duplicated index counts once, so the results match the
+    sequential CPU loops even when asserts are compiled out."""
+    var below = 0
+    var equal = 0
+    for j in range(num_indices):
+        var index = Int(
+            normalize_neg_index(indices[unsafe_offset=j * indices_stride], rank)
+        )
+        if index < 0 or index > position:
+            continue
+        var first = True
+        for k in range(j):
+            if (
+                Int(
+                    normalize_neg_index(
+                        indices[unsafe_offset=k * indices_stride], rank
+                    )
+                )
+                == index
+            ):
+                first = False
+                break
+        if not first:
+            continue
+        below += Int(index < position)
+        equal += Int(index == position)
+    return (below, equal)
+
+
+def _squeeze_shape[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int,
+    remove_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    remove_indices_stride: Int,
+    num_input_dims: Int,
+    num_remove_indices: Int,
+):
+    _check_shape_indices(
+        remove_indices,
+        remove_indices_stride,
+        num_remove_indices,
+        num_input_dims,
+    )
+    var final_rank = num_input_dims - num_remove_indices
+    var output_index = 0
+    for input_index in range(num_input_dims):
+        if _is_shape_index_listed(
+            remove_indices,
+            remove_indices_stride,
+            num_remove_indices,
+            num_input_dims,
+            input_index,
+        ):
+            continue
+        # Duplicate indices with asserts compiled out would overrun the output.
+        if output_index >= final_rank:
+            return
+        output[unsafe_offset=output_index * output_stride] = input[
+            unsafe_offset=input_index * input_stride
+        ]
+        output_index += 1
+
+
+def _unsqueeze_shape[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int,
+    padding_indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    padding_indices_stride: Int,
+    num_input_dims: Int,
+    num_padding_indices: Int,
+):
+    var final_rank = num_input_dims + num_padding_indices
+    _check_shape_indices(
+        padding_indices, padding_indices_stride, num_padding_indices, final_rank
+    )
+    var input_index = 0
+    for output_index in range(final_rank):
+        var dim: Scalar[dtype] = 1
+        if not _is_shape_index_listed(
+            padding_indices,
+            padding_indices_stride,
+            num_padding_indices,
+            final_rank,
+            output_index,
+        ):
+            # Invalid or duplicate indices with asserts compiled out would
+            # read past the input. Skip rather than stop so the listed
+            # positions still get their 1, as in the GPU kernel.
+            if input_index >= num_input_dims:
+                continue
+            dim = input[unsafe_offset=input_index * input_stride]
+            input_index += 1
+        output[unsafe_offset=output_index * output_stride] = dim
+
+
+# Shape vectors hold a handful of entries, so each thread handles one position
+# and scans every index itself: no shared memory, barriers, or warp ops, which
+# keeps the kernel correct for any rank and warp size. `Int` is not
+# `DevicePassable`, hence the `Int32` arguments.
+comptime _SHAPE_BLOCK = 64
+
+
+@__name(t"mo_squeeze_shape_{dtype}_{indices_type}")
+def _squeeze_shape_kernel[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int32,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int32,
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int32,
+    num_input_dims: Int32,
+    num_indices: Int32,
+):
+    var rank = Int(num_input_dims)
+    var count = Int(num_indices)
+    var i = global_idx.x
+    if i >= rank:
+        return
+    if i < count:
+        _check_shape_index(indices, Int(indices_stride), i, rank)
+    var counts = _count_listed_at_or_below(
+        indices, Int(indices_stride), count, rank, i
+    )
+    if counts[1] != 0:
+        return
+    # Duplicate or out-of-range indices with asserts compiled out would
+    # misplace the output position.
+    var out_pos = i - counts[0]
+    if out_pos < 0 or out_pos >= rank - count:
+        return
+    output[unsafe_offset=out_pos * Int(output_stride)] = input[
+        unsafe_offset=i * Int(input_stride)
+    ]
+
+
+@__name(t"mo_unsqueeze_shape_{dtype}_{indices_type}")
+def _unsqueeze_shape_kernel[
+    dtype: DType, indices_type: DType
+](
+    output: Pointer[Scalar[dtype], MutAnyOrigin],
+    output_stride: Int32,
+    input: Pointer[Scalar[dtype], MutAnyOrigin],
+    input_stride: Int32,
+    indices: Pointer[Scalar[indices_type], MutAnyOrigin],
+    indices_stride: Int32,
+    num_input_dims: Int32,
+    num_indices: Int32,
+):
+    var count = Int(num_indices)
+    var rank = Int(num_input_dims) + count
+    var o = global_idx.x
+    if o >= rank:
+        return
+    if o < count:
+        _check_shape_index(indices, Int(indices_stride), o, rank)
+    var counts = _count_listed_at_or_below(
+        indices, Int(indices_stride), count, rank, o
+    )
+    var dim: Scalar[dtype] = 1
+    if counts[1] == 0:
+        # Duplicate or out-of-range indices with asserts compiled out would
+        # read outside the input.
+        var in_pos = o - counts[0]
+        if in_pos < 0 or in_pos >= Int(num_input_dims):
+            return
+        dim = input[unsafe_offset=in_pos * Int(input_stride)]
+    output[unsafe_offset=o * Int(output_stride)] = dim
+
+
 @extensibility.register("mo.squeeze_shape")
 struct SqueezeShape:
     """Registers the `mo.squeeze_shape` graph op with the graph compiler."""
@@ -146,42 +405,44 @@ struct SqueezeShape:
         output_shape: OutputTensor[dtype=dtype, rank=1, ...],
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
         remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
-    ) capturing:
-        # remove_indices may not be sorted so our strategy is to use -1 to
-        # represent removed dimensions in a copied version of our input shape buffer
+        ctx: DeviceContext,
+    ) capturing raises:
+        """Removes the dimensions at `remove_indices` from `input_shape`.
+
+        Raises:
+            If the GPU kernel launch fails.
+        """
         var num_input_dims = input_shape.dim_size[0]()
         var num_remove_indices = remove_indices.dim_size[0]()
-        var final_rank = num_input_dims - num_remove_indices
-
         assert (
-            final_rank == output_shape.dim_size[0]()
+            num_input_dims - num_remove_indices == output_shape.dim_size[0]()
         ), "Incorrect output shape."
 
-        comptime MAX_VECTOR_LIMIT = 12
-        assert (
-            num_input_dims <= MAX_VECTOR_LIMIT
-        ), "Only support shape vectors up to rank-12."
-        var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
-        for i in range(num_input_dims):
-            input_shape_copy[i] = Int(input_shape[i])
-
-        # Mark every squeezed dimension as -1 in our copy of the shape tensor
-        for remove_index_index in range(num_remove_indices):
-            var remove_index = Int(remove_indices[remove_index_index])
-            var remove_index_normalize = remove_index + num_input_dims * Int(
-                remove_indices[remove_index_index] < 0
+        comptime if is_cpu[target]():
+            _squeeze_shape(
+                output_shape.unsafe_ptr(),
+                output_shape.stride_length[0](),
+                input_shape.unsafe_ptr(),
+                input_shape.stride_length[0](),
+                remove_indices.unsafe_ptr(),
+                remove_indices.stride_length[0](),
+                num_input_dims,
+                num_remove_indices,
             )
-            input_shape_copy[remove_index_normalize] = -1
-
-        # # Copy over the non -1 dimensions
-        var output_shape_index = 0
-        for input_shape_index in range(num_input_dims):
-            if input_shape_copy[input_shape_index] == -1:
-                continue
-            output_shape[output_shape_index] = Scalar[dtype](
-                input_shape_copy[input_shape_index]
+        else:
+            comptime kernel = _squeeze_shape_kernel[dtype, indices_type]
+            ctx.enqueue_function[kernel](
+                output_shape.unsafe_ptr(),
+                Int32(output_shape.stride_length[0]()),
+                input_shape.unsafe_ptr(),
+                Int32(input_shape.stride_length[0]()),
+                remove_indices.unsafe_ptr(),
+                Int32(remove_indices.stride_length[0]()),
+                Int32(num_input_dims),
+                Int32(num_remove_indices),
+                grid_dim=max(ceildiv(num_input_dims, _SHAPE_BLOCK), 1),
+                block_dim=_SHAPE_BLOCK,
             )
-            output_shape_index += 1
 
 
 @extensibility.register_shape_function("mo.squeeze_shape")
@@ -215,44 +476,47 @@ struct UnsqueezeShape:
         output_shape: OutputTensor[dtype=dtype, rank=1, ...],
         input_shape: InputTensor[dtype=dtype, rank=1, ...],
         padding_indices: InputTensor[dtype=indices_type, rank=1, ...],
-    ) capturing:
-        # represent uninitialized dimensions, add the padding dimensions, and copy
-        # over the remaining dimensions later.
+        ctx: DeviceContext,
+    ) capturing raises:
+        """Inserts size-1 dimensions into `input_shape` at `padding_indices`.
+
+        Raises:
+            If the GPU kernel launch fails.
+        """
         var num_input_dims = input_shape.dim_size[0]()
         var num_padding_indices = padding_indices.dim_size[0]()
-        var final_rank = num_input_dims + num_padding_indices
         assert (
-            final_rank == output_shape.dim_size[0]()
+            num_input_dims + num_padding_indices == output_shape.dim_size[0]()
         ), "Incorrect output shape."
-        for output_index in range(final_rank):
-            output_shape[output_index] = -1
 
-        for padding_index_index in range(num_padding_indices):
-            var padding_index = Int(padding_indices[padding_index_index])
-            var padding_index_normalize = padding_index + final_rank * Int(
-                padding_indices[padding_index_index] < 0
+        comptime if is_cpu[target]():
+            _unsqueeze_shape(
+                output_shape.unsafe_ptr(),
+                output_shape.stride_length[0](),
+                input_shape.unsafe_ptr(),
+                input_shape.stride_length[0](),
+                padding_indices.unsafe_ptr(),
+                padding_indices.stride_length[0](),
+                num_input_dims,
+                num_padding_indices,
             )
-
-            assert (
-                padding_index_normalize >= 0
-                and padding_index_normalize < final_rank
-            ), (
-                "Padding indices must be between [-r, r-1] where r is the"
-                " final output rank."
+        else:
+            comptime kernel = _unsqueeze_shape_kernel[dtype, indices_type]
+            ctx.enqueue_function[kernel](
+                output_shape.unsafe_ptr(),
+                Int32(output_shape.stride_length[0]()),
+                input_shape.unsafe_ptr(),
+                Int32(input_shape.stride_length[0]()),
+                padding_indices.unsafe_ptr(),
+                Int32(padding_indices.stride_length[0]()),
+                Int32(num_input_dims),
+                Int32(num_padding_indices),
+                grid_dim=max(
+                    ceildiv(num_input_dims + num_padding_indices, _SHAPE_BLOCK),
+                    1,
+                ),
+                block_dim=_SHAPE_BLOCK,
             )
-            assert output_shape[padding_index_normalize] == -1, (
-                "Duplicate padding indices point to the same dimension in"
-                " the final output shape."
-            )
-            output_shape[padding_index_normalize] = 1
-
-        # Copy over the remaining shapes
-        var orig_shape_index = 0
-        for output_shape_index in range(final_rank):
-            if output_shape[output_shape_index] != -1:
-                continue
-            output_shape[output_shape_index] = input_shape[orig_shape_index]
-            orig_shape_index += 1
 
 
 @extensibility.register_shape_function("mo.unsqueeze_shape")
@@ -333,7 +597,7 @@ struct ScatterNDSkipNegIndices:
         scatter_nd_generator[
             oob_index_strategy=ScatterOobIndexStrategy.SKIP,
             target=target,
-            reduce_fn=None,
+            atomic_update_fn=None,
             _trace_description="scatter_nd.skip_neg_indices",
         ](
             input.to_tile_tensor[.int64](),
@@ -358,17 +622,9 @@ struct ScatterNDAdd:
         indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        @inline(.always)
-        def reduce_fn[
-            dtype: DType, width: SIMDLength
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-            dtype, width
-        ]:
-            return lhs + rhs
-
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_add,
             _trace_description="scatter_nd.add",
         ](
             input.to_tile_tensor[.int64](),
@@ -419,7 +675,7 @@ struct ScatterNDMul:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.mul",
         ](
             input.to_tile_tensor[.int64](),
@@ -470,7 +726,7 @@ struct ScatterNDMin:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.min",
         ](
             input.to_tile_tensor[.int64](),
@@ -521,7 +777,7 @@ struct ScatterNDMax:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.max",
         ](
             input.to_tile_tensor[.int64](),
@@ -616,7 +872,7 @@ struct Scatter:
     ) raises:
         check_axis_in_range[output.rank](axis)
 
-        scatter_elements(
+        scatter_elements[target=target](
             input,
             indices,
             updates,
@@ -662,15 +918,7 @@ struct ScatterAdd:
     ) raises:
         check_axis_in_range[output.rank](Int(axis))
 
-        @inline(.always)
-        def reduce_func[
-            dtype: DType, width: SIMDLength
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-            dtype, width
-        ]:
-            return lhs + rhs
-
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[target=target, atomic_update_fn=_atomic_add](
             input,
             indices,
             updates,
@@ -723,7 +971,9 @@ struct ScatterMax:
         ]:
             return max(lhs, rhs)
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,
@@ -776,7 +1026,9 @@ struct ScatterMin:
         ]:
             return min(lhs, rhs)
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,
@@ -829,7 +1081,9 @@ struct ScatterMul:
         ]:
             return lhs * rhs
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,
@@ -991,7 +1245,6 @@ def broadcast_shape_fn(
 
 
 @extensibility.register("mo.static.broadcast_to")
-@extensibility.view_kernel
 struct StaticBroadcastTo:
     """Registers the `mo.static.broadcast_to` graph op with the graph compiler.
     """
@@ -1038,7 +1291,7 @@ struct StaticBroadcastTo:
         return new_strides
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         in_rank: Int,
         out_rank: Int,
@@ -1079,9 +1332,7 @@ struct StaticBroadcastTo:
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
-        var x_view = Self.update_input_view[z._static_shape_tuple](
-            x, output_shape
-        )
+        var x_view = Self.input_view[z._static_shape_tuple](x, output_shape)
 
         view_copy_impl[
             _trace_name=_trace_name,
@@ -1090,12 +1341,11 @@ struct StaticBroadcastTo:
 
 
 @extensibility.register("mo.static.reshape")
-@extensibility.view_kernel
 struct StaticReshape:
     """Registers the `mo.static.reshape` graph op with the graph compiler."""
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         output_rank: Int,
         //,
@@ -1136,7 +1386,7 @@ struct StaticReshape:
         shape: IndexList[output_rank],
         ctx: DeviceContext,
     ) raises:
-        var view_tensor = Self.update_input_view[output._static_shape_tuple](
+        var view_tensor = Self.input_view[output._static_shape_tuple](
             input, shape
         )
 
@@ -1173,7 +1423,6 @@ def reshape_shape_fn[
 
 
 @extensibility.register("mo.transpose")
-@extensibility.view_kernel
 struct Transpose:
     """Registers the `mo.transpose` graph op with the graph compiler."""
 
@@ -1195,7 +1444,7 @@ struct Transpose:
         return {new_shape, new_stride}
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -1236,7 +1485,7 @@ struct Transpose:
         permutations: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        var view = Self.update_input_view[
+        var view = Self.input_view[
             output._static_shape_tuple, static_permutations
         ](input, permutations)
 
@@ -1282,7 +1531,6 @@ def transpose_shape_fn(
 
 
 @extensibility.register("mo.slice")
-@extensibility.view_kernel
 struct Slice:
     """Registers the `mo.slice` graph op with the graph compiler."""
 
@@ -1290,6 +1538,7 @@ struct Slice:
     def get_view_alignment[
         rank: Int,
         dtype: DType,
+        input_shape: IntTuple,
         input_strides: IntTuple,
         static_starts: IntTuple,
         static_steps: IntTuple,
@@ -1299,6 +1548,13 @@ struct Slice:
         comptime stride_types = _IntTupleToCoordLike[.int, input_strides]
         comptime start_types = _IntTupleToCoordLike[.int, static_starts]
         comptime step_types = _IntTupleToCoordLike[.int, static_steps]
+
+        # A stride that is only known at runtime still moves the pointer by a
+        # whole multiple of this one, so it bounds the alignment the same way a
+        # static stride does. 0 when nothing can be established.
+        comptime anchor = _dense_row_major_anchor_stride(
+            rank, input_shape, input_strides
+        )
 
         var alignment = input_alignment
         comptime for i in range(rank):
@@ -1314,32 +1570,46 @@ struct Slice:
                 return 1
 
             comptime if start_types[i].static_value != 0:
-                comptime if not stride_types[i].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    start_types[i].static_value
-                    * stride_types[i].static_value
-                    * align_of[dtype](),
-                )
+                comptime if stride_types[i].is_static_value:
+                    alignment = gcd(
+                        alignment,
+                        start_types[i].static_value
+                        * stride_types[i].static_value
+                        * align_of[dtype](),
+                    )
+                else:
+                    comptime if anchor == 0:
+                        return 1
+                    alignment = gcd(
+                        alignment,
+                        start_types[i].static_value
+                        * anchor
+                        * align_of[dtype](),
+                    )
 
             # Stepping along a non-innermost dimension moves the pointer by
             # `step[i] * strides[i]` elements, so that stride bounds the
             # alignment.
             comptime if i != rank - 1:
-                comptime if not stride_types[i].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    step_types[i].static_value
-                    * stride_types[i].static_value
-                    * align_of[dtype](),
-                )
+                comptime if stride_types[i].is_static_value:
+                    alignment = gcd(
+                        alignment,
+                        step_types[i].static_value
+                        * stride_types[i].static_value
+                        * align_of[dtype](),
+                    )
+                else:
+                    comptime if anchor == 0:
+                        return 1
+                    alignment = gcd(
+                        alignment,
+                        step_types[i].static_value * anchor * align_of[dtype](),
+                    )
 
         return alignment
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -1368,6 +1638,7 @@ struct Slice:
                 Self.get_view_alignment[
                     rank,
                     dtype,
+                    input._static_shape_tuple,
                     input._static_strides_tuple,
                     static_starts,
                     static_steps,
@@ -1408,7 +1679,7 @@ struct Slice:
         steps: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        var view_tensor = Self.update_input_view[
+        var view_tensor = Self.input_view[
             output._static_shape_tuple, static_starts, static_steps
         ](input, starts, stops, steps)
 
@@ -1542,30 +1813,26 @@ struct Gather:
     ) capturing raises:
         @inline(.always)
         def input_fn[
-            width: Int, _rank: Int, element_alignment: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[output.dtype, width]:
+            width: Int, element_alignment: Int
+        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
             return input._lambda_load[
                 width=width, element_alignment=element_alignment
-            ](rebind[IndexList[input.rank]](coords))
+            ](coords)
 
         @inline(.always)
         def indices_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var indices} -> SIMD[indices.dtype, width]:
-            return indices._fused_load[width=width](
-                rebind[IndexList[indices.rank]](coords)
-            )
+            width: Int
+        ](coords: Coord) {var indices} -> SIMD[indices.dtype, width]:
+            return indices._fused_load[width=width](coords)
 
         @inline(.always)
         def output_fn[
-            width: SIMDLength, _rank: Int, element_alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[output.dtype, width]) {
-            var output
-        }:
+            width: SIMDLength, element_alignment: Int
+        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[
                 width=width, element_alignment=element_alignment
             ](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -1611,21 +1878,16 @@ struct GatherSum:
         indices: InputTensor[dtype=.int32, ...],
         ctx: DeviceContext,
     ) raises:
-        comptime assert is_cpu[target](), "only valid on CPUs"
+        """Fused gather (axis 0) + sum reduction (axis 1).
 
-        def add[
-            dtype: DType, simd_width: SIMDLength
-        ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
-            dtype, simd_width
-        ]:
-            return x + y
-
-        gather_reduce[output.dtype, 0, 1, simd_width_of[output.dtype](), add](
+        Dispatches to the CPU `gather_reduce` kernel or the GPU
+        `gather_sum` kernel based on `target`.
+        """
+        gather_sum[target=target](
             output.to_tile_tensor[.int64](),
             input.to_tile_tensor[.int64](),
             indices.to_tile_tensor[.int64](),
-            0,
-            Optional[DeviceContext](ctx),
+            ctx,
         )
 
 
@@ -1635,16 +1897,20 @@ struct Tile:
 
     @staticmethod
     def execute[
-        dtype: DType, rank: Int
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         repeats: InputTensor,
+        ctx: DeviceContext,
     ) raises:
-        tile(
+        tile[target=target](
             input.to_tile_tensor[.int64](),
             repeats.to_tile_tensor[.int64](),
             output.to_tile_tensor[.int64](),
+            ctx,
         )
 
 
@@ -1713,14 +1979,14 @@ struct Concat:
         @__parameter
         @__copy_capture(inputs)
         def inputs_lambda[
-            input_index: Int, width: Int, _rank: Int, alignment: Int = 1
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            input_index: Int, width: Int, alignment: Int = 1
+        ](coords: Coord) -> SIMD[dtype, width]:
             comptime assert (
                 input_index < inputs.size
             ), "tensor index out of bounds"
             return inputs[input_index]._lambda_load[
                 width=width, element_alignment=alignment
-            ](rebind[IndexList[rank]](indices))
+            ](coords)
 
         # Copy-capture `output` for the same reason as `inputs` above: a
         # by-reference capture leaves the device kernel holding a host pointer
@@ -1729,10 +1995,10 @@ struct Concat:
         @__parameter
         @__copy_capture(output)
         def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            _dtype: DType, width: SIMDLength, *, alignment: Int = 1
+        ](coords: Coord, value: SIMD[_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](indices),
+                coords,
                 rebind[SIMD[output.dtype, width]](value),
             )
 
@@ -1745,7 +2011,7 @@ struct Concat:
             target=target,
         ](
             input_shapes,
-            output.to_tile_tensor[.int64](),
+            output.runtime_layout(),
             ctx,
         )
 
@@ -1760,321 +2026,6 @@ def concat_shape_fn[
 ) raises -> IndexList[rank]:
     """Computes the output shape for the `mo.concat` graph op."""
     return concat_shape_impl(axis, inputs)
-
-
-@extensibility.register("mo.composite.concat_slice")
-struct FusedConcatSlice:
-    """Registers the `mo.composite.concat_slice` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-        static_starts: IntTuple,
-        static_steps: IntTuple,
-        axis: Int,
-    ](
-        concat_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        slice_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
-
-        check_axis_in_range[axis, rank]()
-
-        comptime for i in range(inputs.size):
-            input_shapes[i] = inputs[i].shape()
-
-        # Copy-capture the captured tensors into the device-kernel closures.
-        # A by-reference capture leaves the GPU kernel holding host-side
-        # pointers on Metal, so it reads garbage/zeros (the concat>=4-input
-        # all-zeros bug). Copy-capture brings the device pointers into the
-        # closure.
-        @inline(.always)
-        @__parameter
-        @__copy_capture(inputs)
-        def inputs_lambda[
-            input_index: Int,
-            width: Int,
-            _rank: Int,
-            alignment: Int = 1,
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            comptime assert (
-                input_index < inputs.size
-            ), "tensor index out of bounds"
-            return inputs[input_index]._lambda_load[
-                width=width, element_alignment=alignment
-            ](rebind[IndexList[rank]](indices))
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(concat_output, slice_output)
-        def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
-            var concat_indices = rebind[IndexList[rank]](indices)
-
-            # Write to the full concat output.
-            concat_output._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                concat_indices,
-                rebind[SIMD[concat_output.dtype, width]](value),
-            )
-
-            # Check if the current position falls within the slice range.
-            # The inner dimension is guaranteed not to be sliced by the pattern,
-            # so we only check the outer rank-1 dimensions.
-            var slice_indices = IndexList[rank]()
-
-            comptime slice_in_shape = concat_output._static_shape_tuple
-            comptime slice_out_shape = slice_output._static_shape_tuple
-
-            comptime for i in range(rank):
-                comptime start = Int(static_starts[i])
-                comptime step = Int(static_steps[i])
-
-                comptime dim_not_sliced = i == rank - 1 or (
-                    start == 0
-                    and step == 1
-                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
-                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
-                )
-
-                comptime if dim_not_sliced:
-                    slice_indices[i] = concat_indices[i]
-                else:
-                    var start_norm = (
-                        start if start
-                        >= 0 else start + concat_output.dim_size[i]()
-                    )
-                    if (indices[i] - start_norm) % step != 0:
-                        return
-                    var slice_idx = (indices[i] - start_norm) // step
-                    if slice_idx < 0 or slice_idx >= slice_output.dim_size[i]():
-                        return
-                    slice_indices[i] = slice_idx
-
-            slice_output._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                slice_indices,
-                rebind[SIMD[slice_output.dtype, width]](value),
-            )
-
-        fused_concat[
-            dtype,
-            rank,
-            inputs_lambda,
-            epilogue_wrapper,
-            axis=normalize_neg_index(axis, rank),
-            target=target,
-        ](
-            input_shapes,
-            concat_output.to_tile_tensor[.int64](),
-            ctx,
-        )
-
-
-@extensibility.register("mo.dual_fused_concat_slice")
-struct DualFusedConcatSlice:
-    """Registers the `mo.dual_fused_concat_slice` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-        num_inputs_0: Int,
-        static_starts_0: IntTuple,
-        static_steps_0: IntTuple,
-        static_starts_1: IntTuple,
-        static_steps_1: IntTuple,
-        axis: Int,
-    ](
-        concat_output_0: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        slice_output_0: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        concat_output_1: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        slice_output_1: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        comptime num_inputs_1 = inputs.size - num_inputs_0
-        check_axis_in_range[axis, rank]()
-
-        var input_shapes_0 = StaticTuple[IndexList[rank], num_inputs_0]()
-        comptime for i in range(num_inputs_0):
-            input_shapes_0[i] = inputs[i].shape()
-
-        var input_shapes_1 = StaticTuple[IndexList[rank], num_inputs_1]()
-        comptime for i in range(num_inputs_1):
-            input_shapes_1[i] = inputs[num_inputs_0 + i].shape()
-
-        # Copy-capture the captured tensors into the device-kernel closures.
-        # A by-reference capture leaves the GPU kernel holding host-side
-        # pointers on Metal, so it reads garbage/zeros. Copy-capture brings
-        # the device pointers into the closure.
-        @inline(.always)
-        @__parameter
-        @__copy_capture(inputs)
-        def inputs_lambda_0[
-            input_index: Int,
-            width: Int,
-            _rank: Int,
-            alignment: Int = 1,
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            comptime assert (
-                input_index < num_inputs_0
-            ), "concat 0: tensor index out of bounds"
-            return inputs[input_index]._lambda_load[
-                width=width, element_alignment=alignment
-            ](rebind[IndexList[rank]](indices))
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(inputs)
-        def inputs_lambda_1[
-            input_index: Int,
-            width: Int,
-            _rank: Int,
-            alignment: Int = 1,
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            comptime assert (
-                input_index < num_inputs_1
-            ), "concat 1: tensor index out of bounds"
-            return inputs[num_inputs_0 + input_index]._lambda_load[
-                width=width, element_alignment=alignment
-            ](rebind[IndexList[rank]](indices))
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(concat_output_0, slice_output_0)
-        def epilogue_0[
-            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
-            var concat_indices = rebind[IndexList[rank]](indices)
-
-            concat_output_0._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                concat_indices,
-                rebind[SIMD[concat_output_0.dtype, width]](value),
-            )
-
-            var slice_indices = IndexList[rank]()
-            comptime slice_in_shape = concat_output_0._static_shape_tuple
-            comptime slice_out_shape = slice_output_0._static_shape_tuple
-
-            comptime for i in range(rank):
-                comptime start = Int(static_starts_0[i])
-                comptime step = Int(static_steps_0[i])
-
-                comptime dim_not_sliced = i == rank - 1 or (
-                    start == 0
-                    and step == 1
-                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
-                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
-                )
-
-                comptime if dim_not_sliced:
-                    slice_indices[i] = concat_indices[i]
-                else:
-                    var start_norm = (
-                        start if start
-                        >= 0 else start + concat_output_0.dim_size[i]()
-                    )
-                    if (indices[i] - start_norm) % step != 0:
-                        return
-                    var slice_idx = (indices[i] - start_norm) // step
-                    if (
-                        slice_idx < 0
-                        or slice_idx >= slice_output_0.dim_size[i]()
-                    ):
-                        return
-                    slice_indices[i] = slice_idx
-
-            slice_output_0._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                slice_indices,
-                rebind[SIMD[slice_output_0.dtype, width]](value),
-            )
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(concat_output_1, slice_output_1)
-        def epilogue_1[
-            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
-            var concat_indices = rebind[IndexList[rank]](indices)
-
-            concat_output_1._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                concat_indices,
-                rebind[SIMD[concat_output_1.dtype, width]](value),
-            )
-
-            var slice_indices = IndexList[rank]()
-            comptime slice_in_shape = concat_output_1._static_shape_tuple
-            comptime slice_out_shape = slice_output_1._static_shape_tuple
-
-            comptime for i in range(rank):
-                comptime start = Int(static_starts_1[i])
-                comptime step = Int(static_steps_1[i])
-
-                comptime dim_not_sliced = i == rank - 1 or (
-                    start == 0
-                    and step == 1
-                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
-                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
-                )
-
-                comptime if dim_not_sliced:
-                    slice_indices[i] = concat_indices[i]
-                else:
-                    var start_norm = (
-                        start if start
-                        >= 0 else start + concat_output_1.dim_size[i]()
-                    )
-                    if (indices[i] - start_norm) % step != 0:
-                        return
-                    var slice_idx = (indices[i] - start_norm) // step
-                    if (
-                        slice_idx < 0
-                        or slice_idx >= slice_output_1.dim_size[i]()
-                    ):
-                        return
-                    slice_indices[i] = slice_idx
-
-            slice_output_1._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                slice_indices,
-                rebind[SIMD[slice_output_1.dtype, width]](value),
-            )
-
-        _fused_dual_concat_gpu[
-            rank,
-            dtype,
-            inputs_lambda_0,
-            epilogue_0,
-            num_inputs_0,
-            inputs_lambda_1,
-            epilogue_1,
-            num_inputs_1,
-        ](
-            normalize_neg_index(axis, rank),
-            input_shapes_0,
-            concat_output_0.to_tile_tensor[.int64](),
-            input_shapes_1,
-            concat_output_1.to_tile_tensor[.int64](),
-            ctx,
-        )
 
 
 @extensibility.register("mo.split")
@@ -2252,7 +2203,7 @@ struct AdvancedIndexingGetItem:
         @inline(.always)
         def input_tensor_fn[
             dtype: DType, width: Int
-        ](idx: IndexList[input_rank]) {var input_tensor} -> SIMD[dtype, width]:
+        ](idx: Coord) {var input_tensor} -> SIMD[dtype, width]:
             return rebind[SIMD[dtype, width]](
                 input_tensor._fused_load[width](idx)
             )
@@ -2260,7 +2211,7 @@ struct AdvancedIndexingGetItem:
         @inline(.always)
         def indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) {var indices} -> Int:
+        ](coordinates: Coord) {var indices} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
@@ -2268,6 +2219,7 @@ struct AdvancedIndexingGetItem:
 
         advanced_indexing_getitem[
             input_rank=input_rank,
+            index_rank=index_rank,
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
             target=target,
@@ -2337,13 +2289,13 @@ struct AdvancedIndexingSetItemInplace:
         @inline(.always)
         def updates_tensor_fn[
             dtype: DType, width: Int
-        ](idx: IndexList[updates_rank]) {var updates} -> SIMD[dtype, width]:
+        ](idx: Coord) {var updates} -> SIMD[dtype, width]:
             return rebind[SIMD[dtype, width]](updates._fused_load[width](idx))
 
         @inline(.always)
         def indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) {var indices} -> Int:
+        ](coordinates: Coord) {var indices} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
@@ -2398,22 +2350,19 @@ struct AdvancedIndexingSetItem:
         """
 
         # First copy over input tensor into the output
-        @__parameter
         @inline(.always)
         def func[
             width: Int, element_alignment: Int
-        ](idx: IndexList[output_tensor.rank]) -> SIMD[
+        ](idx: IndexList[output_tensor.rank]) {var} -> SIMD[
             output_tensor.dtype, width
         ]:
             return input_tensor._fused_load[
                 width, element_alignment=element_alignment
             ](idx)
 
-        foreach[
-            func,
-            target=target,
-            _trace_name=_trace_name + "_p1/2_copy",
-        ](output_tensor, ctx)
+        foreach[target=target, _trace_name=_trace_name + "_p1/2_copy"](
+            func, output_tensor, ctx
+        )
 
         # Then run the updates in-place.
         # For type checking

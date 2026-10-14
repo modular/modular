@@ -14,11 +14,7 @@
 from . import DeviceContext
 from std.ffi import external_call
 
-from max.gpu.host.device_context import (
-    _CString,
-    _checked,
-    _DeviceContextPtr,
-)
+from max.gpu.host.device_context import _CString, _checked
 
 
 struct _MTLDevice:

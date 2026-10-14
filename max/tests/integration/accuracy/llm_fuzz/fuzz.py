@@ -242,6 +242,55 @@ Examples:
         help="K2VV benchmark mode: quick=500 samples, full=2000 (default: quick)",
     )
 
+    needle_group = p.add_argument_group(
+        "needle prefix cache",
+        "Size of the needle_prefix_cache scenario (defaults run in minutes; "
+        "raise them to exercise eviction and long prompts)",
+    )
+    needle_group.add_argument(
+        "--needle-conversations",
+        type=int,
+        default=8,
+        metavar="N",
+        help="Conversations advanced side by side (default: 8)",
+    )
+    needle_group.add_argument(
+        "--needle-long-conversations",
+        type=int,
+        default=2,
+        metavar="N",
+        help=(
+            "Conversations with a haystack of half the context window, up to "
+            "128K tokens, run alongside the short ones (default: 2, 0 to skip)"
+        ),
+    )
+    needle_group.add_argument(
+        "--needle-turns",
+        type=int,
+        default=3,
+        metavar="N",
+        help="Recall turns after the cold prefill (default: 3)",
+    )
+    needle_group.add_argument(
+        "--needle-strict-cache-hits",
+        action="store_true",
+        help=(
+            "Fail when any follow-up turn reuses less than its whole previous "
+            "prompt, for a deployment expected to serve every reload (a KV "
+            "connector behind a GPU pool sized to evict)"
+        ),
+    )
+    needle_group.add_argument(
+        "--needle-context-tokens",
+        type=int,
+        default=None,
+        metavar="TOKENS",
+        help=(
+            "Approximate haystack size per conversation (default: a quarter "
+            "of the context window, at most 2048)"
+        ),
+    )
+
     # Circuit breaker
     p.add_argument(
         "--circuit-breaker",
@@ -387,6 +436,21 @@ def select_scenarios(
 
 
 async def run(args: argparse.Namespace) -> int:
+    for flag in (
+        "needle_conversations",
+        "needle_turns",
+        "needle_context_tokens",
+    ):
+        value = getattr(args, flag)
+        if value is not None and value < 1:
+            print(
+                f"{RED}--{flag.replace('_', '-')} must be >= 1, got {value}{RESET}"
+            )
+            return 1
+    if args.needle_long_conversations < 0:
+        print(f"{RED}--needle-long-conversations must be >= 0{RESET}")
+        return 1
+
     model_config = build_model_config(
         args.model,
         no_hf_fetch=args.no_hf_fetch,
@@ -405,6 +469,11 @@ async def run(args: argparse.Namespace) -> int:
         model_config=model_config,
         verbose=args.verbose,
         image_stress_nodes=args.image_stress_nodes,
+        needle_conversations=args.needle_conversations,
+        needle_long_conversations=args.needle_long_conversations,
+        needle_turns=args.needle_turns,
+        needle_context_tokens=args.needle_context_tokens,
+        needle_strict_cache_hits=args.needle_strict_cache_hits,
     )
 
     exclude_groups: set[str] = set()

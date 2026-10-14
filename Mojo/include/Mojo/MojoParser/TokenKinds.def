@@ -113,8 +113,6 @@ TOK_KEYWORD(_)
 TOK_KEYWORD(and)
 TOK_KEYWORD(as)
 TOK_KEYWORD(assert)
-TOK_KEYWORD(async)
-TOK_KEYWORD(await)
 TOK_KEYWORD(break)
 TOK_KEYWORD(case)
 TOK_KEYWORD(class)
@@ -154,6 +152,8 @@ TOK_KEYWORD(var) // Mojo extension.
 TOK_KEYWORD(while)
 TOK_KEYWORD(with)
 TOK_KEYWORD(yield)
+TOK_KEYWORD(__async) // Mojo extension: unstable async support.
+TOK_KEYWORD(__await) // Mojo extension: unstable async support.
 TOK_KEYWORD(__extension)  // Mojo extension extension.
 TOK_KEYWORD(__generator_type) // Mojo extension: generator type literal.
 TOK_KEYWORD(__get_address_as_uninit_lvalue)
@@ -168,7 +168,8 @@ TOK_KEYWORD(__functions_in_module)
 TOK_KEYWORD(__get_current_function_name)
 TOK_KEYWORD(__struct_field_ref)
 TOK_KEYWORD(__is_run_in_comptime_interpreter)
-TOK_KEYWORD(__match) // Experimental match statement (pattern matching).
+TOK_KEYWORD(__match) // Deprecated spelling of match (TODO: remove in Mojo 1.2).
+TOK_KEYWORD(__enum)  // Experimental enum declaration.
 
 #ifndef MODULAR_PRODUCTION
 TOK_KEYWORD(__mojo_crash) // Crashes the compiler. Not shipped to users.

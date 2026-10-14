@@ -32,12 +32,12 @@ with open("my_file.txt", "r") as f:
 """
 
 from std.format._utils import _FlushingWriteBuffer
-from std.os import PathLike as stdPathLike, abort, makedirs, remove
+from std.os import PathLike as stdPathLike, abort, makedirs
 from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
 from std.ffi import c_int, c_ssize_t, external_call
 from std.sys import size_of
-from std.sys._libc_errno import ErrNo, get_errno
+from std.sys._libc_errno import get_errno
 from std.sys.info import platform_map
 
 from std.collections import Span
@@ -96,23 +96,24 @@ def _open_file(path: String, mode: String) raises -> Int:
     var flags: Int
     var create_dirs = False
 
-    if mode == "r":
-        flags = O_RDONLY | O_CLOEXEC
-    elif mode == "w":
-        flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
-        create_dirs = True
-    elif mode == "rw":
-        flags = O_RDWR | O_CREAT | O_CLOEXEC
-        create_dirs = True
-    elif mode == "a":
-        flags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
-        create_dirs = True
-    else:
-        raise Error(
-            'invalid mode: "'
-            + mode
-            + '". Can only be one of: {"r", "w", "rw", "a"}'
-        )
+    match mode:
+        case "r":
+            flags = O_RDONLY | O_CLOEXEC
+        case "w":
+            flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
+            create_dirs = True
+        case "rw":
+            flags = O_RDWR | O_CREAT | O_CLOEXEC
+            create_dirs = True
+        case "a":
+            flags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
+            create_dirs = True
+        case _:
+            raise Error(
+                'invalid mode: "'
+                + mode
+                + '". Can only be one of: {"r", "w", "rw", "a"}'
+            )
 
     # Create parent directories if needed
     if create_dirs:
@@ -311,7 +312,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         var fd = self._get_raw_fd()
         var bytes_read = external_call["read", c_ssize_t](
-            fd,
+            c_int(fd),
             buffer.unsafe_ptr(),
             len(buffer) * size_of[dtype](),
         )
@@ -385,7 +386,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             # signifies EOF with a result of zero bytes.
             var chunk_bytes_to_read = len(result) - num_read
             var chunk_bytes_read = external_call["read", c_ssize_t](
-                fd,
+                c_int(fd),
                 result.unsafe_ptr().unsafe_offset(num_read),
                 chunk_bytes_to_read,
             )
@@ -499,7 +500,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         var fd = self._get_raw_fd()
         var bytes_written = external_call["write", c_ssize_t](
-            fd, bytes.unsafe_ptr(), len(bytes)
+            c_int(fd), bytes.unsafe_ptr(), len(bytes)
         )
 
         if bytes_written < 0:
@@ -589,7 +590,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         while total_written < len(bytes):
             var fd = self._get_raw_fd()
             var bytes_written = external_call["write", c_ssize_t](
-                fd,
+                c_int(fd),
                 bytes.unsafe_ptr().unsafe_offset(total_written),
                 len(bytes) - total_written,
             )
@@ -628,7 +629,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         assert self.handle >= 0, "invalid file handle in write()"
 
-        var file = FileDescriptor(self._get_raw_fd())
+        var file = FileDescriptor(self)
         var buffer = _FlushingWriteBuffer(file)
 
         comptime for i in range(args.__len__()):
@@ -659,7 +660,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         while total_written < len:
             var current_ptr = ptr.unsafe_offset(total_written)
             var bytes_written = external_call["write", c_ssize_t](
-                fd, current_ptr, len - total_written
+                c_int(fd), current_ptr, len - total_written
             )
 
             if bytes_written < 0:

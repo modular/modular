@@ -50,6 +50,7 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     MLAKVCacheParams,
     PagedCacheValues,
+    packed_page_stride,
 )
 
 LINE = "=" * 80
@@ -713,6 +714,7 @@ def bench_max(
                 lookup_table.tensor,
                 max_prompt_length.tensor,
                 max_cache_length.tensor,
+                page_stride=packed_page_stride(blocks.buffer),
             )
 
             result = flare_mla_decode_ragged_scaled(
@@ -765,6 +767,7 @@ def bench_max(
                 lookup_table.tensor,
                 max_prompt_length.tensor,
                 max_cache_length.tensor,
+                page_stride=packed_page_stride(blocks.buffer),
             )
 
             result = flare_mla_decode_ragged(

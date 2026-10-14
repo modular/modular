@@ -338,7 +338,9 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         # don't tokenize the full ~25k ShareGPT pool on every benchmark run.
         required_prompts = max_num_unique_sys_prompt + num_requests
         candidate_pool = prompts[: max(required_prompts * 4, 64)]
-        encoded = pool.map(_encode_ids, candidate_pool)
+        encoded = pool.map(
+            _encode_ids, candidate_pool, desc="random: tokenizing prompts"
+        )
         tokenized_prompts: list[list[int]] = [
             ids for ids in encoded if len(ids) >= 4
         ][:required_prompts]
@@ -628,7 +630,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         id_lists.extend(
             p.sys_prompt.ids for p in pending if p.sys_prompt is not None
         )
-        decoded = pool.decode_texts(id_lists)
+        decoded = pool.decode_texts(id_lists, desc="random: decoding prompts")
 
         sys_decoded_iter = iter(decoded[len(pending) :])
         for p, prompt_text in zip(
@@ -642,7 +644,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         texts.extend(
             p.sys_prompt.text for p in pending if p.sys_prompt is not None
         )
-        lens = pool.encode_lens(texts)
+        lens = pool.encode_lens(texts, desc="random: measuring prompts")
 
         sys_lens_iter = iter(lens[len(pending) :])
         for p, plen in zip(pending, lens[: len(pending)], strict=True):

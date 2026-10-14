@@ -38,6 +38,7 @@ from std.math.uutils import ufloordiv
 from max.gpu import block_idx, grid_dim
 from max.gpu.primitives.cluster import elect_one_sync
 from max.gpu.memory import fence_async_view_proxy
+from layout import TensorEngine
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
@@ -135,6 +136,8 @@ struct GroupedWorkIterator[
     tile_k: Int,
     max_groups: Int,
     cta_group: Int = 1,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](Copyable, Iterable, Iterator, RegisterPassable):
     """Per-warp work iterator for grouped GEMM using __next__-style iteration.
 
@@ -151,6 +154,7 @@ struct GroupedWorkIterator[
         tile_k: K dimension of input tiles.
         max_groups: Maximum number of groups.
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
 
     Usage:
         var work_iter = scheduler.work_iterator()
@@ -190,7 +194,9 @@ struct GroupedWorkIterator[
     @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         grid_size: UInt32,
     ):
@@ -345,6 +351,8 @@ struct GroupedTileScheduler[
     max_groups: Int,
     num_stages: Int = 0,
     cta_group: Int = 1,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](TrivialRegisterPassable):
     """Tile scheduler for grouped block-scaled GEMM.
 
@@ -358,19 +366,24 @@ struct GroupedTileScheduler[
         max_groups: Maximum number of groups.
         num_stages: Pipeline stages (0 = single wave).
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
     """
 
     var num_groups: Int
     """Number of active groups."""
 
     @__allow_legacy_any_origin_fields
-    var problem_sizes: _ProblemSizesTile[Self.max_groups]
+    var problem_sizes: _ProblemSizesTile[
+        Self.max_groups, Self.problem_sizes_engine
+    ]
     """Problem sizes tensor (num_groups, 4) with [M, N, K, L] per group."""
 
     @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
     ):
         """Initialize scheduler with problem sizes.
@@ -386,7 +399,12 @@ struct GroupedTileScheduler[
     def work_iterator(
         self,
     ) -> GroupedWorkIterator[
-        Self.tile_m, Self.tile_n, Self.tile_k, Self.max_groups, Self.cta_group
+        Self.tile_m,
+        Self.tile_n,
+        Self.tile_k,
+        Self.max_groups,
+        Self.cta_group,
+        problem_sizes_engine=Self.problem_sizes_engine,
     ]:
         """Create a per-warp work iterator.
 
@@ -401,6 +419,7 @@ struct GroupedTileScheduler[
             Self.tile_k,
             Self.max_groups,
             Self.cta_group,
+            problem_sizes_engine=Self.problem_sizes_engine,
         ](
             self.problem_sizes,
             self.num_groups,
@@ -432,6 +451,8 @@ struct GroupedCLCWorkIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](Copyable, Iterable, Iterator, RegisterPassable):
     """Per-warp work iterator for grouped GEMM with CLC barrier support.
 
@@ -447,6 +468,7 @@ struct GroupedCLCWorkIterator[
         num_clc_stages: Number of CLC pipeline stages for barrier-based
             synchronization.
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
 
     Usage:
         var work_iter = scheduler.clc_work_iterator()
@@ -499,7 +521,9 @@ struct GroupedCLCWorkIterator[
     @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],
@@ -702,6 +726,8 @@ struct GroupedCLCSchedulerIterator[
     max_groups: Int,
     num_clc_stages: Int,
     cta_group: Int = 2,
+    *,
+    problem_sizes_engine: TensorEngine,
 ](Copyable, Iterable, Iterator, RegisterPassable):
     """Scheduler warp iterator for grouped GEMM with CLC.
 
@@ -716,6 +742,7 @@ struct GroupedCLCSchedulerIterator[
         num_clc_stages: Number of CLC pipeline stages for barrier-based
             synchronization.
         cta_group: Number of CTAs cooperating per tile (1 or 2 for 2SM).
+        problem_sizes_engine: Engine of the problem-sizes tile.
 
     Usage:
         var sched_iter = scheduler.scheduler_iterator()
@@ -758,7 +785,9 @@ struct GroupedCLCSchedulerIterator[
     @inline(.always)
     def __init__(
         out self,
-        problem_sizes: _ProblemSizesTile[Self.max_groups],
+        problem_sizes: _ProblemSizesTile[
+            Self.max_groups, Self.problem_sizes_engine
+        ],
         num_groups: Int,
         full_mbar: SMemPtr[SharedMemBarrier],
         empty_mbar: SMemPtr[SharedMemBarrier],

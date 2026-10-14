@@ -51,11 +51,10 @@ both `W` and `R`). `V_LAYOUT = row_major[2, 4, 32]`: 2 K-strips x 4
 depth-tiles x 32 FP8 elts/fragment per lane.
 """
 
-from max.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
+from max.gpu import lane_id, warp_id
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.sync import s_waitcnt
-from std.memory import AddressSpace
 from std.sys.intrinsics import readfirstlane
 from std.testing import assert_equal
 
@@ -257,10 +256,8 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
                     nonzero_seen += 1
                 if v227_f32 != ref_f32:
                     if mismatches < 8:
-                        var lid = idx // _PER_LANE
-                        var rem = idx % _PER_LANE
-                        var frag = rem // _FRAG_ELTS
-                        var f = rem % _FRAG_ELTS
+                        var lid, rem = divmod(idx, _PER_LANE)
+                        var frag, f = divmod(rem, _FRAG_ELTS)
                         print(
                             "  MISMATCH lid=",
                             lid,

@@ -13,19 +13,17 @@
 
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/HLCFDialect/HLCFUtils.h"
+#include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/SmallVector.h"
+
+#define DEBUG_TYPE "hlcf-canonicalize"
 
 using namespace M;
+using namespace M::KGEN;
 using namespace HLCF;
-
-/// True for `IfOp`, and for `ElifOp` only when there are no additional elif
-/// arms (i.e. it is a plain if/else).
-static bool isTwoArmIfLike(ElifOp op) { return op.getElifRegions().empty(); }
-static bool isTwoArmIfLike(IfOp op) {
-  return true; // no extra regions ever.
-}
 
 /// Erase all operations following the given OP in its parent region. The OP
 /// itself does not get deleted.
@@ -59,55 +57,76 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op,
   }
 }
 
-/// Fold identical / trivial then/else yields into the condition or a common
-/// value. Both yield operand lists must match `op`'s result count.
-static LogicalResult hoistIdenticalYieldResults(Operation *op, Value cond,
-                                                ValueRange thenYieldOperands,
-                                                ValueRange elseYieldOperands,
-                                                PatternRewriter &rewriter) {
-  if (thenYieldOperands.size() != op->getNumResults() ||
-      elseYieldOperands.size() != op->getNumResults())
+/// Collect body regions of an IfOp: the first then, each elif then (odd
+/// indices of `$elifRegions`), and the final else. Condition regions are
+/// excluded.
+static void getIfBodyRegions(IfOp op, SmallVectorImpl<Region *> &bodies) {
+  bodies.push_back(&op.getThenRegion());
+  for (unsigned i = 1, e = op.getElifRegions().size(); i < e; i += 2)
+    bodies.push_back(&op.getElifRegions()[i]);
+  bodies.push_back(&op.getElseRegion());
+}
+
+/// Move every region of `src` into the corresponding empty region of `dst`
+/// (same number of elif regions required).
+static void moveIfRegions(PatternRewriter &rewriter, IfOp src, IfOp dst) {
+  assert(src.getElifRegions().size() == dst.getElifRegions().size());
+  rewriter.inlineRegionBefore(src.getThenRegion(), dst.getThenRegion(),
+                              dst.getThenRegion().begin());
+  rewriter.inlineRegionBefore(src.getElseRegion(), dst.getElseRegion(),
+                              dst.getElseRegion().begin());
+  for (auto [srcRegion, dstRegion] :
+       llvm::zip(src.getElifRegions(), dst.getElifRegions()))
+    rewriter.inlineRegionBefore(srcRegion, dstRegion, dstRegion.begin());
+}
+
+/// If `condRegion` is a trivial `hlcf.if.elifcond.yield %c` (no carry-over
+/// values) and `%c` is a constant bool, return that bool. Otherwise failure.
+static FailureOr<bool> matchTrivialConstantElifCond(Region &condRegion) {
+  auto yield = dyn_cast<IfElifCondYieldOp>(condRegion.front().getTerminator());
+  if (!yield || &condRegion.front().front() != yield ||
+      !yield.getValues().empty())
+    return failure();
+  KGEN::SIMDAttr cond;
+  if (!matchPattern(yield.getCond(), m_Constant(&cond)))
+    return failure();
+  return cond.getAsBool();
+}
+
+/// Promote the elif arm at `condIdx` (index into `$elifRegions` of a cond
+/// region) to be the first condition of a new if, keeping remaining elifs.
+/// Requires a trivial elifcond.yield with no carry-over values.
+static LogicalResult promoteElifArmToIf(IfOp op, PatternRewriter &rewriter,
+                                        size_t condIdx) {
+  Region &condRegion = op.getElifRegions()[condIdx];
+  Region &thenRegion = op.getElifRegions()[condIdx + 1];
+  auto yield = dyn_cast<IfElifCondYieldOp>(condRegion.front().getTerminator());
+  if (!yield || &condRegion.front().front() != yield ||
+      !yield.getValues().empty())
     return failure();
 
-  bool changed = false;
-  bool allChanged = true;
-  for (auto [res, opndThen, opndElse] :
-       llvm::zip(op->getResults(), thenYieldOperands, elseYieldOperands)) {
-    // Replace 'if/elif cond { yield true } else { yield false }' with "cond".
-    KGEN::SIMDAttr trueCond, falseCond;
-    if (res.getType() == cond.getType() &&
-        matchPattern(opndThen, m_Constant(&trueCond)) &&
-        matchPattern(opndElse, m_Constant(&falseCond)) &&
-        trueCond.getAsBool() == true && falseCond.getAsBool() == false) {
-      rewriter.replaceAllUsesWith(res, cond);
-      changed = true;
-      continue;
-    }
-
-    if (opndThen == opndElse) {
-      rewriter.replaceAllUsesWith(res, opndThen);
-      changed = true;
-    } else {
-      allChanged = false;
-    }
-  }
-  // Note: this is only called when there is no code in the if other than
-  // the two yield instructions, so this is safe.
-  if (allChanged) {
-    rewriter.eraseOp(op);
-    changed = true;
-  }
-
-  return changed ? success() : failure();
+  size_t remainingElifs = op.getElifRegions().size() - (condIdx + 2);
+  auto newOp = IfOp::create(rewriter, op.getLoc(), op.getResultTypes(),
+                            yield.getCond(), remainingElifs);
+  rewriter.inlineRegionBefore(thenRegion, newOp.getThenRegion(),
+                              newOp.getThenRegion().begin());
+  rewriter.inlineRegionBefore(op.getElseRegion(), newOp.getElseRegion(),
+                              newOp.getElseRegion().begin());
+  for (size_t i = 0; i != remainingElifs; ++i)
+    rewriter.inlineRegionBefore(op.getElifRegions()[condIdx + 2 + i],
+                                newOp.getElifRegions()[i],
+                                newOp.getElifRegions()[i].begin());
+  rewriter.replaceOp(op, newOp.getResults());
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
-// IfOp / ElifOp (2-arm) shared canonicalizations
+// IfOp canonicalizations
 //===----------------------------------------------------------------------===//
 
 namespace {
-/// If both branches have just a YieldOp and yield the same value, replace the
-/// result with that value directly.
+/// If every body arm has just a YieldOp and corresponding results agree,
+/// replace those results (and erase the if when all results fold away).
 ///
 ///   Before:
 ///      %a, %b = hlcf.if %cond {
@@ -119,56 +138,110 @@ namespace {
 ///
 ///   After:
 ///      return %c, %d
-template <typename OpTy>
-struct HoistYieldResults : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+struct HoistYieldResults : public OpRewritePattern<IfOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
-      return failure();
-    if (!isa<YieldOp>(op.getThenTerminator()) ||
-        !isa<YieldOp>(op.getElseTerminator()))
-      return failure();
-    if (&op.getThenBlock().getOperations().front() != op.getThenTerminator())
-      return failure();
-    if (&op.getElseBlock().getOperations().front() != op.getElseTerminator())
-      return failure();
+    SmallVector<Region *, 4> bodies;
+    getIfBodyRegions(op, bodies);
 
-    return hoistIdenticalYieldResults(
-        op, op.getCond(), op.getThenTerminator()->getOperands(),
-        op.getElseTerminator()->getOperands(), rewriter);
+    // See if all the "then" blocks only contain a yield without other logic.
+    SmallVector<YieldOp, 4> yields;
+    yields.reserve(bodies.size());
+    for (Region *body : bodies) {
+      auto yield = dyn_cast<YieldOp>(body->front().getTerminator());
+      if (!yield || &body->front().front() != yield)
+        return failure();
+      yields.push_back(yield);
+    }
+
+    bool changed = false;
+    for (size_t resIdx = 0, e = op.getNumResults(); resIdx != e; ++resIdx) {
+      Value res = op.getResult(resIdx);
+      Value first = yields.front()->getOperand(resIdx);
+      bool allSame = llvm::all_of(
+          yields, [&](YieldOp y) { return y->getOperand(resIdx) == first; });
+
+      // Two-arm special case: `if cond { yield true } else { yield false }`
+      // folds to `cond`.
+      if (yields.size() == 2 && res.getType() == op.getCond().getType()) {
+        KGEN::SIMDAttr trueCond, falseCond;
+        if (matchPattern(yields[0]->getOperand(resIdx),
+                         m_Constant(&trueCond)) &&
+            matchPattern(yields[1]->getOperand(resIdx),
+                         m_Constant(&falseCond)) &&
+            trueCond.getAsBool() == true && falseCond.getAsBool() == false) {
+          rewriter.replaceAllUsesWith(res, op.getCond());
+          changed = true;
+          continue;
+        }
+      }
+
+      if (allSame) {
+        rewriter.replaceAllUsesWith(res, first);
+        changed = true;
+      }
+    }
+
+    // If we removed all the results we can nuke the entire if.  This is safe
+    // because every body arm is only a yield.
+    if (op.use_empty()) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+    return changed ? success() : failure();
   }
 };
 
-/// If the condition is known at compile time, replace the op with the contents
-/// of the corresponding branch. If the block we're inserting doesn't end with
-/// YieldOp, operations following the original op will be discarded.
-template <typename OpTy>
-struct RemoveStaticCondition : public OpRewritePattern<OpTy> {
+/// If the first condition is known at compile time, keep only the live arm(s).
+/// True → replace with the then region. False with no elif → replace with the
+/// else region. False with elifs → drop every leading constant-false arm in
+/// one rewrite (then take a constant-true arm, the else, or promote the first
+/// remaining dynamic elif) so an N-arm chain is O(N), not O(N²).
+struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   RemoveStaticCondition(MLIRContext *ctx)
-      : OpRewritePattern<OpTy>(ctx, /*benefit=*/10) {}
+      : OpRewritePattern(ctx, /*benefit=*/10) {}
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
-      return failure();
-
     KGEN::SIMDAttr condition;
     if (!matchPattern(op.getCond(), m_Constant(&condition)))
       return failure();
 
-    Region &active =
-        condition.getAsBool() ? op.getThenRegion() : op.getElseRegion();
-    replaceOpWithRegion(rewriter, op, active);
+    if (condition.getAsBool()) {
+      replaceOpWithRegion(rewriter, op, op.getThenRegion());
+      return success();
+    }
 
+    // First condition is statically false. Skip every leading elif whose
+    // condition is a trivial constant-false yield, then either take a
+    // constant-true arm, take the else, or promote the first remaining
+    // (dynamic) elif arm.
+    for (size_t condIdx = 0, numElifRegions = op.getElifRegions().size();
+         condIdx < numElifRegions; condIdx += 2) {
+      FailureOr<bool> constCond =
+          matchTrivialConstantElifCond(op.getElifRegions()[condIdx]);
+      if (failed(constCond))
+        // Dynamic / non-trivial: promote this arm as the new if.
+        return promoteElifArmToIf(op, rewriter, condIdx);
+
+      if (*constCond) {
+        // Constant true: keep only this then arm.
+        replaceOpWithRegion(rewriter, op, op.getElifRegions()[condIdx + 1]);
+        return success();
+      }
+      // Constant false: drop this (cond, then) pair and keep scanning.
+    }
+
+    // Every condition was constant false — take the else.
+    replaceOpWithRegion(rewriter, op, op.getElseRegion());
     return success();
   }
 };
 
-/// If both branches end with return ops, replace the return ops with yield ops
-/// and insert a new return op right after the if/elif. All subsequent ops in
-/// the basic block are erased.
+/// If every body arm ends with the same return/break/continue, replace those
+/// terminators with yields and insert one terminator after the if.
 ///
 /// Before:                    After:
 /// {                          {
@@ -182,72 +255,69 @@ struct RemoveStaticCondition : public OpRewritePattern<OpTy> {
 ///   }                          }
 ///   C                          return %x
 /// }                          }
-///
-/// This also works with 'break' and 'continue'.
-template <typename OpTy, typename TerminatorOpT>
-struct HoistUnconditionalReturn : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+template <typename TerminatorOpT>
+struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
+    SmallVector<Region *, 4> bodies;
+    getIfBodyRegions(op, bodies);
+
+    SmallVector<TerminatorOpT, 4> terms;
+    terms.reserve(bodies.size());
+    for (Region *body : bodies) {
+      auto term = dyn_cast<TerminatorOpT>(body->front().getTerminator());
+      if (!term)
+        return failure();
+      terms.push_back(term);
+    }
+
+    // All arms become yields of the new op's results; arities must match.
+    TypeRange operandTypes = terms.front()->getOperandTypes();
+    if (llvm::any_of(terms, [&](TerminatorOpT term) {
+          return term->getOperandTypes() != operandTypes;
+        }))
       return failure();
 
-    auto thenTerm = dyn_cast<TerminatorOpT>(op.getThenTerminator());
-    auto elseTerm = dyn_cast<TerminatorOpT>(op.getElseTerminator());
-    if (!thenTerm || !elseTerm)
-      return failure();
-    // Both arms become yields of the new op's results; arities must match.
-    if (thenTerm->getOperandTypes() != elseTerm->getOperandTypes())
-      return failure();
-
-    if constexpr (!std::is_same_v<TerminatorOpT, KGEN::ReturnOp>) {
-      // Ensure both terminators branch to the same operation. It doesn't matter
-      // if it's the immediate parent.
-      if (thenTerm.getLabelAttr() != elseTerm.getLabelAttr())
+    if constexpr (!std::is_same_v<TerminatorOpT, HLCF::ReturnOp>) {
+      // Ensure all terminators branch to the same labeled loop.
+      auto label = terms.front().getLabelAttr();
+      if (llvm::any_of(terms, [&](TerminatorOpT term) {
+            return term.getLabelAttr() != label;
+          }))
         return failure();
     }
-    DictionaryAttr attrs = thenTerm->getAttrDictionary();
 
-    // Create a new op and put a return right after it. We have to create a new
-    // op because the number of results might differ from the original.
-    auto newOp =
-        OpTy::create(rewriter, op.getLoc(),
-                     op.getThenTerminator()->getOperandTypes(), op.getCond());
-    TerminatorOpT::create(rewriter, op.getLoc(), TypeRange(),
-                          newOp->getResults(), attrs.getValue());
+    auto newOp = IfOp::create(rewriter, op.getLoc(), operandTypes, op.getCond(),
+                              op.getElifRegions().size());
+    TerminatorOpT::create(
+        rewriter, op.getLoc(), TypeRange(), newOp->getResults(),
+        terms.front().getProperties(),
+        llvm::to_vector(terms.front()->getDiscardableAttrs()));
 
-    // Move the 'then' block from the original op to the new one and replace
-    // the return terminator with yield.
-    rewriter.inlineRegionBefore(op.getThenRegion(), newOp.getThenRegion(),
-                                newOp.getThenRegion().begin());
-    rewriter.setInsertionPoint(newOp.getThenTerminator());
-    rewriter.replaceOpWithNewOp<YieldOp>(
-        newOp.getThenTerminator(), newOp.getThenTerminator()->getOperands());
+    moveIfRegions(rewriter, op, newOp);
 
-    // Same for the 'else' block.
-    rewriter.inlineRegionBefore(op.getElseRegion(), newOp.getElseRegion(),
-                                newOp.getElseRegion().begin());
-    rewriter.setInsertionPoint(newOp.getElseTerminator());
-    rewriter.replaceOpWithNewOp<YieldOp>(
-        newOp.getElseTerminator(), newOp.getElseTerminator()->getOperands());
+    // Replace each body terminator with a yield of its operands.
+    SmallVector<Region *, 4> newBodies;
+    getIfBodyRegions(newOp, newBodies);
+    for (Region *body : newBodies) {
+      Operation *term = body->front().getTerminator();
+      rewriter.setInsertionPoint(term);
+      rewriter.replaceOpWithNewOp<YieldOp>(term, term->getOperands());
+    }
 
-    // Erase the original op and all the ops below it.
     eraseOpsAfter(rewriter, op);
     rewriter.eraseOp(op);
-
     return success();
   }
 };
 
-/// If one of the branches is Return, then we can try pulling the code after
-/// the op into the other branch and replace the return op with yield. This
-/// allows us to hoist return to outer scopes, potentially enabling other
-/// optimizations.
-///
-/// We can only perform this transformation if the op's basic block ends with
-/// a return op - in that case it is legal to insert a return after the op,
-/// which we want to do in this transformation.
+/// If some body arms exit with Return/Break and exactly one arm Yields, pull
+/// the code after the if into that yield arm by *moving* it (not cloning) and
+/// hoist a single exit after the if. Multiple yield arms are rejected: each
+/// would need its own copy of the trailing code, which previously caused
+/// catastrophic worklist / IR blow-up under canonicalize.
 ///
 /// Before:                    After:
 /// {                          {
@@ -263,103 +333,85 @@ struct HoistUnconditionalReturn : public OpRewritePattern<OpTy> {
 ///   %t = C(%x)                 return %x
 ///   return %t
 /// }                          }
-template <typename OpTy>
-struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+struct HoistConditionalReturn : public OpRewritePattern<IfOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op,
+  LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter &rewriter) const override {
-    if (!isTwoArmIfLike(op))
-      return failure();
+    SmallVector<Region *, 4> bodies;
+    getIfBodyRegions(op, bodies);
 
-    Block &parentBlock = op->getParentRegion()->front();
-    Operation *parentBlockTerm = parentBlock.getTerminator();
+    SmallVector<Operation *, 4> yieldTerms;
+    SmallVector<Operation *, 4> exitTerms;
+    for (Region *body : bodies) {
+      Operation *term = body->front().getTerminator();
+      if (isa<YieldOp>(term))
+        yieldTerms.push_back(term);
+      else if (isa<HLCF::ReturnOp, BreakOp>(term)) {
+        exitTerms.push_back(term);
 
-    Operation *thenTerm = op.getThenTerminator();
-    Operation *elseTerm = op.getElseTerminator();
+        // Make sure we have consistent terminators.
+        if (!exitTerms.empty()) {
+          Operation *sampleExit = exitTerms.front();
+          if (sampleExit->getName() != term->getName())
+            return rewriter.notifyMatchFailure(
+                op, "Exiting arms have mismatched terminators");
 
-    // On the other hand, if neither of them is return, then we also have
-    // nothing to do.
-    // TODO: This should also work for BreakOp and ContinueOp (provided thenTerm
-    // and elseTerm are of the same type)
-    if (!isa<KGEN::ReturnOp, BreakOp>(thenTerm) &&
-        !isa<KGEN::ReturnOp, BreakOp>(elseTerm))
-      return rewriter.notifyMatchFailure(
-          op, "None of the branches ends with Return/Break");
-
-    // One of the terminators is Return/Break, now make sure that the other one
-    // is Yield.
-    if (!isa<YieldOp>(thenTerm) && !isa<YieldOp>(elseTerm))
-      return rewriter.notifyMatchFailure(
-          op, "None of the branches ends with Yield");
-
-    // Figure out which block contains Return and which one contains Yield.
-    Operation *yieldTerm = nullptr, *returnTerm = nullptr;
-    if (isa<YieldOp>(thenTerm)) {
-      yieldTerm = thenTerm;
-      returnTerm = elseTerm;
-    } else {
-      assert(isa<YieldOp>(elseTerm));
-      yieldTerm = elseTerm;
-      returnTerm = thenTerm;
+          if (auto br = dyn_cast<BreakOp>(sampleExit)) {
+            if (cast<BreakOp>(term).getLabelAttr() != br.getLabelAttr())
+              return rewriter.notifyMatchFailure(
+                  op, "Break arms target different loops");
+          }
+        }
+      } else
+        return rewriter.notifyMatchFailure(
+            op, "Body arm does not end with Yield/Return/Break");
     }
 
-    // If the parent block doesn't end with return, then we cannot return after
-    // the op, which is how we want to hoist return op from its branch. Hence,
-    // bail out.  For a bit more generality, we handle nested IfOps/ElifOps too,
-    // e.g.:
-    //   %4 = hlcf.if %3 -> i1 {
-    //     pop.store %arg1, %arg3 : !kgen.pointer<index>
-    //     hlcf.yield %1 : i1
-    //   } else {
-    //     ...
-    //     hlcf.if %6 {
-    //       kgen.return %0 : i1
-    //     } else {
-    //       hlcf.yield
-    //     }
-    //     hlcf.yield %1 : i1
-    //   }
-    //   kgen.return %4 : i1
+    if (exitTerms.empty())
+      return rewriter.notifyMatchFailure(
+          op, "None of the branches ends with Return/Break");
+    // Exactly one yield arm so we can move the trailing code into it. Cloning
+    // into every yield arm was a compile-time hotspot.
+    if (yieldTerms.size() != 1)
+      return rewriter.notifyMatchFailure(
+          op, "expected exactly one yield arm for move-based hoist");
+
+    Operation *yieldTerm = yieldTerms.front();
+    Operation *sampleExit = exitTerms.front();
+
+    // Walk out through nested 2-arm if yields to find the enclosing
+    // return/break that the yield arm ultimately feeds.
     SmallVector<Value> parentBlockTermOperands;
     Operation *actualParentTermOp = nullptr;
     std::function<void(Operation *)> findParentTermOp;
     findParentTermOp = [&](Operation *parentTerm) {
-      // Base case, we find a return or break with some operands to return.
-      if (isa<KGEN::ReturnOp, BreakOp>(parentTerm)) {
+      if (isa<HLCF::ReturnOp, BreakOp>(parentTerm)) {
         actualParentTermOp = parentTerm;
         parentBlockTermOperands = parentTerm->getOperands();
         return;
       }
 
-      // Otherwise if we have a yield op from a 2-arm if/elif, then we can keep
-      // looking.
       auto yield = dyn_cast<YieldOp>(parentTerm);
-      Operation *parentIfLike = yield ? yield->getParentOp() : nullptr;
-      if (!yield || !(isa<IfOp>(parentIfLike) ||
-                      (isa<ElifOp>(parentIfLike) &&
-                       cast<ElifOp>(parentIfLike).getElifRegions().empty())))
-        return; // Give up.
-      // We're effectively going to hoist the return up the if tree.  We
-      // can't do this if it will skip over other operations, so make sure
-      // the return immediately follows the if.
-      Operation &termAfterIf = *std::next(Block::iterator(parentIfLike));
-      Operation *blockTerm = parentIfLike->getBlock()->getTerminator();
-      if (!isa<KGEN::ReturnOp, BreakOp, YieldOp>(termAfterIf) &&
-          // We can do this for the top level.
+      auto parentIf = yield ? dyn_cast<IfOp>(yield->getParentOp()) : IfOp();
+      if (!yield || !parentIf)
+        return;
+      // Allow climbing out of the if we're rewriting (which may be multi-arm).
+      // Intermediate nested ifs must stay 2-arm — we don't remap through elif.
+      if (!parentIf.getElifRegions().empty() && parentTerm != yieldTerm)
+        return;
+      Operation &termAfterIf = *std::next(Block::iterator(parentIf));
+      Operation *blockTerm = parentIf->getBlock()->getTerminator();
+      if (!isa<HLCF::ReturnOp, BreakOp, YieldOp>(termAfterIf) &&
           parentTerm != yieldTerm)
-        return; // Give up.
-      // Search the parent for a return/break.
+        return;
       findParentTermOp(blockTerm);
       if (!actualParentTermOp)
-        return; // If recursion failed, give up.
+        return;
 
-      // If we succeeded, we may need to remap the returned values, because
-      // they may be a consequence of the yield->if result values. For example
-      // we remap %4 in the example above to %1.
       for (auto &retVal : parentBlockTermOperands) {
         OpResult retRes = dyn_cast<OpResult>(retVal);
-        if (!retRes || retRes.getOwner() != parentIfLike)
+        if (!retRes || retRes.getOwner() != parentIf)
           continue;
         if (retRes.getResultNumber() >= yield->getNumOperands()) {
           actualParentTermOp = nullptr;
@@ -370,161 +422,150 @@ struct HoistConditionalReturn : public OpRewritePattern<OpTy> {
     };
     findParentTermOp(yieldTerm);
 
-    // If we failed, give up.
     if (!actualParentTermOp)
       return rewriter.notifyMatchFailure(
           op, "Parent block doesn't end with Return/Break");
 
-    if (isa<KGEN::ReturnOp>(actualParentTermOp)) {
-      if (!isa<KGEN::ReturnOp>(returnTerm))
+    if (isa<HLCF::ReturnOp>(actualParentTermOp)) {
+      if (!isa<HLCF::ReturnOp>(sampleExit))
         return rewriter.notifyMatchFailure(
             op, "Parent block is Return, but exiting terminator is Break");
     } else {
-      assert((isa<BreakOp>(actualParentTermOp)));
-      if (!isa<BreakOp>(returnTerm))
+      assert(isa<BreakOp>(actualParentTermOp));
+      if (!isa<BreakOp>(sampleExit))
         return rewriter.notifyMatchFailure(
             op, "Parent block is Break, but exiting terminator is Return");
       if (cast<BreakOp>(actualParentTermOp).getLabelAttr() !=
-          cast<BreakOp>(returnTerm).getLabelAttr())
+          cast<BreakOp>(sampleExit).getLabelAttr())
         return rewriter.notifyMatchFailure(
             op, "Break in the parent block's target is different from exiting "
                 "terminator break's target");
     }
 
-    // Both arms become yields of the new op's results. The exiting return/break
-    // must already produce the same values as the parent terminator.
-    if (returnTerm->getNumOperands() != actualParentTermOp->getNumOperands() ||
-        !llvm::equal(returnTerm->getOperandTypes(),
+    if (sampleExit->getNumOperands() != actualParentTermOp->getNumOperands() ||
+        !llvm::equal(sampleExit->getOperandTypes(),
                      actualParentTermOp->getOperandTypes()))
       return rewriter.notifyMatchFailure(
           op, "Exiting terminator and parent return/break have different "
               "operand types");
     if (yieldTerm->getNumOperands() != op.getNumResults())
       return rewriter.notifyMatchFailure(
-          op, "Yield operand count doesn't match if/elif results");
-    if (parentBlockTermOperands.size() != returnTerm->getNumOperands())
+          op, "Yield operand count doesn't match if results");
+    if (parentBlockTermOperands.size() != sampleExit->getNumOperands())
       return rewriter.notifyMatchFailure(
           op, "Remapped parent terminator operands don't match exiting "
               "terminator");
 
-    // Now we know that we can transform this. Create a new op (we can't use
-    // the original because we might need a different number of result values).
-    auto newOp =
-        OpTy::create(rewriter, op.getLoc(),
-                     actualParentTermOp->getOperandTypes(), op.getCond());
+    // Terminator of the block containing `op` — after the move below this is
+    // the op that lands in the yield arm (may differ from actualParentTermOp
+    // when we climbed through nested if yields).
+    Operation *parentBlockTerm = op->getBlock()->getTerminator();
 
-    // Move the original 'then' and 'else' basic blocks into the new op.
-    rewriter.inlineRegionBefore(op.getThenRegion(), newOp.getThenRegion(),
-                                newOp.getThenRegion().begin());
-    rewriter.inlineRegionBefore(op.getElseRegion(), newOp.getElseRegion(),
-                                newOp.getElseRegion().begin());
+    auto newOp = IfOp::create(rewriter, op.getLoc(),
+                              actualParentTermOp->getOperandTypes(),
+                              op.getCond(), op.getElifRegions().size());
+    moveIfRegions(rewriter, op, newOp);
 
-    // Move the ops from the parent block following the original op to a
-    // separate block and then move that block into the 'yield' block in the new
-    // if.
+    // Terminators moved with their regions; re-find on the new op.
+    SmallVector<Operation *, 4> newExitTerms;
+    bodies.clear();
+    getIfBodyRegions(newOp, bodies);
+    yieldTerm = nullptr;
+    for (Region *body : bodies) {
+      Operation *term = body->front().getTerminator();
+      if (isa<YieldOp>(term))
+        yieldTerm = term;
+      else
+        newExitTerms.push_back(term);
+    }
+    assert(yieldTerm && newExitTerms.size() == exitTerms.size());
+
+    SmallVector<Value> yieldOperands(yieldTerm->operand_begin(),
+                                     yieldTerm->operand_end());
+
+    // Move (do not clone) ops after the original if into the yield arm.
     Block *remainderBlock =
         rewriter.splitBlock(op->getBlock(), op->getNextNode()->getIterator());
     rewriter.inlineBlockBefore(remainderBlock, yieldTerm->getBlock(),
                                yieldTerm->getBlock()->end());
 
-    // The remainder block used to use return values of the original op. We
-    // now need to rewire that to values from the yield op.
     for (auto [idx, val] : llvm::enumerate(op->getResults()))
-      rewriter.replaceAllUsesWith(val, yieldTerm->getOperand(idx));
-
-    // And after that we can erase the yield op.
+      rewriter.replaceAllUsesWith(val, yieldOperands[idx]);
     rewriter.eraseOp(yieldTerm);
 
-    // At this point our new op has its then and else block constructed, but
-    // ending with returns. We need to replace them with yields and insert a
-    // return after the new op.
     rewriter.setInsertionPointAfter(newOp);
-    if (auto br = dyn_cast<BreakOp>(returnTerm)) {
+    if (auto br = dyn_cast<BreakOp>(sampleExit)) {
       BreakOp::create(rewriter, op.getLoc(), newOp->getResults(),
                       br.getLabelAttr());
     } else {
-      KGEN::ReturnOp::create(rewriter, op.getLoc(), newOp->getResults());
+      HLCF::ReturnOp::create(rewriter, op.getLoc(), newOp->getResults());
     }
 
-    // The parent block terminator got sucked into the if, and is either a
-    // return/break if it is one level, or a yield if it is deeper.  Replace it
-    // with a yield of the operands we found.
+    // Parent-block terminator was sucked into the yield arm; replace it (and
+    // each exiting arm terminator) with yields. Use the remapped operands from
+    // the nested-yield climb so `return %if` becomes `yield %yielded`.
     rewriter.setInsertionPoint(parentBlockTerm);
     rewriter.replaceOpWithNewOp<YieldOp>(parentBlockTerm,
                                          parentBlockTermOperands);
-    rewriter.setInsertionPoint(returnTerm);
-    rewriter.replaceOpWithNewOp<YieldOp>(returnTerm, returnTerm->getOperands());
+    for (Operation *exitTerm : newExitTerms) {
+      rewriter.setInsertionPoint(exitTerm);
+      rewriter.replaceOpWithNewOp<YieldOp>(exitTerm, exitTerm->getOperands());
+    }
 
-    // Finally, erase the original op.
     rewriter.eraseOp(op);
     return success();
   }
 };
 
-/// Remove unused results of the if/elif and any yields.
-template <typename OpTy>
-struct RemoveUnusedResults : public OpRewritePattern<OpTy> {
-  using OpRewritePattern<OpTy>::OpRewritePattern;
+/// Remove unused results of the if and the matching operands of every body
+/// yield (then, elif thens, and else).
+struct RemoveUnusedResults : public OpRewritePattern<IfOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(OpTy op, PatternRewriter &b) const override {
-    if (!isTwoArmIfLike(op))
+  LogicalResult matchAndRewrite(IfOp op, PatternRewriter &b) const override {
+    if (op.getNumResults() == 0)
       return failure();
 
-    auto thenYield = dyn_cast<YieldOp>(op.getThenTerminator());
-    auto elseYield = dyn_cast<YieldOp>(op.getElseTerminator());
-    if ((thenYield && thenYield->getNumOperands() != op.getNumResults()) ||
-        (elseYield && elseYield->getNumOperands() != op.getNumResults()))
-      return failure();
-
+    // If the 'if' has any unused results, remove them and update any yields.
     llvm::BitVector unused(op.getNumResults());
-    SmallVector<Value> toReplace;
+    SmallVector<Value> resultsToKeep;
     for (auto [i, result] : llvm::enumerate(op.getResults())) {
       if (result.use_empty())
         unused.set(i);
       else
-        toReplace.push_back(result);
+        resultsToKeep.push_back(result);
     }
 
     if (unused.none())
       return b.notifyMatchFailure(op.getLoc(), "all results have uses");
 
-    if (thenYield)
-      b.modifyOpInPlace(thenYield, [&] { thenYield->eraseOperands(unused); });
-    if (elseYield)
-      b.modifyOpInPlace(elseYield, [&] { elseYield->eraseOperands(unused); });
+    // Find all the yields that need updating.
+    SmallVector<Region *, 4> bodies;
+    getIfBodyRegions(op, bodies);
+    SmallVector<YieldOp, 4> yields;
+    for (Region *body : bodies) {
+      if (auto yield = dyn_cast<YieldOp>(body->front().getTerminator()))
+        b.modifyOpInPlace(yield, [&] { yield->eraseOperands(unused); });
+    }
 
-    auto newOp = OpTy::create(b, op.getLoc(), TypeRange(ValueRange(toReplace)),
-                              op.getCond());
-    b.replaceAllUsesWith(toReplace, newOp.getResults());
-    b.inlineRegionBefore(op.getThenRegion(), newOp.getThenRegion(),
-                         newOp.getThenRegion().begin());
-    b.inlineRegionBefore(op.getElseRegion(), newOp.getElseRegion(),
-                         newOp.getElseRegion().begin());
+    auto newOp =
+        IfOp::create(b, op.getLoc(), TypeRange(ValueRange(resultsToKeep)),
+                     op.getCond(), op.getElifRegions().size());
+    b.replaceAllUsesWith(resultsToKeep, newOp.getResults());
+    moveIfRegions(b, op, newOp);
     b.eraseOp(op);
     return success();
   }
 };
-
-template <typename OpTy>
-static void addIfLikeCanonicalizationPatterns(RewritePatternSet &results,
-                                              MLIRContext *ctx) {
-  results.add<RemoveStaticCondition<OpTy>,
-              HoistUnconditionalReturn<OpTy, KGEN::ReturnOp>,
-              HoistUnconditionalReturn<OpTy, HLCF::BreakOp>,
-              HoistUnconditionalReturn<OpTy, HLCF::ContinueOp>,
-              HoistConditionalReturn<OpTy>, HoistYieldResults<OpTy>,
-              RemoveUnusedResults<OpTy>>(ctx);
-}
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                        MLIRContext *ctx) {
-  addIfLikeCanonicalizationPatterns<IfOp>(results, ctx);
-}
-
-void ElifOp::getCanonicalizationPatterns(RewritePatternSet &results,
-                                         MLIRContext *ctx) {
-  addIfLikeCanonicalizationPatterns<ElifOp>(results, ctx);
+  results.add<RemoveStaticCondition, HoistUnconditionalReturn<HLCF::ReturnOp>,
+              HoistUnconditionalReturn<HLCF::BreakOp>,
+              HoistUnconditionalReturn<HLCF::ContinueOp>,
+              HoistConditionalReturn, HoistYieldResults, RemoveUnusedResults>(
+      ctx);
 }
 
 //===----------------------------------------------------------------------===//
@@ -705,4 +746,123 @@ struct RemoveNoopLoop : OpRewritePattern<ForOp> {
 void ForOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                         MLIRContext *ctx) {
   results.insert<RemoveNoopLoop>(ctx);
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeIfOp
+//===----------------------------------------------------------------------===//
+
+// Look at this "comptime if". If all the blocks only contain a terminator,
+// and if the comptime if can be completely removed, return success, otherwise
+// return failure.
+static LogicalResult checkTrivialBlocks(ComptimeIfOp op) {
+  // Only result-less ops can be deleted wholesale: yields with operands would
+  // need to forward results, which this pattern does not handle.
+  if (op->getNumResults() != 0)
+    return failure();
+
+  bool allYield = true;
+  for (Region &thenElseRegion : op.getRegions()) {
+    Block &block = thenElseRegion.front();
+    Operation *term = block.getTerminator();
+
+    // The terminator must be the only op in the block. We also only support
+    // trivial breaks, not ones with operands.
+    if (term != &block.front() || term->getNumOperands() != 0)
+      return failure();
+
+    if (isa<ComptimeYieldOp>(term))
+      continue;
+    if (isa<HLCF::BreakOp>(term)) {
+      allYield = false;
+      continue;
+    }
+    return failure();
+  }
+
+  // If every arm is a bare yield, the comptime.if is a no-op.
+  if (allYield)
+    return success();
+
+  // If every arm is a bare yield or break, and the next op is already a break,
+  // the comptime.if cannot change control flow.
+  if (isa<HLCF::BreakOp>(op->getNextNode()))
+    return success();
+
+  return failure();
+}
+
+LogicalResult ComptimeIfOp::canonicalize(ComptimeIfOp op, PatternRewriter &b) {
+  // If the comptime if is trivial (only has terminator that allow us to
+  // eliminate it), remove it.
+  if (succeeded(checkTrivialBlocks(op))) {
+    b.eraseOp(op);
+    return success();
+  }
+
+  // Multi-condition comptime.if is not folded here; keep the existing
+  // binary-arm patterns only.
+  if (op.getConds().size() != 1)
+    return b.notifyMatchFailure(
+        op.getLoc(), "multi-condition comptime.if is not canonicalized");
+
+  auto condAttr = sugarDynCast<SIMDAttr>(cast<TypedAttr>(op.getConds()[0]));
+  if (!condAttr)
+    return b.notifyMatchFailure(op.getLoc(), "condition is not a constant");
+  bool condValue = condAttr.getAsBool();
+
+  // We can't fold away the op entirely, because it defines a parameter scope
+  // and this could create param decl conflicts. Instead, purge the dead region
+  // and insert a `hlcf.unreachable`.
+  Block &deadBlock = op->getRegion(condValue).front();
+
+  // Don't match again if the dead block is already purged.
+  if (isa<UnreachableOp>(deadBlock.front()))
+    return b.notifyMatchFailure(op.getLoc(), "dead block already purged");
+
+  // Hoist all the non parameter defining ops out of the live region.
+  Block &liveBlock = op->getRegion(!condValue).front();
+  while (!liveBlock.front().hasTrait<OpTrait::IsTerminator>()) {
+    // Stop if we hit an operation defining a parameter. We don't hoist these as
+    // the parameter regions could conflict.
+    if (auto paramOp = dyn_cast<ParamOpInterface>(liveBlock.front())) {
+      bool hasParam = false;
+      paramOp.walkDeclarations([&](ParamDeclAttr attr) { hasParam = true; });
+      if (hasParam)
+        break;
+    }
+
+    // Otherwise, hoist the operation above the 'if'.
+    b.moveOpBefore(&liveBlock.front(), op);
+  }
+
+  // If we got down to a terminator that we can handle, eliminate the 'if'.
+  Operation &liveFront = liveBlock.front();
+  // If the live block is now trivial, we can remove the whole
+  // operation. Replace the results with the operands to the yield.
+  if (auto yield = dyn_cast<ComptimeYieldOp>(liveFront)) {
+    b.replaceOp(op, yield.getOperands());
+    return success();
+  }
+
+  // If we are ending control flow we can hoist it out but we have to delete
+  // all following ops to retain legality.
+  if (isa<HLCF::UnreachableOp, HLCF::BreakOp, HLCF::ContinueOp>(liveFront)) {
+    Block *block = op->getBlock();
+    // Delete things bottom-up so we delete uses before defs.
+    while (&block->back() != op)
+      b.eraseOp(&block->back());
+    // Move the terminator out of the 'if' and remove the 'if'.
+    b.moveOpBefore(&liveFront, op);
+    b.eraseOp(op);
+    return success();
+  }
+
+  // Otherwise, we have a parameter defining op (which we need the scope for)
+  // or control flow we don't know about.
+  for (Operation &subOp : llvm::make_early_inc_range(llvm::reverse(deadBlock)))
+    b.eraseOp(&subOp);
+  b.setInsertionPointToStart(&deadBlock);
+  UnreachableOp::create(b, op.getLoc());
+  return success();
 }

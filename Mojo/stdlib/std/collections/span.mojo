@@ -20,18 +20,17 @@ from std.collections import Span
 ```
 """
 from std.builtin.builtin_slice import ContiguousSlice
-from std.reflection import call_location, reflect
+from std.reflection import reflect
 from std.bit.mask import splat
-from std.bit import pop_count
-from std.memory import (
-    pack_bits,
-    unsafe_uninit_copy_n,
-)
+from std.memory import unsafe_uninit_copy_n, unsafe_memcpy, MaybeUninit
 from std.collections import check_bounds, check_slice_bounds
 from std.builtin.rebind import downcast
-from std.sys import align_of
 from std.sys.info import simd_width_of
-from std.traits import IsTriviallyCopyable, IsTriviallyDeinitable
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
@@ -298,12 +297,14 @@ struct Span[
     def __init__(
         out self,
         ref[Self.origin] list: List[Self.T],
-    ) where conforms_to(Self.T, Movable):
+    ):
         """Construct a `Span` from a `List`.
 
         Args:
             list: The list to which the span refers.
         """
+        # TODO: This should carry the List's interior origin and should not
+        # need a rebind.
         self._data = rebind[type_of(self._data)](list.unsafe_ptr())
         self._len = len(list)
 
@@ -881,7 +882,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = rebind[Int](widths[i])
+            comptime w = widths[i]
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((middle - processed) // w):
@@ -925,7 +926,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = rebind[Int](widths[i])
+            comptime w = widths[i]
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
@@ -965,7 +966,7 @@ struct Span[
         var processed = 0
 
         comptime for i in range(len(widths)):
-            comptime w = rebind[Int](widths[i])
+            comptime w = widths[i]
 
             comptime if simd_width_of[dtype]() >= w:
                 for _ in range((length - processed) // w):
@@ -1095,8 +1096,8 @@ struct Span[
                     return 0
 
             var index = span.binary_search_by[cmp]()
-            if index:
-                print("Found at index: ", index.value())
+            if case .Some(i) = index:
+                print("Found at index: ", i)
             else:
                 print("Not found")
             ```
@@ -1148,8 +1149,8 @@ struct Span[
                         return 0
 
                 var index = span.binary_search_by(cmp)
-                if index:
-                    print("Found at index: ", index.value())
+                if case .Some(i) = index:
+                    print("Found at index: ", i)
                 else:
                     print("Not found")
             ```
@@ -1169,3 +1170,292 @@ struct Span[
             cursor += splat(cmp_result < 0) & half
 
         return Optional(cursor) if cmp_result == 0 else None
+
+    # ===------------------------------------------------------------------===#
+    # Uninitialized memory
+    # ===------------------------------------------------------------------===#
+
+    @inline(.always)
+    @__allow_legacy_custom_self_type
+    def unsafe_deinit_elements[U: Deinitable](self: MutSpan[U, _]):
+        """Destroys every element, leaving the memory uninitialized.
+
+        Each element's deinitializer runs in place, in index order, so the
+        storage behind the span can be reused or released without moving
+        anything out of it.
+
+        Parameters:
+            U: The span's element type.
+
+        Safety:
+
+        - Every element must hold a live `U`. Deinitializing an element that
+          was never initialized, or that was already deinitialized, is
+          undefined behavior.
+        - The elements are left uninitialized. Reading them, or deinitializing
+          them a second time, is undefined behavior.
+        """
+        comptime if IsTriviallyDeinitable[Self.T]:
+            pass
+        else:
+            for i in range(len(self)):
+                self._data.unsafe_offset(i).unsafe_deinit_pointee()
+
+    @inline(.always)
+    @__allow_legacy_custom_self_type
+    def unsafe_deinit_elements_with[
+        U: AnyType
+    ](self: MutSpan[U, _], f: Some[def(var U)], /):
+        """Destroys every element by passing it to `f`, leaving the memory
+        uninitialized.
+
+        This is the `Deinitable`-free counterpart to `unsafe_deinit_elements`:
+        each element is handed to `f` as an owned value, in index order, so a
+        span of elements that have no destructor of their own can still be
+        torn down. `U` is unconstrained, so this works for element types that
+        are neither `Deinitable` nor `Movable`.
+
+        Parameters:
+            U: The span's element type.
+
+        Args:
+            f: The function that consumes, and is responsible for disposing
+                of, each element.
+
+        Safety:
+
+        - Every element must hold a live `U`. Deinitializing an element that
+          was never initialized, or that was already deinitialized, is
+          undefined behavior.
+        - The elements are left uninitialized. Reading them, or deinitializing
+          them a second time, is undefined behavior.
+        """
+        for i in range(len(self)):
+            self._data.unsafe_offset(i).unsafe_deinit_pointee_with(f)
+
+    @inline(.always)
+    def _unsafe_bitcast_span[
+        To: AnyType
+    ](self) -> Span[To, Self.origin, address_space=Self.address_space]:
+        """Reinterprets this span's elements as `To`."""
+        return {
+            unsafe_ptr = self._data.unsafe_bitcast[To](),
+            length = len(self),
+        }
+
+    @inline(.always)
+    @__allow_legacy_custom_self_type
+    def unsafe_assume_init[
+        U: AnyType
+    ](self: Span[MaybeUninit[U], _]) -> Span[U, self.origin]:
+        """Reinterprets this span as a span of initialized `U` elements.
+
+        Parameters:
+            U: The type held by this span's `MaybeUninit` elements.
+
+        Returns:
+            A span of the same length over the same memory, typed as `U`.
+
+        Safety:
+
+        - Every element must hold a live `U`. Reading an element that was never
+          initialized is undefined behavior.
+
+        Examples:
+
+        ```mojo
+        var storage = Array[MaybeUninit[Int], 3]()
+        var uninit = Span(storage)
+        for i in range(len(uninit)):
+            uninit[i].write(i + 1)
+
+        # SAFETY: the loop above wrote every element.
+        print(uninit.unsafe_assume_init()) # [1, 2, 3]
+        ```
+        """
+        # Not `_unsafe_bitcast_span`: `U` is unconstrained, and instantiating
+        # a call against the `MaybeUninit[U]` element type makes the compiler
+        # evaluate `IsTriviallyMovable[U]`, whose `downcast[U, Movable]` is
+        # not guarded by the `conforms_to` beside it and so hard-errors for a
+        # non-`Movable` `U`. TODO(MOCO-4525): drop the workaround once
+        # `IsTriviallyMovable` no longer uses `downcast`.
+        return {
+            unsafe_ptr = self._data.unsafe_bitcast[U](),
+            length = len(self),
+        }
+
+    @inline(.always)
+    @__allow_legacy_custom_self_type
+    def unsafe_init_with[
+        U: AnyType
+    ](
+        self: MutSpan[MaybeUninit[U], _],
+        f: Some[def(Int) -> U],
+        /,
+    ) -> MutSpan[
+        U, self.origin
+    ]:
+        """Initializes every element with the result of `f(i)`.
+
+        Parameters:
+            U: The type held by this span's `MaybeUninit` elements.
+
+        Args:
+            f: A function called with each index in `[0, len(self))`,
+                whose result is written to that position.
+
+        Returns:
+            A span over the newly initialized elements, covering all of `self`.
+
+        Safety:
+
+        - Writing over an element does not destroy what it held, so an
+          element already holding a live `U` leaks whatever that `U` owns.
+          Deinitialize those first.
+
+        Examples:
+
+        ```mojo
+        var storage = Array[MaybeUninit[Int], 5]()
+        var squares = Span(storage).unsafe_init_with(
+            lambda (i: Int) -> Int: i * i
+        )
+        print(squares) # [0, 1, 4, 9, 16]
+        ```
+        """
+        # `Pointer[U]`, not the `MaybeUninit[U]` elements: see the note in
+        # `unsafe_assume_init`.
+        var data = self._data.unsafe_bitcast[U]()
+        for i in range(len(self)):
+            data.unsafe_offset(i).unsafe_write(
+                init_with=lambda () {ref} -> U: f(i)
+            )
+        return {unsafe_ptr = data, length = len(self)}
+
+    @inline(.always)
+    @__allow_legacy_custom_self_type
+    def unsafe_init_copy_from[
+        U: Copyable
+    ](
+        self: MutSpan[MaybeUninit[U], _],
+        copy_from: ImmSpan[U, _],
+        /,
+    ) -> MutSpan[U, self.origin]:
+        """Initializes every element with a copy of the matching `copy_from`
+        element.
+
+        Aborts if `copy_from` is not the same length as `self`.
+
+        Parameters:
+            U: The type held by this span's `MaybeUninit` elements.
+
+        Args:
+            copy_from: The elements to copy, of the same length as `self`.
+
+        Returns:
+            A span over the newly initialized elements, covering all of `self`.
+
+        Safety:
+
+        - Writing over an element does not destroy what it held, so an
+          element already holding a live `U` leaks whatever that `U` owns.
+          Deinitialize those first.
+
+        Examples:
+
+        ```mojo
+        var source: Array[Int, 3] = [1, 2, 3]
+        var storage = Array[MaybeUninit[Int], 3]()
+        var copied = Span(storage).unsafe_init_copy_from(source)
+        print(copied) # [1, 2, 3]
+        ```
+        """
+        debug_assert[assert_mode="safe"](
+            len(self) == len(copy_from),
+            (
+                "Span.unsafe_init_copy_from: source span length does not match"
+                " destination span length."
+            ),
+        )
+
+        comptime if IsTriviallyCopyable[U]:
+            unsafe_memcpy(
+                dest=self._data.unsafe_bitcast[U](),
+                src=copy_from._data,
+                count=len(self),
+            )
+        else:
+            for i in range(len(self)):
+                self._data.unsafe_offset(i)[].unsafe_write(
+                    init_with=lambda () -> U: copy_from._data.unsafe_offset(
+                        i
+                    )[].copy()
+                )
+
+        return self._unsafe_bitcast_span[U]()
+
+    @inline(.always)
+    @__allow_legacy_custom_self_type
+    def unsafe_init_move_from[
+        U: Movable
+    ](
+        self: MutSpan[MaybeUninit[U], _],
+        move_from: MutSpan[U, _],
+        /,
+    ) -> MutSpan[U, self.origin]:
+        """Initializes every element by moving out of the matching `move_from`
+        element.
+
+        Aborts if `move_from` is not the same length as `self`.
+
+        Parameters:
+            U: The type held by this span's `MaybeUninit` elements.
+
+        Args:
+            move_from: The elements to move out of, of the same length as
+                `self`.
+
+        Returns:
+            A span over the newly initialized elements, covering all of `self`.
+
+        Safety:
+
+        - Writing over an element does not destroy what it held, so an
+          element already holding a live `U` leaks whatever that `U` owns.
+          Deinitialize those first.
+        - Every element of `move_from` is left uninitialized. Reading them, or
+          letting their owner destroy them, is undefined behavior.
+
+        Examples:
+
+        ```mojo
+        var source: Array[String, 2] = ["a", "b"]
+        var storage = Array[MaybeUninit[String], 2]()
+        var moved = Span(storage).unsafe_init_move_from(source)
+        print(moved) # ["a", "b"]
+        # `source` now holds two uninitialized elements.
+        ```
+        """
+        debug_assert[assert_mode="safe"](
+            len(self) == len(move_from),
+            (
+                "Span.unsafe_init_move_from: source span length does not match"
+                " destination span length."
+            ),
+        )
+
+        comptime if IsTriviallyMovable[U]:
+            unsafe_memcpy(
+                dest=self.unsafe_ptr().unsafe_bitcast[U](),
+                src=move_from.unsafe_ptr(),
+                count=len(self),
+            )
+        else:
+            for i in range(len(self)):
+                self._data.unsafe_offset(i)[].unsafe_write(
+                    init_with=lambda () -> U: move_from._data.unsafe_offset(
+                        i
+                    ).unsafe_take_pointee()
+                )
+
+        return self._unsafe_bitcast_span[U]()

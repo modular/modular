@@ -30,31 +30,31 @@
 #ifndef SUPPORT_REQUESTCONTEXT_H
 #define SUPPORT_REQUESTCONTEXT_H
 
+#include "Support/Globals/Globals.h"
+
 #include <cstdint>
 #include <optional>
 
 namespace M::Request {
 
-namespace Detail {
-inline thread_local std::optional<int64_t> batchId;
-} // namespace Detail
-
 // The batch this thread is serving, or nullptr outside one. Callers that render
 // it are expected to omit their field entirely when this is null rather than
 // emit a sentinel, so that a reader can tell "no batch" from "batch 0".
 inline const int64_t *currentBatchId() {
-  return Detail::batchId ? &*Detail::batchId : nullptr;
+  const std::optional<int64_t> &batchId = ::M::Globals::getRequestBatchId();
+  return batchId ? &*batchId : nullptr;
 }
 
 // Binds the batch id for a scope and restores what the thread held before, so
 // scopes nest and leaving an inner one cannot strand an outer one's id.
 class BatchScope {
 public:
-  explicit BatchScope(int64_t batchId) : saved(Detail::batchId) {
-    Detail::batchId = batchId;
+  explicit BatchScope(int64_t batchId)
+      : saved(::M::Globals::getRequestBatchId()) {
+    ::M::Globals::getRequestBatchId() = batchId;
   }
 
-  ~BatchScope() { Detail::batchId = saved; }
+  ~BatchScope() { ::M::Globals::getRequestBatchId() = saved; }
 
   BatchScope(const BatchScope &) = delete;
   BatchScope &operator=(const BatchScope &) = delete;
@@ -68,8 +68,8 @@ private:
 // For boundaries a scope object cannot span, such as the Python bindings, where
 // the two ends are separate calls. Prefer BatchScope anywhere it fits: it
 // cannot be left unbalanced.
-inline void setBatchId(int64_t id) { Detail::batchId = id; }
-inline void clearBatchId() { Detail::batchId.reset(); }
+inline void setBatchId(int64_t id) { ::M::Globals::getRequestBatchId() = id; }
+inline void clearBatchId() { ::M::Globals::getRequestBatchId().reset(); }
 
 } // namespace M::Request
 

@@ -11,14 +11,14 @@
 kgen.generator @basic_arg_remove_1<dt: dtype, T: type>(%arg0: !kgen.scalar<dt>, %arg1: !kgen.pointer<none>, %arg2: !kgen.pointer<none>) {
   pop.load %arg1 : !kgen.pointer<none> loc(#loc)
   pop.load %arg2 : !kgen.pointer<none> loc(#loc)
-  // CHECK: kgen.return loc(#[[INLINED_LOC:.+]])
-  kgen.return loc(#inlinedLoc)
+  // CHECK: hlcf.return loc(#[[INLINED_LOC:.+]])
+  hlcf.return loc(#inlinedLoc)
 // CHECK: } loc(#[[LOC:.+]])
 } loc(#loc)
 
 kgen.generator @user<dt: dtype, T: type>(%arg0: !kgen.scalar<dt>, %arg1: !kgen.pointer<none>, %arg2: !kgen.pointer<none>) {
   kgen.call @basic_arg_remove_1<:dtype dt, :type T>(%arg0, %arg1, %arg2) : (!kgen.scalar<dt>, !kgen.pointer<none>, !kgen.pointer<none>) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-DAG: ![[UNSPECIFIED:.+]] = !debuginfo.unspecified<"optimized out">
@@ -47,10 +47,10 @@ kgen.generator @basic_arg_remove_debug_only_user<dt: dtype>(%arg0: !kgen.scalar<
   // CHECK-NOT: debuginfo.value
   debuginfo.value #di_arg0 = %arg0 : !kgen.scalar<dt> loc(#loc)
   pop.load %arg1 : !kgen.pointer<none> loc(#loc)
-  kgen.return loc(#loc)
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 kgen.generator @user<dt: dtype, T: type>(%arg0: !kgen.scalar<dt>, %arg1: !kgen.pointer<none>, %arg2: !kgen.pointer<none>) {
   kgen.call @basic_arg_remove_debug_only_user<:dtype dt>(%arg0, %arg1) : (!kgen.scalar<dt>, !kgen.pointer<none>) -> ()
-  kgen.return
+  hlcf.return
 }

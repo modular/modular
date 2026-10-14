@@ -152,7 +152,7 @@ def run_sampling[
     # so the unfiltered fast path is only reachable with a null optional here.
     # A buffer of zeros leaves the optional engaged and takes the slow path.
     var min_p_t = (
-        TileTensor(min_p_dev, row_major(rows)).as_unsafe_any_origin().as_immut()
+        TileTensor(min_p_dev, row_major(rows)).as_unsafe_any_origin().as_imm()
     )
     var min_p_arg = Optional(min_p_t)
     if not pass_min_p:
@@ -172,16 +172,16 @@ def run_sampling[
             d,
             rng_seed=TileTensor(seed_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_k_arr=TileTensor(top_k_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_p_arr=TileTensor(top_p_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             temperature=TileTensor(temp_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             min_p=min_p_arg,
             out_dist=TileTensor(
                 dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)
@@ -197,16 +197,16 @@ def run_sampling[
             d,
             rng_seed=TileTensor(seed_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_k_arr=TileTensor(top_k_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_p_arr=TileTensor(top_p_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             temperature=TileTensor(temp_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             min_p=min_p_arg,
             out_dist=TileTensor(
                 dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)

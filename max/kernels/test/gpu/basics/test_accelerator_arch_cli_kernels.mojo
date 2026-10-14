@@ -14,7 +14,7 @@
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm_90a %s | FileCheck --check-prefix=CHECK-NV90 %s
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm_120a %s | FileCheck --check-prefix=CHECK-NV120 %s
 
-from std.sys.info import _accelerator_arch, _is_sm_9x, _is_sm_9x_or_newer
+from std.sys.info import _is_sm_9x, _is_sm_9x_or_newer
 
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
@@ -32,8 +32,6 @@ def check_sm9x_or_newer() -> Bool:
 
 
 def main() raises:
-    comptime accelerator_arch = _accelerator_arch()
-
     # CHECK-NV80: ret i1 false
     # CHECK-NV90: ret i1 true
     # CHECK-NV120: ret i1 false
@@ -41,7 +39,7 @@ def main() raises:
         _compile_code[
             check_sm9x,
             emission_kind="llvm",
-            target=get_gpu_target[_accelerator_arch()](),
+            target=get_gpu_target(),
         ]()
     )
 
@@ -52,6 +50,6 @@ def main() raises:
         _compile_code[
             check_sm9x_or_newer,
             emission_kind="llvm",
-            target=get_gpu_target[_accelerator_arch()](),
+            target=get_gpu_target(),
         ]()
     )

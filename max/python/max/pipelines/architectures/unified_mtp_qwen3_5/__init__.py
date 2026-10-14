@@ -13,7 +13,8 @@
 """Qwen3.5 MTP head fused with its target for speculative decoding."""
 
 from .arch import unified_mtp_qwen3_5_arch
-from .model import UnifiedMTPQwen3_5Inputs, UnifiedMTPQwen3_5Model
+from .inputs import UnifiedMTPQwen3_5Inputs
+from .model import UnifiedMTPQwen3_5Model
 
 __all__ = [
     "UnifiedMTPQwen3_5Inputs",

@@ -28,19 +28,22 @@ makes the test meaningful.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Buffer
+from max import tree
+from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
-    KVCacheInputs,
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
-    RecurrentStateInputs,
+    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -49,10 +52,11 @@ from max.pipelines.architectures.qwen3_5.qwen3_5 import Qwen3_5
 from max.pipelines.architectures.qwen3_5.state_cache import (
     ATTN_CACHE_KEY,
     STATE_CACHE_KEY,
-    attn_cache,
     linear_state_regions,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
+    JengaKVCacheManager,
+)
 from test_common.context_utils import create_text_context
 
 HIDDEN = 64
@@ -70,9 +74,6 @@ LINEAR_VALUE_HEADS = 2
 # The recurrence kernel is only compiled for 128 x 128 heads.
 LINEAR_KEY_DIM = 128
 LINEAR_VALUE_DIM = 128
-CONV_DIM = 2 * LINEAR_KEY_HEADS * LINEAR_KEY_DIM + (
-    LINEAR_VALUE_HEADS * LINEAR_VALUE_DIM
-)
 
 
 def _config(target_layer_ids: list[int] | None) -> Qwen3_5Config:
@@ -154,12 +155,44 @@ def _with_state_regions(config: Qwen3_5Config) -> Qwen3_5Config:
     return config
 
 
-def _run(
+def _create_kv_manager(
+    params: KVCacheParamInterface, *, max_batch_size: int = 2
+) -> JengaKVCacheManager:
+    """Jenga manager over the full attn+state tree, matching production serve."""
+    tp_degree = params.tensor_parallel_degree
+    huge_page_bytes = max(
+        leaf.bytes_per_page // tp_degree for leaf in params.leaves().values()
+    )
+    num_huge_blocks = 32
+    return JengaKVCacheManager.create(
+        params=params,
+        available_bytes=num_huge_blocks * huge_page_bytes * len(params.devices),
+        max_batch_size=max_batch_size,
+        max_seq_len=128,
+    )
+
+
+class Tapped(NamedTuple):
+    """A compiled tap graph and what running it needs."""
+
+    compiled: Model
+    device: Device
+    kv_params: MultiKVCacheParams
+
+
+def _build(
     target_layer_ids: list[int] | None,
     *,
     return_all_hidden_states: bool = False,
-) -> list[np.ndarray]:
-    """Runs a tiny Qwen3.5 with fixed weights and returns its tap outputs."""
+) -> Tapped:
+    """Compiles a tiny Qwen3.5 with fixed weights, tapping ``target_layer_ids``.
+
+    Compiling only, with nothing placed on the device: a test that builds every
+    graph it needs before running any of them can have all of those compiles
+    recorded by a CPU build action (``precompile_mefs`` in the BUILD file, and
+    ``docs/internal/CompileOnCpuRunOnGpu.md``). Interleaving the two hides
+    every compile after the first from the recording.
+    """
     config = _with_state_regions(_config(target_layer_ids))
     model = Qwen3_5(config)
     model.return_logits = ReturnLogits.LAST_TOKEN
@@ -197,68 +230,64 @@ def _run(
         tokens, row_offsets, return_n_logits, *rest = graph.inputs
         it = iter(rest)
         signal_buffers = [next(it).buffer]
-        tree = kv_tree.unflatten_kv_inputs(it)
-        assert isinstance(tree, MultiKVCacheInputs)
-        leaf = tree.children[ATTN_CACHE_KEY]
-        assert isinstance(leaf, KVCacheInputs)
-        state = tree.children[STATE_CACHE_KEY]
-        assert isinstance(state, RecurrentStateInputs)
+        kv_inputs = kv_tree.unflatten_kv_inputs(it)
+        assert isinstance(kv_inputs, dict)
+        leaf = kv_inputs[ATTN_CACHE_KEY]
+        assert (
+            isinstance(leaf, tuple)
+            and leaf
+            and isinstance(leaf[0], KVCacheInputsPerDevice)
+        )
+        state = kv_inputs[STATE_CACHE_KEY]
+        assert isinstance(state, tuple)
         outputs = model(
             tokens.tensor,
-            list(leaf.inputs),
+            tree.leaves(leaf, leaf=KVCacheInputsPerDevice),
             return_n_logits.tensor,
             row_offsets.tensor,
             signal_buffers,
-            list(state.inputs),
+            tree.leaves(state, leaf=RecurrentStateInputsPerDevice),
         )
         graph.output(*outputs)
 
     compiled = session.load(graph, weights_registry=registry)
 
+    kv_params = config.kv_params
+    assert isinstance(kv_params, MultiKVCacheParams)
+    return Tapped(compiled, device, kv_params)
+
+
+def _execute(tapped: Tapped) -> list[np.ndarray]:
+    """Runs a built tap graph and returns its tap outputs.
+
+    Everything here needs the device: the input buffers, the cache manager's
+    pages, and the signal buffers.
+
+    Args:
+        tapped: What :func:`_build` compiled.
+
+    Returns:
+        One capture per tapped layer, in ascending layer order.
+    """
+    compiled, device, kv_params = tapped
+
     def buf(x: np.ndarray) -> Buffer:
         return Buffer.from_numpy(np.ascontiguousarray(x)).to(device)
 
-    kv_manager = PagedKVCacheManager(
-        params=attn_cache(config.kv_params),
-        total_num_pages=8,
-        session=session,
-        max_batch_size=2,
-    )
+    kv_manager = _create_kv_manager(kv_params)
     ctx = create_text_context(
         np.arange(SEQ_LEN, dtype=np.int64), max_length=128
     )
     kv_manager.claim(ctx)
     kv_manager.alloc(ctx)
-    kv_inputs = list(
-        kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0].flatten()
-    )
+    kv_runtime = kv_manager.runtime_inputs([[ctx]])
 
     results = compiled.execute(
         buf(np.arange(SEQ_LEN, dtype=np.int64)),
         buf(np.array([0, SEQ_LEN], dtype=np.uint32)),
         Buffer.from_numpy(np.array([1], dtype=np.int64)),
         *Signals.allocate([device]),
-        *kv_inputs,
-        # One pool per leaf, a block's layers being consecutive rows, then
-        # the rows each layer reads.
-        buf(
-            np.zeros(
-                (2 * NUM_LINEAR, CONV_DIM, CONV_KERNEL - 1), dtype=np.float32
-            )
-        ),
-        buf(
-            np.zeros(
-                (
-                    2 * NUM_LINEAR,
-                    LINEAR_VALUE_HEADS,
-                    LINEAR_KEY_DIM,
-                    LINEAR_VALUE_DIM,
-                ),
-                dtype=np.float32,
-            )
-        ),
-        buf(np.arange(NUM_LINEAR, dtype=np.uint32).reshape(1, NUM_LINEAR)),
-        buf(np.arange(NUM_LINEAR, dtype=np.uint32).reshape(1, NUM_LINEAR)),
+        *tree.leaves(kv_runtime),
     )
     # LAST_TOKEN logits, then one capture per tapped layer.
     return [np.array(r.to(CPU()).to_numpy()) for r in results[1:]]
@@ -266,7 +295,7 @@ def _run(
 
 def test_no_taps_requested_means_no_captures() -> None:
     """The base graph is unchanged: the hook costs nothing when unused."""
-    assert _run(None) == []
+    assert _execute(_build(None)) == []
 
 
 @pytest.mark.parametrize("order", [[1, 3], [3, 1]])
@@ -278,9 +307,11 @@ def test_captures_come_out_in_ascending_layer_order(
     ``fc`` consumes one column block per tap in ascending layer order, so a
     list-ordered capture would feed every block the wrong layer.
     """
-    ascending = _run([1, 3])
+    # Both graphs before either run, so a record run sees both compiles.
+    in_order, as_written = _build([1, 3]), _build(order)
+    ascending = _execute(in_order)
     assert len(ascending) == 2
-    got = _run(order)
+    got = _execute(as_written)
     for a, b in zip(ascending, got, strict=True):
         np.testing.assert_array_equal(a, b)
 
@@ -288,9 +319,10 @@ def test_captures_come_out_in_ascending_layer_order(
 def test_a_tap_reads_its_own_layer() -> None:
     """Distinct layers, and each capture equal to that layer's own single-tap
     run -- so the list is a per-layer read, not the same tensor N times."""
-    both = _run([1, 3])
-    (only_1,) = _run([1])
-    (only_3,) = _run([3])
+    pair, first, second = _build([1, 3]), _build([1]), _build([3])
+    both = _execute(pair)
+    (only_1,) = _execute(first)
+    (only_3,) = _execute(second)
     np.testing.assert_array_equal(both[0], only_1)
     np.testing.assert_array_equal(both[1], only_3)
     assert not np.array_equal(only_1, only_3)
@@ -299,7 +331,7 @@ def test_a_tap_reads_its_own_layer() -> None:
 def test_both_layer_kinds_are_tappable() -> None:
     """Layer 0 is linear-attention and layer 1 is full-attention; one hook
     covers both, which is what makes taps 5/19/33/47/61 free."""
-    captures = _run([0, 1])
+    captures = _execute(_build([0, 1]))
     assert len(captures) == 2
     assert captures[0].shape == captures[1].shape == (SEQ_LEN, HIDDEN)
     assert not np.array_equal(captures[0], captures[1])
@@ -315,6 +347,8 @@ def test_a_tap_captures_the_layers_output_not_its_input() -> None:
     would still pass.
     """
     last = len(LAYER_TYPES) - 1
-    (tapped,) = _run([last])
-    (final,) = _run(None, return_all_hidden_states=True)
+    tap_of_last = _build([last])
+    every_layer = _build(None, return_all_hidden_states=True)
+    (tapped,) = _execute(tap_of_last)
+    (final,) = _execute(every_layer)
     np.testing.assert_array_equal(tapped, final)

@@ -12,7 +12,7 @@ package(default_visibility = ["//max:consumers"])
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         enable_assertions = True,
         exec_properties = {
-            "test.resources:gpu-memory": "3",
+            "test.resources:gpu-memory": "2",
         },
         tags = ["gpu"],
         target_compatible_with = [

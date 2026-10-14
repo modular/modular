@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import exp, sqrt
+from std.math import ceildiv, exp, sqrt
 from std.random import rand
 from std.collections import Array
 from max.gpu import block_idx, thread_idx, block_dim, grid_dim
@@ -305,7 +305,7 @@ def main() raises:
     device.enqueue_copy(d_K, h_K)
     device.enqueue_copy(d_V, h_V)
 
-    var grid_size = (N + B_r - 1) // B_r
+    var grid_size = ceildiv(N, B_r)
     var scaling = 1.0 / sqrt(Float32(D_MODEL))
 
     print("Launching kernel with grid=", grid_size, "block=", BLOCK_SIZE, "...")

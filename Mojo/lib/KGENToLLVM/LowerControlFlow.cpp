@@ -48,7 +48,7 @@ struct ControlFlowConverter {
 
   /// Lower the terminator.
   LogicalResult lowerTerminator(ControlFlowTerminator term, unsigned &termId);
-  LogicalResult lowerReturn(KGEN::ReturnOp op, ValueRange operands);
+  LogicalResult lowerReturn(HLCF::ReturnOp op, ValueRange operands);
 
   /// The rewriter to use.
   IRRewriter b;
@@ -128,31 +128,17 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
 
   b.setInsertionPointToEnd(before);
   // Replace the operation.
-  if (auto cond = dyn_cast<IfOp>(node.getOperation())) {
-    Type condType = typeConverter.convertType(cond.getCond().getType());
+  if (auto ifOp = dyn_cast<IfOp>(node.getOperation())) {
+    // Region layout: 0 = then, 1 = else, 2+ = (cond, then) elif pairs.
+    // Branch on the first condition to then vs. the first elif cond (or else).
+    Type condType = typeConverter.convertType(ifOp.getCond().getType());
     if (!condType)
-      return mlir::emitError(cond.getLoc(), "failed to convert condition type");
-    // We can not use cast_to_builtin here since mlir type converter insert
-    // `UnrealizedConversionCastOp` by default, and we need to do the same to
-    // cancel out type conversion.
+      return mlir::emitError(ifOp.getLoc(), "failed to convert condition type");
     auto condCast = mlir::UnrealizedConversionCastOp::create(
-        b, node->getLoc(), condType, cond.getCond());
-    LLVM::CondBrOp::create(b, node->getLoc(), condCast.getResult(0),
-                           entries.front(), ValueRange(), entries.back(),
-                           ValueRange());
-    b.eraseOp(node);
-  } else if (auto elif = dyn_cast<ElifOp>(node.getOperation())) {
-    // Multi-arm elif is expanded to nested 2-arm elifs before this pass.
-    if (elif.getNumRegions() != 2)
-      return elif.emitOpError("expected 2-region elif for LLVM lowering");
-    Type condType = typeConverter.convertType(elif.getCond().getType());
-    if (!condType)
-      return mlir::emitError(elif.getLoc(), "failed to convert condition type");
-    auto condCast = mlir::UnrealizedConversionCastOp::create(
-        b, node->getLoc(), condType, elif.getCond());
-    LLVM::CondBrOp::create(b, node->getLoc(), condCast.getResult(0),
-                           entries.front(), ValueRange(), entries.back(),
-                           ValueRange());
+        b, node->getLoc(), condType, ifOp.getCond());
+    unsigned falseRegion = ifOp.getElifRegions().empty() ? 1 : 2;
+    LLVM::CondBrOp::create(b, node->getLoc(), condCast.getResult(0), entries[0],
+                           ValueRange(), entries[falseRegion], ValueRange());
     b.eraseOp(node);
   } else if (auto sw = dyn_cast<SwitchOp>(node.getOperation())) {
     auto arg = mlir::UnrealizedConversionCastOp::create(
@@ -198,7 +184,7 @@ LogicalResult ControlFlowConverter::lowerNode(ControlFlowNode node,
   return success();
 }
 
-LogicalResult ControlFlowConverter::lowerReturn(KGEN::ReturnOp op,
+LogicalResult ControlFlowConverter::lowerReturn(HLCF::ReturnOp op,
                                                 ValueRange operands) {
   // If the results don't need to be packed, create the LLVM return.
   if (op->getNumOperands() <= 1) {
@@ -223,8 +209,8 @@ LogicalResult ControlFlowConverter::lowerReturn(KGEN::ReturnOp op,
 
 LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
                                                     unsigned &termId) {
-  // kgen.unreachable -> llvm.unreachable.
-  if (auto unreachableOp = dyn_cast<KGEN::UnreachableOp>(term.getOperation())) {
+  // hlcf.unreachable -> llvm.unreachable.
+  if (auto unreachableOp = dyn_cast<HLCF::UnreachableOp>(term.getOperation())) {
     b.replaceOpWithNewOp<LLVM::UnreachableOp>(unreachableOp);
     return success();
   }
@@ -244,12 +230,32 @@ LogicalResult ControlFlowConverter::lowerTerminator(ControlFlowTerminator term,
   }
 
   // Rewrite the terminator.
-  if (auto returnOp = dyn_cast<KGEN::ReturnOp>(term.getOperation()))
+  if (auto returnOp = dyn_cast<HLCF::ReturnOp>(term.getOperation()))
     return lowerReturn(returnOp, results);
 
   assert(termId < tree.targets.size() && "malformed tree");
   auto &[nodeId, target] = tree.targets[termId];
   assert(nodeId < blocks.size() && "malformed tree");
+
+  // `hlcf.if.elifcond.yield` is a two-way branch on its condition operand,
+  // carrying any extra operands into both successors as block arguments.
+  if (isa<IfElifCondYieldOp>(term.getOperation())) {
+    if (target.size() != 2)
+      return term.emitOpError(
+          "expected 2 targets for non-constant if.elifcond.yield");
+    ValueRange carry = ArrayRef(results).drop_front();
+    b.replaceOpWithNewOp<LLVM::CondBrOp>(
+        term, results.front(),
+        getTargetBlock(blocks[nodeId].first, blocks[nodeId].second,
+                       target[0].index),
+        carry,
+        getTargetBlock(blocks[nodeId].first, blocks[nodeId].second,
+                       target[1].index),
+        carry);
+    ++termId;
+    return success();
+  }
+
   if (target.size() != 1)
     return term.emitOpError("cannot lower terminator without 1 target");
   b.replaceOpWithNewOp<LLVM::BrOp>(term, results,

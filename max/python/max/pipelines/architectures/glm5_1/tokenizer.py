@@ -20,34 +20,33 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import (
-    TextTokenizer,
-    resolve_single_special_token,
+from max.pipelines.architectures.glm5_1.chat_template import (
+    linearize_tool_results,
+    order_tool_results,
 )
+from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
 
-_THINK_START_TOKEN = "<think>"
-_THINK_END_TOKEN = "</think>"
-
 logger = logging.getLogger("max.serve")
 
-# GLM's chat template exposes a small ladder of thinking levels, and *which*
-# rungs exist varies by checkpoint:
+# Which thinking controls GLM's chat template exposes varies by checkpoint:
 #
-#   GLM-5.1 / 5.2  {%- set effective_reasoning_effort =
+#   GLM-5 / 5.1    ``enable_thinking`` only; ``reasoning_effort`` is never read
+#   GLM-5.2        {%- set effective_reasoning_effort =
 #                       'high' if reasoning_effort == 'high' else 'max' -%}
 #   GLM-5.3        {%- set effective_reasoning_effort = reasoning_effort
 #                       if reasoning_effort in ['low', 'high'] else 'max' -%}
 #
-# and GLM-5.3 dropped ``enable_thinking`` entirely, s
+# and GLM-5.3 dropped ``enable_thinking`` entirely, so it cannot stop reasoning.
 #
 # OpenAI's ladder is mapped onto whichever rungs the template actually offers:
 #   "none"           -> thinking off where the template supports it, otherwise
 #                       the floor rung (see ``normalize_glm_reasoning_effort``)
+#   "minimal"        -> the floor rung
 #   "low"            -> "low" when the template has that rung, else "high"
 #   "medium", "high" -> "high"
 #   "xhigh", "max"   -> "max"
@@ -75,8 +74,8 @@ _CANDIDATE_RUNGS: tuple[str, ...] = (_GLM_EFFORT_LOW, _GLM_EFFORT_HIGH)
 # control when probing.
 _UNRECOGNIZED_EFFORT = "__max_probe_unrecognized__"
 
-# The rung set assumed when a template cannot be probed. Matches GLM-5.1/5.2,
-# the behavior that shipped before probing existed.
+# The rung set assumed when a template cannot be probed. Matches GLM-5.2, the
+# behavior that shipped before probing existed.
 _FALLBACK_RUNGS = frozenset({_GLM_EFFORT_HIGH})
 
 
@@ -111,8 +110,9 @@ def _probe_template_rungs(
             returns the prompt. Any exception is treated as "cannot probe".
 
     Returns:
-        The capabilities detected, or the GLM-5.1/5.2 defaults if the template
-        could not be rendered.
+        The capabilities detected, or the GLM-5.2 defaults if the template
+        could not be rendered. A template that reads no effort, like GLM-5.1's,
+        has no rungs.
     """
     try:
         control = render(reasoning_effort=_UNRECOGNIZED_EFFORT)
@@ -127,16 +127,14 @@ def _probe_template_rungs(
     except Exception:
         logger.warning(
             "Could not render the GLM chat template to detect its reasoning "
-            "ladder; assuming the GLM-5.1/5.2 ladder (high, max) with a "
+            "ladder; assuming the GLM-5.2 ladder (high, max) with a "
             "thinking toggle."
         )
         return GlmTemplateCapabilities(
             _FALLBACK_RUNGS, honors_thinking_toggle=True
         )
 
-    return GlmTemplateCapabilities(
-        rungs or _FALLBACK_RUNGS, honors_thinking_toggle=honors_toggle
-    )
+    return GlmTemplateCapabilities(rungs, honors_thinking_toggle=honors_toggle)
 
 
 def _asks_for_no_reasoning(options: Mapping[str, Any]) -> bool:
@@ -183,7 +181,7 @@ def normalize_glm_reasoning_effort(
     Args:
         chat_template_options: Keyword arguments bound for the chat template.
         capabilities: The template's detected ladder. Defaults to the
-            GLM-5.1/5.2 ladder, which is what this function assumed before
+            GLM-5.2 ladder, which is what this function assumed before
             templates were probed.
 
     Returns:
@@ -217,6 +215,8 @@ def normalize_glm_reasoning_effort(
     normalized = effort.strip().lower()
     if normalized in _TOP_RUNG_ALIASES:
         options["reasoning_effort"] = _GLM_EFFORT_MAX
+    elif normalized == "minimal":
+        options["reasoning_effort"] = capabilities.floor_rung
     elif normalized in capabilities.rungs:
         options["reasoning_effort"] = normalized
     else:
@@ -226,7 +226,7 @@ def normalize_glm_reasoning_effort(
     return options
 
 
-class GlmTokenizer(TextTokenizer):
+class GlmTokenizer(ReasoningTextTokenizer):
     """Text tokenizer for GLM-4.5+ (GLM-5.1 / GLM-5.2 / GLM-5.3).
 
     Overridden to apply reasoning parsing normalization to the chat template,
@@ -255,12 +255,7 @@ class GlmTokenizer(TextTokenizer):
             chat_template=chat_template,
             **unused_kwargs,
         )
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_START_TOKEN
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_END_TOKEN
-        )
+        self._orders_tool_results = self._linearize_tool_results()
         self._template_capabilities = _probe_template_rungs(self._render_probe)
         if not self._template_capabilities.honors_thinking_toggle:
             logger.info(
@@ -270,6 +265,43 @@ class GlmTokenizer(TextTokenizer):
                 "disabling reasoning.",
                 self._template_capabilities.floor_rung,
             )
+
+    def _linearize_tool_results(self) -> bool:
+        """Swaps GLM-5.3's quadratic tool-result ordering for a linear one.
+
+        Applies to whichever template requests render with, including an
+        operator's ``--chat-template``. A template without GLM-5.3's block
+        is left as is.
+
+        Returns:
+            Whether the template was patched, in which case requests must
+            pass through :func:`order_tool_results` before rendering.
+        """
+        source = (
+            self._chat_template
+            if self._custom_template_provided
+            else self.delegate.chat_template
+        )
+        if not isinstance(source, str):
+            return False
+        patched = linearize_tool_results(source)
+        if patched is None:
+            if "has_dup_tool_result_id" in source:
+                logger.warning(
+                    "This GLM chat template orders tool results with "
+                    "GLM-5.3's quadratic macros, but not in the form MAX "
+                    "rewrites, so a turn with thousands of tool calls can "
+                    "stall the server while it renders."
+                )
+            return False
+        if self._custom_template_provided:
+            self._chat_template = patched
+        self.delegate.chat_template = patched
+        logger.info(
+            "Ordering GLM tool results in Python: the chat template's "
+            "tool-result ordering is quadratic in the number of tool calls."
+        )
+        return True
 
     def _render_probe(self, **chat_template_options: Any) -> str:
         """Renders a one-message prompt, for template capability detection.
@@ -292,6 +324,8 @@ class GlmTokenizer(TextTokenizer):
     ) -> str:
         """Applies the GLM chat template, first settling GLM's own defaults."""
         options = _apply_glm_clear_thinking_default(chat_template_options)
+        if self._orders_tool_results:
+            messages = order_tool_results(messages)
         return super().apply_chat_template(
             messages,
             tools,
@@ -299,13 +333,3 @@ class GlmTokenizer(TextTokenizer):
                 options, self._template_capabilities
             ),
         )
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<think>`` (opens a GLM reasoning span)."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``</think>`` (closes a GLM reasoning span)."""
-        return self._reasoning_end_token_id

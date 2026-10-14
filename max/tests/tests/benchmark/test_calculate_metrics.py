@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import statistics
 from unittest.mock import MagicMock
 
 import pytest
@@ -28,12 +29,34 @@ from max.benchmark.benchmark_shared.request import (
     ServerTokenStats,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
+    _aggregate_gpu_stats,
     _per_turn_cache_retentions,
     build_text_generation_result,
     calculate_metrics,
     calculate_pixel_generation_metrics,
+    compute_output_len,
 )
 from max.profiler.cpu import CPUMetrics
+from max.profiler.gpu import GPUStats, MemoryStats, UtilizationStats
+
+_MIB = 1024 * 1024
+
+
+def _gpu_stats(*, util: int, used_mib: int, free_mib: int) -> GPUStats:
+    """A minimal GPUStats shaped like the scraper/NVML recorder emit."""
+    return GPUStats(
+        memory=MemoryStats(
+            total_bytes=(used_mib + free_mib) * _MIB,
+            free_bytes=free_mib * _MIB,
+            used_bytes=used_mib * _MIB,
+            reserved_bytes=None,
+        ),
+        utilization=UtilizationStats(
+            gpu_usage_percent=util, memory_activity_percent=None
+        ),
+        clocks=None,
+    )
+
 
 _EMPTY_CPU_METRICS = CPUMetrics(
     user=0.0, user_percent=0.0, system=0.0, system_percent=0.0, elapsed=0.0
@@ -148,6 +171,54 @@ def test_tpot_both_definitions() -> None:
     assert math.isclose(
         metrics.text_data.step_tpot_ms.mean, 125.0, rel_tol=1e-6
     )
+
+
+def test_output_len_prefers_server_completion_tokens() -> None:
+    """The server's completion count drives TPOT, not the re-tokenized text.
+
+    With ``ignore_eos``, tokens past EOS can stream no text, so the text
+    re-tokenizes to fewer tokens than the server generated.
+    """
+    # 10 generated tokens whose text re-tokenizes to 4, latency 1.0s, ttft
+    # 0.1s -> tpot = 0.9 / 9 = 0.1 s.
+    output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="four tok",
+        itl=[0.1] * 9,
+        tpot=[0.1] * 9,
+        server_token_stats=ServerTokenStats(completion_tokens=10),
+    )
+    tokenizer = _make_mock_tokenizer({"four tok": 4})
+
+    metrics = calculate_metrics(
+        outputs=[output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        kv_block_size=128,
+    )
+
+    assert metrics.text_data is not None
+    assert metrics.text_data.total_output == 10
+    assert metrics.text_data.tpot_ms is not None
+    assert math.isclose(metrics.text_data.tpot_ms.mean, 100.0, rel_tol=1e-6)
+
+
+def test_output_len_falls_back_to_text_without_usage() -> None:
+    """A server that reports no usage is counted from its text."""
+    output = RequestFuncOutput(success=True, generated_text="four tok")
+    tokenizer = _make_mock_tokenizer({"four tok": 4})
+
+    assert compute_output_len(tokenizer, output) == 4
 
 
 def test_tpot_zero_decode_tokens() -> None:
@@ -1153,6 +1224,66 @@ def test_build_text_generation_result_not_detected_falls_back_to_trim() -> None:
     assert result.text_data.completed == 3
 
 
+def _outputs_with_completion_tokens(
+    counts: list[int],
+) -> list[RequestFuncOutput]:
+    outputs = []
+    for count in counts:
+        output = _make_request_func_output()
+        output.server_token_stats = ServerTokenStats(completion_tokens=count)
+        outputs.append(output)
+    return outputs
+
+
+def test_build_text_generation_result_attaches_aggregate_server_stats() -> None:
+    """Without sessions, server stats are attached flat in output order."""
+    outputs = _outputs_with_completion_tokens([3, 1, 2])
+    result = build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert result.session_server_stats is None
+    assert result.aggregate_server_stats == [
+        o.server_token_stats for o in outputs
+    ]
+
+
+def test_build_text_generation_result_attaches_session_server_stats() -> None:
+    """With sessions, server stats are grouped per session."""
+    a, b, c, d = _outputs_with_completion_tokens([1, 2, 3, 4])
+    by_session = {"10": [a], "anon": [b], "2": [c, d]}
+    result = build_text_generation_result(
+        outputs=[a, b, c, d],
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        outputs_by_session=by_session,
+    )
+
+    assert result.aggregate_server_stats is None
+    assert result.session_server_stats is not None
+    assert list(result.session_server_stats) == ["2", "10", "anon"]
+    assert result.session_server_stats["2"] == [
+        c.server_token_stats,
+        d.server_token_stats,
+    ]
+
+
 def test_build_text_generation_result_all_failed_suppresses_ss_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1652,3 +1783,424 @@ def test_steady_state_records_keep_dispatch_indices() -> None:
     assert result.text_data is not None
     records = result.text_data.request_records
     assert [r.index for r in records] == list(range(12))
+
+
+def _constrained_split_outputs(
+    pairs: int = 2,
+) -> list[RequestFuncOutput]:
+    """Alternating constrained/unconstrained requests, separated by TTFT/TPOT.
+
+    Constrained: ttft 0.3s, 5 tokens over 1.1s -> tpot = 0.8/4 = 0.2s.
+    Unconstrained: ttft 0.1s, 5 tokens over 0.5s -> tpot = 0.4/4 = 0.1s.
+
+    Submit times are distinct so the head/tail skip window has an order to
+    sort by.
+    """
+    outputs = []
+    for i in range(pairs):
+        constrained = RequestFuncOutput(
+            success=True,
+            latency=1.1,
+            ttft=0.3,
+            prompt_len=10,
+            generated_text="five tokens here now",
+            response_format_constrained=True,
+        )
+        constrained.request_submit_time = float(2 * i)
+        outputs.append(constrained)
+        unconstrained = RequestFuncOutput(
+            success=True,
+            latency=0.5,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="five tokens here now",
+        )
+        unconstrained.request_submit_time = float(2 * i + 1)
+        outputs.append(unconstrained)
+    return outputs
+
+
+def _calculate_for(
+    outputs: list[RequestFuncOutput],
+    skip_first: int = 0,
+    skip_last: int = 0,
+) -> object:
+    tokenizer = _make_mock_tokenizer({"five tokens here now": 5})
+    return calculate_metrics(
+        outputs=outputs,
+        dur_s=2.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=skip_first,
+        skip_last_n_requests=skip_last,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        kv_block_size=128,
+    )
+
+
+def test_constrained_split_separates_the_two_halves() -> None:
+    """Each half is computed only over its own requests."""
+    metrics = _calculate_for(_constrained_split_outputs())
+    text = metrics.text_data  # type: ignore[attr-defined]
+    assert text is not None
+
+    assert text.ttft_ms_constrained is not None
+    assert text.ttft_ms_unconstrained is not None
+    assert math.isclose(text.ttft_ms_constrained.mean, 300.0, rel_tol=1e-6)
+    assert math.isclose(text.ttft_ms_unconstrained.mean, 100.0, rel_tol=1e-6)
+
+    assert text.tpot_ms_constrained is not None
+    assert text.tpot_ms_unconstrained is not None
+    assert math.isclose(text.tpot_ms_constrained.mean, 200.0, rel_tol=1e-6)
+    assert math.isclose(text.tpot_ms_unconstrained.mean, 100.0, rel_tol=1e-6)
+
+    # The unsplit metrics still cover every request.
+    assert text.ttft_ms is not None
+    assert math.isclose(text.ttft_ms.mean, 200.0, rel_tol=1e-6)
+    assert text.constrained_request_rate == 0.5
+
+
+def test_single_population_run_reports_no_split() -> None:
+    """A split is only meaningful across two populations. With one, the
+    populated side would restate ``ttft_ms``, so neither side is reported."""
+    outputs = [
+        o
+        for o in _constrained_split_outputs()
+        if not o.response_format_constrained
+    ]
+    text = _calculate_for(outputs).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.ttft_ms_constrained is None
+    assert text.ttft_ms_unconstrained is None
+    assert text.tpot_ms_constrained is None
+    assert text.tpot_ms_unconstrained is None
+    assert text.ttft_ms is not None
+    assert text.constrained_request_rate == 0.0
+
+    for o in outputs:
+        o.response_format_constrained = True
+    text = _calculate_for(outputs).text_data  # type: ignore[attr-defined]
+    assert text.ttft_ms_constrained is None
+    assert text.ttft_ms_unconstrained is None
+    assert text.constrained_request_rate == 1.0
+
+
+def test_constrained_rate_counts_over_the_measured_window() -> None:
+    """The rate shares a denominator with the other aggregates.
+
+    Skip counts are auto-derived from ``--max-concurrency``, so most runs
+    measure fewer requests than they completed.
+    """
+    outputs = _constrained_split_outputs(pairs=10)
+    for o in outputs:
+        o.response_format_constrained = True
+
+    text = _calculate_for(  # type: ignore[attr-defined]
+        outputs, skip_first=3, skip_last=2
+    ).text_data
+    assert text is not None
+    assert text.constrained_request_rate == 1.0
+
+
+def test_tpot_split_is_gated_on_its_own_population() -> None:
+    """TTFT and TPOT can have different populations, so each pair stands or
+    falls on its own.
+
+    A request that emits a single token has a TTFT but no TPOT. When every
+    constrained request is that short, the TPOT split has one empty half and
+    the surviving half would only restate ``tpot_ms``.
+    """
+    tokenizer = _make_mock_tokenizer({"five tokens here now": 5, "one": 1})
+    outputs = []
+    for i in range(2):
+        short = RequestFuncOutput(
+            success=True,
+            latency=0.4,
+            ttft=0.3,
+            prompt_len=10,
+            generated_text="one",
+            response_format_constrained=True,
+        )
+        short.request_submit_time = float(2 * i)
+        outputs.append(short)
+        long = RequestFuncOutput(
+            success=True,
+            latency=0.5,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="five tokens here now",
+        )
+        long.request_submit_time = float(2 * i + 1)
+        outputs.append(long)
+
+    text = calculate_metrics(
+        outputs=outputs,
+        dur_s=2.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        kv_block_size=128,
+    ).text_data
+    assert text is not None
+    # Both sides produced a first token, so the TTFT split stands.
+    assert text.ttft_ms_constrained is not None
+    assert text.ttft_ms_unconstrained is not None
+    # Only one side produced a second token, so the TPOT split does not.
+    assert text.tpot_ms_constrained is None
+    assert text.tpot_ms_unconstrained is None
+
+
+def test_constrained_split_reaches_result_groups() -> None:
+    """A field on the aggregates alone is not rendered; the console summary and
+    the stored JSON both read ``result_groups``."""
+    metrics = _calculate_for(_constrained_split_outputs())
+    latency = metrics.result_groups.latency_stats  # type: ignore[attr-defined]
+    assert latency is not None
+    assert latency.ttft_ms_constrained is not None
+    assert latency.tpot_ms_unconstrained is not None
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.constrained_request_rate == 0.5
+
+
+def test_constrained_split_reaches_the_flat_result_dict() -> None:
+    metrics = _calculate_for(_constrained_split_outputs())
+    d = metrics.text_data.to_result_dict()  # type: ignore[attr-defined]
+    assert math.isclose(d["mean_ttft_ms_constrained"], 300.0, rel_tol=1e-6)
+    assert math.isclose(d["mean_tpot_ms_unconstrained"], 100.0, rel_tol=1e-6)
+    assert d["constrained_request_rate"] == 0.5
+
+
+def test_conformance_rate_counts_only_judged_constrained_requests() -> None:
+    """A constrained request that was never judged must not be counted as a
+    failure; an unconstrained run reports no rate at all."""
+    conforming = RequestFuncOutput(
+        success=True,
+        latency=1.1,
+        ttft=0.3,
+        prompt_len=10,
+        generated_text="five tokens here now",
+        response_format_constrained=True,
+        response_format_conformed=True,
+    )
+    failing = RequestFuncOutput(
+        success=True,
+        latency=1.1,
+        ttft=0.3,
+        prompt_len=10,
+        generated_text="five tokens here now",
+        response_format_constrained=True,
+        response_format_conformed=False,
+    )
+    unjudged = RequestFuncOutput(
+        success=True,
+        latency=1.1,
+        ttft=0.3,
+        prompt_len=10,
+        generated_text="five tokens here now",
+        response_format_constrained=True,
+    )
+    text = _calculate_for([conforming, failing, unjudged]).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    # 1 of the 2 judged, not 1 of the 3 constrained.
+    assert text.constrained_conformance_rate == 0.5
+    assert text.constrained_request_rate == 1.0
+
+
+def test_no_conformance_rate_without_constrained_requests() -> None:
+    outputs = [
+        o
+        for o in _constrained_split_outputs()
+        if not o.response_format_constrained
+    ]
+    text = _calculate_for(outputs).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.constrained_conformance_rate is None
+
+
+def test_conformance_rate_reaches_the_summary_group() -> None:
+    metrics = _calculate_for(
+        [
+            RequestFuncOutput(
+                success=True,
+                latency=1.1,
+                ttft=0.3,
+                prompt_len=10,
+                generated_text="five tokens here now",
+                response_format_constrained=True,
+                response_format_conformed=False,
+            )
+        ]
+    )
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.constrained_conformance_rate == 0.0
+
+
+def test_aggregate_gpu_stats_disabled_or_empty() -> None:
+    """Collection off, no snapshots, or all-empty snapshots yield nothing."""
+    assert _aggregate_gpu_stats(collect_gpu_stats=False, gpu_metrics=[]) == (
+        [],
+        [],
+        [],
+        {},
+    )
+    assert _aggregate_gpu_stats(collect_gpu_stats=True, gpu_metrics=None) == (
+        [],
+        [],
+        [],
+        {},
+    )
+    # Snapshots with no devices report nothing rather than raising.
+    assert _aggregate_gpu_stats(
+        collect_gpu_stats=True, gpu_metrics=[{}, {}]
+    ) == ([], [], [], {})
+
+
+def test_aggregate_gpu_stats_single_device_across_snapshots() -> None:
+    """Peak used = max, available = min free, util = mean over snapshots."""
+    snapshots = [
+        {"n:gpu0": _gpu_stats(util=80, used_mib=100, free_mib=900)},
+        {"n:gpu0": _gpu_stats(util=90, used_mib=300, free_mib=700)},
+    ]
+    peak, avail, util, _ = _aggregate_gpu_stats(
+        collect_gpu_stats=True, gpu_metrics=snapshots
+    )
+    assert peak == [300.0]
+    assert avail == [700.0]
+    assert util == [85.0]
+
+
+def test_aggregate_gpu_stats_tolerates_changing_device_set() -> None:
+    """A device set that varies across snapshots never raises KeyError.
+
+    This is the multi-node failure mode: a Service scrape (or a flaky
+    endpoint) makes successive snapshots disagree on which devices appear.
+    Each device is aggregated only over the snapshots that contain it.
+    """
+    snapshots = [
+        # Only node-1 present this interval.
+        {
+            "node-1:gpu0": _gpu_stats(util=100, used_mib=200, free_mib=800),
+        },
+        # Both nodes present.
+        {
+            "node-1:gpu0": _gpu_stats(util=50, used_mib=400, free_mib=600),
+            "node-2:gpu0": _gpu_stats(util=40, used_mib=100, free_mib=900),
+        },
+        # Only node-2 present.
+        {
+            "node-2:gpu0": _gpu_stats(util=60, used_mib=300, free_mib=700),
+        },
+    ]
+
+    peak, avail, util, _ = _aggregate_gpu_stats(
+        collect_gpu_stats=True, gpu_metrics=snapshots
+    )
+
+    # Union of devices, sorted: node-1:gpu0 then node-2:gpu0.
+    assert peak == [400.0, 300.0]
+    assert avail == [600.0, 700.0]
+    # node-1: mean(100, 50) = 75; node-2: mean(40, 60) = 50. Each averaged
+    # only over the snapshots in which it appears.
+    assert util == [75.0, 50.0]
+    # Reported mean GPU util is the mean across all engine devices seen.
+    assert statistics.mean(util) == 62.5
+
+
+def test_aggregate_gpu_stats_splits_utilization_by_group() -> None:
+    """Each group gets its devices' utilization, in the mapping's order.
+
+    A device with no group still counts toward the overall list, and a
+    grouped device absent from every snapshot adds nothing.
+    """
+    snapshot = {
+        "GPU-a": _gpu_stats(util=96, used_mib=100, free_mib=900),
+        "GPU-b": _gpu_stats(util=94, used_mib=100, free_mib=900),
+        "GPU-c": _gpu_stats(util=38, used_mib=100, free_mib=900),
+        "GPU-d": _gpu_stats(util=50, used_mib=100, free_mib=900),
+    }
+    _, _, util, by_group = _aggregate_gpu_stats(
+        collect_gpu_stats=True,
+        gpu_metrics=[snapshot],
+        gpu_device_groups={
+            "GPU-c": "decode",
+            "GPU-a": "prefill",
+            "GPU-b": "prefill",
+            "GPU-z": "decode",
+        },
+    )
+    assert util == [96.0, 94.0, 38.0, 50.0]
+    assert by_group == {"decode": [38.0], "prefill": [96.0, 94.0]}
+    assert list(by_group) == ["decode", "prefill"]
+
+
+def test_tool_rates_count_offers_and_calls_separately() -> None:
+    """The request rate is over every measured request; the call rate only
+    over the ones that offered tools, as production's two counters are."""
+    outputs = _constrained_split_outputs(pairs=4)
+    for o in outputs:
+        o.response_format_constrained = False
+    for i, o in enumerate(outputs[:4]):
+        o.tools_offered = True
+        o.tool_call_returned = i < 3
+    text = _calculate_for(outputs).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.tool_request_rate == 4 / len(outputs)
+    assert text.tool_call_response_rate == 0.75
+
+
+def test_tool_rates_reach_result_groups_and_the_flat_result_dict() -> None:
+    """The console and stored JSON read ``result_groups`` and the flat dict,
+    not the aggregates."""
+    outputs = _constrained_split_outputs()
+    for o in outputs:
+        o.tools_offered = True
+    outputs[0].tool_call_returned = True
+    metrics = _calculate_for(outputs)
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.tool_request_rate == 1.0
+    assert mix.tool_call_response_rate == 0.25
+    d = metrics.text_data.to_result_dict()  # type: ignore[attr-defined]
+    assert d["tool_request_rate"] == 1.0
+    assert d["tool_call_response_rate"] == 0.25
+
+
+def test_tool_call_rate_is_none_without_tool_requests() -> None:
+    outputs = [
+        o
+        for o in _constrained_split_outputs()
+        if not o.response_format_constrained
+    ]
+    text = _calculate_for(outputs).text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.tool_request_rate == 0.0
+    assert text.tool_call_response_rate is None
+
+
+def test_image_and_lora_rates_count_over_measured_requests() -> None:
+    outputs = _constrained_split_outputs(pairs=4)
+    for i, o in enumerate(outputs):
+        o.carries_image = i < 2
+        o.lora_id = "adapter-a" if i < 6 else None
+    metrics = _calculate_for(outputs)
+    text = metrics.text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.image_request_rate == 2 / len(outputs)
+    assert text.lora_request_rate == 6 / len(outputs)
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.image_request_rate == text.image_request_rate
+    assert mix.lora_request_rate == text.lora_request_rate
+    d = text.to_result_dict()
+    assert d["image_request_rate"] == text.image_request_rate
+    assert d["lora_request_rate"] == text.lora_request_rate

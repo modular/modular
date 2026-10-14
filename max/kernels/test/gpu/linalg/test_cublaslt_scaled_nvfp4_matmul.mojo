@@ -18,7 +18,12 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from linalg.matmul.vendor.blas import matmul
 from _cublas.cublaslt import cublasLtGetVersion
-from layout import TileTensor, Coord, CoordLike, Idx, row_major
+from layout import (
+    TileTensor,
+    CoordLike,
+    Idx,
+    row_major,
+)
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -75,28 +80,24 @@ def test_block_scaled_nvfp4_cublaslt[
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
     comptime input_dtype = DType.uint8
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
+    var a_shape = row_major(m, Idx[KType.static_value // 2])
     var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
+        Idx[NType.static_value], Idx[KType.static_value // 2]
     )
-    var c_shape = row_major(Coord(m, n))
+    var c_shape = row_major(m, n)
     var a_scales_shape = row_major(
-        Coord(
-            Int(ceildiv(M, SF_MN_GROUP_SIZE)),
-            Idx[ceildiv(KType.static_value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(M, SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_size = (
@@ -123,8 +124,8 @@ def test_block_scaled_nvfp4_cublaslt[
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](a_scales_size)
     var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
@@ -153,8 +154,8 @@ def test_block_scaled_nvfp4_cublaslt[
     var c_device_ref = ctx.enqueue_create_buffer[out_dtype](c_size)
     var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -173,21 +174,16 @@ def test_block_scaled_nvfp4_cublaslt[
         c_row_major=True,
     )
 
-    var c_ref = c_device_ref_nd.to_layout_tensor()
-    var a_lt = a_device_nd.to_layout_tensor()
-    var b_lt = b_device_nd.to_layout_tensor()
-    var a_scales_lt = a_scales_device_nd.to_layout_tensor()
-    var b_scales_lt = b_scales_device_nd.to_layout_tensor()
     naive_block_scaled_matmul[
         scaling_kind=UMMAKind.KIND_MXF4NVF4,
         SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](
-        c_ref,
-        a_lt,
-        b_lt,
-        a_scales_lt,
-        b_scales_lt,
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales_device_nd,
+        b_scales_device_nd,
         ctx,
     )
 

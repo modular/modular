@@ -119,8 +119,7 @@ def semaphore_matrix_reduce[
 
     sema.wait(block_idx)
     for x in range(tid, M * N, block_dim.x):
-        var row = x // N
-        var col = x % N
+        var row, col = divmod(x, N)
         c_ptr[row * N + col] += a_ptr[
             row * (N * num_parts) + (block_idx * num_parts + col)
         ]

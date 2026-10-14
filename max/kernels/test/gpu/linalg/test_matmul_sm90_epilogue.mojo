@@ -11,17 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
-from std.sys import align_of, size_of
+from std.sys import size_of
 
-import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
-from linalg.utils import elementwise_compute_lambda_type
 
-from std.utils.index import Index, IndexList
-from layout import Idx
+from std.utils.index import Index
+from layout import Coord, Idx
 
 comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
     128, wgmma_n, 128 // size_of[a_dtype]()
@@ -166,16 +163,13 @@ def main() raises:
             default_epilogue=True,
         ](ctx, Int(91), Idx[111], Idx[588])
 
-        @__parameter
         @inline(.always)
         def test_lambda_fn_square[
-            _dtype: DType,
-            width: SIMDLength,
-            *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-            _dtype, width
-        ]:
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             return val * val
 
         test_matmul_sm90[
@@ -186,25 +180,20 @@ def main() raises:
             block_tile_shape[256, .bfloat16],
             wgmma_shape[256, .bfloat16],
             num_consumer=2,
-            elementwise_compute_lambda_fn=Optional[
-                elementwise_compute_lambda_type
-            ](test_lambda_fn_square),
-            default_epilogue=True,
-        ](ctx, Int(277), Idx[2560], Idx[128])
+            has_compute_fn=True,
+        ](ctx, Int(277), Idx[2560], Idx[128], test_lambda_fn_square)
 
-        @__parameter
         @inline(.always)
         def test_lambda_add_coords[
-            _dtype: DType,
-            width: SIMDLength,
-            *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-            _dtype, width
-        ]:
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             # Cast indices between 0-1 to avoid accuracy issues
-            var i = Float32(idx[0]) / 277.0
-            var j = Float32(idx[1] - idx[1] % 8) / 2560.0
+            var col = Int(idx[1].value())
+            var i = Float32(idx[0].value()) / 277.0
+            var j = Float32(col - col % 8) / 2560.0
             return val + i.cast[_dtype]() + 2 * j.cast[_dtype]()
 
         test_matmul_sm90[
@@ -215,11 +204,8 @@ def main() raises:
             block_tile_shape[256, .bfloat16],
             wgmma_shape[256, .bfloat16],
             num_consumer=2,
-            elementwise_compute_lambda_fn=Optional[
-                elementwise_compute_lambda_type
-            ](test_lambda_add_coords),
-            default_epilogue=True,
-        ](ctx, Int(277), Idx[2560], Idx[128])
+            has_compute_fn=True,
+        ](ctx, Int(277), Idx[2560], Idx[128], test_lambda_add_coords)
 
         test_matmul_sm90[
             .bfloat16,

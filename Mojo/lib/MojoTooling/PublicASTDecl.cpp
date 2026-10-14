@@ -808,7 +808,7 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
                  declRef.getName().value_or(StringRef())),
       decl(declRef), isGlobalAlias(isGlobalAliasDecl(declRef)),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())) {
-  auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
+  LIT::AliasDeclOp aliasOp = cast<LIT::AliasASTDecl>(&*declRef)->getOp();
 
   auto &shared = *declRef.getShared();
 
@@ -911,7 +911,7 @@ std::string PublicFunctionDecl::getDeclarationSnippet(
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   if (isAsync())
-    os << "async ";
+    os << "__async ";
 
   unsigned returnOffset = 0;
   std::string signature =

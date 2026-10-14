@@ -43,7 +43,11 @@ from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    PagedCacheValues,
+    packed_page_stride,
+)
 
 # Try importing external libraries (installed via Bazel pycross_wheel_library)
 _flashinfer: types.ModuleType | None
@@ -382,6 +386,7 @@ def bench_max(
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
             attention_dispatch_metadata=attention_dispatch_metadata.tensor,
         )
 

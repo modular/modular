@@ -38,7 +38,14 @@ dspark_speculators_draft_arch = SupportedArchitecture(
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    # Checked against the DRAFT model config's own `device_specs`, not
+    # against any graph this placeholder builds -- it builds none. A draft
+    # served beside a tensor-parallel target has to name the target's whole
+    # device list, because `MultiKVCacheParams` requires every leaf to agree
+    # on it, so `False` here rejects a valid TP pairing (Kimi K3 at TP8) at
+    # config validation. `DFlashDraftModel` and `DFlash2DraftModel` both
+    # declare `True` for the same reason.
+    multi_gpu_supported=True,
     task=PipelineTask.TEXT_GENERATION,
     config=DSparkSpeculatorsDraftArchConfig,
 )

@@ -170,6 +170,13 @@ struct FA4Config[
         return self.BM
 
     @inline(.always)
+    def gqa_pad_rows(self) -> Int:
+        """Tile rows left unused when the GQA group does not divide `BM`."""
+        if self.fuse_gqa:
+            return self.BM % self.group
+        return 0
+
+    @inline(.always)
     def cta_group(self) -> Int:
         return 2 if self.pair_cta else 1
 
@@ -466,6 +473,17 @@ struct FA4Config[
             + self.ov_depth * self.BM
             + self.BM * 2
         )
+
+    @inline(.always)
+    def ws_epilogue_o_f32_offset(self) -> Int:
+        """F32-slot offset of the WS epilogue's output tile in the carve.
+
+        Past every f32 region, rounded up to 1 KiB: the O-TMA store applies its
+        swizzle by absolute SMEM address while the writers swizzle relative to
+        this base. The key-split epilogue and the empty-partition split-K path
+        must carve the same tile, so both take it from here.
+        """
+        return align_up(self.ws_epilogue_f32_slots(), 1024 // 4)
 
     @inline(.always)
     def correction_o_cols(self) -> Int:
@@ -1216,7 +1234,22 @@ struct FA4Config[
             self.MMA_M = 32
         else:
             self.MMA_M = 128
-        self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
+        # A group that does not divide MMA_M is packed only by the d256
+        # shared-key decode vehicle: its tile holds `MMA_M // group` seq
+        # positions x `group` heads and leaves `MMA_M % group` pad rows.
+        self.fuse_gqa = (
+            group > 1
+            and not is_mla
+            and (
+                self.MMA_M % group == 0
+                or (
+                    ws_shared_key
+                    and self.MMA_M == 32
+                    and qk_depth == 256
+                    and group < self.MMA_M
+                )
+            )
+        )
         comptime if Self.qkv_dtype.is_float8():
             self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
         else:
@@ -1410,7 +1443,7 @@ struct FA4Config[
         # - mma must wait for each P stage barrier before processing
         self.num_pv_stages = 2
 
-        var smem_use = 4
+        var smem_use = 0
         # Compute misc_mbars fixed size (barriers that don't scale with num_kv_stages):
         # - S consumers: 2 * num_pv_stages (num_pv_stages per warp group)
         # - S producers: 2 (1 per warp group)
@@ -1469,8 +1502,8 @@ struct FA4Config[
         # `num_q` or `BM` (the correction store is indexed by CTA-wide `tid`,
         # not by `BM`). A `BM`-derived size only happens to be right at
         # BM==128/256; for the warp-specialized MMA_M=32 path (BM=32) it would
-        # under-reserve and the trailing mbar / tmem_addr regions overflow
-        # into unmapped __shared__ on init.
+        # under-reserve and the trailing mbar region overflows into unmapped
+        # __shared__ on init.
         smem_use += (
             2
             * WARPGROUP_SIZE

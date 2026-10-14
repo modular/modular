@@ -251,20 +251,19 @@ def test_conv_transposed[
     @inline(.always)
     @__copy_capture(output, bias_ptr)
     @__parameter
-    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
+    def epilogue(coords: Coord, f_size: Int):
         @inline(.always)
         def body1[width: Int](idx: Int) {var}:
-            var curr_coords = rebind[IndexList[rank + 2]](coords)
-            curr_coords[rank + 1] += idx
+            var f = Int(coords[rank + 1].value()) + idx
+            var curr_coords = coords
+            curr_coords.replace_dynamic[rank + 1](f)
 
-            var output_idx = output.layout(Coord(curr_coords))
+            var output_idx = output.layout(curr_coords)
 
             var vec = output.raw_load[width=width](output_idx)
 
             output.raw_store(
-                output_idx,
-                10.0
-                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
+                output_idx, 10.0 * (vec + bias_ptr.load[width=width](f))
             )
 
         vectorize[simd_size](f_size, body1)
@@ -530,7 +529,7 @@ def main() raises:
     #     320,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -542,7 +541,7 @@ def main() raises:
     #     256,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -554,7 +553,7 @@ def main() raises:
     #     128,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -566,7 +565,7 @@ def main() raises:
     #     64,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -578,6 +577,6 @@ def main() raises:
     #     32,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )

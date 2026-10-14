@@ -336,7 +336,8 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     `target-abi` LLVM module flag, exactly as clang does.
 
     The `opaque_plugin` carries an opaque payload as the stdlib plugin. MDialect
-    never inspects it.
+    never inspects it. The payload must be a typed attribute, so that its type
+    is always available to the dialect that interprets it.
 
     Example:
     ```mlir
@@ -350,7 +351,7 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     "llvm::Triple":$triple,
     StringRefParameter<>:$arch,
     StringRefParameter<"", "\"default\"">:$stdlib_plugin,
-    OptionalParameter<"Attribute">:$opaque_plugin,
+    OptionalParameter<"TypedAttr">:$opaque_plugin,
     OptionalStringRefParameter:$features,
     OptionalDataLayoutParameter:$data_layout,
     DefaultValuedParameter<"llvm::Reloc::Model",
@@ -447,6 +448,13 @@ def M_DeviceRefAttr : MAttr<"DeviceRef", "device_ref"> {
 //===----------------------------------------------------------------------===//
 
 def M_DeviceRefArrayAttr : TypedArrayAttrBase<M_DeviceRefAttr, "A list of devicerefs">;
+
+//===----------------------------------------------------------------------===//
+// DeviceRefsAttr
+//===----------------------------------------------------------------------===//
+
+def M_DeviceRefsAttr
+    : ArrayOfAttr<MDialect, "DeviceRefs", "devices", "DeviceRefAttr">;
 
 //===----------------------------------------------------------------------===//
 // DeviceInfoAttr

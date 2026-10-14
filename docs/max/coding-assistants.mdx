@@ -30,10 +30,6 @@ website navigation hints and direct access to up-to-date API documentation.
 project that provide AI assistants with build commands, coding conventions,
 and project structure.
 
-- **Cursor project rules** (`.cursor/rules/`): Modular-specific rules that
-  activate based on the files you're editing, providing consistent guidance for
-  MAX development (and Mojo when using rules from the Modular repository).
-
 ## Install MAX skills {#skills}
 
 MAX skills are AI agent skills that capture best practices and step-by-step
@@ -168,11 +164,6 @@ Different tools look for different files (either `CLAUDE.md` or `AGENTS.md`,
 which are identical)—for compatibility details, see the section below about
 [Modular context files](#modular-context-files).
 
-**Cursor users**: The repository also includes project rules in `.cursor/rules/`
-that activate based on the files you're editing. These rules provide
-file-specific guidance for Mojo and MAX development. See
-[Modular Cursor rules](#modular-cursor-rules) for the full list.
-
 ## Starting a new project
 
 For your own MAX projects, the entirety of our
@@ -184,9 +175,6 @@ the Modular repository.
 However, you might find some parts useful, such as the section about
 [Critical development notes](https://github.com/modular/modular/blob/main/CLAUDE.md#critical-development-notes),
 which you can copy to your own `CLAUDE.md` or `AGENTS.md` file.
-
-**Cursor users**: You also might want to copy the [Modular Cursor
-rules](#modular-cursor-rules) below to your `.cursor/rules/` directory.
 
 ## Resources for AI assistants
 
@@ -205,28 +193,6 @@ standard, providing LLM-friendly documentation files:
 | <a href="/llms-accelerator-api.txt" target="_blank">llms-accelerator-api.txt</a>  | MAX accelerator library API indexes    | Kernel and GPU development    |
 | <a href="/llms-c-api.txt" target="_blank">llms-c-api.txt</a>                      | MAX C API reference                    | C API integration             |
 | <a href="https://mojolang.org/llms.txt" target="_blank">mojolang.org/llms.txt</a> | Mojo language docs (external)          | Mojo development              |
-
-### Modular Cursor rules
-
-Copy these rules to your `.cursor/rules/` directory for consistent AI
-assistance with Mojo and MAX development:
-
-- **[`general_behavior_rules.mdc`](https://github.com/modular/modular/blob/main/.cursor/rules/general_behavior_rules.mdc)**:
-General rules for code creation. Emphasizes simplicity, thorough investigation,
-using existing solutions, descriptive naming, robust error handling, and
-documentation.
-
-- **[`git.mdc`](https://github.com/modular/modular/blob/main/.cursor/rules/git.mdc)**:
-Best practices for Git including code organization, commit strategies,
-branching models, and collaborative workflows.
-
-- **[`max_development.mdc`](https://github.com/modular/modular/blob/main/.cursor/rules/max_development.mdc)**:
-Guidelines for MAX development covering project context, task execution, code
-quality, testing practices, and documentation.
-
-- **[`mojo.mdc`](https://github.com/modular/modular/blob/main/.cursor/rules/mojo.mdc)**:
-Mojo coding standards, performance optimizations, and best practices for
-GPU-accelerated code.
 
 ### Modular context files
 

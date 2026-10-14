@@ -18,6 +18,7 @@
 #include "MojoUtils.h"
 
 #include "IREmitter.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/ParameterReplacer.h"
 #include "Mojo/LITDialect/LITAttrs.h"
@@ -25,13 +26,17 @@
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "Mojo/MojoParser/ASTType.h"
 #include "Mojo/MojoParser/ExprNode.h"
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "Mojo/POPDialect/POPTypes.h"
 #include "ParamInf.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace M::KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace M::KGEN::LIT;
 
 TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
@@ -73,6 +78,18 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
   return OriginSetAttr::get(shared.getContext(), origins);
 }
 
+ASTType LIT::specializeStruct(const ParamBindings &bindings,
+                              StructDeclOp structOp, ASTDecl *declIfKnown) {
+  TypeSignatureType sig = structOp.getSignature();
+  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, declIfKnown,
+                     /*discardError=*/false);
+  VerifiedParamBindings verified = inference.inferForStruct();
+  if (!verified)
+    return {};
+  return verified.specializeStructType(structOp);
+}
+
 ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
                                    FnTypeGeneratorType sig, TypedAttr origin) {
   auto &shared = declScope.getShared();
@@ -89,17 +106,8 @@ ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   paramBinds.add(expr, PValue(resultType));
   paramBinds.add(expr, origin);
 
-  auto structOp = cast<StructDeclOp>(decl->getIfOperation());
-  TypeSignatureType structSig = structOp.getSignature();
-  ParamInf inference(paramBinds, structSig.getParamTypes(),
-                     structSig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, decl,
-                     /*discardError=*/false);
-  VerifiedParamBindings bindings = inference.inferForStruct();
-  if (!bindings)
-    return {};
-
-  return bindings.specializeStructType(structOp);
+  return specializeStruct(paramBinds,
+                          cast<StructDeclOp>(decl->getIfOperation()), decl);
 }
 
 CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,
@@ -214,4 +222,21 @@ FunctionType
 LIT::replaceIndexRefsWithNamedRefs(FunctionType functionType,
                                    ArrayRef<ParamDeclAttr> explicitParamDecls) {
   return replaceIndexRefsWithNamedRefs(functionType, explicitParamDecls, {});
+}
+
+void LIT::generateConversionThunkName(llvm::raw_ostream &os,
+                                      ArrayRef<Type> keys) {
+
+  for (auto k : keys) {
+    ASTType(k).print(os, /*diags=*/{});
+    os << '|';
+  }
+  // Mix in the full signatures to disambiguate.
+  std::string sigHash;
+  llvm::raw_string_ostream sigHashOs(sigHash);
+  for (auto k : keys)
+    k.print(sigHashOs);
+
+  os << llvm::utohexstr(llvm::xxh3_64bits(sigHash),
+                        /*LowerCase=*/true, /*Width=*/16);
 }

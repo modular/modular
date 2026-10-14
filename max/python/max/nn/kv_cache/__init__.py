@@ -11,9 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Key-value cache types for MAX layers.
+
+Defines cache parameters, host-side buffers, and the input values that
+attention layers consume, for paged and recurrent caches alike.
+"""
+
 from .cache_params import (
+    PACKED_PAGE_STRIDE,
     BatchCharacteristics,
+    CacheLeafKind,
     CacheLeafParamInterface,
+    HostStagingAlloc,
     KVCacheAssignments,
     KVCacheBuffer,
     KVCacheBufferInterface,
@@ -36,23 +45,22 @@ from .cache_params import (
     RecurrentKVLeafRegion,
     RecurrentStateBuffer,
     RecurrentStateParams,
+    RecurrentStateRegion,
+    ScratchKVLeafRegion,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     estimated_memory_size,
+    packed_page_stride,
     recurrent_leaf,
+    recurrent_leaves,
     spec_decode_cache_slack,
 )
 from .input_types import (
-    PACKED_PAGE_STRIDE,
     KVCacheInputs,
-    KVCacheInputsInterface,
     KVCacheInputsPerDevice,
-    MultiKVCacheInputs,
     PagedCacheValues,
     RecurrentLeafInputs,
-    RecurrentStateInputs,
     RecurrentStateInputsPerDevice,
-    RecurrentStateRegion,
 )
 from .metrics import KVCacheMetrics
 from .utils import (
@@ -70,13 +78,14 @@ __all__ = [
     "AttnKey",
     "AttnKeyInterface",
     "BatchCharacteristics",
+    "CacheLeafKind",
     "CacheLeafParamInterface",
+    "HostStagingAlloc",
     "KVCacheAssignments",
     "KVCacheBuffer",
     "KVCacheBufferInterface",
     "KVCacheGroupId",
     "KVCacheInputs",
-    "KVCacheInputsInterface",
     "KVCacheInputsPerDevice",
     "KVCacheMemory",
     "KVCacheMetrics",
@@ -94,7 +103,6 @@ __all__ = [
     "MSAAttnKey",
     "MSAKVCacheParams",
     "MultiKVCacheBuffer",
-    "MultiKVCacheInputs",
     "MultiKVCacheParams",
     "NullKVConnectorConfig",
     "PagedCacheValues",
@@ -102,15 +110,17 @@ __all__ = [
     "RecurrentKVLeafRegion",
     "RecurrentLeafInputs",
     "RecurrentStateBuffer",
-    "RecurrentStateInputs",
     "RecurrentStateInputsPerDevice",
     "RecurrentStateParams",
     "RecurrentStateRegion",
+    "ScratchKVLeafRegion",
     "build_max_lengths_tensors",
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",
     "estimated_memory_size",
+    "packed_page_stride",
     "padded_lut_cols",
     "recurrent_leaf",
+    "recurrent_leaves",
     "spec_decode_cache_slack",
 ]

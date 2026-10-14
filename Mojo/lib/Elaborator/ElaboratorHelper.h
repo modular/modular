@@ -70,6 +70,15 @@ ErrorTreeOrSuccess sortAndBundleOffloadOps(
     llvm::function_ref<ErrorTreeOrSuccess(CompileOffloadOp, mlir::StringAttr)>
         bundleOp);
 
+/// The key identifying the offload group `op` belongs to. Offloads sharing a
+/// key compile together in one sliced module, so everything the slice bakes in
+/// must appear here: the emission options, and the `target_attrs` dictionary
+/// the target backend interprets as launch metadata.
+///
+/// Bundling and plugging results back must agree on this, in both the
+/// concrete and the parametric elaborator, which is why it is one function.
+std::string makeOffloadGroupKey(CompileOffloadOp op);
+
 } // namespace M::KGEN
 
 #endif // KGEN_ELABORATOR_ELABORATORHELPER_H

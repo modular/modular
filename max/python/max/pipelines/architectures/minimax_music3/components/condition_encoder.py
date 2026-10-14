@@ -112,9 +112,9 @@ class ConditionEncoder(Module[[Tensor], Tensor]):
         latent_length = self.config.latent_length(frames)
         if latent_length == frames:
             return x
-        indices = F.floor_div(
+        indices = (
             F.arange(0, latent_length, dtype=DType.int64, device=self.device)
-            * frames,
-            latent_length,
+            * frames
+            // latent_length
         )
         return F.gather(x, indices, axis=1)

@@ -29,14 +29,6 @@ def as():
 def assert():
     pass
 
-# expected-error @+1 {{'async' cannot be used as a function name in this context}}
-def async():
-    pass
-
-# expected-error @+1 {{'await' cannot be used as a function name in this context}}
-def await():
-    pass
-
 # expected-error @+1 {{'break' cannot be used as a function name in this context}}
 def break():
     pass
@@ -165,6 +157,22 @@ def struct():
 def trait():
     pass
 
+# expected-error @+1 {{'__async' cannot be used as a function name in this context}}
+def __async():
+    pass
+
+# expected-error @+1 {{'__await' cannot be used as a function name in this context}}
+def __await():
+    pass
+
+# expected-error @+1 {{'async' cannot be used as a function name in this context}}
+def async():
+    pass
+
+# expected-error @+1 {{'await' cannot be used as a function name in this context}}
+def await():
+    pass
+
 # expected-error @+1 {{'__extension' cannot be used as a function name in this context}}
 def __extension():
     pass
@@ -243,6 +251,10 @@ def __is_run_in_comptime_interpreter():
 
 # expected-error @+1 {{'__match' cannot be used as a function name in this context}}
 def __match():
+    pass
+
+# expected-error @+1 {{'__enum' cannot be used as a function name in this context}}
+def __enum():
     pass
 
 

@@ -54,13 +54,11 @@ using namespace KGEN;
 using namespace AsyncRT;
 
 /// Short living attribute that is needed to set on KGEN::FuncOp or
-/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVMetadata
+/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVM attributes
 /// after concretization and will be removed from the operation, therefore won't
 /// survive Elaborator.
-static constexpr StringRef kLLVMMetadataArrayAttrName =
-    "kgen.elaborator.llvm_metadata_array";
-static constexpr StringRef kLLVMArgMetadataArrayAttrName =
-    "kgen.elaborator.llvm_arg_metadata_array";
+static constexpr StringRef kFnAttrsAttrName = "kgen.elaborator.fn_attrs";
+static constexpr StringRef kFnArgAttrsAttrName = "kgen.elaborator.fn_arg_attrs";
 
 //===----------------------------------------------------------------------===//
 // ExpansionGraph
@@ -259,8 +257,8 @@ static ElaborationState processParamAssertOp(PImplNode *inode,
 /// Convert llvm metadata array attrs into dicts by treating every pair of
 /// attributes in the array as (key, value) pairs, where the key is always a
 /// StringAttr.
-static ErrorTreeOr<DictionaryAttr>
-concretizeLLVMMetadataArrays(Location loc, ArrayAttr array) {
+static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
+                                                              ArrayAttr array) {
   NamedAttrList llvmMetadata;
   DenseSet<StringAttr> seenMetadataNames;
   for (int i = 0, e = array.size(); i < e; i += 2) {
@@ -299,32 +297,31 @@ static ElaborationState processGenericOp(PImplNode *parent, Operation *op) {
     op->setAttrs(newAttrs);
 
   if (auto func = dyn_cast<FuncOp>(op)) {
-    if (auto llvmMetadataArray = dyn_cast_or_null<ArrayAttr>(
-            func->getAttr(kLLVMMetadataArrayAttrName))) {
+    if (auto fnAttrs =
+            dyn_cast_or_null<ArrayAttr>(func->getAttr(kFnAttrsAttrName))) {
       ErrorTreeOr<DictionaryAttr> result =
-          concretizeLLVMMetadataArrays(op->getLoc(), llvmMetadataArray);
+          concretizeLLVMFnAttrArrays(op->getLoc(), fnAttrs);
       if (result.isError()) {
         parent->setToError(result.takeError());
         return ElaborationState::error();
       }
-      func.setLLVMMetadataAttr(result.takeValue());
-      func->removeAttr(kLLVMMetadataArrayAttrName);
+      func.setFnAttrsAttr(result.takeValue());
+      func->removeAttr(kFnAttrsAttrName);
     }
-    if (auto llvmArgMetadataArray = dyn_cast_or_null<ArrayAttr>(
-            func->getAttr(kLLVMArgMetadataArrayAttrName))) {
-      SmallVector<Attribute> resultArray;
-      for (Attribute perArgMetadataArray : llvmArgMetadataArray) {
-        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMMetadataArrays(
-            op->getLoc(), cast<ArrayAttr>(perArgMetadataArray));
+    if (auto argAttrs =
+            dyn_cast_or_null<ArrayAttr>(func->getAttr(kFnArgAttrsAttrName))) {
+      SmallVector<Attribute> resultAttrs;
+      for (Attribute perArgAttrArray : argAttrs) {
+        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMFnAttrArrays(
+            op->getLoc(), cast<ArrayAttr>(perArgAttrArray));
         if (result.isError()) {
           parent->setToError(result.takeError());
           return ElaborationState::error();
         }
-        resultArray.push_back(result.takeValue());
+        resultAttrs.push_back(result.takeValue());
       }
-      func.setLLVMArgMetadataAttr(
-          ArrayAttr::get(op->getContext(), resultArray));
-      func->removeAttr(kLLVMArgMetadataArrayAttrName);
+      func.setFnArgAttrsAttr(ArrayAttr::get(op->getContext(), resultAttrs));
+      func->removeAttr(kFnArgAttrsAttrName);
     }
   }
 
@@ -868,7 +865,7 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, PImplNode *inode) {
         }
       }
       // When elaboration is complete, only the first block in any region is
-      // valid (any other block may be illegal, e.g. due to how kgen.param.if
+      // valid (any other block may be illegal, e.g. due to how hlcf.comptime.if
       // is handled). So we only need to go through the region arguments.
       for (Region &r : op->getRegions()) {
         for (BlockArgument arg : r.getArguments())
@@ -894,7 +891,7 @@ static LogicalResult concretizeLocsInScope(Block &scope, PImplNode *inode) {
 }
 
 //===----------------------------------------------------------------------===//
-// ParametricElaborator::processParamIfOp
+// ParametricElaborator::processComptimeIfOp
 //===----------------------------------------------------------------------===//
 
 /// We always erase this op and its nested scopes from the parameter graph -
@@ -922,19 +919,24 @@ static void recursivelyEraseFromNestedScopes(PImplNode *node, Operation *op) {
     eraseScopes(graph);
 }
 
-ElaborationState ParametricElaborator::processParamIfOp(PImplNode *parent,
-                                                        ParamIfOp op) {
-  // Check the condition expression.
-  Attribute value;
-  HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
+ElaborationState
+ParametricElaborator::processComptimeIfOp(PImplNode *parent,
+                                          HLCF::ComptimeIfOp op) {
+  // Select the live arm: first true condition's then, else the final else.
+  size_t liveRegion = op.getNumRegions() - 1;
+  for (auto [idx, attr] : llvm::enumerate(op.getCondAttrs())) {
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), cast<TypedAttr>(attr));
+    if (cast<SIMDAttr>(value).getAsBool()) {
+      liveRegion = idx;
+      break;
+    }
+  }
 
-  // Take whichever branch the condition indicated, and simply inline those ops
-  // then elaborate them. We can do this by splicing the op list into the parent
-  // block. We splice it this way to avoid remapping the ops when we process
-  // them later.
-  bool resultBool = cast<SIMDAttr>(value).getAsBool();
-  // Get the appropriate region.
-  Region &toProcess = op->getRegion(!resultBool);
+  // Take the selected arm and simply inline those ops then elaborate them. We
+  // can do this by splicing the op list into the parent block. We splice it
+  // this way to avoid remapping the ops when we process them later.
+  Region &toProcess = op->getRegion(liveRegion);
 
   // Push a new node and skip over the current frame until it completes.
   PImplNode::WorkItem item{{}, nullptr, parent->getEvaluator()};
@@ -942,17 +944,17 @@ ElaborationState ParametricElaborator::processParamIfOp(PImplNode *parent,
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [resultBool, debug = config.elaborateDebugInfo](
+  item.onComplete = [liveRegion, debug = config.elaborateDebugInfo](
                         PImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
     PImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
-    auto op = cast<ParamIfOp>(parentFrame.ops.back());
+    auto op = cast<HLCF::ComptimeIfOp>(parentFrame.ops.back());
 
     // Splice the ops into the parent. Grab the terminator before the iterators
     // invalidate.
     Block::iterator iter = op->getIterator();
-    Block &block = op->getRegion(!resultBool).front();
+    Block &block = op->getRegion(liveRegion).front();
 
     // First update the locations if necessary
     if (debug) {
@@ -964,8 +966,8 @@ ElaborationState ParametricElaborator::processParamIfOp(PImplNode *parent,
     op->getBlock()->getOperations().splice(iter, block.getOperations());
 
     // Update the values for the result parameters and do other processing
-    // necessary for param.yield.
-    if (auto yieldOp = dyn_cast<ParamYieldOp>(terminator)) {
+    // necessary for comptime.yield.
+    if (auto yieldOp = dyn_cast<HLCF::ComptimeYieldOp>(terminator)) {
       // RAUW the op's results with the terminator's inputs.
       op->getResults().replaceAllUsesWith(yieldOp.getOperands());
 
@@ -973,7 +975,7 @@ ElaborationState ParametricElaborator::processParamIfOp(PImplNode *parent,
       terminator->erase();
     } else if (auto hlcfTerm =
                    dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
-      // If it's an kgen.return op, we have to split the block after the return.
+      // If it's an hlcf.return op, we have to split the block after the return.
       hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
       // Drop all uses of the if op because any of its uses will be null and
       // void at this point.
@@ -998,11 +1000,11 @@ ElaborationState ParametricElaborator::processParamIfOp(PImplNode *parent,
 }
 
 //===----------------------------------------------------------------------===//
-// ParametricElaborator::processParamForOp
+// ParametricElaborator::processComptimeForOp
 //===----------------------------------------------------------------------===//
 
 // Take a look at the HLCF::Loop operation generated by unrolling one iteration
-// of a kgen.param.for. If the loop is pointless, we can inline it into the
+// of a hlcf.comptime.for. If the loop is pointless, we can inline it into the
 // containing region to reduce control flow complexity from downstream passes.
 //
 // This returns true if the rest of the containing logic is dead.
@@ -1073,8 +1075,9 @@ static bool simplifyParamForLoop(HLCF::LoopOp loop, HLCF::LoopOp outerLoop) {
   return false;
 }
 
-ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
-                                                         ParamForOp op) {
+ElaborationState
+ParametricElaborator::processComptimeForOp(PImplNode *parent,
+                                           HLCF::ComptimeForOp op) {
   // First, concretize the iterator value and the hasnext/getnext expressions.
   Attribute initial, hasNext, getNextIter;
   HANDLE_EVALUATOR_CONC(initial, parent, op.getLoc(), op.getInitial());
@@ -1082,9 +1085,9 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
   HANDLE_EVALUATOR_CONC(getNextIter, parent, op.getLoc(), op.getGetNextIter());
 
   // Get the result types of the for loop.  These are the values passed from
-  // kgen.param.for.break/continue across loop iterations and to the result of
-  // the kgen.param.for.  These are created by mem2reg promoting stack objects
-  // in the body of the loop.
+  // hlcf.comptime.for.break/continue across loop iterations and to the result
+  // of the hlcf.comptime.for.  These are created by mem2reg promoting stack
+  // objects in the body of the loop.
   SmallVector<Type> resultTypes;
   for (Type type : op.getResultTypes())
     HANDLE_EVALUATOR_CONC(resultTypes.emplace_back(), parent, op.getLoc(),
@@ -1256,10 +1259,10 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
   }
 
   // The else body should be unreachable after LowerSemanticCF.
-  assert(isa<UnreachableOp>(op.getElseRegion().front().front()) &&
-         "LowerSemanticCF didn't lower the else block of param.for?");
+  assert(isa<HLCF::UnreachableOp>(op.getElseRegion().front().front()) &&
+         "LowerSemanticCF didn't lower the else block of comptime.for?");
 
-  // Lower the `kgen.param.for` into an outer loop and wrapper loops for each
+  // Lower the `hlcf.comptime.for` into an outer loop and wrapper loops for each
   // generated iteration. This way, we can lower `continue` to a break to the
   // wrapper loop to model exiting a single iteration and lower `break` to a
   // break to the outer loop to model exiting the whole loop.
@@ -1274,12 +1277,12 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
   // end of this function.
   parent->stack.back().ops.pop_back();
 
-  // Add a worklist item to delete the param.for op when all the iterations are
-  // processed and done and cleanup the result IR.
+  // Add a worklist item to delete the comptime.for op when all the iterations
+  // are processed and done and cleanup the result IR.
   PImplNode::WorkItem finalItem{{}, nullptr, parent->getEvaluator()};
   finalItem.onComplete = [op, parent,
                           outerLoop](PImplNode *node) mutable -> LogicalResult {
-    // Remove the original kgen.param.for now that it has been lowered.
+    // Remove the original hlcf.comptime.for now that it has been lowered.
     recursivelyEraseFromNestedScopes(parent, op);
     op.erase();
 
@@ -1293,7 +1296,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
     // Check to see if we can simplify the final outer loop.
     simplifyParamForLoop(outerLoop, outerLoop);
 
-    // Each iteration of the kgen.param.for will be turned into a nested
+    // Each iteration of the hlcf.comptime.for will be turned into a nested
     // hlcf.loop and many of them will be trivial (no breaks/continues out of
     // them other than the final one).  Clean up the IR to improve compile time.
     return success();
@@ -1301,7 +1304,7 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
   parent->stack.push_back(std::move(finalItem));
 
   // Upon completion of elaboration of each such generated loop, replace the
-  // `kgen.param.for` terminators with the appropriate HLCF ones.
+  // `hlcf.comptime.for` terminators with the appropriate HLCF ones.
   auto makeCompletion =
       [debug = config.elaborateDebugInfo, outerLabel](
           Region &region) -> std::function<LogicalResult(PImplNode *)> {
@@ -1313,17 +1316,17 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
 
       auto thisLoop = cast<HLCF::LoopOp>(region.getParentOp());
 
-      // Replace the `kgen.param.for` terminators with the HLCF equivalent.
+      // Replace the `hlcf.comptime.for` terminators with the HLCF equivalent.
       region.walk([&](Operation *op) {
-        if (isa<ParamForOp>(op))
+        if (isa<HLCF::ComptimeForOp>(op))
           return WalkResult::skip();
-        if (isa<ParamForBreakOp>(op)) {
+        if (isa<HLCF::ComptimeForBreakOp>(op)) {
           IRRewriter b{OpBuilder(op)};
           b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(),
                                               outerLabel);
           return WalkResult::advance();
         }
-        if (isa<ParamForContinueOp>(op)) {
+        if (isa<HLCF::ComptimeForContinueOp>(op)) {
           IRRewriter b{OpBuilder(op)};
           b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(),
                                               thisLoop.getLabelAttr());
@@ -1563,9 +1566,9 @@ ElaborationState ParametricElaborator::processOp(PImplNode *node,
   // ParamMaterializeOp same as ParamConstantOp, cpuDevice constant? value
   // RebindOp  check during elab, no-op
   // ParamAssertOp: similar to RebindOp, just do checks
-  // ParamIfOp:
-  // ParamForOp: nested regions. unwrap things, no interpreting the body
-  // GeneratorUserOpInterface:
+  // HLCF::ComptimeIfOp:
+  // HLCF::ComptimeForOp: nested regions. unwrap things, no interpreting the
+  // body GeneratorUserOpInterface:
   //  ParamApply
   //  CallOp
   //  ...
@@ -1583,10 +1586,10 @@ ElaborationState ParametricElaborator::processOp(PImplNode *node,
     return processRebindOp(node, rebindOp);
   if (auto assertOp = dyn_cast<ParamAssertOp>(op))
     return processParamAssertOp(node, assertOp);
-  if (auto ifOp = dyn_cast<ParamIfOp>(op))
-    return processParamIfOp(node, ifOp);
-  if (auto forOp = dyn_cast<ParamForOp>(op))
-    return processParamForOp(node, forOp);
+  if (auto ifOp = dyn_cast<HLCF::ComptimeIfOp>(op))
+    return processComptimeIfOp(node, ifOp);
+  if (auto forOp = dyn_cast<HLCF::ComptimeForOp>(op))
+    return processComptimeForOp(node, forOp);
   if (auto apply = dyn_cast<ParamApplyOp>(op))
     return processParamApplyOp(node, apply);
   if (auto call = dyn_cast<GeneratorUserOpInterface>(op))
@@ -1674,7 +1677,7 @@ ElaborationState ParametricElaborator::specializeGenerator(PImplNode *inode,
     //   kgen.call @foo<() -> y>()
     //   %0 = kgen.param.constant = <y>
     //   kgen.param.result_bind<2>
-    //   kgen.return
+    //   hlcf.return
     // }
     // ```
     //
@@ -1722,16 +1725,18 @@ ElaborationState ParametricElaborator::specializeGenerator(PImplNode *inode,
         generatorOp.getDecorators(), DictionaryAttr::get(b.getContext())));
     cast<FuncOp>(*instance).setInlineLevelAttr(
         generatorOp.getInlineLevelAttr());
-    // Process LLVM metadata recorded in the generator by fusing names and
-    // values from the LLVMetadataName and LLVMMetadataValue dictionaries.
     auto newFunc = cast<FuncOp>(*instance);
-    if (!generatorOp.getLLVMMetadataArray().empty()) {
-      newFunc->setAttr(kLLVMMetadataArrayAttrName,
-                       generatorOp.getLLVMMetadataArray());
-    }
-    if (!generatorOp.getLLVMArgMetadataArray().empty()) {
-      newFunc->setAttr(kLLVMArgMetadataArrayAttrName,
-                       generatorOp.getLLVMArgMetadataArray());
+    if (!generatorOp.getFnAttrs().empty())
+      newFunc->setAttr(kFnAttrsAttrName, generatorOp.getFnAttrs());
+    if (!generatorOp.getFnArgAttrs().empty())
+      newFunc->setAttr(kFnArgAttrsAttrName, generatorOp.getFnArgAttrs());
+    // The instance is created with an empty discardable dictionary; forward
+    // the offload target-attribute dictionary so the target backend can read
+    // it off the compiled kernel function.
+    if (auto targetAttrs = generatorOp->getDiscardableAttr(
+            CompileOffloadOp::getTargetAttrsForwardedAttrName())) {
+      newFunc->setAttr(CompileOffloadOp::getTargetAttrsForwardedAttrName(),
+                       targetAttrs);
     }
     instantiateBody = true;
   } else {
@@ -1901,17 +1906,41 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
   // the elaborator invocation will fail due to multiple implementations of a
   // primary generator, and the functor will return an error.
 
+  DictionaryAttr targetAttrs = op.getTargetAttrsAttr();
+
   targetOffloadInfos.modify([&](auto &info) {
-    std::string groupKey =
-        emissionOptionsStr.str() + emissionLinkOptionsStr.str();
-    OffloadInfo::Group &offloadInfo = info[target].groups[groupKey];
+    OffloadInfo::Group &offloadInfo =
+        info[target].groups[makeOffloadGroupKey(op)];
     offloadInfo.emissionOptions = emissionOptionsStr;
     offloadInfo.emissionLinkOptions = emissionLinkOptionsStr;
+    offloadInfo.targetAttrs = targetAttrs;
 
     // Slice out a pre-elaboration module for the new target to compile for.
     ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
     exportedSymbols.insert_or_assign(func.getSymNameAttr(),
                                      ExportKind::Exported);
+
+    if (targetAttrs) {
+      // Function symbols referenced only from `target_attrs` (e.g. window
+      // transform functions) have no SSA use in the slice, so a `NotExported`
+      // entry would be DCEd; export them.
+      //
+      // `insert_or_assign` upgrades a symbol the param replacers below reached
+      // first, and `Exported` is external linkage in the artifact, not just
+      // liveness. That is deliberate -- reachable only through an attribute,
+      // the symbol has nothing else to keep it alive -- but it does mean the
+      // same callee linked differently depending on how it is referenced.
+      mlir::AttrTypeWalker attrWalker;
+      attrWalker.addWalk([&](SymbolConstantAttr ref) {
+        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
+                                         ExportKind::Exported);
+      });
+      attrWalker.addWalk([&](FuncSymbolAttr ref) {
+        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
+                                         ExportKind::Exported);
+      });
+      attrWalker.walk(targetAttrs);
+    }
 
     // Make sure to slice out anything referenced in the input parameters. When
     // generator references are instantiated in the standalone module, they are
@@ -2427,12 +2456,7 @@ static WalkResult rewriteCompileOffloadOp(
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
   TargetInfoAttr target =
       cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
-  StringRef emissionOptionsStr =
-      cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
-  StringRef emissionLinkOptionsStr =
-      cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
-  std::string groupKey =
-      emissionOptionsStr.str() + emissionLinkOptionsStr.str();
+  std::string groupKey = makeOffloadGroupKey(op);
 
   auto targetIter = compiledOffload.find(target);
   if (targetIter == compiledOffload.end()) {

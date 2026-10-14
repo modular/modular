@@ -7,20 +7,20 @@ kgen.generator @foo() {
   kgen.param.declare.region SomeClosure = () capturing {
     // CHECK-NEXT: kgen.param.constant: array<1, i1> = <[1]> loc(#[[LOC_CL:.*]])
     %array = kgen.param.constant: array<1, i1> = <[1]> loc(#locClosure)
-    // CHECK-NEXT: kgen.return loc(#[[LOC_CL]])
-    kgen.return loc(#locClosure)
+    // CHECK-NEXT: hlcf.return loc(#[[LOC_CL]])
+    hlcf.return loc(#locClosure)
   // CHECK-NEXT: } {isolated} loc(#[[LOC_CL]])
   } loc(#locClosure)
 
   // CHECK: kgen.param.declare.region OtherClosure
   kgen.param.declare.region OtherClosure = <K>(%arg1: !pop.array<K, index>) {
-    // CHECK-NEXT: kgen.return loc(#[[LOC_OTHER:.*]])
-    kgen.return loc(#locOther)
+    // CHECK-NEXT: hlcf.return loc(#[[LOC_OTHER:.*]])
+    hlcf.return loc(#locOther)
   // CHECK-NEXT: } {isolated} loc(#[[LOC_OTHER]])
   } loc(#locOther)
 
-  // CHECK-NEXT: kgen.return loc(#[[LOC_FOO:.*]])
-  kgen.return loc(#locFoo)
+  // CHECK-NEXT: hlcf.return loc(#[[LOC_FOO:.*]])
+  hlcf.return loc(#locFoo)
 // CHECK-NEXT: } loc(#[[LOC_FOO]])
 } loc(#locFoo)
 
@@ -65,7 +65,7 @@ kgen.generator @func() {
       // CHECK: hlcf.break loc([[BREAK_LOC]])
       hlcf.break loc(#loc4)
     } loc(#loc4)
-    kgen.return loc(#loc4)
+    hlcf.return loc(#loc4)
   } loc(#loc4)
-  kgen.return loc(#loc3)
+  hlcf.return loc(#loc3)
 } loc(#loc3)

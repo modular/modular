@@ -18,7 +18,7 @@ The lightweight percentile-metric types
 live in :mod:`max.benchmark.benchmark_shared.percentile_metrics` so
 consumers that only need the type definitions can import them without
 pulling in this module's heavier dependency surface (numpy, the rest
-of MAX, transformers, etc.). They are re-exported here so existing
+of MAX, transformers and so on). They are re-exported here so existing
 ``from max.benchmark.benchmark_shared.metrics import …`` callers
 continue to work unchanged.
 """
@@ -48,6 +48,7 @@ from max.benchmark.benchmark_shared.result_groups import (
     DiagnosticsGroup,
     GpuStatsGroup,
     LatencyStatsGroup,
+    RequestMixGroup,
     SummaryGroup,
     ThroughputStatsGroup,
 )
@@ -132,7 +133,7 @@ class ThroughputMetrics(PercentileMetrics):
     Container for throughput-based metrics with automatic percentile calculations.
 
     For throughput metrics, percentiles are reversed because smaller values
-    are worse for throughput (e.g., p99 represents the 1st percentile).
+    are worse for throughput (for example, p99 represents the 1st percentile).
 
     Structured as a ``PercentileMetrics`` subclass (rather than wrapping one in a
     private attribute) so the computed stats live in dataclass fields: JSON /
@@ -153,8 +154,8 @@ class ThroughputMetrics(PercentileMetrics):
 
         Args:
             data: List of throughput values to calculate percentiles from.
-            scale_factor: Factor to multiply all values by (e.g., for unit conversion).
-            unit: Unit string to display (e.g., "tok/s", "req/s", "MB/s").
+            scale_factor: Factor to multiply all values by (such as for unit conversion).
+            unit: Unit string to display (such as "tok/s", "req/s", "MB/s").
         """
         _validate_data(data)
 
@@ -189,7 +190,7 @@ class StandardPercentileMetrics(PercentileMetrics):
     Container for standard percentile-based metrics with automatic calculations.
 
     For standard metrics, higher percentiles represent worse performance
-    (e.g., p99 represents the 99th percentile).
+    (for example, p99 represents the 99th percentile).
 
     Structured as a ``PercentileMetrics`` subclass (see ``ThroughputMetrics``)
     so the computed stats are serializable dataclass fields; the public API is
@@ -207,8 +208,8 @@ class StandardPercentileMetrics(PercentileMetrics):
 
         Args:
             data: List of values to calculate percentiles from.
-            scale_factor: Factor to multiply all values by (e.g., 1000 for ms conversion).
-            unit: Unit string to display (e.g., "ms", "s", "MB/s").
+            scale_factor: Factor to multiply all values by (such as 1000 for ms conversion).
+            unit: Unit string to display (such as "ms", "s", "MB/s").
         """
         _validate_data(data)
 
@@ -244,7 +245,7 @@ class RatePercentileMetrics(StandardPercentileMetrics):
     Stored and displayed either as a fraction in [0, 1] (``as_percent=False``)
     or a percentage in [0, 100] (``as_percent=True``). Validation enforces the
     corresponding upper bound, which catches both negative values and values
-    above the representation's maximum (e.g. ``cached_tokens > prompt_tokens``).
+    above the representation's maximum (such as ``cached_tokens > prompt_tokens``).
     """
 
     def __init__(
@@ -348,7 +349,7 @@ class BaseBenchmarkMetrics(BaseModel, Metrics):
         """Serialize aggregate metrics to a flat dict.
 
         Produces the key layout that the upload script and the
-        ``--result-filename`` JSON expect (e.g. ``mean_ttft_ms``,
+        ``--result-filename`` JSON expect (such as ``mean_ttft_ms``,
         ``p99_latency_ms``, ``ttft_ms_confidence``, …).
 
         Subclasses should call ``super().to_result_dict()`` and merge in
@@ -608,6 +609,37 @@ class TextGenAggregates(_CompletedRunBase):
         default=None, json_schema_extra={"phase": "decode"}
     )
 
+    # ``ttft_ms`` / ``tpot_ms`` restricted to the requests that carried a
+    # ``response_format`` and to those that did not; the constrained-decoding
+    # cost is the gap between them. Each pair is ``None`` unless both its
+    # halves have samples.
+    ttft_ms_constrained: StandardPercentileMetrics | None = None
+    ttft_ms_unconstrained: StandardPercentileMetrics | None = None
+    tpot_ms_constrained: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
+    )
+    tpot_ms_unconstrained: StandardPercentileMetrics | None = Field(
+        default=None, json_schema_extra={"phase": "decode"}
+    )
+    # Share of the measured requests that carried a ``response_format``, over
+    # the same window as ``ttft_ms`` and the other aggregates.
+    constrained_request_rate: float | None = None
+    # Share of constrained requests whose content satisfied the schema, judged
+    # client-side. ``None`` when nothing was constrained, or when nothing
+    # constrained could be judged. Read against ``constrained_request_rate``: a
+    # high request rate with a collapsed rate here is a backend that took
+    # ``response_format`` and did nothing with it.
+    constrained_conformance_rate: float | None = None
+    # Share of the measured requests that offered ``tools``, and of those, the
+    # share whose response called one: the client-side counterparts of
+    # ``maxserve.tool_call.requests`` and ``.responses``.
+    tool_request_rate: float | None = None
+    tool_call_response_rate: float | None = None
+    # Share of the measured requests whose payload carried an image, and share
+    # routed to a LoRA adapter.
+    image_request_rate: float | None = None
+    lora_request_rate: float | None = None
+
     max_input: int
     max_output: int
     max_total: int
@@ -696,10 +728,28 @@ class TextGenAggregates(_CompletedRunBase):
             if pm is not None:
                 d.update(pm.to_flat_dict(name))
                 d.update(pm.confidence_to_flat_dict(name))
+        if self.constrained_request_rate is not None:
+            d["constrained_request_rate"] = self.constrained_request_rate
+        if self.constrained_conformance_rate is not None:
+            d["constrained_conformance_rate"] = (
+                self.constrained_conformance_rate
+            )
+        if self.tool_request_rate is not None:
+            d["tool_request_rate"] = self.tool_request_rate
+        if self.tool_call_response_rate is not None:
+            d["tool_call_response_rate"] = self.tool_call_response_rate
+        if self.image_request_rate is not None:
+            d["image_request_rate"] = self.image_request_rate
+        if self.lora_request_rate is not None:
+            d["lora_request_rate"] = self.lora_request_rate
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
+            ("ttft_ms_constrained", self.ttft_ms_constrained),
+            ("ttft_ms_unconstrained", self.ttft_ms_unconstrained),
+            ("tpot_ms_constrained", self.tpot_ms_constrained),
+            ("tpot_ms_unconstrained", self.tpot_ms_unconstrained),
         ]:
             if spm is not None:
                 d.update(spm.to_flat_dict(name))
@@ -746,6 +796,10 @@ class TextGenAggregates(_CompletedRunBase):
             ("tpot_ms", self.tpot_ms),
             ("itl_ms", self.itl_ms),
             ("step_tpot_ms", self.step_tpot_ms),
+            ("ttft_ms_constrained", self.ttft_ms_constrained),
+            ("ttft_ms_unconstrained", self.ttft_ms_unconstrained),
+            ("tpot_ms_constrained", self.tpot_ms_constrained),
+            ("tpot_ms_unconstrained", self.tpot_ms_unconstrained),
         ]:
             # ``None`` means the metric had no samples this iteration
             # (e.g. decode metrics on a prefill-only run); the empty case
@@ -791,6 +845,12 @@ class TextGenAggregates(_CompletedRunBase):
             ("tpot_ms", self.tpot_ms),
             ("output_throughput", self.output_throughput),
             ("step_tpot_ms", self.step_tpot_ms),
+            # A mix ratio starves one side by construction, and that side is
+            # the one whose comparison cannot be trusted.
+            ("ttft_ms_constrained", self.ttft_ms_constrained),
+            ("ttft_ms_unconstrained", self.ttft_ms_unconstrained),
+            ("tpot_ms_constrained", self.tpot_ms_constrained),
+            ("tpot_ms_unconstrained", self.tpot_ms_unconstrained),
         ]:
             if metric is None:
                 continue
@@ -837,6 +897,12 @@ class BenchmarkResult(BaseModel):
     peak_gpu_memory_mib: list[float] = Field(default_factory=list)
     available_gpu_memory_mib: list[float] = Field(default_factory=list)
     gpu_utilization: list[float] = Field(default_factory=list)
+    # Per-device utilization split by group (a disaggregated engine's role,
+    # with a node suffix when the role spans nodes); empty when the GPU
+    # source can't tell the devices apart.
+    gpu_utilization_by_group: dict[str, list[float]] = Field(
+        default_factory=dict
+    )
     cpu_metrics: CPUMetrics | None = None
     metrics_by_endpoint: Mapping[str, ParsedMetrics] = Field(
         default_factory=dict
@@ -1045,7 +1111,7 @@ class BenchmarkResult(BaseModel):
         """Serialize aggregate metrics to a flat dict.
 
         Produces the key layout that the upload script and the
-        ``--result-filename`` JSON expect (e.g. ``mean_ttft_ms``,
+        ``--result-filename`` JSON expect (such as ``mean_ttft_ms``,
         ``p99_latency_ms``, ``ttft_ms_confidence``, …).
         """
         d: dict[str, object] = {
@@ -1054,6 +1120,8 @@ class BenchmarkResult(BaseModel):
             "available_gpu_memory_mib": self.available_gpu_memory_mib,
             "gpu_utilization": self.gpu_utilization,
         }
+        if self.gpu_utilization_by_group:
+            d["gpu_utilization_by_group"] = self.gpu_utilization_by_group
         if self.cpu_metrics is not None:
             d["cpu_metrics"] = dataclasses.asdict(self.cpu_metrics)
         if self.metrics_by_endpoint:
@@ -1178,11 +1246,23 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         ),
     )
 
+    request_mix: RequestMixGroup | None = None
+    if text_data is not None:
+        request_mix = RequestMixGroup(
+            constrained_request_rate=text_data.constrained_request_rate,
+            constrained_conformance_rate=text_data.constrained_conformance_rate,
+            tool_request_rate=text_data.tool_request_rate,
+            tool_call_response_rate=text_data.tool_call_response_rate,
+            image_request_rate=text_data.image_request_rate,
+            lora_request_rate=text_data.lora_request_rate,
+        )
+
     gpu_stats = (
         GpuStatsGroup(
             peak_gpu_memory_mib=result.peak_gpu_memory_mib,
             available_gpu_memory_mib=result.available_gpu_memory_mib,
             gpu_utilization=result.gpu_utilization,
+            gpu_utilization_by_group=result.gpu_utilization_by_group,
         )
         if (
             result.peak_gpu_memory_mib
@@ -1202,6 +1282,10 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
             tpot_ms=text_data.tpot_ms,
             itl_ms=text_data.itl_ms,
             step_tpot_ms=text_data.step_tpot_ms,
+            ttft_ms_constrained=text_data.ttft_ms_constrained,
+            ttft_ms_unconstrained=text_data.ttft_ms_unconstrained,
+            tpot_ms_constrained=text_data.tpot_ms_constrained,
+            tpot_ms_unconstrained=text_data.tpot_ms_unconstrained,
         )
         throughput_stats = ThroughputStatsGroup(
             input_throughput=text_data.input_throughput,
@@ -1240,6 +1324,7 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
 
     return BenchmarkResultGroups(
         summary=summary,
+        request_mix=request_mix,
         gpu_stats=gpu_stats,
         latency_stats=latency_stats,
         throughput_stats=throughput_stats,

@@ -26,14 +26,13 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 from max.algorithm import elementwise
 
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
 from max.gpu.host.info import is_gpu
-from kv_cache.types import KVCacheStaticParams
+from kv_cache.types import KVCacheStaticParams, KVCollectionT
 from layout import (
     Coord,
     Layout,
-    LayoutTensor,
     RuntimeLayout,
     UNKNOWN_VALUE,
     row_major,
@@ -41,7 +40,7 @@ from layout import (
 from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
-    copy_kv_pages_d2h,
+    fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged,
     fused_dual_qk_rms_norm_rope_ragged_paged,
     fused_qk_rms_norm_ragged_paged,
     fused_qk_rms_norm_rope_ragged_paged,
@@ -50,6 +49,7 @@ from nn.kv_cache import (
     rms_norm_kv_cache_ragged_paged,
     rms_norm_value_cache_ragged_paged,
 )
+from nn.kv_cache_gather import kv_cache_gather_rows_ragged
 from nn.kv_cache_ragged import (
     generic_kv_cache_radd_dispatch,
     k_matmul_ragged_paged,
@@ -121,7 +121,7 @@ struct Struct_kv_cache_store_paged:
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: IndexList[3]) capturing -> SIMD[kv_type, width]:
+        ](idx: Coord) capturing -> SIMD[kv_type, width]:
             # The value dtype is the producer compute dtype (bf16), which need
             # not match the cache: an FP8 cache saturates on the store rather
             # than emitting NaN for out-of-range values.
@@ -133,8 +133,61 @@ struct Struct_kv_cache_store_paged:
 
         kv_cache_store_ragged[input_fn=input_fn, target=target](
             cache,
-            inputs.shape(),
-            input_row_offsets.to_layout_tensor(),
+            inputs.shape_coord(),
+            input_row_offsets.to_tile_tensor(),
+            context,
+        )
+
+
+@extensibility.register("mo.kv_cache.gather_rows.ragged.paged")
+struct Struct_kv_cache_gather_rows_ragged_paged:
+    """Registers the `mo.kv_cache.gather_rows.ragged.paged` graph op with the graph compiler.
+
+    Copies the key or value rows a per-row slot list names out of one layer
+    of a paged cache, one head per slot. See `nn.kv_cache_gather`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        kv_type: DType,
+        //,
+        key_or_value: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=kv_type, rank=3, ...],
+        slots: InputTensor[dtype=.int32, rank=2, ...],
+        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        context: DeviceContext,
+    ) raises:
+        var paged_kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        comptime KVCacheT = paged_kv_collection.CacheType
+        var cache: KVCacheT
+
+        comptime if key_or_value == 0:
+            cache = paged_kv_collection.get_key_cache(Int(layer_idx))
+        else:
+            cache = paged_kv_collection.get_value_cache(Int(layer_idx))
+
+        kv_cache_gather_rows_ragged[target=target](
+            output.to_tile_tensor(),
+            slots.to_tile_tensor(),
+            row_offsets.to_tile_tensor(),
+            cache,
             context,
         )
 
@@ -183,61 +236,15 @@ struct Struct_kv_cache_store_k_scales_paged:
             page_size,
             quantization_granularity,
         ](
-            LayoutTensor[cache_dtype, Layout.row_major[6](), MutAnyOrigin](
-                kv_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
-                page_stride.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    page_stride.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-                cache_lengths.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    cache_lengths.to_layout_tensor().runtime_layout.shape.value,
-                    cache_lengths.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                kv_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
-                max_prompt_length.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    max_prompt_length.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
-                max_cache_length.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    max_cache_length.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
-                k_scales_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    k_scales_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
-                scales_page_stride.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    scales_page_stride.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                k_scales_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    k_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor(),
+            cache_lengths.to_tile_tensor(),
+            kv_lookup_table.to_tile_tensor(),
+            max_prompt_length.to_tile_tensor(),
+            max_cache_length.to_tile_tensor(),
+            k_scales_blocks.to_tile_tensor(),
+            scales_page_stride.to_tile_tensor(),
+            k_scales_lookup_table.to_tile_tensor(),
         )
 
         var k_cache = k_collection.get_key_cache(Int(layer_idx))
@@ -255,21 +262,27 @@ struct Struct_kv_cache_store_k_scales_paged:
             var input_row_offsets,
             var input_k_scales,
         }:
+            var row = Int(idx[0].value())
+            # Same bound as the value store: a row past the last offset
+            # belongs to no request, and the search below would answer with
+            # the last one and write it past the end of that request's span.
+            if row >= Int(
+                input_row_offsets_tt[input_row_offsets_tt.num_elements() - 1]
+            ):
+                return
             var loaded_val = input_k_scales._lambda_load[
                 width=width, element_alignment=alignment
             ](
-                IndexList[3](
-                    Int(idx[0].value()),
+                (
+                    row,
                     Int(idx[1].value()),
                     Int(idx[2].value()),
                 ),
             )
             var batch_idx = get_batch_from_row_offsets(
-                input_row_offsets_tt, Int(idx[0].value())
+                input_row_offsets_tt, row
             )
-            var token_idx = Int(
-                UInt32(idx[0].value()) - input_row_offsets[batch_idx]
-            )
+            var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
             var h_idx = Int(idx[1].value())
             var hd_idx = Int(idx[2].value())
             var cache_length = k_cache.cache_length(batch_idx)
@@ -283,7 +296,7 @@ struct Struct_kv_cache_store_k_scales_paged:
             )
 
         comptime simd_width = (
-            simd_width_of[scale_dtype, target=get_gpu_target()]() if is_gpu[
+            simd_width_of[scale_dtype, target=context.target]() if is_gpu[
                 target
             ]() else simd_width_of[
                 scale_dtype, target=CompilationTarget.current()
@@ -336,17 +349,16 @@ struct Struct_kv_cache_store_padded:
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: IndexList[4]) capturing -> SIMD[dtype, width]:
+        ](idx: Coord) capturing -> SIMD[dtype, width]:
+            comptime assert idx.rank == 4
             return inputs._lambda_load[
                 width=width, element_alignment=alignment
-            ](
-                idx,
-            )
+            ](idx)
 
         kv_cache_store_padded[input_fn=input_fn, target=target](
             cache,
             inputs.shape(),
-            valid_lengths.to_layout_tensor(),
+            valid_lengths.to_tile_tensor(),
             context,
         )
 
@@ -512,10 +524,9 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
         )
 
         @inline(.always)
-        @__parameter
         def q_input_fn[
             width: Int, alignment: Int
-        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+        ](token: Int, head: Int, col: Int) {var q_proj} -> SIMD[dtype, width]:
             return q_proj._fused_load[width=width, element_alignment=alignment](
                 IndexList[3](token, head, col)
             )
@@ -524,9 +535,9 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
             target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
-            q_input_fn=q_input_fn,
         ](
             kv_collection,
+            q_input_fn,
             q_gamma.to_tile_tensor[.int64](),
             k_gamma.to_tile_tensor[.int64](),
             freqs_cis.to_tile_tensor[.int64](),
@@ -620,29 +631,29 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         )
 
         @inline(.always)
-        @__parameter
         def main_q_input_fn[
             width: Int, alignment: Int
-        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+        ](token: Int, head: Int, col: Int) {var q_main_proj} -> SIMD[
+            dtype, width
+        ]:
             return q_main_proj._fused_load[
                 width=width, element_alignment=alignment
-            ](IndexList[3](token, head, col))
+            ]((token, head, col))
 
         @inline(.always)
-        @__parameter
         def index_q_input_fn[
             width: Int, alignment: Int
-        ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
+        ](token: Int, head: Int, col: Int) {var q_index_proj} -> SIMD[
+            dtype, width
+        ]:
             return q_index_proj._fused_load[
                 width=width, element_alignment=alignment
-            ](IndexList[3](token, head, col))
+            ]((token, head, col))
 
         fused_dual_qk_rms_norm_rope_ragged_paged[
             target=target,
             multiply_before_cast=multiply_before_cast,
             interleaved=Self.interleaved,
-            main_q_input_fn=main_q_input_fn,
-            index_q_input_fn=index_q_input_fn,
         ](
             main_kv_collection,
             index_kv_collection,
@@ -656,8 +667,409 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
             weight_offset,
             layer_idx,
             input_row_offsets.to_tile_tensor[.int64](),
+            main_q_input_fn,
+            index_q_input_fn,
             q_main_output.to_tile_tensor[.int64](),
             q_index_output.to_tile_tensor[.int64](),
+            context,
+        )
+
+
+@inline(.always)
+def load_staged_row[
+    width: Int, alignment: Int
+](proj: FusedInputTensor[rank=3, ...], token: Int, head: Int, col: Int) -> SIMD[
+    proj.dtype, width
+]:
+    """Reads `width` elements of one staged `[token, head, col]` row.
+
+    Parameters:
+        width: Number of elements to read.
+        alignment: Alignment of the read, in elements.
+
+    Args:
+        proj: The staged projection, through its fused read.
+        token: Ragged token index.
+        head: Head index.
+        col: First column to read.
+
+    Returns:
+        The `width` elements starting at `[token, head, col]`.
+    """
+    return proj._fused_load[width=width, element_alignment=alignment](
+        IndexList[3](token, head, col)
+    )
+
+
+@inline(.always)
+def fused_dual_qk_rms_norm_rope_nvfp4_from_graph[
+    dtype: DType,
+    q_main_out_dtype: DType,
+    q_index_out_dtype: DType,
+    freq_dtype: DType,
+    main_collection_t: KVCollectionT,
+    index_collection_t: KVCollectionT,
+    //,
+    target: StaticString,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+](
+    q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
+    q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
+    q_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+    k_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+    v_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+    q_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+    k_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+    main_kv_collection: main_collection_t,
+    index_kv_collection: index_collection_t,
+    q_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+    k_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+    q_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+    k_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+    freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+    main_epsilon: Float32,
+    index_epsilon: Float32,
+    layer_idx: UInt32,
+    weight_offset: Scalar[dtype=dtype],
+    context: DeviceContext,
+) raises:
+    """Runs `fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged` from graph
+    operands, once the ops have built their cache collections.
+
+    Parameters:
+        dtype: Staging and gamma dtype.
+        q_main_out_dtype: Main Q output dtype.
+        q_index_out_dtype: IndexQ output dtype.
+        freq_dtype: RoPE table dtype.
+        main_collection_t: Main cache collection type.
+        index_collection_t: Index-K cache collection type.
+        target: Target device.
+        multiply_before_cast: RMSNorm rounding order.
+        interleaved: Whether RoPE rotates adjacent pairs.
+
+    Args:
+        q_main_output: Normed and roped main Q.
+        q_index_output: Normed and roped IndexQ.
+        q_main_proj: Staged main Q.
+        k_main_proj: Staged main K.
+        v_main_proj: Staged main V.
+        q_index_proj: Staged IndexQ.
+        k_index_proj: Staged IndexK.
+        input_row_offsets: Ragged row offsets.
+        main_kv_collection: Main cache.
+        index_kv_collection: Index-K cache.
+        q_main_gamma: Main Q RMSNorm weight.
+        k_main_gamma: Main K RMSNorm weight.
+        q_index_gamma: IndexQ RMSNorm weight.
+        k_index_gamma: IndexK RMSNorm weight.
+        freqs_cis: RoPE table.
+        main_epsilon: Main RMSNorm epsilon.
+        index_epsilon: Indexer RMSNorm epsilon.
+        layer_idx: Layer index.
+        weight_offset: RMSNorm weight offset.
+        context: Device context.
+    """
+
+    @inline(.always)
+    def q_main_fn[
+        width: Int, alignment: Int
+    ](token: Int, head: Int, col: Int) {var q_main_proj} -> SIMD[dtype, width]:
+        return load_staged_row[width, alignment](q_main_proj, token, head, col)
+
+    @inline(.always)
+    def k_main_fn[
+        width: Int, alignment: Int
+    ](token: Int, head: Int, col: Int) {var k_main_proj} -> SIMD[dtype, width]:
+        return load_staged_row[width, alignment](k_main_proj, token, head, col)
+
+    @inline(.always)
+    def v_main_fn[
+        width: Int, alignment: Int
+    ](token: Int, head: Int, col: Int) {var v_main_proj} -> SIMD[dtype, width]:
+        return load_staged_row[width, alignment](v_main_proj, token, head, col)
+
+    @inline(.always)
+    def q_index_fn[
+        width: Int, alignment: Int
+    ](token: Int, head: Int, col: Int) {var q_index_proj} -> SIMD[dtype, width]:
+        return load_staged_row[width, alignment](q_index_proj, token, head, col)
+
+    @inline(.always)
+    def k_index_fn[
+        width: Int, alignment: Int
+    ](token: Int, head: Int, col: Int) {var k_index_proj} -> SIMD[dtype, width]:
+        return load_staged_row[width, alignment](k_index_proj, token, head, col)
+
+    fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
+        target=target,
+        multiply_before_cast=multiply_before_cast,
+        interleaved=interleaved,
+    ](
+        main_kv_collection,
+        index_kv_collection,
+        q_main_gamma.to_tile_tensor[.int64](),
+        k_main_gamma.to_tile_tensor[.int64](),
+        q_index_gamma.to_tile_tensor[.int64](),
+        k_index_gamma.to_tile_tensor[.int64](),
+        freqs_cis.to_tile_tensor[.int64](),
+        main_epsilon,
+        index_epsilon,
+        weight_offset,
+        layer_idx,
+        input_row_offsets.to_tile_tensor[.int64](),
+        q_main_fn,
+        k_main_fn,
+        v_main_fn,
+        q_index_fn,
+        k_index_fn,
+        q_main_output.to_tile_tensor[.int64](),
+        q_index_output.to_tile_tensor[.int64](),
+        context,
+    )
+
+
+@extensibility.register("mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4")
+struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual_nvfp4[interleaved: Bool]:
+    """Registers `mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4` with the graph compiler.
+
+    The dual MiniMax-M3 RMSNorm+RoPE op for a main cache with scales, which
+    the projection leaves unwritten. Q, K, V, IndexQ and IndexK all come from
+    staging through `FusedInputTensor` read lambdas. K and V are written to the
+    main cache (NVFP4 when its dtype is `uint8`), IndexK to the index cache.
+    The main cache's operands are in the order
+    `flatten_without_attention_dispatch_metadata` emits for quantized params.
+
+    Parameters:
+        interleaved: When true, RoPE rotates adjacent element pairs; when
+            false, rotates pairs separated by half the head dimension.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        q_main_out_dtype: DType,
+        q_index_out_dtype: DType,
+        freq_dtype: DType,
+        multiply_before_cast: Bool,
+        main_cache_dtype: DType,
+        main_scale_dtype: DType,
+        index_cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
+        q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
+        q_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        k_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        v_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        q_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        k_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_blocks: MutableInputTensor[dtype=main_cache_dtype, rank=6, ...],
+        main_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        main_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        main_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        main_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_scales: MutableInputTensor[dtype=main_scale_dtype, rank=6, ...],
+        main_scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        main_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        index_kv_blocks: MutableInputTensor[
+            dtype=index_cache_dtype, rank=6, ...
+        ],
+        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        q_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        q_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        main_epsilon: Float32,
+        index_epsilon: Float32,
+        layer_idx: UInt32,
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContext,
+    ) raises:
+        var main_kv_collection = generic_get_paged_cache_with_scales(
+            main_kv_blocks,
+            main_page_stride,
+            main_cache_lengths,
+            main_kv_lookup_table,
+            main_max_prompt_length,
+            main_max_cache_length,
+            main_kv_scales,
+            main_scales_page_stride,
+            main_scales_lookup_table,
+        )
+        var index_kv_collection = generic_get_paged_cache(
+            index_kv_blocks,
+            index_page_stride,
+            index_cache_lengths,
+            index_kv_lookup_table,
+            index_max_prompt_length,
+            index_max_cache_length,
+        )
+
+        fused_dual_qk_rms_norm_rope_nvfp4_from_graph[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            interleaved=Self.interleaved,
+        ](
+            q_main_output,
+            q_index_output,
+            q_main_proj,
+            k_main_proj,
+            v_main_proj,
+            q_index_proj,
+            k_index_proj,
+            input_row_offsets,
+            main_kv_collection,
+            index_kv_collection,
+            q_main_gamma,
+            k_main_gamma,
+            q_index_gamma,
+            k_index_gamma,
+            freqs_cis,
+            main_epsilon,
+            index_epsilon,
+            layer_idx,
+            weight_offset,
+            context,
+        )
+
+
+@extensibility.register(
+    "mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4.nvfp4_index"
+)
+struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual_nvfp4_nvfp4_index[
+    interleaved: Bool
+]:
+    """Registers `mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4.nvfp4_index` with the graph compiler.
+
+    `mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4` for an index-K cache
+    that has scales too: IndexK is written as NVFP4 like the main K.
+
+    The dual MiniMax-M3 RMSNorm+RoPE op for a main cache with scales, which
+    the projection leaves unwritten. Q, K, V, IndexQ and IndexK all come from
+    staging through `FusedInputTensor` read lambdas. K and V are written to the
+    main cache (NVFP4 when its dtype is `uint8`), IndexK to the index cache.
+    The main cache's operands are in the order
+    `flatten_without_attention_dispatch_metadata` emits for quantized params.
+
+    Parameters:
+        interleaved: When true, RoPE rotates adjacent element pairs; when
+            false, rotates pairs separated by half the head dimension.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        q_main_out_dtype: DType,
+        q_index_out_dtype: DType,
+        freq_dtype: DType,
+        multiply_before_cast: Bool,
+        main_cache_dtype: DType,
+        main_scale_dtype: DType,
+        index_cache_dtype: DType,
+        index_scale_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
+        q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
+        q_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        k_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        v_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        q_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        k_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_blocks: MutableInputTensor[dtype=main_cache_dtype, rank=6, ...],
+        main_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        main_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        main_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        main_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_scales: MutableInputTensor[dtype=main_scale_dtype, rank=6, ...],
+        main_scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        main_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        index_kv_blocks: MutableInputTensor[
+            dtype=index_cache_dtype, rank=6, ...
+        ],
+        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        index_kv_scales: MutableInputTensor[
+            dtype=index_scale_dtype, rank=6, ...
+        ],
+        index_scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        index_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        q_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        q_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        main_epsilon: Float32,
+        index_epsilon: Float32,
+        layer_idx: UInt32,
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContext,
+    ) raises:
+        var main_kv_collection = generic_get_paged_cache_with_scales(
+            main_kv_blocks,
+            main_page_stride,
+            main_cache_lengths,
+            main_kv_lookup_table,
+            main_max_prompt_length,
+            main_max_cache_length,
+            main_kv_scales,
+            main_scales_page_stride,
+            main_scales_lookup_table,
+        )
+        var index_kv_collection = generic_get_paged_cache_with_scales(
+            index_kv_blocks,
+            index_page_stride,
+            index_cache_lengths,
+            index_kv_lookup_table,
+            index_max_prompt_length,
+            index_max_cache_length,
+            index_kv_scales,
+            index_scales_page_stride,
+            index_scales_lookup_table,
+        )
+
+        fused_dual_qk_rms_norm_rope_nvfp4_from_graph[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            interleaved=Self.interleaved,
+        ](
+            q_main_output,
+            q_index_output,
+            q_main_proj,
+            k_main_proj,
+            v_main_proj,
+            q_index_proj,
+            k_index_proj,
+            input_row_offsets,
+            main_kv_collection,
+            index_kv_collection,
+            q_main_gamma,
+            k_main_gamma,
+            q_index_gamma,
+            k_index_gamma,
+            freqs_cis,
+            main_epsilon,
+            index_epsilon,
+            layer_idx,
+            weight_offset,
             context,
         )
 
@@ -788,9 +1200,9 @@ struct Struct_kv_matmul_ragged_paged:
             max_cache_length,
         )
         kv_matmul_ragged_paged[target=target](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
             ctx,
@@ -830,9 +1242,9 @@ struct Struct_k_matmul_ragged_paged:
             max_cache_length,
         )
         k_matmul_ragged_paged[target=target](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
             ctx,
@@ -880,15 +1292,17 @@ struct Struct_k_matmul_ragged_paged_scale:
         )
         k_matmul_ragged_paged_scale[
             target=target,
-            scales_granularity_mnk=IndexList[3](
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=(
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
+            input_scale.to_tile_tensor[.int64](),
+            weight_scale.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
             ctx,
@@ -952,9 +1366,9 @@ struct Struct_kv_cache_ragged_paged_radd:
         )
 
         generic_kv_cache_radd_dispatch[target=target,](
-            a.to_layout_tensor(),
+            a.to_tile_tensor(),
             kv_collection,
-            input_row_offsets.to_layout_tensor(),
+            input_row_offsets.to_tile_tensor(),
             batch_offset,
             layer_idx,
             context,
@@ -995,67 +1409,17 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
             max_cache_length,
         )
 
-        var kv_layout_tensor = kv.to_layout_tensor()
+        var kv_tensor = kv.to_tile_tensor()
 
-        if kv_layout_tensor.shape[0]() == 0:
+        if kv_tensor.dim[0]() == 0:
             return
 
         kv_cache_2m_iadd_dispatch[target=target,](
-            kv_layout_tensor,
+            kv_tensor,
             kv_collection,
-            input_row_offsets.to_layout_tensor(),
-            lora_end_idx.to_layout_tensor(),
-            batch_seq_len.to_layout_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            lora_end_idx.to_tile_tensor(),
+            batch_seq_len.to_tile_tensor(),
             layer_idx,
             context,
-        )
-
-
-@extensibility.register("mo.kv_cache.copy_pages_d2h")
-struct KVCacheCopyPagesD2H:
-    """Registers the `mo.kv_cache.copy_pages_d2h` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        device_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        host_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        src_page_ids: InputTensor[dtype=.int64, rank=1, ...],
-        dst_page_ids: InputTensor[dtype=.int64, rank=1, ...],
-        layer_idx: UInt32,
-        ctx: DeviceContext,
-    ) raises:
-        var gpu_ctx = ctx
-
-        copy_kv_pages_d2h(
-            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-                device_kv_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    device_kv_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-                host_kv_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    host_kv_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), MutAnyOrigin](
-                src_page_ids.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    src_page_ids.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), MutAnyOrigin](
-                dst_page_ids.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    dst_page_ids.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            Int(layer_idx),
-            gpu_ctx,
         )

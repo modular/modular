@@ -983,6 +983,26 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
                                       ASTDecl::getAssumptionsFromScope(&scope));
 }
 
+TraitType ASTType::getProvidedTrait(SharedState &shared) {
+  ASTType declDefType = getDeclDefineType(*this);
+  if (!isa<StructType>(declDefType) && !isa<TraitType>(declDefType))
+    return nullptr;
+
+  if (auto trait = dyn_cast<TraitType>(declDefType))
+    return trait;
+
+  auto structType = cast<StructType>(declDefType);
+  auto structOp = cast<StructDeclOp>(getDecl(shared)->getIfOperation());
+  auto trait = cast<StructDeclOp>(structOp).getCanonicalTrait();
+  if (structType.getParamValues().empty())
+    return trait;
+
+  // Bind the parametric trait.
+  ParameterEvaluator evaluator = shared.getParameterEvaluator(
+      structOp.getInputParams(), structType.getParamValues());
+  return evaluator.replace(trait);
+}
+
 TriBool
 ASTType::doesConformTo(TraitType trait, SharedState &shared,
                        ArrayRef<ConstraintAttr> callerAssumptions) const {

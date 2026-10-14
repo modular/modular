@@ -35,7 +35,8 @@ import numpy.typing as npt
 from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import CompiledModel, Module
+from max.experimental.compilation import CompiledCallable
+from max.experimental.nn import Module
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import TensorType
 from max.graph.weights import SafetensorWeights, Weights
@@ -243,9 +244,9 @@ class DiffusionStage:
                 ).to(device)
             with default_dtype(dtype):
                 self.dit = GuidedTransformer(self.transformer_config).to(device)
-        self._encoders: dict[int, CompiledModel[..., Any]] = {}
-        self._transformers: dict[int, CompiledModel[..., Any]] = {}
-        self._updates: dict[tuple[int, int], CompiledModel[..., Any]] = {}
+        self._encoders: dict[int, CompiledCallable[..., Any]] = {}
+        self._transformers: dict[int, CompiledCallable[..., Any]] = {}
+        self._updates: dict[tuple[int, int], CompiledCallable[..., Any]] = {}
 
     @classmethod
     def from_model_dir(
@@ -297,7 +298,7 @@ class DiffusionStage:
 
     # -- graphs ------------------------------------------------------------
 
-    def encoder(self, frames: int) -> CompiledModel[..., Any]:
+    def encoder(self, frames: int) -> CompiledCallable[..., Any]:
         """The condition encoder for a window of ``frames`` frames."""
         if frames not in self._encoders:
             module = self.condition_encoder
@@ -307,7 +308,7 @@ class DiffusionStage:
             )
         return self._encoders[frames]
 
-    def transformer(self, length: int) -> CompiledModel[..., Any]:
+    def transformer(self, length: int) -> CompiledCallable[..., Any]:
         """The DiT for one window, evaluating both guidance branches at once."""
         if length not in self._transformers:
             module = self.dit
@@ -319,7 +320,7 @@ class DiffusionStage:
             )
         return self._transformers[length]
 
-    def update(self, length: int, overlap: int) -> CompiledModel[..., Any]:
+    def update(self, length: int, overlap: int) -> CompiledCallable[..., Any]:
         """Guidance, Euler increment, and overlap blend for one step."""
         key = (length, overlap)
         if key not in self._updates:

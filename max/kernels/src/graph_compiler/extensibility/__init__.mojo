@@ -24,7 +24,10 @@ decorator instead.
 from .decorators import *
 from .managed_tensor_slice import *
 from .operation_traits import *
+from .stable_addr_engine import *
+from .stable_tensor import *
 from .tensor_arg_traits import *
+from .tensor_tuple import *
 from .tile_tensor_adapters import *
 
 # Underscore-prefixed names are skipped by `import *`, but the kernels and
@@ -41,4 +44,8 @@ from .managed_tensor_slice import (
     _MutableInputVariadicTensors,
     _dot_prod,
     _shape_types_compatible,
+)
+from .stable_tensor import (
+    _StableMutableInputTensor,
+    _StableMutableInputVariadicTensors,
 )

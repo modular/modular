@@ -16,15 +16,16 @@ from std.ffi import external_call
 
 @inline(.always)
 def __sanitizer_annotate_contiguous_container(
-    beg: OptionalPointer[NoneType, MutUntrackedOrigin],
-    end: OptionalPointer[NoneType, MutUntrackedOrigin],
-    old_mid: OptionalPointer[NoneType, MutUntrackedOrigin],
-    new_mid: OptionalPointer[NoneType, MutUntrackedOrigin],
+    *,
+    beg: ImmPointer,
+    end: ImmPointer,
+    old_mid: ImmPointer,
+    new_mid: ImmPointer,
 ):
     # follows __annotate_contiguous_container from __debug_utils
     # https://github.com/llvm/llvm-project/blob/main/libcxx/include/__debug_utils/sanitizers.h
     comptime if SanitizeAddress:
-        if not __is_run_in_comptime_interpreter and beg:
+        if not __is_run_in_comptime_interpreter:
             external_call[
                 "__sanitizer_annotate_contiguous_container", NoneType
             ](beg, end, old_mid, new_mid)

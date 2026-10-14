@@ -47,7 +47,6 @@ from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from std.sys import simd_width_of, size_of
-from std.utils.index import IndexList
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 
@@ -66,6 +65,7 @@ trait TileLoader(TrivialRegisterPassable):
         dst: TileTensor[
             mut=True,
             address_space=.SHARED,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
@@ -185,9 +185,8 @@ struct CPAsyncBarrierHandler(BarrierHandler):
 struct TileLoaderTMA[
     tma_origin: ImmOrigin,
     dtype: DType,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     /,
     *,
     BK: Int,
@@ -203,7 +202,6 @@ struct TileLoaderTMA[
     Parameters:
         tma_origin: Origin type for the TMA operation.
         dtype: Data type of the elements being loaded.
-        tma_rank: Rank of the TMA tile (number of dimensions).
         tile_shape: Shape of the complete tile in shared memory.
         desc_shape: Shape described by the TMA descriptor (may be smaller).
         BK: Block size in the K dimension (for coordinate conversion).
@@ -214,9 +212,7 @@ struct TileLoaderTMA[
     comptime _dtype = Self.dtype
 
     comptime TMATensorTilePtr = Pointer[
-        TMATensorTile[
-            Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
-        ],
+        TMATensorTile[Self.dtype, Self.tile_shape, Self.desc_shape],
         Self.tma_origin,
     ]
     var tma_op: Self.TMATensorTilePtr
@@ -247,6 +243,7 @@ struct TileLoaderTMA[
         dst: TileTensor[
             mut=True,
             address_space=.SHARED,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
@@ -289,8 +286,8 @@ struct TileLoaderTMA[
             _coords[0],
         )  # (m/n, k) -> (k, m/n)
 
-        comptime tma_load_size = _idx_product[Self.tma_rank, Self.desc_shape]()
-        comptime tma_rows = Self.desc_shape[0]
+        comptime tma_load_size = _idx_product[Self.desc_shape]()
+        comptime tma_rows = Self.desc_shape.element_types[0].static_value
 
         comptime if Self.cluster_size > 1:
             # Multi-block cluster: Use multicast to share data across blocks
@@ -334,7 +331,7 @@ struct TileLoaderCPAsync[
     thread_layout: MixedLayout,
     swizzle_mode: TensorMapSwizzle,
     vector_size: Int,
-    src_engine: TensorEngine = DefaultEngine[element_width=1],
+    src_engine: TensorEngine,
 ](TileLoader):
     """Software-based tile loader using cp.async instructions.
 
@@ -348,8 +345,7 @@ struct TileLoaderCPAsync[
         thread_layout: Thread arrangement for distributed copying.
         swizzle_mode: Swizzling pattern for shared memory access.
         vector_size: Number of elements loaded per thread.
-        src_engine: Engine of the source tensor (defaults to
-            `DefaultEngine`).
+        src_engine: Engine of the source tensor.
     """
 
     comptime _dtype = Self.dtype
@@ -388,6 +384,7 @@ struct TileLoaderCPAsync[
         dst: TileTensor[
             mut=True,
             address_space=.SHARED,
+            # Shared memory is raw-pointer addressed so pin DefaultEngine.
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
@@ -455,6 +452,8 @@ def async_copy_with_bound_check[
     thread_layout: MixedLayout,
     swizzle_mode: TensorMapSwizzle,
 ](
+    # Both operands arrive from `vectorize`, which collapses any source engine
+    # to `DefaultEngine`, and the copy below walks raw pointers anyway.
     src: TileTensor[
         mut=False,
         dtype,

@@ -20,7 +20,6 @@ from std.collections.string.string_span import get_static_string
 from std.format._utils import _FixedWriteBuffer, _FlushingWriteBuffer
 from std.sys import _libc as libc
 from std.ffi import (
-    c_char,
     c_size_t,
     c_ssize_t,
     external_call,
@@ -75,7 +74,7 @@ struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
         """
 
         self.handle = fdopen(
-            dup(Int32(stream_id.value)),
+            dup(stream_id.value),
             Self.mode.as_c_string_span(),
         )
 
@@ -419,13 +418,11 @@ def print[
 
         return
 
-    comptime if CurrentPlugin.print_emit_fn:
+    comptime if case .Some(_emit) = CurrentPlugin.print_emit_fn:
         var buffer = _FixedWriteBuffer()
         values._write_to(buffer, sep=sep, end=end)
 
         var cstr = buffer.nul_terminate()
-
-        comptime _emit = CurrentPlugin.print_emit_fn.unsafe_value()
 
         # FIXME: The origin param of `_emit` should be inferred from `cstr`.
         _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
@@ -441,10 +438,6 @@ def print[
             var msg = printf_begin()
             _ = printf_append_string_n(
                 msg, cstr.as_bytes_with_nul(), is_last=True
-            )
-        elif is_apple_gpu():
-            _metal_print_write(
-                StringSlice(unsafe_from_utf8=cstr.as_bytes_with_nul())
             )
         else:
             CompilationTarget.unsupported_target_error[

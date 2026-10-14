@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, Device
 from max.dtype import DType
@@ -31,7 +32,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
@@ -77,9 +78,7 @@ class Qwen2_5VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] = field(
-        kw_only=True
-    )
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -486,7 +485,7 @@ class Qwen2_5VLModel(
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         with Graph(
             "qwen2_5vl_language",
@@ -630,7 +629,7 @@ class Qwen2_5VLModel(
             *image_token_indices,
             model_inputs.position_ids,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         # Return model outputs based on what the language model returns

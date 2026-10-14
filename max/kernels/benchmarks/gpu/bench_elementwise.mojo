@@ -30,7 +30,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
@@ -83,8 +83,8 @@ def run_elementwise[
     # Blackwell support 32B ld/st, see KERN-2037
     comptime pack_size = 32 // size_of[dtype]() if _is_sm10x_gpu(
         ctx.default_device_info
-    ) else simd_width_of[dtype, target=get_gpu_target()]()
-    comptime align = align_of[SIMD[dtype, pack_size], target=get_gpu_target()]()
+    ) else simd_width_of[dtype, target=ctx.target]()
+    comptime align = align_of[SIMD[dtype, pack_size], target=ctx.target]()
     var N = product(dims, rank)
 
     # Cache busting buffers: sized to exceed 2x GPU cache.

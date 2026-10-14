@@ -20,7 +20,7 @@ from threading import Thread
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import kv_memory
+from _transfer_engine_helpers import every_leaf, kv_memory
 from max.driver import CPU, Device
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import (
@@ -40,7 +40,11 @@ def transfer_routine_sender(
     dst_replica_idx: int,
 ) -> None:
     transfer_req = engine.initiate_send_transfer(
-        remote, src_idxs, dst_idxs, src_replica_idx, dst_replica_idx
+        remote,
+        every_leaf(remote, src_idxs),
+        every_leaf(remote, dst_idxs),
+        src_replica_idx,
+        dst_replica_idx,
     )
     queue.put(transfer_req)
     engine.sync_and_release(transfer_req)

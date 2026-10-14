@@ -15,17 +15,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
-from max.driver import Buffer, Device, DeviceSpec
+from max import tree
+from max.driver import Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-)
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -55,8 +53,6 @@ class DeepseekV2Model(
     batch_processor_cls: ClassVar[type[DeepseekV2ModuleV3BatchProcessor]] = (
         DeepseekV2ModuleV3BatchProcessor
     )
-
-    model: Callable[..., Any]
 
     def __init__(
         self,
@@ -88,8 +84,6 @@ class DeepseekV2Model(
             memory_plan=memory_plan,
         )
 
-        self.model = self.load_model()
-
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV2Inputs)
 
@@ -99,18 +93,9 @@ class DeepseekV2Model(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             model_inputs.input_row_offsets,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
-        if len(model_outputs) == 3:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-            )
-        return ModelOutputs(
-            logits=cast(Buffer, model_outputs[0].driver_tensor),
-            next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-        )
+        return self._to_model_outputs(model_outputs)
 
     @classmethod
     def get_kv_params(

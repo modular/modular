@@ -32,7 +32,6 @@ Warmup + hot timing loops, mirroring `bench_apple_gpu_matmul.mojo`.
 
 from std.sys.info import _accelerator_arch
 from max.gpu.host import DeviceContext
-from std.os import getenv
 from std.time import perf_counter
 
 from layout import TileTensor
@@ -41,6 +40,7 @@ from layout.tile_layout import row_major
 from linalg.fp4_utils import NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
+from std.math import ceildiv
 from linalg.matmul.gpu.apple.fp4_matmul import (
     _enqueue_apple_fp4_materialize_dense,
     _launch_apple_fp4_matmul,
@@ -77,7 +77,7 @@ def _bench_fp4_shape(
     """Time fused W4A16 vs materialize+bf16 on one shape; report both + ratio.
     """
     var packed_k = k // 2
-    var scale_k = (k + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(k, NVFP4_SF_VECTOR_SIZE)
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](m * k)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](n * packed_k)
@@ -101,13 +101,13 @@ def _bench_fp4_shape(
     ctx.enqueue_copy(packed_dev, packed_host)
     ctx.enqueue_copy(scale_dev, scale_host)
 
-    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_immut()
+    var act_tt = TileTensor(act_dev.unsafe_ptr(), row_major(m, k)).as_imm()
     var packed_tt = TileTensor(
         packed_dev.unsafe_ptr(), row_major(n, packed_k)
-    ).as_immut()
+    ).as_imm()
     var scale_tt = TileTensor(
         scale_dev.unsafe_ptr(), row_major(n, scale_k)
-    ).as_immut()
+    ).as_imm()
     var wdense_tt = TileTensor(wdense_dev.unsafe_ptr(), row_major(n, k))
     var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(m, n))
 
@@ -129,8 +129,7 @@ def _bench_fp4_shape(
 
     # --- fused: the cooperative-SMEM kernel directly (BM/BK by M, like the
     # dispatch: BM=128/BK=64 for M>=256, BM=64/BK=32 below). ---
-    @__parameter
-    def _run_fused() raises:
+    def _run_fused() raises {imm}:
         if m >= 256:
             _launch_apple_fp4_matmul[
                 DType.float32, None, BM=128, BK=64, coalesce_scales=True
@@ -168,14 +167,14 @@ def _bench_fp4_shape(
         enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[
             in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-        ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
+        ](out_tt, act_tt, wdense_tt.as_imm(), ctx)
         ctx.synchronize()
     var t3 = perf_counter()
     for _ in range(hot):
         enqueue_fp4_materialize[.bfloat16](wdense_tt, packed_tt, scale_tt, ctx)
         enqueue_apple_matmul[
             in_type=DType.bfloat16, c_type=DType.float32, transpose_b=True
-        ](out_tt, act_tt, wdense_tt.as_immut(), ctx)
+        ](out_tt, act_tt, wdense_tt.as_imm(), ctx)
         ctx.synchronize()
     var matprealloc_sec = (perf_counter() - t3) / Float64(hot)
 

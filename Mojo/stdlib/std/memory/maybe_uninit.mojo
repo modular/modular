@@ -14,8 +14,6 @@
 initialized.
 """
 
-from std.builtin.rebind import downcast
-from std.os import abort
 from std.memory import unsafe_memset_zero
 from std.traits import (
     IsTriviallyCopyable,
@@ -26,20 +24,19 @@ from std.traits import (
 
 struct MaybeUninit[T: AnyType](
     Defaultable,
-    Deinitable where (
-        IsTriviallyDeinitable[T],
+    Deinitable where IsTriviallyDeinitable[T] else (
         "T must be trivially deinitable, since MaybeUninit never runs T's"
-        " __deinit__",
+        " __deinit__"
     ),
     ImplicitlyCopyable where (
-        IsTriviallyCopyable[T] and IsTriviallyMovable[T],
+        IsTriviallyCopyable[T] and IsTriviallyMovable[T]
+    ) else (
         "T must be trivially copyable and movable, since copying"
-        " MaybeUninit only copies the underlying bits",
+        " MaybeUninit only copies the underlying bits"
     ),
-    Movable where (
-        IsTriviallyMovable[T],
+    Movable where IsTriviallyMovable[T] else (
         "T must be trivially movable, since moving MaybeUninit only moves"
-        " the underlying bits",
+        " the underlying bits"
     ),
     RegisterPassable where (
         conforms_to(T, RegisterPassable) and IsTriviallyMovable[T]
@@ -309,6 +306,38 @@ struct MaybeUninit[T: AnyType](
           first if the previous value needs to be destroyed.
         """
         self.unsafe_ptr().unsafe_write(value^)
+
+    @inline(.always)
+    def unsafe_write(mut self, *, var init_with: Some[def() -> Self.T]):
+        """Initialize this memory with the value returned by `init_with`.
+
+        The value returned by `init_with` is constructed directly into this
+        memory rather than being constructed elsewhere and then moved, so `T`
+        does not need to be `Movable`.
+
+        ```mojo
+        from std.memory import MaybeUninit
+
+        @fieldwise_init
+        struct Pinned(not Movable):
+            var value: Int
+
+        var uninit = MaybeUninit[Pinned]()
+        ref value = uninit.unsafe_write(init_with=lambda () -> Pinned: Pinned(7))
+        print(value)  # => 7
+        ```
+
+        Args:
+            init_with: A function that constructs and returns the value to
+                store in memory.
+
+        Safety:
+
+        - If the memory is already initialized, calling this leaks the
+          previous value: its destructor never runs. Call `unsafe_deinit()`
+          first if the previous value needs to be destroyed.
+        """
+        self.unsafe_ptr().unsafe_write(init_with=init_with)
 
     @inline(.always)
     def unsafe_assume_init(

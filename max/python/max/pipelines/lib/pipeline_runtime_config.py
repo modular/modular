@@ -22,7 +22,10 @@ from max.pipelines.diffusion.config import (
     DEFAULT_DENOISING_CACHE_CONFIG,
     DenoisingCacheConfig,
 )
-from max.pipelines.modeling.config_enums import PipelineRole
+from max.pipelines.modeling.config_enums import (
+    EagerValidatorMode,
+    PipelineRole,
+)
 from pydantic import ConfigDict, Field, PrivateAttr
 
 # Default max batch input tokens for chunked prefill and memory estimation.
@@ -32,6 +35,13 @@ DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 # explicitly disable the parser, overriding any architecture default. The value
 # is matched case-insensitively (e.g. ``"none"``, ``"None"``, ``"NONE"``).
 DISABLE_PARSER_SENTINEL = "none"
+
+_ENV_FLAG_TRUE = ("1", "true", "on", "yes")
+
+
+def _env_flag(name: str) -> bool:
+    """Returns whether environment variable ``name`` is set to a true value."""
+    return os.environ.get(name, "").strip().lower() in _ENV_FLAG_TRUE
 
 
 class PipelineRuntimeConfig(ConfigFileModel):
@@ -114,6 +124,16 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    ep_fuse_ffn_combine_send: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the MoE FFN performs the expert-parallel combine send "
+            "from its own epilogue, which drops the local staging tensor for "
+            "its output. Unset defaults ON except for a decode-only worker, "
+            "since the span it speeds up grows with tokens per expert."
+        ),
+    )
+
     eplb_profile: bool = Field(
         default_factory=lambda: (
             os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
@@ -190,14 +210,42 @@ class PipelineRuntimeConfig(ConfigFileModel):
     prefill_coalesce_min_pending: int = Field(
         default=0,
         description=(
-            "Under in-flight batching each replica holds queued fresh prefill "
-            "requests until enough can share one decode step. The same number "
-            "is used two ways. Prefills are released once this many are "
-            "queued. A held prefill is also released after this many decode "
-            "steps so it never waits indefinitely. Holding keeps more steps "
-            "pure decode so they can replay the captured graph. A step "
-            "holding a prefill request runs eager. The default of 0 holds "
-            "nothing back."
+            "Under in-flight batching the scheduler holds queued fresh "
+            "prefill requests until enough can share one decode step. "
+            "Prefills are released once this many are queued, counted across "
+            "the whole data-parallel group, since one eager step serves every "
+            "replica at once. A held prefill is also released after this many "
+            "decode steps so it never waits indefinitely, unless "
+            "prefill_coalesce_max_held_steps sets that deadline separately. "
+            "Holding keeps more steps pure decode so they can replay the "
+            "captured graph. A step holding a prefill request runs eager. "
+            "The default of 0 holds nothing back."
+        ),
+    )
+
+    prefill_coalesce_max_held_steps: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Ceiling on how many consecutive decode steps a prefill is held "
+            "before it is admitted regardless of how few are queued. This "
+            "splits the release deadline out of prefill_coalesce_min_pending, "
+            "which otherwise serves as both the queue depth that opens the "
+            "gate and the step count that expires it. The default of 0 falls "
+            "back to prefill_coalesce_min_pending."
+        ),
+    )
+
+    prefill_schedule_interval: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Admit prefill work only on every Nth scheduler step. "
+            "Data-parallel ranks advance in lockstep, so prefill on any rank "
+            "stalls the whole group; confining it to a shared cadence leaves "
+            "the steps in between entirely to decode. A step with no decode "
+            "work anywhere admits prefill regardless, rather than run an "
+            "empty batch. The default of 1 admits prefill every step."
         ),
     )
 
@@ -219,6 +267,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "This value is used for chunked prefill and memory estimation."
         ),
     )
+
+    max_request_input_tokens: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Ceiling, in tokens, on how much of a single request is encoded "
+            "in one batch, so short requests still fit alongside a long "
+            "prefill instead of queueing behind it. 0 (default) disables the "
+            "cap. Requires chunked prefill."
+        ),
+    )
+    """Per-request ceiling on prefill tokens per batch (0 = off)."""
 
     use_experimental_kernels: str = Field(
         default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
@@ -344,6 +404,29 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    disable_overlap: bool = Field(
+        default_factory=lambda: _env_flag("MAX_DISABLE_OVERLAP"),
+        description=(
+            "Keeps the overlap pipeline but synchronizes after every model "
+            "execution, so CPU work no longer overlaps GPU work and throughput "
+            "drops. Device graph capture runs only in the overlap pipeline, so "
+            "this is how to run capture without overlap when debugging. "
+            "Defaults from the ``MAX_DISABLE_OVERLAP`` environment variable. "
+            "Has no effect when the overlap scheduler is off."
+        ),
+    )
+
+    disable_vendor_blas_fallback: bool = Field(
+        default_factory=lambda: _env_flag("MODULAR_DISABLE_VENDOR_FALLBACK"),
+        description=(
+            "Compiles kernels without the matmul vendor-BLAS fallback by "
+            "passing the ``MODULAR_DISABLE_VENDOR_FALLBACK`` define to the "
+            "kernel compile. Always on for device graph capture on HIP. "
+            "Defaults from the ``MODULAR_DISABLE_VENDOR_FALLBACK`` environment "
+            "variable."
+        ),
+    )
+
     dp_ce_balance_timeout_ms: float = Field(
         default=-1.0,
         description=(
@@ -410,6 +493,17 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "When ``False`` (default), the inference server uses the graph API architecture. "
             "When ``True``, the server uses the ModuleV3 architecture when available and "
             "falls back to the graph API architecture."
+        ),
+    )
+
+    eager_usage_validator: EagerValidatorMode = Field(
+        default=EagerValidatorMode.INIT_ONLY,
+        description=(
+            "Configure when to use the eager usage validator, which reports "
+            "unsafe API usage. ``init-only`` (default) validates model "
+            "initialization only; ``enabled`` validates both model "
+            "initialization and every request, at the cost of Python overhead "
+            "on the serving path; ``disabled`` turns it off."
         ),
     )
 
@@ -555,6 +649,23 @@ class PipelineRuntimeConfig(ConfigFileModel):
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
+
+    @property
+    def max_num_input_tokens(self) -> int | None:
+        """Tokens one forward encodes, or None when a prompt is encoded whole.
+
+        Chunked prefill cuts a CE batch at ``max_batch_input_tokens``, which is
+        also what a request has to be allocated for. Without it a prompt is
+        admitted in full, so nothing bounds the allocation. A decode worker
+        encodes no prompt: it receives the whole prompt's KV from prefill in
+        one transfer, so it must hold every page up front.
+        """
+        if (
+            not self.enable_chunked_prefill
+            or self.pipeline_role == "decode_only"
+        ):
+            return None
+        return self.max_batch_input_tokens
 
     @property
     def is_disaggregated(self) -> bool:

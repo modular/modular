@@ -215,17 +215,12 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   }
 
   if (auto inferredAttr = operand.ir.getIfInferredBaseAttrRef()) {
-    // Resolve `.member` against the expected parameter type, e.g.
-    // `takes_dtype(.float32)` with `dtype: DType` becomes `DType.float32`.
-    IREmitter emitter(getDeclScope(), ExprContext::EC_CallArgValue);
-    ExprDest dest(expectedType, ExprContext::EC_CallArgValue);
-    if (auto cValue = inferredAttr.emitAsCValue(emitter, dest))
-      return SmartVariant<CValue, ASTType>(cValue);
-    // emitAsCValue diagnoses into the shared engine; also record on the
-    // ParamInf diag so overload fitness failure reporting stays consistent.
-    getMojoDiag(operand.expr->getLoc())
-        << "cannot resolve inferred attribute reference";
-    return failure();
+    // Simply take the expected type as the inferred type, according to the
+    // specification: If the contextual type is ambiguous, inference fails; we
+    // do not search the overload set for a type that would make `.member` work.
+    // So we can safely assume that the expected type would work and defer the
+    // error (if any) till call emission time.
+    return SmartVariant<CValue, ASTType>(expectedType);
   }
 
   auto orValue = operand.ir.getIfOverloadSet();
@@ -593,7 +588,8 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     if (!argVal) {
       argVal =
           emitter.emitPValue(binding, EC_ParameterList, cast<ASTType>(*cvOr));
-      assert(argVal && "This should always succeed; it was checked");
+      if (!argVal) // can fail if the this is a contextual member reference.
+        return failure();
     }
 
     // Finally, check that this CValue is a PValue.
@@ -708,19 +704,6 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
                                 declaredParamTypes[paramIdx])
        << " has " << expectedType << " type, but value has type "
        << diagBindingVal.getType() << binding.expr->getRange();
-
-  // Add some extra note for binding a thin function to a closure trait, which
-  // would otherwise be confusing to many.
-  if (ClosureEmitter::isClosureType(shared, expectedType) &&
-      sugarIsa<FnLiteralTypeGeneratorType>(diagBindingVal.getType())) {
-    llvm::SMRange smRange =
-        shared.diags.convertToSMRange(binding.expr->getRange());
-    StringRef src(smRange.Start.getPointer(),
-                  smRange.End.getPointer() - smRange.Start.getPointer());
-    diag.attachNote(binding.expr->getLoc())
-        << "a thin function cannot bind to a closure trait; use 'type_of("
-        << src << ")' to pass its type instead";
-  }
 
   return failure();
 }
@@ -1188,13 +1171,20 @@ using EqualityPair = std::pair<TypedAttr, TypedAttr>;
 /// Collect the individual equality (`==`) propositions.
 static void collectEqualityPropositions(TypedAttr prop,
                                         SmallVectorImpl<EqualityPair> &out) {
-  if (std::optional<EqualityPair> identity = getIdentityProposition(prop)) {
-    out.push_back(*identity);
-  } else if (auto op = sugarDynCast<ParamOperatorAttr>(prop)) {
-    if (op.getOpcode() == POC::And)
-      for (TypedAttr operand : op.getOperands())
-        collectEqualityPropositions(operand, out);
+  // A merged identity class arrives as one n-ary `identical`. Consecutive
+  // pairs keep inference on the pairwise form it expects. The class rebinds
+  // every member to a representative type, which would hide a bare parameter
+  // reference from the matcher, so peel that rebind back off.
+  if (std::optional<ArrayRef<TypedAttr>> members = getIdentityClass(prop)) {
+    for (size_t i = 1, e = members->size(); i < e; ++i)
+      out.emplace_back(ParamOperatorAttr::stripRebind((*members)[i - 1]),
+                       ParamOperatorAttr::stripRebind((*members)[i]));
+    return;
   }
+  if (auto op = sugarDynCast<ParamOperatorAttr>(prop);
+      op && op.getOpcode() == POC::And)
+    for (TypedAttr operand : op.getOperands())
+      collectEqualityPropositions(operand, out);
 }
 
 LogicalResult ParamInf::inferFromBodyConstraints() {
@@ -1847,13 +1837,10 @@ LogicalResult CallParamInf::inferOptionalLiteralSize() {
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     if (pog.getName().strref() == "__literal_size__") {
       IREmitter emitter(getDeclScope(), ExprContext::EC_ParameterList);
-      SyntheticNode dummyNode(callOperands.getExprLoc());
-      auto size = IntegerAttr::get(IndexType::get(getShared().getContext()),
-                                   callOperands.values.size() - 1);
       PValue literalSize =
           emitter
-              .emitInt({ASTExprAnd<AnyValue>(size, &dummyNode)},
-                       ExprContext::EC_ParameterList)
+              .emitInt(callOperands.values.size() - 1,
+                       callOperands.getExprLoc(), ExprContext::EC_ParameterList)
               .getIfPValue();
       if (!literalSize) {
         getMojoDiag(callOperands.getExprLoc())
@@ -2165,7 +2152,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       auto expectedMutable = expectedRefPackType.getOriginType().getIsMutable();
       auto bothMutable =
           ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
-      if (bothMutable != expectedMutable) {
+      if (!isEqualCanon(bothMutable, expectedMutable)) {
         auto &diag = getMojoDiag(operand.expr->getLoc());
         diag << "cannot unpack a variadic pack into a call that requires a "
                 "stricter mutability. Expected "
@@ -2418,7 +2405,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
   // that doesn't have us shadowing parameters like this!
   // A trait member's enclosing declaration is a trait rather than a struct, so
   // the struct-shaped CTAD inference never applies to one.
-  if (declIfKnown && !declIfKnown->getIfWitness()) {
+  if (declIfKnown && !isa<WitnessASTDecl>(declIfKnown)) {
     auto fnOp = cast<FnOp>(declIfKnown->getIfOperation());
     if (!fnOp.getIsStatic() && isa<StructDeclOp>(fnOp->getParentOp())) {
       if (failed(inferCTADParams()))

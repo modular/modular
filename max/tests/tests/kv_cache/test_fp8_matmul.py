@@ -39,6 +39,7 @@ from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
+    packed_page_stride,
 )
 
 
@@ -292,6 +293,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
 
         # Now call the kernel - should not raise any errors when all devices match
@@ -529,6 +531,7 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
             lookup_table.tensor,
             max_prompt_length.tensor,
             max_cache_length.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
         matmul_k_cache_ragged_scaled_float8(
             kv_params,
@@ -611,6 +614,7 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
                 lookup_table.tensor,
                 max_prompt_length.tensor,
                 max_cache_length.tensor,
+                page_stride=packed_page_stride(blocks.buffer),
             )
             matmul_k_cache_ragged_scaled_float8(
                 kv_params,

@@ -57,6 +57,10 @@ public:
     return emitError(getToken().getLoc(), message);
   }
 
+  /// Warn if `tok` is the unprefixed `async` or `await` spelling of the
+  /// unstable `__async` or `__await` keyword.
+  void warnIfUnprefixedAsyncSpelling(const Token &tok);
+
   //===--------------------------------------------------------------------===//
   // Location Handling
   //===--------------------------------------------------------------------===//
@@ -295,15 +299,25 @@ public:
   ParseResult parseExpression(ExprNode *&result,
                               std::optional<size_t> stmtIndent = std::nullopt,
                               Precedence minPrec = Precedence::kExpression);
+  /// Parse an expression with its nodes owned by `allocator`.  This is usually
+  /// the statement allocator for the current statement being parsed, but for
+  /// decorators (and other "actually immortal" things, it can be the persistent
+  /// allocator).
+  ParseResult parseExpression(ExprNode *&result, BumpAllocator &allocator,
+                              std::optional<size_t> stmtIndent = std::nullopt,
+                              Precedence minPrec = Precedence::kExpression);
   ParseResult parseVarInitExpression(ExprNode *&result, size_t stmtIndent);
   ParseResult parseTargetListExpr(ExprNode *&result,
                                   std::optional<size_t> stmtIndent);
 
   /// Parse an expression_list production, returning a single expression or a
-  /// tuple expression if there are commas.
-  ParseResult parseExpressionList(ExprNode *&result,
-                                  std::optional<size_t> stmtIndent,
-                                  ArrayRef<Token::Kind> terminators = {});
+  /// tuple expression if there are commas.  Each list item is parsed at
+  /// `itemMinPrec` (defaults to full expression precedence).
+  ParseResult
+  parseExpressionList(ExprNode *&result,
+                      std::optional<size_t> stmtIndent = std::nullopt,
+                      ArrayRef<Token::Kind> terminators = {},
+                      Precedence itemMinPrec = Precedence::kExpression);
 
   ParseResult parseStarredItem(ExprNode *&result);
 

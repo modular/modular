@@ -152,14 +152,18 @@ class _KdaGraph(Module):
         x: TensorValue,
         conv_pool: BufferValue,
         recurrent_pool: BufferValue,
-        slot_idx: TensorValue,
+        row_id: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        # One row id for both leaves: these pools hold a single layer, so a
+        # request's row in each is its block, and the two block spaces
+        # coincide. A real cache draws the two leaves' blocks separately.
         return self.kda(
             x,
             conv_pool,
+            row_id,
             recurrent_pool,
-            slot_idx,
+            row_id,
             input_row_offsets,
             replay_capture=self.captured,
         )

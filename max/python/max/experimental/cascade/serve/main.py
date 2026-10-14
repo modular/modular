@@ -50,6 +50,7 @@ from typing import Annotated
 
 import cyclopts
 from cyclopts import Parameter
+from max.experimental.cascade.core.fd_limits import raise_nofile_soft_limit
 from max.experimental.cascade.deployment.context_config import ContextConfig
 from max.experimental.cascade.pipelines.all_pipelines import (
     build_pipeline,
@@ -101,6 +102,8 @@ async def serve(
         host: Interface to bind uvicorn to.
         port: TCP port to bind uvicorn to.
     """
+    raise_nofile_soft_limit()
+
     # Size the GPU worker pool from the model arguments unless the user
     # set it explicitly.
     if context_config.local_gpu_workers == 0:

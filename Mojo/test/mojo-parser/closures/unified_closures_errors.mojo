@@ -136,7 +136,6 @@ def takesClosure[T: def(Int) -> Int](cb: T, x: Int) -> Int:
 
 def useTopLevelClosure():
     # expected-error @below {{invalid call to 'takesClosure': 'takesClosure' parameter 'T' has 'def(Int) -> Int' type, but value has type 'def topLevel(x: String) thin -> String'}}
-    # expected-note @below {{a thin function cannot bind to a closure trait; use 'type_of(topLevel)' to pass its type instead}}
     takesClosure[topLevel](topLevel, 1)
 
 
@@ -171,7 +170,7 @@ def traitConstraintMismatch[Q: Animal]():
     def closureWrongConvention(mut x: Dog) {var}:
         x.speak()
 
-    # expected-error @below {{'takeClosureMammalParam' parameter 'C' has 'def(x: W) -> None' type, but value has type 'def(mut x: Dog) -> None'}}
+    # expected-error @below {{'takeClosureMammalParam' parameter 'C' has 'def(x: Dog) -> None' type, but value has type 'def(mut x: Dog) -> None'}}
     takeClosureMammalParam[Dog, type_of(closureWrongConvention)](closureWrongConvention)
 
 # ===----------------------------------------------------------------------=== #
@@ -191,7 +190,6 @@ struct Sphere(Coord):
    var phi: Int
 
 
-# expected-note @below {{constraint declared here evaluated to False}}
 # expected-note @below {{function declared here}}
 def takeClosure[T: Coord, C:def() -> T](impl: C) -> T:
    _ = impl()
@@ -200,7 +198,7 @@ def takeClosure[T: Coord, C:def() -> T](impl: C) -> T:
 def makeClosure[B:Int](something: Cartesian):
    def closureImpl() {var} -> Cartesian:
       return something
-   # expected-error @below {{invalid call to 'takeClosure': violated constraint}}
+   # expected-error @below {{invalid call to 'takeClosure': 'takeClosure' parameter 'C' has 'def() -> Sphere' type, but value has type 'def() -> Cartesian'}}
    takeClosure[Sphere, type_of(closureImpl)](closureImpl)
 
 

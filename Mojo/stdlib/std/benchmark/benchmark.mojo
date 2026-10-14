@@ -183,7 +183,6 @@ elapsed and either `max_runtime_secs` OR `max_iters` is achieved.
 import std.format._utils as fmt
 
 from std.time import time_function
-from std.testing import assert_true
 from std.utils.numerics import max_finite, min_finite
 
 
@@ -268,14 +267,15 @@ struct Unit:
 
     @staticmethod
     def _divisor(unit: String) -> Int:
-        if unit == Unit.ns:
-            return 1
-        elif unit == Unit.us:
-            return 1_000
-        elif unit == Unit.ms:
-            return 1_000_000
-        else:
-            return 1_000_000_000
+        match unit:
+            case Unit.ns:
+                return 1
+            case Unit.us:
+                return 1_000
+            case Unit.ms:
+                return 1_000_000
+            case _:
+                return 1_000_000_000
 
 
 # ===-----------------------------------------------------------------------===#

@@ -16,25 +16,53 @@
 from __future__ import annotations
 
 __all__ = [
+    "ChatEncoderOutcomesProbe",
+    "LabelScoringTokenizer",
     "PipelineTokenizer",
+    "PreprocessCacheStatsProbe",
     "PreprocessedImageProbe",
+    "TokenIds",
     "TokenizerEncoded",
     "UnboundContextType",
+    "VisionPreprocessCacheStats",
 ]
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    runtime_checkable,
+)
 
+import numpy as np
+import numpy.typing as npt
 from max.pipelines.request import RequestType
 
 if TYPE_CHECKING:
     from .pipeline_variants.text_generation import (
         TextGenerationRequestMessage,
+        TextGenerationRequestTool,
     )
 
 # TODO: Bound this to TextContext, after we've audited the class.
 UnboundContextType = TypeVar("UnboundContextType", covariant=True)
+UnboundContextType.__doc__ = (
+    "The context type a tokenizer creates from a request."
+)
+
 TokenizerEncoded = TypeVar("TokenizerEncoded")
+TokenizerEncoded.__doc__ = "The tokenized form a tokenizer's encode() returns."
+
+# Decode is typed independently of the encode output: serving decodes arrays,
+# log-probability responses decode one id, and the CLI decodes a token list.
+TokenIds: TypeAlias = npt.NDArray[np.integer[Any]] | Sequence[int] | int
+"""Token ids decoded or encoded by a tokenizer: an array, a sequence, or
+a single id, matching the shape of the request that produced them.
+"""
 
 
 @runtime_checkable
@@ -75,6 +103,122 @@ class PreprocessedImageProbe(Protocol):
             One flag per entry in ``images``, in the same order. Returning a
             different length is a contract violation.
         """
+        ...
+
+
+@dataclass(frozen=True)
+class VisionPreprocessCacheStats:
+    """One media preprocess cache's counters, as of now.
+
+    The three counts are cumulative for the lifetime of the process that
+    owns the cache, and the two byte figures are instantaneous. A reader that
+    wants rates owns the differencing, and has to survive the counts
+    restarting at zero: the cache is rebuilt empty in any process it is
+    unpickled into.
+    """
+
+    hits: int
+    """Lookups the cache answered without preprocessing."""
+
+    misses: int
+    """Lookups that had to preprocess."""
+
+    evictions: int
+    """Entries dropped to stay inside the byte budget."""
+
+    size_bytes: int
+    """Host bytes the cached payloads retain right now."""
+
+    capacity_bytes: int
+    """The byte budget, which ``size_bytes`` is evicted down to (``0``:
+    caching is disabled)."""
+
+
+@runtime_checkable
+class ChatEncoderOutcomesProbe(Protocol):
+    """Optional tokenizer capability: report how its chat prompts encoded.
+
+    A tokenizer that can encode chats with a ``--tokenizer-impl`` encoder
+    implements this so the server can count the chats that encoder served
+    and the ones that fell back to HuggingFace. A separate protocol for the
+    reasons given on :class:`PreprocessCacheStatsProbe`.
+    """
+
+    def take_chat_encoder_outcomes(self) -> Mapping[str, int]:
+        """Returns the chats encoded since the last call, and forgets them.
+
+        Must be cheap: the server calls it per request on the event loop.
+
+        Returns:
+            A count per outcome: ``custom`` for a chat the encoder served, or
+            ``fallback`` for one it failed on, which HuggingFace encoded
+            instead.
+        """
+        ...
+
+
+@runtime_checkable
+class PreprocessCacheStatsProbe(Protocol):
+    """Optional tokenizer capability: report its media preprocess caches.
+
+    An architecture that caches preprocessed media implements this so the
+    server can publish the cache's occupancy and eviction pressure, which is
+    what separates "this workload has no repeats" from "the cache is
+    thrashing at its budget" -- readings a hit rate alone cannot tell apart.
+
+    A separate protocol rather than a defaulted method on
+    :class:`PipelineTokenizer`, for the same reason as
+    :class:`PreprocessedImageProbe`: ``PipelineTokenizer`` is
+    ``runtime_checkable`` and the API server gates request admission on
+    ``isinstance`` against it, so a new member there would reject every
+    tokenizer that does not define it. This also keeps the absence typed
+    rather than a ``getattr`` sniff at a private attribute name, which would
+    stop working silently the day an architecture renames its cache.
+    """
+
+    def preprocess_cache_stats(
+        self,
+    ) -> Mapping[str, VisionPreprocessCacheStats]:
+        """This tokenizer's preprocess caches, keyed by media kind.
+
+        Must not preprocess, evict or otherwise disturb a cache: the server
+        calls it per request on the event loop.
+
+        Returns:
+            One entry per cache the tokenizer owns, keyed ``image`` or
+            ``video``. An architecture with no video cache simply omits that
+            key rather than reporting an empty one.
+        """
+        ...
+
+
+@runtime_checkable
+class LabelScoringTokenizer(Protocol):
+    """Tokenizer capabilities that label scoring (``/v1/decisions``) needs.
+
+    Declared as a protocol, checked once when a scoring request is admitted,
+    so a tokenizer that lacks a member is refused instead of having its
+    context-length check skipped.
+    """
+
+    @property
+    def max_length(self) -> int | None:
+        """The context length, in tokens; ``None`` when unbounded."""
+        ...
+
+    def apply_chat_template(
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None,
+        **chat_template_options: Any,
+    ) -> str:
+        """Renders ``messages`` with the model's chat template."""
+        ...
+
+    async def encode(
+        self, prompt: str, add_special_tokens: bool = True
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Encodes text to token ids."""
         ...
 
 
@@ -152,11 +296,12 @@ class PipelineTokenizer(
         """
         ...
 
-    async def decode(self, encoded: TokenizerEncoded, **kwargs) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decodes response tokens to text.
 
         Args:
-            encoded: Encoded response tokens.
+            encoded: Response token ids, as an array, a sequence, or a single
+                id.
             **kwargs: Additional decoder options (for example, ``skip_special_tokens``).
 
         Returns:

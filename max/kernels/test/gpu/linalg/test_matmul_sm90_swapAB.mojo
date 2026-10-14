@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for swapAB matmul optimization comparing normal vs swapAB execution."""
 
-from std.collections import Optional
-from std.sys import align_of
 
 from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.config import MatmulConfig as MatmulConfigSM90
@@ -21,11 +19,8 @@ from linalg.matmul.gpu.sm90.testbed_swapAB import (
     test_matmul_sm90_swapAB_comparison,
     test_matmul_sm90_swapAB_comparison_v2,
 )
-from linalg.utils import elementwise_compute_lambda_type
 
-from std.utils.index import IndexList
-
-from layout import Idx
+from layout import Coord, Idx
 
 comptime bf16 = DType.bfloat16
 
@@ -357,18 +352,15 @@ def main() raises:
         # Each position gets val + row + col * 0.5, creating unique values
         # Using larger offsets that are significant in bf16 precision
         # If indexing is wrong, the reference and swapAB results will mismatch
-        @__parameter
         @inline(.always)
         def coord_lambda[
-            _dtype: DType,
-            width: SIMDLength,
-            *,
-            alignment: Int = align_of[SIMD[_dtype, width]](),
-        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-            _dtype, width
-        ]:
-            var row = Scalar[_dtype](idx[0])
-            var base_col = idx[1]
+            _dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+            comptime assert (
+                idx.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var row = Scalar[_dtype](idx[0].value())
+            var base_col = Int(idx[1].value())
             var result = val
 
             # Iterate through each element in SIMD vector with correct per-element column
@@ -397,11 +389,9 @@ def main() raises:
             MMA_K_SWAPAB=16,
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
-            elementwise_compute_lambda_fn=Optional[
-                elementwise_compute_lambda_type
-            ](coord_lambda),
+            has_compute_fn=True,
             use_vendor_reference=True,
-        ](ctx, Int(1000), Idx[1024], Idx[256])
+        ](ctx, Int(1000), Idx[1024], Idx[256], coord_lambda)
 
         test_matmul_sm90_swapAB_comparison_v2[
             a_type=bf16,
@@ -423,11 +413,9 @@ def main() raises:
             MMA_K_SWAPAB=16,
             num_pipeline_stages_swapAB=2,
             num_consumer_swapAB=2,
-            elementwise_compute_lambda_fn=Optional[
-                elementwise_compute_lambda_type
-            ](coord_lambda),
+            has_compute_fn=True,
             use_vendor_reference=True,
-        ](ctx, Int(900), Idx[1532], Idx[256])
+        ](ctx, Int(900), Idx[1532], Idx[256], coord_lambda)
 
         test_matmul_sm90_swapAB_comparison_v2[
             a_type=bf16,

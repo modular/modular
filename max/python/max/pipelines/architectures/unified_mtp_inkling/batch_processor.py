@@ -17,16 +17,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-import numpy as np
 from max.driver import Buffer
 from max.engine import Model
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
-from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 
 from ..inkling.batch_processor import InklingBatchProcessor
-from ..inkling.state_cache import InklingConvStateCache
+from ..inkling.model_config import InklingConfig
+from ..inkling.state_cache import InklingConvScratchPools
 
 if TYPE_CHECKING:
     from .model import UnifiedMTPInklingInputs
@@ -40,68 +39,51 @@ class UnifiedMTPInklingBatchProcessor(InklingBatchProcessor):
     """
 
     def __init__(
-        self, config: ArchConfig, runtime: BatchProcessorRuntime
+        self, config: InklingConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
-        self._draft_state_cache: InklingConvStateCache | None = None
         self._draft_conv_pools: list[Buffer] = []
 
     def bind_runtime_state(
         self,
-        state_cache: InklingConvStateCache | None,
         vision_model: Model,
-        draft_state_cache: InklingConvStateCache | None = None,
+        draft_scratch: InklingConvScratchPools | None = None,
     ) -> None:
-        super().bind_runtime_state(state_cache, vision_model)
-        self._draft_state_cache = draft_state_cache
-        if draft_state_cache is None:
+        super().bind_runtime_state(vision_model)
+        if draft_scratch is None:
             self._draft_conv_pools = []
             return
         self._draft_conv_pools = [
             pool
             for device_idx in range(len(self.runtime.devices))
-            for pool in draft_state_cache.pools(device_idx)
+            for pool in draft_scratch.pools(device_idx)
         ]
 
-    def prepare_initial_token_inputs(
+    def _make_inkling_inputs(
         self,
-        replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
+        *,
+        context_batch: Sequence[TextAndVisionContext],
+        tokens: Buffer,
+        input_row_offsets: Buffer,
+        positions: Buffer,
+        return_n_logits: Buffer,
+        image_embeddings: Buffer,
+        image_indices: Buffer,
+        signal_buffers: list[Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
     ) -> UnifiedMTPInklingInputs:
         from .model import UnifiedMTPInklingInputs
 
-        base = super().prepare_initial_token_inputs(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
-        context_batch = [ctx for batch in replica_batches for ctx in batch]
-        draft_cache = self._draft_state_cache
-        assert draft_cache is not None
-        for context in context_batch:
-            draft_cache.claim(context.request_id)
-
-        lengths = np.fromiter(
-            (context.tokens.active_length for context in context_batch),
-            dtype=np.int64,
-            count=len(context_batch),
-        )
-        host_input_row_offsets = Buffer.from_numpy(
-            np.cumsum([0, *lengths], dtype=np.uint32)
-        )
         return UnifiedMTPInklingInputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            positions=base.positions,
-            return_n_logits=base.return_n_logits,
-            host_input_row_offsets=host_input_row_offsets,
-            image_embeddings=base.image_embeddings,
-            image_indices=base.image_indices,
-            signal_buffers=base.signal_buffers,
-            slot_idx=base.slot_idx,
-            has_initial_state=base.has_initial_state,
-            conv_pools=base.conv_pools,
+            tokens=tokens,
+            input_row_offsets=input_row_offsets,
+            positions=positions,
+            return_n_logits=return_n_logits,
+            image_embeddings=image_embeddings,
+            image_indices=image_indices,
+            signal_buffers=signal_buffers,
+            kv_cache_inputs=kv_cache_inputs,
             draft_conv_pools=self._draft_conv_pools,
-            kv_cache_inputs=base.kv_cache_inputs,
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
         )

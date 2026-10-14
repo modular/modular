@@ -28,11 +28,11 @@ The instantiation mirrors the production call site
 """
 
 from std.random import randn, random_float64, seed
-from std.sys import has_amd_gpu_accelerator
+from std.sys import default_accelerator
 from std.testing import assert_equal, assert_false, assert_true
 
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
 from max.gpu.host import DeviceContext
 
@@ -85,14 +85,12 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(c_dev, c_host)
 
-    var c_tt = TileTensor(
-        c_dev.unsafe_ptr(), row_major(Coord(m, Idx[static_N]))
-    )
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(Coord(m, Idx[K])))
+    var c_tt = TileTensor(c_dev.unsafe_ptr(), row_major(m, Idx[static_N]))
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(m, Idx[K]))
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major[static_N, K]())
 
     router_gate_mixed_gemv[static_N](
-        c_tt, a_tt.as_immut(), b_tt.as_immut(), m, static_N, K, ctx
+        c_tt, a_tt.as_imm(), b_tt.as_imm(), m, static_N, K, ctx
     )
 
     ctx.enqueue_copy(c_host, c_dev)
@@ -158,7 +156,7 @@ def test_router_gate_use_mixed_gemv() raises:
 
 
 def main() raises:
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("SKIP: AMD GPU not available")
         return
 

@@ -14,37 +14,32 @@
 
 from __future__ import annotations
 
-import logging
-import math
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
-    Any,
     ClassVar,
     Generic,
     Protocol,
-    TypeVar,
     cast,
     runtime_checkable,
 )
 
 import numpy as np
-from max.driver import (
-    Buffer,
-    Device,
-    DevicePinnedBuffer,
-    is_virtual_device_mode,
-)
+from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContext, TextContext
 from max.pipelines.context.tokens import TokenBuffer
+from max.pipelines.graph_input_stager import (
+    GraphInputStager,
+    InputDescriptor,
+)
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelInputs,
@@ -53,15 +48,17 @@ from max.pipelines.lib.interfaces.pipeline_model import (
 )
 from max.pipelines.lora import LoRAManagerV3
 from max.pipelines.modeling.dataprocessing import collate_batch
+from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
 
-logger = logging.getLogger("max.pipelines")
-
 ContextT = TypeVar("ContextT", bound=BaseContext)
 InputsT = TypeVar("InputsT", bound=ModelInputs)
 SpecDecodeInputsT = TypeVar("SpecDecodeInputsT", bound=UnifiedSpecDecodeInputs)
+ArchConfigT_co = TypeVar(
+    "ArchConfigT_co", bound=ArchConfig, default=ArchConfig, covariant=True
+)
 
 
 @runtime_checkable
@@ -78,124 +75,118 @@ class BatchProcessorRuntime:
     pipeline_config: PipelineConfig
     devices: list[Device]
     return_logits: ReturnLogits
+
+    max_batch_size: int
+    """Most contexts the scheduler puts in one replica's batch."""
+
+    max_seq_len: int
+    """Longest a single sequence can grow, after memory planning clamped it."""
+
+    max_batch_input_tokens: int
+    """The scheduler's per-step budget for active (unencoded) tokens."""
+
+    enable_chunked_prefill: bool = True
+    """Whether the scheduler splits a long prompt to stay inside that budget.
+
+    Mirrors ``pipeline_config.runtime.enable_chunked_prefill``, which the
+    scheduler reads as ``target_tokens_per_batch_ce``'s chunking policy.
+    """
+
+    data_parallel_degree: int = 1
+    """Replicas the scheduler fills, each to its own batch size and budget.
+
+    A processor stages every replica's contexts into one ragged stream, so
+    the whole product bounds the buffers it stages into.
+    """
+
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     signal_buffers: Sequence[Buffer] = ()
     lora_manager: LoRAManagerV3 | None = None
     pad_token_id: int = 0
-    max_batch_size: int | None = None
 
+    @property
+    def max_global_batch_size(self) -> int:
+        """Contexts in the largest batch a processor stages.
 
-class ModelInputCachingAllocator:
-    """Caches reusable, non-pinned device input buffers across steps.
-
-    Small requests reuse a fixed-capacity backing buffer.
-    Views with the same ``(name, device)`` alias storage and can race if used
-    concurrently.
-
-    Requests larger than the fixed capacity fall back to a dedicated owning
-    buffer cached by the exact ``(name, device, dtype, shape)`` key, and log a
-    warning on each new allocation.
-
-    Reuse keeps a captured graph replaying in place (the replay copy is a
-    no-op when the model inputs already are the captured buffers). Callers own
-    copying host data into the returned buffer.
-
-    Never cache pinned host staging buffers here: those must be allocated fresh
-    every step so the next overlap step's host writes can't clobber an
-    in-flight H2D copy.
-    """
-
-    FIXED_CAPACITY_BYTES: ClassVar[int] = 8 * 1024 * 1024
-
-    def __init__(self) -> None:
-        self._fixed_capacity_buffers: dict[tuple[str, int], Buffer] = {}
-        # Graph replay skips input copies only when capture and replay receive
-        # the same Buffer object; recreating an aliased view still copies.
-        self._fixed_capacity_views: dict[
-            tuple[str, int, DType, tuple[int, ...]], Buffer
-        ] = {}
-        self._oversized_buffers: dict[
-            tuple[str, int, DType, tuple[int, ...]], Buffer
-        ] = {}
-
-    def alloc(
-        self,
-        *,
-        name: str,
-        dtype: DType,
-        shape: tuple[int, ...],
-        device: Device,
-    ) -> Buffer:
-        """Returns a reusable buffer of ``shape`` and ``dtype`` on ``device``.
-
-        Up to :attr:`FIXED_CAPACITY_BYTES` the result is a view aliasing the
-        single owning backing buffer held for ``(name, device)``. A later
-        allocation under the same name and device may overwrite its contents,
-        while an exact dtype-and-shape request returns the same view object for
-        graph replay. Beyond that capacity the result is a dedicated owning
-        buffer cached by the exact ``(name, device, dtype, shape)`` key.
-        Distinct ``name``s never alias, and each device gets its own backing
-        under a given name.
-
-        Args:
-            name: Stable identifier for this logical buffer.
-            dtype: Element type.
-            shape: Buffer shape (ragged inputs change shape per step).
-            device: Target device for the buffer.
+        :attr:`max_batch_size` bounds one replica; this bounds the batch a
+        processor actually sees, which is every replica's contexts staged
+        into one ragged stream.
         """
-        shape = tuple(shape)
-        num_bytes = math.prod(shape) * dtype.size_in_bytes
-        capacity = self.FIXED_CAPACITY_BYTES
+        return self.max_batch_size * self.data_parallel_degree
 
-        if num_bytes <= capacity:
-            view_key = (name, id(device), dtype, shape)
-            view = self._fixed_capacity_views.get(view_key)
-            if view is not None:
-                return view
+    @property
+    def max_batch_active_tokens(self) -> int:
+        """Most active tokens one batch's ragged token stream can carry.
 
-            backing_key = (name, id(device))
-            backing = self._fixed_capacity_buffers.get(backing_key)
-            if backing is None:
-                backing = Buffer(
-                    shape=(capacity,), dtype=DType.uint8, device=device
-                )
-                self._fixed_capacity_buffers[backing_key] = backing
-            view = backing[:num_bytes].view(dtype, shape)
-            self._fixed_capacity_views[view_key] = view
-            return view
-
-        oversized_key = (name, id(device), dtype, shape)
-        buffer = self._oversized_buffers.get(oversized_key)
-        if buffer is None:
-            logger.warning(
-                "Model input %r needs %d bytes (shape=%s, dtype=%s, "
-                "device=%s), exceeding the %d-byte reusable input capacity; "
-                "allocating a dedicated buffer cached per exact shape.",
-                name,
-                num_bytes,
-                shape,
-                dtype,
-                device,
-                capacity,
-            )
-            buffer = Buffer(shape=shape, dtype=dtype, device=device)
-            self._oversized_buffers[oversized_key] = buffer
-        return buffer
+        Every context contributes its active window, and chunked prefill
+        holds a replica's sum under :attr:`max_batch_input_tokens` by
+        splitting a prompt that would overflow it. With chunked prefill off
+        that budget is only a soft limit -- the scheduler admits an
+        oversized request whole rather than dropping it -- so one
+        full-length sequence can land on top of an already-full budget.
+        Neither case can exceed a full batch of full-length sequences, and
+        every batch carries at least one token per context. Each replica
+        gets its own budget, and they are staged into one stream.
+        """
+        budget = self.max_batch_input_tokens
+        if not self.enable_chunked_prefill:
+            budget += self.max_seq_len
+        per_replica = max(
+            self.max_batch_size,
+            min(budget, self.max_batch_size * self.max_seq_len),
+        )
+        return per_replica * self.data_parallel_degree
 
 
-class BatchProcessor(ABC, Generic[ContextT, InputsT]):
+RAGGED_INPUT_TOKENS = "ragged_input_tokens"
+"""Device input holding a batch's concatenated active tokens."""
+
+RAGGED_INPUT_ROW_OFFSETS = "ragged_input_row_offsets"
+"""Device input holding each context's start offset into that token stream."""
+
+
+def ragged_token_descriptors(
+    runtime: BatchProcessorRuntime,
+) -> list[InputDescriptor]:
+    """The two device inputs every ragged batch stages.
+
+    Sized from the batching dimensions rather than a shared capacity: the
+    token stream holds one batch's active windows, and the row offsets hold
+    one entry per context plus the trailing total. Described in one place so
+    the architectures that stage a ragged batch cannot drift apart on the
+    sizes.
+    """
+    staging_device = [runtime.devices[0]]
+    return [
+        InputDescriptor(
+            name=RAGGED_INPUT_TOKENS,
+            dtype=DType.int64,
+            max_shape=(runtime.max_batch_active_tokens,),
+            destinations=staging_device,
+        ),
+        InputDescriptor(
+            name=RAGGED_INPUT_ROW_OFFSETS,
+            dtype=DType.uint32,
+            max_shape=(runtime.max_global_batch_size + 1,),
+            destinations=staging_device,
+        ),
+    ]
+
+
+class BatchProcessor(ABC, Generic[ContextT, InputsT, ArchConfigT_co]):
     """Batches pipeline contexts into model inputs and parses execution outputs."""
 
     def __init__(
         self,
-        config: ArchConfig,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
+        inputs: Sequence[InputDescriptor] = (),
     ) -> None:
         self.config = config
         self.runtime = runtime
-        # Caches reusable non-pinned device input buffers so captured graphs
-        # replay in place. Pinned host staging is never cached here.
-        self._device_input_allocator = ModelInputCachingAllocator()
+        # Holds the reused non-pinned device input buffers so captured graphs
+        # replay in place. Pinned host staging never belongs here.
+        self._stager = GraphInputStager(inputs)
 
     @abstractmethod
     def get_symbolic_inputs(
@@ -210,7 +201,7 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares inputs for the first execution step of a batch."""
@@ -222,20 +213,22 @@ class BatchProcessor(ABC, Generic[ContextT, InputsT]):
         """Maps raw ``Model.execute`` buffers to :class:`ModelOutputs`."""
 
 
-class RaggedBatchProcessor(BatchProcessor[ContextT, InputsT]):
+class RaggedBatchProcessor(BatchProcessor[ContextT, InputsT, ArchConfigT_co]):
     """Base for ragged KV text batching."""
 
     def __init__(
         self,
-        config: ArchConfig,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
+        inputs: Sequence[InputDescriptor] = (),
     ) -> None:
-        super().__init__(config, runtime)
+        super().__init__(
+            config, runtime, [*ragged_token_descriptors(runtime), *inputs]
+        )
         # Pre-allocate row offsets for multistep decode to avoid materializing
         # and copying a buffer on each step. Skip in virtual device mode
         # (warm-cache/cross-compilation) since VirtualDeviceContext does not
         # support memAlloc.
-        assert runtime.max_batch_size, "Expected max_batch_size to be set"
         self._input_row_offsets_prealloc: Buffer | None = None
         if not is_virtual_device_mode() and runtime.devices:
             self._input_row_offsets_prealloc = Buffer.from_numpy(
@@ -267,7 +260,7 @@ def build_single_replica_ragged_token_arrays(
 
 
 class SingleReplicaRaggedBatchProcessor(
-    RaggedBatchProcessor[ContextT, InputsT]
+    RaggedBatchProcessor[ContextT, InputsT, ArchConfigT_co]
 ):
     """Single-replica ragged KV batching for Graph-path models (no DP / LoRA).
 
@@ -295,7 +288,7 @@ class SingleReplicaRaggedBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares ragged token inputs for a single-replica Graph-path batch."""
@@ -323,7 +316,7 @@ class SingleReplicaRaggedBatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         signal_buffers: list[Buffer],
     ) -> InputsT:
         """Constructs architecture-specific model inputs."""
@@ -360,7 +353,7 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares ragged token inputs for a single-replica ModuleV3 batch.
@@ -397,7 +390,7 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     ) -> InputsT:
         """Constructs architecture-specific model inputs."""
         raise NotImplementedError(
@@ -478,7 +471,7 @@ def ragged_kv_symbolic_inputs(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     if include_signal_buffers:
         signals = Signals(devices=device_refs)
         return [
@@ -517,7 +510,7 @@ def modulev3_ragged_kv_symbolic_inputs(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     return [
         tokens_type,
         return_n_logits_type,
@@ -526,53 +519,18 @@ def modulev3_ragged_kv_symbolic_inputs(
     ]
 
 
-@dataclass
-class PersistentInputBuffers:
-    """Pinned-host buffers reused across unified spec-decode batch steps."""
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-
-    @classmethod
-    def alloc(
-        cls,
-        max_batch_size: int,
-        max_batch_input_tokens: int,
-        device: Device,
-    ) -> PersistentInputBuffers:
-        """Allocates persistent token and row-offset buffers for spec-decode batching."""
-        max_batch_input_tokens = max(max_batch_input_tokens, max_batch_size)
-        tokens = Buffer(
-            shape=(max_batch_input_tokens,), dtype=DType.int64, device=device
-        )
-        input_row_offsets = Buffer(
-            shape=(max_batch_size + 1,), dtype=DType.uint32, device=device
-        )
-        return cls(tokens, input_row_offsets)
-
-
 class UnifiedSpecDecodeBatchProcessor(
-    BatchProcessor[TextContext, SpecDecodeInputsT], Generic[SpecDecodeInputsT]
+    BatchProcessor[TextContext, SpecDecodeInputsT, ArchConfigT_co],
+    Generic[SpecDecodeInputsT, ArchConfigT_co],
 ):
     """Ragged batching with persistent buffers and seed for unified spec-decode graphs."""
 
     def __init__(
         self,
-        config: Any,
+        config: ArchConfigT_co,
         runtime: BatchProcessorRuntime,
     ) -> None:
-        super().__init__(config, runtime)
-        assert runtime.max_batch_size is not None
-        max_batch_input_tokens = (
-            runtime.pipeline_config.runtime.max_batch_input_tokens
-        )
-        self._persistent_input_buffers: PersistentInputBuffers | None = None
-        if not is_virtual_device_mode():
-            self._persistent_input_buffers = PersistentInputBuffers.alloc(
-                max_batch_size=runtime.max_batch_size,
-                max_batch_input_tokens=max_batch_input_tokens,
-                device=runtime.devices[0],
-            )
+        super().__init__(config, runtime, ragged_token_descriptors(runtime))
         self._seed_counter = 0
 
     def _next_seed(self, device0: Device) -> Buffer:
@@ -597,49 +555,32 @@ class UnifiedSpecDecodeBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> SpecDecodeInputsT:
         """Prepares ragged token inputs with persistent buffers and a per-step seed."""
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         device0 = self.runtime.devices[0]
-        buffer_type = Buffer if device0.is_host else DevicePinnedBuffer
 
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
         batch_size = len(context_batch)
 
-        assert self._persistent_input_buffers is not None
-        persistent_tokens = self._persistent_input_buffers.tokens
-        persistent_tokens = persistent_tokens[:total_seq_len]
-        persistent_input_row_offsets = (
-            self._persistent_input_buffers.input_row_offsets
-        )
-        persistent_input_row_offsets = persistent_input_row_offsets[
-            : batch_size + 1
-        ]
-
-        tokens_host = buffer_type(
-            dtype=DType.int64,
-            shape=(total_seq_len,),
-            device=device0,
-        )
-        offsets_host = buffer_type(
-            dtype=DType.uint32,
-            shape=(batch_size + 1,),
-            device=device0,
-        )
-
-        np.concatenate(
-            [ctx.tokens.active for ctx in context_batch],
-            out=tokens_host.to_numpy(),
-        )
-        persistent_tokens.inplace_copy_from(tokens_host)
-        np.cumsum(
-            [0] + [ctx.tokens.active_length for ctx in context_batch],
-            dtype=np.uint32,
-            out=offsets_host.to_numpy(),
-        )
-        persistent_input_row_offsets.inplace_copy_from(offsets_host)
+        with self._stager.stage() as staging:
+            tokens_host, (persistent_tokens,) = staging.get(
+                RAGGED_INPUT_TOKENS, (total_seq_len,)
+            )
+            offsets_host, (persistent_input_row_offsets,) = staging.get(
+                RAGGED_INPUT_ROW_OFFSETS, (batch_size + 1,)
+            )
+            np.concatenate(
+                [ctx.tokens.active for ctx in context_batch],
+                out=tokens_host.to_numpy(),
+            )
+            np.cumsum(
+                [0] + [ctx.tokens.active_length for ctx in context_batch],
+                dtype=np.uint32,
+                out=offsets_host.to_numpy(),
+            )
 
         return_n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
@@ -660,7 +601,7 @@ class UnifiedSpecDecodeBatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None,
         seed: Buffer,
         structured_output: bool,
     ) -> SpecDecodeInputsT:
@@ -716,7 +657,7 @@ class SingleReplicaEmbeddingBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares ragged token inputs for a single-replica embedding batch."""
@@ -807,7 +748,7 @@ class PaddedEncoderBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
         """Prepares padded token and attention-mask inputs for one replica."""
@@ -878,7 +819,7 @@ def modulev3_gemma_multimodal_language_symbolic_inputs(
     return_n_logits_type = TensorType(
         DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     return [
         tokens_type,
         return_n_logits_type,
@@ -916,7 +857,7 @@ def modulev3_idefics3_language_symbolic_inputs(
         shape=["total_image_tokens"],
         device=device_ref,
     )
-    kv_inputs = kv_params.get_symbolic_inputs().flatten()
+    kv_inputs = kv_params.flattened_kv_inputs()
     return [
         tokens_type,
         input_row_offsets_type,

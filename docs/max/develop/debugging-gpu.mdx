@@ -41,12 +41,17 @@ sessions; do not use in production.
 
 ## Enable kernel-level bounds checking
 
-Mojo's standard library ships with assertions that catch common kernel-authoring
-bugs, including out-of-bounds accesses on
-[`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor),
-which happen when a kernel reads or writes outside the allocated region of a
-tensor. These assertions are compiled out by default, so a buggy kernel produces
-corrupted output downstream instead of a clear error at the kernel site.
+Mojo's assertion-enabled APIs can catch some kernel-authoring bugs. For
+example, flat legacy
+[`LayoutTensor`](/api/mojo/layout/layout_tensor/LayoutTensor/) accesses have
+bounds checks when all assertions are enabled. These checks aren't present in
+every tensor or pointer API.
+
+For new kernels, use [`TileTensor`](/tile-tensor/tensors/), but don't assume
+ordinary pointer-backed indexing, `load()`, or `store()` checks coordinates
+against the tensor's bounds. Guard accesses with explicit bounds predicates or
+use a copy helper's masked-access support where available. Enabling all
+assertions doesn't make every raw memory access bounds-checked.
 
 The `assert-level` option controls assertions in the Mojo standard library:
 
@@ -54,7 +59,8 @@ The `assert-level` option controls assertions in the Mojo standard library:
 - `warn`: log warnings for out-of-bounds accesses
 - `safe`: assertions on bounds checks that are unlikely to trigger in
   correct code
-- `all`: full bounds checking on every access
+- `all`: all available assertions, including bounds checks in APIs that
+  provide them
 
 ```bash
 MODULAR_DEBUG=assert-level=safe max serve --model modularai/Llama-3.1-8B-Instruct-GGUF

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: mkdir -p %t.closure-dir
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 mojo precompile %S/inputs/closure -o %t.closure-dir/closure.mojoc
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 mojo -debug-level=line-tables -I %t.closure-dir %s 4 | FileCheck %s
 # RUN: mojo precompile %S/inputs/closure -o %t.closure-dir/closure.mojoc
 # RUN: mojo -debug-level=line-tables -I %t.closure-dir %s 4 | FileCheck %s
 

@@ -21,10 +21,10 @@ Examples:
 ```mojo
 var a = Optional(1)
 var b = Optional[Int](None)
-if a:
-    print(a.value())  # prints 1
-if b:  # Bool(b) is False, so no print
-    print(b.value())
+if case .Some(value) = a:
+    print(value)  # prints 1
+if case .Some(value) = b:  # b is empty, so no print
+    print(value)
 var c = a.or_else(2)
 var d = b.or_else(2)
 print(c)  # prints 1
@@ -43,7 +43,6 @@ from std.builtin.variadics import ParameterList, TypeList, _MLIR
 from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 from std.hashlib import Hasher
 from std.memory import MaybeUninit, forget_deinit
-from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location, reflect
 from std.utils import StaticTuple
 from std.utils._nicheable import (
@@ -137,10 +136,10 @@ struct Optional[T: AnyType](
     ```mojo
     var a = Optional(1)
     var b = Optional[Int](None)
-    if a:
-        print(a.value())  # prints 1
-    if b:  # Bool(b) is False, so no print
-        print(b.value())
+    if case .Some(value) = a:
+        print(value)  # prints 1
+    if case .Some(value) = b:  # b is empty, so no print
+        print(value)
     var c = a.or_else(2)
     var d = b.or_else(2)
     print(c)  # prints 1
@@ -170,7 +169,13 @@ struct Optional[T: AnyType](
     comptime Element = Self.T
     """The element type of this optional."""
 
-    comptime device_type: AnyType = Self
+    comptime _DevicePayloadType: AnyType = Self.T.device_type if conforms_to(
+        Self.T, DevicePassable
+    ) else Self.T
+    """The device-side payload type: the payload's `device_type` when it is
+    `DevicePassable`, otherwise the payload type itself."""
+
+    comptime device_type: AnyType = Optional[Self._DevicePayloadType]
     """The device-side type for this optional."""
 
     comptime _type = Variant[_NoneType, Self.T]
@@ -234,7 +239,7 @@ struct Optional[T: AnyType](
 
         ```mojo
         @fieldwise_init
-        struct Pinned(Movable where False):
+        struct Pinned(not Movable):
             var value: Int
 
         def make() -> Pinned:
@@ -543,7 +548,16 @@ struct Optional[T: AnyType](
             encoder: Target specific device type encoder.
             target: The target pointer to store the device type.
         """
-        encoder.encode(self, target)
+        comptime DevT = Self._DevicePayloadType
+        comptime DevStorage = Variant[_NoneType, DevT]
+        ref dev = target.unsafe_bitcast[DevStorage]()[]
+        if self:
+            self._unsafe_unchecked_value()._to_device_type(
+                encoder, dev._unsafe_ptr[DevT]().unsafe_bitcast[NoneType]()
+            )
+            dev._unsafe_set_active[DevT]()
+        else:
+            dev._unsafe_set_active[_NoneType]()
 
     @staticmethod
     def get_type_name() -> (
@@ -603,7 +617,6 @@ struct Optional[T: AnyType](
     # EnumLike
     # ===-------------------------------------------------------------------===#
 
-    comptime _enum_case_length = 2
     comptime _enum_case_names = ParameterList.of[
         "None".value, "Some".value
     ].values
@@ -761,7 +774,7 @@ struct Optional[T: AnyType](
 
         ```mojo
         @fieldwise_init
-        struct ExplicitDeinit(Movable, Deinitable where False):
+        struct ExplicitDeinit(Movable, not Deinitable):
             var data: Int
 
             def explicit_deinit(deinit self):
@@ -1052,6 +1065,11 @@ trait _OptionalRegStorageTraits(TrivialRegisterPassable):
     def value[U: TrivialRegisterPassable](self) -> U:
         ...
 
+    def _unsafe_payload_ptr[
+        U: TrivialRegisterPassable
+    ](ref self) -> Pointer[U, origin_of(self)]:
+        ...
+
     def __bool__(self) -> Bool:
         ...
 
@@ -1082,6 +1100,18 @@ struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
             index=SIMDLength(0)._mlir_value
         ](self._value)
         return rebind[U](value)
+
+    @inline(.always)
+    def _unsafe_payload_ptr[
+        U: TrivialRegisterPassable
+    ](ref self) -> Pointer[U, origin_of(self)]:
+        comptime assert U == Self.T
+        return Pointer[Self.T, origin_of(self)](
+            _mlir_value=__mlir_op.`pop.variant.bitcast`[
+                _type=Pointer[Self.T, origin_of(self)]._mlir_type,
+                index=SIMDLength(0)._mlir_value,
+            ](Pointer(to=self._value)._get_kgen_pointer())
+        ).unsafe_bitcast[U]()
 
     @inline(.always)
     def __bool__(self) -> Bool:
@@ -1119,6 +1149,17 @@ struct _NicheableOptionalRegStorage[
         return Pointer(to=self.storage).unsafe_bitcast[U]()[]
 
     @inline(.always)
+    def _unsafe_payload_ptr[
+        U: TrivialRegisterPassable
+    ](ref self) -> Pointer[U, origin_of(self)]:
+        comptime assert U == Self.T
+        return (
+            Pointer(to=self.storage)
+            .unsafe_bitcast[U]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
+
+    @inline(.always)
     def __bool__(self) -> Bool:
         var ptr = Pointer(to=self.storage).unsafe_bitcast[MaybeUninit[Self.T]]()
         return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
@@ -1134,7 +1175,7 @@ comptime _OptionalRegStorageFor[
 
 
 struct OptionalReg[T: TrivialRegisterPassable](
-    Boolable, Defaultable, DevicePassable, TrivialRegisterPassable
+    Boolable, Defaultable, DevicePassable, EnumLike, TrivialRegisterPassable
 ):
     """A register-passable optional type.
 
@@ -1148,13 +1189,37 @@ struct OptionalReg[T: TrivialRegisterPassable](
     comptime _Storage = _OptionalRegStorageFor[Self.T]
     var _value: Self._Storage
 
-    comptime device_type: AnyType = Self
+    comptime _DevicePayloadType: TrivialRegisterPassable = downcast[
+        Self.T.device_type, TrivialRegisterPassable
+    ] if conforms_to(Self.T, DevicePassable) else Self.T
+    """The payload's `device_type`, or the payload type itself."""
+
+    comptime device_type: AnyType = OptionalReg[Self._DevicePayloadType]
     """The device-side type for this optional register."""
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        """Convert to device type and store at the target address.
+
+        Args:
+            encoder: Target specific device type encoder.
+            target: The target pointer to store the device type.
+        """
+        comptime DevT = Self._DevicePayloadType
+        comptime if conforms_to(Self.T, DevicePassable):
+            var dev: OptionalReg[DevT]
+            if self:
+                var payload = MaybeUninit[DevT]()
+                self.value()._to_device_type(
+                    encoder, payload.unsafe_ptr().unsafe_bitcast[NoneType]()
+                )
+                dev = OptionalReg[DevT](payload.unsafe_ptr()[])
+            else:
+                dev = OptionalReg[DevT]()
+            target.unsafe_bitcast[OptionalReg[DevT]]().unsafe_write(dev)
+        else:
+            encoder.encode(self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -1219,8 +1284,8 @@ struct OptionalReg[T: TrivialRegisterPassable](
         Args:
             optional: The `Optional` to convert from.
         """
-        if optional:
-            self = optional.unsafe_value()
+        if case .Some(value) = optional:
+            self = value
         else:
             self = {}
 
@@ -1288,6 +1353,39 @@ struct OptionalReg[T: TrivialRegisterPassable](
             The contained value.
         """
         return self._value.value[Self.T]()
+
+    # ===-------------------------------------------------------------------===#
+    # EnumLike
+    # ===-------------------------------------------------------------------===#
+
+    comptime _enum_case_names = ParameterList.of[
+        "None".value, "Some".value
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
+        Trait=AnyType, NoneType, Self.T
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        """Return 0 for `None` and 1 for `Some`."""
+        return 1 if self else 0
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Return a reference to the `Some` payload.
+
+        Only valid when the discriminant is `1` (`Some`).
+        """
+        comptime assert id != 0, "cannot get payload for None case"
+        return rebind[TypeList[Trait=AnyType, Self._enum_case_types]()[id]](
+            self._value._unsafe_payload_ptr[Self.T]().unsafe_origin_cast[
+                origin_of(self)
+            ]()[]
+        )
 
     def or_else(var self, var default: Self.T) -> Self.T:
         """Return the underlying value contained in the Optional or a default

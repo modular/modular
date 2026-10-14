@@ -32,6 +32,7 @@ from layout import (
 from layout.tile_layout import Layout
 
 from .sampling import (
+    apply_masked_penalties_to_logits,
     apply_penalties_to_logits,
     update_frequency_data,
 )

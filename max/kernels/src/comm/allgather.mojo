@@ -70,12 +70,7 @@ from .device_query import (
     KB,
     dispatch_select_comm_config,
 )
-from .relay import (
-    RELAY_ARCH,
-    RelayTuningConfig,
-    _relay_pairs,
-    _relay_slice_vectors,
-)
+from .relay import RelayTuningConfig, _relay_pairs, _relay_slice_vectors
 from internal_utils import Table
 
 from .reducescatter import _target_address_space
@@ -398,8 +393,8 @@ def _allgather_tma_kernel[
     # Grid-strided chunk distribution across warps handling the same source.
     var warps_per_src_per_block = NUM_WARPS // ngpus
     var src_local_warp = warp // ngpus
-    var first = Int(block_idx.x) * warps_per_src_per_block + src_local_warp
-    var warp_stride = Int(grid_dim.x) * warps_per_src_per_block
+    var first = block_idx.x * warps_per_src_per_block + src_local_warp
+    var warp_stride = grid_dim.x * warps_per_src_per_block
 
     var total_chunks = ceildiv(nbytes, BYTES_PER_COPY)
 
@@ -538,8 +533,8 @@ def _allgather_relay_kernel[
     # world rank folded by the group width.
     var group_rank = _my_rank % ngpus
 
-    var bid = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var bid = block_idx.x
+    var tid = thread_idx.x
     var _relay_percent = Int(relay_percent)
 
     # Synchronize before reading. The domain spans both groups because a
@@ -610,7 +605,7 @@ def _allgather_relay_kernel[
         # stores before any consumer reads the output.
         var relay_bid = bid - Int(num_direct_blocks)
         var src_idx = relay_bid % ngpus
-        var blocks_per_src = (Int(grid_dim.x) - Int(num_direct_blocks)) // ngpus
+        var blocks_per_src = (grid_dim.x - Int(num_direct_blocks)) // ngpus
         var src_block = relay_bid // ngpus
         var src_ptr = peer_src_ptrs[src_idx].address_space_cast[
             _target_address_space
@@ -746,7 +741,7 @@ def _allgather_p2p_relay[
     # `ngpus`-wide grouped barrier and this one advance the same counters at
     # different rates and hang the node.
     comptime relay_domain_id = 0 if 2 * ngpus == MAX_GPUS else 2 * ngpus
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # A relay block only runs if some shard in the relay world is long enough
     # to split. Both groups see both length sets, so they agree on the grid --
@@ -862,11 +857,11 @@ def _allgather_p2p[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
+    var group_sigs = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> Pointer[
+            Signal, MutAnyOrigin
+        ]: rank_sigs[group_start + i]
     )
-    comptime for i in range(group_size):
-        group_sigs[i] = rank_sigs[group_start + i]
 
     # Build Int32 versions for passing to GPU kernels.
     var lengths_i32 = StaticTuple[Int32, group_size]()
@@ -922,11 +917,11 @@ def _allgather_p2p[
         ](pair_max_length * size_of[dtype]())
 
         if pair_max_length > 0 and recipe.relay_percent > 0:
-            var relay_sigs = Array[
-                MutPointer[Signal, MutAnyOrigin], 2 * group_size
-            ](uninitialized=True)
-            for i in range(2 * group_size):
-                relay_sigs[i] = rank_sigs[pair_base + i]
+            var relay_sigs = Array[_, 2 * group_size](
+                fill_with=lambda (i: Int) -> Pointer[
+                    Signal, MutAnyOrigin
+                ]: rank_sigs[pair_base + i]
+            )
 
             return _allgather_p2p_relay(
                 output_ptrs,
@@ -979,7 +974,7 @@ def _allgather_p2p[
         ](max_length * size_of[dtype]()).get_num_blocks()
     )
 
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     # Use ceildiv for max_length to ensure we have enough threads.
     var grid_size = min(
         max_num_blocks,
@@ -1129,9 +1124,11 @@ def allgather[
                 " between GPUs"
             )
         comptime OutputTensorType = type_of(output_buffers[0])
-        var my_outputs = Array[OutputTensorType, ngpus](uninitialized=True)
-        comptime for i in range(ngpus):
-            my_outputs[i] = output_buffers[my_rank * ngpus + i]
+        var my_outputs = Array[_, ngpus](
+            fill_with_unrolled=lambda [i: Int]() -> OutputTensorType: (
+                output_buffers[my_rank * ngpus + i]
+            )
+        )
         return _allgather_naive(input_buffers, my_outputs, ctx)
 
     # P2P path: hand the collective the whole world plus the group width, and

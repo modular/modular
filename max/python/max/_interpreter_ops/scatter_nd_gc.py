@@ -24,7 +24,7 @@ no ``batch_dims``).
 (``1..MAX_RANK``), one graph per depth. Instead each graph flattens each
 multi-dim index vector to one scalar (``flat_idx = sum(indices * strides)``,
 see :func:`gc_compile.flat_index_strides`) and feeds the depth-1 result
-straight into the real ``ops.scatter_nd``/``ops.scatter_nd_add``/etc. in the
+straight into the real ``ops.scatter_nd`` family op in the
 same compiled graph -- ``index_depth`` stays fully dynamic, never a cache-key
 variant. Unlike the axis-based ``ScatterOp`` family (``scatter_gc.py``), this
 keeps the real GPU-capable kernel in the loop: duplicate index vectors resolve
@@ -73,7 +73,7 @@ def uint_view_dtype(dtype: DType) -> DType:
     """The same-bit-width unsigned int a dtype is bit-cast to for copying.
 
     Raises:
-        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
+        NotImplementedError: For sub-byte dtypes (such as ``float4_e2m1fn``), which
             pack multiple elements per byte and so cannot be reinterpreted
             element-for-element as a whole-byte unsigned int.
     """
@@ -327,7 +327,7 @@ def scatter_nd_model(
 
     Lazy by default: compiled on first use and cached for the process lifetime.
     With ``MAX_EAGER_OP_PRECOMPILE=1`` it was precompiled at import and this is a
-    lookup. On the first miss a warm cache is adopted whole (manifest force-load,
+    lookup. On the first miss a warm cache is adopted whole (the warm store,
     else a batched stamp sweep) instead of compiling per target.
 
     Args:

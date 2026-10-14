@@ -25,6 +25,7 @@
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TinyPtrVector.h"
 
@@ -34,45 +35,17 @@ class ParamDeclRefAttr;
 } // end namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class ASTDecl;
+class AliasASTDecl;
+class AliasDeclOp;
+class WitnessASTDecl;
 class StructType;
 class DocStringAttr;
 class DocString;
 class TraitDeclOp;
 class TraitType;
 
-// TODO(MOCO-4712): This should just be a CValue variant, we should
-// simplify how trait witness are created in general, then it should be merged
-// with the CValue variants when we have a IR representation for the witness
-// decl.
-struct WitnessDecl {
-  // This is the merged witness non-function decls with the same witness name,
-  // they might conflict each other if their types are not reconcilable.
-  using UnresolvedDecls = SmallVector<ASTDecl *>;
-
-  // This is the resolved witness entry.
-  struct ResolvedType {
-    StringAttr witnessName;
-    Type witnessType;
-
-    // Some extra information that is not available via a fnType. Meaningless
-    // for non-function witnesses.
-    ImplicitConversionKind implicitConversion = ImplicitConversionKind::None;
-    bool isStaticMethod = false;
-  };
-
-  UnresolvedDecls getDecls() const { return cast<UnresolvedDecls>(storage); }
-  ResolvedType getWitnessEntry() const { return cast<ResolvedType>(storage); }
-
-  // Depending on whether the decl is fully resolved, it could be either be a
-  // array lof decls that it depends on, or it could be a resolved witness type.
-  SmartVariant<ResolvedType, UnresolvedDecls> storage;
-
-  // This is the trait symbol that the decl witnessed.
-  TraitSymbolAttr traitSymbol;
-};
-
-using DeclIRValue =
-    SmartVariant<Operation *, WitnessDecl, CValue, std::nullopt_t>;
+using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
 struct UnresolvedWildcardImport {
   ImportPathAttr moduleName;
@@ -102,6 +75,16 @@ struct UnresolvedWildcardImport {
 /// notices a declaration but does not parse its body until it is demanded.
 class ASTDecl {
 public:
+  enum class Kind : uint8_t {
+    Base,
+    Alias,
+    Witness,
+  };
+
+  virtual ~ASTDecl();
+
+  Kind getKind() const { return parentDeclAndKind.getInt(); }
+
   /// ASTDecl's always have a notion of where they came from.
   SharedState &getShared() const { return shared; }
   MLIRContext *getContext() const { return shared.getContext(); }
@@ -112,12 +95,6 @@ public:
   /// This is used for things like Module, StructDecl, Func, or ParamDecl.
   Operation *getIfOperation() const { return dyn_cast<Operation *>(irValue); }
   void setIRValue(DeclIRValue value) { irValue = value; }
-
-  WitnessDecl *getIfWitness() const {
-    if (isa<WitnessDecl>(irValue))
-      return &cast<WitnessDecl>(irValue);
-    return nullptr;
-  }
 
   /// Return true if this decl is callable: a `FnOp`, or a witness for one.
   bool isCallableDecl() const;
@@ -130,23 +107,6 @@ public:
 
   /// Return how this decl may be used as an implicit conversion.
   ImplicitConversionKind getDeclImplicitConversionKind() const;
-
-  // When handling things like default trait method, we might insert placeholder
-  // ASTDecl for default implementation that later become invalid after body
-  // resolving the struct (e.g., when there is a user-provided overload), this
-  // that case, we  need to mark the ASTDecl to be invalid. We cannot simply
-  // detach it from the parent decl as it corrupt a lot of loop iteration over
-  // ASTDecls.
-  void markDisabled() {
-    assert(getCursor().isInvalid() && "should only disable synthetic ASTDecl");
-    resolvedness = DeclResolvedness::body;
-    irValue = std::nullopt;
-    // Let the parent scope's name lookups know they must now filter disabled
-    // decls; scopes without any stay on the fast path.
-    if (parentDecl)
-      parentDecl->hasDisabledDecls = true;
-  }
-  bool isDisabled() const { return isa<std::nullopt_t>(irValue); }
 
   /// Get the user-printable name of the declaration if it has one.
   ///  This removes any mangling (e.g. for parameters).
@@ -162,7 +122,7 @@ public:
   void setLoc(llvm::SMLoc newLoc) { loc = newLoc; }
   LLVM_ATTRIBUTE_ALWAYS_INLINE LLVM_ATTRIBUTE_NODEBUG ASTDecl *
   getParentDecl() const {
-    return parentDecl;
+    return parentDeclAndKind.getPointer();
   }
 
   /// Get the nearest decl backed by one of the given operations. This can
@@ -319,7 +279,7 @@ public:
       ArrayRef<ASTDecl *> result = curScope->lookupInCurrentScope(name);
       if (!result.empty())
         return result;
-      curScope = curScope->parentDecl;
+      curScope = curScope->getParentDecl();
     }
     return {};
   }
@@ -423,6 +383,11 @@ private:
   ASTDecl(const ASTDecl &) = delete;
   ASTDecl &operator=(const ASTDecl &) = delete;
 
+protected:
+  ASTDecl(Kind kind, SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
+          ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+          ssize_t indentation);
+
 private:
   /// The Mojo shared state this decl is associated with.
   SharedState &shared;
@@ -439,9 +404,9 @@ private:
   /// member.  This is only valid after signature resolution.
   ASTType typeDeclSelf;
 
-  /// This the parent scope that should continue name lookup, or null for the
-  /// top scope.
-  ASTDecl *parentDecl;
+  /// The parent scope that should continue name lookup, plus the declaration
+  /// kind in the pointer's low bits.
+  llvm::PointerIntPair<ASTDecl *, 3, Kind> parentDeclAndKind;
 
   /// This is the cursor that points to the next part of declaration to continue
   /// parsing as the declaration is progressively resolved.
@@ -467,10 +432,6 @@ private:
   /// the signatures of all the children to register them in the symbol table.
   /// Cache this process using a flag on the decl.
   bool referencedFromBytecode : 1;
-
-  /// True if any decl in this scope has been disabled, so name lookup must
-  /// filter tombstones. Cache this using a flag on the decl.
-  bool hasDisabledDecls : 1;
 
   /// This is set to true when an error is detected and reported about this
   /// declaration that could cause references to it to cause spurious downstream
@@ -552,6 +513,65 @@ private:
   /// this declaration. It may reference parameter declarations from this
   /// ASTDecl or its parent ASTDecls.
   std::unique_ptr<llvm::SetVector<ConstraintAttr>> knownAssumptions;
+};
+
+/// An AST declaration backed by an alias declaration operation.
+class AliasASTDecl final : public ASTDecl {
+public:
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Alias;
+  }
+
+  /// Return the alias operation represented by this declaration.
+  AliasDeclOp getOp() const;
+
+private:
+  friend class DeclResolver;
+
+  AliasASTDecl(SharedState &shared, AliasDeclOp aliasOp, llvm::SMLoc loc,
+               ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+               ssize_t indentation);
+};
+
+/// A synthesized declaration for a member inherited through trait composition.
+/// It tracks the contributing declarations until they are resolved into a
+/// single witness type.
+class WitnessASTDecl final : public ASTDecl {
+public:
+  /// The declarations merged into this witness before signature resolution.
+  using UnresolvedDecls = SmallVector<ASTDecl *>;
+
+  /// The resolved witness entry.
+  struct ResolvedType {
+    StringAttr witnessName;
+    Type witnessType;
+
+    /// Additional function information, meaningless for non-function members.
+    ImplicitConversionKind implicitConversion = ImplicitConversionKind::None;
+    bool isStaticMethod = false;
+  };
+
+  static bool classof(const ASTDecl *decl) {
+    return decl->getKind() == Kind::Witness;
+  }
+
+  UnresolvedDecls getDecls() const { return cast<UnresolvedDecls>(storage); }
+  ResolvedType getWitnessEntry() const { return cast<ResolvedType>(storage); }
+
+  /// Holds contributing declarations before resolution and the merged type
+  /// afterward.
+  SmartVariant<ResolvedType, UnresolvedDecls> storage;
+
+  /// The trait symbol witnessed by this declaration.
+  TraitSymbolAttr traitSymbol;
+
+private:
+  friend class DeclResolver;
+
+  WitnessASTDecl(SharedState &shared, UnresolvedDecls unresolvedDecls,
+                 TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
+                 ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+                 ssize_t indentation);
 };
 
 } // namespace M::KGEN::LIT

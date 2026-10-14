@@ -16,7 +16,7 @@
 # (memcheck/redzone) by default; with --check, numerical (flash vs the naive MHA
 # reference) under the `ref` oracle.
 
-from std.math import max, min
+from std.math import min
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 

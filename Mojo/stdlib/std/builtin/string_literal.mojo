@@ -21,6 +21,7 @@ from std.collections.string.string_span import (
     CodepointsIter,
     GraphemeSliceIter,
     StaticString,
+    _get_kgen_string,
 )
 from std.os import PathLike
 from std.ffi import c_char, CStringSpan
@@ -59,6 +60,13 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     def __init__(out self):
         """Constructor for any value."""
         pass
+
+    # ===-------------------------------------------------------------------===#
+    # Factory methods
+    # ===-------------------------------------------------------------------===#
+
+    comptime _from[s: StaticString] = StringLiteral[_get_kgen_string[s]()]
+    """Creates a string literal from a static string at compile time."""
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -580,7 +588,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Args:
             prefix: The prefix to check.
             start: The start byte offset from which to check.
-            end: The end byte offset from which to check.
+            end: The end byte offset up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
@@ -596,7 +604,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Args:
             suffix: The suffix to check.
             start: The start byte offset from which to check.
-            end: The end byte offset from which to check.
+            end: The end byte offset up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.
@@ -909,3 +917,15 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         ```
         """
         return StringSlice(self).split(sep, maxsplit=maxsplit)
+
+    @always_inline("builtin")
+    def _is_identical(self, rhs: StringLiteral) -> Bool:
+        """Returns whether two string literals have identical KGEN parameters.
+        """
+        return __mlir_attr[
+            `#kgen.param.identical<`,
+            self.value,
+            `, `,
+            rhs.value,
+            `> : !kgen.scalar<bool>`,
+        ]

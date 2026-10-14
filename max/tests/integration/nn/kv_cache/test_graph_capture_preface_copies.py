@@ -16,8 +16,10 @@
 Two layers, no GPU required:
 
 - Real CPU ``Buffer`` objects: verify ``batch_inplace_copy`` produces the same
-  values as a per-buffer ``inplace_copy_from`` loop and that identity pairs
-  (``dst is src``) are no-ops.
+  values as a per-buffer ``inplace_copy_from`` loop, that identity pairs
+  (``dst is src``) are no-ops, and that two distinct buffers over the same
+  memory are too -- a caller that rebuilds an equal view every step should not
+  pay for a copy that would not move a byte.
 - Fake-device simulation: exercise ``ServeGraphCaptureRunner.replay``'s routing
   without a GPU -- host destinations copy inline, accelerator destinations go
   through the batched call, destinations spanning devices preserve output
@@ -75,6 +77,7 @@ class _FakeBuffer:
     def __init__(self, device: _FakeDevice, *, value: object = None) -> None:
         self.device = device
         self.value = value
+        self.pinned = False
 
     def inplace_copy_from(self, src: _FakeBuffer) -> None:
         self.value = src.value
@@ -83,7 +86,12 @@ class _FakeBuffer:
 def _fake_batch_inplace_copy(
     dsts: Sequence[_FakeBuffer], srcs: Sequence[_FakeBuffer]
 ) -> None:
-    """Mirrors the real driver call: skip identity pairs, copy the rest."""
+    """Mirrors the real driver call: skip identity pairs, copy the rest.
+
+    The driver also skips two distinct buffers over the same memory, which
+    these value-less fakes cannot express; the real-buffer tests above cover
+    that.
+    """
     for dst, src in zip(dsts, srcs, strict=True):
         if dst is not src:
             dst.inplace_copy_from(src)
@@ -108,7 +116,9 @@ def _make_replay_runner() -> ServeGraphCaptureRunner:
     runner = ServeGraphCaptureRunner.__new__(ServeGraphCaptureRunner)
     runner._records = {}
     runner.graph_entries = {}
-    runner._model = MagicMock()
+    runner._engine_model = MagicMock()
+    runner._signal_buffers = []
+    runner._host_input_guard_mode = None
     return runner
 
 
@@ -192,6 +202,28 @@ def test_batch_inplace_copy_skips_identity() -> None:
     np.testing.assert_array_equal(other_dst.to_numpy(), [99.0])
 
 
+def test_batch_inplace_copy_skips_an_aliased_pair() -> None:
+    """Distinct buffers over one allocation are as much a no-op as identity.
+
+    The values cannot show the difference -- both sides name the same bytes --
+    so this pins the correctness half: eliding must not corrupt the batch or
+    the real copies beside it.
+    """
+    backing = Buffer.from_numpy(np.array([42.0, 7.0], dtype=np.float32))
+    dst_view = backing[:1]
+    src_view = backing[:1]
+    other_src = Buffer.from_numpy(np.array([99.0], dtype=np.float32))
+    other_dst = Buffer.from_numpy(np.zeros(1, dtype=np.float32))
+
+    assert dst_view is not src_view
+    assert dst_view._data_ptr() == src_view._data_ptr()
+
+    batch_inplace_copy([dst_view, other_dst], [src_view, other_src])
+
+    np.testing.assert_array_equal(backing.to_numpy(), [42.0, 7.0])
+    np.testing.assert_array_equal(other_dst.to_numpy(), [99.0])
+
+
 # -- Routing tests via fake buffers (no GPU required) ---------------------
 
 
@@ -215,24 +247,24 @@ def test_batched_preface_multi_device_output_parity(
     assert [buf.value for buf in dst_buffers] == expected
 
 
-def test_batched_preface_host_destinations_copy_inline(
+def test_batched_preface_skips_host_destinations(
     fake_batch_copy: None,
 ) -> None:
-    """Host-resident destinations copy inline via inplace_copy_from.
+    """Host-resident destinations are not refreshed; device ones are.
 
-    Device ID 9 is modelled as host-resident; its copies must go through the
-    per-copy inline path (not the batch path) and still deliver the correct
-    values.
+    Device ID 9 is modelled as host-resident. Replay runs no host code, so the
+    graph only read that input at capture and it keeps its captured value.
     """
     runner = _make_replay_runner()
     bc, model_inputs, dst_buffers = _install_scenario(
         runner, [0, 9, 0], host_device_ids={9}
     )
-    expected = [src.value for src in model_inputs.buffers]
+    captured = [buf.value for buf in dst_buffers]
+    live = [src.value for src in model_inputs.buffers]
 
     runner.replay(model_inputs=model_inputs, batch_characteristics=bc)
 
-    assert [buf.value for buf in dst_buffers] == expected
+    assert [buf.value for buf in dst_buffers] == [live[0], captured[1], live[2]]
 
 
 def test_batched_preface_single_device(fake_batch_copy: None) -> None:

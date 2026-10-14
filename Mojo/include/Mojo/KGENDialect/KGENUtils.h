@@ -101,10 +101,25 @@ bool isTypeExprType(Type type);
 /// Returns whether the given attribute is a KGEN type expression.
 bool isTypeExpr(TypedAttr attr);
 
+/// If `prop` is an `identical` of any arity, return its operands.
+/// Unlike `getIdentityProposition`, this includes classes wider than two.
+std::optional<ArrayRef<TypedAttr>> getIdentityClass(TypedAttr prop);
+
 /// If `prop` is a binary `#kgen.param.identical` -- so that a consumer may
 /// substitute either operand for the other -- return the pair.
+/// n-ary `identical` wider than two is dropped; use `getIdentityClass`.
 std::optional<std::pair<TypedAttr, TypedAttr>>
 getIdentityProposition(TypedAttr prop);
+
+/// Folds the scalar-bool conjunction of `conjuncts`, which need not be
+/// canonical and may contain nested ANDs. Returns True, False, the single
+/// surviving clause (e.g. a merged `identical` class), or a sorted AND of the
+/// surviving clauses.
+///
+/// Ordinary code builds a conjunction with `ParamOperatorAttr::get(POC::And,
+/// ...)`, which already folds through this; the direct callers are attribute
+/// construction and the proposition fold.
+TypedAttr foldBoolConjunction(ArrayRef<TypedAttr> conjuncts, Type boolType);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given compilation context. This includes things like
@@ -133,6 +148,13 @@ ParseResult parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly);
 /// Uses TypedAttr to support future parametric alignment.
 void printMinAlignment(AsmPrinter &p, TypedAttr minAlignment);
 ParseResult parseMinAlignment(AsmParser &p, TypedAttr &minAlignment);
+
+/// Parser & printer for a single simplified StructDefFieldAttr, spelled
+/// `name: type` with an optional trailing `[annotations...]`.
+ParseResult parseStructDefField(AsmParser &p, StringAttr &name,
+                                TypedAttr &typeValue, ArrayAttr &annotations);
+void printStructDefField(AsmPrinter &p, StringAttr name, TypedAttr typeValue,
+                         ArrayAttr annotations);
 
 /// Parser & printer for array of simplified StructDefFieldAttrs.
 ParseResult parseStructDefFields(AsmParser &p,
@@ -428,6 +450,11 @@ void printFunctionFuncTypeGenerator(OpAsmPrinter &p, Region *region,
 /// Parse the always_inline related keywords if present.
 ParseResult parseOptionalInline(OpAsmParser &parser, Attribute &attr);
 void printOptionalInline(AsmPrinter &p, Attribute attr);
+
+/// Get the value of a scalar index-like parameter value.
+/// This is a temporary helper utility during the Int->SIMD unification project.
+/// After it's done, we should remove the IntegerAttr case.
+ErrorOr<int64_t> getScalarIndexValue(TypedAttr value);
 
 /// The integer `spec` holds, in either the plain or the `InlineLevel` form.
 std::optional<int64_t> inlineLevelValueOf(TypedAttr spec);

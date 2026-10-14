@@ -16,18 +16,16 @@ Bicubic interpolation is a 2D extension of cubic interpolation for resampling
 digital images. It uses the weighted average of the 4x4 neighborhood of pixels
 around the target location to compute the interpolated value.
 """
-from std.math import clamp, floor
+from std.math import ceildiv, clamp, floor
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
-from max.gpu import block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from layout import (
     Coord,
-    Idx,
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord,
     coord_to_index_list,
 )
 from std.itertools import product
@@ -247,9 +245,10 @@ def gpu_bicubic_kernel[
 
     # Each thread processes multiple output pixels
     var total_pixels = out_height * out_width
-    var threads_per_block = block_dim.x
+    var first_pixel = block_idx.z * block_dim.x + tid
+    var pixel_stride = grid_dim.z * block_dim.x
 
-    for pixel_idx in range(tid, total_pixels, threads_per_block):
+    for pixel_idx in range(first_pixel, total_pixels, pixel_stride):
         var y_out, x_out = divmod(pixel_idx, out_width)
 
         var in_y = map_output_to_input_coord(y_out, scale_h)
@@ -323,9 +322,19 @@ def resize_bicubic[
         var input_shape = coord_to_index_list(input.layout.shape_coord())
         var N = input_shape[0]
         var C = input_shape[1]
+        var output_shape = coord_to_index_list(output.layout.shape_coord())
 
-        # Use a fixed block size to avoid exceeding CUDA thread limits.
+        # Use a fixed block size to avoid exceeding CUDA thread limits. Pixels
+        # are spread over the third grid dimension so that a few images still
+        # fill the GPU; with many images the (N, C) grid already does, so the
+        # kernel strides over pixels instead of launching more blocks.
         var block_size = 256
+        var blocks_to_fill_gpu = 8 * Int(ctx.default_device_info.sm_count)
+        var pixel_blocks = clamp(
+            ceildiv(blocks_to_fill_gpu, N * C),
+            1,
+            min(ceildiv(output_shape[2] * output_shape[3], block_size), 65535),
+        )
         comptime kernel = gpu_bicubic_kernel[
             output.dtype,
             output_origin=output.origin,
@@ -337,8 +346,8 @@ def resize_bicubic[
         ]
         ctx.enqueue_function[kernel](
             output,
-            input.as_immut(),
-            grid_dim=(N, C),
+            input.as_imm(),
+            grid_dim=(N, C, pixel_blocks),
             block_dim=(block_size,),
         )
     else:

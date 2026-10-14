@@ -13,7 +13,6 @@
 """Implements the `StringSpan` type and related utilities for efficient string operations."""
 
 from std.builtin.builtin_slice import ContiguousSlice
-from std.builtin.format_int import _write_int
 from std.reflection import call_location
 from std.collections import check_bounds, check_slice_bounds, Span
 from std.collections.string._unicode import (
@@ -48,11 +47,7 @@ from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
-from std.memory import (
-    unsafe_memcmp,
-    unsafe_memcpy,
-    pack_bits,
-)
+from std.memory import unsafe_memcmp, pack_bits
 from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
@@ -971,12 +966,15 @@ struct StringSpan[origin: ImmOrigin](
         Returns:
             The string concatenated `n` times.
         """
-        var string = String()
-        var buffer = _FlushingWriteBuffer(string)
-        for _ in range(n):
-            buffer.write_string(self)
-        buffer.flush()
-        return string^
+        var length = self.byte_length()
+        if n <= 0 or length == 0:
+            return String()
+
+        var result = String(unsafe_uninit_length=n * length)
+        var bytes = result.unsafe_as_bytes_mut()
+        for i in range(n):
+            bytes[i * length : (i + 1) * length].copy_from(self.as_bytes())
+        return result^
 
     @inline(.nodebug)
     def __merge_with__[
@@ -1026,7 +1024,7 @@ struct StringSpan[origin: ImmOrigin](
         Returns:
             A c-compatible CStringSpan.
         """
-        return {unsafe_from_ptr = self.unsafe_ptr().unsafe_bitcast[Int8]()}
+        return {unsafe_from_ptr = self.unsafe_ptr().unsafe_bitcast[c_char]()}
 
     @inline(.always)
     def as_imm(self) -> Self.Immutable:
@@ -1085,10 +1083,10 @@ struct StringSpan[origin: ImmOrigin](
         return res^
 
     def _interleave(self, val: StringSpan) -> String:
-        # TODO: this may be better as:
-        # (val.byte_length() * self.count_codepoints()) + self.count_codepoints()
-        var estimated_capacity = val.byte_length() * self.byte_length()
-        var res = String(capacity_bytes=estimated_capacity)
+        var res = String(
+            capacity_bytes=val.byte_length() * self.count_codepoints()
+            + self.byte_length()
+        )
         for codepoint in self.codepoint_slices():
             res += val
             res += codepoint
@@ -1698,19 +1696,12 @@ struct StringSpan[origin: ImmOrigin](
         Args:
             prefix: The prefix to check.
             start: The start offset in bytes from which to check.
-            end: The end offset in bytes from which to check.
+            end: The end offset in bytes up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
-        if end == -1:
-            return self.find(prefix, start) == start
-        return StringSpan[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
-                length=end - start,
-            )
-        ).startswith(prefix)
+        return _affix_matches[from_end=False](self, prefix, start, end)
 
     def endswith(
         self, suffix: StringSpan, start: Int = 0, end: Int = -1
@@ -1724,25 +1715,12 @@ struct StringSpan[origin: ImmOrigin](
         Args:
             suffix: The suffix to check.
             start: The start offset in bytes from which to check.
-            end: The end offset in bytes from which to check.
+            end: The end offset in bytes up to which to check.
 
         Returns:
             True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
-        if suffix.byte_length() > self.byte_length():
-            return False
-        if end == -1:
-            return (
-                self.rfind(suffix, start) + suffix.byte_length()
-                == self.byte_length()
-            )
-        # FIXME: use normalize_index
-        return StringSpan[Self.origin](
-            unsafe_from_utf8=Span[Byte, Self.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start),
-                length=end - start,
-            )
-        ).endswith(suffix)
+        return _affix_matches[from_end=True](self, suffix, start, end)
 
     def removeprefix(self, prefix: StringSpan, /) -> Self:
         """Returns a view of the string with the prefix removed if it was
@@ -2178,7 +2156,9 @@ struct StringSpan[origin: ImmOrigin](
                     str_len += is_r_n
                 else:
                     str_len -= splat(likely(is_new_line)) & char_len
-                    var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
+                    var is_r_n = unlikely(
+                        prev_b0 == `\r` and b0 == `\n` and str_len == 0
+                    )
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended
                         line_start = line_end
@@ -2425,14 +2405,14 @@ struct StringSpan[origin: ImmOrigin](
             fillchar.byte_length() == 1
         ), "fill char needs to be a one byte literal"
 
-        var result = String(capacity_bytes=width)
-        for _ in range(start):
-            result += fillchar
-        result += self
-
-        while result.byte_length() < width:
-            result += fillchar
-        return result
+        var length = self.byte_length()
+        var fill = fillchar.as_bytes()[0]
+        var result = String(unsafe_uninit_length=width)
+        var bytes = result.unsafe_as_bytes_mut()
+        bytes[:start].fill(fill)
+        bytes[start : start + length].copy_from(self.as_bytes())
+        bytes[start + length :].fill(fill)
+        return result^
 
     def join[
         T: Copyable & Writable,
@@ -2596,6 +2576,50 @@ def _to_string_list[
         lambda (v: Span[Byte, O]) -> Int: len(v),
         lambda (v: Span[Byte, O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
     ](items)
+
+
+def _normalize_affix_bound(bound: Int, length: Int) -> Int:
+    return bound if bound >= 0 else max(bound + length, 0)
+
+
+def _affix_matches[
+    from_end: Bool
+](haystack: StringSpan, affix: StringSpan, start: Int, end: Int) -> Bool:
+    var length = haystack.byte_length()
+    var start_byte = _normalize_affix_bound(start, length)
+    if end == -1:
+        var affix_length = affix.byte_length()
+        # Subtract, don't add: the sum overflows near `Int.MAX`.
+        if start_byte > length - affix_length:
+            return False
+        if affix_length == 0:
+            return True
+        var offset: Int
+        comptime if from_end:
+            offset = length - affix_length
+        else:
+            offset = start_byte
+        return (
+            unsafe_memcmp(
+                haystack.unsafe_ptr().unsafe_offset(offset),
+                affix.unsafe_ptr(),
+                affix_length,
+            )
+            == 0
+        )
+    var end_byte = min(_normalize_affix_bound(end, length), length)
+    if start_byte > end_byte:
+        return False
+    var sub = type_of(haystack)(
+        unsafe_from_utf8={
+            unsafe_ptr = haystack.unsafe_ptr().unsafe_offset(start_byte),
+            length = end_byte - start_byte,
+        }
+    )
+    comptime if from_end:
+        return sub.endswith(affix)
+    else:
+        return sub.startswith(affix)
 
 
 @inline(.always)
@@ -2831,16 +2855,16 @@ def _split[
     var ptr = src_str.unsafe_ptr()
     var sep_len = sep.byte_length()
     if sep_len == 0:
-        var iterator = src_str.codepoint_slices()
-        var i_len = len(iterator) + 2
-        output = {capacity = i_len}
+        # The byte length bounds the codepoint count without a counting pass.
+        var byte_len = src_str.byte_length()
+        output = {capacity = byte_len + 2}
         output.append(S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=0)))
-        for s in iterator:
+        for s in src_str.codepoint_slices():
             output.append(s)
         output.append(
             S(
                 unsafe_from_utf8=Span(
-                    unsafe_ptr=ptr.unsafe_offset(i_len - 1), length=0
+                    unsafe_ptr=ptr.unsafe_offset(byte_len), length=0
                 )
             )
         )

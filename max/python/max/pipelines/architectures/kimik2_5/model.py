@@ -22,6 +22,7 @@ from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import (
     Buffer,
     Device,
@@ -43,7 +44,7 @@ from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheInputsInterface,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -67,16 +68,15 @@ from max.pipelines.lib.eplb_stats import (
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.config_enums import is_float4_encoding
-from max.pipelines.weights.block_scaled_preshuffle import (
-    preshuffle_block_scaled_b_experts,
-    preshuffle_block_scaled_b_scales,
-)
 from max.pipelines.weights.quant import parse_quant_config
 from max.profiler import traced
 from transformers import AutoConfig
 
 from ..deepseekV3.model import DeepseekV3Inputs
-from .batch_processor import KimiK2_5BatchProcessor
+from .batch_processor import (
+    KimiK2_5BatchProcessor,
+    KimiK2_5BatchProcessorBase,
+)
 from .context import KimiK2_5TextAndVisionContext
 from .kimi_nvfp4_policy import infer_kimi_nvfp4_weight_flags
 from .kimik2_5 import KimiK2_5
@@ -141,7 +141,7 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
             self.data_parallel_splits,
             *self.signal_buffers,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),
@@ -158,7 +158,7 @@ class KimiK2_5Model(
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
 
     model_config_cls: ClassVar[type[Any]] = KimiK2_5Config
-    batch_processor_cls: ClassVar[type[KimiK2_5BatchProcessor]] = (
+    batch_processor_cls: ClassVar[type[KimiK2_5BatchProcessorBase[Any]]] = (
         KimiK2_5BatchProcessor
     )
 
@@ -216,7 +216,7 @@ class KimiK2_5Model(
         self.vision_model, self.language_model = self.load_model(session)
 
         if self._batch_processor is not None:
-            assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
+            assert isinstance(self._batch_processor, KimiK2_5BatchProcessorBase)
             assert self.model_config is not None
             self._batch_processor.bind_model_config(self.model_config)
             assert self.vision_model is not None
@@ -293,19 +293,6 @@ class KimiK2_5Model(
         dtype = self.dtype
         quant_config = parse_quant_config(config, state_dict, dtype)
 
-        # Kimi K2.5 expects expert B weights in the 5D layout that the AMD
-        # `block_scaled_grouped_matmul_amd_preb` kernel reads, and the per-expert
-        # B-scales in the 4D-cell layout the same kernel addresses via
-        # `Shuffler.scale_4d_byte_off`. The OG weight adapter only renames
-        # keys, so do both CPU preshuffles here and flip the QuantConfig
-        # flag so `MoEQuantized` dispatches to the preb path. Must stay in
-        # lockstep with the weight adapter.
-        if quant_config is not None and quant_config.is_mxfp4:
-            preshuffle_block_scaled_b_experts(state_dict)
-            preshuffle_block_scaled_b_scales(state_dict)
-            quant_config = replace(
-                quant_config, block_scaled_preshuffled_b=True
-            )
         shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
             infer_kimi_nvfp4_weight_flags(
                 state_dict,
@@ -713,8 +700,9 @@ class KimiK2_5Model(
 
             # Unmarshal the KV cache arguments.
             kv_inputs = self.kv_params.unflatten_kv_inputs(variadic_args_iter)
-            assert isinstance(kv_inputs, KVCacheInputs)
-            kv_caches_per_dev = list(kv_inputs.inputs)
+            kv_caches_per_dev = tree.leaves(
+                kv_inputs, leaf=KVCacheInputsPerDevice
+            )
 
             # Unmarshal the batch context lengths
             batch_context_lengths = [
@@ -780,7 +768,7 @@ class KimiK2_5Model(
         per-image order) stays encapsulated in the batch processor; the cache
         only ever sees the per-image-ordered output.
         """
-        assert isinstance(self._batch_processor, KimiK2_5BatchProcessor)
+        assert isinstance(self._batch_processor, KimiK2_5BatchProcessorBase)
         embeddings, token_counts = (
             self._batch_processor.encode_uncached_chunked(selection)
         )
@@ -829,7 +817,7 @@ class KimiK2_5Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> KimiK2_5ModelInputs:
         """Delegates to the batch processor; typed for Eagle subclasses."""

@@ -19,7 +19,6 @@ model:
   max_length: 8192
   kv_cache:
     device_memory_utilization: 0.95
-    enable_prefix_caching: false
 
 runtime:
   max_batch_size: 64

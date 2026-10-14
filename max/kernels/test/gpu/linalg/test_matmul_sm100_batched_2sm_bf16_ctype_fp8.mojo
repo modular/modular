@@ -16,12 +16,10 @@ from std.testing import assert_equal
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 
 # from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
-    Coord,
     CoordLike,
     Idx,
     TileTensor,
@@ -81,16 +79,14 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]))
+    var a_shape = row_major(batch, m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            batch,
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        batch,
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
-    var c_ref_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
+    var c_shape = row_major(batch, m, Idx[NType.static_value])
+    var c_ref_shape = row_major(batch, m, Idx[NType.static_value])
 
     var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
     var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
@@ -129,8 +125,8 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
                         b_type
                     ]()
     else:
-        rand(a_host._storage, a_host.num_elements(), min=-1.0, max=1.0)
-        rand(b_host._storage, b_host.num_elements(), min=-1.0, max=1.0)
+        rand(a_host.as_span(), min=-1.0, max=1.0)
+        rand(b_host.as_span(), min=-1.0, max=1.0)
 
     # Move operands to device
     ctx.enqueue_copy(a_device, a_host_ptr)

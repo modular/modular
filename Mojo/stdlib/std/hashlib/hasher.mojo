@@ -18,8 +18,6 @@ for runtime hashing, while `default_comp_time_hasher` uses FNV-1a for
 compile-time hashing.
 """
 
-from std.collections import Span
-
 from ._ahash import AHasher
 from ._fnv1a import Fnv1a
 

@@ -20,6 +20,13 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
+from max.experimental.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Replicated,
+    Sharded,
+)
 from max.experimental.tensor import (
     Tensor,
     TensorType,
@@ -27,6 +34,7 @@ from max.experimental.tensor import (
     _default_dtype,
     default_device,
     default_dtype,
+    defaults,
     defaults_like,
     driver_tensor_type,
 )
@@ -197,7 +205,7 @@ def test_tensor_default_dtype() -> None:
 
 def test_tensor_default_device() -> None:
     t = Tensor(1)
-    assert t.device == _default_device()
+    assert t.device == _default_device().devices[0]
     assert t.dtype == _default_dtype(_default_device())
 
 
@@ -211,11 +219,60 @@ def test_defaults_like() -> None:
         assert t.type == t3.type
 
 
+def _cpu_mesh() -> DeviceMesh:
+    return DeviceMesh((CPU(), CPU()), (2,), ("tp",))
+
+
+def test_default_device_mesh_replicates_new_tensors() -> None:
+    mesh = _cpu_mesh()
+    with default_device(mesh):
+        assert defaults() == (DType.float32, mesh)
+        t = Tensor.ones([2, 3])
+        r = random.normal([2, 3])
+    for x in (t, r):
+        assert x.mesh is mesh
+        assert x.placements == (Replicated(),)
+        assert list(x.shape) == [2, 3]
+    shards = [s.to_numpy() for s in r.local_shards]
+    np.testing.assert_array_equal(shards[0], shards[1])
+
+
+def test_defaults_returns_a_device_as_a_single_device_mesh() -> None:
+    assert defaults(device=CPU())[1] == DeviceMesh.single(CPU())
+    with default_device(CPU()) as mesh:
+        assert mesh == DeviceMesh.single(CPU())
+        assert defaults()[1] == mesh
+
+
+def test_random_on_a_sharded_mapping_slices_one_tensor() -> None:
+    mesh = _cpu_mesh()
+    r = random.uniform(
+        [4, 3], dtype=DType.float32, device=DeviceMapping(mesh, (Sharded(0),))
+    )
+    assert r.placements == (Sharded(0),)
+    assert list(r.shape) == [4, 3]
+    assert [list(s.shape) for s in r.local_shards] == [[2, 3], [2, 3]]
+
+
+def test_random_rejects_a_partial_mapping() -> None:
+    with pytest.raises(ValueError, match="Partial"):
+        random.gaussian([4], device=DeviceMapping(_cpu_mesh(), (Partial(),)))
+
+
+def test_defaults_like_a_distributed_tensor_uses_its_mesh() -> None:
+    mesh = _cpu_mesh()
+    t = Tensor.zeros([4], dtype=DType.int32, device=mesh)
+    with defaults_like(t):
+        t2 = Tensor.zeros([4])
+    assert t2.mesh is mesh
+    assert t2.dtype == DType.int32
+
+
 @pytest.mark.skipif(
     not accelerator_count(), reason="requires at least 2 devices"
 )
 def test_tensor_default_device_context() -> None:
-    assert _default_device() != CPU()
+    assert _default_device().devices[0] != CPU()
     with default_device(CPU()):
         t = Tensor(1)
 

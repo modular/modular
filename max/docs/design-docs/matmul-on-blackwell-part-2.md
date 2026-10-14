@@ -23,6 +23,13 @@ resultant `C` matrix is `MxN` with `M=N=K=4096`. We’ll assume the same shape
 throughout this blog series; in the last post we’ll show how our techniques
 generalize to any shape.
 
+The snippets below are fragments, not a complete kernel. They use native
+`TileTensor` views for tensor storage and retain low-level Blackwell instruction
+fragments where appropriate. Setup helpers such as `load_tiles_ab()` stand for
+the operations explained in the following sections. The performance figures
+remain measurements of the original implementation, not of these updated
+snippets.
+
 Recall our 4 line matmul from before, and let’s zoom in on the core
 computation:
 
@@ -30,9 +37,10 @@ computation:
 acc += a[row, k].cast[DType.float32]() * b[col, k].cast[DType.float32]()
 ```
 
-Each Fused Multiply Add (FMA) operation requires two
-[global](https://max.modular.com/glossary/gpu/memory) loads and one memory
-write. The issue with global memory is that, while abundant, it's considerably
+Each iteration of this naive loop loads two values from
+[global memory](https://max.modular.com/glossary/gpu/memory) and updates the
+register accumulator with a fused multiply-add (FMA). The issue with global
+memory is that, while abundant, it's considerably
 slower than other kinds of memory. Therefore the craft of optimizing matmul is
 how to avoid or hide the memory loads and stores by leveraging the [memory
 hierarchy](https://en.wikipedia.org/wiki/Memory_hierarchy) available on the
@@ -99,7 +107,7 @@ as an intermediate value:
 
 In the second iteration, we load the next two chunks into shared memory, and we
 **add** the result of this MMA to the result from the previous iteration.This
-keeps going on for K/BK iterations (in our case 256 iterations) until we reach
+keeps going on for K/BK iterations (in our case 64 iterations) until we reach
 the result of the final tile. Once the K/BK loop in done, we will have the
 final output tile. The final result for that tile can then be written **only
 once to** global memory.
@@ -129,12 +137,21 @@ write_c_tile_to_global_memory()   # store C tile from registers to gmem
 
 We will store our `B` matrix in its transposed form to ensure coalesced layout
 when accessing. This can be done via a
-[Layout](https://max.modular.com/api/mojo/layout/layout/) transform:
+native row-major layout. The buffers below contain `M * K`, `N * K`, and
+`M * N` elements, respectively:
 
 ```mojo
-alias a_layout = Layout.row_major(M, K)
-alias b_layout = Layout.row_major(N, K) # Transposed
-...
+from std.sys import size_of
+from layout import TileTensor, coord, row_major
+from layout.tensor_core_async import tile_layout_k_major_typed
+from layout.tma_async import create_tensor_tile, create_tma_tile
+
+comptime a_layout = row_major[M, K]()
+comptime b_layout = row_major[N, K]()  # B is stored transposed.
+comptime c_layout = row_major[M, N]()
+var a = TileTensor(a_buffer, a_layout)
+var b = TileTensor(b_buffer, b_layout)
+var c = TileTensor(c_buffer, c_layout)
 ```
 
 The kernel does require some host setup changes, and we will explain the needed
@@ -146,8 +163,7 @@ The Nvidia Hopper architecture introduces the Tensor Memory Accelerator (TMA),
 a specialized hardware unit that transfers data between the GPU’s global memory
 (GMEM) and shared memory (SMEM) asynchronously.
 
-To use the TMA, we need to first create a [tensor
-tile](https://max.modular.com/api/mojo/layout/tma_async/create_tma_tile)
+To use the TMA, first create a tensor tile with `create_tensor_tile()`
 on the host and pass it to the kernel. The tensor map is a 128B data chunk
 encoding the input tensor's shape, the stride, and the global memory address.
 (The tensor map can also encode a *swizzling pattern*, an optimization we’ll
@@ -155,20 +171,29 @@ discuss a little later.) You can easily create a TMA tile in Mojo using the
 provided [APIs](https://max.modular.com/api/mojo/layout/tma_async/):
 
 ```mojo
-# Rank 2 matrix
-# A/B tiles in shared memory have shapes BMxBK and BNxBK, respectively
-a_tma_op = create_tma_tile[Index(BM, BK)](ctx, a_global_mem_address)
+# The host operands are TileTensor values, not bare addresses.
+var a_tma_op = create_tensor_tile[coord[BM, BK]](ctx, a)
+var b_tma_op = create_tensor_tile[coord[BN, BK]](ctx, b)
 
-b_tma_op = create_tma_tile[Index(BN, BK)](ctx, b_global_mem_address)
+comptime a_smem_layout = tile_layout_k_major_typed[a.dtype, BM, BK]
+comptime b_smem_layout = tile_layout_k_major_typed[b.dtype, BN, BK]
 ```
+
+The shared-memory views use these typed K-major layouts; they are constructed
+in the shared-memory setup section below. With no swizzle, the BF16 descriptor
+box is `BM * 8` elements. Eight boxes fill a `BM * 64` tile, so a plain
+row-major `BM * 64` shared view would describe the wrong physical layout.
+The kernel's by-value `a_tma_op` and `b_tma_op` arguments also require
+``@__llvm_arg_metadata(..., `nvvm.grid_constant`)`` annotations so TMA can read
+their descriptors from kernel argument storage.
 
 Below is how we use the TMA object within the kernel:
 
 ```mojo
-alias num_iters = K // BK
+comptime num_iters = K // BK
 
 for i in range(num_iters):
-  # One a single thread launches the TMA async copy.
+    # A single thread launches both TMA copies.
     if elect_one_thread:
         tma_mbar[0].expect_bytes(expected_bytes)
 
@@ -194,9 +219,11 @@ completed. Let’s go through this one at a time.
 
 `a_tma_op.async_copy` takes three arguments:
 
-- `a_smem_tile:` a `LayoutTensor` providing the tile’s shared memory address.
-- `tma_mbar:` a memory barrier to track how much data has been transferred.
-- `(i * BK, block_idx.y * BM):` is the current tile’s coordinates in global
+- `a_smem_tile`: a mutable shared-memory `TileTensor` providing the tile's
+  address. Its storage must be 128-byte aligned and match the descriptor's
+  physical layout.
+- `tma_mbar`: a memory barrier to track how much data has been transferred.
+- `(i * BK, block_idx.y * BM)`: the current tile's coordinates in global
   memory, depending on the iteration and block coordinate (see post 1).
 
 #### The need for a TMA barrier
@@ -227,9 +254,9 @@ expect from the TMA with `tma_mbar[0].expect_bytes(expected_bytes)` . The
 expected bytes is the total number of bytes in both transferred tiles.
 
 ```mojo
-alias a_expected_bytes = a_size * sizeof[a_type]()
-alias b_expected_bytes = b_size * sizeof[b_type]()
-alias expected_bytes = a_expected_bytes + b_expected_bytes
+comptime a_expected_bytes = BM * BK * size_of[a.dtype]()
+comptime b_expected_bytes = BN * BK * size_of[b.dtype]()
+comptime expected_bytes = a_expected_bytes + b_expected_bytes
 ```
 
 The TMA continuously updates the barrier with the number of bytes it has
@@ -353,9 +380,9 @@ for i in range(num_iters):
   load_tiles_ab()  #section 1
   if elect_one_thread:
       comptime for j in range(num_k_mmas):
-          alias idx = IntTuple(0, MMA_K * j)
-          alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-          alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
+          comptime idx = coord[0, MMA_K * j]
+          comptime a_offset = Int(a_smem_layout(idx)) * size_of[a_type]()
+          comptime b_offset = Int(b_smem_layout(idx)) * size_of[b_type]()
 
           # Use c_scale=0 for the first mma to initialize results and use
           # c_scale=1 subsequently to accumulate results.
@@ -396,15 +423,15 @@ memory at address `tmem_addr`. To allocate the tensor memory one needs to
 perform:
 
 ```mojo
-    # allocate all 2^18 bytes of smem for tcgen05, all 512 cols allocated
+    # Allocate all 512 columns of tensor memory, not shared memory.
     if elect_one_warp:
-        tcgen05_alloc(ptr_tmem_addr, max_tmem_cols)
+        tcgen05_alloc[1](ptr_tmem_addr, max_tmem_cols)
 
     # Ensure all threads see initialized mbarrier and
     # tensor memory allocation
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[unsafe_offset=0]
 ```
 
 This allocation turns out to be quite non-trivial. First the allocation needs
@@ -450,7 +477,7 @@ The only way to move data out from tensor memory is to move the data into
 registers first. This can be done via the `tcgen05_ld` operation:
 
 ```mojo
-c_frag = tcgen05_ld[
+var c_frag = tcgen05_ld[
     datapaths=16,
     bits=256,
     repeat = BN // 8,
@@ -522,16 +549,17 @@ outputting the 3rd tile of row 3:
 ![Outputting the 3rd tile of row 3](./img/matmul-on-blackwell-part-2/image16.jpeg)
 ///caption Outputting the 3rd tile of row 3 ///
 
-We use the `LayoutTensor.tile()` method to extract a tile of the output matrix:
+For the flat row-major output, use `TileTensor.tile()` to extract a block's
+tile without copying the data:
 
 ```mojo
-ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
+var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 ```
 
 Then we further tile it for each warp:
 
 ```mojo
-c_gmem_warp_tile = ctile.tile[BM // num_warps, BN](warp_id, 0)
+var c_gmem_warp_tile = ctile.tile[BM // num_warps, BN](warp_id(), 0)
 ```
 
 ![Tiling the output matrix for each warp](./img/matmul-on-blackwell-part-2/image17.jpeg)
@@ -556,13 +584,13 @@ be cool? If only we had a library function that did this. Mojo provides such a
 function, so this can be done succinctly:
 
 ```mojo
-c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
-    Layout.row_major(8, 4)
+var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+    row_major[8, 4]()
 ](lane_id())
 ```
 
 This might be a bit complicated for folks who have just had their first look at
-`LayoutTensor`, so let’s visualize the view for `thread 0`. The first part of
+`TileTensor`, so let’s visualize the view for `thread 0`. The first part of
 the code realizes that, since each thread stores 2 consecutive elements, the
 16x64 tile can be viewed as a 16x32 tile of 2-value vectors each:
 
@@ -570,13 +598,18 @@ the code realizes that, since each thread stores 2 consecutive elements, the
 ///caption A 16x64 tile can be viewed as a 16x32 tile of 2-value vectors each
 ///
 
-This is followed by `.distribute[Layout.row_major(8, 4)]` which distributes the
+This is followed by `.distribute[row_major[8, 4]()]` which distributes the
 16x32 vectors over 8x4 threads repeatedly as demonstrated below.
 
-The offset is calculated as `row_major(8, 4)(lane_id())`. For example,
+The native thread layout maps lane `l` to `(l // 4, l % 4)`. For example,
 `thread 0` gets the vector at `(0, 0)` in all the sub-matrices (green cell) and
-`thread 6` gets the vector at `(1, 3)` similarly (blue cells in the figure
-below). In fact, each submatrix maps identically to Nvidia’s layout in
+`thread 6` gets the vector at `(1, 2)`. For fragment coordinate
+`(m_vec, n_vec)`, this flat row-major view addresses row
+`16 * warp_id() + l // 4 + 8 * m_vec` and column `2 * (l % 4) + 8 * n_vec`
+within the block's output tile. The two scalar values in each vector occupy
+adjacent columns. This reproduces the TMEM register ordering without treating a
+nested shared layout as row-major. Each submatrix maps identically to NVIDIA's
+layout in
 [Figure 185](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=tcgen05%2520mma#tcgen05-mma-fragment-16128b):
 
 ![Submatrix mapping](./img/matmul-on-blackwell-part-2/image20.jpeg)
@@ -595,13 +628,19 @@ With this mapping, the output to global memory is trivially accomplished by a
 loop:
 
 ```mojo
-alias num_vecs_m = c_gmem_frag.shape[0]()
-alias num_vecs_n = c_gmem_frag.shape[1]()
+comptime num_vecs_m = c_gmem_frag.static_shape[0]
+comptime num_vecs_n = c_gmem_frag.static_shape[1]
 
 comptime for n_vec in range(num_vecs_n):
     comptime for m_vec in range(num_vecs_m):
-        alias i_vec = n_vec * num_vecs_m + m_vec
-        c_gmem_frag[m_vec, n_vec] = [c_frag[2 * i_vec], c_frag[2 * i_vec + 1]]
+        comptime i_vec = n_vec * num_vecs_m + m_vec
+        c_gmem_frag.store(
+            coord[m_vec, n_vec],
+            SIMD[c.dtype, 2](
+                c_frag[2 * i_vec].cast[c.dtype](),
+                c_frag[2 * i_vec + 1].cast[c.dtype](),
+            ),
+        )
 ```
 
 Using `num_vecs_n, num_vecs_m=(8,2)` as an example means that across each warp,
@@ -635,20 +674,28 @@ skipped as far. We use shared memory primarily for the input tiles, memory
 barrier, and TMEM allocation.
 
 ```mojo
-var a_smem = external_memory[Scalar[a_type],
-              address_space = AddressSpace.SHARED]())
-# Offset BMxBK for A tile
+from max.gpu.memory import external_memory
+from layout.tma_async import SharedMemBarrier
+
+comptime a_size = BM * BK
+comptime b_size = BN * BK
+var a_smem = external_memory[
+    Scalar[a_type], address_space=.SHARED, alignment=128
+]()
 var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
-# Offset BNxBK for B tile
-var tma_mbar = (b_smem + b_size).bitcast[Int64]()
-# Offset 8B for tma memory barrier
-mma_mbar = tma_mbar + 1
-# Offset 8B for mma memory barrier
-ptr_tmem_addr = mma_mbar + 1
+var tma_mbar = (b_smem + b_size).bitcast[SharedMemBarrier]()
+var mma_mbar = tma_mbar + 1
+var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
+var a_smem_tile = TileTensor[address_space=.SHARED](a_smem, a_smem_layout)
+var b_smem_tile = TileTensor[address_space=.SHARED](b_smem, b_smem_layout)
 ```
 
 The setup code above grabs the base address from dynamic shared memory
-allocation (`external_memory`), then grows the offset as shown below.
+allocation (`external_memory`), then grows the offset as shown below. For the
+BF16 `64 * 64` input tiles, each offset is a multiple of 128 bytes. The
+barriers occupy 8 bytes each and the TMEM address occupies 4 bytes. The launch
+must reserve that total dynamic shared-memory size; barrier initialization and
+its block synchronization still precede the first TMA transfer.
 
 ![`async_copy()` operation copying tile blocks to shared memory](./img/matmul-on-blackwell-part-2/image26.jpeg)
 ///caption `async_copy()` operation copying tile blocks to shared memory ///
@@ -805,25 +852,44 @@ through the library’s layout tensors and instruction itself. The only code
 changes necessary is telling TMA and `tcgen05.mma` which swizzle mode to adopt:
 
 ```mojo
-alias a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-alias b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
-#for the tma, used on writing in data from global memory
-alias a_smem_layout = tile_layout_k_major[
+comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
+comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
+comptime a_smem_layout = tile_layout_k_major_typed[
     a_type, BM, BK, swizzle_mode=a_swizzle
-]()
-alias b_smem_layout = tile_layout_k_major[
+]
+comptime b_smem_layout = tile_layout_k_major_typed[
     b_type, BN, BK, swizzle_mode=b_swizzle
-]()
+]
 
-#for the mma
-adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+var a_tma_op = create_tensor_tile[
+    coord[BM, BK], swizzle_mode=a_swizzle
+](ctx, a)
+var b_tma_op = create_tensor_tile[
+    coord[BN, BK], swizzle_mode=b_swizzle
+](ctx, b)
+
+# The 128-byte K-major atom changes both descriptor byte strides.
+comptime aSBO = 8 * BK * size_of[a_type]()
+comptime bSBO = 8 * BK * size_of[b_type]()
+comptime aLBO = 16
+comptime bLBO = 16
+
+# Reconstruct the shared views using the updated layouts.
+var a_smem_tile = TileTensor[address_space=.SHARED](a_smem, a_smem_layout)
+var b_smem_tile = TileTensor[address_space=.SHARED](b_smem, b_smem_layout)
+var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
+var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
 ```
 
-Since LayoutTensor understands swizzling, we can hide the details of the
-swizzle operations behind the layout tensor API and leave our code unchanged.
+For `BK = 64` and BF16, the 128-byte descriptor box spans the entire K
+extent, so each input tile now needs one TMA copy. TMA applies the swizzle on
+write and the matching MMA descriptor interprets it on read. The typed layout
+above describes the atom geometry; ordinary `TileTensor` indexing does not
+apply that hardware XOR automatically. Thread-level loads or stores into this
+swizzled storage must account for the swizzle explicitly.
 
 ### Performance
 
@@ -874,7 +940,20 @@ as a result we use 128B swizzling (`BN * 2B = 128B`) to avoid the conflicts.
 
 With data swizzled and packed in shared memory, we can launch the TMA store
 operation to copy the data back to global memory asynchronously. The code below
-shows how the TMA store and how it handles the synchronization. Before the TMA
+shows the native TMA store interface; the hardware-specific `stmatrix` packing
+remains an illustrative step described above, not a generic tensor copy.
+Assume it has produced consecutive `BM * TMA_BN` boxes in 128-byte-aligned
+shared storage `c_smem`, using the same 128-byte swizzle as the store
+descriptor. On the host, create `c_tma_op` with `create_tma_tile()` from
+`layout.tma_async`:
+
+```mojo
+var c_tma_op = create_tma_tile[
+    BM, TMA_BN, swizzle_mode=TensorMapSwizzle.SWIZZLE_128B
+](ctx, c)
+```
+
+Before the TMA
 issues the asynchronous store, we to fence the memory via
 `fence_async_view_proxy` to ensure previous packing in shared memory is visible
 to TMA store.
@@ -882,11 +961,12 @@ to TMA store.
 ```mojo
 # Launch one TMA store per thread
 if elect_one_warp and thread_idx.x < BN // TMA_BN:
-  # memory fence to ensure previous shared memory access
-  # is seen by TMA instruction
+    # Make the packed shared-memory data visible to TMA.
     fence_async_view_proxy()
-    c_tma_tile = ...  # setup the tile for tma
-    # c_tma_op is created similarly like a_tma_op for loading data
+    var c_tma_tile = TileTensor[address_space=.SHARED](
+        c_smem + thread_idx.x * BM * TMA_BN,
+        row_major[BM, TMA_BN](),
+    )
     c_tma_op.async_store(
         c_tma_tile,
         (block_idx.x * BN + thread_idx.x * TMA_BN, block_idx.y * BM),
@@ -902,7 +982,7 @@ After issuing the TMA store, we first commit the stores using `commit_group()`
 counter. The following `wait_group[N]()` waits util only `N` groups of stores
 are still in flight. For instance, if there are 3 committed groups,
 `wait_group[2]()` ensures the first group is completed and the last two groups
-are in flight. In the above code, `wait_group[2]()` guards all TMA stores to
+are in flight. In the above code, `wait_group[0]()` guards all TMA stores to
 finish. The ability to wait by commit groups allows to you to build pipelines
 and overlap other tasks efficiently in later optimizations.
 
@@ -974,7 +1054,7 @@ format required by `tcgen05.mma`.The most important details are`LBO` and `SBO`:
 
 In kernel 2 i.e. without swizzling, printing this out for `A` shows:
 
-```mojo
+```output
 aSBO=128
 aLBO=1024
 ```
@@ -996,7 +1076,7 @@ for the detailed encoding.
 The mathematical definition for swizzling is shown below. Given a swizzle
 defined as `Swizzle(bits, base, shift)`:
 
-```mojo
+```text
 ## A generic Swizzle functor
 # 0bxxxYYYxxxxZZZxxxx
 #                ^--^  Base is the number of least-sig bits to keep constant
@@ -1013,10 +1093,10 @@ defined as `Swizzle(bits, base, shift)`:
 If you look at the lower-level Mojo code, the swizzle is implemented as:
 
 ```mojo
-bit_msk = (1 << bits) - 1
+var bit_msk = (1 << bits) - 1
 self.yyy_mask = bit_msk << (base + max(0, shift))
 self.zzz_mask = bit_msk << (base - min(0, shift))
-swizzled = offset ^ (offset & self.yyy_mask) >> shift
+var swizzled = offset ^ (offset & self.yyy_mask) >> shift
 ```
 
 Consider the 128B swizzle where `bits=3`, `base=4`, and `shift=3`. The

@@ -10,9 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import TypeVar
 
 from typing_extensions import Self
+
+_N = TypeVar("_N", int, float)
+
+
+def _add_by_key(a: Mapping[str, _N], b: Mapping[str, _N]) -> dict[str, _N]:
+    """Sums two per-label counter maps, keeping labels either one carries."""
+    total = dict(a)
+    for key, value in b.items():
+        total[key] = total.get(key, 0) + value
+    return total
 
 
 def dkv_tier_degraded(connected_clients: int, total_clients: int) -> bool:
@@ -60,6 +72,25 @@ class KVCacheMetrics:
     """Bytes of KV read from disk."""
     inflight_disk_ops: int = 0
     """Number of in-flight disk operations."""
+    connector_loads_refused: int = 0
+    """Number of loads the connector's host and disk tiers refused.
+
+    A refused load is served by recomputing its blocks, so a steady rate of
+    these is hit rate the tiers reported and then could not deliver.
+    """
+    connector_load_failures: int = 0
+    """Number of connector loads whose copy failed.
+
+    Counted by the cache manager, which serves each one by recomputing the
+    request's prefix. A transport fault rather than a miss, so any of these is
+    worth chasing.
+    """
+    connector_offload_blocks_dropped: int = 0
+    """Number of offloaded blocks the connector's host pool had no room for.
+
+    Counted per leaf block. A pool starved by blocks pinned for in-flight
+    transfers drops offloads before its hit rate falls.
+    """
     nixl_read_blocks: int = 0
     """Number of cache blocks read via NIXL (dKV GET)."""
     nixl_write_blocks: int = 0
@@ -97,16 +128,34 @@ class KVCacheMetrics:
 
     # dKV external-tier health. These are a level and a lifetime-cumulative
     # counter read live from the connector rather than per-batch transfer
-    # deltas, so they export as gauges and reset_metrics does not clear them.
+    # deltas, so they export as gauges and take_metrics does not clear them.
     dkv_connected_clients: int = 0
-    """Number of dKV connector clients currently connected to the external tier."""
+    """Number of dKV data-parallel replicas fully connected to the external tier.
+
+    Per REPLICA, not per client. A replica owns one connector client per KV
+    cache leaf, and counts as connected only when EVERY one of them is up,
+    because one dead leaf cannot serve a block. A four-leaf replica with one
+    leaf down reports 0 here against 1 in ``dkv_total_clients``.
+    """
     dkv_total_clients: int = 0
-    """Total number of dKV connector clients, one per data-parallel replica."""
+    """Number of dKV data-parallel replicas, regardless of connection state.
+
+    The denominator for ``dkv_connected_clients``. Named "clients" from when a
+    replica owned exactly one; it counts replicas, not the per-leaf clients a
+    replica now holds.
+    """
     dkv_reconnect_attempts: int = 0
-    """Cumulative dKV reconnect attempts across all clients over the process lifetime."""
+    """Cumulative dKV reconnect attempts per replica, summed over replicas.
+
+    Per REPLICA, not per client: a replica owns one client per KV cache leaf and
+    they share a server and a network path, so they lose and recover it
+    together. The connector reports the max over a replica's leaf clients, which
+    keeps this on the same denominator as ``dkv_total_clients`` -- summing over
+    leaves would multiply a four-leaf deployment's reading by four.
+    """
 
     # Cross-node pull. Per-window deltas like nixl_read_blocks and the latency
-    # pairs, so they sum and reset_metrics clears them, unlike the three dKV
+    # pairs, so they sum and take_metrics clears them, unlike the three dKV
     # health keys above. The connector's ConnectorMetrics is the canonical
     # account of each one's unit.
     dkv_peer_attaches: int = 0
@@ -134,6 +183,22 @@ class KVCacheMetrics:
     """
     dkv_hints_rejected: int = 0
     """Cache hints that were present but the connector could not use."""
+    dkv_hints_rejected_by_reason: dict[str, int] = field(default_factory=dict)
+    """``dkv_hints_rejected`` split by why each hint went unused."""
+
+    # Per-call dKV client counters, per-window deltas keyed by RPC (or, for the
+    # lock waits, by connector entry point). Time over calls is the per-call
+    # mean, which the per-batch latency means above cannot give.
+    dkv_rpc_calls: dict[str, int] = field(default_factory=dict)
+    """dKV RPCs issued, by operation."""
+    dkv_rpc_time_ms: dict[str, float] = field(default_factory=dict)
+    """Wall time of those RPCs in milliseconds, socket wait included."""
+    dkv_rpc_socket_wait_ms: dict[str, float] = field(default_factory=dict)
+    """Milliseconds those RPCs queued for their client's one REQ socket."""
+    dkv_lock_waits: dict[str, int] = field(default_factory=dict)
+    """Times each connector entry point took the connector lock."""
+    dkv_lock_wait_ms: dict[str, float] = field(default_factory=dict)
+    """Milliseconds each entry point waited for the connector lock."""
 
     @property
     def prompt_tokens(self) -> int:
@@ -241,6 +306,12 @@ class KVCacheMetrics:
             disk_bytes_written=self.disk_bytes_written
             + other.disk_bytes_written,
             disk_bytes_read=self.disk_bytes_read + other.disk_bytes_read,
+            connector_loads_refused=self.connector_loads_refused
+            + other.connector_loads_refused,
+            connector_load_failures=self.connector_load_failures
+            + other.connector_load_failures,
+            connector_offload_blocks_dropped=self.connector_offload_blocks_dropped
+            + other.connector_offload_blocks_dropped,
             inflight_disk_ops=self.inflight_disk_ops + other.inflight_disk_ops,
             nixl_read_blocks=self.nixl_read_blocks + other.nixl_read_blocks,
             nixl_write_blocks=self.nixl_write_blocks + other.nixl_write_blocks,
@@ -282,4 +353,21 @@ class KVCacheMetrics:
             + other.dkv_peer_load_failures,
             dkv_hints_rejected=self.dkv_hints_rejected
             + other.dkv_hints_rejected,
+            dkv_hints_rejected_by_reason=_add_by_key(
+                self.dkv_hints_rejected_by_reason,
+                other.dkv_hints_rejected_by_reason,
+            ),
+            dkv_rpc_calls=_add_by_key(self.dkv_rpc_calls, other.dkv_rpc_calls),
+            dkv_rpc_time_ms=_add_by_key(
+                self.dkv_rpc_time_ms, other.dkv_rpc_time_ms
+            ),
+            dkv_rpc_socket_wait_ms=_add_by_key(
+                self.dkv_rpc_socket_wait_ms, other.dkv_rpc_socket_wait_ms
+            ),
+            dkv_lock_waits=_add_by_key(
+                self.dkv_lock_waits, other.dkv_lock_waits
+            ),
+            dkv_lock_wait_ms=_add_by_key(
+                self.dkv_lock_wait_ms, other.dkv_lock_wait_ms
+            ),
         )

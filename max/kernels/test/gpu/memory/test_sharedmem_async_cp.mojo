@@ -23,7 +23,7 @@ def copy_via_shared(
     src: ImmPointer[Float32, ImmutAnyOrigin],
     dst: MutPointer[Float32, MutAnyOrigin],
 ):
-    var thread_id = Int(thread_idx.x)
+    var thread_id = thread_idx.x
     var mem_buff: MutPointer[
         Float32, MutAnyOrigin, address_space=.SHARED
     ] = unsafe_stack_allocation[16, Float32, address_space=.SHARED]()

@@ -45,6 +45,8 @@ from std.sys import get_defined_bool
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
+from nn.attention.mha_utils import OptionalPointer, as_optional_reg
+
 
 # The kernels below already wait on dependent grids and the decode producer
 # already triggers them, but neither has an effect unless the consumer launch
@@ -1172,20 +1174,21 @@ def launch_mla_combine_kernel[
 # High-level dispatcher to be called from mla_decode_sm100_dispatch.mojo
 # ===----------------------------------------------------------------------=== #
 def mla_decode_combine_partial_outputs[
+    AttnSinkPtrType: OptionalPointer,
+    //,
     output_type: DType,
     accum_type: DType,
     head_dim: Int,
     num_splits: Int,
     ragged: Bool = False,
     warps_per_head: Int = 2,
-    has_attn_sink: Bool = False,
     split_parallel: Bool = False,
 ](
     out_accum_split: TileTensor[output_type, address_space=.GENERIC, ...],
     lse_accum_split: TileTensor[accum_type, address_space=.GENERIC, ...],
     output: TileTensor[output_type, address_space=.GENERIC, ...],
     input_row_offsets_ptr: UnsafePointer[UInt32, origin=MutAnyOrigin],
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
+    attn_sink_ptr: AttnSinkPtrType,
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -1198,6 +1201,9 @@ def mla_decode_combine_partial_outputs[
     tensor pointers, shape, and attention-sink parameters unchanged.
 
     Parameters:
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred). A non-null type applies the attention-sink
+            correction to the global LSE.
         output_type: The element type of the per-split partial output
             accumulator and the final combined output tensor.
         accum_type: The element type of the per-split LSE accumulator values.
@@ -1213,9 +1219,6 @@ def mla_decode_combine_partial_outputs[
         warps_per_head: Number of warps assigned to each attention head
             (defaults to 2). Must divide 8; controls vector load width and
             threads per block. Used only when `split_parallel` is false.
-        has_attn_sink: Whether to apply attention-sink correction to the
-            global LSE (defaults to `False`). When true, `attn_sink_ptr`
-            must be provided.
         split_parallel: Selects the split-parallel combine kernel when true,
             otherwise the main combine kernel (defaults to `False`).
 
@@ -1229,15 +1232,19 @@ def mla_decode_combine_partial_outputs[
         input_row_offsets_ptr: Pointer to cumulative token counts per batch;
             `input_row_offsets_ptr[i]` is the start token index for batch
             `i`. Used only in ragged mode.
-        attn_sink_ptr: Optional pointer to per-head attention-sink LSE values
-            of shape `[num_heads]` in natural log. Used only when
-            `has_attn_sink` is true.
+        attn_sink_ptr: Per-head attention-sink LSE values of shape
+            `[num_heads]` in natural log; ignored when `AttnSinkPtrType` is
+            null.
         batch_size: Number of batches in the request.
         seq_len: Maximum number of query tokens per batch (the padded grid
             dimension along the sequence axis).
         num_heads: Number of query attention heads.
         ctx: The device context used to enqueue the kernel.
     """
+    comptime has_attn_sink = not AttnSinkPtrType.is_null
+    var attn_sink_opt = rebind[
+        OptionalReg[UnsafePointer[Float32, MutAnyOrigin]]
+    ](as_optional_reg(attn_sink_ptr))
     comptime if split_parallel:
         launch_mla_combine_kernel_split_parallel[
             output_type,
@@ -1251,7 +1258,7 @@ def mla_decode_combine_partial_outputs[
             lse_accum_split,
             output,
             input_row_offsets_ptr,
-            attn_sink_ptr,
+            attn_sink_opt,
             batch_size,
             seq_len,
             num_heads,
@@ -1271,7 +1278,7 @@ def mla_decode_combine_partial_outputs[
             lse_accum_split,
             output,
             input_row_offsets_ptr,
-            attn_sink_ptr,
+            attn_sink_opt,
             batch_size,
             seq_len,
             num_heads,

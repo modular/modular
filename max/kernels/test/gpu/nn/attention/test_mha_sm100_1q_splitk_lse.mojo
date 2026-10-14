@@ -68,7 +68,7 @@ from std.sys import get_defined_int, get_defined_bool
 from std.testing import assert_equal
 
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -78,7 +78,11 @@ from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     clusters_per_wave,
 )
-from nn.attention.gpu.nvidia.sm100.dispatch import _bucket_ws, ws_p_ceiling
+from nn.attention.gpu.nvidia.sm100.dispatch import (
+    _bucket_ws,
+    _ws_g_p_ceiling,
+    ws_p_ceiling,
+)
 from nn.attention.mha_mask import (
     MHAMask,
     NullMask,
@@ -87,8 +91,6 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
     SlidingWindowNonCausalMask,
 )
-
-from std.utils import IndexList
 
 
 comptime _LUT_TAIL_PAD = 16
@@ -119,7 +121,6 @@ def execute_combine_test[
     # the cluster-global denominator EXACTLY ONCE (by the always-non-empty
     # rank-0 writer), never by an empty partition. This exercises that path.
     comptime USE_SINK = get_defined_bool["FA4_1Q_SPLITK_SINK", False]()
-    comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
 
     # gpt-oss-20b-like shape: 64 q-heads, 8 kv-heads (group 8). `num_kv_heads` is
     # steerable so a P=16 target can shrink the work-item count: with this tiny
@@ -182,8 +183,7 @@ def execute_combine_test[
     # Front-loaded balanced split (matches `splitk_window`); diagnostic only
     # here -- the combine writer emits the FULL O, so the oracle is full-range.
     var T = ceildiv(num_keys, BN)
-    var q_tiles = T // P
-    var r_tiles = T % P
+    var q_tiles, r_tiles = divmod(T, P)
     var cb = W * q_tiles + min(W, r_tiles)
     var ce = (W + 1) * q_tiles + min(W + 1, r_tiles)
     var win_begin = cb * BN
@@ -210,16 +210,15 @@ def execute_combine_test[
     if not (ce > cb):
         raise Error("partition window is empty (T < P?)")
 
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime kv_block_6d_layout = Layout.row_major[6]()
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
 
     var scale = rsqrt(Float32(head_size))
 
@@ -235,44 +234,42 @@ def execute_combine_test[
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
-    var input_row_offsets_lt = LayoutTensor[
-        mut=False, .uint32, row_offsets_layout
-    ](
-        input_row_offsets_dev,
-        RuntimeLayout[row_offsets_layout].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var input_row_offsets_tt = (
+        TileTensor(
+            input_row_offsets_dev,
+            row_major(Int64(len(input_row_offsets_dev))),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     # --- Q (ragged: [total_length, num_q_heads, head_size]) ---
     var q_size = total_length * num_q_heads * head_size
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
-    var q_host_tt = LayoutTensor[dtype, q_ragged_layout](
-        q_host.unsafe_ptr(),
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var q_host_tt = TileTensor(
+        q_host, row_major(total_length, Idx[num_q_heads], Idx[head_size])
     )
     random(q_host_tt)
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q_dev, q_host)
-    var q_lt = LayoutTensor[mut=False, dtype, q_ragged_layout](
-        q_dev,
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
-    )
+    var q_tt = TileTensor(
+        q_dev, row_major(total_length, Idx[num_q_heads], Idx[head_size])
+    ).as_imm()
 
     # --- Paged KV blocks (shared physical storage for both runs) ---
     var num_paged_blocks = ceildiv(num_keys, page_size) * batch_size + 4
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_params.num_heads,
-        head_size,
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_paged_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        2 * num_layers * page_size * kv_params.num_heads * head_size
     )
+    blocks_strides[1] = Int64(
+        num_layers * page_size * kv_params.num_heads * head_size
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
     var kv_block_size = (
         num_paged_blocks
         * 2
@@ -282,17 +279,11 @@ def execute_combine_test[
         * head_size
     )
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](kv_block_size)
-    var kv_block_host_tt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_host.unsafe_ptr(),
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_host_tt = TileTensor(kv_block_host, blocks_layout)
     random(kv_block_host_tt)
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
     ctx.enqueue_copy(kv_block_dev, kv_block_host)
-    var kv_block_paged_lt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_dev,
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_paged_tt = TileTensor(kv_block_dev, blocks_layout)
 
     # --- Full lookup table (unique physical block per logical page) ---
     var full_pages = ceildiv(num_keys, page_size)
@@ -313,33 +304,28 @@ def execute_combine_test[
     cache_lengths_host[0] = UInt32(cache_length)
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
-    var cache_lengths_lt = LayoutTensor[
-        mut=False, .uint32, cache_lengths_layout
-    ](
-        cache_lengths_dev,
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
+    var cache_lengths_tt = (
+        TileTensor(cache_lengths_dev, row_major(Int64(len(cache_lengths_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size * lut_cols
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
-    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
-        paged_lut_dev,
-        RuntimeLayout[paged_lut_layout].row_major(
-            IndexList[2](batch_size, lut_cols)
-        ),
+    var paged_lut_tt = (
+        TileTensor(paged_lut_dev, row_major(Int64(batch_size), Int64(lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        # `flash_attention`/`mha_gpu_naive` read both the `k` and `v` cache
-        # views, which are disjoint kv_idx halves of one `blocks` buffer sharing
-        # its origin, so the nested-origin exclusivity check rejects passing
-        # both. Declare the block origin as UnsafeAnyOrigin to opt out of
-        # exclusivity checking (mirrors `test_mha_sm100_1q_sink.mojo`).
-        kv_block_paged_lt.as_unsafe_any_origin(),
-        cache_lengths_lt,
-        paged_lut_lt,
+    var kv_collection = Collection(
+        # K and V occupy disjoint per-page regions; erased origins allow
+        # the attention kernel to borrow both cache views.
+        kv_block_paged_tt.as_unsafe_any_origin(),
+        cache_lengths_tt,
+        paged_lut_tt,
         UInt32(valid_length),
         UInt32(num_keys),
     )
@@ -348,11 +334,9 @@ def execute_combine_test[
 
     var test_out_size = total_length * num_q_heads * head_size
     var test_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
-    var test_out_lt = LayoutTensor[dtype, output_layout](
-        test_out_dev.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var test_out_tt = TileTensor(
+        test_out_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
 
     # --- Per-head sink weights. `num_q_heads` entries (sinks are indexed by the
@@ -370,31 +354,32 @@ def execute_combine_test[
             sinks_host[h] = Scalar[dtype](0)
     var sinks_dev = ctx.enqueue_create_buffer[dtype](num_q_heads)
     ctx.enqueue_copy(sinks_dev, sinks_host)
-    var sinks_lt = LayoutTensor[mut=False, dtype, sink_layout](
-        sinks_dev.unsafe_ptr().as_unsafe_any_origin(),
-        RuntimeLayout[sink_layout].row_major(IndexList[1](num_q_heads)),
+    var sinks_tt = (
+        TileTensor(sinks_dev, row_major(Int64(len(sinks_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     comptime if USE_SINK:
         flash_attention[ragged=True, sink=True](
-            test_out_lt,
-            q_lt,
+            test_out_tt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            input_row_offsets_lt,
+            input_row_offsets_tt,
             scale,
             ctx,
-            sink_weights=sinks_lt,
+            sink_weights=sinks_tt,
         )
     else:
         flash_attention[ragged=True](
-            test_out_lt,
-            q_lt,
+            test_out_tt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            input_row_offsets_lt,
+            input_row_offsets_tt,
             scale,
             ctx,
         )
@@ -404,20 +389,18 @@ def execute_combine_test[
     # oracle is plain `mha_gpu_naive` over the entire cache with the same mask
     # (no windowing, no per-partition weight). Reuses Run 1's paged collection.
     var ref_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
-    var ref_out_lt = LayoutTensor[dtype, output_layout](
-        ref_out_dev.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var ref_out_tt = TileTensor(
+        ref_out_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     comptime if USE_SINK:
         mha_gpu_naive[ragged=True, sink=True](
-            q_lt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            ref_out_lt,
-            input_row_offsets_lt,
+            ref_out_tt,
+            input_row_offsets_tt,
             scale,
             batch_size,
             valid_length,
@@ -426,16 +409,16 @@ def execute_combine_test[
             head_size,
             group,
             ctx,
-            sinks_lt,
+            sinks_tt,
         )
     else:
         mha_gpu_naive[ragged=True](
-            q_lt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            ref_out_lt,
-            input_row_offsets_lt,
+            ref_out_tt,
+            input_row_offsets_tt,
             scale,
             batch_size,
             valid_length,
@@ -562,6 +545,15 @@ def main() raises:
 
     assert_equal(ws_p_ceiling[148](24), UInt32(37))
     assert_equal(ws_p_ceiling[148](25), UInt32(35))
+
+    # The WS-G ceiling matches `ws_p_ceiling` inside the one-wave sweep and
+    # follows the one-wave split past it. Raw grids 128 and 256 are Inkling
+    # decode at batch 32 and 64 with 4 KV heads.
+    assert_equal(_ws_g_p_ceiling[148](24), UInt32(37))
+    assert_equal(_ws_g_p_ceiling[148](32), UInt32(4))
+    assert_equal(_ws_g_p_ceiling[148](64), UInt32(2))
+    assert_equal(_ws_g_p_ceiling[148](128), UInt32(1))
+    assert_equal(_ws_g_p_ceiling[148](256), UInt32(1))
 
     # The `_bucket_ws` saturation guard. A `by_cache` of 0 is a cache too short
     # for a rung, which is the only cache the guard applies to.

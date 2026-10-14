@@ -187,11 +187,11 @@ def bench_rms_norm_fused_fp8[
 
             var fp8_output_tt = TileTensor(
                 cb_fp8_output.offset_ptr(iteration),
-                row_major(Coord(rows, cols)),
+                row_major(rows, cols),
             )
             var scales_tt = TileTensor(
                 scales_base_ptr,
-                row_major(Coord(Idx[1], rows)),
+                row_major(Idx[1], rows),
             )
 
             quantize_dynamic_scaled_fp8[
@@ -349,11 +349,11 @@ def bench_rms_norm_fused_fp8[
 
     var fp8_output_tt_verify = TileTensor(
         fp8_verify_base_ptr,
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var scales_tt_verify = TileTensor(
         scales_base_ptr,
-        row_major(Coord(Idx[1], rows)),
+        row_major(Idx[1], rows),
     )
 
     quantize_dynamic_scaled_fp8[

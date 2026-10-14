@@ -35,7 +35,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def test_reshape_fuses_into_gather_data_inner_dynamic(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """``gather(reshape(x, [2, D]), indices)`` with an INNER dynamic dim ``D``.
 

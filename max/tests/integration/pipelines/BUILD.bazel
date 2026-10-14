@@ -36,16 +36,12 @@ modular_eager_py_test(
         # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
         "MAX_EAGER_EXECUTOR": "fallback-internal",
     },
-    ignore_extra_deps = [
-        # lazy import
-        "//max/python/max/_interpreter_ops",
-    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
     deps = [
-        "//max/python/max/_interpreter_ops",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
@@ -180,21 +176,55 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_model_manifest_hf",
+    name = "test_auto_model",
     size = "large",
-    srcs = ["test_model_manifest_hf.py"],
-    env_inherit = ["HF_TOKEN"],
+    srcs = ["test_auto_model.py"],
+    ignore_extra_deps = [
+        # Resolve SmolLM and its EAGLE draft by name at runtime.
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
     tags = [
-        "manual",
         "no-sandbox",
         "requires-network",
-        "run-in-hf-workflow",
     ],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/weights",
-        requirement("huggingface-hub"),
-        requirement("transformers"),
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_auto_model_graph_capture_gpu",
+    size = "large",
+    srcs = ["test_auto_model_graph_capture_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "23",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Resolves SmolLM2 by name at runtime.
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
     ],
 )
 
@@ -215,7 +245,8 @@ modular_py_test(
             "test_pipeline_config_resolve.py",
             "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",
-            "test_model_manifest_hf.py",
+            "test_auto_model.py",
+            "test_video.py",
             "test_weight_loader.py",
         ],
     ),
@@ -230,6 +261,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/context",
@@ -238,6 +270,22 @@ modular_py_test(
         "//max/python/max/support",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:numerics",
+        requirement("numpy"),
+    ],
+)
+
+# The shared video decoder needs neither network nor GPU, so it gets its own
+# target rather than riding along with the network-tagged suite above.
+modular_py_test(
+    name = "test_video",
+    srcs = ["test_video.py"],
+    target_compatible_with = select({
+        # libx264 encode via PyAV is unreliable on the macOS CI image.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/pipelines/context",
         requirement("av"),
         requirement("numpy"),
     ],
@@ -271,6 +319,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -280,6 +329,28 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_capture_compiled_callable_gpu",
+    size = "medium",
+    srcs = ["test_graph_capture_compiled_callable_gpu.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
@@ -318,6 +389,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],
@@ -328,44 +400,6 @@ modular_py_test(
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:numerics",
-        requirement("numpy"),
-    ],
-)
-
-modular_py_test(
-    name = "tests_gpu",
-    size = "large",
-    srcs = glob(
-        ["**/*_gpu.py"],
-        exclude = [
-            "test_attention_dispatch_resolver_gpu.py",
-            "test_mla_probe_strategy_gpu.py",
-            "test_smollm2_lora_modulev3_gpu.py",
-            "test_structured_output_spec_decode_gpu.py",
-        ],
-    ),
-    exec_properties = {
-        "test.resources:gpu-memory": "22",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    ignore_extra_deps = [
-        # Used as a pytest plugin
-        "//max/tests/integration/test_common:registry",
-    ],
-    tags = [
-        "gpu",
-        "manual",  # TODO(AITLIB-293)
-        "no-sandbox",
-        "requires-network",
-        "run-in-hf-workflow",
-    ],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/context",
-        "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/modeling",
-        "//max/tests/integration/test_common:registry",
         requirement("numpy"),
     ],
 )

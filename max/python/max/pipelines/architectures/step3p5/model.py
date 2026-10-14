@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
+from max import tree
 from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
@@ -75,7 +76,11 @@ class Step3p5Inputs(Llama3Inputs):
         return (
             *base,
             *self.signal_buffers,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
             *self.ep_inputs,
         )
 
@@ -295,9 +300,7 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     @override
     def _wire_batch_processor(
-        self,
-        model: Any = None,
-        model_config: Any = None,
+        self, model: Model, model_config: Step3p5Config
     ) -> None:
         super()._wire_batch_processor(model, model_config)
         batch_processor = self.batch_processor

@@ -61,7 +61,7 @@ namespace M::KGEN {
 /// as signed.
 class DTypeValue {
 public:
-  /// Get an integer value.
+  /// Get an integer value. Signedness is taken from `dtype`, not `value`.
   DTypeValue(APSInt value, KGENDType dtype);
 
   /// Get a floating point value.
@@ -76,17 +76,13 @@ public:
   /// Raw data constructor.
   DTypeValue(APInt data, KGENDType dtype);
 
-  /// Compare two dtype values.
-  /// NOTE: We use APInt::isSameValue to compare the data because
-  /// APInt::operator== asserts when comparing APInts with different bit widths.
-  /// This can happen when the same logical value is stored with different bit
-  /// widths (e.g., index types on 32-bit vs 64-bit targets).
+  /// Bit width is ignored: it differs across targets for index-like dtypes.
   bool operator==(const DTypeValue &rhs) const {
-    return dtype == rhs.dtype && APInt::isSameValue(data, rhs.data);
+    return dtype == rhs.dtype && APSInt::isSameValue(data, rhs.data);
   }
 
   /// Get the underlying data.
-  const APInt &getData() const { return data; }
+  const APSInt &getData() const { return data; }
 
   /// Get the dtype.
   KGENDType getDType() const { return dtype; }
@@ -107,8 +103,8 @@ private:
   /// Default constructor accessible only by the attribute storage class.
   DTypeValue() {}
 
-  /// All values are stored as `APInt`s.
-  APInt data;
+  /// All values are stored as `APSInt`s, signed iff the dtype is.
+  APSInt data;
 
   /// The dtype of the value. This indicates how to interpret `data`.
   KGENDType dtype;

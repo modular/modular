@@ -23,7 +23,6 @@ Memory layout (low to high address):
     [KV: num_kv_stages * (BN//2) * BK0 elements of qkv_dtype]
     [correction: BM elements of Float32]
     [barriers: (num_fixed + 2*num_kv_stages) SharedMemBarriers]
-    [tmem_addr: 1 UInt32]
 
 The P buffer is unique to this kernel: P@V uses SS MMA (both operands from
 SMEM), so softmax must write P to SMEM after computing exp(S). In FA4,
@@ -105,11 +104,6 @@ struct Depth512AttentionSMem[
         Self.correction_byte_offset + Self.correction_bytes
     )
     comptime mbar_bytes: Int = Self.total_mbars * size_of[SharedMemBarrier]()
-
-    # tmem_addr: 1 UInt32, immediately after the barriers.
-    comptime tmem_addr_byte_offset: Int = (
-        Self.mbar_byte_offset + Self.mbar_bytes
-    )
 
     # ---- element-count offsets (for compatibility with existing callers) ------
 
@@ -206,13 +200,8 @@ struct Depth512AttentionSMem[
         """
         return (self.base + Self.mbar_byte_offset).bitcast[SharedMemBarrier]()
 
-    @inline(.always)
-    def tmem_addr_ptr(self) -> SharedMemPointer[UInt32]:
-        """Pointer to the single UInt32 storing the TMEM address."""
-        return (self.base + Self.tmem_addr_byte_offset).bitcast[UInt32]()
-
     @staticmethod
     @inline(.always)
     def smem_size() -> Int:
         """Total dynamic shared memory bytes required."""
-        return Self.tmem_addr_byte_offset + size_of[UInt32]()
+        return Self.mbar_byte_offset + Self.mbar_bytes

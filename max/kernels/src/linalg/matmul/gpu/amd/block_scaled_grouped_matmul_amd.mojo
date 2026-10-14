@@ -30,7 +30,12 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
 from max.gpu.memory import CacheOperation
 
-from layout import Coord, Idx, TensorLayout, TensorEngine, TileTensor
+from layout import (
+    Idx,
+    TensorLayout,
+    TensorEngine,
+    TileTensor,
+)
 from layout.tile_layout import row_major
 
 from std.utils import StaticTuple
@@ -38,6 +43,22 @@ from std.utils import StaticTuple
 from ....arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from .block_scaled_matmul_amd import BlockScaledMatmulAMD
 from .block_scaled_matmul_amd_preb import BlockScaledMatmulAMD_PreB
+from linalg.swiglu_activation import swiglu, swiglu_activation_type
+
+
+def _validate_block_scaled_grouped_rows(
+    c_rows: Int, a_rows: Int, a_scale_rows: Int
+) raises:
+    """Validates the token-row extents, the only dynamic grouped dimensions.
+
+    Every other extent is static, so `_launch_block_scaled_grouped` checks
+    those with `comptime assert`. Raised errors remain active in release
+    builds.
+    """
+    if c_rows < 0 or a_rows < 0:
+        raise Error("grouped GEMM requires nonnegative row counts")
+    if c_rows != a_rows or a_scale_rows != a_rows:
+        raise Error("grouped C, A, and A scales must have matching row counts")
 
 
 @inline(.always)
@@ -45,22 +66,23 @@ def _waves_per_eu_attr[waves_per_eu: Int]() -> __mlir_type.`!kgen.string`:
     # `amdgpu-waves-per-eu` "1,MAX" cap (avoids EU over-subscription); 0 => "1,8"
     # (CDNA4 max waves/SIMD) = non-binding default. Literal per branch: the LLVM
     # passthrough attr needs a StringLiteral, not a computed string.
-    comptime if waves_per_eu == 1:
-        return "1,1".value
-    elif waves_per_eu == 2:
-        return "1,2".value
-    elif waves_per_eu == 3:
-        return "1,3".value
-    elif waves_per_eu == 4:
-        return "1,4".value
-    elif waves_per_eu == 5:
-        return "1,5".value
-    elif waves_per_eu == 6:
-        return "1,6".value
-    elif waves_per_eu == 7:
-        return "1,7".value
-    else:
-        return "1,8".value
+    comptime match waves_per_eu:
+        case 1:
+            return "1,1".value
+        case 2:
+            return "1,2".value
+        case 3:
+            return "1,3".value
+        case 4:
+            return "1,4".value
+        case 5:
+            return "1,5".value
+        case 6:
+            return "1,6".value
+        case 7:
+            return "1,7".value
+        case _:
+            return "1,8".value
 
 
 struct PreShuffledBGroupedGEMM[
@@ -154,8 +176,9 @@ struct PreShuffledBGroupedGEMM[
         # on `xcd_stripe` alone — see the dispatcher callers' per-band notes.
         var xcd_idx = linear_idx % Self.num_xcd
         var xcd_linear_idx = linear_idx // Self.num_xcd
-        var superblock_id = xcd_linear_idx // Self.effective_xcd_stripe
-        var within_block = xcd_linear_idx % Self.effective_xcd_stripe
+        var superblock_id, within_block = divmod(
+            xcd_linear_idx, Self.effective_xcd_stripe
+        )
         return (
             superblock_id * (Self.num_xcd * Self.effective_xcd_stripe)
             + xcd_idx * Self.effective_xcd_stripe
@@ -178,7 +201,7 @@ struct PreShuffledBGroupedGEMM[
         )
     )
     @__name(
-        t"mx_preb_pers_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}{"_cds" if cluster_drain_sched else ""}{"_mc2" if mfma_cluster == 2 else ""}{"_pd3" if pipeline_depth == 3 else ""}{"_sg4" if scale_group == 4 else ""}{"_bas" if b_addr_split else ""}"
+        t"mx_preb_pers_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}{"_cds" if cluster_drain_sched else ""}{"_mc2" if mfma_cluster == 2 else ""}{"_pd3" if pipeline_depth == 3 else ""}{"_sg4" if scale_group == 4 else ""}{"_bas" if b_addr_split else ""}{"_fq" if fuse_swiglu_mxfp8 else ""}"
     )
     @__llvm_metadata(
         `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
@@ -213,6 +236,8 @@ struct PreShuffledBGroupedGEMM[
         scale_group: Int = 1,
         b_addr_split: Bool = False,
         waves_per_eu: Int = 0,
+        fuse_swiglu_mxfp8: Bool = False,
+        activation: swiglu_activation_type = swiglu[0.0],
     ](
         c_tensor: TileTensor[
             mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=CEngine
@@ -243,6 +268,10 @@ struct PreShuffledBGroupedGEMM[
         ],
         num_active_experts: Int32,
         max_padded_M: Int32,
+        # Destination for the fused epilogue's E8M0 scales, and the
+        # per-expert slot stride (0 = plain row-major).
+        c_scales_ptr: Pointer[UInt8, MutAnyOrigin],
+        c_scales_max_padded_m: UInt32,
     ):
         var _num_active_experts = Int(num_active_experts)
         var _max_padded_M = Int(max_padded_M)
@@ -263,6 +292,8 @@ struct PreShuffledBGroupedGEMM[
             pipeline_depth=pipeline_depth,
             scale_group=scale_group,
             b_addr_split=b_addr_split,
+            fuse_swiglu_mxfp8=fuse_swiglu_mxfp8,
+            activation=activation,
         ]
         # K_SCALES (= K / 32) derived from A's K byte extent. The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -275,7 +306,7 @@ struct PreShuffledBGroupedGEMM[
         if N == 0 or _num_active_experts == 0:
             return
 
-        var linear_wg = Int(block_idx.x)
+        var linear_wg = block_idx.x
         var logical_wg = Self.to_swizzled_idx(linear_wg)
 
         # grid stride loop over available work tiles using the logical WG ID
@@ -329,17 +360,23 @@ struct PreShuffledBGroupedGEMM[
             # stores) write only real-token scales; the pad-row matmul outputs
             # are discarded after the gather, so the slot tail is not
             # zero-filled.
-            var sfa_start_row = UInt32(expert_slot * _max_padded_M)
+            var sfa_start_row = expert_slot * _max_padded_M
             var sfa_padded_M = align_up(Int(M), 32)
 
-            var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+            comptime C_N = N // 2 if fuse_swiglu_mxfp8 else N
+            comptime assert LayoutC.static_shape[1] == C_N, (
+                "C's N extent must match the epilogue's output width;"
+                " a mismatch means fuse_swiglu_mxfp8 did not reach this"
+                " kernel and it would overrun c"
+            )
+            var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(C_N)
             comptime A_K_BYTES = a_tensor.static_shape[1]
-            var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
-            var b_pre_ptr = b_pre_tensor.ptr + expert_id * Int32(N) * Int32(
+            var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
+            var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
                 K_BYTES
             )
-            var sfa_ptr = sfa_tensor.ptr + sfa_start_row * UInt32(K_SCALES)
-            var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(
+            var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
+            var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(
                 K_SCALES
             )
 
@@ -348,12 +385,10 @@ struct PreShuffledBGroupedGEMM[
             # written. That is what makes the uninitialized pad scale cells in
             # `sfa` (whose V# DOES extend to `sfa_padded_M`) safe — the C rows
             # they would feed are OOB-clamped and discarded.
-            var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-            var a_tile = TileTensor(
-                a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES]))
-            )
+            var c_tile = TileTensor(c_ptr, row_major(M, Idx[C_N]))
+            var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
             var b_pre_tile = TileTensor(
-                b_pre_ptr, row_major(Coord(Idx[1], Idx[N * K_BYTES]))
+                b_pre_ptr, row_major(Idx[1], Idx[N * K_BYTES])
             )
             # NOTE: the 2D `[MN_padded, K_SCALES]` shape is a fiction —
             # the buffer is in scale-4d byte order, not row-major. Only
@@ -363,7 +398,7 @@ struct PreShuffledBGroupedGEMM[
             # TODO: switch to a flat 1D uint8 tile so the layout stops
             # mis-suggesting row-major bytes.
             var sfa_tile = TileTensor(
-                sfa_ptr, row_major(Coord(Int(sfa_padded_M), Idx[K_SCALES]))
+                sfa_ptr, row_major(sfa_padded_M, Idx[K_SCALES])
             )
             var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
@@ -398,6 +433,10 @@ struct PreShuffledBGroupedGEMM[
                     sfb_tile,
                     Int(n_tile),
                     Int(m_tile),
+                    c_scales_ptr,
+                    Int(a_start_row),
+                    expert_slot,
+                    Int(c_scales_max_padded_m),
                 )
 
                 # advance to this WG's next claim in the global counter
@@ -421,7 +460,7 @@ struct PreShuffledBGroupedGEMM[
         )
     )
     @__name(
-        t"mx_preb_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}{"_cds" if cluster_drain_sched else ""}{"_mc2" if mfma_cluster == 2 else ""}{"_pd3" if pipeline_depth == 3 else ""}{"_sg4" if scale_group == 4 else ""}{"_bas" if b_addr_split else ""}"
+        t"mx_preb_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}{"_cds" if cluster_drain_sched else ""}{"_mc2" if mfma_cluster == 2 else ""}{"_pd3" if pipeline_depth == 3 else ""}{"_sg4" if scale_group == 4 else ""}{"_bas" if b_addr_split else ""}{"_fq" if fuse_swiglu_mxfp8 else ""}"
     )
     @__llvm_metadata(
         `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
@@ -456,6 +495,8 @@ struct PreShuffledBGroupedGEMM[
         scale_group: Int = 1,
         b_addr_split: Bool = False,
         waves_per_eu: Int = 0,
+        fuse_swiglu_mxfp8: Bool = False,
+        activation: swiglu_activation_type = swiglu[0.0],
     ](
         c_tensor: TileTensor[
             mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=CEngine
@@ -486,6 +527,10 @@ struct PreShuffledBGroupedGEMM[
         ],
         num_active_experts: Int32,
         max_padded_M: Int32,
+        # Destination for the fused epilogue's E8M0 scales, and the
+        # per-expert slot stride (0 = plain row-major).
+        c_scales_ptr: Pointer[UInt8, MutAnyOrigin],
+        c_scales_max_padded_m: UInt32,
     ):
         var _max_padded_M = Int(max_padded_M)
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
@@ -505,6 +550,8 @@ struct PreShuffledBGroupedGEMM[
             pipeline_depth=pipeline_depth,
             scale_group=scale_group,
             b_addr_split=b_addr_split,
+            fuse_swiglu_mxfp8=fuse_swiglu_mxfp8,
+            activation=activation,
         ]
         # K_SCALES (= K / 32) derived from A's K byte extent. The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -525,25 +572,28 @@ struct PreShuffledBGroupedGEMM[
         var a_start_row = a_offsets[block_idx.z]
         # Preshuffled A-scales: fixed-stride slot at e * max_padded_M.
         # Per-expert tight V# bound = align_up(num_tokens, 32).
-        var sfa_start_row = UInt32(Int(block_idx.z) * _max_padded_M)
+        var sfa_start_row = block_idx.z * _max_padded_M
         var sfa_padded_M = align_up(Int(M), 32)
 
-        var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+        comptime C_N = N // 2 if fuse_swiglu_mxfp8 else N
+        var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(C_N)
         comptime A_K_BYTES = a_tensor.static_shape[1]
-        var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
-        var b_pre_ptr = b_pre_tensor.ptr + expert_id * Int32(N) * Int32(K_BYTES)
-        var sfa_ptr = sfa_tensor.ptr + sfa_start_row * UInt32(K_SCALES)
-        var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
+        var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
+        var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
+            K_BYTES
+        )
+        var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
+        var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
 
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES])))
+        var c_tile = TileTensor(c_ptr, row_major(M, Idx[C_N]))
+        var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
         var b_pre_tile = TileTensor(
-            b_pre_ptr, row_major(Coord(Idx[1], Idx[N * K_BYTES]))
+            b_pre_ptr, row_major(Idx[1], Idx[N * K_BYTES])
         )
         # See persistent_kernel for why this 2D shape is a fiction.
         # TODO: switch to a flat 1D uint8 tile.
         var sfa_tile = TileTensor(
-            sfa_ptr, row_major(Coord(Int(sfa_padded_M), Idx[K_SCALES]))
+            sfa_ptr, row_major(sfa_padded_M, Idx[K_SCALES])
         )
         var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
@@ -567,8 +617,12 @@ struct PreShuffledBGroupedGEMM[
             b_pre_tile,
             sfa_tile,
             sfb_tile,
-            Int(block_idx.x),
-            Int(block_idx.y),
+            block_idx.x,
+            block_idx.y,
+            c_scales_ptr,
+            Int(a_start_row),
+            block_idx.z,
+            Int(c_scales_max_padded_m),
         )
 
     # --------------------------------------------------------------------- #
@@ -591,6 +645,8 @@ struct PreShuffledBGroupedGEMM[
         b_addr_split: Bool = False,
         waves_per_eu: Int = 0,
         static_grid_z: Bool = False,
+        fuse_swiglu_mxfp8: Bool = False,
+        activation: swiglu_activation_type = swiglu[0.0],
     ](
         c: TileTensor[mut=True, ...],
         a: TileTensor[.uint8, ...],
@@ -603,6 +659,10 @@ struct PreShuffledBGroupedGEMM[
         num_active_experts: Int,
         ctx: DeviceContext,
         grid_m_cap: Int = -1,
+        c_scales_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[
+            UInt8, MutAnyOrigin
+        ](unsafe_from_address=16),
+        c_scales_max_padded_m: UInt32 = 0,
     ) raises:
         comptime MatmulDeviceFunctionType = BlockScaledMatmulAMD_PreB[
             BM=BM,
@@ -618,9 +678,11 @@ struct PreShuffledBGroupedGEMM[
             pipeline_depth=pipeline_depth,
             scale_group=scale_group,
             b_addr_split=b_addr_split,
+            fuse_swiglu_mxfp8=fuse_swiglu_mxfp8,
+            activation=activation,
         ]
 
-        comptime N = c.static_shape[1]
+        comptime N = c.static_shape[1] * (2 if fuse_swiglu_mxfp8 else 1)
         comptime K_BYTES = (
             b_pre.static_shape[1] // N if b_pre.flat_rank
             == 2 else b_pre.static_shape[2]
@@ -693,6 +755,8 @@ struct PreShuffledBGroupedGEMM[
                 scale_group,
                 b_addr_split,
                 waves_per_eu,
+                fuse_swiglu_mxfp8,
+                activation,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -704,6 +768,8 @@ struct PreShuffledBGroupedGEMM[
                 expert_ids_i,
                 Int32(num_active_experts),
                 Int32(max_padded_M),
+                c_scales_ptr,
+                c_scales_max_padded_m,
                 grid_dim=(Self.total_wg, 1, 1),
                 block_dim=MatmulDeviceFunctionType.num_threads,
             )
@@ -738,6 +804,8 @@ struct PreShuffledBGroupedGEMM[
                 scale_group,
                 b_addr_split,
                 waves_per_eu,
+                fuse_swiglu_mxfp8,
+                activation,
             ]
             # grid.y cap: decode cap when supplied, else full A-scale stride.
             var m_cap = (
@@ -759,6 +827,8 @@ struct PreShuffledBGroupedGEMM[
                 expert_ids_i,
                 Int32(num_active_experts),
                 Int32(max_padded_M),
+                c_scales_ptr,
+                c_scales_max_padded_m,
                 grid_dim=(
                     ceildiv(N, BN),
                     ceildiv(m_cap, BM),
@@ -782,7 +852,9 @@ struct PreShuffledBGroupedGEMM[
         )
     )
 )
-@__name(t"mxfp4_grouped_{out_dtype}_BM{BM}_BN{BN}_WM{WM}_WN{WN}_BK{BK_ELEMS}")
+@__name(
+    t"mx_grouped_lb{(32 * matrix_format.bits_per_element()) // 8}{"" if matrix_format == b_matrix_format else "_w4a8"}_{out_dtype}_BM{BM}_BN{BN}_WM{WM}_WN{WN}_BK{BK_ELEMS}"
+)
 def block_scaled_grouped_matmul_amd_kernel[
     BM: Int,
     BN: Int,
@@ -805,6 +877,7 @@ def block_scaled_grouped_matmul_amd_kernel[
     SFBEngine: TensorEngine,
     AOffsetsEngine: TensorEngine,
     ExpertIdsEngine: TensorEngine,
+    b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ](
     c_tensor: TileTensor[
         mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=CEngine
@@ -833,19 +906,21 @@ def block_scaled_grouped_matmul_amd_kernel[
     ],
     num_active_experts: Int32,
 ):
-    """MXFP4 grouped matmul kernel with expert dispatch via block_idx.z.
+    """Block-scaled grouped matmul kernel with expert dispatch via block_idx.z.
 
-    b_tensor and sfb_tensor are flattened from 3D to 2D:
-      b: [num_experts*N, K//2], sfb: [num_experts*N, K//32]
+    A and B carry independent `f8f6f4` encodings, so their byte widths differ
+    when they differ (E4M3 A is `K` bytes wide, E2M1 B `K//2`). b_tensor and
+    sfb_tensor are flattened from 3D to 2D:
+      b: [num_experts*N, K*b_bits//8], sfb: [num_experts*N, K//32]
 
     Parameters:
         BM: Block tile rows (output M per block).
         BN: Block tile cols (output N per block).
-        BK_ELEMS: Block tile K in logical FP4 elements.
+        BK_ELEMS: Block tile K in logical elements.
         WM: Warp tile rows; `BM` must be divisible by `WM`.
         WN: Warp tile cols; `BN` must be divisible by `WN`.
-        matrix_format: `f8f6f4` operand encoding for A and B; the tile byte
-            widths are derived from it.
+        matrix_format: `f8f6f4` encoding of A; A's tile byte width is derived
+            from it.
         out_dtype: Element type of the output tensor `c_tensor`.
         LayoutC: Compile-time layout of the output tensor `c_tensor`.
         LayoutA: Compile-time layout of the A operand `a_tensor`.
@@ -864,19 +939,23 @@ def block_scaled_grouped_matmul_amd_kernel[
         AOffsetsEngine: Engine of the token offsets tensor `a_offsets`.
         ExpertIdsEngine: Engine of the expert indices tensor
             `expert_ids`.
+        b_matrix_format: `f8f6f4` encoding of B, defaulting to
+            `matrix_format`; B's tile byte width is derived from it.
 
     Args:
         c_tensor: Output matrix `[total_tokens, N]` of dtype `out_dtype`,
             indexed by per-expert token offsets.
-        a_tensor: Packed activations `[total_tokens, K//2]` uint8, two
-            MXFP4 nibbles per byte.
-        b_tensor: Expert weights `[num_experts*N, K//2]` uint8, flattened
-            from 3D `[num_experts, N, K//2]`, two MXFP4 nibbles per byte.
+        a_tensor: Activations `[total_tokens, K*a_bits//8]` as raw uint8
+            bytes in the `matrix_format` encoding (`K//2` at MXFP4, `K` at
+            MXFP8).
+        b_tensor: Expert weights `[num_experts*N, K*b_bits//8]` as raw uint8
+            bytes in the `b_matrix_format` encoding, flattened from 3D
+            `[num_experts, N, K*b_bits//8]`.
         sfa_tensor: A block scales `[total_tokens, K//32]` as
-            `float8_e8m0fnu`, one scale per 32 MXFP4 elements.
+            `float8_e8m0fnu`, one scale per 32 logical elements.
         sfb_tensor: B block scales `[num_experts*N, K//32]` as
             `float8_e8m0fnu`, flattened from 3D `[num_experts, N, K//32]`,
-            one scale per 32 MXFP4 elements.
+            one scale per 32 logical elements.
         a_offsets: Token offsets `[num_active_experts+1]` uint32; expert
             slot `e` spans rows `a_offsets[e]` to `a_offsets[e+1]`.
         expert_ids: Expert indices `[num_active_experts]` int32;
@@ -895,6 +974,7 @@ def block_scaled_grouped_matmul_amd_kernel[
         WM=WM,
         WN=WN,
         matrix_format=matrix_format,
+        b_matrix_format=b_matrix_format,
     ]
     comptime N = c_tensor.static_shape[1]
     comptime K_BYTES = b_tensor.static_shape[1]  # K//2
@@ -914,17 +994,20 @@ def block_scaled_grouped_matmul_amd_kernel[
     if block_idx.y >= ceildiv(Int(M), BM):
         return
 
-    var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+    # 64-bit offsets, as in `grouped_matmul.mojo`. B counts packed bytes, so it
+    # passes Int32 once the expert stack exceeds 2 GiB (Kimi K3 gate/up at 4
+    # devices); A and C scale with token rows.
+    var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
     comptime A_K_BYTES = a_tensor.static_shape[1]
-    var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
-    var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K_BYTES)
-    var sfa_ptr = sfa_tensor.ptr + a_start_row * UInt32(K_SCALES)
-    var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
+    var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
+    var b_ptr = b_tensor.ptr + Int(expert_id) * Int(N) * Int(K_BYTES)
+    var sfa_ptr = sfa_tensor.ptr + Int(a_start_row) * Int(K_SCALES)
+    var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
 
-    var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-    var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES])))
+    var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+    var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
     var b_tile = TileTensor(b_ptr, row_major[N, K_BYTES]())
-    var sfa_tile = TileTensor(sfa_ptr, row_major(Coord(Int(M), Idx[K_SCALES])))
+    var sfa_tile = TileTensor(sfa_ptr, row_major(M, Idx[K_SCALES]))
     var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
     Kernel.run[
@@ -949,6 +1032,7 @@ def block_scaled_grouped_matmul_amd_kernel[
 
 def block_scaled_grouped_matmul_amd[
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+    b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[.uint8, ...],
@@ -961,15 +1045,20 @@ def block_scaled_grouped_matmul_amd[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """Launch native MXFP4 grouped matmul on AMD CDNA4.
+    """Launch native block-scaled grouped matmul on AMD CDNA4.
+
+    `matrix_format` describes A; B defaults to the same encoding. Mixed
+    E4M3 FP8 A and packed E2M1 FP4 B use independent byte strides and
+    hardware fragments. This entry point uses the direct row-major kernel;
+    preshuffled and persistent entry points retain their equal-format API.
 
     Grouped matmul for MoE: dispatches one expert per block_idx.z,
     using BlockScaledMatmulAMD.run per expert slice.
 
     Args:
         c: Output [total_tokens, N].
-        a: Packed activations [total_tokens, K//2] uint8.
-        b: Expert weights [num_experts, N, K//2] uint8.
+        a: Activations [total_tokens, K * A_bits // 8] as raw uint8 bytes.
+        b: Expert weights [num_experts, N, K * B_bits // 8] uint8.
         a_scales: Activation scales [total_tokens, K//32] float8_e8m0fnu.
         b_scales: Weight scales [num_experts, N, K//32] float8_e8m0fnu.
         a_offsets: Token offsets [num_active_experts+1] uint32.
@@ -984,12 +1073,15 @@ def block_scaled_grouped_matmul_amd[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
     comptime K_BYTES = b.static_shape[2]
-    comptime bk_512_bytes = (512 * matrix_format.bits_per_element()) // 8
+    comptime bk_512_bytes = (512 * b_matrix_format.bits_per_element()) // 8
     comptime can_use_bk_512 = (
         K_BYTES >= bk_512_bytes and K_BYTES % bk_512_bytes == 0
     )
 
-    comptime is_fp6 = matrix_format.bits_per_element() == 6
+    comptime is_fp6 = (
+        matrix_format.bits_per_element() == 6
+        or b_matrix_format.bits_per_element() == 6
+    )
     comptime BM_wide = 96 if is_fp6 else 64
     comptime BN_wide = 64 if is_fp6 else 128
     comptime WM_wide = 32 if is_fp6 else 64
@@ -1006,6 +1098,7 @@ def block_scaled_grouped_matmul_amd[
                 WM=WM_wide,
                 WN=64,
                 matrix_format=matrix_format,
+                b_matrix_format=b_matrix_format,
             ](
                 c,
                 a,
@@ -1027,6 +1120,7 @@ def block_scaled_grouped_matmul_amd[
         WM=WM_deep,
         WN=64,
         matrix_format=matrix_format,
+        b_matrix_format=b_matrix_format,
     ](
         c,
         a,
@@ -1048,6 +1142,7 @@ def _launch_block_scaled_grouped[
     WM: Int,
     WN: Int,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+    b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[.uint8, ...],
@@ -1061,6 +1156,11 @@ def _launch_block_scaled_grouped[
     ctx: DeviceContext,
 ) raises:
     """Instantiates and launches the grouped MXFP4 kernel."""
+    comptime assert c.flat_rank == 2, "c must be rank 2"
+    comptime assert a.flat_rank == 2, "a must be rank 2"
+    comptime assert b.flat_rank == 3, "b must be rank 3"
+    comptime assert a_scales.flat_rank == 2, "a_scales must be rank 2"
+    comptime assert b_scales.flat_rank == 3, "b_scales must be rank 3"
     comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
         BN=BN,
@@ -1068,14 +1168,47 @@ def _launch_block_scaled_grouped[
         WM=WM,
         WN=WN,
         matrix_format=matrix_format,
+        b_matrix_format=b_matrix_format,
     ]
     comptime num_experts = b.static_shape[0]
     comptime N = b.static_shape[1]
-    comptime K_BYTES = b.static_shape[2]  # K//2
+    comptime K_BYTES = b.static_shape[2]  # K * b_bits // 8
 
     comptime num_experts_sf = b_scales.static_shape[0]
     comptime N_sf = b_scales.static_shape[1]
     comptime K_SCALES = b_scales.static_shape[2]  # K//32
+
+    # Only the token rows are dynamic: the expert views below and the kernel's
+    # `Idx` tiles are built from these extents (a dynamic one reads as -1).
+    # B's scale width must be checked here, since the per-expert view
+    # rebuilds it from A's and would hide a mismatch from `Kernel.run`.
+    comptime a_bits = matrix_format.bits_per_element()
+    comptime b_bits = b_matrix_format.bits_per_element()
+    comptime A_K_BYTES = a.static_shape[1]
+    comptime K_LOGICAL = A_K_BYTES * 8 // a_bits
+    comptime assert (
+        num_experts >= 0 and N > 0 and c.static_shape[1] == N
+    ), "grouped C width must match B's static N, and experts must be static"
+    comptime assert (
+        A_K_BYTES > 0
+        and K_BYTES > 0
+        and (A_K_BYTES * 8) % a_bits == 0
+        and (K_BYTES * 8) % b_bits == 0
+    ), "grouped operand byte widths must encode a positive whole logical K"
+    comptime assert (
+        K_LOGICAL == K_BYTES * 8 // b_bits and K_LOGICAL % 32 == 0
+    ), "grouped A and B must have matching logical K divisible by 32"
+    comptime assert (
+        a_scales.static_shape[1] == K_LOGICAL // 32
+    ), "grouped A scales must have one entry per 32 logical elements"
+    comptime assert (
+        num_experts_sf == num_experts
+        and N_sf == N
+        and K_SCALES == K_LOGICAL // 32
+    ), "grouped B scales must match B's expert/N axes and logical K/32"
+    _validate_block_scaled_grouped_rows(
+        Int(c.dim[0]()), Int(a.dim[0]()), Int(a_scales.dim[0]())
+    )
 
     var a_i = TileTensor(
         a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
@@ -1102,7 +1235,7 @@ def _launch_block_scaled_grouped[
         expert_ids.layout,
     )
 
-    if max_num_tokens_per_expert == 0:
+    if max_num_tokens_per_expert == 0 or num_active_experts == 0:
         return
 
     comptime out_dtype = type_of(c).dtype
@@ -1128,6 +1261,7 @@ def _launch_block_scaled_grouped[
         type_of(sfb_2d).Engine,
         type_of(a_off_i).Engine,
         type_of(expert_ids_i).Engine,
+        b_matrix_format,
     ]
 
     ctx.enqueue_function[kernel](
@@ -1149,7 +1283,10 @@ def _launch_block_scaled_grouped[
 
 
 def block_scaled_grouped_matmul_amd_preb[
-    lane_bytes: Int = 0, fp6_format: Int = 0
+    lane_bytes: Int = 0,
+    fp6_format: Int = 0,
+    fuse_swiglu_mxfp8: Bool = False,
+    activation: swiglu_activation_type = swiglu[0.0],
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[.uint8, ...],
@@ -1164,6 +1301,10 @@ def block_scaled_grouped_matmul_amd_preb[
     estimated_total_m: Int = 0,
     decode_grid_m_cap: Int = -1,
     decode_grid_m_rows: Int = 0,
+    c_scales_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[UInt8, MutAnyOrigin](
+        unsafe_from_address=16
+    ),
+    c_scales_max_padded_m: Int = 0,
 ) raises:
     """Launches grouped MXFP4 matmul on AMD CDNA4 with pre-shuffled weights.
 
@@ -1182,6 +1323,12 @@ def block_scaled_grouped_matmul_amd_preb[
         fp6_format: 0 selects E2M3, 1 selects E3M2. Ignored unless
             `lane_bytes` resolves to 24 — both FP6 encodings put 24 bytes in a
             lane, so the byte count cannot choose between them.
+        fuse_swiglu_mxfp8: Folds the gated activation and the MXFP8
+            requantize into gemm1's epilogue. `c` then carries half the
+            matmul's N as packed E4M3 and `c_scales_ptr` receives its E8M0
+            block scales. Requires the gate_up weight sigma-permuted on N.
+        activation: The gated activation the fused epilogue applies, selected
+            at compile time (defaults to `swiglu`).
 
     Args:
         c: Output tensor [total_tokens, N].
@@ -1202,6 +1349,10 @@ def block_scaled_grouped_matmul_amd_preb[
             selecting the direct kernel over the persistent one; not a bound.
         decode_grid_m_rows: Rows grid.y must cover per expert on the decode
             bands. 0 falls back to the full A-scale stride.
+        c_scales_ptr: Destination for the fused epilogue's E8M0 scales.
+            Unread unless `fuse_swiglu_mxfp8`.
+        c_scales_max_padded_m: Per-expert slot stride for those scales; 0
+            writes plain row-major.
     """
 
     comptime assert (
@@ -1215,7 +1366,9 @@ def block_scaled_grouped_matmul_amd_preb[
         == 2 else b_pre.static_shape[1] * b_pre.static_shape[2]
     )
 
-    comptime N = c.static_shape[1]
+    # `c` carries the halved N when the epilogue is fused; recover the
+    # matmul's N, which is what the tiling and the b_pre extents use.
+    comptime N = c.static_shape[1] * (2 if fuse_swiglu_mxfp8 else 1)
     comptime packed_K = a.static_shape[1]
 
     comptime K_LOGICAL = a_scales.static_shape[1] * 32
@@ -1263,7 +1416,6 @@ def block_scaled_grouped_matmul_amd_preb[
 
     # One launch per band; only the comptime config differs, so capture the
     # runtime args once and let each band be a single line.
-    @__parameter
     def run_kernel[
         BM: Int,
         BN: Int,
@@ -1279,7 +1431,7 @@ def block_scaled_grouped_matmul_amd_preb[
         scale_group: Int = 1,
         b_addr_split: Bool = False,
         waves_per_eu: Int = 0,
-    ]() raises:
+    ]() raises {imm}:
         # The kernels' `@__name` spells only these values, and the schedule
         # knobs are not otherwise part of the symbol -- a new value here would
         # make two bands share a symbol and silently alias in an .amdgcn dump
@@ -1320,6 +1472,8 @@ def block_scaled_grouped_matmul_amd_preb[
             b_addr_split=b_addr_split,
             waves_per_eu=waves_per_eu,
             static_grid_z=use_decode_cap,
+            fuse_swiglu_mxfp8=fuse_swiglu_mxfp8,
+            activation=activation,
         ](
             c,
             a,
@@ -1332,6 +1486,8 @@ def block_scaled_grouped_matmul_amd_preb[
             num_active_experts,
             ctx,
             grid_m_cap,
+            c_scales_ptr,
+            UInt32(c_scales_max_padded_m),
         )
 
     # Autotune entry point, mirroring the AMD dense-matmul hook in

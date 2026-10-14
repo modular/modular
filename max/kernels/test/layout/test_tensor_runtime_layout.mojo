@@ -17,68 +17,64 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    TileTensor,
+    Coord,
+    Idx,
+    coord,
+    row_major,
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
 from layout._fillers import arange, random
+from layout.tile_layout import Layout as TileLayout
+from std.testing import assert_equal
 from layout.layout_tensor import LayoutTensorIter
 
 from std.utils import IndexList
+
+
+def print_tile_tensor(tensor: TileTensor):
+    for i in range(tensor.dim[0]()):
+        for j in range(tensor.dim[1]()):
+            print(tensor[i, j], end=" ")
+        print()
+
+
+def print_static_layout(tensor: TileTensor):
+    print(
+        TileLayout(
+            coord[tensor.static_shape[0], tensor.static_shape[1]],
+            coord[tensor.static_stride[0], tensor.static_stride[1]],
+        )
+    )
 
 
 #  CHECK-LABEL: test_fill_and_print
 def test_fill_and_print() raises:
     print("== test_fill_and_print")
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
-    var dynamic_layout = RuntimeLayout[
-        layout, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout.shape, element_type=.int32](4, 8),
-        RuntimeTuple[layout.stride, element_type=.int32](8, 1),
+    var storage = List(length=4 * 8, fill=Float32(0))
+    var tensor = TileTensor[linear_idx_type=.int32](
+        storage, row_major(Coord(Int32(4), Int32(8)))
     )
-
-    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
-
-    var tensor = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](storage, dynamic_layout)
     arange(tensor)
 
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
     # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-    print(tensor)
+    print_tile_tensor(tensor)
 
 
 #  CHECK-LABEL: test_set_and_get_items
 def test_set_and_get_items() raises:
     print("== test_set_and_get_items")
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
-    var dynamic_layout = RuntimeLayout[
-        layout, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout.shape, element_type=.int32](4, 4),
-        RuntimeTuple[layout.stride, element_type=.int32](4, 1),
+    var storage = List(length=4 * 4, fill=Float32(0))
+    var tensor = TileTensor[linear_idx_type=.int32](
+        storage, row_major(Coord(Int32(4), Int32(4)))
     )
-
-    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
-
-    var tensor = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](storage, dynamic_layout)
-
     for i in range(4):
         for j in range(4):
             tensor[i, j] = Float32(i * 4 + j + 2)
@@ -87,38 +83,24 @@ def test_set_and_get_items() raises:
     # CHECK: 6.0 7.0 8.0 9.0
     # CHECK: 10.0 11.0 12.0 13.0
     # CHECK: 14.0 15.0 16.0 17.0
-    print(tensor)
+    print_tile_tensor(tensor)
 
 
 #  CHECK-LABEL: test_tile
 def test_tile() raises:
     print("== test_tile")
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
-    var dynamic_layout = RuntimeLayout[
-        layout, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout.shape, element_type=.int32](4, 4),
-        RuntimeTuple[layout.stride, element_type=.int32](4, 1),
+    var storage = List(length=4 * 4, fill=Float32(0))
+    var tensor = TileTensor[linear_idx_type=.int32](
+        storage, row_major(Coord(Int32(4), Int32(4)))
     )
-
-    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
-
-    var tensor = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](storage, dynamic_layout)
     arange(tensor)
 
     var tile = tensor.tile[2, 2](0, 0)
-    # CHECK: ((2, 2):(-1, 1))
-    print(materialize[tile.layout]())
-
-    # CHECK: ((2, 2):(4, 1))
-    print(tile.runtime_layout)
+    comptime assert tile.static_shape[0] == 2 and tile.static_shape[1] == 2
+    comptime assert tile.static_stride[0] == -1 and tile.static_stride[1] == 1
+    assert_equal(tile.layout.stride[0]().value(), 4)
+    assert_equal(tile.layout.stride[1]().value(), 1)
 
     # CHECK: ----tile-data[ 0 , 0 ]----
     # CHECK: 0.0 1.0
@@ -136,28 +118,16 @@ def test_tile() raises:
         for tile_j in range(2):
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tile_2x2 = tensor.tile[2, 2](tile_i, tile_j)
-            print(tile_2x2)
+            print_tile_tensor(tile_2x2)
 
 
 def test_tile_and_distribute():
     print("== test_tile_and_distribute")
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    var dynamic_layout = RuntimeLayout[
-        layout, element_type=.int64, linear_idx_type=.int64
-    ](
-        RuntimeTuple[layout.shape](8, 8).cast[.int64](),
-        RuntimeTuple[layout.stride](8, 1).cast[.int64](),
+    var storage = List(length=8 * 8, fill=Float32(0))
+    var tensor = TileTensor[linear_idx_type=.int64](
+        storage, row_major(Coord(Int64(8), Int64(8)))
     )
-
-    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
-
-    var tensor = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int64,
-        linear_idx_type=.int64,
-    ](storage, dynamic_layout)
     arange(tensor)
 
     # ---tile-data[ 0 , 0 ]----
@@ -232,11 +202,11 @@ def test_tile_and_distribute():
         for tile_j in range(2):
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tile_4x4 = tensor.tile[4, 4](tile_i, tile_j)
-            print(tile_4x4)
+            print_tile_tensor(tile_4x4)
             for th_i in range(4):
-                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](th_i)
+                var tile_2x2 = tile_4x4.distribute[row_major[2, 2]()](th_i)
                 print("----fragments-data[", th_i, "]----")
-                print(tile_2x2)
+                print_tile_tensor(tile_2x2)
 
 
 # CHECK-LABEL: test_tile_and_vectorize
@@ -460,59 +430,35 @@ def test_tile_and_vectorize():
 
 
 # CHECK-LABEL: test_copy_from
-def test_copy_from():
+def test_copy_from() raises:
     print("== test_copy_from")
-    comptime layout = Layout(
-        IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var dynamic_layout = TileLayout(coord[8, 8], Coord(Int32(8), Int32(1)))
+    var src_engine = List(length=64, fill=Float32(0))
+    var src_tensor = TileTensor[linear_idx_type=.int32](
+        src_engine, dynamic_layout
     )
-
-    var dynamic_layout = RuntimeLayout[
-        layout, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout.shape, element_type=.int32](8, 8),
-        RuntimeTuple[layout.stride, element_type=.int32](8, 1),
-    )
-    var src_engine = List(length=dynamic_layout.size(), fill=Float32(0))
-    var src_tensor = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](src_engine, dynamic_layout)
     arange(src_tensor)
 
-    var dst_storage = List(length=dynamic_layout.size(), fill=Float32(0))
-    var dst_tensor = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](dst_storage, dynamic_layout)
-    print(dst_tensor)
+    var dst_storage = List(length=64, fill=Float32(0))
+    var dst_tensor = TileTensor[linear_idx_type=.int32](
+        dst_storage, dynamic_layout
+    )
+    print_tile_tensor(dst_tensor)
     dst_tensor.copy_from(src_tensor)
-    print(dst_tensor)
+    for i in range(8):
+        for j in range(8):
+            assert_equal(dst_tensor[i, j], Float32(i * 8 + j))
+    print_tile_tensor(dst_tensor)
 
 
 # CHECK-LABEL: test_linspace_fill
 def test_linspace_fill():
     print("== test_linspace_fill")
-    comptime layout = Layout(
-        IntTuple(8, 8), IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    var dynamic_layout = TileLayout(coord[8, 8], Coord(Int32(8), Int32(1)))
+    var src_engine = List(length=64, fill=Float32(0))
+    var src_tensor = TileTensor[linear_idx_type=.int32](
+        src_engine, dynamic_layout
     )
-
-    var dynamic_layout = RuntimeLayout[
-        layout, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout.shape, element_type=.int32](8, 8),
-        RuntimeTuple[layout.stride, element_type=.int32](8, 1),
-    )
-    var src_engine = List(length=dynamic_layout.size(), fill=Float32(0))
-    var src_tensor = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](src_engine, dynamic_layout)
     arange(src_tensor)
 
     # CHECK: ----source-tensor----
@@ -526,7 +472,7 @@ def test_linspace_fill():
     # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
 
     print("----source-tensor----")
-    print(src_tensor)
+    print_tile_tensor(src_tensor)
 
     # CHECK: ----source-tensor----
     # CHECK: 42.0 42.0 42.0 42.0 42.0 42.0 42.0 42.0
@@ -540,7 +486,7 @@ def test_linspace_fill():
 
     var src_tensor_copy = src_tensor.fill(42.0)
     print("----source-tensor----")
-    print(src_tensor)
+    print_tile_tensor(src_tensor)
 
     # CHECK: ----source-tensor-copy----
     # CHECK: 42.0 42.0 42.0 42.0 42.0 42.0 42.0 42.0
@@ -553,42 +499,30 @@ def test_linspace_fill():
     # CHECK: 42.0 42.0 42.0 42.0 42.0 42.0 42.0 42.0
     # CHECK: True
     print("----source-tensor-copy----")
-    print(src_tensor_copy)
-    print(src_tensor.ptr == src_tensor_copy.ptr)
+    print_tile_tensor(src_tensor_copy)
+    print(src_tensor.unsafe_ptr() == src_tensor_copy.unsafe_ptr())
 
 
 # CHECK-LABEL: test_random_fill
 def test_random_fill():
     print("== test_random_fill")
-    comptime layout = Layout(8 * 8 * 8 * 8)
-
-    comptime RuntimeLayoutType = RuntimeLayout[
-        layout, element_type=.int32, linear_idx_type=.int32
-    ]
-
-    var dynamic_layout = RuntimeLayoutType(
-        RuntimeLayoutType.ShapeType(comptime (layout.size())),
-        RuntimeLayoutType.StrideType(1),
+    comptime count = 8 * 8 * 8 * 8
+    var src_engine = List(length=count, fill=Float32(0))
+    var src_tensor = TileTensor[linear_idx_type=.int32](
+        src_engine, row_major[count]()
     )
-    var src_engine = List(length=dynamic_layout.size(), fill=Float32(0))
-    var src_tensor = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](src_engine, dynamic_layout)
     random(src_tensor)
     var sum: Float32 = 0.0
-    for i in range(src_tensor.runtime_layout.size()):
-        sum += rebind[Float32](src_tensor[i])
-    var mean = sum / Float32(src_tensor.runtime_layout.size())
+    for i in range(src_tensor.num_elements()):
+        sum += src_tensor[i]
+    var mean = sum / Float32(src_tensor.num_elements())
 
     var variance: Float32 = 0.0
-    for i in range(src_tensor.runtime_layout.size()):
-        var diff = rebind[Float32](src_tensor[i]) - mean
+    for i in range(src_tensor.num_elements()):
+        var diff = src_tensor[i] - mean
         variance += diff * diff
-    variance = sqrt(variance / Float32(src_tensor.runtime_layout.size()))
-    # Check that the mean value is close to 0.5 and variance is more than 0.1
+    variance = sqrt(variance / Float32(src_tensor.num_elements()))
+    # Check the mean and standard deviation of the uniform sample.
     # CHECK: ----mean-variance----
     # CHECK: True
     # CHECK: True
@@ -708,122 +642,99 @@ def test_split():
 
     var ptr = List(length=16, fill=Float32(0))
 
-    comptime layout_Ux4 = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
-    var dynamic_layout_2x4 = RuntimeLayout[
-        layout_Ux4, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout_Ux4.shape, element_type=.int32](2, 4),
-        RuntimeTuple[layout_Ux4.stride, element_type=.int32](4, 1),
+    var tensor_Ux4 = TileTensor[linear_idx_type=.int32](
+        ptr, row_major((Int32(2), Idx[4]))
     )
-    var tensor_Ux4 = LayoutTensor[
-        .float32,
-        layout_Ux4,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](ptr, dynamic_layout_2x4)
     arange(tensor_Ux4)
     # CHECK: 0.0 1.0
     # CHECK: 4.0 5.0
-    print(tensor_Ux4.split[axis=1](2, 0))
+    print_tile_tensor(tensor_Ux4.as_imm().split[axis=1](2, 0))
     # CHECK: 2.0 3.0
     # CHECK: 6.0 7.0
-    print(tensor_Ux4.split[axis=1](2, 1))
+    print_tile_tensor(tensor_Ux4.as_imm().split[axis=1](2, 1))
 
-    comptime layout_4x4 = Layout(IntTuple(4, 4), IntTuple(4, 1))
-    var dynamic_layout_4x4 = RuntimeLayout[
-        layout_4x4, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout_4x4.shape, element_type=.int32](4, 4),
-        RuntimeTuple[layout_4x4.stride, element_type=.int32](4, 1),
-    )
-    var tensor_4x4 = LayoutTensor[
-        .float32,
-        layout_4x4,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](ptr, dynamic_layout_4x4)
+    var tensor_4x4 = TileTensor[linear_idx_type=.int32](ptr, row_major[4, 4]())
     arange(tensor_4x4)
-    var tensor_4x4_split0 = tensor_4x4.split[axis=0](2, 0)
-    var tensor_4x4_split1 = tensor_4x4.split[axis=0](2, 1)
+    var tensor_4x4_split0 = tensor_4x4.as_imm().split[axis=0](2, 0)
+    var tensor_4x4_split1 = tensor_4x4.as_imm().split[axis=0](2, 1)
 
     # CHECK: ((-1, 4):(4, 1))
-    print(materialize[tensor_4x4_split0.layout]())
+    print_static_layout(tensor_4x4_split0)
     # CHECK: ((2, 4):(4, 1))
-    print(tensor_4x4_split0.runtime_layout)
+    print(tensor_4x4_split0.layout)
     # CHECK: 0.0 1.0 2.0 3.0
     # CHECK: 4.0 5.0 6.0 7.0
-    print(tensor_4x4_split0)
+    print_tile_tensor(tensor_4x4_split0)
 
     # CHECK: ((-1, 4):(4, 1))
-    print(materialize[tensor_4x4_split1.layout]())
+    print_static_layout(tensor_4x4_split1)
     # CHECK: ((2, 4):(4, 1))
-    print(tensor_4x4_split1.runtime_layout)
+    print(tensor_4x4_split1.layout)
     # CHECK: 8.0 9.0 10.0 11.0
     # CHECK: 12.0 13.0 14.0 15.0
-    print(tensor_4x4_split1)
+    print_tile_tensor(tensor_4x4_split1)
 
-    comptime layout_Ux8 = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
-    var dynamic_layout_Ux8 = RuntimeLayout[
-        layout_Ux8, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout_Ux8.shape, element_type=.int32](2, 8),
-        RuntimeTuple[layout_Ux8.stride, element_type=.int32](8, 1),
+    var tensor_Ux8 = TileTensor[linear_idx_type=.int32](
+        ptr, row_major((Int32(2), Idx[8]))
     )
-    var tensor_Ux8 = LayoutTensor[
-        .float32,
-        layout_Ux8,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](ptr, dynamic_layout_Ux8)
-    var tensor_Ux8_split0 = tensor_Ux8.split[1, split_alignment=3](3, 0)
-    var tensor_Ux8_split1 = tensor_Ux8.split[1, split_alignment=3](3, 1)
-    var tensor_Ux8_split2 = tensor_Ux8.split[1, split_alignment=3](3, 2)
+    var tensor_Ux8_split0 = tensor_Ux8.as_imm().split[1, split_alignment=3](
+        3, 0
+    )
+    var tensor_Ux8_split1 = tensor_Ux8.as_imm().split[1, split_alignment=3](
+        3, 1
+    )
+    var tensor_Ux8_split2 = tensor_Ux8.as_imm().split[1, split_alignment=3](
+        3, 2
+    )
 
     # CHECK: ((-1, -1):(8, 1))
-    print(materialize[tensor_Ux8_split0.layout]())
+    print_static_layout(tensor_Ux8_split0)
     # CHECK: ((2, 3):(8, 1))
-    print(tensor_Ux8_split0.runtime_layout)
+    print(tensor_Ux8_split0.layout)
     # CHECK: 0.0 1.0 2.0
     # CHECK: 8.0 9.0 10.0
-    print(tensor_Ux8_split0)
+    print_tile_tensor(tensor_Ux8_split0)
 
     # CHECK: ((-1, -1):(8, 1))
-    print(materialize[tensor_Ux8_split1.layout]())
+    print_static_layout(tensor_Ux8_split1)
     # CHECK: ((2, 3):(8, 1))
-    print(tensor_Ux8_split1.runtime_layout)
+    print(tensor_Ux8_split1.layout)
     # CHECK: 3.0 4.0 5.0
     # CHECK: 11.0 12.0 13.0
-    print(tensor_Ux8_split1)
+    print_tile_tensor(tensor_Ux8_split1)
 
     # CHECK: ((-1, -1):(8, 1))
-    print(materialize[tensor_Ux8_split2.layout]())
+    print_static_layout(tensor_Ux8_split2)
     # CHECK: ((2, 2):(8, 1))
-    print(tensor_Ux8_split2.runtime_layout)
+    print(tensor_Ux8_split2.layout)
     # CHECK: 6.0 7.0
     # CHECK: 14.0 15.0
-    print(tensor_Ux8_split2)
+    print_tile_tensor(tensor_Ux8_split2)
 
-    comptime layout_8x2 = Layout(IntTuple(8, 2), IntTuple(2, 1))
-    var tensor_8x2 = LayoutTensor[.float32, layout_8x2](ptr)
-    var tensor_8x2_split1 = tensor_8x2.split[0, split_alignment=3](3, 1)
-    var tensor_8x2_split2 = tensor_8x2.split[0, split_alignment=3](3, 2)
+    var tensor_8x2 = TileTensor(ptr, row_major[8, 2]())
+    var tensor_8x2_split1 = tensor_8x2.as_imm().split[0, split_alignment=3](
+        3, 1
+    )
+    var tensor_8x2_split2 = tensor_8x2.as_imm().split[0, split_alignment=3](
+        3, 2
+    )
 
     # CHECK: ((-1, 2):(2, 1))
-    print(materialize[tensor_8x2_split1.layout]())
+    print_static_layout(tensor_8x2_split1)
     # CHECK: ((3, 2):(2, 1))
-    print(tensor_8x2_split1.runtime_layout)
+    print(tensor_8x2_split1.layout)
     # CHECK: 6.0 7.0
     # CHECK: 8.0 9.0
     # CHECK: 10.0 11.0
-    print(tensor_8x2_split1)
+    print_tile_tensor(tensor_8x2_split1)
 
     # CHECK: ((-1, 2):(2, 1))
-    print(materialize[tensor_8x2_split2.layout]())
+    print_static_layout(tensor_8x2_split2)
     # CHECK: ((2, 2):(2, 1))
-    print(tensor_8x2_split2.runtime_layout)
+    print(tensor_8x2_split2.layout)
     # CHECK: 12.0 13.0
     # CHECK: 14.0 15.0
-    print(tensor_8x2_split2)
+    print_tile_tensor(tensor_8x2_split2)
 
 
 def main() raises:

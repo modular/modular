@@ -51,7 +51,7 @@ from std.sys.defines import get_defined_bool, get_defined_int
 from std.utils.numerics import isfinite
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
@@ -60,6 +60,7 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     get_scale_factor,
 )
+from linalg.swiglu_activation import get_swiglu_activation
 from shmem.ep_comm import fused_silu_mxfp8_interleaved_kernel
 
 from _fuzz import (
@@ -100,7 +101,7 @@ def _swiglu(g: Float32, u: Float32) -> Float32:
         var g_c = min(g, LIMIT)
         var u_c = max(min(u, LIMIT), -LIMIT)
         var sig = recip(Float32(1.0) + exp(-(g_c * ALPHA)))
-        return (u_c + Float32(1.0)) * g_c * sig
+        return g_c * sig * (u_c + Float32(1.0))
     else:
         var silu_g = g * recip(Float32(1.0) + exp(-g))
         return silu_g * u
@@ -180,13 +181,11 @@ def run_one_case(
 
     comptime k_groups = ceildiv(H, SF_VECTOR_SIZE * SF_ATOM_K)
     var scales_shape = row_major(
-        Coord(
-            scales_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        scales_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var scales_size = scales_shape.product()
 
@@ -205,17 +204,15 @@ def run_one_case(
     ctx.enqueue_copy(row_off_dev, row_off_host)
     ctx.enqueue_copy(sc_off_dev, sc_off_host)
 
-    var out_tt = TileTensor(out_dev, row_major(Coord(total_m, Idx[H])))
+    var out_tt = TileTensor(out_dev, row_major(total_m, Idx[H]))
     var scales_tt = TileTensor(scales_dev, scales_shape)
-    var in_tt = TileTensor(in_dev, row_major(Coord(total_m, Idx[two_H])))
-    var row_off_tt = TileTensor(
-        row_off_dev, row_major(Coord(Idx[NUM_ACTIVE + 1]))
-    )
-    var sc_off_tt = TileTensor(sc_off_dev, row_major(Coord(Idx[NUM_ACTIVE])))
+    var in_tt = TileTensor(in_dev, row_major(total_m, Idx[two_H]))
+    var row_off_tt = TileTensor(row_off_dev, row_major(Idx[NUM_ACTIVE + 1]))
+    var sc_off_tt = TileTensor(sc_off_dev, row_major(Idx[NUM_ACTIVE]))
 
-    var in_immut = in_tt.as_immut()
-    var row_off_immut = row_off_tt.as_immut()
-    var sc_off_immut = sc_off_tt.as_immut()
+    var in_immut = in_tt.as_imm()
+    var row_off_immut = row_off_tt.as_imm()
+    var sc_off_immut = sc_off_tt.as_imm()
 
     comptime hw_info = ctx.default_device_info
     comptime kernel = fused_silu_mxfp8_interleaved_kernel[
@@ -229,7 +226,9 @@ def run_one_case(
         sc_off_immut.LayoutType,
         hw_info.max_thread_block_size,
         hw_info.sm_count,
-        clamp_activation=CLAMP,
+        activation=get_swiglu_activation[
+            "swigluoai" if CLAMP else "silu", ALPHA, LIMIT if CLAMP else 0.0
+        ],
     ]
     ctx.enqueue_function[kernel](
         out_tt,
@@ -237,8 +236,6 @@ def run_one_case(
         in_immut,
         row_off_immut,
         sc_off_immut,
-        ALPHA,
-        LIMIT,
         grid_dim=hw_info.sm_count,
         block_dim=hw_info.max_thread_block_size,
     )

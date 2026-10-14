@@ -117,11 +117,11 @@ def _run_mfma_32x32x64_smoke(ctx: DeviceContext) raises:
 
     var baseline_tt = TileTensor(
         baseline_device,
-        row_major(Coord(Idx[WARP_SIZE], Idx[accum_width])),
+        row_major(Idx[WARP_SIZE], Idx[accum_width]),
     )
     var scaled_tt = TileTensor(
         scaled_device,
-        row_major(Coord(Idx[WARP_SIZE], Idx[accum_width])),
+        row_major(Idx[WARP_SIZE], Idx[accum_width]),
     )
 
     comptime kernel = _mfma_32x32x64_kernel[

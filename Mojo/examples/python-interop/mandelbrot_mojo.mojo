@@ -18,7 +18,7 @@ from std.sys import has_accelerator
 from std.complex import ComplexSIMD, ComplexScalar
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from std.python import PythonObject
 from std.python.bindings import PythonModuleBuilder
 
@@ -33,7 +33,7 @@ comptime MAX_X: Scalar[float_dtype] = 0.7
 comptime MIN_Y: Scalar[float_dtype] = -1.12
 comptime MAX_Y: Scalar[float_dtype] = 1.12
 
-comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
+comptime layout = row_major[GRID_HEIGHT, GRID_WIDTH]()
 
 
 # An interface for this Mojo module must be exported to Python.
@@ -50,8 +50,7 @@ def PyInit_mandelbrot_mojo() abi("C") -> PythonObject:
 
 
 def run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
-    """The main GPU dispatch function for the Mandelbrot calculation called from Python.
-    """
+    """Dispatches the Mandelbrot calculation from Python to the GPU."""
     comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Get the context for the attached GPU
@@ -59,7 +58,7 @@ def run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
 
     # Allocate a tensor on the target device to hold the resulting set.
     var dev_buf = ctx.enqueue_create_buffer[int_dtype](comptime (layout.size()))
-    var out_tensor = LayoutTensor[int_dtype, layout](dev_buf)
+    var out_tensor = TileTensor(dev_buf, layout)
 
     # Compute how many blocks are needed in each dimension to fully cover the grid,
     # rounding up to ensure even partially filled blocks are launched.
@@ -78,16 +77,16 @@ def run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
 
     # Map the output tensor data to CPU so that we can read the results.
     with dev_buf.map_to_host() as host_buf:
-        var host_tensor = LayoutTensor[int_dtype, layout](host_buf)
+        var host_tensor = TileTensor(host_buf, layout)
         # Return the ASCII art string representation to Python.
         return draw_mandelbrot(host_tensor, Int32(py=iterations))
 
 
 def mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout, MutAnyOrigin], iterations: Int32
+    tensor: TileTensor[int_dtype, type_of(layout), MutAnyOrigin],
+    iterations: Int32,
 ):
-    """The per-element calculation of iterations to escape in the Mandelbrot set.
-    """
+    """Calculates each element's escape iteration in the Mandelbrot set."""
     # Obtain the position in the grid from the X, Y thread locations.
     var row = global_idx.y
     var col = global_idx.x
@@ -117,9 +116,9 @@ def mandelbrot(
 
 
 def draw_mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout, ...], iterations: Int32
+    tensor: TileTensor[int_dtype, type_of(layout), ...], iterations: Int32
 ) raises -> String:
-    """A helper function to visualize the Mandelbrot set in ASCII art."""
+    """Visualizes the Mandelbrot set as ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     var buffer = String()
     for row in range(GRID_HEIGHT):

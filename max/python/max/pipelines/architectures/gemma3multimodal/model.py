@@ -20,6 +20,7 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -152,7 +153,6 @@ class Gemma3_MultiModalModel(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -162,6 +162,7 @@ class Gemma3_MultiModalModel(
             adapter=adapter,
             return_logits=return_logits,
             memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
@@ -180,7 +181,7 @@ class Gemma3_MultiModalModel(
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())
         self._language_weights_dict = convert_safetensor_language_state_dict(
@@ -435,7 +436,7 @@ class Gemma3_MultiModalModel(
             *image_embeddings,
             *image_token_indices,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         if len(model_outputs) == 3:

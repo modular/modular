@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec
+from max.driver import DeviceSpec, is_virtual_device_mode
 from max.graph.weights import (
     WeightsFormat,
     load_weights,
@@ -53,6 +53,7 @@ from max.pipelines.modeling.config_enums import (
 from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
+    header_only_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
@@ -319,7 +320,7 @@ def _infer_weight_path(
     Takes *encoding* (and optionally *cast_from*) explicitly rather than
     reading ``config.quantization_encoding`` so this can be called on a
     config those fields were never written to
-    (e.g. a diffusion component resolved on demand at consumption time,
+    (such as a diffusion component resolved on demand at consumption time,
     without going through architecture-level resolution).
 
     Prefers safetensors format as default.
@@ -373,11 +374,11 @@ def _resolve_component_encoding_and_weights(
 
     Read-only: does not mutate *config*. Intended for callers that consume
     a ``MAXModelConfig`` directly without going through architecture-level
-    resolution -- e.g. a diffusion per-component builder -- so they get the
+    resolution -- for example, a diffusion per-component builder -- so they get the
     same best-effort inference diffuser sub-components rely on, without
     depending on mutation having happened first.
 
-    Safe to call even when *config* is already fully resolved (e.g. an LLM
+    Safe to call even when *config* is already fully resolved (such as an LLM
     component whose ``quantization_encoding``/``weight_path`` were set during
     architecture validation): both steps are no-ops once those are set.
 
@@ -589,7 +590,7 @@ def _device_specs_for_encoding(
 
     An encoding that cannot run on GPU (GGUF q4) overrides all-GPU
     *device_specs* and runs on CPU: returns ``[DeviceSpec.cpu()]``. Any
-    other combination is returned unchanged (an invalid one, e.g. a
+    other combination is returned unchanged (an invalid one, for example, a
     GPU-only encoding on CPU, is rejected by the caller's compatibility
     check). Read-only.
 
@@ -879,6 +880,19 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Whether to force download a file even if it's already in the local cache."""
 
+    header_only_weights: bool = Field(
+        default=False,
+        description=(
+            "Stand in header-only, zero-filled sparse copies of the safetensors "
+            "checkpoint, built from the remote files' headers, instead of "
+            "downloading the weights. Compilation only needs tensor names, "
+            "shapes and dtypes, so this makes ``warm-cache --target`` "
+            "independent of checkpoint size. Only valid with ``--target`` "
+            "(compile-only mode); safetensors repos only."
+        ),
+    )
+    """Whether to stand in header-only stubs for the checkpoint (compile-only)."""
+
     vision_config_overrides: dict[str, Any] = Field(
         default_factory=dict,
         description=(
@@ -917,10 +931,9 @@ class MAXModelConfig(MAXModelConfigBase):
     chat_template: Path | None = Field(
         default=None,
         description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config. If a path is provided, the file is "
-            "read lazily by the registry when building the tokenizer. If "
-            "``None``, the model's default chat template is used."
+            "Path to a custom chat template that overrides the one from "
+            "the Hugging Face model (the default). The file is either a Jinja template "
+            "or a JSON object with a ``chat_template`` key. "
         ),
     )
     """An optional custom chat template to override the one shipped with the model."""
@@ -1043,7 +1056,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Skipped when already seeded (an explicit ``_huggingface_config`` passed
         to the constructor, or one preserved across ``with_override``), for
         placeholder configs with no ``model_path``, and for repos that carry no
-        loadable model config -- e.g. diffusion-manifest components such as the
+        loadable model config -- for example, diffusion-manifest components such as the
         feature extractor or scheduler, which ship only a preprocessor/
         scheduler config. Those keep the lazy getter, which stays a no-op
         unless the config is actually accessed.
@@ -1129,7 +1142,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """Builds a :class:`MAXModelConfig` from a :class:`PipelineArgs`'s flat fields.
 
         Returns a new object on every call -- ``args`` holds no live handle
-        back to it, so mutating the returned object (e.g.
+        back to it, so mutating the returned object (such as
         ``MAXModelConfig.from_pipeline_args(args).foo = x``) has no effect on
         a subsequent call with the same ``args``. Set the corresponding field
         on ``args`` itself instead.
@@ -1145,6 +1158,7 @@ class MAXModelConfig(MAXModelConfigBase):
             subfolder=args.subfolder,
             device_specs=list(args.device_specs),
             force_download=args.force_download,
+            header_only_weights=args.header_only_weights,
             vision_config_overrides=dict(args.vision_config_overrides),
             rope_type=args.rope_type,
             sliding_window=args.sliding_window,
@@ -1201,6 +1215,9 @@ class MAXModelConfig(MAXModelConfigBase):
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
 
+        Under ``header_only_weights`` the stubs are sized like the files they
+        stand in for, so their sizes are read straight off disk instead.
+
         Returns:
             The total size of all weight files in bytes.
 
@@ -1213,6 +1230,13 @@ class MAXModelConfig(MAXModelConfigBase):
                 not available or API error).
             RuntimeError: If the determined ``repo_type`` is unexpected.
         """
+        if self.header_only_weights:
+            # A stub is sized like the file it stands in for, so one stat per
+            # shard replaces one Hugging Face HEAD request per shard.
+            return sum(
+                path.stat().st_size for path in self.resolved_weight_paths()
+            )
+
         total_weights_size = 0
         repo = self.huggingface_weight_repo
 
@@ -1269,7 +1293,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Built once at construction (see :meth:`_populate_repo_handles`) and
         stored in a PrivateAttr; this getter returns it. Falls back to
-        building a fresh handle only for a never-populated config (e.g. a
+        building a fresh handle only for a never-populated config (such as a
         placeholder with no ``model_path``) and never writes back.
         """
         cached = self._cached_weight_repo
@@ -1308,11 +1332,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Loaded once at construction (see :meth:`_populate_hf_config`) and
         stored in a PrivateAttr; this getter returns it. Falls back to loading
-        on demand -- without caching -- for a never-populated config (e.g. a
+        on demand -- without caching -- for a never-populated config (such as a
         placeholder with no ``model_path``).
 
         For transformers models this is the ``AutoConfig`` subclass; for
-        non-transformers models (e.g. diffusers components) it is the raw
+        non-transformers models (such as diffusers components) it is the raw
         ``config.json`` wrapped in a ``PretrainedConfig``.
 
         Raises:
@@ -1329,7 +1353,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Loaded once at construction (see :meth:`_populate_generation_config`)
         and stored in a PrivateAttr; this getter returns it, falling back to
-        loading on demand for a never-populated config (e.g. a placeholder).
+        loading on demand for a never-populated config (such as a placeholder).
         Loading failures yield a default ``GenerationConfig``.
         """
         if self._generation_config is None:
@@ -1484,19 +1508,59 @@ class MAXModelConfig(MAXModelConfigBase):
             )
             return None
 
+    def _header_only_weight_paths(self, weight_path: list[Path]) -> list[Path]:
+        """Resolve weight paths to header-only stubs, fetching headers if needed.
+
+        Args:
+            weight_path: Weight files to resolve, relative to the repo.
+
+        Returns:
+            Absolute paths to header-only stubs on disk.
+
+        Raises:
+            ValueError: If the run is not compile-only, if the repo is not an
+                online Hugging Face repo, or if the weights are not safetensors.
+        """
+        if not is_virtual_device_mode():
+            raise ValueError(
+                "header_only_weights is only valid in compile-only mode "
+                "(``--target``). Its stub weights are zero-filled, so they "
+                "must never reach a real device."
+            )
+        weight_repo = self.huggingface_weight_repo
+        if weight_repo.repo_type != "online":
+            raise ValueError(
+                "header_only_weights reads the safetensors headers from an "
+                f"online Hugging Face repo, but '{weight_repo.repo_id}' is a "
+                f"{weight_repo.repo_type} repo."
+            )
+        if weights_format(weight_path) != WeightsFormat.safetensors:
+            raise ValueError(
+                "header_only_weights only supports safetensors checkpoints, "
+                f"but '{weight_repo.repo_id}' carries "
+                f"{weights_format(weight_path).value} weights."
+            )
+        return header_only_weight_files(
+            huggingface_model_id=weight_repo.repo_id,
+            filenames=[str(x) for x in weight_path],
+            revision=weight_repo.revision,
+        )
+
     def resolved_weight_paths(
         self, weight_path: list[Path] | None = None
     ) -> list[Path]:
         """Resolve weight paths to absolute local paths, downloading if needed.
 
         For online repos, downloads weight files from HuggingFace Hub.
-        For local repos, constructs absolute paths from the repo root.
+        For local repos, constructs absolute paths from the repo root. Under
+        ``header_only_weights`` the download is replaced by header-only stubs
+        (see :meth:`_header_only_weight_paths`).
 
         Args:
             weight_path: Weight files to resolve, relative to the repo.
                 Defaults to ``self.weight_path``. Pass an explicit,
                 already-resolved list for a config whose ``weight_path``
-                was never populated during resolution (e.g. a diffusion
+                was never populated during resolution (such as a diffusion
                 component resolved on demand at consumption time -- see
                 :func:`_resolve_component_encoding_and_weights`).
 
@@ -1507,6 +1571,9 @@ class MAXModelConfig(MAXModelConfigBase):
             weight_path = self.weight_path
         if not weight_path:
             return []
+
+        if self.header_only_weights:
+            return self._header_only_weight_paths(weight_path)
 
         weight_repo = self.huggingface_weight_repo
         if weight_repo.repo_type == "online":
@@ -1570,7 +1637,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """Logs model configuration information for this config.
 
         Args:
-            role: The semantic role of this model (e.g. ``"main"``,
+            role: The semantic role of this model (such as ``"main"``,
                 ``"draft"``, ``"vae"``).
         """
         logger.info("")

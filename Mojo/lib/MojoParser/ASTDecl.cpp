@@ -29,38 +29,65 @@ using namespace LIT;
 ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
                  ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
                  ssize_t indentation)
-    : shared(shared), irValue(irValue), loc(loc), parentDecl(parentDecl),
-      cursor(cursor), endCursorState(endCursor.getState()),
-      indentation(indentation) {
+    : ASTDecl(Kind::Base, shared, std::move(irValue), loc, parentDecl, cursor,
+              endCursor, indentation) {}
+
+ASTDecl::ASTDecl(Kind kind, SharedState &shared, DeclIRValue irValue,
+                 llvm::SMLoc loc, ASTDecl *parentDecl, LexerCursor cursor,
+                 LexerCursor endCursor, ssize_t indentation)
+    : shared(shared), irValue(std::move(irValue)), loc(loc),
+      parentDeclAndKind(parentDecl, kind), cursor(cursor),
+      endCursorState(endCursor.getState()), indentation(indentation) {
   resolvedness = DeclResolvedness::unparsed;
   referencedFromBytecode = false;
-  hasDisabledDecls = false;
   hasReferenceError = false;
   hasBodyDecorators = false;
   loadedFromBytecode = false;
   isExplicitParamScope = false;
 }
 
+ASTDecl::~ASTDecl() = default;
+
+AliasASTDecl::AliasASTDecl(SharedState &shared, AliasDeclOp aliasOp,
+                           llvm::SMLoc loc, ASTDecl *parentDecl,
+                           LexerCursor cursor, LexerCursor endCursor,
+                           ssize_t indentation)
+    : ASTDecl(Kind::Alias, shared, aliasOp.getOperation(), loc, parentDecl,
+              cursor, endCursor, indentation) {}
+
+AliasDeclOp AliasASTDecl::getOp() const {
+  return cast<AliasDeclOp>(getIfOperation());
+}
+
+WitnessASTDecl::WitnessASTDecl(SharedState &shared,
+                               UnresolvedDecls unresolvedDecls,
+                               TraitSymbolAttr traitSymbol, llvm::SMLoc loc,
+                               ASTDecl *parentDecl, LexerCursor cursor,
+                               LexerCursor endCursor, ssize_t indentation)
+    : ASTDecl(Kind::Witness, shared, static_cast<Operation *>(nullptr), loc,
+              parentDecl, cursor, endCursor, indentation),
+      storage(std::move(unresolvedDecls)), traitSymbol(traitSymbol) {}
+
 bool ASTDecl::isCallableDecl() const {
-  if (auto witness = getIfWitness())
+  if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return isa<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
   return isa_and_nonnull<FnOp>(getIfOperation());
 }
 
 FnTypeGeneratorType ASTDecl::getDeclFullSignature() const {
-  if (auto witness = getIfWitness()) // already expanded.
+  if (auto *witness = dyn_cast<WitnessASTDecl>(this)) // already expanded.
     return cast<FnTypeGeneratorType>(witness->getWitnessEntry().witnessType);
   return cast<FnOp>(getIfOperation()).getFullSignature();
 }
 
 bool ASTDecl::isStaticMethodDecl() const {
-  if (auto witness = getIfWitness())
+  if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return witness->getWitnessEntry().isStaticMethod;
   return cast<FnOp>(getIfOperation()).getIsStatic();
 }
 
 ImplicitConversionKind ASTDecl::getDeclImplicitConversionKind() const {
-  if (auto witness = getIfWitness())
+  if (auto *witness = dyn_cast<WitnessASTDecl>(this))
     return witness->getWitnessEntry().implicitConversion;
   return cast<FnOp>(getIfOperation()).getImplicitConversion();
 }
@@ -112,15 +139,8 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
     return {};
 
   auto it = declsInScope->find(name);
-  if (it != declsInScope->end() && !it->second.empty()) {
-    // A name whose decls are all disabled is a miss
-    if (LLVM_UNLIKELY(hasDisabledDecls) &&
-        llvm::all_of(it->second,
-                     [](ASTDecl *decl) { return decl->isDisabled(); })) {
-      return {};
-    }
+  if (it != declsInScope->end() && !it->second.empty())
     return it->second;
-  }
   return {};
 }
 
@@ -156,14 +176,10 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     return result;
 
   // Now find all extensions that target this struct/trait.
-  // Extensions are registered with the name of their target type, prefixed
-  // with "extension:" (e.g., "extension:Spaceship") so that we can do this
-  // lookup here.
-  StringRef typeName = astDecl->getUserNameIfOperation().value();
-  std::string extensionName =
-      shared.extensionsScopeMarker.getValue().str() + typeName.str();
-  LookupAllResult lookupResult =
-      shared.lookupAllDeclsWithName(extensionName, callLoc, *this, true);
+  StringAttr extensionName =
+      shared.getExtensionName(astDecl->getUserNameIfOperation().value());
+  LookupAllResult lookupResult = shared.lookupAllDeclsWithName(
+      extensionName.getValue(), callLoc, *this, true);
 
   // Only consider results from successful lookups. Lookups with isErroneous()
   // means the error was already diagnosed. Lookups with isFailure() should
@@ -184,10 +200,14 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     // The bucket is keyed by the target's leaf name only, so extensions of
     // distinct types that share a name land together; keep only those whose
     // resolved target is this type's own decl, as
-    // findExtensionsInScopeForStruct does.
+    // findExtensionsInScopeForStruct does. An import re-exports every
+    // extension visible in its source module, so one extension can be found in
+    // several enclosing scopes; count it once, or its methods tie with
+    // themselves in overload resolution.
     auto extOp =
         dyn_cast_or_null<ExtensionDeclOp>(foundAstDecl->getIfOperation());
-    if (extOp && extOp.getTargetStructAttr() == typeSymbol)
+    if (extOp && extOp.getTargetStructAttr() == typeSymbol &&
+        !llvm::is_contained(result, foundAstDecl))
       result.push_back(foundAstDecl);
   }
 
@@ -199,7 +219,7 @@ void ASTDecl::takeDecls(ASTDecl &src) {
     setErroneous();
   for (auto &[name, children] : src.getDeclsInScope())
     for (ASTDecl *child : children)
-      child->parentDecl = this;
+      child->parentDeclAndKind.setPointer(this);
   declsInScope = std::move(src.declsInScope);
   counter = src.counter;
   assert(!knownAssumptions && "assumptions should be empty before overwriting");
@@ -219,7 +239,7 @@ void ASTDecl::mergeDeclsFrom(ASTDecl &src) {
   for (auto &[name, children] : *src.declsInScope) {
     TinyPtrVector<ASTDecl *> &entries = (*declsInScope)[name];
     for (ASTDecl *child : children) {
-      child->parentDecl = this;
+      child->parentDeclAndKind.setPointer(this);
       entries.push_back(child);
     }
   }
@@ -390,7 +410,7 @@ void ASTDecl::dump() const {
     llvm::errs() << "\n";
   } else if (auto cv = getIfIRValue()) {
     cv.dump();
-  } else if (auto witness = getIfWitness()) {
+  } else if (auto *witness = dyn_cast<WitnessASTDecl>(this)) {
     llvm::errs() << "witness ";
     if (resolvedness < DeclResolvedness::signature) {
       llvm::errs() << "<unresolved>";
@@ -475,13 +495,10 @@ void ASTDecl::findExtensionsInScopeForStruct(
   if (declsInScope->find(shared.extensionsScopeMarker) == declsInScope->end())
     return;
 
-  // Extensions targeting this struct are registered under "extension:<leaf>".
-  // The bucket is keyed by the target's leaf name only, so distinct structs
-  // that share a leaf name land together and the exact-symbol check below still
-  // filters them.
-  SmallString<64> extensionName(shared.extensionsScopeMarker.getValue());
-  extensionName += targetStruct.getLeafReference().getValue();
-  auto it = declsInScope->find(StringAttr::get(getContext(), extensionName));
+  // The exact-symbol check below filters out other structs sharing the leaf
+  // name.
+  auto it = declsInScope->find(
+      shared.getExtensionName(targetStruct.getLeafReference().getValue()));
   if (it == declsInScope->end())
     return;
 

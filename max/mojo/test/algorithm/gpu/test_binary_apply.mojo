@@ -19,8 +19,8 @@ from std.testing import assert_equal, TestSuite
 def vec_func[
     op: def(Float32, Float32) capturing[_] -> Float32
 ](
-    in0: Pointer[Float32, MutAnyOrigin],
-    in1: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):

@@ -248,23 +248,23 @@ struct Format(ImplicitlyCopyable, Writable):
         Args:
             value: The format to print results.
         """
-        if value == Format.csv.value:
-            self.value = Format.csv.value
-        elif value == Format.tabular.value:
-            self.value = Format.tabular.value
-        elif value == Format.table.value:
-            self.value = Format.table.value
-        else:
-            self.value = ""
-            var valid_formats = String(
-                " valid formats: ",
-                Format.csv,
-                ", ",
-                Format.tabular,
-                ", ",
-                Format.table,
-            )
-            abort(t"Invalid format option: {value}{valid_formats}")
+        match value:
+            case Format.csv.value:
+                self.value = Format.csv.value
+            case Format.tabular.value:
+                self.value = Format.tabular.value
+            case Format.table.value:
+                self.value = Format.table.value
+            case _:
+                var valid_formats = String(
+                    " valid formats: ",
+                    Format.csv,
+                    ", ",
+                    Format.tabular,
+                    ", ",
+                    Format.table,
+                )
+                abort(t"Invalid format option: {value}{valid_formats}")
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the format to a writer.
@@ -394,37 +394,37 @@ struct BenchConfig(Copyable):
         self.verbose_metric_names = True
 
         # TODO: This function should move out of BenchConfig and be part of update_bench_config_args.
-        @__parameter
-        def argparse() raises:
+        def argparse() raises {mut self}:
             """Parse cmd line args to define benchmark configuration."""
 
             var args = argv()
             var i = 1
             while i < len(args):
-                if args[i] == "-o":
-                    if i + 1 >= len(args):
-                        raise Error("Missing value for -o option")
-                    self.out_file = Path(args[i + 1])
-                    i += 2
-                elif args[i] == "-r":
-                    if i + 1 >= len(args):
-                        raise Error("Missing value for -r option")
-                    self.num_repetitions = Int(args[i + 1])
-                    i += 2
-                elif args[i] == "--format":
-                    if i + 1 >= len(args):
-                        raise Error("Missing value for --format option")
-                    self.format = Format(args[i + 1])
-                    i += 2
-                elif args[i] == "--no-progress":
-                    self.show_progress = False
-                    i += 1
-                elif args[i] == "--verbose":
-                    self.verbose_timing = True
-                    i += 1
-                # TODO: add an arg for bench batchsize
-                else:
-                    i += 1
+                match args[i]:
+                    case "-o":
+                        if i + 1 >= len(args):
+                            raise Error("Missing value for -o option")
+                        self.out_file = Path(args[i + 1])
+                        i += 2
+                    case "-r":
+                        if i + 1 >= len(args):
+                            raise Error("Missing value for -r option")
+                        self.num_repetitions = Int(args[i + 1])
+                        i += 2
+                    case "--format":
+                        if i + 1 >= len(args):
+                            raise Error("Missing value for --format option")
+                        self.format = Format(args[i + 1])
+                        i += 2
+                    case "--no-progress":
+                        self.show_progress = False
+                        i += 1
+                    case "--verbose":
+                        self.verbose_timing = True
+                        i += 1
+                    # TODO: add an arg for bench batchsize
+                    case _:
+                        i += 1
 
             # KBENCH_OUTFILE overrides -o (used by kbench driver mode).
             comptime if get_defined_bool["KBENCH_USE_ENV_ARGS", False]():
@@ -640,8 +640,7 @@ struct Bench(Writable):
         self.mode = mode
         self.info_vec = List[BenchmarkInfo]()
 
-        @__parameter
-        def argparse():
+        def argparse() {mut self}:
             """Parse cmd line args to define benchmark configuration."""
 
             var args = argv()
@@ -678,8 +677,8 @@ struct Bench(Writable):
         Args:
             suffix: Suffix string to append to output file name.
         """
-        if self.config.out_file:
-            var stem = String(self.config.out_file.value())
+        if case .Some(out_file) = self.config.out_file:
+            var stem = String(out_file)
             var current_suffix = String("")
             var split = stem.split(".")
             if len(split) > 1:
@@ -909,8 +908,8 @@ struct Bench(Writable):
             return b.elapsed
 
         var full_name = bench_id.func_name
-        if bench_id.input_id:
-            full_name.write("/input_id:", bench_id.input_id.value())
+        if case .Some(input_id) = bench_id.input_id:
+            full_name.write("/input_id:", input_id)
 
         if self.config.show_progress:
             print("Running", full_name)
@@ -919,8 +918,8 @@ struct Bench(Writable):
 
         var res: Report
 
-        if fixed_iterations:
-            res = _run_impl_fixed(benchmark_fn, fixed_iterations.value())
+        if case .Some(fixed_iterations) = fixed_iterations:
+            res = _run_impl_fixed(benchmark_fn, fixed_iterations)
         else:
             res = _run_impl(
                 _RunOptions(
@@ -952,10 +951,10 @@ struct Bench(Writable):
         """
         print(self)
 
-        if self.config.out_file:
+        if case .Some(out_file) = self.config.out_file:
             var orig_format = self.config.format
             self.config.format = self.config.out_file_format
-            with open(self.config.out_file.value(), "w") as f:
+            with open(out_file, "w") as f:
                 f.write(self)
             self.config.format = orig_format
 

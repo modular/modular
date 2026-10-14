@@ -5,6 +5,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 kgen.func @return_none() -> !kgen.none {
   // CHECK: llvm.return
   %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }
 }

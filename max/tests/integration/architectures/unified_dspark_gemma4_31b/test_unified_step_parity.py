@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,7 @@ import numpy as np
 import pytest
 import torch
 from huggingface_hub import hf_hub_download, snapshot_download
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -56,6 +58,9 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
+)
+from max.pipelines.architectures.gemma4.block_spec_adapters import (
+    SLIDING_KV,
 )
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
@@ -258,15 +263,19 @@ class _RecordingUnified(UnifiedDSparkGemma4_31B):
             )
 
         def sample_draft_tokens(
-            base_logits: TensorValue, anchor_tokens: TensorValue
+            base_logits: TensorValue,
+            anchor_tokens: TensorValue,
+            sampler: Callable[[TensorValue, int], TensorValue] | None = None,
         ) -> TensorValue:
             self.recorded["base_logits"] = base_logits
-            return orig_sample_draft_tokens(base_logits, anchor_tokens)
+            return orig_sample_draft_tokens(
+                base_logits, anchor_tokens, sampler=sampler
+            )
 
         def acceptance_sampler(
             draft_tokens: TensorValue,
             target_logits: TensorValue,
-            **kwargs: TensorValue | None,
+            **kwargs: Any,
         ) -> tuple[TensorValue, TensorValue, TensorValue]:
             self.recorded["target_logits"] = target_logits
             return orig_sampler(draft_tokens, target_logits, **kwargs)
@@ -319,7 +328,7 @@ class _StepHarness:
             draft=draft_config,
             draft_kv_params=draft_kv_params,
             speculative_config=SpeculativeConfig(
-                speculative_method="dflash",
+                speculative_method="dspark",
                 num_speculative_tokens=NUM_DRAFTS,
             ),
             target_layer_ids=list(draft_config.target_layer_ids),
@@ -355,8 +364,29 @@ class _StepHarness:
             "unified_dspark_gemma4_31b_step_parity",
             input_types=nn_model.input_types(),
         ) as graph:
-            values = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(values)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                signal_buffers=graph_inputs.signal_buffers,
+                kv_collections=graph_inputs.kv("target", "full_attention"),
+                passthrough_kv={
+                    SLIDING_KV: graph_inputs.kv("target", "sliding_attention")
+                },
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                in_thinking_phase=graph_inputs.in_thinking_phase,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
             assert len(outputs) == 3
             recorded = nn_model.recorded
             graph.output(
@@ -418,7 +448,7 @@ class _StepHarness:
             Buffer.zeros(
                 shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=device
             ),
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
             Buffer.from_numpy(draft_tokens).to(device),
             Buffer.from_numpy(np.array([1], dtype=np.uint64)).to(device),
             Buffer.from_numpy(np.array([0.0], dtype=np.float32)).to(device),

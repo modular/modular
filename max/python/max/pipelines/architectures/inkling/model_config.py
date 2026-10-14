@@ -22,7 +22,12 @@ from typing import Any, ClassVar, Final
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+)
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -37,8 +42,17 @@ from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self
 
+from .state_cache import conv_state_regions
+
 GLOBAL_ATTENTION = "full_attention"
 LOCAL_ATTENTION = "sliding_attention"
+STATE_CACHE_KEY = "conv_state"
+"""The child holding every layer's convolution state.
+
+One child however many attention flavors the tree has, and however many
+MTP depths sit beside them: a request holds one conv state, and the draft
+keeps its depths' state in the same row as the backbone's.
+"""
 
 # A layer's experts are packed FP4 iff its stacked weight ships block scales.
 _EXPERT_BLOCK_SCALE = re.compile(
@@ -334,8 +348,7 @@ def nest_inkling_mtp_kv_params(
     ):
         if count == 0:
             continue
-        child = target.children[key]
-        assert isinstance(child, MHAKVCacheParams)
+        child = target.child(key, MHAKVCacheParams)
         draft_children[key] = replace(child, num_layers=count)
     if not draft_children:
         raise ValueError("Inkling MTP built zero draft attention layers")
@@ -463,7 +476,7 @@ class InklingConfig(ArchConfigWithKVCache):
                 window_size=window_size,
             )
 
-        target = MultiKVCacheParams.from_params(
+        attention = MultiKVCacheParams.from_params(
             {
                 GLOBAL_ATTENTION: params_for(
                     text_config.num_key_value_heads,
@@ -478,14 +491,26 @@ class InklingConfig(ArchConfigWithKVCache):
                 ),
             }
         )
-        if mtp_depths == 0:
-            return target
-        assert mtp is not None
-        # TODO(thomas.borstad): give the draft its own dispatch metadata
-        # (declare `speculative_method="mtp"`) instead of replaying the
-        # verify metadata over zeroed cache lengths; that changes the
-        # graph's input signature.
-        return nest_inkling_mtp_kv_params(target, mtp, mtp_depths)
+        if mtp_depths:
+            assert mtp is not None
+            # TODO(thomas.borstad): give the draft its own dispatch metadata
+            # (declare `speculative_method="mtp"`) instead of replaying the
+            # verify metadata over zeroed cache lengths; that changes the
+            # graph's input signature.
+            attention = nest_inkling_mtp_kv_params(attention, mtp, mtp_depths)
+        state = RecurrentStateParams(
+            # The ring must cover a rollback of up to mtp_depths tokens.
+            regions=conv_state_regions(
+                text_config,
+                tp_size=len(devices),
+                num_draft_tokens=mtp_depths,
+            ),
+            devices=devices,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        )
+        return MultiKVCacheParams.from_params(
+            {**attention.children, STATE_CACHE_KEY: state}
+        )
 
     @classmethod
     def initialize(

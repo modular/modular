@@ -18,6 +18,7 @@ import functools
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -27,7 +28,6 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
-    Value,
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
@@ -37,6 +37,7 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
+    packed_page_stride,
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
@@ -49,6 +50,7 @@ from max.nn.transformer.distributed_transformer import (
 )
 from max.nn.transformer.transformer import forward_sharded_layers
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tree import Tree
 
 from .layers.attention import Qwen3_5Attention
 from .layers.gated_deltanet import GatedDeltaNet, GatedDeltaReplayInputs
@@ -56,7 +58,7 @@ from .layers.text_rotary import Qwen3_5TextRotaryEmbedding
 from .layers.visual_transformer import VisionTransformer
 from .model_config import Qwen3_5Config
 from .quantization import storage_dtype
-from .state_cache import CONV_LEAF_ID, RECURRENT_LEAF_ID
+from .state_cache import GatedDeltaStateAccess, layer_state_access
 
 
 def _shard_mlp_and_norms(
@@ -178,6 +180,7 @@ class Qwen3_5FullAttentionBlock(Module):
                     norm_xs[i],
                     PagedCacheValues(
                         kv_blocks=kv_blocks[i],
+                        page_stride=packed_page_stride(kv_blocks[i]),
                         cache_lengths=cache_lengths[i],
                         lookup_table=lookup_table[i],
                         max_prompt_length=max_prompt_length[i],
@@ -213,6 +216,12 @@ class Qwen3_5LinearAttentionBlock(Module):
     Set by the speculative graph, which re-runs those kernels over the
     accepted prefix after the verify pass. Off by default, so the base graph
     is unchanged.
+    """
+
+    verify_width: TensorValue | None = None
+    """The speculative graph's verify width operand, or ``None``.
+
+    Set alongside :attr:`replay_capture`. See :class:`GatedDeltaNet`.
     """
 
     def __init__(
@@ -271,29 +280,29 @@ class Qwen3_5LinearAttentionBlock(Module):
         self,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        conv_pools: list[BufferValue],
-        conv_row_ids: list[TensorValue],
-        recurrent_pools: list[BufferValue],
-        recurrent_row_ids: list[TensorValue],
+        state: list[GatedDeltaStateAccess],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # Each device owns a slice of the value heads, so `out_proj` emits a
-        # partial sum over the full hidden dim.
+        # partial sum over the full hidden dim. The state rows arrive already
+        # selected for this layer (see ``layer_state_access``).
         attn_outs = self.allreduce(
             [
                 shard(
                     norm_xs[i],
-                    conv_pool=conv_pools[i],
-                    conv_row_id=conv_row_ids[i],
-                    recurrent_pool=recurrent_pools[i],
-                    recurrent_row_id=recurrent_row_ids[i],
+                    conv_pool=state[i].conv_pool,
+                    conv_row_id=state[i].conv_row_id,
+                    recurrent_pool=state[i].recurrent_pool,
+                    recurrent_row_id=state[i].recurrent_row_id,
                     input_row_offsets=input_row_offsets[i],
                     replay_capture=(
                         None
                         if self.replay_capture is None
                         else self.replay_capture[i]
                     ),
+                    ring=state[i].ring,
+                    verify_width=self.verify_width,
                 )
                 for i, shard in enumerate(self.linear_attn_shards)
             ],
@@ -342,9 +351,12 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         #
         # The KV cache dtype does not enter into this: rope is applied to K
         # before the value is cast into the cache.
-        self.mrope_enabled = (
-            config.mrope_section is not None
-            and config.vision_config is not None
+        # `vision_config` stands in for "an image can appear in context". The
+        # fused speculative graph compiles no encoder yet still verifies
+        # tokens that follow one, so it sets `mrope_without_encoder` to keep
+        # the 3-axis positions without the tower.
+        self.mrope_enabled = config.mrope_section is not None and (
+            config.vision_config is not None or config.mrope_without_encoder
         )
         rope: Llama3RotaryEmbedding
         if self.mrope_enabled:
@@ -535,8 +547,16 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         freq_row_ids: list[TensorValue] | None = None
         if position_ids is not None:
             assert isinstance(self.rope, Qwen3_5TextRotaryEmbedding)
-            table = self.rope.freqs_cis_position_ids(position_ids)
-            freqs_cis = [table.to(device) for device in self.devices]
+            # Unlike the static table, this one depends on the step's
+            # positions and cannot be hoisted to init. Copying it GPU to GPU
+            # joins the per-device capture sequences, which device graph
+            # capture rejects, so each device builds its own from a broadcast.
+            freqs_cis = [
+                self.rope.freqs_cis_position_ids(device_position_ids)
+                for device_position_ids in ops.distributed_broadcast(
+                    position_ids, signal_buffers
+                )
+            ]
             freq_row_ids = [
                 ops.unsqueeze(
                     ops.range(
@@ -569,12 +589,11 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             )
             assert kv_collection.attention_dispatch_metadata is not None
         kv_cache_idx = 0
-        linear_state_idx = 0
 
         def inputs_for_layer(
             idx: int, hs: list[TensorValue]
-        ) -> list[Value[Any] | Sequence[Value[Any]]]:
-            nonlocal kv_cache_idx, linear_state_idx
+        ) -> list[Tree[Any]]:
+            nonlocal kv_cache_idx
             if self.layer_types[idx] == "full_attention":
                 # ``layer_idx`` is the sequential index within the KV cache
                 # (0-based across full-attention layers only), distinct from
@@ -587,7 +606,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 # ``forward_sequential_layers`` only introspects ``Value`` and
                 # sequences of them, so the per-device dataclasses are
                 # unpacked field by field.
-                full_attn_inputs: list[Value[Any] | Sequence[Value[Any]]] = [
+                full_attn_inputs: list[Tree[Any]] = [
                     hs,
                     layer_idx_tensor,
                     signal_buffers,
@@ -607,22 +626,18 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                 if freq_row_ids is not None:
                     full_attn_inputs.append(freq_row_ids)
                 return full_attn_inputs
-            # Subgraph inputs, so every entry must be a graph value. The ids
-            # arrive already folded; this only picks out this layer's column.
-            conv = [device.by_leaf(CONV_LEAF_ID) for device in state]
-            rec = [device.by_leaf(RECURRENT_LEAF_ID) for device in state]
-            layer = linear_state_idx
-            vals: list[Value[Any] | Sequence[Value[Any]]] = [
+            # All linear layers share one compiled subgraph, whose body is
+            # built from the first of them. Only the arguments vary per call,
+            # so this layer's row of ``live_row_ids`` has to be selected
+            # here -- selecting it inside the block would bake layer 0's
+            # row into every layer's state access.
+            layer = self.linear_layer_indices.index(idx)
+            return [
                 hs,
                 signal_buffers,
-                [leaf.pool for leaf in conv],
-                [leaf.live_row_id(layer) for leaf in conv],
-                [leaf.pool for leaf in rec],
-                [leaf.live_row_id(layer) for leaf in rec],
+                layer_state_access(state, layer),
                 row_offsets,
             ]
-            linear_state_idx += 1
-            return vals
 
         full_attn_indices = [
             i for i, lt in enumerate(self.layer_types) if lt == "full_attention"
@@ -700,7 +715,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         signal_buffer_types = signals.input_types()
 
         # Flatten KV types for all devices
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # The hidden state is replicated across devices, so the merge runs per
         # replica against a per-device copy of the same embeddings.

@@ -301,9 +301,8 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
         if self._entry_wait_wrap() > 0:
             b.emit(OpDesc.schedule_barrier())
 
-        @__parameter
         @inline(.always)
-        def emit_sync_section():
+        def emit_sync_section() {mut b, imm}:
             if self._pre_mma_sync_wrap() > 0:
                 b.emit(OpDesc.schedule_barrier())
             b.emit_if(self.pre_sync)
@@ -314,9 +313,8 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
             if self._pre_mma_sync_wrap() > 0:
                 b.emit(OpDesc.schedule_barrier())
 
-        @__parameter
         @inline(.always)
-        def emit_load_section():
+        def emit_load_section() {mut b, imm}:
             if self.global_before_frag:
                 b.emit_if(self.global_load, self.global_load_prefetch)
                 b.emit_if(self.global_load_1, self.global_load_1_prefetch)

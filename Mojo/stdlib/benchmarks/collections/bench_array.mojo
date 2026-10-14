@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import std.time
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 # Purposefully mixes power-of-two with non-power-of-two values.

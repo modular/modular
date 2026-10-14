@@ -24,7 +24,7 @@ from max.pipelines.context import AudioContext, TokenBuffer
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib.request_text import retrieve_input_text
 from max.pipelines.lib.tokenizer import run_with_default_executor
-from max.pipelines.modeling.types import PipelineTokenizer
+from max.pipelines.modeling.types import PipelineTokenizer, TokenIds
 from max.pipelines.request import OpenResponsesRequest
 from max.pipelines.request.provider_options import AudioProviderOptions
 from transformers import AutoTokenizer
@@ -169,9 +169,7 @@ class AudioGenerationTokenizer(
             )
         return token_ids
 
-    async def decode(
-        self, encoded: npt.NDArray[np.int64], **kwargs: Any
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs: Any) -> str:
         """Raises: audio generation returns samples, never text."""
         raise NotImplementedError(
             "Decoding is not implemented for audio generation."

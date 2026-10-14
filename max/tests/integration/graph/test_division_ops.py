@@ -119,44 +119,54 @@ def build_floor_div_model(lhs_dtype: DType, rhs_dtype: DType) -> Graph:
     lhs_type = TensorType(lhs_dtype, [], device=DeviceRef.CPU())
     rhs_type = TensorType(rhs_dtype, [], device=DeviceRef.CPU())
     with Graph("floor_div", input_types=[lhs_type, rhs_type]) as g:
-        g.output(floor_div(g.inputs[0].tensor, g.inputs[1].tensor))
+        lhs, rhs = g.inputs[0].tensor, g.inputs[1].tensor
+        g.output(floor_div(lhs, rhs), lhs // rhs)
     return g
 
 
 @pytest.mark.parametrize(
-    "dtype,cases",
+    "lhs_dtype,rhs_dtype,cases",
     [
         # Signed integers exercise the floor correction: truncation toward zero
         # would give -3 (not -4) for -7 // 2, so this pins the signed path.
-        (DType.int32, [(7, 2), (-7, 2), (7, -2), (-7, -2), (-6, 3), (0, 5)]),
-        # Unsigned skips the correction (fast path); operands stay non-negative.
-        (DType.uint32, [(7, 2), (18, 5)]),
+        (
+            DType.int32,
+            DType.int32,
+            [(7, 2), (-7, 2), (7, -2), (-7, -2), (-6, 3), (0, 5)],
+        ),
+        # Unsigned skips the correction; operands stay non-negative.
+        (DType.uint32, DType.uint32, [(7, 2), (18, 5)]),
+        # Mixed operands divide in the promoted signed dtype, so the floor
+        # correction must apply even though `lhs` is unsigned.
+        (DType.uint8, DType.int16, [(7, -2), (255, -1), (7, 2)]),
+        (DType.int8, DType.int32, [(-7, 2), (-128, -1)]),
         # Float operands route through floor(div(...)).
-        (DType.float32, [(7.5, 2.0), (-7.5, 2.0)]),
+        (DType.float32, DType.float32, [(7.5, 2.0), (-7.5, 2.0)]),
     ],
 )
-def test_floor_div_matches_python(
-    dtype: DType,
+def test_floor_div_matches_numpy(
+    lhs_dtype: DType,
+    rhs_dtype: DType,
     cases: list[tuple[int | float, int | float]],
 ) -> None:
-    """``ops.floor_div`` must match Python ``//`` across sign and dtype."""
+    """``ops.floor_div`` and ``//`` must match ``np.floor_divide``."""
     cpu = CPU()
     session = InferenceSession(devices=[cpu])
-    model = session.load(build_floor_div_model(dtype, dtype))
+    model = session.load(build_floor_div_model(lhs_dtype, rhs_dtype))
 
     for lhs_val, rhs_val in cases:
-        lhs = Buffer.from_numpy(np.array(lhs_val, dtype=dtype.to_numpy())).to(
-            cpu
-        )
-        rhs = Buffer.from_numpy(np.array(rhs_val, dtype=dtype.to_numpy())).to(
-            cpu
-        )
-        out = model(lhs, rhs)[0]
-        got = (
-            out.to_numpy().item()
-            if isinstance(out, Buffer)
-            else torch.utils.dlpack.from_dlpack(out).numpy().item()
-        )
-        np.testing.assert_equal(
-            got, lhs_val // rhs_val, err_msg=f"floor_div({lhs_val}, {rhs_val})"
-        )
+        lhs_np = np.array(lhs_val, dtype=lhs_dtype.to_numpy())
+        rhs_np = np.array(rhs_val, dtype=rhs_dtype.to_numpy())
+        expected = np.floor_divide(lhs_np, rhs_np)
+        lhs = Buffer.from_numpy(lhs_np).to(cpu)
+        rhs = Buffer.from_numpy(rhs_np).to(cpu)
+        for name, out in zip(("floor_div", "//"), model(lhs, rhs), strict=True):
+            got = (
+                out.to_numpy()
+                if isinstance(out, Buffer)
+                else torch.utils.dlpack.from_dlpack(out).numpy()
+            )
+            assert got.dtype == expected.dtype, name
+            np.testing.assert_equal(
+                got, expected, err_msg=f"{name}({lhs_val}, {rhs_val})"
+            )

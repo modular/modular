@@ -183,9 +183,8 @@ def _launch_amd_4wave_conv2d_runtime[
     row stride is `C_out` (NHWC contiguous).
     """
 
-    @__parameter
     @inline(.always)
-    def _launch[stride_v: Int, pad_v: Int]() raises:
+    def _launch[stride_v: Int, pad_v: Int]() raises {imm}:
         var _rt_N = Int(input.dim[0]())
         var _rt_H = Int(input.dim[1]())
         var _rt_W = Int(input.dim[2]())
@@ -219,20 +218,21 @@ def _launch_amd_4wave_conv2d_runtime[
             beta=beta,
         )
 
-    if stride == 1 and pad == 0:
-        _launch[1, 0]()
-    elif stride == 1 and pad == 1:
-        _launch[1, 1]()
-    elif stride == 1 and pad == 2:
-        _launch[1, 2]()
-    elif stride == 2 and pad == 0:
-        _launch[2, 0]()
-    elif stride == 2 and pad == 1:
-        _launch[2, 1]()
-    elif stride == 2 and pad == 2:
-        _launch[2, 2]()
-    else:
-        return False
+    match (stride, pad):
+        case (1, 0):
+            _launch[1, 0]()
+        case (1, 1):
+            _launch[1, 1]()
+        case (1, 2):
+            _launch[1, 2]()
+        case (2, 0):
+            _launch[2, 0]()
+        case (2, 1):
+            _launch[2, 1]()
+        case (2, 2):
+            _launch[2, 2]()
+        case _:
+            return False
     return True
 
 
@@ -445,16 +445,17 @@ def dispatch_amd_4wave_conv2d[
             Scalar[output_type], ImmutAnyOrigin
         ].unsafe_dangling()
 
-        @__parameter
         @inline(.always)
-        def _src_immut() -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
+        def _src_immut() {
+            imm
+        } -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
             comptime if has_residual:
                 # When called with has_residual=True, the caller must
                 # supply source_ptr. Materialize an immutable view of it
                 # (the kernel only reads).
-                if source_ptr:
+                if case .Some(source_ptr) = source_ptr:
                     return UnsafePointer[Scalar[output_type], ImmutAnyOrigin](
-                        unsafe_from_address=Int(source_ptr.value())
+                        unsafe_from_address=Int(source_ptr)
                     )
             return _src_ptr_immut
 
@@ -463,9 +464,10 @@ def dispatch_amd_4wave_conv2d[
         # -------- Static vs runtime-HW dispatch --------------------
         comptime if _all_hw_static:
 
-            @__parameter
             @inline(.always)
-            def _launch_static[stride_v: Int, pad_v: Int]() raises -> Bool:
+            def _launch_static[
+                stride_v: Int, pad_v: Int
+            ]() raises {imm} -> Bool:
                 comptime _eff_R = _R
                 comptime _eff_S = _S
                 comptime _H_out_v = (
@@ -520,26 +522,27 @@ def dispatch_amd_4wave_conv2d[
                 )
                 return True
 
-            if stride[0] == 1 and pad == 0:
-                if not _launch_static[1, 0]():
+            match (stride[0], pad):
+                case (1, 0):
+                    if not _launch_static[1, 0]():
+                        return False
+                case (1, 1):
+                    if not _launch_static[1, 1]():
+                        return False
+                case (1, 2):
+                    if not _launch_static[1, 2]():
+                        return False
+                case (2, 0):
+                    if not _launch_static[2, 0]():
+                        return False
+                case (2, 1):
+                    if not _launch_static[2, 1]():
+                        return False
+                case (2, 2):
+                    if not _launch_static[2, 2]():
+                        return False
+                case _:
                     return False
-            elif stride[0] == 1 and pad == 1:
-                if not _launch_static[1, 1]():
-                    return False
-            elif stride[0] == 1 and pad == 2:
-                if not _launch_static[1, 2]():
-                    return False
-            elif stride[0] == 2 and pad == 0:
-                if not _launch_static[2, 0]():
-                    return False
-            elif stride[0] == 2 and pad == 1:
-                if not _launch_static[2, 1]():
-                    return False
-            elif stride[0] == 2 and pad == 2:
-                if not _launch_static[2, 2]():
-                    return False
-            else:
-                return False
         else:
             if not _launch_amd_4wave_conv2d_runtime[
                 C_in=_C_in,

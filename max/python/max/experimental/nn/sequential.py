@@ -13,7 +13,6 @@
 """A Module for a sequence of tensor transformations."""
 
 import functools
-from collections.abc import Iterable
 from typing import Any
 
 from max.experimental.tensor import Tensor
@@ -47,16 +46,28 @@ class ModuleList(list[T], Module[[Tensor], Tensor]):
         }
     """
 
-    @property
-    def children(self) -> Iterable[tuple[str, Module[..., Any]]]:
-        """Iterates over the direct child modules of the ``Module``.
+    def __tree_flatten__(self) -> tuple[dict[Any, Any], None]:
+        """Returns the listed modules keyed by index, then the attributes."""
+        children: dict[Any, Any] = {
+            str(i): child for i, child in enumerate(self)
+        }
+        attributes, _ = super().__tree_flatten__()
+        children.update(attributes)
+        return children, None
 
-        Yields:
-            ``(name, module)`` pairs, where ``name`` is the attribute name of
-            the child on the module.
-        """
-        for i, child in enumerate(self):
-            yield str(i), child
+    @classmethod
+    def __tree_empty__(cls, meta: None) -> "ModuleList[Any]":
+        """Creates an empty list whose children are set afterwards."""
+        del meta
+        return list.__new__(cls)
+
+    def __tree_setattr__(self, key: Any, value: Any) -> None:
+        """Appends the child if ``key`` is its index, else sets an attribute."""
+        # Index keys arrive first and in order, so appending is correct.
+        if isinstance(key, str) and key.isdigit() and int(key) == len(self):
+            self.append(value)
+        else:
+            super().__tree_setattr__(key, value)
 
     def __rich_repr__(self):
         """Omits the path for children in the repr."""

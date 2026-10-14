@@ -130,11 +130,11 @@ def bench_single_group_router_eplb[
                 expert_indices,
                 expert_indices_log,
                 expert_weights,
-                expert_scores.as_immut(),
-                expert_bias.as_immut(),
-                logcnt.as_immut(),
-                log2phy.as_immut(),
-                layer_idx.as_immut(),
+                expert_scores.as_imm(),
+                expert_bias.as_imm(),
+                logcnt.as_imm(),
+                log2phy.as_imm(),
+                layer_idx.as_imm(),
                 routed_scaling_factor,
                 ctx,
             )
@@ -320,8 +320,8 @@ def bench_router_group_limited[
             ](
                 expert_indices,
                 expert_weights,
-                expert_scores.as_immut(),
-                expert_bias.as_immut(),
+                expert_scores.as_imm(),
+                expert_bias.as_imm(),
                 routed_scaling_factor,
                 ctx,
             )
@@ -416,8 +416,8 @@ def bench_single_group_router[
             ](
                 expert_indices,
                 expert_weights,
-                expert_scores.as_immut(),
-                expert_bias.as_immut(),
+                expert_scores.as_imm(),
+                expert_bias.as_imm(),
                 routed_scaling_factor,
                 ctx,
             )
@@ -523,10 +523,10 @@ def bench_eplb_remap[
                 target="gpu",
             ](
                 phy,
-                router_idx.as_immut(),
-                logcnt.as_immut(),
-                log2phy.as_immut(),
-                layer_idx.as_immut(),
+                router_idx.as_imm(),
+                logcnt.as_imm(),
+                log2phy.as_imm(),
+                layer_idx.as_imm(),
                 ctx,
             )
 

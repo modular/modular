@@ -29,7 +29,6 @@ from std.tempfile import gettempdir
 import std.os
 from std.format._utils import _FlushingWriteBuffer
 from std.pathlib import Path
-from std.sys import CompilationTarget
 from std.random import random_ui64
 
 from std.collections import Span
@@ -389,8 +388,8 @@ struct NamedTemporaryFile(Movable):
         self._delete = delete
         self.name = ""
 
-        if name:
-            self.name = name.value()
+        if case .Some(name) = name:
+            self.name = name
         else:
             for _ in range(TMP_MAX):
                 var potential_name = (
@@ -582,7 +581,7 @@ struct NamedTemporaryFile(Movable):
             )
         ```
         """
-        var file = FileDescriptor(self._file_handle._get_raw_fd())
+        var file = FileDescriptor(self._file_handle)
         var buffer = _FlushingWriteBuffer(file)
 
         comptime for i in range(args.__len__()):

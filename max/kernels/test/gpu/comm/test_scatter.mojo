@@ -30,7 +30,7 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
     Replica D [0,8,16]  -> GPU 6, GPU 7
 """
 
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from std.collections import Array
 from std.math import ceildiv
 from std.sys import size_of
@@ -89,7 +89,7 @@ def _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(n)).as_immut()
+        tt_input_bufs[dp] = TileTensor(dev_buf, row_major(n)).as_imm()
         input_devbufs.append(dev_buf)
 
     # Output buffers on each GPU (sized to its replica's chunk).
@@ -111,17 +111,17 @@ def _test_pull[
 
     # Signal buffers.
     var signal_bufs = List[DeviceBuffer[.uint8]]()
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
     for i in range(ngpus):
         var sig_buf = ctxs[i].create_buffer_sync[.uint8](size_of[Signal]())
         init_signal_buffer(sig_buf, ctxs[i])
         ctxs[i].synchronize()
-        rank_sigs[i] = (
-            sig_buf.unsafe_ptr().bitcast[Signal]().as_unsafe_any_origin()
-        )
         signal_bufs.append(sig_buf)
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_bufs[i])
+    )
 
     # Launch scatter.
     comptime for i in range(ngpus):

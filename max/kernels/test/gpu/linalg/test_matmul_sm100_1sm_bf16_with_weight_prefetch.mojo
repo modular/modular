@@ -24,7 +24,6 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.primitives.grid_controls import PDLLevel
-from linalg.utils import elementwise_epilogue_type
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -75,14 +74,12 @@ def test_blackwell_matmul_with_weight_prefetch[
         t" prefetch_tiles_n={prefetch_tiles_n}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -110,8 +107,8 @@ def test_blackwell_matmul_with_weight_prefetch[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -207,14 +204,12 @@ def test_rmsnorm_then_matmul[
         t" prefetch_tiles_n={prefetch_tiles_n}"
     )
 
-    var ak_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var ak_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = M * K
     var b_size = N * K
@@ -317,30 +312,27 @@ def test_rmsnorm_then_matmul[
         prefetch_tiles_n=prefetch_tiles_n,
     )
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c_ours_tensor)
+    var out_shape = IndexList[2](
+        Int(c_ours_tensor.dim[0]()), Int(c_ours_tensor.dim[1]())
+    )
+
     def epilogue_fn[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = 1,
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var c_ours_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         c_ours_tensor.raw_store[
             width=width, alignment=alignment * size_of[c_type]()
-        ](c_ours_tensor.layout(Coord(idx)), rebind[SIMD[c_type, width]](val))
-
-    comptime epi = Optional[elementwise_epilogue_type](epilogue_fn)
+        ](c_ours_tensor.layout(idx), rebind[SIMD[c_type, width]](val))
 
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        elementwise_lambda_fn=epi,
         pdl_level=pdl_level,
     ](
-        c_ours_tensor,
+        out_shape,
         a_normed_ours_tensor,
         b_tensor,
+        epilogue_fn,
         ctx,
     )
 

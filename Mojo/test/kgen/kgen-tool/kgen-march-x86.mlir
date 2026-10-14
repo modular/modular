@@ -8,5 +8,5 @@
 // CHECK-TUNE-SAME: tune_cpu = "skylake-avx512"
 
 kgen.generator export @main() {
-  kgen.return
+  hlcf.return
 }

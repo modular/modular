@@ -168,7 +168,7 @@ class Segment:
 
     - :meth:`even` splits the segment's ``size`` rows/cols evenly across devices
       via :func:`_compute_shard_range`. Used for gate/up halves of SwiGLU
-      stacks, MoE intermediate dims, etc.
+      stacks, MoE intermediate dims, and so on.
     - :meth:`head_aware` splits the segment by attention head; each device
       receives ``_compute_shard_range(num_heads, ...)`` heads of ``head_dim``
       slots. Handles uneven head distributions.

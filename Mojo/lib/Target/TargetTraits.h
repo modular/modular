@@ -40,6 +40,11 @@ template <class C>
 struct object_creator;
 } // namespace llvm
 
+namespace mlir {
+class DialectRegistry;
+class MLIRContext;
+} // namespace mlir
+
 namespace M::KGEN {
 
 /// Per-target metadata dispatched by triple. Carries only cheap, broadly-useful
@@ -55,6 +60,14 @@ public:
   /// Whether these traits describe `triple`.
   virtual bool matches(const llvm::Triple &triple) const = 0;
 
+  /// Adds any dialects the target's lowering needs to `registry`. Targets
+  /// whose IR is entirely upstream KGEN contribute nothing.
+  virtual void registerDialects(mlir::DialectRegistry &registry) const {}
+  /// Loads those dialects into `ctx` (the preload variant).
+  virtual void loadDialects(mlir::MLIRContext *ctx) const {}
+  /// Registers the target's passes so tools can run them by name.
+  virtual void registerPasses() const {}
+
   /// Resolves `triple` to the concrete traits that describe it, or null if
   /// these do not. The default returns `this` when `matches`; a dispatcher that
   /// owns nested traits overrides this to return one of them.
@@ -67,6 +80,11 @@ public:
 
   /// Whether this target is a GPU.
   virtual bool isGPU() const { return false; }
+
+  /// Whether this target forces all sliced symbols to be exported, beyond the
+  /// GPU-driven `overrideExported` default. Folded into `overrideExported` so
+  /// generic driver code need not special-case the target.
+  virtual bool forcesExportedSymbols() const { return false; }
 
   /// Default target CPU for `triple` when none is given, or empty to use the
   /// generic host/cross-compile fallback.
@@ -140,6 +158,11 @@ public:
   /// `validateEmissionKind` if the target does not accept `kind`.
   ErrorOr<EmitAs> emitAsForKind(llvm::StringRef kind) const;
 
+  /// The file extension an artifact of `kind` carries. Non-virtual, so a
+  /// file's name cannot disagree with its content across the places that
+  /// name one.
+  llvm::StringRef extensionFor(EmitAs kind) const;
+
   /// One accelerator architecture accepted by `--target-accelerator`.
   struct AcceleratorArch {
     llvm::StringRef arch;
@@ -179,6 +202,11 @@ public:
   llvm::ArrayRef<std::unique_ptr<TargetTraits>> targets() const {
     return Targets;
   }
+
+  /// Runs the corresponding hook on every registered target.
+  void registerAllDialects(mlir::DialectRegistry &registry) const;
+  void loadAllDialects(mlir::MLIRContext *ctx) const;
+  void registerAllPasses() const;
 
 private:
   TargetTraitsRegistry() = default;

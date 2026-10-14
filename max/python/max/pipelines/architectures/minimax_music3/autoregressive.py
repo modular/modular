@@ -44,15 +44,19 @@ from typing import Any, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
-from max.experimental.nn import CompiledModel
+from max.experimental.compilation import CompiledCallable
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn.kv_cache import KVCacheInputs, MHAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    MHAKVCacheParams,
+)
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
 
@@ -148,9 +152,13 @@ class _Step(LanguageModel):
         kv_inputs = self.kv_params.unflatten_kv_inputs(
             iter(tensor._graph_value for tensor in cache)
         )
-        assert isinstance(kv_inputs, KVCacheInputs)
+        assert (
+            isinstance(kv_inputs, tuple)
+            and kv_inputs
+            and isinstance(kv_inputs[0], KVCacheInputsPerDevice)
+        )
         hidden, logits = super().forward(
-            inputs_embeds, kv_inputs.inputs[0], input_row_offsets
+            inputs_embeds, kv_inputs[0], input_row_offsets
         )
         sampling.seed(seed)
         scores = logits.cast(DType.float32)
@@ -234,7 +242,7 @@ class LanguageModelStage:
             ).to(device)
         # `_Step` widens `LanguageModel`'s two outputs to four, which the
         # compiled type cannot express: it is derived from the base signature.
-        self.model: CompiledModel[..., Any] = module.compile(
+        self.model: CompiledCallable[..., Any] = module.compile(
             *module.input_types(BATCH),
             weights=convert_language_model_state(weights, config, dtype),
         )
@@ -280,7 +288,10 @@ class LanguageModelStage:
         ).to(self.device)
         cache_inputs = self.cache.runtime_inputs_for_leaf([self.contexts])
         outputs = self.model(
-            embeds, offsets, seed, *cache_inputs.inputs[0].flatten()
+            embeds,
+            offsets,
+            seed,
+            *tree.leaves(cache_inputs[0]),
         )
         for context in self.contexts:
             # Marks this step's positions processed and queues one more, which is
@@ -484,7 +495,7 @@ class DepthDecoderStage:
             module = _Frame(
                 config, language_model_config.semantic_vocab_size, recipe
             ).to(device)
-        self.decoder: CompiledModel[..., Any] = module.compile(
+        self.decoder: CompiledCallable[..., Any] = module.compile(
             *module.input_types(),
             weights=convert_depth_decoder_state(
                 weights, language_model, language_model_config, dtype

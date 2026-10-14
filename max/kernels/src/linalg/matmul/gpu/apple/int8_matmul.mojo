@@ -54,7 +54,7 @@ from std.utils import IndexList
 
 from layout import TensorEngine, TileTensor
 from layout.coord import Coord
-from layout.tile_layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout
 
 from linalg.arch.apple.mma import MmaOpApple
 
@@ -773,8 +773,7 @@ struct AppleM5Int8MatMul[
             return
 
         var sg_id = Int32(thread_idx.x) // Int32(WARP_SIZE)
-        var sg_m_idx = sg_id // Int32(Self.NUM_SG_N)
-        var sg_n_idx = sg_id % Int32(Self.NUM_SG_N)
+        var sg_m_idx, sg_n_idx = divmod(sg_id, Int32(Self.NUM_SG_N))
 
         var row_base = tile_m * BM_i + sg_m_idx * SG_M_i
         var col_base = tile_n * BN_i + sg_n_idx * SG_N_i
@@ -978,17 +977,17 @@ def enqueue_apple_int8_matmul[
 
     # Gate on the int32-indexed extents (m*k, n*k) -- not m*n, since only A/B are
     # int32-indexed (C stays i64). Non-qualifying shapes use the i64 `_mma_width16`.
-    var use_i32 = _use_i32_override.value() if _use_i32_override else (
+    var use_i32 = _use_i32_override.or_else(
         (k % 16 == 0) and (max(m * k, n * k) < (Int(1) << 31))
     )
     if use_i32:
         ctx.enqueue_function[kernel_i32](
             c,
-            a.as_immut(),
-            b.as_immut(),
-            a_scale.as_immut(),
-            b_scale.as_immut(),
-            bias.as_immut(),
+            a.as_imm(),
+            b.as_imm(),
+            a_scale.as_imm(),
+            b_scale.as_imm(),
+            bias.as_imm(),
             log2_m,
             log2_n,
             grid_dim=(side_m * side_n),
@@ -997,11 +996,11 @@ def enqueue_apple_int8_matmul[
     else:
         ctx.enqueue_function[kernel_i64](
             c,
-            a.as_immut(),
-            b.as_immut(),
-            a_scale.as_immut(),
-            b_scale.as_immut(),
-            bias.as_immut(),
+            a.as_imm(),
+            b.as_imm(),
+            a_scale.as_imm(),
+            b_scale.as_imm(),
+            bias.as_imm(),
             log2_m,
             log2_n,
             grid_dim=(side_m * side_n),
@@ -1048,8 +1047,8 @@ struct AppleInt8ActQuant[in_type: DType = .bfloat16, *, THREADS: Int = 64]:
         K_arg: Int32,
     ):
         var K = Int(K_arg)
-        var row = Int(block_idx.x)
-        var tid = Int(thread_idx.x)
+        var row = block_idx.x
+        var tid = thread_idx.x
 
         # Pass 1: per-thread partial absmax over strided columns of this row,
         # then a threadgroup all-reduce via a tiny shared-scratch max.
@@ -1087,7 +1086,7 @@ def _threadgroup_max[nthreads: Int](val: Float32) -> Float32:
     reduction is cheap and needs no tree.
     """
     var s = unsafe_stack_allocation[nthreads, Float32, address_space=.SHARED]()
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     s[tid] = val
     barrier()
     if tid == 0:
@@ -1139,7 +1138,7 @@ def enqueue_apple_int8_quantize_activation[
     ]
     ctx.enqueue_function[kernel](
         q,
-        a.as_immut(),
+        a.as_imm(),
         a_scale,
         Int32(k),
         grid_dim=(m),

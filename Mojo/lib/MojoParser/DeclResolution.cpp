@@ -38,6 +38,7 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Filesystem/Paths.h"
 
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -52,6 +53,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace LIT;
 
 /// If the given ASTDecl represents an extension, return the ASTDecl for its
@@ -154,6 +157,11 @@ public:
   /// body decorator. Any leftover decorators are emitted and set on the
   /// operation.
   void applyBodyDecorators(function_ref<LogicalResult(ExprNode *)> process);
+
+  /// Process body decorators on a declaration that handles none of its own.
+  /// Leftover decorators are emitted as expressions, so this rejects the ones
+  /// the expression emitter cannot name.
+  void applyBodyDecorators();
 
 private:
   /// Validate compiler decorators that are allowed to propagate.
@@ -447,11 +455,12 @@ LogicalResult Decorators::handleDocHidden(ExprNode *expr, ASTDecl &decl) {
   if (!declRef || declRef->spelling != "doc_hidden")
     return failure(); // Not our decorator.
 
-  Operation *op = decl.getIfOperation();
-  if (auto aliasOp = dyn_cast_if_present<AliasDeclOp>(op)) {
+  if (auto *aliasDecl = dyn_cast<AliasASTDecl>(&decl)) {
+    AliasDeclOp aliasOp = aliasDecl->getOp();
     aliasOp.setHasDocHiddenDecoratorAttr(UnitAttr::get(aliasOp.getContext()));
     return success();
   }
+  Operation *op = decl.getIfOperation();
   if (auto fieldOp = dyn_cast_if_present<StructFieldOp>(op)) {
     fieldOp.setIsDocHiddenAttr(UnitAttr::get(fieldOp.getContext()));
     return success();
@@ -509,6 +518,143 @@ void Decorators::applySignatureDecorators(
   decl.setBodyDecorators(bodyDecorators);
 }
 
+//===----------------------------------------------------------------------===//
+// Struct decorators
+//
+// `@__annotation(value, ...)` attaches comptime values to a struct or one of
+// its fields. The values are evaluated here and stored, each paired with its
+// type as a `#kgen.annotation`, in the decl's `annotations` attribute;
+// `#kgen.get_annotation_value` reads one back by index, which the reflection
+// library wraps as `reflect[T].annotation[index]`.
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct StructDecorators : public SharedStateUser {
+  StructDecorators(StructDeclOp structOp, ASTDecl &structDecl,
+                   DeclResolver &resolver)
+      : SharedStateUser(resolver.shared), structOp(structOp),
+        structDecl(structDecl) {}
+
+  /// Return true if `decorator` is `@__annotation`, in either the bare or the
+  /// called form. A declaration with nowhere to store annotations uses this to
+  /// diagnose the decorator itself, rather than letting it reach the emitter
+  /// as an unknown name.
+  static bool isAnnotationDecorator(ExprNode *decorator);
+
+  LogicalResult processBodyDecorator(ExprNode *decorator);
+
+  /// Attach an `@__annotation` decorator's values to `fieldOp`, returning
+  /// failure if `decorator` is some other decorator. A field's operands may
+  /// name the struct's parameters, so they are emitted in the struct's scope.
+  LogicalResult processFieldDecorator(ExprNode *decorator,
+                                      StructFieldOp fieldOp);
+
+private:
+  /// Process the @fieldwise_init body decorator on structs.
+  void processFieldwiseInitDecorator(SMLoc decoratorLoc, bool isImplicit);
+
+  /// Match `@__annotation(...)`, returning the call node, or null if
+  /// `decorator` is some other decorator. The bare `@__annotation` form is
+  /// diagnosed here.
+  const CallNode *matchAnnotationDecorator(ExprNode *decorator);
+
+  /// Evaluate the operands of an `@__annotation(...)` decorator in the
+  /// struct's scope and prepend them to `op`'s annotations. Decorators reach
+  /// us innermost-first, so prepending restores source order.
+  template <typename OpTy>
+  void applyAnnotationDecorator(const CallNode *callNode, OpTy op);
+
+  StructDeclOp structOp;
+  ASTDecl &structDecl;
+};
+} // namespace
+
+static constexpr StringLiteral kAnnotationDecorator = "__annotation";
+
+bool StructDecorators::isAnnotationDecorator(ExprNode *decorator) {
+  const ExprNode *callee = decorator;
+  if (auto callNode = dyn_cast<CallNode>(decorator))
+    callee = callNode->callee;
+  auto declRef = dyn_cast<DeclRefNode>(callee);
+  return declRef && declRef->spelling == kAnnotationDecorator;
+}
+
+const CallNode *
+StructDecorators::matchAnnotationDecorator(ExprNode *decorator) {
+  if (!isAnnotationDecorator(decorator))
+    return nullptr;
+
+  auto callNode = dyn_cast<CallNode>(decorator);
+  if (!callNode) {
+    emitError(decorator->getLoc(), "@__annotation requires at least one value")
+        << decorator->getRange();
+    return nullptr;
+  }
+  return callNode;
+}
+
+template <typename OpTy>
+void StructDecorators::applyAnnotationDecorator(const CallNode *callNode,
+                                                OpTy op) {
+  if (callNode->operands.empty()) {
+    emitError(callNode->getLoc(), "@__annotation requires at least one value")
+        << callNode->getRange();
+    return;
+  }
+
+  IREmitter emitter(structDecl, EC_Decorator);
+  SmallVector<Attribute> annotations;
+  for (const Operand &operand : callNode->operands) {
+    if (!operand.isPositional()) {
+      // `*args` and `**kwargs` are not keyword arguments, and expanding one
+      // would mean splicing a comptime variadic into the annotation list.
+      emitError(operand.expr->getLoc(),
+                operand.isKeyword()
+                    ? "@__annotation does not accept keyword arguments"
+                    : "@__annotation does not accept unpacked arguments")
+          << operand.expr->getRange();
+      return;
+    }
+    PValue value = emitter.emitExprPValue(operand.expr, EC_Decorator);
+    if (!value)
+      return; // Error already emitted.
+
+    // Store the materialized form.
+    if (ASTType target = value.getType().getNonmaterializableTarget(shared)) {
+      value = emitter.emitExprPValue(operand.expr, EC_Decorator, target);
+      if (!value)
+        return; // Error already emitted.
+    }
+
+    TypedAttr annotationValue = getCanonicalAttr(value.get());
+    TraitType anyTypeTrait = emitter.shared.lookupBuiltinTraitType(
+        "AnyType", operand.expr->getLoc());
+    // Upcast to AnyType, this is shared metatype for all annotation attr.
+    FailureOr<PValue> annotationType = emitter.emitTypeValueUpCastToTrait(
+        {PValue(annotationValue.getType()), operand.expr}, anyTypeTrait);
+    if (failed(annotationType)) {
+      emitError(operand.expr->getLoc(),
+                "@__annotation value must be a value, not a type")
+          << operand.expr->getRange();
+      return;
+    }
+    annotations.push_back(
+        AnnotationAttr::get(annotationValue, *annotationType));
+  }
+
+  llvm::append_range(annotations, op.getAnnotations());
+  op.setAnnotationsAttr(ArrayAttr::get(op.getContext(), annotations));
+}
+
+LogicalResult StructDecorators::processFieldDecorator(ExprNode *decorator,
+                                                      StructFieldOp fieldOp) {
+  if (!isAnnotationDecorator(decorator))
+    return failure();
+  if (const CallNode *annotation = matchAnnotationDecorator(decorator))
+    applyAnnotationDecorator(annotation, fieldOp);
+  return success();
+}
+
 // Helper function to extract symbol name from a TypedAttr
 static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
   // Helper lambda to extract name from a symbol reference
@@ -545,7 +691,6 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
 
       KGEN::kFnRegister,
       "elementwise",
-      "view_kernel",
       "mutable",
   };
 
@@ -560,6 +705,20 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
   }
 
   return success(llvm::is_contained(plainDre, *symbolName));
+}
+
+void Decorators::applyBodyDecorators() {
+  applyBodyDecorators([&](ExprNode *decorator) -> LogicalResult {
+    // Only structs and struct fields have somewhere to store annotations, and
+    // they handle the decorator themselves. Letting it fall through to the
+    // expression emitter would report "unknown declaration '__annotation'".
+    if (!StructDecorators::isAnnotationDecorator(decorator))
+      return failure();
+    emitError(decorator->getLoc(),
+              "@__annotation is only supported on structs and struct fields")
+        << decorator->getRange();
+    return success();
+  });
 }
 
 void Decorators::applyBodyDecorators(
@@ -657,7 +816,7 @@ private:
   void applyArgumentless(StringRef spelling, const CallNode *callNode,
                          function_ref<void()> applyImpl);
 
-  ArrayAttr getLLVMMetadataArray(ArrayRef<Operand> operands);
+  ArrayAttr getLLVMFnAttrArray(ArrayRef<Operand> operands);
 
   /// Register an LLVM arg metadata in the internal list to avoid churning mlir
   /// attributes as these arg metadata decorators are parsed. Must call finalize
@@ -670,13 +829,13 @@ private:
   StringRef baseName;
   TypeCheckedFnSignature &tcSignature;
 
-  /// The working list of LLVMArgMetadata. Either empty, or initialized to a
+  /// The working list of FnArgMetadata. Either empty, or initialized to a
   /// list with the same length as the total number of function arguments on
   /// first use.
-  SmallVector<Attribute> llvmArgMetadata;
+  SmallVector<Attribute> fnArgAttributes;
 
   /// The working vector of the LLVMMetadata.
-  SmallVector<Attribute> llvmMetadata;
+  SmallVector<Attribute> fnAttributes;
 
   /// The inline decorator already applied, empty until one is.
   StringRef inlineSpelling;
@@ -1047,7 +1206,7 @@ void FnSigDecorators::applyExportLike(SMLoc loc, bool isExport,
 
   // TODO: Consider extracting the operand-parsing loop below into a helper
   // (e.g. parseDecoratorArgs) that returns a struct {TypedAttr rawName,
-  // std::optional<std::string> exportABI, std::optional<bool> mangle}, to
+  // std::optional<std::string> exportABI, TriBool mangle}, to
   // separate argument parsing from the semantic actions that follow.
   TypedAttr linkageName;
   std::optional<std::string> exportABI;
@@ -1343,9 +1502,8 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
         return {};
       }
     }
-    if (auto aliasOp =
-            dyn_cast_or_null<AliasDeclOp>(nameDecls.back()->getIfOperation()))
-      return aliasOp;
+    if (auto *aliasDecl = dyn_cast<AliasASTDecl>(nameDecls.back()))
+      return aliasDecl->getOp();
 
     shared.emitError(funcDecl.getLoc(), "name '")
         << name << "' cannot be used in '@__llvm_metadata'";
@@ -1354,47 +1512,47 @@ static std::optional<AliasDeclOp> getLLVMMetadataNameAlias(SharedState &shared,
   return {};
 }
 
-ArrayAttr FnSigDecorators::getLLVMMetadataArray(ArrayRef<Operand> operands) {
+ArrayAttr FnSigDecorators::getLLVMFnAttrArray(ArrayRef<Operand> operands) {
   IREmitter emitter(sigDecl, EC_Decorator);
-  SmallVector<Attribute> metadata;
+  SmallVector<Attribute> fnAttrs;
   for (Operand value : operands) {
-    StringAttr metadataName;
-    ExprNode *metadataValue;
+    StringAttr fnAttrName;
+    ExprNode *fnAttrValue;
     // Handle the case of only a metadata name, with no value associated.
     if (value.unpackStyle == ArgUnpackStyle::kPositional) {
       auto declRef = dyn_cast<DeclRefNode>(value.expr);
       if (!declRef) {
-        emitError(value.getLoc(), "Expected LLVM metadata name");
+        emitError(value.getLoc(), "Expected function attribute name");
         continue;
       }
-      metadataName = StringAttr::get(getContext(), declRef->spelling);
-      metadataValue = nullptr;
+      fnAttrName = StringAttr::get(getContext(), declRef->spelling);
+      fnAttrValue = nullptr;
     } else {
       if (!value.name) {
-        emitError(value.getLoc(), "LLVM metadata requires a name");
+        emitError(value.getLoc(), "function attribute requires a name");
         continue;
       }
-      metadataName = value.name;
-      metadataValue = value.expr;
+      fnAttrName = value.name;
+      fnAttrValue = value.expr;
     }
 
     // It might be possible that name comes from alias, therefore need to
     // analyze all module's aliases to see if alias's value needs to be used.
     if (std::optional<AliasDeclOp> aliasOp =
-            getLLVMMetadataNameAlias(shared, sigDecl, metadataName))
-      metadata.push_back(*aliasOp->getValue());
+            getLLVMMetadataNameAlias(shared, sigDecl, fnAttrName))
+      fnAttrs.push_back(*aliasOp->getValue());
     else
-      metadata.push_back(metadataName);
+      fnAttrs.push_back(fnAttrName);
 
-    if (metadataValue) {
+    if (fnAttrValue) {
       if (PValue attr = emitter.emitExprPValue(value.expr, EC_Decorator))
-        metadata.push_back(attr);
+        fnAttrs.push_back(attr);
     } else {
       // Store unit attr as value.
-      metadata.push_back(UnitAttr::get(getContext()));
+      fnAttrs.push_back(UnitAttr::get(getContext()));
     }
   }
-  return ArrayAttr::get(getContext(), metadata);
+  return ArrayAttr::get(getContext(), fnAttrs);
 }
 
 void FnSigDecorators::applyLLVMMetadata(SMLoc decoratorLoc,
@@ -1405,8 +1563,8 @@ void FnSigDecorators::applyLLVMMetadata(SMLoc decoratorLoc,
     return;
   }
 
-  ArrayAttr metadata = getLLVMMetadataArray(node->operands);
-  llvmMetadata.append(metadata.begin(), metadata.end());
+  ArrayAttr fnAttrs = getLLVMFnAttrArray(node->operands);
+  fnAttributes.append(fnAttrs.begin(), fnAttrs.end());
 }
 
 void FnSigDecorators::applyLLVMArgMetadata(SMLoc decoratorLoc,
@@ -1450,12 +1608,12 @@ void FnSigDecorators::applyLLVMArgMetadata(SMLoc decoratorLoc,
   }
 
   // First time setting arg metadata, initialize with array of empty attributes.
-  if (llvmArgMetadata.empty())
-    llvmArgMetadata.insert(llvmArgMetadata.begin(),
+  if (fnArgAttributes.empty())
+    fnArgAttributes.insert(fnArgAttributes.begin(),
                            tcSignature.argList.parsedArgs.size(),
                            ArrayAttr::get(getContext(), {}));
 
-  llvmArgMetadata[argIdx] = getLLVMMetadataArray(node->operands.drop_front());
+  fnArgAttributes[argIdx] = getLLVMFnAttrArray(node->operands.drop_front());
 }
 
 void FnSigDecorators::finalize() {
@@ -1476,13 +1634,12 @@ void FnSigDecorators::finalize() {
                       LinkageNameAttr::get(decl.getContext(), baseName));
   }
 
-  if (!llvmArgMetadata.empty())
-    funcOp.setLLVMArgMetadataArrayAttr(
-        ArrayAttr::get(getContext(), llvmArgMetadata));
+  if (!fnArgAttributes.empty())
+    funcOp.setFnArgAttrsAttr(ArrayAttr::get(getContext(), fnArgAttributes));
 
-  if (!llvmMetadata.empty()) {
+  if (!fnAttributes.empty()) {
     // NOTE: @llvm_metadata are processed and added in reverse order
-    funcOp.setLLVMMetadataArrayAttr(ArrayAttr::get(getContext(), llvmMetadata));
+    funcOp.setFnAttrsAttr(ArrayAttr::get(getContext(), fnAttributes));
   }
 }
 
@@ -1508,7 +1665,7 @@ isCapturingByDefault(SharedState &shared, FnOp funcOp, TraitType canonicalTrait,
       return WalkResult::advance();
     TraitDeclOp traitDeclOp =
         dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
-    if (traitDeclOp && traitDeclOp.getDefinesClosure())
+    if (traitDeclOp && shared.isUniversalParametricClosureTrait(traitDecl))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
@@ -1563,10 +1720,10 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
   return true;
 }
 
-static MLValue emitClosureInstance(ArrayRef<Capture> captures,
-                                   ASTDecl &nestedFnDecl, SharedState &shared,
-                                   ArrayRef<ParamDeclRefAttr> bodyParamCaptures,
-                                   bool useParametricTrait) {
+static MLValue
+emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
+                    SharedState &shared,
+                    ArrayRef<ParamDeclRefAttr> bodyParamCaptures) {
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
@@ -1580,25 +1737,6 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   auto [capturedRefs, _] =
       DeclResolver::createSelfContainedSignature(closureSig);
 
-  // Register captured external parameter references so that call sites can
-  // pre-seed auxiliary parameters during overload fitness evaluation.
-  if (!capturedRefs.empty()) {
-    ASTDecl *enclosingDecl =
-        nestedFnDecl.getParentDecl()->getNearestDeclOfType<FnOp>();
-    if (enclosingDecl) {
-      SmallVector<ClosureParamCapture> paramCaptures;
-      for (ParamDeclRefAttr ref : capturedRefs)
-        paramCaptures.push_back({ref.getName(), ref.getType()});
-      shared.addClosureParamCaptures(*enclosingDecl,
-                                     nestedFn.getSourceNameAttr(),
-                                     std::move(paramCaptures));
-    }
-  }
-
-  ASTDecl *closureTrait =
-      useParametricTrait
-          ? shared.getUniversalParametricClosureTrait()
-          : shared.getOrCreateClosureTrait(loc, *moduleDecl, closureSig);
   bool isCopyable = allCopyable(captures, shared, loc, nestedFnDecl);
 
   ClosureEmitter &emitter = shared.getClosureEmitter();
@@ -1614,9 +1752,8 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
         capturedRefs.push_back(ref);
     }
   }
-  Value closureInstance =
-      emitter.emitClosure(*moduleDecl, nestedFnDecl, captures, *closureTrait,
-                          mlirLoc, isCopyable, closureSig, capturedRefs);
+  Value closureInstance = emitter.emitClosure(
+      *moduleDecl, nestedFnDecl, captures, mlirLoc, isCopyable, capturedRefs);
   if (!closureInstance)
     return {};
   return MLValue(closureInstance);
@@ -1675,13 +1812,11 @@ static BodyCaptures collectBodyCaptures(SharedState &shared, ASTDecl &decl,
 /// Construct the runtime value for a fully-resolved non-legacy nested-`def`
 /// closure: promote a stateless closure to a top-level function, or otherwise
 /// materialize a storage-struct instance. Sets the decl's IR value on success.
-static LogicalResult
-constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
-                 ArrayRef<Capture> captures,
-                 ArrayRef<ParamDeclRefAttr> paramCaptures,
-                 const ParsedCaptureList &captureSignature,
-                 ArrayRef<ConstraintAttr> closureExternalRefConstraints,
-                 FnTypeGeneratorType signature, bool useParametricTrait) {
+static LogicalResult constructClosure(SharedState &shared, ASTDecl &decl,
+                                      FnOp funcOp, ArrayRef<Capture> captures,
+                                      ArrayRef<ParamDeclRefAttr> paramCaptures,
+                                      const ParsedCaptureList &captureSignature,
+                                      FnTypeGeneratorType signature) {
   // abi("C") functions must be bare function pointers with no captured
   // state, even in closure form.
   if (signature.getFnEffects().isCABI() && !captures.empty()) {
@@ -1693,15 +1828,13 @@ constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
   // Stateless nested defs (no runtime captures) are still promoted to thin
   // functions so they remain usable as parameter values (e.g.
   // `_reflection_write_to[f=call_write_to]`).
-  if (closureExternalRefConstraints.empty() &&
-      captureSignature.parsedCaptures.empty() &&
+  if (captureSignature.parsedCaptures.empty() &&
       !captureSignature.captureAllByConvention) {
     shared.closureEmitter->promoteClosure(decl, paramCaptures);
     return success();
   }
 
-  MLValue instance = emitClosureInstance(captures, decl, shared, paramCaptures,
-                                         useParametricTrait);
+  MLValue instance = emitClosureInstance(captures, decl, shared, paramCaptures);
   if (!instance)
     return failure();
   decl.setIRValue(instance);
@@ -1742,81 +1875,20 @@ static LogicalResult createCaptureValues(ParserBase &p, ASTDecl &sigDecl,
   return didFail ? failure() : success();
 }
 
-/// Registers the closure-typed parameters in `params` whose signatures capture
-/// other parameters in the same list (e.g. `F: def[w: Int]() -> SIMD[dtype, w]`
-/// captures `dtype`) and returns the type-equality `where` clauses that bind
-/// each closure alias to the captured parameter (e.g. `eq(F.dtype, dtype)`).
-static SmallVector<ConstraintAttr>
-registerClosureParamCaptures(ArrayRef<ParamDeclAttr> params, ASTDecl &decl,
-                             SharedState &shared, OpBuilder &builder) {
-  SmallVector<ClosureExternalRef> closureExternalRefs;
-  for (ParamDeclAttr param : params)
-    shared.getClosureEmitter().collectClosureExternalRefs(param,
-                                                          closureExternalRefs);
-
-  SmallVector<ConstraintAttr> constraints;
-  if (closureExternalRefs.empty())
-    return constraints;
-
-  ClosureParamCaptures closureParamCaptures;
-  for (const ClosureExternalRef &ref : closureExternalRefs)
-    closureParamCaptures[ref.closureParam.getName()].push_back(
-        {ref.externalName, ref.externalType});
-  shared.setClosureParamCaptures(decl, std::move(closureParamCaptures));
-
-  // Emit a type-equality constraint for each external reference so the closure
-  // alias binds to the captured parameter.
-  for (const ClosureExternalRef &ref : closureExternalRefs) {
-    TypedAttr rhs = ParamDeclRefAttr::get(ref.externalName, ref.externalType);
-
-    ParamDeclAttr closureParam = ref.closureParam;
-
-    std::optional<TraitDeclOp> closureTraitOr = ClosureEmitter::getClosureDecl(
-        shared, getCanonicalType(closureParam.getType()));
-    assert(closureTraitOr && "expected closure type");
-
-    // Get the trait symbol for the GetWitnessAttr.
-    TraitDeclOp closureTrait = *closureTraitOr;
-    auto traitSymbol =
-        TraitSymbolAttr::get(getFullyResolvedSymbolRef(closureTrait));
-
-    // LHS: C.T - GetWitnessAttr accessing the alias on the closure param.
-    TypedAttr witnessAttr =
-        GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitSymbol,
-                            ref.externalName, ref.externalType);
-
-    TypedAttr idConstraint = ParamIdenticalAttr::get(witnessAttr, rhs);
-    Location loc = shared.diags.translateLocation(decl.getLoc());
-    constraints.push_back(
-        ConstraintAttr::get(idConstraint, loc, /*message=*/StringAttr()));
-  }
-  return constraints;
-}
-
 /// Finalizes a fully type-checked function/closure signature onto `funcOp`:
-/// registers closure-parameter captures (with their `eq(C.T, T)` where
-/// clauses), builds the generator signature, and writes the params /
-/// function-type / generator / mangled-symbol attributes. Returns the
-/// (implicit-origin-indexed) generator signature, or null on failure.
-static FnTypeGeneratorType finalizeResolvedFnOp(
-    SharedState &shared, FnOp funcOp, ASTDecl &decl,
-    TypeCheckedFnSignature &tcSignature, TypeCheckedParamList &paramList,
-    StringAttr baseName,
-    SmallVectorImpl<ConstraintAttr> &closureExternalRefConstraints) {
+/// builds the generator signature, and writes the params / function-type /
+/// generator / mangled-symbol attributes. Returns the (implicit-origin-indexed)
+/// generator signature, or null on failure.
+static FnTypeGeneratorType
+finalizeResolvedFnOp(SharedState &shared, FnOp funcOp, ASTDecl &decl,
+                     TypeCheckedFnSignature &tcSignature,
+                     TypeCheckedParamList &paramList, StringAttr baseName) {
   OpBuilder builder = decl.getDeclEndBuilder();
   NamedAttrList attrs = funcOp->getAttrDictionary();
-
-  // Register closure-parameter captures and their `eq(C.T, T)` where clauses.
-  closureExternalRefConstraints = registerClosureParamCaptures(
-      paramList.paramDeclAttrs, decl, shared, builder);
-  llvm::append_range(tcSignature.paramList.emittedBodyConstraints,
-                     closureExternalRefConstraints);
 
   FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
   if (!signature)
     return {};
-
-  decl.insertKnownAssumptions(closureExternalRefConstraints);
 
   /// configure FnOp
 
@@ -1974,6 +2046,7 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
   argList.resultArg = node->resultArg;
   argList.effects = node->effects;
   argList.thrownTypeExpr = const_cast<ExprNode *>(node->thrownTypeExpr);
+  argList.isParsingClosure = true;
 
   TypeCheckedFnSignature tcSignature(paramList, argList, /*originExpr=*/nullptr,
                                      &decl, baseName);
@@ -1984,13 +2057,9 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
 
   // 5. Build the generator signature and write the signature attributes onto
   //    the FnOp (shared with resolveSignature via finalizeResolvedFnOp), then
-  //    register the symbol. The closure-param-capture constraints output is
-  //    unused here: the lambda materializes its instance directly via
-  //    emitClosureInstance.
-  SmallVector<ConstraintAttr> closureExternalRefConstraints;
-  FnTypeGeneratorType signature =
-      finalizeResolvedFnOp(shared, funcOp, decl, tcSignature, paramList,
-                           baseName, closureExternalRefConstraints);
+  //    register the symbol.
+  FnTypeGeneratorType signature = finalizeResolvedFnOp(
+      shared, funcOp, decl, tcSignature, paramList, baseName);
   if (!signature)
     return {};
   for (ParsedArgument &arg : tcSignature.argList.parsedArgs)
@@ -2081,9 +2150,8 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
     return emitter.emitResult(AnyValue(literal), node, dest);
   }
 
-  MLValue instance =
-      emitClosureInstance(bodyCaptures.values, decl, shared,
-                          bodyCaptures.paramRefs, /*useParametricTrait=*/false);
+  MLValue instance = emitClosureInstance(bodyCaptures.values, decl, shared,
+                                         bodyCaptures.paramRefs);
   if (!instance)
     return {};
 
@@ -2098,9 +2166,9 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  assert(p.getToken().isAny(Token::kw_async, Token::kw_def, Token::kw_fn) &&
+  assert(p.getToken().isAny(Token::kw___async, Token::kw_def, Token::kw_fn) &&
          "not a function definition?");
-  bool isAsync = p.consumeIf(Token::kw_async);
+  bool isAsync = p.consumeIf(Token::kw___async);
   // FIXME(26.5): Remove support for 'fn'.
   if (p.getToken().is(Token::kw_fn)) {
     shared.emitError(p.getToken().getLoc(),
@@ -2212,7 +2280,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       // TODO(MOCO-2287): Support async defaulted trait methods
       shared.emitError(funcOp.getLoc())
           << "async defaulted trait methods are not supported; remove the "
-             "method or remove 'async'";
+             "method or remove '__async'";
       return failure();
     }
   }
@@ -2243,6 +2311,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     fnSignature.effects.setCapturing();
   bool isNonlegacyClosure =
       funcOp->getParentOfType<FnOp>() && !fnSignature.effects.isCapturing();
+  fnSignature.isParsingClosure = isNonlegacyClosure;
 
   // Keep the provisional FnOp signature in sync with early effect decisions so
   // signature typechecking for nested defs classifies the current function
@@ -2357,10 +2426,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   // Handle argument effects, build the ASTDecls for the arguments, and write
   // the finalized signature attributes onto the FnOp (shared with the lambda
   // desugaring via finalizeResolvedFnOp).
-  SmallVector<ConstraintAttr> closureExternalRefConstraints;
-  FnTypeGeneratorType signature =
-      finalizeResolvedFnOp(shared, funcOp, decl, tcSignature, paramList,
-                           baseName, closureExternalRefConstraints);
+  FnTypeGeneratorType signature = finalizeResolvedFnOp(
+      shared, funcOp, decl, tcSignature, paramList, baseName);
   if (!signature)
     return failure();
 
@@ -2467,8 +2534,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
 
   if (isNonlegacyClosure)
     return constructClosure(shared, decl, funcOp, captures, paramCaptures,
-                            captureSignature, closureExternalRefConstraints,
-                            signature, fnSignature.isExperimentalParamTrait);
+                            captureSignature, signature);
 
   if (captures.empty() && captureSignature.parsedCaptures.empty() &&
       !captureSignature.captureAllByConvention) {
@@ -2555,8 +2621,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       // and would otherwise skip that step, silently dropping their body
       // decorators -- which makes a @doc_hidden @unavailable function appear
       // to require a doc string. Apply them here as well.
-      Decorators(decl).applyBodyDecorators(
-          [&](ExprNode *decorator) { return failure(); });
+      Decorators(decl).applyBodyDecorators();
       return success();
     }
 
@@ -2588,6 +2653,31 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
         return failure();
       }
     }
+  }
+
+  // An enum method whose body is only `...` is rejected. In a trait, `...`
+  // marks a requirement and `pass` a default implementation; a struct method
+  // still accepts `...` as `pass`, which is to be deprecated (MOCO-5076), so
+  // enums reject it from the start.
+  ASTDecl *structDecl = getStructOrTargetStruct(*decl.getParentDecl(), *this);
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(
+          structDecl ? structDecl->getIfOperation() : nullptr);
+      structOp && structOp.isEnum()) {
+    LexerCursor bodyCursor = lexer.getCursor();
+    ParserBase p(shared, lexer);
+    StringRef docString;
+    p.parseDocString(docString);
+    SMLoc ellipsisLoc;
+    if (p.consumeIf(Token::dot_dot_dot, &ellipsisLoc)) {
+      while (p.consumeIf(Token::semi) || p.consumeIf(Token::dot_dot_dot)) {
+      }
+      if (decl.isMatchingEndCursor(lexer.getCursor())) {
+        shared.emitError(ellipsisLoc,
+                         "enum methods must have a body; '...' is reserved");
+        return failure();
+      }
+    }
+    bodyCursor.restore(lexer);
   }
 
   // Set up information about value arguments, emitting before the lit.endfn.
@@ -2705,8 +2795,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
     emitter.emitNormalReturn(funcOp.getLoc(), Value(), /*emitEndFunc=*/false);
 
   // Now that the body of the function is parsed, run any body decorators.
-  Decorators(decl).applyBodyDecorators(
-      [&](ExprNode *decorator) { return failure(); });
+  Decorators(decl).applyBodyDecorators();
 
   // If this function is @always_inline("builtin"), check that its body obeys
   // the right invariants.
@@ -3795,7 +3884,7 @@ static LogicalResult parseExplicitDestroyMessage(SharedState &shared,
 }
 
 /// structdef ::=
-///   [decorators] "struct" identifier [param_signature]
+///   [decorators] ("struct" | "__enum") identifier [param_signature]
 ///                ["(" conformance_list ")"] ("where" expression)* ":" suite
 ///
 LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
@@ -3817,7 +3906,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<ParsedConformanceEntry> parsedConformances;
   SmallVector<ParsedTraitConstraint> parsedConstraints;
 
-  if (p.parseToken(Token::kw_struct,
+  if (p.parseToken(structOp.isEnum() ? Token::kw___enum : Token::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc) ||
@@ -3827,7 +3916,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
           /*allowConformanceConstraints=*/true) ||
       parsedParams.parseTrailingConstraintsIfPresent(
           p, sigDecl.getIndentation()) ||
-      p.parseToken(Token::colon, "expected ':' in struct definition") ||
+      p.parseToken(Token::colon, structOp.isEnum()
+                                     ? "expected ':' in enum definition"
+                                     : "expected ':' in struct definition") ||
       decl.isErroneous())
     return failure();
 
@@ -3849,16 +3940,6 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   }
 
   paramSignature.emitBodyConstraints();
-
-  // Register closure-parameter captures and their `eq(F.dtype, dtype)` where
-  // clauses.
-  OpBuilder structBuilder = decl.getDeclEndBuilder();
-  SmallVector<ConstraintAttr> closureExternalRefConstraints =
-      registerClosureParamCaptures(paramSignature.paramDeclAttrs, decl, shared,
-                                   structBuilder);
-  llvm::append_range(paramSignature.emittedBodyConstraints,
-                     closureExternalRefConstraints);
-  sigDecl.insertKnownAssumptions(closureExternalRefConstraints);
 
   // Look up traits the compiler unconditionally injects into every struct.
   // These lookups are reused below both for constraint building (to skip
@@ -3980,6 +4061,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SmallVector<ConstraintAttr> constraintsArray =
       canonicalizeTraitSymbolsAndConstraints(shared, traitConformed,
                                              traitConstraints);
+  if (failed(checkAtMostOneClosureTrait(shared, traitConformed, identifierLoc)))
+    decl.setErroneous();
   structOp.setCanonicalTrait(
       TraitType::get(getContext(), traitConformed, constraintsArray));
 
@@ -4072,24 +4155,6 @@ static FnOp lookupSpecialInit(ASTDecl &structDecl,
   }
   return {};
 }
-
-namespace {
-struct StructDecorators : public SharedStateUser {
-  StructDecorators(StructDeclOp structOp, ASTDecl &structDecl,
-                   DeclResolver &resolver)
-      : SharedStateUser(resolver.shared), structOp(structOp),
-        structDecl(structDecl) {}
-
-  LogicalResult processBodyDecorator(ExprNode *decorator);
-
-private:
-  /// Process the @fieldwise_init body decorator on structs.
-  void processFieldwiseInitDecorator(SMLoc decoratorLoc, bool isImplicit);
-
-  StructDeclOp structOp;
-  ASTDecl &structDecl;
-};
-} // namespace
 
 /// Look at the initializers of the specified struct to see if there is already
 /// a fieldwise init.  If so, return it, otherwise return null.
@@ -4199,6 +4264,11 @@ LogicalResult StructDecorators::processBodyDecorator(ExprNode *decorator) {
       return failure();
     }
   }
+  if (isAnnotationDecorator(decorator)) {
+    if (const CallNode *annotation = matchAnnotationDecorator(decorator))
+      applyAnnotationDecorator(annotation, structOp);
+    return success();
+  }
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
       if (declRef->spelling == "explicit_destroy")
@@ -4263,6 +4333,39 @@ static void processRegisterPassableDecorator(
   }
 }
 
+void DeclResolver::resolveEnumCases(ASTDecl &structDecl,
+                                    ArrayRef<ASTDecl *> caseDecls) {
+  // Cases are not in the enum's name table, so duplicates are found here,
+  // before a case's line is re-read: a duplicate's payload types are never
+  // resolved.
+  SmallDenseMap<StringAttr, ASTDecl *, 8> firstByName;
+  bool hasBadCase = false;
+  for (ASTDecl *caseDecl : caseDecls) {
+    auto caseOp = cast<EnumCaseOp>(caseDecl->getIfOperation());
+    auto [previous, inserted] =
+        firstByName.try_emplace(caseOp.getNameAttr(), caseDecl);
+    if (!inserted) {
+      auto diag = emitError(caseDecl->getLoc())
+                  << "invalid redefinition of '" << caseOp.getName() << "'";
+      diag.attachNote(previous->second->getLoc()) << "previous definition here";
+      // Leave the decl as `resolve` leaves a malformed case, so that nothing
+      // resolves it.
+      caseOp.erase();
+      caseDecl->setIRValue(std::nullopt);
+      caseDecl->setErroneous();
+      caseDecl->resolvedness = DeclResolvedness::body;
+      hasBadCase = true;
+      continue;
+    }
+    if (failed(resolveSignature(*caseDecl, caseDecl->getLoc())))
+      hasBadCase = true;
+  }
+  // Any rejected case makes the enum erroneous, but only once every case is
+  // resolved: an erroneous enum silences the errors in later payload types.
+  if (hasBadCase)
+    structDecl.setErroneous();
+}
+
 ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                       ASTDecl &structDecl) {
 
@@ -4282,8 +4385,18 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // Parse the body of the struct, which will give us all the methods and
   // fields, but without resolving their signatures or bodies.
+  size_t firstBodyDecl = parsedDeclList.size();
   if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
+
+  // An enum's cases are unlisted, so collect them from the decls the body
+  // created.
+  SmallVector<ASTDecl *> caseDecls;
+  if (structOp.isEnum())
+    for (ASTDecl *decl : ArrayRef(parsedDeclList).drop_front(firstBodyDecl))
+      if (decl->getParentDecl() == &structDecl &&
+          isa_and_nonnull<EnumCaseOp>(decl->getIfOperation()))
+        caseDecls.push_back(decl);
 
   // At this point, we have to mark the struct as body resolved... for very
   // unfortunate reasons. The issue is that we need nested declarations (e.g.
@@ -4323,6 +4436,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       structFields.push_back({fieldOp, decl});
     }
   }
+
+  if (structOp.isEnum())
+    resolveEnumCases(structDecl, caseDecls);
 
   // Determine if there is an explicit conformance to Deinitable.
   if (std::optional<ConstraintAttr> deinitableConstraint =
@@ -4378,7 +4494,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                                      structOp.getConvention());
 
   // If any of the fields are bad, we do not process decorators since they
-  // assume that the struct body if valid.
+  // assume that the struct body is valid.
   if (hasBadField && !structDecl.getBodyDecorators().empty()) {
     structDecl.setErroneous();
     return failure();
@@ -4461,9 +4577,10 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
         // defaulted alias with the same name, raise an error.
         for (ASTDecl *existingDecl :
              structDecl.lookupInCurrentScope(childName)) {
-          Operation *op = existingDecl->getIfOperation();
-          if (auto existingAlias = dyn_cast_or_null<AliasDeclOp>(op);
-              existingAlias && existingAlias.isDefaultedAssociatedAlias()) {
+          auto *existingAliasDecl = dyn_cast<AliasASTDecl>(existingDecl);
+          if (existingAliasDecl &&
+              existingAliasDecl->getOp().isDefaultedAssociatedAlias()) {
+            AliasDeclOp existingAlias = existingAliasDecl->getOp();
 
             SymbolRefAttr currentTraitRef = getFullyResolvedSymbolRef(
                 existingAlias->getParentOfType<TraitDeclOp>());
@@ -4577,7 +4694,13 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
   // Process field decorators syntactically to avoid recursive scope lookups
   // that can arise when using the IR emitter from within a struct's scope.
   // Currently only @doc_hidden and @__allow_legacy_any_origin_fields are
-  // supported on struct fields.
+  // supported on struct fields, plus @__annotation, whose operands are
+  // arbitrary comptime expressions. Those are emitted in the struct's scope,
+  // which is already name-lookup ready: resolveBody(StructDeclOp) marks it
+  // before resolving any field.
+  ASTDecl &structDecl = *decl.getParentDecl();
+  StructDecorators structDecorators(
+      cast<StructDeclOp>(structDecl.getIfOperation()), structDecl, *this);
   for (auto &[decorator, _] : decoratorExprs) {
     if (auto *declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "doc_hidden") {
@@ -4590,6 +4713,8 @@ LogicalResult DeclResolver::resolveSignature(StructFieldOp fieldOp,
         continue;
       }
     }
+    if (succeeded(structDecorators.processFieldDecorator(decorator, fieldOp)))
+      continue;
     shared.emitError(decorator->getLoc(),
                      "decorators not supported on this statement")
         << SourceRange(decorator->getRangeStart(), decorator->getRangeEnd());
@@ -4625,6 +4750,84 @@ ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
       return failure();
     }
   }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// EnumCaseDecl implementation
+//===----------------------------------------------------------------------===//
+
+/// enum_case ::= "case" identifier ["(" expression ("," expression)* [","] ")"]
+///
+/// Every other spelling after `case` is reserved and rejected.
+LogicalResult DeclResolver::resolveSignature(EnumCaseOp caseOp, Lexer &lexer,
+                                             ASTDecl &decl) {
+  ParserBase p(shared, lexer);
+  size_t stmtIndent = decl.getIndentation();
+
+  // A malformed case declares no case.
+  auto removeCase = [&] {
+    caseOp.erase();
+    decl.setIRValue(std::nullopt);
+    return failure();
+  };
+  auto rejectCase = [&](SMLoc loc) {
+    p.emitError(loc) << "enum case must have the form 'case name' or "
+                        "'case name(T, ...)'";
+    return removeCase();
+  };
+
+  if (p.parseToken(Token::kw_case, "internal error: checked by stmt parser") ||
+      p.parseIdentifier("internal error: checked by stmt parser"))
+    return removeCase();
+
+  SmallVector<ExprNode *, 2> payload;
+  if (p.consumeIf(Token::l_paren)) {
+    if (p.getToken().is(Token::r_paren))
+      return rejectCase(p.getToken().getLoc());
+
+    auto parsePayloadType = [&]() -> ParseResult {
+      ExprNode *typeExpr = nullptr;
+      if (p.parseExpression(typeExpr))
+        return failure();
+      if (p.getToken().isAny(Token::colon, Token::equal)) {
+        p.emitError(typeExpr->getLoc())
+            << "labeled payloads in enum cases are not supported; use "
+               "positional types, e.g. 'case C(T, U)'"
+            << typeExpr->getRange();
+        return failure();
+      }
+      payload.push_back(typeExpr);
+      return success();
+    };
+    if (p.parseCommaSeparatedList(parsePayloadType, {Token::r_paren}))
+      return removeCase();
+    if (!p.consumeIf(Token::r_paren))
+      return rejectCase(p.getTokenLocOrEndOfPreviousLineIfOnNewLine());
+  }
+
+  // Reject extraneous tokens after the case.
+  if (p.getToken().isNot(Token::semi, Token::eof) &&
+      p.isTokenInCurrentStatement(stmtIndent))
+    return rejectCase(p.getToken().getLoc());
+
+  ASTDecl &enumDecl = *decl.getParentDecl();
+  SmallVector<Type> payloadTypes;
+  for (ExprNode *typeExpr : payload) {
+    IREmitter emitter(enumDecl, EC_Type);
+    ASTType type = emitter.emitExprType(typeExpr, /*allowUnbound=*/false);
+    if (!type)
+      return failure();
+    if (sugarIsa<TraitType>(type)) {
+      emitError(typeExpr->getLoc())
+          << "enum case payloads do not support trait types; " << type
+          << " is a trait, use a concrete type or compile-time generic";
+      return failure();
+    }
+    payloadTypes.push_back(type);
+  }
+  caseOp.setPayloadTypesAttr(
+      OpBuilder(caseOp.getContext()).getTypeArrayAttr(payloadTypes));
   return success();
 }
 
@@ -4741,20 +4944,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                              shared, immediateParents))
     return failure();
   SmallVector<TraitSymbolAttr> parentTraits;
-  bool definesClosure = traitOp.getDefinesClosure();
   if (auto *inheritedFrom = decl.getTraitConformanceLineage()) {
-    for (auto [symbol, _] : *inheritedFrom) {
+    for (auto [symbol, _] : *inheritedFrom)
       parentTraits.push_back(symbol);
-      if (definesClosure)
-        continue;
-      ASTDecl &type = getDeclForTypeSymbol(symbol.getSymbol());
-      if (auto traitDecl =
-              dyn_cast_if_present<TraitDeclOp>(type.getIfOperation()))
-        if (traitDecl.getDefinesClosure())
-          definesClosure = true;
-    }
   }
-  traitOp.setDefinesClosure(definesClosure);
 
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();
@@ -5088,6 +5281,15 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
   if (ParserBase(shared, lexer).parseSuite(extensionDecl))
     return failure();
 
+  // The conflict check below and the verification of the extension's
+  // conformances need the struct's members, so resolve the struct. Resolving it
+  // looks up its members, which resolves its extensions, including this one.
+  // Mark this extension resolved first, as structs do once their members are
+  // parsed, so that those lookups see its members rather than a cycle.
+  extensionDecl.resolvedness = DeclResolvedness::body;
+  if (failed(resolveBody(structAstDecl, extensionDecl.getLoc())))
+    return failure();
+
   // Now check for conflicts; things in the extension shouldn't already be in
   // the struct, unless they're both methods because overloading is fine.
   if (extensionDecl.declsInScope && structAstDecl.declsInScope) {
@@ -5215,25 +5417,25 @@ ParseResult DeclResolver::resolveSignature(LIT::UnresolvedImportOp op,
 // Trait Composition Decl implementation
 //===----------------------------------------------------------------------===//
 
-ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
-                                           ASTDecl &decl) {
-  if (auto alias = dyn_cast<AliasDeclOp>(
-          witness->getDecls().front()->getIfOperation())) {
+ParseResult DeclResolver::resolveSignature(WitnessASTDecl &witness) {
+  if (auto *firstAliasDecl =
+          dyn_cast<AliasASTDecl>(witness.getDecls().front())) {
+    AliasDeclOp firstAlias = firstAliasDecl->getOp();
     Type mergedType;
     ASTDecl *mergedTypeDecl = nullptr;
 
     DenseSet<TraitType> traitTypesToMerge;
-    for (ASTDecl *curDecl : witness->getDecls()) {
+    for (ASTDecl *curDecl : witness.getDecls()) {
       if (failed(resolve(*curDecl, DeclResolvedness::signature,
                          curDecl->getLoc())))
         return failure();
 
-      auto alias = cast<AliasDeclOp>(curDecl->getIfOperation());
+      AliasDeclOp alias = cast<AliasASTDecl>(curDecl)->getOp();
       Type aliasType = alias.getType();
       std::optional<ParameterEvaluator> evaluatorOpt =
-          populateTraitBindingEvaluator(witness->traitSymbol, shared);
+          populateTraitBindingEvaluator(witness.traitSymbol, shared);
       if (evaluatorOpt) {
-        assert(shared.isUniversalParametricClosureTrait(witness->traitSymbol));
+        assert(shared.isUniversalParametricClosureTrait(witness.traitSymbol));
         aliasType = cast<FnTypeGeneratorType>(evaluatorOpt->replace(aliasType));
       }
 
@@ -5275,42 +5477,34 @@ ParseResult DeclResolver::resolveSignature(WitnessDecl *witness,
     // The merged entry is keyed by whichever trait the first alias came from;
     // all of them agree on the name, and conformance checking re-verifies the
     // merged bound against each.
-    WitnessDecl::ResolvedType resolved;
-    resolved.witnessName = alias.getDeclName();
+    WitnessASTDecl::ResolvedType resolved;
+    resolved.witnessName = firstAlias.getDeclName();
     resolved.witnessType = mergedType;
-    witness->storage = resolved;
+    witness.storage = resolved;
     return success();
   }
 
-  ASTDecl &onlyWitness = *witness->getDecls().front();
+  ASTDecl &onlyWitness = *witness.getDecls().front();
   if (failed(resolve(onlyWitness, DeclResolvedness::signature,
                      onlyWitness.getLoc())))
     return failure();
 
-  // Propagate the disabled state. Signature resolution is what disables an
-  // overridden method, so this has to be checked before touching the
-  // operation, which disabling clears.
-  if (onlyWitness.isDisabled()) {
-    decl.markDisabled();
-    return success();
-  }
-
   auto fnOp = cast<FnOp>(onlyWitness.getIfOperation());
 
-  WitnessDecl::ResolvedType resolved;
+  WitnessASTDecl::ResolvedType resolved;
   resolved.witnessName = fnOp.getSymNameAttr();
   resolved.witnessType = fnOp.getFullSignature();
   resolved.implicitConversion = fnOp.getImplicitConversion();
   resolved.isStaticMethod = fnOp.getIsStatic();
-  witness->storage = resolved;
+  witness.storage = resolved;
   return success();
 }
 
-ParseResult DeclResolver::resolveBody(WitnessDecl *witness, ASTDecl &decl) {
+ParseResult DeclResolver::resolveBody(WitnessASTDecl &witness) {
   // We don't need to resolve the body of a witness, only need the type.
-  assert(witness->getWitnessEntry().witnessType &&
+  assert(witness.getWitnessEntry().witnessType &&
          "Witness type should be resolved");
-  decl.resolvedness = DeclResolvedness::body;
+  witness.resolvedness = DeclResolvedness::body;
   return success();
 }
 
@@ -5346,9 +5540,6 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
     for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
         Operation *memberOp = decl->getIfOperation();
-        // Skip disabled member and inherited decls.
-        if (decl->isDisabled())
-          continue;
         if (!isa<AliasDeclOp, FnOp>(memberOp)) {
           // If the decl is not a function or alias, it is an error.
           return emitError(parentDecl.getLoc(), "unexpected decl in trait")

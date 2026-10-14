@@ -59,7 +59,7 @@ The NVFP4 per-tensor `weight_scale_2` scalar folds in OUTSIDE the kernel (a
 post-matmul multiply by the graph lowering), identically to the committed path.
 """
 
-from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
+from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
 from std.math import ceildiv
 from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
@@ -163,8 +163,7 @@ def bc_frag_coord(lane: Int, i: Int) -> IndexList[2]:
         i: B/C-fragment element index in `[0, 16)`; selects which of this
             lane's 16 held B/C elements to map to `(row, col)`.
     """
-    var half = i // 8
-    var sub = i % 8
+    var half, sub = divmod(i, 8)
     return IndexList[2](
         frag_row_base(lane) + (sub >> 2) * 8,
         frag_col_base(lane) + (sub % 4) + half * 16,
@@ -191,8 +190,7 @@ def bt_frag_coord(lane: Int, i: Int) -> IndexList[2]:
         i: B-fragment element index in `[0, 16)`; selects which of this lane's
             16 held B elements to map to `(n, k)` under `transpose_right=1`.
     """
-    var half = i // 8
-    var sub = i % 8
+    var half, sub = divmod(i, 8)
     return IndexList[2](
         frag_row_base(lane) + (sub >> 2) * 8 + half * 16,  # n (0..31)
         frag_col_base(lane) + (sub % 4),  # k (0..15, contiguous)
@@ -655,14 +653,13 @@ struct Matmul2dFp4[
         var N = Int(N_arg)
         var K = Int(K_arg)
         var lane = Int(lane_id())
-        var sg_id = Int(thread_idx.x) // WARP_SIZE
-        var sg_m = sg_id // Self.num_sg_n
-        var sg_n = sg_id % Self.num_sg_n
+        var sg_id = warp_id()
+        var sg_m, sg_n = divmod(sg_id, Self.num_sg_n)
 
-        var sg_row0 = (Int(block_idx.y) * Self.num_sg_m + sg_m) * (
+        var sg_row0 = (block_idx.y * Self.num_sg_m + sg_m) * (
             Self.MMA_M * Self.tm
         )
-        var sg_col0 = (Int(block_idx.x) * Self.num_sg_n + sg_n) * (
+        var sg_col0 = (block_idx.x * Self.num_sg_n + sg_n) * (
             Self.MMA_N * Self.tn
         )
 
@@ -826,13 +823,12 @@ struct Matmul2dFp4[
         )
 
         var lane = Int(lane_id())
-        var tid = Int(thread_idx.x)
-        var sg_id = tid // WARP_SIZE
-        var sg_m = sg_id // Self.num_sg_n
-        var sg_n = sg_id % Self.num_sg_n
+        var tid = thread_idx.x
+        var sg_id = warp_id()
+        var sg_m, sg_n = divmod(sg_id, Self.num_sg_n)
 
-        var tg_col = Int(block_idx.x) * BN  # N-origin of this threadgroup tile
-        var sg_row0 = (Int(block_idx.y) * Self.num_sg_m + sg_m) * (
+        var tg_col = block_idx.x * BN  # N-origin of this threadgroup tile
+        var sg_row0 = (block_idx.y * Self.num_sg_m + sg_m) * (
             Self.MMA_M * Self.tm
         )
 
@@ -877,8 +873,7 @@ struct Matmul2dFp4[
         var accs = Array[_, Self.tm * Self.tn](fill=SIMD[.float32, 16](0))
 
         # This thread's cooperative-decode slot: N-row + contiguous byte-run.
-        var dec_nrow = tid // THREADS_PER_ROW
-        var dec_col_in_row = tid % THREADS_PER_ROW
+        var dec_nrow, dec_col_in_row = divmod(tid, THREADS_PER_ROW)
         var dec_col0 = dec_col_in_row * COLS_PER_THREAD  # first bf16 col
         var dec_n_abs = tg_col + dec_nrow
 
@@ -887,12 +882,11 @@ struct Matmul2dFp4[
         # `bounded=False` instantiation contains no bounds branch (comptime),
         # matching the AppleM5Fp4MatMul edge/interior split. The B decode/read is
         # always interior (tile-aligned N + K % BK == 0).
-        var tg_m_end = (Int(block_idx.y) + 1) * Self.TG_M
+        var tg_m_end = (block_idx.y + 1) * Self.TG_M
         var is_m_edge = tg_m_end > M
 
         @inline(.always)
-        @__parameter
-        def _kloop[bounded: Bool]():
+        def _kloop[bounded: Bool]() {mut accs, imm}:
             var k0 = 0
             while k0 < K:
                 # ---- cooperative coalesced decode of (BN, BK) -> b_view ----
@@ -1054,9 +1048,9 @@ def enqueue_matmul2d_fp4[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        packed.as_immut(),
-        scales.as_immut(),
+        a.as_imm(),
+        packed.as_imm(),
+        scales.as_imm(),
         Int32(m),
         Int32(n),
         Int32(k),
@@ -1179,9 +1173,9 @@ def enqueue_matmul2d_fp4_smem[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        packed.as_immut(),
-        scales.as_immut(),
+        a.as_imm(),
+        packed.as_imm(),
+        scales.as_imm(),
         Int32(m),
         Int32(n),
         Int32(k),

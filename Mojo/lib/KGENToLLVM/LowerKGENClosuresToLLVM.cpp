@@ -238,8 +238,8 @@ private:
     Value one = LLVM::ConstantOp::create(rewriter, op.getLoc(),
                                          IntegerType::get(context, 8), 1);
     LLVM::AllocaOp envStruct =
-        LLVM::AllocaOp::create(rewriter, op.getLoc(), types.opaquePtrType, one);
-    envStruct.setElemType(types.liftedFunctionCaptureType);
+        LLVM::AllocaOp::create(rewriter, op.getLoc(), types.opaquePtrType,
+                               types.liftedFunctionCaptureType, one);
     // TODO: When data layouts are propagated properly, extract the data
     //  layout from TargetInfoAttr
     LLVM::LifetimeStartOp::create(rewriter, op.getLoc(), envStruct);

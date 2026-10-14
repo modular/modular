@@ -52,8 +52,6 @@ _EXTRA_CONSTRAINTS = {
     "test_semaphore.mojo": ["//:nvidia_gpu"],
     "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_grid_dependence_control.mojo": ["//:h100_gpu"],
-    "test_has_amd_gpu.mojo": ["//:amd_gpu"],
-    "test_has_nvidia_gpu.mojo": ["//:nvidia_gpu"],
     "test_kernel_with_list.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377 remove this
     "test_producer_consumer.mojo": ["//:h100_gpu"],
     "test_tbc_launch_config.mojo": ["//:h100_gpu"],
@@ -81,7 +79,6 @@ _GPU_MEMORY = {
     "test_dim.mojo": "1",
     "test_fast_div.mojo": "1",
     "test_fast_div_ptx.mojo": "1",
-    "test_has_nvidia_gpu.mojo": "1",
     "test_info.mojo": "1",
     "test_invariant_load.mojo": "1",
     "test_is_sm90.mojo": "1",

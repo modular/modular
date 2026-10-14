@@ -30,10 +30,8 @@ print(p)  # a/b/c.txt
 
 import std.os
 import std.format._utils as fmt
-from std.hashlib.hasher import Hasher
 from std.os import PathLike, listdir, stat_result
 from std.ffi import c_char, external_call
-from std.sys import CompilationTarget
 
 from std.reflection import call_location
 

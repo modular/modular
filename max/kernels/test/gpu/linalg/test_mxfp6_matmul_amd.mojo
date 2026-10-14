@@ -55,20 +55,14 @@ from std.memory import bitcast
 from std.random import random_ui64, seed
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
-from std.testing import assert_true
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from std.utils import StaticTuple
-from layout import Coord, Idx, TileTensor
+from layout import Idx, TileTensor
 from layout.tile_layout import row_major
 
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.matmul.gpu.amd import Shuffler
-from linalg.fp6_utils import (
-    FP6Format,
-    decode_fp6_to_f32,
-    fp6_reference_table,
-    unpack_fp6_x32,
-)
+from linalg.fp6_utils import FP6Format, decode_fp6_to_f32, unpack_fp6_x32
 from linalg.fp6_quantization import quantize_mxfp6_amd
 from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     mxfp6_block_scaled_matmul_amd,
@@ -431,8 +425,8 @@ def run_case_preb[
 ) raises -> Bool:
     """Same shapes and reference as `run_case`, but drives
     `mxfp6_block_scaled_matmul_amd[preshuffled_b=True]`: B and its scales are
-    preshuffled once (untimed, mirroring the load-time cost
-    `preshuffle_block_scaled_b_dense` pays in production) before the call.
+    preshuffled once (untimed, mirroring the one-time cost
+    `preshuffle_block_scaled_b` pays at model init) before the call.
 
     Only valid for `M > DECODE_M_MAX` (64): the dispatcher silently takes the
     row-major decode path for smaller M regardless of `preshuffled_b`, so
@@ -474,9 +468,7 @@ def run_case_preb[
     # static weight.
     var b_sf_pre = ctx.enqueue_create_host_buffer[DType.uint8](N * K_SCALES)
     ctx.synchronize()
-    var b_sf_tt = TileTensor(
-        b_sf, row_major(Coord(Idx[1], Idx[N], Idx[K_SCALES]))
-    )
+    var b_sf_tt = TileTensor(b_sf, row_major(Idx[1], Idx[N], Idx[K_SCALES]))
     _ = Shuffler[1].preshuffle_scale_4d[MN=N, K_SCALES=K_SCALES](
         b_sf_tt, b_sf_pre
     )
@@ -940,13 +932,13 @@ def test_quantizer_feeds_matmul[
         ctx,
         TileTensor(a_q, row_major((M, Idx[K_BYTES]))),
         TileTensor(a_sf, row_major((M, Idx[K_SCALES]))),
-        TileTensor(a_bf_d, row_major((M, Idx[K]))).as_immut(),
+        TileTensor(a_bf_d, row_major((M, Idx[K]))).as_imm(),
     )
     quantize_mxfp6_amd[fmt](
         ctx,
         TileTensor(b_q, row_major[N, K_BYTES]()),
         TileTensor(b_sf, row_major[N, K_SCALES]()),
-        TileTensor(b_bf_d, row_major[N, K]()).as_immut(),
+        TileTensor(b_bf_d, row_major[N, K]()).as_imm(),
     )
 
     var c_d = ctx.enqueue_create_buffer[.float32](M * N)

@@ -190,6 +190,9 @@ class TestCustomKernelValidation:
                 for word in ["output", "signature", "result", "type"]
             )
 
+    @pytest.mark.compile_on_gpu(
+        "asserts on the error its compile raises, which only compiling reproduces"
+    )
     def test_custom__error__data_dependent_dim_without_shape_function(
         self, kernel_verification_ops_path: Path, session: InferenceSession
     ) -> None:
@@ -479,12 +482,6 @@ class TestCustomOperationExecution:
         input_tensor = Buffer.from_numpy(np.array([42], dtype=np.int32))
         compiled_model.execute(input_tensor)
 
-    @pytest.mark.skipif(
-        "MAX_GC_USE_ADV_FUSION" in os.environ,
-        reason="Segfaults the graph compiler under the new fusion system: the "
-        "inplace custom op's mutable buffer lowering crashes at compile time "
-        "(known gap). A process crash can't be xfail'd, so it's skipped.",
-    )
     def test_inplace_custom__execution_with_session(
         self, kernel_verification_ops_path: Path, session: InferenceSession
     ) -> None:

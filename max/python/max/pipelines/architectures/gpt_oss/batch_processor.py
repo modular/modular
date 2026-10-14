@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     SingleReplicaRaggedBatchProcessor,
@@ -41,7 +41,7 @@ class GptOssBatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> GptOssInputs:
         from .model import GptOssInputs

@@ -30,7 +30,7 @@ struct MemExample(ImplicitlyCopyable, Copyable):
   # CHECK-NEXT:    lit.call {{.*}}noop{{.*}}([[IMMREF]])
   # CHECK-NEXT:    %none = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT:    lit.ownership.mark_destroyed %self
-  # CHECK-NEXT:    kgen.return %none : !kgen.none
+  # CHECK-NEXT:    hlcf.return %none : !kgen.none
   def __deinit__(deinit self):
     self.noop()
 
@@ -61,7 +61,7 @@ struct RegExample(ImplicitlyCopyable, RegisterPassable):
   # CHECK-LABEL: lit.fn @"__deinit__
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
   def __deinit__(deinit self):
     pass
 
@@ -231,14 +231,14 @@ def testGetAsUninitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, 
 # https://github.com/modularml/modular/issues/27472
 def testCondGetAsUninitializedObject(exit_early: __mlir_type.`!kgen.scalar<bool>`,
                                   ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
-  # CHECK: hlcf.elif
+  # CHECK: hlcf.if
   if exit_early:
       return
 
   # CHECK: [[REF:%.*]] = lit.ref.from_pointer %ptr start_uninit :
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[REF]])
   # CHECK-NEXT: %none = kgen.param.constant: none
-  # CHECK-NEXT: kgen.return %none
+  # CHECK-NEXT: hlcf.return %none
   __get_address_as_uninit_lvalue(ptr) = MemExample()
 
 
@@ -256,7 +256,7 @@ struct FieldSensitiveMemExample(ImplicitlyCopyable):
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%2)
     self.f2 = MemExample()
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
-    # CHECK-NEXT: kgen.return
+    # CHECK-NEXT: hlcf.return
 
   # CHECK: lit.fn @"__init__
   def __init__(out self, a: MemExample, b: MemExample):
@@ -418,17 +418,17 @@ def test_result_consume_reg(cond: __mlir_type.`!kgen.scalar<bool>`) -> RegExampl
   # CHECK-NEXT: lit.ref.store [[TMP]], %example2
   var example2 = RegExample()
 
-  # CHECK-NEXT: hlcf.elif %cond {
+  # CHECK-NEXT: hlcf.if %cond {
   if (cond):
     # CHECK-NEXT: lit.ownership.use %example2
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume %example2
     # CHECK-NEXT: lifetime.end %example2
-    # CHECK-NEXT: kgen.return [[TMP2]]
+    # CHECK-NEXT: hlcf.return [[TMP2]]
     return example2^
   else: # CHECK-NEXT: } else {
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume %example2
     # CHECK-NEXT: lifetime.end %example2
-    # CHECK-NEXT: kgen.return [[TMP2]]
+    # CHECK-NEXT: hlcf.return [[TMP2]]
     return example2  # copy/deinit -> move optimization.
 
 # CHECK: lit.fn @"consumeMem
@@ -486,7 +486,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     # CHECK-NEXT: lit.ref.store [[TMP]], [[B]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
     # CHECK-NEXT: lit.var.lifetime.end %self
-    # CHECK-NEXT: kgen.return [[TMP]]
+    # CHECK-NEXT: hlcf.return [[TMP]]
     self.a = RegExample()
     self.b = RegExample()
 
@@ -503,7 +503,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
     # CHECK-NEXT: lit.ref.store [[TMP]], [[SB]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
     # CHECK-NEXT: lit.var.lifetime.end %self
-    # CHECK-NEXT: kgen.return [[TMP]]
+    # CHECK-NEXT: hlcf.return [[TMP]]
     self.a = copy.a
     self.b = copy.b
 
@@ -514,7 +514,7 @@ struct BigRegExample(ImplicitlyCopyable, RegisterPassable):
   # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}([[BPTR]])
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
 
 
 def take_regexample_ref(ref r: RegExample): pass
@@ -580,7 +580,7 @@ struct ExoticDelExample(RegisterPassable):
     # Test the condition
     # CHECK-NEXT: [[CONDPTR:%.*]] = lit.ref.struct.ger %self[cond]
     # CHECK-NEXT: [[CONDVAL:%.*]] = lit.ref.load [[CONDPTR]]
-    # CHECK-NEXT: hlcf.elif [[CONDVAL]] {
+    # CHECK-NEXT: hlcf.if [[CONDVAL]] {
     if self.cond:
       # This side we manually consume for c.
 
@@ -599,7 +599,7 @@ struct ExoticDelExample(RegisterPassable):
 
     # CHECK-NEXT: = kgen.param.constant: none = <#kgen.none>
     # CHECK-NEXT:lit.ownership.mark_destroyed %self
-    # CHECK-NEXT:kgen.return
+    # CHECK-NEXT:hlcf.return
 
 
 # CHECK-LABEL: lit.fn @"def_borrowed
@@ -698,7 +698,7 @@ struct RegExampleValue(ImplicitlyCopyable, RegisterPassable):
 # https://github.com/modularml/modular/issues/27792
 # CHECK-LABEL: lit.fn @"test_or
 def test_or(a: MemExample) -> MemExample:
-  # CHECK: hlcf.elif {{.*}} {
+  # CHECK: hlcf.if {{.*}} {
   # CHECK:   lit.memcpy %a,
   # CHECK: } else {
   # CHECK:   lit.memcpy %a,
@@ -778,7 +778,7 @@ def variadic_field_sensitivity():
   # CHECK-NEXT: lit.call {{.*}}__deinit__{{.*}}(%memPair)
   # CHECK-NEXT: lifetime.end %memPair
   # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
 
 # CHECK-LABEL: lit.fn @"variadic_inout_mems
 # CHECK-SAME: [imm *"mems`2"]
@@ -793,7 +793,7 @@ def variadic_inout_mems(mut *mems: MemExample):
   mems[0].x += 1
 
   # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
 
 # CHECK-LABEL: lit.fn @"call_variadic_inout_mems
 def call_variadic_inout_mems():
@@ -814,7 +814,7 @@ def call_variadic_inout_mems():
   # CHECK-NEXT: lifetime.end %a
 
   # CHECK-NEXT: kgen.param.constant: none
-  # CHECK-NEXT: kgen.return
+  # CHECK-NEXT: hlcf.return
 
 # CHECK-LABEL: lit.fn @"variadic_owned_mems
 def variadic_owned_mems(var *mems: MemExample):
@@ -831,7 +831,7 @@ def call_variadic_owned_mems(var c: MemExample, var d: MemExample):
     # CHECK-NEXT: lit.var.lifetime.end %anonymous
     # CHECK-NEXT: lit.var.lifetime.end %__passed_varargs__
     # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-    # CHECK-NEXT: kgen.return %none : !kgen.none
+    # CHECK-NEXT: hlcf.return %none : !kgen.none
 
 
 # CHECK-LABEL: lit.fn @"test_partial_overwrite
@@ -841,7 +841,7 @@ def test_partial_overwrite(cond: __mlir_type.`!kgen.scalar<bool>`):
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%pair)
   var pair = MemPair()
 
-  # CHECK-NEXT: hlcf.elif %cond {
+  # CHECK-NEXT: hlcf.if %cond {
   if cond:
     # Inserted destruction of incoming pair.b
     # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %pair[b]
@@ -863,7 +863,7 @@ def test_partial_overwrite(cond: __mlir_type.`!kgen.scalar<bool>`):
     # CHECK-NEXT: lifetime.end %pair
 
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
-    # CHECK-NEXT: kgen.return
+    # CHECK-NEXT: hlcf.return
     return
   # CHECK-NEXT: }
 
@@ -880,7 +880,7 @@ struct UninitField(Movable where False):
       # CHECK-NEXT: %0 = lit.ref.struct.ger %self[field]
       # CHECK-NEXT: lit.ownership.mark_initialized %0
       # CHECK-NEXT: %none = kgen.param.constant
-      # CHECK-NEXT: kgen.return %none
+      # CHECK-NEXT: hlcf.return %none
 
 def maybeMemExample() raises -> MemExample:
    return MemExample()
@@ -943,7 +943,7 @@ struct DoNotPropagateErrorStateIntoContinueSet(Movable where False):
   # CHECK-LABEL: lit.fn @"__init__(
   def __init__(out self, cond: __mlir_type.`!kgen.scalar<bool>`, var list: List) raises:
     # CHECK:     hlcf.loop "_loop_0" {
-    # CHECK-NEXT:  hlcf.elif %cond {
+    # CHECK-NEXT:  hlcf.if %cond {
     # CHECK-NEXT:    hlcf.yield
     # CHECK-NEXT:  } else {
     # CHECK-NEXT:    hlcf.break "_loop_0"
@@ -961,7 +961,7 @@ def destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`!kgen.scalar<b
    # alive during the loop.  The solution here is to destroy memPair immediately
    # before the implicit break out of the loop
    while cond:
-     # CHECK:      hlcf.elif %cond {
+     # CHECK:      hlcf.if %cond {
      # CHECK-NEXT:   hlcf.yield
      # CHECK-NEXT: } else {
      # CHECK-NEXT:   lit.call {{.*}}::@MemPair::@"__deinit__({{.*}}(%memPair)
@@ -975,7 +975,7 @@ def destroyWholeValuesIfLastReferenceWasInLoop(cond: __mlir_type.`!kgen.scalar<b
 def overwrite(y: MemExample, x: Bool) raises:
    var foo = MemPair()
    if x:
-   # CHECK: hlcf.elif %{{.*}} {
+   # CHECK: hlcf.if %{{.*}} {
    # CHECK-NEXT: lit.call {{.*}}::@MemPair::@"__deinit__
       raise Error()
    # CHECK: } else {
@@ -992,7 +992,7 @@ def overwrite(y: MemExample, x: Bool) raises:
 # done.
 def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExample:
     # CHECK-NEXT: lit.call {{.*}}__mlir_bool__
-    # CHECK-NEXT: [[RES:%.*]] = hlcf.elif
+    # CHECK-NEXT: [[RES:%.*]] = hlcf.if
     # CHECK-NEXT:    [[TMP:%.*]] = lit.ref.upcast %a
     # CHECK-NEXT:    hlcf.yield [[TMP]]
     # CHECK-NEXT:  } else {
@@ -1008,7 +1008,7 @@ def test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExamp
     # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%b)
     # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%a)
 
-    # CHECK-NEXT:  kgen.return [[RESULT]]
+    # CHECK-NEXT:  hlcf.return [[RESULT]]
     return a if x else b
 
 
@@ -1033,7 +1033,7 @@ struct MyStructWithMarkDestroyed[T: ImplicitlyCopyable & Deinitable](Movable whe
         # Full object bit is explicitly destroyed.
         # CHECK-NEXT: kgen.param.constant: none
         # CHECK-NEXT: lit.ownership.mark_destroyed %self
-        # CHECK-NEXT: kgen.return
+        # CHECK-NEXT: hlcf.return
 
 
 # CHECK-LABEL: lit.fn @"field_sensitive_ref_last_use
@@ -1225,7 +1225,7 @@ def testConds1(cond: __mlir_type.`!kgen.scalar<bool>`, reg: RegExample, i: Int):
   # Implicit conversions.
   # Mojo Issue #49: https://github.com/modular/mojo/issues/49
 
-  # CHECK-NEXT: hlcf.elif %cond -> !RegExample {
+  # CHECK-NEXT: hlcf.if %cond -> !RegExample {
   # CHECK:        [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}copy"
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1234,7 +1234,7 @@ def testConds1(cond: __mlir_type.`!kgen.scalar<bool>`, reg: RegExample, i: Int):
   # CHECK-NEXT: }
   _ = reg if cond else i
 
-  # CHECK: hlcf.elif %cond -> !RegExample {
+  # CHECK: hlcf.if %cond -> !RegExample {
   # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}(%i)
   # CHECK-NEXT:   hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1249,7 +1249,7 @@ def testConds1(cond: __mlir_type.`!kgen.scalar<bool>`, reg: RegExample, i: Int):
 # Memory only conds. Issue (#13379)
 # CHECK-LABEL: lit.fn @"testConds2
 def testConds2(cond: __mlir_type.`!kgen.scalar<bool>`, a: MemExample, b: MemExample) -> MemExample:
-  # CHECK:      [[IF:%.*]] = hlcf.elif %cond
+  # CHECK:      [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:   [[TMP:%.*]] = lit.ref.upcast %a
   # CHECK-NEXT:   hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1264,7 +1264,7 @@ def testConds2(cond: __mlir_type.`!kgen.scalar<bool>`, a: MemExample, b: MemExam
   # could direct construct into the dest and elide the temp.
 
   # CHECK-NEXT: [[IF:%.*]] = lit.var.decl "anonymous
-  # CHECK-NEXT: hlcf.elif %cond
+  # CHECK-NEXT: hlcf.if %cond
   # CHECK-NEXT:   [[TMP:%.*]] = lit.var.decl "__call_result_tmp__"
   # CHECK-NEXT:   lit.var.lifetime.start [[TMP]]
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMP]])
@@ -1285,7 +1285,7 @@ def testConds2(cond: __mlir_type.`!kgen.scalar<bool>`, a: MemExample, b: MemExam
   # CHECK-NEXT: lit.var.lifetime.end [[IF]]
 
 
-  # CHECK-NEXT: [[IF:%.*]] = hlcf.elif %cond
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:   [[TMP:%.*]] = lit.ref.upcast %a
   # CHECK-NEXT:   hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1300,7 +1300,7 @@ def testConds2(cond: __mlir_type.`!kgen.scalar<bool>`, a: MemExample, b: MemExam
 def testConds3(cond: __mlir_type.`!kgen.scalar<bool>`, var a: MemExample, var b: MemExample,
               var m: RegExample, var n: RegExample):
   # CHECK-NEXT: %t1 = lit.var.decl
-  # CHECK-NEXT: hlcf.elif %cond
+  # CHECK-NEXT: hlcf.if %cond
   # CHECK-NEXT:    lit.call {{.*}}__deinit__{{.*}}(%b)
   # CHECK-NEXT:    lit.ownership.use %a
   # CHECK-NEXT:    lit.var.lifetime.start %t1
@@ -1315,7 +1315,7 @@ def testConds3(cond: __mlir_type.`!kgen.scalar<bool>`, var a: MemExample, var b:
   # CHECK-NEXT: }
   var t1 = a^ if cond else b^
 
-  # CHECK-NEXT: [[IF:%.*]] = hlcf.elif %cond
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    lit.call {{.*}}RegExample::@"__deinit__{{.*}}(%n)
   # CHECK-NEXT:    lit.ownership.use %m
   # CHECK-NEXT:    [[TMP:%.*]] = lit.load.consume %m
@@ -1337,7 +1337,7 @@ def testConds3(cond: __mlir_type.`!kgen.scalar<bool>`, var a: MemExample, var b:
 # CHECK-LABEL: lit.fn @"my_min1
 # CHECK-SAME: !lit.ref<:meta<!Int> #alias_Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
 def my_min1(cond: __mlir_type.`!kgen.scalar<bool>`, ref x: Int, ref y: Int) -> ref [x, y] Int:
-  # CHECK-NEXT: [[IF:%.*]] = hlcf.elif %cond
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    [[TMP:%.*]] = lit.ref.upcast %x
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
@@ -1346,7 +1346,7 @@ def my_min1(cond: __mlir_type.`!kgen.scalar<bool>`, ref x: Int, ref y: Int) -> r
   # CHECK-NEXT: }
 
   # CHECK-NEXT: [[RET:%.*]] = kgen.rebind [[IF]]
-  # CHECK-NEXT: kgen.return [[RET]]
+  # CHECK-NEXT: hlcf.return [[RET]]
   return x if cond else y
 
 # CHECK-LABEL: lit.fn @"my_min2
@@ -1482,7 +1482,7 @@ struct InheritDefaultFromHasBarWVariadicPack(HasBarWVariadicPack, Movable where 
 # CHECK: lit.fn @"method_with_pack{{.*}}(%self: !lit.ref<!InheritDefaultFromHasBarWVariadicPack, mut *"0_unnamed`"> mut,
 # CHECK-SAME: %args: !lit.ref<!lit.struct<#VariadicPack
 # CHECK-NEXT: lit.call {{.*}}@"method_with_pack{{.*}}(%self, %args)
-# CHECK-NEXT: kgen.return %0
+# CHECK-NEXT: hlcf.return %0
 
 # https://github.com/modular/modular/issues/5722
 # `__deinit__` incorrectly runs when `__init__` raises before all fields are initialized.

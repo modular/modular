@@ -112,10 +112,10 @@ def main() raises:
     comptime lengths = (1_000, 10_000, 100_000)
 
     comptime for i in range(len(lengths)):
-        comptime length = rebind[Int](lengths[i])
+        comptime length = lengths[i]
 
         comptime for j in range(len(filenames)):
-            comptime fname = rebind[StaticString](filenames[j])
+            comptime fname = filenames[j]
             comptime suffix = String("[", length, ",", fname, "]")
             m.bench_function(
                 bench_grapheme_iter_forward[length, fname],

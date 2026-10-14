@@ -13,8 +13,8 @@
 
 """The accepted-row plan behind the Qwen3.5 speculative state rollback.
 
-The plan decides which rows of the verify pass's per-token tensors the state
-kernels re-run over, so an off-by-one here rewinds the recurrence to the wrong
+The plan decides which rows of the verify pass's per-token tensors the conv
+replay re-runs over, so an off-by-one here lands the conv window at the wrong
 length -- which produces a slightly wrong generation rather than an error. The
 bit-exactness gate on the real kernels needs a GPU and lives in
 ``mach/docs/qwen38_27b/mtp-serving.md``; these are the arithmetic's own

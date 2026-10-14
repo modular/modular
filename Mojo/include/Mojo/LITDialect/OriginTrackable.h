@@ -186,11 +186,11 @@ enum class OverallOpValueEffect {
   /// perform local control flow.
   localControlFlowOp,
 
-  /// This is HLCF::IfOp, ParamIfOp, which are all if-like.
+  /// This is HLCF::ComptimeIfOp (comptime if). Runtime if/else uses ifOp.
   ifLikeOp,
 
-  /// This is HLCF::ElifOp specifically.
-  elifOp,
+  /// This is HLCF::IfOp specifically.
+  ifOp,
 
   /// This is HLCF::MatchOp.
   matchOp,

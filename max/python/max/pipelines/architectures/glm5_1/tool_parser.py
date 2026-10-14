@@ -151,6 +151,15 @@ def _schema_types(schema: dict[str, Any]) -> set[str]:
         return {t}
     if isinstance(t, list):
         return {x for x in t if isinstance(x, str)}
+    # const/enum admit a fixed set of literals, so they pin the type as firmly
+    # as "type" does and neither usually carries one. Without this a string
+    # const like "2.0" leaves the bare wire form decoded as the number 2.0 and
+    # the round-tripped arguments contradict the grammar that produced them.
+    if "const" in schema:
+        return {_json_type(schema["const"])}
+    values = schema.get("enum")
+    if isinstance(values, list) and values:
+        return {_json_type(v) for v in values}
     # A schema that declares string facets but omits "type" still constrains
     # a string (JSON Schema applies these keywords only to strings), matching
     # the grammar's own is_string test. Infer "string" so a bare non-string
@@ -479,6 +488,7 @@ class GlmToolParser(StructuralTagToolParser):
         tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
         backend: str = "xgrammar",
         tool_choice: str | dict[str, Any] | None = None,
+        reject_unsupported: bool = False,
         **kwargs: Any,
     ) -> str:
         """Generates a tool-call constrained-decoding grammar for GLM.
@@ -499,6 +509,9 @@ class GlmToolParser(StructuralTagToolParser):
             tokenizer: Unused (the xgrammar tag references literal markers).
             backend: Structured-output backend; must be ``"xgrammar"``.
             tool_choice: ``"auto"``, ``"required"``, or a named choice.
+            reject_unsupported: Whether to raise an error during grammar
+                compilation when a tool's schema cannot be enforced. Otherwise,
+                the schema is enforced best-effort.
             **kwargs: Ignored (accepts future kwargs).
 
         Returns:
@@ -515,4 +528,5 @@ class GlmToolParser(StructuralTagToolParser):
             tools or [],
             normalized_choice,
             response_format_schema=response_format_schema,
+            reject_unsupported=reject_unsupported,
         )

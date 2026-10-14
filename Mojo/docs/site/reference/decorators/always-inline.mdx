@@ -1,8 +1,18 @@
 ---
 title: '@always_inline'
-description: Copies the body of a function directly into the body of the calling function.
+description: Copies the body of a function directly into the body of the calling function (in new code, use @inline instead).
 codeTitle: true
 ---
+
+:::caution
+
+In new code, prefer [`@inline`](/docs/reference/decorators/inline/), which sets
+the same inline levels and can also take the level from a parameter.
+`@always_inline` is equivalent to `@inline(.always)`, and
+`@always_inline("nodebug")` to `@inline(.nodebug)`. The `"builtin"` version
+described below has no `@inline` equivalent.
+
+:::
 
 You can add the `@always_inline` decorator on any function to make the Mojo
 compiler "inline" the body of the function (copy it) directly into the body of
@@ -56,8 +66,8 @@ context.
 
 Using this version of the decorator requires some knowledge of the Mojo
 compiler's internals. Using it outside of the standard library is not
-recommended. Use the standard `@always_inline` decorator or the `"nodebug"`
-version, instead.
+recommended. Use the standard [`@inline`](/docs/reference/decorators/inline/)
+decorator instead.
 
 :::
 
@@ -71,6 +81,3 @@ other behaviors:
 
 - When the function is used in a parameter context, it is unconditionally
   inlined.
-
-For more details and background, see
-[the `@always_inline("builtin") proposal](https://github.com/modular/modular/blob/main/Mojo/proposals/always_inline_builtin.md).

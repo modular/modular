@@ -15,6 +15,7 @@ from max.algorithm.backend.gpu.reduction import reduce_launch
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
+from std.utils.coord import Coord
 from std.utils import IndexList, StaticTuple
 
 comptime num_reductions = 2
@@ -75,14 +76,12 @@ def fused_reduce_inner_test[
     def input_fn[
         dtype: DType,
         width: Int,
-        _rank: Int,
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var c = rebind[IndexList[rank]](coords)
+    ](coords: Coord) -> SIMD[dtype, width]:
         var linear_idx = 0
         var stride = 1
 
         comptime for i in reversed(range(rank)):
-            linear_idx += c[i] * stride
+            linear_idx += Int(coords[i].value()) * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
             input_buf_device.unsafe_ptr().unsafe_load[width=width](linear_idx)
@@ -91,17 +90,13 @@ def fused_reduce_inner_test[
     @__copy_capture(output_buf_device0, output_buf_device1, out_shape)
     @__parameter
     def output_fn[
-        _dtype: DType, width: SIMDLength, _rank: Int
-    ](
-        coords: IndexList[_rank],
-        val: StaticTuple[SIMD[_dtype, width], num_reductions],
-    ):
-        var c = rebind[IndexList[rank]](coords)
+        _dtype: DType, width: SIMDLength
+    ](coords: Coord, val: StaticTuple[SIMD[_dtype, width], num_reductions],):
         var linear_idx = 0
         var stride = 1
 
         comptime for i in reversed(range(rank)):
-            linear_idx += c[i] * stride
+            linear_idx += Int(coords[i].value()) * stride
             stride *= out_shape[i]
         output_buf_device0.unsafe_ptr().unsafe_store[width=width](
             linear_idx, rebind[SIMD[dtype, width]](val[0])
@@ -181,7 +176,6 @@ def reduce_inner_test[
     )
 
     @inline(.always)
-    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -194,14 +188,12 @@ def reduce_inner_test[
     def input_fn[
         dtype: DType,
         width: Int,
-        _rank: Int,
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var c = rebind[IndexList[rank]](coords)
+    ](coords: Coord) -> SIMD[dtype, width]:
         var linear_idx = 0
         var stride = 1
 
         comptime for i in reversed(range(rank)):
-            linear_idx += c[i] * stride
+            linear_idx += Int(coords[i].value()) * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
             input_buf_device.unsafe_ptr().unsafe_load[width=width](linear_idx)
@@ -210,17 +202,13 @@ def reduce_inner_test[
     @__copy_capture(output_buf_device, out_shape)
     @__parameter
     def output_fn[
-        _dtype: DType, width: SIMDLength, _rank: Int
-    ](
-        coords: IndexList[_rank],
-        val: StaticTuple[SIMD[_dtype, width], num_reductions],
-    ):
-        var c = rebind[IndexList[rank]](coords)
+        _dtype: DType, width: SIMDLength
+    ](coords: Coord, val: StaticTuple[SIMD[_dtype, width], num_reductions],):
         var linear_idx = 0
         var stride = 1
 
         comptime for i in reversed(range(rank)):
-            linear_idx += c[i] * stride
+            linear_idx += Int(coords[i].value()) * stride
             stride *= out_shape[i]
         output_buf_device.unsafe_ptr().unsafe_store[width=width](
             linear_idx, rebind[SIMD[dtype, width]](val[0])
@@ -246,21 +234,18 @@ def reduce_inner_test[
 
 
 def test_reduce() raises:
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @__parameter
     def reduce_max[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
-    @__parameter
     def fused_reduce_add_max[
         dtype: DType,
         width: SIMDLength,
@@ -436,14 +421,12 @@ def test_multiblock_reduce() raises:
     """Tests the multiblock_reduce_kernel path for under-saturated cases
     where num_rows is small but the reduction axis is large."""
 
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @__parameter
     def reduce_max[
         dtype: DType,
         width: SIMDLength,
@@ -509,7 +492,6 @@ def test_thread_saturated_contiguous_reduce() raises:
     boundary.
     """
 
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,

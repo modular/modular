@@ -32,7 +32,6 @@ from max.gpu import lane_id
 from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu.intrinsics import ds_read_tr8_b64
 from std.math import exp2 as math_exp2
-from std.memory import AddressSpace
 from std.sys import size_of
 from std.utils import IndexList
 
@@ -934,8 +933,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
 
             var lid = Int(lane_id())
             var lane_in_row = lid % 16
-            var pair_idx = lane_in_row // 2
-            var is_odd = lane_in_row % 2
+            var pair_idx, is_odd = divmod(lane_in_row, 2)
             var row_in_warp = lid // 16
             var is_hw1 = lid // 32
             var rel_key = (pair_idx % 4) + (pair_idx // 4) * 8
@@ -965,8 +963,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
                     @inline(.always)
-                    @__parameter
-                    def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+                    def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
                         # Comptime per-cell offset, derived from
                         # B = _row_offset + key_base (multiple of 16):
                         #   ((B // V_SUB_ROWS) * subtiles_per_row +
@@ -1030,15 +1027,13 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     comptime _row_offset = i * _MMA_K_
                     comptime _depth_offset = j * _MMA_M_
                     var depth_in_v = _depth_offset + lane_row
-                    var sub_col = depth_in_v // _V_SUB_COLS_
-                    var col_in_sub = depth_in_v % _V_SUB_COLS_
+                    var sub_col, col_in_sub = divmod(depth_in_v, _V_SUB_COLS_)
                     var key_start = _row_offset + lane_k_group * 32
 
                     var vals = SIMD[Self.T, Self.FRAG_ELTS]()
                     for f in range(Self.FRAG_ELTS):
                         var key_idx = key_start + f
-                        var sub_row = key_idx // _V_SUB_ROWS_
-                        var row_in_sub = key_idx % _V_SUB_ROWS_
+                        var sub_row, row_in_sub = divmod(key_idx, _V_SUB_ROWS_)
                         var sub_id = sub_row * _subtiles_per_row + sub_col
                         var slot_row = sub_id * _V_SUB_ROWS_ + row_in_sub
                         var byte_offset = slot_row * _V_SUB_COLS_ + col_in_sub
@@ -1545,8 +1540,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
 
         var lid = Int(lane_id())
         var lane_in_row = lid % 16
-        var pair_idx = lane_in_row // 2
-        var is_odd = lane_in_row % 2
+        var pair_idx, is_odd = divmod(lane_in_row, 2)
         var row_in_warp = lid // 16
         var is_hw1 = lid // 32
         var rel_key = (pair_idx % 4) + (pair_idx // 4) * 8
@@ -1684,8 +1678,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
                 @inline(.always)
-                @__parameter
-                def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+                def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
                     comptime _B = _row_offset + key_base
                     comptime _comptime_cell_offset = (
                         (_B // _V_SUB_ROWS_) * _v_block_stride
@@ -1783,8 +1776,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
         @inline(.always)
-        @__parameter
-        def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+        def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
             comptime _B = _row_offset + key_base
             # Reference FULL-v227 V adapter READ cell offset (the `R` of
             # the `W∘R` pair). The per-lane base `v_lane_base` is already

@@ -22,10 +22,9 @@ from std.sys import get_defined_bool, size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import B200
-from layout import TileTensor
+from layout import TileTensor, coord
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig, GEMMKind
@@ -183,31 +182,37 @@ def blockwise_fp8_matmul[
     var a_tma_op = create_tma_tile[
         Kernel.ATileLayout,
         Kernel.ADescLayout,
-        Index(BM // config.cluster_shape[1], BK),
+        coord[BM // config.cluster_shape[1], BK],
         swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
     var b_tma_op = create_tma_tile[
         Kernel.BTileLayout,
         Kernel.BDescLayout,
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
+        coord[
+            BN
+            // (
+                config.cluster_shape[0] // config.cta_group
+            ) if transpose_b else BK,
+            BK if transpose_b else BN
+            // (config.cluster_shape[0] // config.cta_group),
+        ],
         swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
     var a_scales_tma_op = create_tma_tile[
         Kernel.AScalesLayout,
         Kernel.AScalesLayout,
-        Index(1, BM),
+        coord[1, BM],
     ](ctx, a_scales)
 
-    comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
+    comptime bw_c_m = (
+        config.output_tile_shape[0] if (
+            MMA_M == 256 or config.cta_group == 1
+        ) else 64
+    )
+    comptime bw_c_n = config.output_tile_shape[1]
+    comptime c_tma_tile_shape = coord[bw_c_m, bw_c_n]
 
     var c_tma_op = create_tma_tile[
         Kernel.CTileLayout,

@@ -63,15 +63,13 @@ def test_blackwell_matmul_with_epilogue_tensor[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
-    var epilogue_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
+    var epilogue_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
@@ -102,9 +100,9 @@ def test_blackwell_matmul_with_epilogue_tensor[
     var epilogue_tile = TileTensor(epilogue_device, epilogue_shape)
 
     # Initialize
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
-    rand(epilogue_host._storage, epilogue_host.num_elements(), min=-10, max=10)
+    rand(a_host.as_span())
+    rand(b_host.as_span())
+    rand(epilogue_host.as_span(), min=-10, max=10)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)

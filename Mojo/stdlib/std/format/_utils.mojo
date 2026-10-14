@@ -21,9 +21,8 @@ from std.io.io import _printf
 from std.os import abort
 from std.reflection.type_info import _unqualified_type_name
 from std.sys import size_of
-from std.sys.info import is_gpu
 from std.sys.defines import get_defined_int
-from std.ffi import CStringSpan
+from std.ffi import CStringSpan, c_char
 
 from std.bit import byte_swap
 from std.memory import bitcast, unsafe_memcpy
@@ -438,7 +437,7 @@ struct _FixedWriteBuffer(Writer):
 
         return CStringSpan(
             unsafe_from_ptr=self._data.unsafe_ptr()
-            .unsafe_bitcast[Int8]()
+            .unsafe_bitcast[c_char]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -602,24 +601,25 @@ def _write_hex[
     comptime `u` = Byte(ord("u"))
     comptime `U` = Byte(ord("U"))
 
-    comptime if amnt_hex_bytes == 2:
-        var chars = _hex_digits_to_hex_chars(UInt8(decimal))
-        var buf = Array[Byte, 4](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `x`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
-    elif amnt_hex_bytes == 4:
-        var chars = _hex_digits_to_hex_chars(UInt16(decimal))
-        var buf = Array[Byte, 6](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `u`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
-    else:
-        var chars = _hex_digits_to_hex_chars(UInt32(decimal))
-        var buf = Array[Byte, 10](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `U`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+    comptime match amnt_hex_bytes:
+        case 2:
+            var chars = _hex_digits_to_hex_chars(UInt8(decimal))
+            var buf = Array[Byte, 4](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `x`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+        case 4:
+            var chars = _hex_digits_to_hex_chars(UInt16(decimal))
+            var buf = Array[Byte, 6](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `u`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+        case _:
+            var chars = _hex_digits_to_hex_chars(UInt32(decimal))
+            var buf = Array[Byte, 10](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `U`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))

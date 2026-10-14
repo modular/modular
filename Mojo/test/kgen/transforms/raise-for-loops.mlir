@@ -26,7 +26,7 @@ kgen.func @zero_starting_range() {
     kgen.call @foo(%2) : (index) -> ()
     hlcf.continue %1 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @sequential_range
@@ -52,7 +52,7 @@ kgen.func @sequential_range() {
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %1 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @strided_range
@@ -79,7 +79,7 @@ kgen.func @strided_range() {
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %1 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nested_unroll_loops
@@ -129,7 +129,7 @@ kgen.func @nested_unroll_loops() {
     } {unrollLevel = #hlcf<unroll_level full>}
     hlcf.continue %1 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @zero_starting_range_not_decorated
@@ -156,7 +156,7 @@ kgen.func @zero_starting_range_not_decorated() {
     kgen.call @foo(%2) : (index) -> ()
     hlcf.continue %1 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @loop_carried_dependency
@@ -211,7 +211,7 @@ kgen.func @loop_carried_dependency() {
   } {unrollLevel = #hlcf<unroll_level full>}
   kgen.call @foo(%0#0) : (index) -> ()
   kgen.call @foo(%0#1) : (index) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @reorder_args
@@ -248,7 +248,7 @@ kgen.func @reorder_args(%arg0: !kgen.struct<(pointer<scalar<f32>>, index, dtype)
     %8 = pop.offset %arg1[%idx1] : !kgen.pointer<scalar<f32>>
     hlcf.continue %3, %8, %7 : index, !kgen.pointer<scalar<f32>>, index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: @complex_exit_logic_no_raise
@@ -271,7 +271,7 @@ kgen.func @complex_exit_logic_no_raise() {
     kgen.call @foo(%1) : (index) -> ()
     hlcf.continue %1 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @negative_step
@@ -298,7 +298,7 @@ kgen.func @negative_step() {
     kgen.call @foo(%arg0) : (index) -> ()
     hlcf.continue %4 : index
   } {unrollLevel = #hlcf<unroll_level full>}
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @nested_loops_no_unroll_inner
@@ -343,7 +343,7 @@ kgen.func @nested_loops_no_unroll_inner() {
     }
     hlcf.continue %1 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @break_in_then
@@ -365,7 +365,7 @@ kgen.func @nested_loops_no_unroll_inner() {
      %2 = index.add %arg0, %idx1
      hlcf.continue %2 : index
    }
-   kgen.return
+   hlcf.return
  }
 
 // CHECK-LABEL: @return_value_same_as_iter_var
@@ -390,7 +390,7 @@ kgen.func @return_value_same_as_iter_var()  {
     %3 = index.add %arg0, %idx1
     hlcf.continue %3 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @stride_same_as_iter_var
@@ -410,7 +410,7 @@ kgen.func @stride_same_as_iter_var()  {
     %3 = index.add %arg0, %arg0
     hlcf.continue %3 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @non_const_loop_end
@@ -430,7 +430,7 @@ kgen.func @non_const_loop_end()  {
     %3 = index.add %arg0, %idx1
     hlcf.continue %3, %3 : index, index
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -459,7 +459,7 @@ kgen.func @simple_call_in_break_branch() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @intermediate_values_in_break_branch
@@ -486,7 +486,7 @@ kgen.func @intermediate_values_in_break_branch() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @break_dependent_on_break_branch
@@ -509,7 +509,7 @@ kgen.func @break_dependent_on_break_branch() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @dependent_ops_in_break_branch
@@ -532,7 +532,7 @@ kgen.func @dependent_ops_in_break_branch() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @dynamic_bounds
@@ -551,7 +551,7 @@ kgen.func @dynamic_bounds(%arg0: index) {
     %3 = index.add %arg1, %arg0
     hlcf.continue %3 : index
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -562,15 +562,14 @@ kgen.func @pop_cmp_si64_countdown() {
   %simd_0 = kgen.param.constant: scalar<si64> = <0>
   %simd_1 = kgen.param.constant: scalar<si64> = <1>
 
-  // CHECK: pop.cast {{.*}} : !kgen.scalar<si64> to !kgen.scalar<index>
-  // CHECK: pop.cast_to_builtin {{.*}} : !kgen.scalar<index> to index
-  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} sgt sub] (%arg0 = {{.*}} : index) {
-  // CHECK-NEXT:   [[FROM_BUILTIN:%.*]] = pop.cast_from_builtin %arg0 : index to !kgen.scalar<index>
-  // CHECK-NEXT:   [[IND:%.*]] = pop.cast [[FROM_BUILTIN]] : !kgen.scalar<index> to !kgen.scalar<si64>
-  // CHECK:        [[NEXT:%.*]] = pop.sub [[IND]], {{.*}} : !kgen.scalar<si64>
-  // CHECK:        [[NEXT_POP:%.*]] = pop.cast [[NEXT]] : !kgen.scalar<si64> to !kgen.scalar<index>
-  // CHECK-NEXT:   [[NEXT_IDX:%.*]] = pop.cast_to_builtin [[NEXT_POP]] : !kgen.scalar<index> to index
-  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT_IDX]] : index)] [retvals ()] [iterargs ()]
+  // A signed scalar is already a legal hlcf.for control variable, so the loop
+  // keeps its own type instead of round-tripping the induction variable
+  // through index on every iteration.
+  // CHECK-NOT:  pop.cast
+  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} : !kgen.scalar<si64> sgt sub] (%arg0 = {{.*}} : !kgen.scalar<si64>) {
+  // CHECK-NEXT:   pop.cmp
+  // CHECK-NEXT:   [[NEXT:%.*]] = pop.sub %arg0, {{.*}} : !kgen.scalar<si64>
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT]] : !kgen.scalar<si64>)] [retvals ()] [iterargs ()]
   // CHECK-NEXT: }
 
   hlcf.loop (%arg0 = %simd : !kgen.scalar<si64>) {
@@ -583,7 +582,7 @@ kgen.func @pop_cmp_si64_countdown() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<si64>
     hlcf.continue %next : !kgen.scalar<si64>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -594,15 +593,11 @@ kgen.func @pop_cmp_si8_countdown() {
   %simd_0 = kgen.param.constant: scalar<si8> = <0>
   %simd_1 = kgen.param.constant: scalar<si8> = <1>
 
-  // CHECK: pop.cast {{.*}} : !kgen.scalar<si8> to !kgen.scalar<index>
-  // CHECK: pop.cast_to_builtin {{.*}} : !kgen.scalar<index> to index
-  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} sgt sub] (%arg0 = {{.*}} : index) {
-  // CHECK-NEXT:   [[FROM_BUILTIN:%.*]] = pop.cast_from_builtin %arg0 : index to !kgen.scalar<index>
-  // CHECK-NEXT:   [[IND:%.*]] = pop.cast [[FROM_BUILTIN]] : !kgen.scalar<index> to !kgen.scalar<si8>
-  // CHECK:        [[NEXT:%.*]] = pop.sub [[IND]], {{.*}} : !kgen.scalar<si8>
-  // CHECK:        [[NEXT_POP:%.*]] = pop.cast [[NEXT]] : !kgen.scalar<si8> to !kgen.scalar<index>
-  // CHECK-NEXT:   [[NEXT_IDX:%.*]] = pop.cast_to_builtin [[NEXT_POP]] : !kgen.scalar<index> to index
-  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT_IDX]] : index)] [retvals ()] [iterargs ()]
+  // CHECK-NOT:  pop.cast
+  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} : !kgen.scalar<si8> sgt sub] (%arg0 = {{.*}} : !kgen.scalar<si8>) {
+  // CHECK-NEXT:   pop.cmp
+  // CHECK-NEXT:   [[NEXT:%.*]] = pop.sub %arg0, {{.*}} : !kgen.scalar<si8>
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT]] : !kgen.scalar<si8>)] [retvals ()] [iterargs ()]
   // CHECK-NEXT: }
 
   hlcf.loop (%arg0 = %simd : !kgen.scalar<si8>) {
@@ -615,7 +610,7 @@ kgen.func @pop_cmp_si8_countdown() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<si8>
     hlcf.continue %next : !kgen.scalar<si8>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -638,7 +633,7 @@ kgen.func @pop_cmp_f32_no_raise() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<f32>
     hlcf.continue %next : !kgen.scalar<f32>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -649,15 +644,11 @@ kgen.func @pop_cmp_index_countdown() {
   %simd_0 = kgen.param.constant: scalar<index> = <0>
   %simd_1 = kgen.param.constant: scalar<index> = <1>
 
-  // CHECK: pop.cast {{.*}} : !kgen.scalar<index> to !kgen.scalar<index>
-  // CHECK: pop.cast_to_builtin {{.*}} : !kgen.scalar<index> to index
-  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} sgt sub] (%arg0 = {{.*}} : index) {
-  // CHECK-NEXT:   [[FROM_BUILTIN:%.*]] = pop.cast_from_builtin %arg0 : index to !kgen.scalar<index>
-  // CHECK-NEXT:   [[IND:%.*]] = pop.cast [[FROM_BUILTIN]] : !kgen.scalar<index> to !kgen.scalar<index>
-  // CHECK:        [[NEXT:%.*]] = pop.sub [[IND]], {{.*}} : !kgen.scalar<index>
-  // CHECK:        [[NEXT_POP:%.*]] = pop.cast [[NEXT]] : !kgen.scalar<index> to !kgen.scalar<index>
-  // CHECK-NEXT:   [[NEXT_IDX:%.*]] = pop.cast_to_builtin [[NEXT_POP]] : !kgen.scalar<index> to index
-  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT_IDX]] : index)] [retvals ()] [iterargs ()]
+  // CHECK-NOT:  pop.cast
+  // CHECK:      hlcf.for [{{.*}} to {{.*}} step {{.*}} : !kgen.scalar<index> sgt sub] (%arg0 = {{.*}} : !kgen.scalar<index>) {
+  // CHECK-NEXT:   pop.cmp
+  // CHECK-NEXT:   [[NEXT:%.*]] = pop.sub %arg0, {{.*}} : !kgen.scalar<index>
+  // CHECK-NEXT:   hlcf.for.yield [induction_var ([[NEXT]] : !kgen.scalar<index>)] [retvals ()] [iterargs ()]
   // CHECK-NEXT: }
 
   hlcf.loop (%arg0 = %simd : !kgen.scalar<index>) {
@@ -670,7 +661,7 @@ kgen.func @pop_cmp_index_countdown() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<index>
     hlcf.continue %next : !kgen.scalar<index>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -693,7 +684,7 @@ kgen.func @pop_cmp_uindex_countdown() {
     %next = pop.sub %arg0, %simd_1 : !kgen.scalar<uindex>
     hlcf.continue %next : !kgen.scalar<uindex>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -711,7 +702,7 @@ kgen.func @donnot_crash_with_block_argument_cond() {
     }
     hlcf.continue %0 : !kgen.scalar<bool>
   }
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -741,5 +732,112 @@ kgen.func @loop_with_lit_try() {
     %2 = index.add %arg0, %idx1
     hlcf.continue %2 : index
   }
-  kgen.return
+  hlcf.return
+}
+
+// -----
+
+// COM: The exception-based `for i in range(n)` idiom (StopIteration `lit.try`
+// whose `except` breaks the loop) is normalized and raised to an ascending,
+// unit-step `hlcf.for`. A loop-invariant op before `lit.try.raise` (loop-exit
+// work) rides the break path and is relocated after the raised `hlcf.for`.
+// CHECK-LABEL: @leading_invariant_op_moved_after_loop
+kgen.func @leading_invariant_op_moved_after_loop(%end: !kgen.scalar<index>) -> !kgen.scalar<index> {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+  // CHECK: hlcf.for [%{{.*}} to %{{.*}} step %{{.*}} slt add]
+  // CHECK: hlcf.for.yield
+  // CHECK: }
+  // CHECK: kgen.call @cleanup(%{{.*}}) : (!kgen.scalar<index>) -> ()
+  // CHECK-NOT: hlcf.loop
+  // CHECK-NOT: lit.try
+  %r = hlcf.loop "_loop_0" (%acc = %c0 : !kgen.scalar<index>, %ctr = %c0 : !kgen.scalar<index>) -> !kgen.scalar<index> {
+    %0 = pop.add %ctr, %c1 : !kgen.scalar<index>
+    %1 = pop.cmp eq(%ctr, %end) : <1, index>
+    %2 = pop.select %1, %ctr, %0 : !kgen.scalar<index>
+    %3:2 = lit.try "try0" -> !kgen.scalar<index>, !kgen.scalar<index> {
+      hlcf.if %1 {
+        kgen.call @cleanup(%c1) : (!kgen.scalar<index>) -> ()
+        lit.try.raise "try0" %2, %ctr : !kgen.scalar<index>, !kgen.scalar<index>
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield %2, %ctr : !kgen.scalar<index>, !kgen.scalar<index>
+    } except (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      hlcf.break "_loop_0" %acc : !kgen.scalar<index>
+    } else (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      lit.try.yield %a, %b : !kgen.scalar<index>, !kgen.scalar<index>
+    }
+    %4 = pop.add %acc, %3#1 : !kgen.scalar<index>
+    hlcf.continue "_loop_0" %4, %3#0 : !kgen.scalar<index>, !kgen.scalar<index>
+  }
+  hlcf.return %r : !kgen.scalar<index>
+}
+
+// -----
+
+// COM: A leading op using a loop-internal value can't be hoisted, so the loop
+// is left as-is (soft error) rather than raised.
+// CHECK-LABEL: @leading_loop_dependent_op_not_raised
+// CHECK: hlcf.loop
+// CHECK: lit.try
+// CHECK: kgen.call @use
+kgen.func @leading_loop_dependent_op_not_raised(%end: !kgen.scalar<index>) -> !kgen.scalar<index> {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+  %r = hlcf.loop "_loop_0" (%acc = %c0 : !kgen.scalar<index>, %ctr = %c0 : !kgen.scalar<index>) -> !kgen.scalar<index> {
+    %0 = pop.add %ctr, %c1 : !kgen.scalar<index>
+    %1 = pop.cmp eq(%ctr, %end) : <1, index>
+    %2 = pop.select %1, %ctr, %0 : !kgen.scalar<index>
+    %3:2 = lit.try "try0" -> !kgen.scalar<index>, !kgen.scalar<index> {
+      hlcf.if %1 {
+        kgen.call @use(%ctr) : (!kgen.scalar<index>) -> ()
+        lit.try.raise "try0" %2, %ctr : !kgen.scalar<index>, !kgen.scalar<index>
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield %2, %ctr : !kgen.scalar<index>, !kgen.scalar<index>
+    } except (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      hlcf.break "_loop_0" %acc : !kgen.scalar<index>
+    } else (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      lit.try.yield %a, %b : !kgen.scalar<index>, !kgen.scalar<index>
+    }
+    %4 = pop.add %acc, %3#1 : !kgen.scalar<index>
+    hlcf.continue "_loop_0" %4, %3#0 : !kgen.scalar<index>, !kgen.scalar<index>
+  }
+  hlcf.return %r : !kgen.scalar<index>
+}
+
+// -----
+
+// COM: A break carrying the except region's exception payload cannot be
+// rebuilt outside the `lit.try`, since erasing the try would destroy the
+// value. The loop is left as-is rather than crashing the compiler.
+// CHECK-LABEL: @break_carries_except_payload
+// CHECK: hlcf.loop
+// CHECK: lit.try
+// CHECK: hlcf.break
+kgen.func @break_carries_except_payload(%end: !kgen.scalar<index>) -> !kgen.scalar<index> {
+  %c0 = kgen.param.constant: scalar<index> = <0>
+  %c1 = kgen.param.constant: scalar<index> = <1>
+  %r = hlcf.loop "_loop_0" (%acc = %c0 : !kgen.scalar<index>, %ctr = %c0 : !kgen.scalar<index>) -> !kgen.scalar<index> {
+    %0 = pop.add %ctr, %c1 : !kgen.scalar<index>
+    %1 = pop.cmp eq(%ctr, %end) : <1, index>
+    %2 = pop.select %1, %ctr, %0 : !kgen.scalar<index>
+    %3:2 = lit.try "try0" -> !kgen.scalar<index>, !kgen.scalar<index> {
+      hlcf.if %1 {
+        lit.try.raise "try0" %2, %ctr : !kgen.scalar<index>, !kgen.scalar<index>
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield %2, %ctr : !kgen.scalar<index>, !kgen.scalar<index>
+    } except (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      hlcf.break "_loop_0" %b : !kgen.scalar<index>
+    } else (%a: !kgen.scalar<index>, %b: !kgen.scalar<index>) {
+      lit.try.yield %a, %b : !kgen.scalar<index>, !kgen.scalar<index>
+    }
+    %4 = pop.add %acc, %3#1 : !kgen.scalar<index>
+    hlcf.continue "_loop_0" %4, %3#0 : !kgen.scalar<index>, !kgen.scalar<index>
+  }
+  hlcf.return %r : !kgen.scalar<index>
 }

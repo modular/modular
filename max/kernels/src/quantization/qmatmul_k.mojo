@@ -21,7 +21,7 @@ from std.algorithm import tile
 
 from max.algorithm import sync_parallelize
 from max.gpu.host import DeviceContext
-from layout import LayoutTensor, TileTensor
+from layout import TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
 from linalg.arch.cpu.vnni_intrinsics import (
@@ -41,8 +41,6 @@ from std.memory import (
 from std.memory.alloc import Layout as AllocLayout
 
 from max.runtime.asyncrt import parallelism_level
-
-from std.utils.index import Index
 
 from ._utils import roundeven_to_int32
 
@@ -226,12 +224,13 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         """Packs the supplied external buffer to local storage."""
         comptime assert (Self._packed_stride % Self._simd_width) == 0
 
-        comptime if Self.bit_width == 4:
-            return self._pack_int4(src_ptr)
-        elif Self.bit_width == 6:
-            return self._pack_int6(src_ptr)
-        else:
-            comptime assert False, "unsupported bit width"
+        comptime match Self.bit_width:
+            case 4:
+                return self._pack_int4(src_ptr)
+            case 6:
+                return self._pack_int6(src_ptr)
+            case _:
+                comptime assert False, "unsupported bit width"
 
     @inline(.always)
     def unpack[
@@ -240,13 +239,14 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
         """Unpacks the local storage to the supplied external buffer."""
         comptime assert (Self._packed_stride % Self._simd_width) == 0
 
-        comptime if Self.bit_width == 4:
-            comptime assert zero_point == 0, "zero point not implemented"
-            return self._unpack_int4(dst_ptr)
-        elif Self.bit_width == 6:
-            return self._unpack_int6[zero_point](dst_ptr)
-        else:
-            comptime assert False, "unsupported bit width"
+        comptime match Self.bit_width:
+            case 4:
+                comptime assert zero_point == 0, "zero point not implemented"
+                return self._unpack_int4(dst_ptr)
+            case 6:
+                return self._unpack_int6[zero_point](dst_ptr)
+            case _:
+                comptime assert False, "unsupported bit width"
 
 
 struct _block_Q4_K_packed[block_n: Int = 1]:
@@ -274,15 +274,15 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 def _quantize_a_Q8_K[
     group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
-](a: LayoutTensor[mut=False, dtype, ...]) -> Allocation[
+](a: TileTensor[mut=False, dtype, ...]) -> Allocation[
     _block_Q8_K_packed[group_size]
 ]:
     comptime assert a.rank == 2
     comptime quantized_k = _block_QK_K.quantized_k
     comptime group_count = quantized_k // group_size
 
-    var M = a.dim[0]()
-    var K = a.dim[1]()
+    var M = Int(a.dim[0]())
+    var K = Int(a.dim[1]())
 
     var packed_base_alloc = alloc(
         AllocLayout[_block_Q8_K_packed[group_size]](
@@ -578,19 +578,17 @@ def matmul_Q4_K_pack_b(
         b_tt: Source tensor holding the unpacked Q4_K quantized weights.
         b_packed_tt: Destination tensor for the packed weights.
     """
-    var b = b_tt.to_layout_tensor()
-    var b_packed = b_packed_tt.to_layout_tensor()
-    comptime assert b.rank == 2
-    comptime assert b_packed.rank == 2
-    var N = b.dim[0]()
-    var K = b.dim[1]()
+    comptime assert b_tt.rank == 2
+    comptime assert b_packed_tt.rank == 2
+    var N = Int(b_tt.dim[0]())
+    var K = Int(b_tt.dim[1]())
     var k_blocks = K // size_of[_block_Q4_K]()
 
     comptime simd_width = simd_width_of[DType.float32]()
     comptime block_n = simd_width * 2
 
-    var src_ptr = b.ptr.bitcast[_block_Q4_K]()
-    var dst_ptr = b_packed.ptr.bitcast[_block_Q4_K_packed[block_n]]()
+    var src_ptr = b_tt.ptr.bitcast[_block_Q4_K]()
+    var dst_ptr = b_packed_tt.ptr.bitcast[_block_Q4_K_packed[block_n]]()
 
     for _kb in range(k_blocks):
         var src_n_ptr = src_ptr
@@ -614,19 +612,17 @@ def matmul_Q6_K_pack_b(
         b_tt: Source tensor holding the unpacked Q6_K quantized weights.
         b_packed_tt: Destination tensor for the packed weights.
     """
-    var b = b_tt.to_layout_tensor()
-    var b_packed = b_packed_tt.to_layout_tensor()
-    comptime assert b.rank == 2
-    comptime assert b_packed.rank == 2
-    var N = b.dim[0]()
-    var K = b.dim[1]()
+    comptime assert b_tt.rank == 2
+    comptime assert b_packed_tt.rank == 2
+    var N = Int(b_tt.dim[0]())
+    var K = Int(b_tt.dim[1]())
     var k_blocks = K // size_of[_block_Q6_K]()
 
     comptime simd_width = simd_width_of[DType.float32]()
     comptime block_n = simd_width * 2
 
-    var src_ptr = b.ptr.bitcast[_block_Q6_K]()
-    var dst_ptr = b_packed.ptr.bitcast[_block_Q6_K_packed[block_n]]()
+    var src_ptr = b_tt.ptr.bitcast[_block_Q6_K]()
+    var dst_ptr = b_packed_tt.ptr.bitcast[_block_Q6_K_packed[block_n]]()
 
     for _kb in range(k_blocks):
         var src_n_ptr = src_ptr
@@ -963,19 +959,13 @@ def _accumulate_and_store[
 
     c_float.store(c_ptr, N)
 
-    comptime if elementwise_lambda_fn:
-        comptime func = elementwise_lambda_fn.value()
-
+    comptime if case .Some(func) = elementwise_lambda_fn:
         if is_last_k_iter:
             comptime for mm in range(tile_m):
                 comptime for nn in range(tile_n):
                     var val = c_float[mm, nn]
                     func[.float32, simd_width](
-                        Index(
-                            m + mm,
-                            n + nn * simd_width,
-                        ),
-                        val,
+                        (m + mm, n + nn * simd_width), val
                     )
 
 
@@ -1473,10 +1463,10 @@ def _matmul_Qb_K[
     interleave_group_sums: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    a: LayoutTensor[mut=False, .float32, address_space=.GENERIC, ...],
-    b: LayoutTensor[mut=False, .uint8, address_space=.GENERIC, ...],
-    c: LayoutTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    a: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    b: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    c: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1484,9 +1474,9 @@ def _matmul_Qb_K[
 
     comptime simd_width = simd_width_of[DType.float32]()
 
-    var M = a.dim[0]()
-    var N = b.dim[0]()
-    var K = a.dim[1]()
+    var M = Int(a.dim[0]())
+    var N = Int(b.dim[0]())
+    var K = Int(a.dim[1]())
     var k_blocks = K // _block_QK_K.quantized_k
 
     var a_packed_base_alloc = _quantize_a_Q8_K[
@@ -1573,7 +1563,7 @@ def matmul_Q4_K[
     a_tt: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     c_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes a matrix multiplication with Q4_K block-quantized weights.
 
@@ -1589,12 +1579,9 @@ def matmul_Q4_K[
         c_tt: Output tensor in float32.
         ctx: Optional device context for parallel execution.
     """
-    var a = a_tt.to_layout_tensor()
-    var b = b_tt.to_layout_tensor()
-    var c = c_tt.to_layout_tensor()
-    comptime assert a.rank == 2
-    comptime assert b.rank == 2
-    comptime assert c.rank == 2
+    comptime assert a_tt.rank == 2
+    comptime assert b_tt.rank == 2
+    comptime assert c_tt.rank == 2
 
     _matmul_Qb_K[
         group_size=_block_Q4_K.group_size,
@@ -1602,7 +1589,7 @@ def matmul_Q4_K[
         columns_fn=_matmul_Q4_K_columns,
         interleave_group_sums=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](a, b, c, ctx)
+    ](a_tt, b_tt, c_tt, ctx)
 
 
 def matmul_Q6_K[
@@ -1611,7 +1598,7 @@ def matmul_Q6_K[
     a_tt: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     c_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ):
     """Computes a matrix multiplication with Q6_K block-quantized weights.
 
@@ -1627,16 +1614,13 @@ def matmul_Q6_K[
         c_tt: Output tensor in float32.
         ctx: Optional device context for parallel execution.
     """
-    var a = a_tt.to_layout_tensor()
-    var b = b_tt.to_layout_tensor()
-    var c = c_tt.to_layout_tensor()
-    comptime assert a.rank == 2
-    comptime assert b.rank == 2
-    comptime assert c.rank == 2
+    comptime assert a_tt.rank == 2
+    comptime assert b_tt.rank == 2
+    comptime assert c_tt.rank == 2
 
     _matmul_Qb_K[
         group_size=_block_Q6_K.group_size,
         b_type=_block_Q6_K_packed[],
         columns_fn=_matmul_Q6_K_columns,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](a, b, c, ctx)
+    ](a_tt, b_tt, c_tt, ctx)

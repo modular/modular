@@ -215,8 +215,8 @@ struct PyObjectPtr(
 
     @inline(.always)
     def __int__(self) -> Int:
-        if self._unsized_obj_ptr:
-            return Int(self._unsized_obj_ptr.unsafe_value())
+        if case .Some(unsized_obj_ptr) = self._unsized_obj_ptr:
+            return Int(unsized_obj_ptr)
         else:
             return 0
 
@@ -2084,11 +2084,10 @@ struct CPython(Defaultable, Movable):
         # instance.
         var maybe_ptr = self.lib.get_symbol[PyObjectPtr](global_name)
 
-        if not maybe_ptr:
-            abort(t"error: symbol `{global_name}` not found in CPython library")
+        if case .Some(ptr) = maybe_ptr:
+            return ptr[]
         else:
-            # SAFETY: maybe_ptr is checked above
-            return maybe_ptr.unsafe_value()[]
+            abort(t"error: symbol `{global_name}` not found in CPython library")
 
     # ===-------------------------------------------------------------------===#
     # Python/C API

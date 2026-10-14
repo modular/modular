@@ -56,13 +56,12 @@ row counts beyond the hardware-tuned block limit. Gamma weights are
 preloaded once and reused across all rows in the loop.
 """
 
-from std.collections import Array, Optional
-from std.collections._conditional import _ComptimeConditional
+from std.builtin.device_passable import DevicePassable
+from std.collections import Array
 from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
     get_defined_int,
-    has_amd_gpu_accelerator,
     simd_width_of,
     size_of,
 )
@@ -75,7 +74,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from layout import (
     Coord,
@@ -96,7 +95,6 @@ from .rms_norm_fp8 import rms_norm_fused_fp8
 
 from .allreduce import (
     allreduce,
-    elementwise_epilogue_type,
     allreduce_tuning_table,
 )
 from .device_query import get_sm_version, dispatch_select_comm_config
@@ -137,9 +135,10 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: def[width: SIMDLength](
-        row: Int, col: Int, val: SIMD[out_dtype, width]
-    ) capturing -> None,
+    OutputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: SIMDLength](Int, Int, SIMD[out_dtype, width]) -> None,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     gamma: TileTensor[in_dtype, LayoutType, origin],
@@ -165,6 +164,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         residual_out_origin,
         engaged=has_residual,
     ],
+    output_fn: OutputFnType,
 ):
     """Fused allreduce + RMSNorm + FP8 kernel using warp-tiling.
 
@@ -328,9 +328,10 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: def[width: SIMDLength](
-        row: Int, col: Int, val: SIMD[out_dtype, width]
-    ) capturing -> None,
+    OutputFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: SIMDLength](Int, Int, SIMD[out_dtype, width]) -> None,
 ](
     src_ptrs: Array[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     gamma: TileTensor[in_dtype, LayoutType, origin],
@@ -356,6 +357,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
         residual_out_origin,
         engaged=has_residual,
     ],
+    output_fn: OutputFnType,
 ):
     """Single-kernel 2-stage fused RS + RMSNorm + FP8 + AG.
 
@@ -673,7 +675,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
 # --- Launcher ---
 
-comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx[0], Idx[0])))
+comptime _ZeroSizedLayout = type_of(row_major(Idx[0], Idx[0]))
 
 
 def _allreduce_rmsnorm_fp8_launch[
@@ -727,11 +729,9 @@ def _allreduce_rmsnorm_fp8_launch[
     comptime assert output.flat_rank >= 2
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(output)
     def output_fn[
         width: SIMDLength
-    ](row: Int, col: Int, val: SIMD[out_dtype, width]):
+    ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
         output.store[width=width](Coord(row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
@@ -751,7 +751,7 @@ def _allreduce_rmsnorm_fp8_launch[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
         has_residual=has_residual,
-        output_fn=output_fn,
+        OutputFnType=type_of(output_fn),
     ]
     ctx.enqueue_function[kernel](
         src_ptrs,
@@ -766,6 +766,7 @@ def _allreduce_rmsnorm_fp8_launch[
         Int32(my_rank),
         residual,
         residual_output,
+        output_fn,
         grid_dim=grid_dim,
         block_dim=block_dim,
     )
@@ -886,11 +887,9 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     comptime assert output.flat_rank >= 2
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(output)
     def output_fn[
         width: SIMDLength
-    ](row: Int, col: Int, val: SIMD[out_dtype, width]):
+    ](row: Int, col: Int, val: SIMD[out_dtype, width]) {var output}:
         output.store[width=width](Coord(row, col), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
@@ -910,7 +909,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
         has_residual=has_residual,
-        output_fn=output_fn,
+        OutputFnType=type_of(output_fn),
     ]
     ctx.enqueue_function[kernel](
         src_ptrs,
@@ -925,6 +924,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         Int32(my_rank),
         residual,
         residual_output,
+        output_fn,
         grid_dim=grid_dim,
         block_dim=block_dim,
     )
@@ -959,12 +959,10 @@ def _launch_split_allreduce_rmsnorm_fp8[
     it avoids carrying bf16 residual data through scratch buffers.
     """
     # Construct TileTensor inputs for allreduce.
-    comptime _TT = type_of(
-        TileTensor(src_ptrs[0], row_major(Coord(rows, cols)))
-    )
+    comptime _TT = type_of(TileTensor(src_ptrs[0], row_major(rows, cols)))
     var input_buffers = Array[_, ngpus](
         fill_with=lambda (i: Int) -> _TT: TileTensor(
-            src_ptrs[i], row_major(Coord(rows, cols))
+            src_ptrs[i], row_major(rows, cols)
         )
     )
 
@@ -982,7 +980,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = TileTensor(
-        scale_output_1d._storage, row_major(Coord(rows, Idx[1]))
+        scale_output_1d._storage, row_major(rows, Idx[1])
     )
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
@@ -1028,10 +1026,9 @@ def _launch_split_allreduce_rmsnorm_fp8[
             rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]()),
         )
 
-    allreduce[
-        ngpus=ngpus,
-        output_lambda=Optional[elementwise_epilogue_type](add_epilogue),
-    ](input_buffers, residual_output, rank_sigs, ctx)
+    allreduce[ngpus=ngpus, output_lambda=add_epilogue](
+        input_buffers, residual_output.layout, rank_sigs, ctx
+    )
 
     # Step 2: Fused RMSNorm + FP8 on residual_output (kernel already compiled).
     rms_norm_fused_fp8[in_dtype, out_dtype, scales_dtype, 2, input_fn](
@@ -1090,11 +1087,15 @@ def _dispatch_fused_kernel[
     allreduce_residual_rmsnorm. Selects simd width based on column count
     and 1-stage vs 2-stage based on payload size.
     """
+    # A step that skips speculative drafting hands every rank a zero-row
+    # batch, and a zero grid is rejected by `enqueue_function`. Every rank
+    # sees the same `rows`, so skipping the barrier pair strands no peer.
+    if rows == 0:
+        return
+
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
-    comptime base_simd_width = simd_width_of[
-        in_dtype, target=get_gpu_target()
-    ]()
+    comptime base_simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime sw1 = base_simd_width
     comptime sw2 = base_simd_width * 2
 
@@ -1123,16 +1124,14 @@ def _dispatch_fused_kernel[
     #   MI355 8GPU:  80 KB non-res,  96 KB residual
     #   B200  4GPU: 512 KB non-res, 256 KB residual
     #   B200  8GPU:  80 KB non-res, 80/100 KB residual (column-aware, see below)
-    @__parameter
     def _rank_4_per_rank_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return 128 * 1024 if not has_residual else 96 * 1024
         else:
             return 512 * 1024 if not has_residual else 256 * 1024
 
-    @__parameter
     def _rank_8_per_rank_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return 80 * 1024 if not has_residual else 96 * 1024
         else:
             return 80 * 1024
@@ -1148,17 +1147,22 @@ def _dispatch_fused_kernel[
     # 36.3us, a 12% loss). Use a column-aware threshold: 100 KB for wide
     # columns (>= 6144, the large-hidden regime), 80 KB otherwise (matches the
     # validated narrow-column crossover; cols=4096 crosses near 72 KB).
-    @__parameter
     def _rank_8_residual_thresh_for_cols(c: Int) -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_8_per_rank_thresh()
         else:
             return 100 * 1024 if c >= 6144 else 80 * 1024
 
     var threshold: Int
-    comptime if ngpus <= 4:
+    comptime if ngpus <= 2 and has_residual and not quantize:
+        # 2-stage ships the payload twice, moving 2*(ngpus-1)/ngpus of what
+        # 1-stage moves over the fabric, plus a second barrier and a scratch
+        # round trip (~9 us on 2xB200). At two ranks that ratio is exactly 1,
+        # so this is never a win and we always use the 1-stage kernel.
+        threshold = Int.MAX
+    elif ngpus <= 4:
         threshold = _rank_4_per_rank_thresh()
-    elif has_residual and not has_amd_gpu_accelerator():
+    elif has_residual and not ctx.target.is_amd_gpu():
         threshold = _rank_8_residual_thresh_for_cols(cols)
     else:
         threshold = _rank_8_per_rank_thresh()
@@ -1170,14 +1174,12 @@ def _dispatch_fused_kernel[
     #          split beats 2-stage for cols > 8192. See dispatch below.
     #   B200 4GPU: 1536 KB per-rank crossover
     #   B200 8GPU: conservative, same as 2-stage threshold
-    @__parameter
     def _rank_4_split_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_4_per_rank_thresh()
         else:
             return 1536 * 1024
 
-    @__parameter
     def _rank_8_split_thresh() -> Int:
         # For 8 GPUs the split threshold equals the 2-stage threshold on
         # both AMD and NVIDIA.  This intentionally means the 2-stage
@@ -1187,7 +1189,7 @@ def _dispatch_fused_kernel[
         # Benchmarks show the split (2-kernel) path is always faster than
         # fused 2-stage with residual at 8-GPU scale because the extra
         # bf16 scratch traffic in Stage 2 outweighs the launch overhead.
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_8_per_rank_thresh()
         else:
             return _rank_8_per_rank_thresh()
@@ -1196,50 +1198,50 @@ def _dispatch_fused_kernel[
 
     var use_2stage: Bool
     var use_split: Bool = False
-    comptime if force_stage == 1:
-        use_2stage = False
-    elif force_stage == 2:
-        use_2stage = True
-    elif force_stage == 3:
-        # Force split (2-kernel) path (FP8/quantizing residual only).
-        use_2stage = False
-        comptime if has_residual and quantize:
-            use_split = True
-    else:
-        comptime if has_residual and quantize:
-            comptime if has_amd_gpu_accelerator():
-                # MI355: 2-stage fused beats split for cols <= 8192,
-                # split beats 2-stage for wider columns (16384+).
-                if per_rank_bytes >= threshold:
-                    if cols > 8192:
+    comptime match force_stage:
+        case 1:
+            use_2stage = False
+        case 2:
+            use_2stage = True
+        case 3:
+            # Force split (2-kernel) path (FP8/quantizing residual only).
+            use_2stage = False
+            comptime if has_residual and quantize:
+                use_split = True
+        case _:
+            comptime if has_residual and quantize:
+                comptime if ctx.target.is_amd_gpu():
+                    # MI355: 2-stage fused beats split for cols <= 8192,
+                    # split beats 2-stage for wider columns (16384+).
+                    if per_rank_bytes >= threshold:
+                        if cols > 8192:
+                            use_split = True
+                            use_2stage = False
+                        else:
+                            use_2stage = True
+                    else:
+                        use_2stage = False
+                else:
+                    # NVIDIA residual dispatch.  For 8 GPUs split_threshold
+                    # == threshold, so the elif is unreachable and the
+                    # 2-stage residual path is intentionally skipped (see
+                    # _rank_8_split_thresh comment).  For 4 GPUs the two
+                    # thresholds differ and all three paths are reachable.
+                    if per_rank_bytes >= split_threshold:
                         use_split = True
                         use_2stage = False
-                    else:
+                    elif per_rank_bytes >= threshold:
                         use_2stage = True
-                else:
-                    use_2stage = False
+                    else:
+                        use_2stage = False
+            elif has_residual:
+                # Non-quant residual: the split path is FP8-only, so pick between
+                # the 1-stage and 2-stage fused kernels by per-rank payload only.
+                use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
             else:
-                # NVIDIA residual dispatch.  For 8 GPUs split_threshold
-                # == threshold, so the elif is unreachable and the
-                # 2-stage residual path is intentionally skipped (see
-                # _rank_8_split_thresh comment).  For 4 GPUs the two
-                # thresholds differ and all three paths are reachable.
-                if per_rank_bytes >= split_threshold:
-                    use_split = True
-                    use_2stage = False
-                elif per_rank_bytes >= threshold:
-                    use_2stage = True
-                else:
-                    use_2stage = False
-        elif has_residual:
-            # Non-quant residual: the split path is FP8-only, so pick between
-            # the 1-stage and 2-stage fused kernels by per-rank payload only.
-            use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
-        else:
-            use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
+                use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
 
-    @__parameter
-    def launch_1stage[sw: Int]() raises:
+    def launch_1stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch[
             sw,
             in_dtype,
@@ -1265,8 +1267,7 @@ def _dispatch_fused_kernel[
             residual_output,
         )
 
-    @__parameter
-    def launch_2stage[sw: Int]() raises:
+    def launch_2stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch_2stage[
             sw,
             in_dtype,
@@ -1439,17 +1440,13 @@ def allreduce_rmsnorm[
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
         rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var scale_output_1d = TileTensor(
         rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
             scale_output._storage
         ),
-        row_major(
-            Coord(
-                rows,
-            )
-        ),
+        row_major(rows),
     )
 
     _dispatch_fused_kernel[in_dtype, out_dtype, scales_dtype, ngpus](
@@ -1553,27 +1550,23 @@ def allreduce_residual_rmsnorm[
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
         rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var residual_2d = TileTensor(
         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](residual._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var residual_output_2d = TileTensor(
         rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
             residual_output._storage
         ),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var scale_output_1d = TileTensor(
         rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
             scale_output._storage
         ),
-        row_major(
-            Coord(
-                rows,
-            )
-        ),
+        row_major(rows),
     )
 
     _dispatch_fused_kernel[

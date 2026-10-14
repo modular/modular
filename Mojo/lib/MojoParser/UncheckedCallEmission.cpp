@@ -315,6 +315,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         return pmb;
     }
 
+    emitter.warnIfTransferIsOnlyBorrowed(operand);
+
     // Emit the operand as a 'ref'.
     Value refValue = emitter.emitRefValue(operand, EC_CallRefArgValue);
     if (!refValue)
@@ -1759,44 +1761,6 @@ static bool shouldEmitParameterCall(RValue callee,
   return false;
 }
 
-/// Rewrite closure-capture witnesses inside `type` back to the external value
-/// they are known to equal.
-static Type externClosureCapturesInType(Type type, ASTDecl &declScope) {
-  // Start the capture search from the nearest enclosing operation.
-  Operation *startOp = nullptr;
-  for (ASTDecl *scope = &declScope; scope && !startOp;
-       scope = scope->getParentDecl())
-    startOp = scope->getIfOperation();
-  if (!startOp)
-    return type;
-
-  SharedState &shared = declScope.getShared();
-
-  // `startOp` is fixed for this call, so memoize the capture lookup per closure
-  // parameter name.
-  DenseMap<StringAttr, ArrayRef<ClosureParamCapture>> captureCache;
-  auto capturesFor = [&](StringAttr name) -> ArrayRef<ClosureParamCapture> {
-    auto [it, inserted] = captureCache.try_emplace(name);
-    if (inserted)
-      it->second = shared.lookupClosureCaptureFromOp(startOp, name);
-    return it->second;
-  };
-
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](GetWitnessAttr witness) -> TypedAttr {
-    auto closureParam = sugarDynCast<ParamDeclRefAttr>(witness.getTypeValue());
-    if (!closureParam)
-      return witness;
-    for (const ClosureParamCapture &capture :
-         capturesFor(closureParam.getName()))
-      if (capture.first == witness.getWitnessName())
-        return ParamDeclRefAttr::get(witness.getWitnessName(),
-                                     witness.getType());
-    return witness;
-  });
-  return replacer.replace(type);
-}
-
 CValue IREmitter::emitCallUnchecked(RValue callee,
                                     CallOperands &&callOperands) {
   const ExprNode *callExpr = callOperands.callExpr;
@@ -1852,8 +1816,14 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
         // Thrown type must be implicitly convertible to the error slot type.
         isErrorTypeConvertible()) {
 
-      return emitIndirectCallInTryBlock(
-          callee, std::move(callOperands), [&](VarDeclOp errDecl) {
+      // The callee is already resolved, so emit it unchecked in the try
+      // region rather than re-resolving it as an indirect call.
+      return emitCallInTryBlock(
+          callee, std::move(callOperands),
+          [&](CallOperands &&operands) {
+            return emitCallUnchecked(callee, std::move(operands));
+          },
+          [&](VarDeclOp errDecl) {
             // Move the error out of the temporary and into the overall error
             // slot, performing the implicit conversion.
             ExprDest moveDest(errSlot, EC_RaiseValue);
@@ -1925,15 +1895,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
               findSugaredResultTypeFor(paramCallResult.getType()))
         paramCallResult =
             ParamOperatorAttr::getRebind(paramCallResult, sugaredResult);
-    }
-
-    // Re-express any forwarded closure-capture witness as captured type.
-    if (paramCallResult) {
-      Type externed =
-          externClosureCapturesInType(paramCallResult.getType(), declScope);
-      if (externed != paramCallResult.getType())
-        paramCallResult =
-            ParamOperatorAttr::getRebind(paramCallResult, externed);
     }
 
     // The dest might force further calls.  We delay calling it until after
@@ -2145,18 +2106,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       sugaredResult = callResult.getMValueType().getWithElement(sugaredResult);
     callResult = rebindValue({callResult, callExpr}, sugaredResult);
     assert(callResult && "rebindValue always succeeds");
-  }
-
-  // Re-express any forwarded closure-capture witness as captured type.
-  if (callResult) {
-    Type externed =
-        externClosureCapturesInType(callResult.getRValueType(), declScope);
-    if (externed != callResult.getRValueType()) {
-      if (callResult.isMValue())
-        externed = callResult.getMValueType().getWithElement(externed);
-      callResult = rebindValue({callResult, callExpr}, externed);
-      assert(callResult && "rebindValue always succeeds");
-    }
   }
 
   // Apply type refinement to the call result if it has a parametric type

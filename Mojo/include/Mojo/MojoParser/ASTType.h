@@ -187,6 +187,8 @@ public:
   /// Note: this resolves the body of a struct type.
   bool isTrivialRegisterType(llvm::SMLoc loc, SharedState &shared) const;
 
+  TraitType getProvidedTrait(SharedState &shared);
+
   /// Check whether this type conforms to the specified trait, returning a
   /// 3-state result. This uses the concrete type's parameter bindings to
   /// evaluate any conditional trait conformances.
@@ -370,8 +372,8 @@ struct ASTTypePrinterContext {
   /// prints `Self` in place of the fully-expanded form.
   ASTType selfType = {};
 
-  /// Set to true to print closure trait signature.
-  bool suppressThin = false;
+  /// Set to true when printing a closure trait signature.
+  bool isClosureSignature = false;
 
   ASTTypePrinterContext() {}
   ASTTypePrinterContext(SharedState *shared) : shared(shared) {}

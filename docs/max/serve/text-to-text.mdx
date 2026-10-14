@@ -70,9 +70,10 @@ For compatibility with OpenAI SDKs that emit `developer` for the o1/o3
 reasoning models, MAX also accepts `developer` as a system-equivalent role and
 normalizes it to `system` internally.
 
-Some models define extra roles through their chat template. For example, MAX
-also accepts a `root` role, but only when the model's tokenizer enables it.
-Requests that use a role the model doesn't support are rejected.
+Some models define extra roles through their [chat
+template](/serve/chat-templates). For example, MAX also accepts a `root` role,
+but only when the model's tokenizer enables it. Requests that use a role the
+model doesn't support are rejected.
 
 Use this endpoint whenever you want conversational interaction, such as:
 

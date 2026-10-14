@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterable, AsyncIterator
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
@@ -32,6 +33,10 @@ from max.experimental.cascade.pipelines.dummy_textgen import (
     build_dummy_textgen_pipeline,
 )
 from max.experimental.cascade.serve.chat_completions import build_router
+from max.experimental.cascade.serve.openai_chat_formatter import (
+    DONE_SSE,
+    OpenAIChatFormatter,
+)
 
 
 @pytest.fixture()
@@ -321,3 +326,47 @@ async def test_defaults_when_fields_absent(
     assert req.repetition_penalty is None
     assert req.stop is None
     assert req.stop_token_ids is None
+
+
+async def _sse_frames(
+    chunks: list[GenAIChunk],
+) -> list[bytes]:
+    """Run ``format_stream`` over ``chunks`` and collect its SSE frames."""
+
+    async def _iter() -> AsyncIterator[GenAIChunk]:
+        for chunk in chunks:
+            yield chunk
+
+    formatter = OpenAIChatFormatter()
+    # A streaming worker_method returns the async iterator when called directly
+    # on the instance (the proxy path returns a ResultIter handle instead).
+    stream = cast(
+        "AsyncIterator[bytes]",
+        formatter.format_stream(_iter(), "m", "req-1", 0),
+    )
+    return [frame async for frame in stream]
+
+
+@pytest.mark.asyncio
+async def test_text_free_chunks_are_not_framed() -> None:
+    """A chunk carrying only a token count produces no SSE delta."""
+    frames = await _sse_frames(
+        [
+            GenAITextChunk(text="hi", num_tokens=1),
+            GenAITextChunk(text="", num_tokens=1),
+        ]
+    )
+
+    # One content frame, then the finish_reason frame and the DONE sentinel.
+    assert sum(b'"content":"hi"' in frame for frame in frames) == 1
+    assert not any(b'"content":""' in frame for frame in frames)
+    assert frames[-1] == DONE_SSE
+
+
+@pytest.mark.asyncio
+async def test_text_free_chunk_alone_still_terminates_the_stream() -> None:
+    """A response whose only chunk is text-free still closes cleanly."""
+    frames = await _sse_frames([GenAITextChunk(text="", num_tokens=1)])
+
+    assert not any(b'"content":""' in frame for frame in frames)
+    assert frames[-1] == DONE_SSE

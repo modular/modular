@@ -14,6 +14,7 @@
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
+from std.math import ceildiv
 
 
 # ========================== CONFIGURATION ==========================
@@ -78,7 +79,7 @@ def main() raises:
             h_size[0] = UInt32(0)
 
         # Launch kernel
-        var num_blocks = (N + BLOCK_DIM - 1) // BLOCK_DIM
+        var num_blocks = ceildiv(N, BLOCK_DIM)
         print(
             "Launching simple unstable filter kernel (Fig 12.2) with",
             num_blocks,

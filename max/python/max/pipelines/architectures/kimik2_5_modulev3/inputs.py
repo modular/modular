@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from max import tree
 from max.driver import Buffer
 from max.pipelines.lib import ModelInputs
 
@@ -64,7 +65,7 @@ class KimiK2_5ModelInputs(ModelInputs):
             *self.batch_context_lengths,
             *dp_inputs,
             *(
-                self.kv_cache_inputs.flatten()
+                tree.leaves(self.kv_cache_inputs)
                 if self.kv_cache_inputs is not None
                 else ()
             ),

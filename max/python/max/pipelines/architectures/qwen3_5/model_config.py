@@ -169,6 +169,17 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
     vision_config: VisionConfig | None = None
     """Vision encoder configuration; None for text-only models."""
 
+    mrope_without_encoder: bool = False
+    """Keep M-RoPE on a graph that compiles no vision encoder.
+
+    ``vision_config`` normally carries two facts at once: that an encoder must
+    be built, and that images can appear in a request's context. The fused
+    speculative graph separates them — it never encodes an image, because the
+    encoder ran before the tokens it verifies ever reached it, but a request
+    whose context holds one still needs 3-axis positions for every token after
+    it. Setting this keeps :attr:`Qwen3_5.mrope_enabled` true with
+    ``vision_config`` cleared."""
+
     image_token_id: int | None = None
     """Token ID used for image placeholders in the input sequence."""
 
@@ -393,6 +404,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         page_size = kv_cache_config.kv_cache_page_size
         if text_config.head_dim > 128:
             page_size = max(page_size, text_config.head_dim)
+        speculative = pipeline_config.speculative
         params = kv_cache_config.to_params(
             allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
@@ -402,6 +414,14 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             page_size=page_size,
+            # A speculative step writes its whole verify window, and the cache
+            # reserves a request's pages for it from this. Without it a window
+            # that crosses a page writes past them, and the next step loses an
+            # accepted token's K/V. The method stays unset, since it adds a
+            # draft attention input this graph does not take.
+            num_draft_tokens=(
+                speculative.num_speculative_tokens or 0 if speculative else 0
+            ),
         )
         return params
 
@@ -412,11 +432,13 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         num_linear_layers: int,
         dtype: DType,
         num_devices: int,
+        ring_len: int = 0,
     ) -> tuple[RecurrentStateRegion, ...]:
         """Returns the state leaves this checkpoint's linear layers keep.
 
         The fallbacks are the published Qwen3.5 geometry, left implicit by a
-        config predating these fields.
+        config predating these fields. A nonzero ``ring_len`` adds the
+        speculative verify's ring leaf.
         """
         return linear_state_regions(
             num_linear_layers=num_linear_layers,
@@ -427,7 +449,17 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             conv_kernel_dim=getattr(text_config, "linear_conv_kernel_dim", 4),
             dtype=dtype,
             num_devices=num_devices,
+            ring_len=ring_len,
         )
+
+    @classmethod
+    def _verify_ring_len(cls, pipeline_config: PipelineConfig) -> int:
+        """Returns the verify ring length the state cache must hold, or zero.
+
+        Only an architecture whose graph folds a verify ring declares one.
+        """
+        del pipeline_config
+        return 0
 
     @classmethod
     def construct_kv_params(  # type: ignore[override]  # TODO(SERVOPT-1607)
@@ -469,6 +501,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
                     text_config, kv_cache_config
                 ),
                 num_devices=len(devices),
+                ring_len=cls._verify_ring_len(pipeline_config),
             ),
             devices=attn.devices,
             data_parallel_degree=attn.data_parallel_degree,
@@ -494,6 +527,30 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         return text_config.num_hidden_layers
 
+    def _linear_regions(
+        self, ring_len: int = 0
+    ) -> tuple[RecurrentStateRegion, ...]:
+        """Returns this config's state regions at full width, unsharded.
+
+        Byte counts summed over these are totals across devices.
+        """
+        num_linear = sum(
+            1 for lt in self.layer_types if lt == "linear_attention"
+        )
+        if num_linear == 0:
+            return ()
+        return linear_state_regions(
+            num_linear_layers=num_linear,
+            key_head_dim=self.linear_key_head_dim,
+            num_key_heads=self.linear_num_key_heads,
+            value_head_dim=self.linear_value_head_dim,
+            num_value_heads=self.linear_num_value_heads,
+            conv_kernel_dim=self.linear_conv_kernel_dim,
+            dtype=self.state_dtype,
+            num_devices=1,
+            ring_len=ring_len,
+        )
+
     def _per_request_state_bytes(self) -> int:
         """Returns GPU bytes one request's linear-attention state occupies.
 
@@ -501,23 +558,17 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         declares its leaves from, so a shape cannot be right in one and wrong
         in the other.
         """
-        num_linear = sum(
-            1 for lt in self.layer_types if lt == "linear_attention"
-        )
-        if num_linear == 0:
-            return 0
+        return sum(region.bytes_per_page for region in self._linear_regions())
+
+    def _per_request_ring_bytes(self, ring_len: int) -> int:
+        """Returns the per-request bytes of a verify's ring, padding included.
+
+        The ring is a scratch leaf of the state cache, drawn per request.
+        """
         return sum(
-            region.bytes_per_state
-            for region in linear_state_regions(
-                num_linear_layers=num_linear,
-                key_head_dim=self.linear_key_head_dim,
-                num_key_heads=self.linear_num_key_heads,
-                value_head_dim=self.linear_value_head_dim,
-                num_value_heads=self.linear_num_value_heads,
-                conv_kernel_dim=self.linear_conv_kernel_dim,
-                dtype=self.state_dtype,
-                num_devices=1,
-            )
+            region.bytes_per_page
+            for region in self._linear_regions(ring_len)
+            if region.scratch
         )
 
     def infer_optimal_batch_size(
@@ -544,7 +595,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             device_memory_utilization: Headroom factor.
             extra_per_request_bytes: Per-request state the architecture holds
                 beyond the pool set this config declares -- a speculative
-                arch's shadow set, for one. Added to the divisor so the
+                arch's verify ring, for one. Added to the divisor so the
                 inferred batch fits what will really be allocated.
         """
         per_req = self._per_request_state_bytes() + extra_per_request_bytes
@@ -622,7 +673,9 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         ]
 
         # Override KV params and attention multiplier
-        kv_params = Qwen3_5Config.construct_kv_params(
+        # Through ``cls`` so a speculative subclass's verify ring reaches
+        # memory planning, not only the cache the pipeline model allocates.
+        kv_params = cls.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=device_refs,

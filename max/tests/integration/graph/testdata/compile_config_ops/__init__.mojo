@@ -57,11 +57,10 @@ struct AddOneCustom:
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @__parameter
-        def add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
+        def add_one[width: Int](idx: Coord) {var} -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[add_one, target=target](output, ctx)
+        foreach[target=target](add_one, output, ctx)
 
 
 @extensibility.register_shape_function("add_one_custom")

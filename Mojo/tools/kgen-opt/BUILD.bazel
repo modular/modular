@@ -26,6 +26,7 @@ modular_cc_binary(
         "//Mojo:plugin_consumers",
     ],
     deps = [
+        "//:accel_registration",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Init",

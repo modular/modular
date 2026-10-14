@@ -71,11 +71,10 @@ same mask, at the bf16 floor used throughout this datapath's other tests
 
 from std.math import ceildiv, isnan, rsqrt
 from std.random import seed
-from std.utils import IndexList
 from std.utils.numerics import nan
 
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
@@ -106,12 +105,15 @@ def padded_lut_cols(cols: Int) -> Int:
 
 
 def main() raises:
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime qo_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_size)
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime kv_block_layout = Layout.row_major[6]()
-    comptime qo_shape = IndexList[3](valid_length, num_q_heads, head_size)
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
     comptime qo_size = valid_length * num_q_heads * head_size
 
     var scale = rsqrt(Float32(head_size))
@@ -123,34 +125,40 @@ def main() raises:
         row_offsets_host[1] = UInt32(valid_length)
         var row_offsets_dev = ctx.enqueue_create_buffer[.uint32](2)
         ctx.enqueue_copy(row_offsets_dev, row_offsets_host)
-        var row_offsets = LayoutTensor[mut=False, .uint32, row_offsets_layout](
-            row_offsets_dev,
-            RuntimeLayout[row_offsets_layout].row_major(IndexList[1](2)),
+        var row_offsets = (
+            TileTensor(row_offsets_dev, row_major(Int64(len(row_offsets_dev))))
+            .as_imm()
+            .as_unsafe_any_origin()
         )
 
         var cache_lengths_host = ctx.enqueue_create_host_buffer[.uint32](1)
         cache_lengths_host[0] = UInt32(cache_length)
         var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](1)
         ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
-        var cache_lengths = LayoutTensor[
-            mut=False, .uint32, cache_lengths_layout
-        ](
-            cache_lengths_dev,
-            RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](1)),
+        var cache_lengths = (
+            TileTensor(
+                cache_lengths_dev,
+                row_major(Int64(len(cache_lengths_dev))),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
 
         var q_host = ctx.enqueue_create_host_buffer[dtype](qo_size)
         random(
-            LayoutTensor[dtype, qo_layout](
-                q_host.unsafe_ptr(),
-                RuntimeLayout[qo_layout].row_major(qo_shape),
+            TileTensor(
+                q_host,
+                row_major(
+                    Int64(valid_length), Idx[num_q_heads], Idx[head_size]
+                ),
             )
         )
         var q_dev = ctx.enqueue_create_buffer[dtype](qo_size)
         ctx.enqueue_copy(q_dev, q_host)
-        var q = LayoutTensor[mut=False, dtype, qo_layout](
-            q_dev, RuntimeLayout[qo_layout].row_major(qo_shape)
-        )
+        var q = TileTensor(
+            q_dev,
+            row_major(Int64(valid_length), Idx[num_q_heads], Idx[head_size]),
+        ).as_imm()
 
         # One spare block, reserved as a NaN poison page (per
         # `test_mha_sm100_ws_bm32.mojo`): any TMA that reads past a
@@ -160,27 +168,29 @@ def main() raises:
         var num_pages = ceildiv(num_keys, page_size)
         var num_blocks = num_pages + 1
         var poison_block = num_blocks - 1
-        var kv_shape = IndexList[6](
-            num_blocks, 2, 1, page_size, kv_params.num_heads, head_size
+        comptime BlocksLayout = Collection.blocks_tt_layout
+        var blocks_shape = Coord[*BlocksLayout.shape_types]()
+        blocks_shape[0] = Int64(num_blocks)
+        blocks_shape[2] = Int64(1)
+        var blocks_strides = Coord[*BlocksLayout.stride_types]()
+        blocks_strides[0] = Int64(
+            2 * 1 * page_size * kv_params.num_heads * head_size
         )
+        blocks_strides[1] = Int64(
+            1 * page_size * kv_params.num_heads * head_size
+        )
+        var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
         var kv_size = (
             num_blocks * 2 * page_size * kv_params.num_heads * head_size
         )
         var kv_host = ctx.enqueue_create_host_buffer[dtype](kv_size)
-        random(
-            LayoutTensor[dtype, kv_block_layout](
-                kv_host.unsafe_ptr(),
-                RuntimeLayout[kv_block_layout].row_major(kv_shape),
-            )
-        )
+        random(TileTensor(kv_host, blocks_layout))
         var block_elems = 2 * page_size * kv_params.num_heads * head_size
         for i in range(block_elems):
             kv_host[poison_block * block_elems + i] = nan[dtype]()
         var kv_dev = ctx.enqueue_create_buffer[dtype](kv_size)
         ctx.enqueue_copy(kv_dev, kv_host)
-        var kv_blocks = LayoutTensor[dtype, kv_block_layout](
-            kv_dev, RuntimeLayout[kv_block_layout].row_major(kv_shape)
-        )
+        var kv_blocks = TileTensor(kv_dev, blocks_layout)
 
         # Identity LUT (logical page `i` -> physical block `i`) -- this bug is
         # about the intra-page row offset (`tok_in_block`), not physical block
@@ -192,14 +202,13 @@ def main() raises:
             lut_host[i] = UInt32(poison_block if i >= num_pages else i)
         var lut_dev = ctx.enqueue_create_buffer[.uint32](lut_cols)
         ctx.enqueue_copy(lut_dev, lut_host)
-        var lut = LayoutTensor[mut=False, .uint32, paged_lut_layout](
-            lut_dev,
-            RuntimeLayout[paged_lut_layout].row_major(
-                IndexList[2](1, lut_cols)
-            ),
+        var lut = (
+            TileTensor(lut_dev, row_major(Int64(1), Int64(lut_cols)))
+            .as_imm()
+            .as_unsafe_any_origin()
         )
 
-        var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
+        var kv_collection = Collection(
             kv_blocks.as_unsafe_any_origin(),
             cache_lengths,
             lut,
@@ -211,9 +220,11 @@ def main() raises:
 
         var test_dev = ctx.enqueue_create_buffer[dtype](qo_size)
         flash_attention[ragged=True](
-            LayoutTensor[dtype, qo_layout](
-                test_dev.unsafe_ptr(),
-                RuntimeLayout[qo_layout].row_major(qo_shape),
+            TileTensor(
+                test_dev,
+                row_major(
+                    Int64(valid_length), Idx[num_q_heads], Idx[head_size]
+                ),
             ),
             q,
             k_cache,
@@ -230,9 +241,11 @@ def main() raises:
             k_cache,
             v_cache,
             CausalMask(),
-            LayoutTensor[dtype, qo_layout](
-                ref_dev.unsafe_ptr(),
-                RuntimeLayout[qo_layout].row_major(qo_shape),
+            TileTensor(
+                ref_dev,
+                row_major(
+                    Int64(valid_length), Idx[num_q_heads], Idx[head_size]
+                ),
             ),
             row_offsets,
             scale,

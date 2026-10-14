@@ -16,6 +16,7 @@
 
 #include "IREvaluator.h"
 #include "InterpreterCache.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/Interpreter/BytecodeInterpreter.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
@@ -257,15 +258,16 @@ private:
                                         SymbolConstantAttr calleeSymbol,
                                         ImplNode *parent);
 
-  /// Process a param.if op by evaluating the condition and elaborating and
+  /// Process a comptime.if op by evaluating the condition and elaborating and
   /// inlining only the branch that was taken. If one of the branches had an
   /// early return, this will split the block after the return and avoid
   /// elaborating the rest of the function.
-  ElaborationState processParamIfOp(ImplNode *parent, ParamIfOp op);
+  ElaborationState processComptimeIfOp(ImplNode *parent, HLCF::ComptimeIfOp op);
 
-  /// Process a param.for op by evaluating the sequence of induction variables
-  /// and then instantiating the body for each value of the sequence.
-  ElaborationState processParamForOp(ImplNode *parent, ParamForOp op);
+  /// Process a comptime.for op by evaluating the sequence of induction
+  /// variables and then instantiating the body for each value of the sequence.
+  ElaborationState processComptimeForOp(ImplNode *parent,
+                                        HLCF::ComptimeForOp op);
 
   //===--------------------------------------------------------------------===//
   // Worklist
@@ -281,10 +283,6 @@ private:
   void processImplNodeTask(ImplNode *node);
   /// Schedule an implementation node on the AsyncRT work queue.
   void scheduleImplNode(ImplNode *inode);
-  /// Record that elaboration of `inode` is blocked on completion of `genNode`
-  /// and arrange for `inode` to be re-processed once every registered blocker
-  /// has completed.
-  void registerBlocker(ImplNode *inode, Location from, ParamNode *genNode);
   /// Process the scopes within an implementation node. This function returns
   /// `success` if all scopes completed processing and the node is completely
   /// elaborated. If the function returns `failure`, that means elaboration of

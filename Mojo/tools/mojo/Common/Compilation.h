@@ -155,10 +155,11 @@ struct CommonParseResult {
 ///
 /// Returns a CommonParseResult containing either an exit code (if parsing
 /// failed) or the parsed arguments and options.
-ErrorOr<CommonParseResult> parseCommonMojoArguments(
-    State &state, llvm::SourceMgr &sourceManager, MLIRContext &ctx,
-    const llvm::opt::PrecomputedOptTable &optTable,
-    const CommonOptionIDs &optionIDs, const CommonParseConfig &config);
+ErrorOr<CommonParseResult>
+parseCommonMojoArguments(State &state, llvm::SourceMgr &sourceManager,
+                         MLIRContext &ctx, const llvm::opt::OptTable &optTable,
+                         const CommonOptionIDs &optionIDs,
+                         const CommonParseConfig &config);
 
 /// Parse the common configuration options for Mojo related to compilation,
 /// populating the provided `compilationOptions` argument. An error is returned

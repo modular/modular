@@ -107,8 +107,8 @@ def __wrap_and_execute_raising_main[
         main_func()
     except e:
         var stack_trace = e.get_stack_trace()
-        if stack_trace:
-            print(stack_trace.value(), file=stderr)
+        if case .Some(stack_trace) = stack_trace:
+            print(stack_trace, file=stderr)
         else:
             print(
                 (

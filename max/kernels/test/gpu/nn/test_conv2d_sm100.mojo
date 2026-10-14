@@ -35,12 +35,7 @@ from std.sys import align_of
 from std.testing import assert_false
 
 import linalg.matmul.vendor.blas as vendor_blas
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
@@ -57,7 +52,6 @@ from nn.conv.gpu.nvidia.sm100.conv_config import (
     Conv2dConfig,
     Conv2dProblemShape,
 )
-from linalg.utils import elementwise_compute_lambda_type
 
 
 def test_conv2d_implicit_im2col[
@@ -140,20 +134,9 @@ def test_conv2d_implicit_im2col[
     var out_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
 
     # TileTensor shapes with dynamic dimensions
-    var act_shape = row_major(
-        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
-    )
-    var filter_shape = row_major(
-        Coord(
-            Int(out_c),
-            Int(filter_h),
-            Int(filter_w),
-            Int(in_c),
-        )
-    )
-    var out_shape = row_major(
-        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
-    )
+    var act_shape = row_major(batch, in_h, in_w, in_c)
+    var filter_shape = row_major(out_c, filter_h, filter_w, in_c)
+    var out_shape = row_major(batch, out_h, out_w, out_c)
 
     var act_host = TileTensor(act_host_ptr, act_shape)
 
@@ -192,9 +175,7 @@ def test_conv2d_implicit_im2col[
 
     # Perform im2col on host
     var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
-    var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
-    )
+    var im2col_host = TileTensor(im2col_host_ptr, row_major(M, K))
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
@@ -334,20 +315,9 @@ def test_conv2d_1sm[
     var out_host_ref_ptr = ctx.enqueue_create_host_buffer[out_type](out_size)
 
     # TileTensor shapes with dynamic dimensions
-    var act_shape = row_major(
-        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
-    )
-    var filter_shape = row_major(
-        Coord(
-            Int(out_c),
-            Int(filter_h),
-            Int(filter_w),
-            Int(in_c),
-        )
-    )
-    var out_shape = row_major(
-        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
-    )
+    var act_shape = row_major(batch, in_h, in_w, in_c)
+    var filter_shape = row_major(out_c, filter_h, filter_w, in_c)
+    var out_shape = row_major(batch, out_h, out_w, out_c)
 
     var act_host = TileTensor(act_host_ptr, act_shape)
 
@@ -384,9 +354,7 @@ def test_conv2d_1sm[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
-    var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
-    )
+    var im2col_host = TileTensor(im2col_host_ptr, row_major(M, K))
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
@@ -512,20 +480,9 @@ def test_conv2d_epilogue_lambda[
     var bias_host_ptr = ctx.enqueue_create_host_buffer[out_type](bias_size)
 
     # TileTensor shapes with dynamic dimensions
-    var act_shape = row_major(
-        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
-    )
-    var filter_shape = row_major(
-        Coord(
-            Int(out_c),
-            Int(filter_h),
-            Int(filter_w),
-            Int(in_c),
-        )
-    )
-    var out_shape = row_major(
-        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
-    )
+    var act_shape = row_major(batch, in_h, in_w, in_c)
+    var filter_shape = row_major(out_c, filter_h, filter_w, in_c)
+    var out_shape = row_major(batch, out_h, out_w, out_c)
 
     var act_host = TileTensor(act_host_ptr, act_shape)
 
@@ -558,37 +515,26 @@ def test_conv2d_epilogue_lambda[
     # Define epilogue lambda that adds bias (broadcast over M dimension)
     # Output shape is [M, N] where N = out_channels
     # Bias is [N], so we index by idx[1] (the column/channel index)
-    @__parameter
     @inline(.always)
-    @__copy_capture(bias_tensor)
     def epilogue_add_bias[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var bias_tensor} -> SIMD[
         _dtype, width
     ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         # Load bias value for this channel and broadcast to SIMD width
         # Note: For width > 1, consecutive columns may have different biases
         # so we need to load a vector of biases
         var bias_val = bias_tensor.load[width=width]((idx[1],)).cast[_dtype]()
         return val + bias_val
 
-    # Create optional lambda
-    comptime optional_lambda = Optional[elementwise_compute_lambda_type](
-        epilogue_add_bias
-    )
-
     # Run conv2d with epilogue lambda
-    conv2d_fprop[
-        config=config,
-        elementwise_compute_lambda_fn=optional_lambda,
-    ](
+    conv2d_fprop[config=config](
         out_device_nd,
         act_device_nd,
         filter_device_nd,
         problem,
+        epilogue_add_bias,
         ctx,
     )
 
@@ -597,9 +543,7 @@ def test_conv2d_epilogue_lambda[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     var im2col_host_ptr = ctx.enqueue_create_host_buffer[act_type](im2col_size)
-    var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
-    )
+    var im2col_host = TileTensor(im2col_host_ptr, row_major(M, K))
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
@@ -735,20 +679,9 @@ def test_conv2d_bias_fusion[
     ctx.enqueue_copy(bias_dev, bias_host)
 
     # Create TileTensors
-    var act_shape = row_major(
-        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
-    )
-    var filter_shape = row_major(
-        Coord(
-            Int(out_c),
-            Int(filter_h),
-            Int(filter_w),
-            Int(in_c),
-        )
-    )
-    var out_shape = row_major(
-        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
-    )
+    var act_shape = row_major(batch, in_h, in_w, in_c)
+    var filter_shape = row_major(out_c, filter_h, filter_w, in_c)
+    var out_shape = row_major(batch, out_h, out_w, out_c)
     var act_nd = TileTensor(act_dev, act_shape)
     var filter_nd = TileTensor(filter_dev, filter_shape)
     var out_nd = TileTensor(out_dev, out_shape)
@@ -757,51 +690,41 @@ def test_conv2d_bias_fusion[
     var bias_tensor = TileTensor(bias_dev, row_major(out_c))
 
     # Epilogue lambda: add bias (idx[1] = channel index in [M, N] output)
-    @__parameter
     @inline(.always)
-    @__copy_capture(bias_tensor)
     def add_bias[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, width]) {var bias_tensor} -> SIMD[
         _dtype, width
     ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val + bias_tensor.load[width=width]((idx[1],)).cast[_dtype]()
-
-    comptime bias_lambda = Optional[elementwise_compute_lambda_type](add_bias)
 
     # Run conv2d with fused bias
     comptime if use_1sm:
         conv2d_fprop[
             config=Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
-            elementwise_compute_lambda_fn=bias_lambda,
         ](
             out_nd,
             act_nd,
             filter_nd,
             problem,
+            add_bias,
             ctx,
         )
     else:
-        conv2d_fprop[
-            config=Conv2dConfig[dtype, dtype, dtype].default_bf16(),
-            elementwise_compute_lambda_fn=bias_lambda,
-        ](
+        conv2d_fprop[config=Conv2dConfig[dtype, dtype, dtype].default_bf16(),](
             out_nd,
             act_nd,
             filter_nd,
             problem,
+            add_bias,
             ctx,
         )
 
     # Reference: im2col + GEMM + bias (CPU bias add)
     var act_host_nd = TileTensor(act_host, act_shape)
     var im2col_host = ctx.enqueue_create_host_buffer[dtype](M * K)
-    var im2col_host_nd = TileTensor(
-        im2col_host, row_major(Coord(Int(M), Int(K)))
-    )
+    var im2col_host_nd = TileTensor(im2col_host, row_major(M, K))
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
 
@@ -840,7 +763,6 @@ def test_conv2d_bias_fusion[
     print("    PASSED")
     _ = act_dev^
     _ = filter_dev^
-    _ = bias_dev^
     _ = out_dev^
     _ = out_ref_dev^
     _ = im2col_dev^
@@ -927,20 +849,9 @@ def test_conv2d_residual_api[
     var source_host_ptr = ctx.enqueue_create_host_buffer[dtype](out_size)
 
     # TileTensor shapes with dynamic dimensions
-    var act_shape = row_major(
-        Coord(Int(batch), Int(in_h), Int(in_w), Int(in_c))
-    )
-    var filter_shape = row_major(
-        Coord(
-            Int(out_c),
-            Int(filter_h),
-            Int(filter_w),
-            Int(in_c),
-        )
-    )
-    var out_shape = row_major(
-        Coord(Int(batch), Int(out_h), Int(out_w), Int(out_c))
-    )
+    var act_shape = row_major(batch, in_h, in_w, in_c)
+    var filter_shape = row_major(out_c, filter_h, filter_w, in_c)
+    var out_shape = row_major(batch, out_h, out_w, out_c)
 
     var act_host = TileTensor(act_host_ptr, act_shape)
 
@@ -1010,9 +921,7 @@ def test_conv2d_residual_api[
     var im2col_device = ctx.enqueue_create_buffer[dtype](im2col_size)
 
     var im2col_host_ptr = ctx.enqueue_create_host_buffer[dtype](im2col_size)
-    var im2col_host = TileTensor(
-        im2col_host_ptr, row_major(Coord(Int(M), Int(K)))
-    )
+    var im2col_host = TileTensor(im2col_host_ptr, row_major(M, K))
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
@@ -1193,8 +1102,8 @@ def test_conv_gpu_scale_epilogue[
     @inline(.always)
     @__copy_capture(out_epilogue_tt)
     def scale_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
         out_epilogue_tt.store[
             width=_width, alignment=align_of[dtype]() * _alignment
@@ -1316,8 +1225,8 @@ def test_conv_gpu_additive_epilogue[
     @inline(.always)
     @__copy_capture(out_epilogue_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         var coord = Coord(coords[0], coords[1], coords[2], coords[3])
         var existing = out_epilogue_tt.load[
             width=_width, alignment=align_of[_dtype]() * _alignment
@@ -1709,8 +1618,8 @@ def test_conv_gpu_residual_with_bias[
     @inline(.always)
     @__copy_capture(out_tt)
     def add_bias_epilogue[
-        _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        _dtype: DType, _width: SIMDLength, _alignment: Int = 1
+    ](coords: Coord, val: SIMD[_dtype, _width]):
         var coord = Coord(coords[0], coords[1], coords[2], coords[3])
         var existing = out_tt.load[
             width=_width, alignment=align_of[_dtype]() * _alignment

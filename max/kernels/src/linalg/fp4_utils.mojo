@@ -15,13 +15,14 @@
 
 from std.sys._assembly import inlined_assembly
 from std.sys import is_nvidia_gpu, bit_width_of, llvm_intrinsic
-from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer, align_of
+from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 from std.utils.numerics import FPUtils
-from std.utils.index import IndexList
 from std.memory import bitcast
-from layout import Coord, CoordLike, Idx, Layout, LayoutTensor, TileTensor
+from layout import Coord, CoordLike, TileTensor
+from layout.tile_layout import TensorLayout
 from std.simd import _convert_f32_to_float8_ue8m0
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from internal_utils.fp8_utils import cast_saturating
 
 comptime SF_ATOM_M = (32, 4)
 comptime SF_ATOM_K = 4
@@ -164,25 +165,30 @@ def decode_e2m1_to_f16[
 ](nibble: SIMD[.uint16, width]) -> SIMD[.float16, width]:
     """Decodes E2M1 nibbles to float16 by exponent injection (Preston's trick).
 
-    The float16 twin of `decode_e2m1_to_f32_inject`, but -- unlike the f32/bf16
-    injection variants -- **correct on the Apple M5** (and any FTZ target). It
-    injects the 3 magnitude bits `(e1 e0 m0)` at float16 bits 11:9 and the sign
-    at bit 15, then renormalizes with a single `* 2^14` (a power of two, hence
-    exact). The result is **bit-identical** to `E2M1_TO_FLOAT32[nibble]` cast to
-    float16 for all 16 values (every `{+-0, +-0.5, ..., +-6}` is exactly
-    representable in float16), so `decode_e2m1_to_f16(n).cast[float32]()` equals
-    `decode_e2m1_to_f32(n)` bit-for-bit.
+    It injects the 3 magnitude bits `(e1 e0 m0)` at float16 bits 11:9 and the
+    sign at bit 15, then renormalizes with a single `* 2^14` (a power of two,
+    hence exact). The result is **bit-identical** to `E2M1_TO_FLOAT32[nibble]`
+    cast to float16 for all 16 values (every `{+-0, +-0.5, ..., +-6}` is
+    exactly representable in float16), so
+    `decode_e2m1_to_f16(n).cast[float32]()` equals `decode_e2m1_to_f32(n)`
+    bit-for-bit.
 
-    Why it is M5-safe where the f32/bf16 inject is not: the `+-0.5` codes
-    (`E == 0, m == 1`) route through the float16 subnormal `0x0200` / `0x8200`
-    (value `2^-15`), which `* 2^14` renormalizes to `+-0.5`. The Apple M5
-    flushes **f32/bf16** denormals to zero on arithmetic inputs (see
-    `patterns/apple-m5-denormal-flush-to-zero`) -- which is why
-    `decode_e2m1_to_f32_inject` decodes `+-0.5` to `+-0` there -- but it
-    **preserves float16 subnormals**, so this f16 decode keeps `+-0.5` exact
-    (verified on-device: all 16 codes match `E2M1_TO_FLOAT32`). Callers that
-    need f32/bf16 cast the f16 result afterwards; the cast of the now-normal
-    `+-0.5` is exact.
+    Why the injection is done in float16: the `+-0.5` codes (`E == 0, m == 1`)
+    are the only ones that pass through a subnormal intermediate. The same
+    trick in float32 (inject at bits 22..24, renormalize by `* 2^126`) makes
+    that intermediate the float32 denormal `0x00400000`, and the bf16 variant
+    makes it `0x0040`. Any target that flushes f32/bf16 denormals to zero on
+    arithmetic inputs -- the Apple M5, and NVIDIA/AMD under
+    `--fp-mode=denormal=flush` -- zeroes it before the multiply, so `+-0.5`
+    decodes to `+-0` (verified on-device on the M5: nibbles 1 and 9 mismatch).
+    Here the intermediate is the float16 subnormal `0x0200` / `0x8200` (value
+    `2^-15`), which `* 2^14` renormalizes to `+-0.5`. The M5 **preserves
+    float16 subnormals** (see `patterns/apple-m5-denormal-flush-to-zero`), so
+    this decode keeps `+-0.5` exact there (verified on-device: all 16 codes
+    match `E2M1_TO_FLOAT32`). Callers that need f32/bf16 cast the f16 result
+    afterwards; the cast of the now-normal `+-0.5` is exact. On a target that
+    also flushes f16 denormals, use `decode_e2m1_to_f32` or
+    `decode_e2m1_to_bf16`, which never form a denormal.
 
     It is also cheaper than `decode_e2m1_to_f32` (no `uint32` widen, no
     `select`, no `E == 0` compare) while staying bit-exact -- the reason to
@@ -250,66 +256,6 @@ def decode_e2m1_to_f32[
     var is_subnormal = e.eq(type_of(e)(0))  # SIMD[bool, width] mask
     var mag = is_subnormal.select(subnormal_mag, normal_mag)
     return bitcast[.float32](sign | mag)
-
-
-@inline(.always)
-def decode_e2m1_to_f32_inject[
-    width: SIMDLength, //
-](nibble: SIMD[.uint16, width]) -> SIMD[.float32, width]:
-    """Decodes E2M1 nibbles to float32 by exponent injection (Preston's trick).
-
-    A branch-free alternative to `decode_e2m1_to_f32` with NO `select`: inject
-    the 3 value bits `(e1 e0 m0)` and the sign directly into a float32 bit
-    pattern at a SHIFTED exponent position, then renormalize with a single
-    `* 2^126` multiply (a power-of-two scale, hence exact). The result is
-    **bit-identical** to `decode_e2m1_to_f32` / `E2M1_TO_FLOAT32[nibble]` for all
-    16 values on a denormal-honoring target (verified host-side, including `+-0`
-    and the signed values).
-
-    !!! warning "Wrong on flush-to-zero (FTZ) GPUs, including Apple M5"
-        This trick relies on the `+-0.5` E2M1 values (`E == 0, m == 1`)
-        producing a **denormal** float32 intermediate (`0x00400000`) that
-        survives until the `* 2^126` renormalizes it. On a GPU that flushes
-        denormals to zero on arithmetic inputs -- **the Apple M5 does** -- that
-        intermediate is zeroed and `+-0.5` decodes to `+-0.0` (verified
-        on-device: nibbles 1 and 9 mismatch, every other value is exact). Use
-        `decode_e2m1_to_f32` (which builds the normalized value directly, no
-        denormal intermediate) on Apple GPU and any FTZ target. This function is
-        retained only for non-FTZ targets and as documentation of why the
-        injection trick does not port to M5.
-
-    Construction (float32 `s | 8-bit exp | 23-bit mantissa`): place `(e1 e0 m0)`
-    at bits 22..24 and the sign at bit 31, leaving a denormalized/small float
-    whose significand encodes the value; `* 2^126` shifts those bits into the
-    proper exponent range, reproducing `2^(E-1) * (1 + m/2)` for `E >= 1` and
-    `0.5 * m` for `E == 0` exactly (the same value the table holds). The
-    `E == 0, m == 1` case is the lone denormal intermediate (see the warning).
-
-    NOTE on folding: `2^126` CANNOT be folded into the per-block FP8 scale --
-    `scale * 2^126` overflows float32 for any `scale >= 4.0` (fp8_e4m3 scales
-    routinely exceed this), which corrupts the result. The `* 2^126` must be
-    applied to the injected value FIRST (where the product is <= 6.0, no
-    overflow), then the caller multiplies by the block scale. So this is NOT a
-    multiply saved over `decode_e2m1_to_f32` -- it trades the `select` + the
-    `(E+126)<<23 | m<<22` assembly for an extra `* 2^126`; whether it is faster
-    is a per-target measurement (on Apple M5 it is moot -- it is wrong, see the
-    warning -- and the dequant cost there is the scale LOAD, not the arith).
-
-    Parameters:
-        width: SIMD width (lane count) of the nibble vector.
-
-    Args:
-        nibble: One E2M1 nibble per lane in the low 4 bits (`0..15`).
-
-    Returns:
-        The decoded values as `SIMD[.float32, width]`, bit-identical to
-        `E2M1_TO_FLOAT32[nibble]`.
-    """
-    var n = nibble.cast[.uint32]()
-    # Inject (e1 e0 m0) at bits 22..24, sign (bit 3) at bit 31.
-    var inj = ((n & 0x7) << 22) | ((n & 0x8) << 28)
-    comptime c2_126 = bitcast[.float32](UInt32(0x7E800000))
-    return bitcast[.float32](inj) * c2_126
 
 
 @inline(.always)
@@ -509,6 +455,47 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
     ](x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
 
 
+@inline(.always)
+def nvfp4_kv_group_scale(amax: Float32) -> Float32:
+    """Returns the E4M3 scale of one 16-element NVFP4 KV cache group.
+
+    The scale is `E4M3(max(amax, 1e-12) / 6)` clamped to `[2^-9, 448]`, with
+    the per-tensor scale fixed at 1. It is returned widened to float32.
+
+    Args:
+        amax: The largest magnitude in the group.
+
+    Returns:
+        The group scale, exactly representable in E4M3.
+    """
+    var scale = cast_saturating[NVFP4_SF_DTYPE](max(amax, Float32(1e-12)) / 6.0)
+    return max(scale.cast[.float32](), Float32(1.0 / 512.0))
+
+
+@inline(.always)
+def nvfp4_kv_quantize_x8(x: SIMD[.float32, 8], scale: Float32) -> UInt32:
+    """Quantizes eight values that share one scale to packed FP4 E2M1.
+
+    Each value is divided by `scale` (true division), then rounded by the
+    hardware convert, which rounds half to even and saturates at 6. A
+    magnitude that rounds to zero is stored as +0, never -0.
+
+    Args:
+        x: Eight values, element 0 in the lowest nibble of the result.
+        scale: The group scale from `nvfp4_kv_group_scale`.
+
+    Returns:
+        The eight E2M1 codes packed into one word.
+
+    Constraints:
+        Requires NVIDIA GPU with SM100 or newer.
+    """
+    var packed = cast_fp32_to_fp4e2m1(x / scale)
+    var mag = packed & 0x77777777
+    var nonzero = (mag | (mag >> 1) | (mag >> 2)) & 0x11111111
+    return mag | (packed & (nonzero << 3))
+
+
 def cast_f4e2m1x2_to_fp16x2(x: UInt8) -> SIMD[.float16, 2]:
     """Converts two FP4 E2M1 nibbles packed in one byte to two float16 values using SM100 PTX.
 
@@ -575,70 +562,21 @@ def cast_float_to_fp4e2m1_amd[
     var packed = UInt32(0)
 
     comptime for i in range(width // 2):
-        comptime if dtype == .bfloat16:
-            packed = llvm_intrinsic[
-                "llvm.amdgcn.cvt.scalef32.pk.fp4.bf16",
-                UInt32,
-            ](packed, input.slice[2, offset=i * 2](), scale, Int32(i))
-        elif dtype == .float32:
-            packed = llvm_intrinsic[
-                "llvm.amdgcn.cvt.scalef32.pk.fp4.f32",
-                UInt32,
-            ](packed, input[i * 2], input[i * 2 + 1], scale, Int32(i))
-        else:
-            comptime assert False, "Unsupported dtype"
+        comptime match dtype:
+            case .bfloat16:
+                packed = llvm_intrinsic[
+                    "llvm.amdgcn.cvt.scalef32.pk.fp4.bf16",
+                    UInt32,
+                ](packed, input.slice[2, offset=i * 2](), scale, Int32(i))
+            case .float32:
+                packed = llvm_intrinsic[
+                    "llvm.amdgcn.cvt.scalef32.pk.fp4.f32",
+                    UInt32,
+                ](packed, input[i * 2], input[i * 2 + 1], scale, Int32(i))
+            case _:
+                comptime assert False, "Unsupported dtype"
 
     return packed
-
-
-def set_scale_factor[
-    scales_dtype: DType,
-    scales_layout: Layout,
-    //,
-    SF_VECTOR_SIZE: Int,
-    width: SIMDLength,
-](
-    scales_tensor: LayoutTensor[mut=True, scales_dtype, scales_layout, ...],
-    row_idx: Int,
-    col_idx: Int,
-    scale_value: SIMD[scales_dtype, width],
-):
-    """Stores a scale factor into a 5D non-batched `LayoutTensor` at the given row and column.
-
-    Translates the linear `(row_idx, col_idx)` coordinates into the 5D
-    scale-factor layout used by MXFP4/NVFP4 block-scaled tensors and stores
-    `scale_value` there with natural alignment.
-
-    Parameters:
-        scales_dtype: Element type of the scales tensor.
-        scales_layout: Layout of the scales `LayoutTensor`.
-        SF_VECTOR_SIZE: Number of elements each scale factor covers.
-        width: SIMD width of the value to store; must not exceed `SF_ATOM_K`.
-
-    Args:
-        scales_tensor: Mutable 5D `LayoutTensor` holding the scale factors.
-        row_idx: Row index in the original (unscaled) tensor coordinates.
-        col_idx: Column index in the original (unscaled) tensor coordinates.
-        scale_value: Scale factor value(s) to store.
-    """
-    comptime assert (
-        scales_tensor.rank == 5
-    ), "scales_tensor must be 5D for non-batched scales tensor"
-    comptime assert (
-        width <= SF_ATOM_K
-    ), "width must be less than or equal to SF_ATOM_K"
-
-    comptime align = align_of[SIMD[scales_dtype, width]]()
-    scales_tensor.store[store_alignment=align](
-        IndexList[5](
-            row_idx // SF_MN_GROUP_SIZE,
-            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            row_idx % SF_ATOM_M[0],
-            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-        ),
-        scale_value,
-    )
 
 
 def set_scale_factor[
@@ -688,54 +626,10 @@ def set_scale_factor[
 
 def get_scale_factor[
     scales_dtype: DType,
-    scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
 ](
-    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    row_idx: Int,
-    col_idx: Int,
-) -> Scalar[scales_dtype]:
-    """Loads a scale factor from a 5D non-batched `LayoutTensor` at the given row and column.
-
-    Translates the linear `(row_idx, col_idx)` coordinates into the 5D
-    scale-factor layout used by MXFP4/NVFP4 block-scaled tensors and returns
-    the stored scale factor.
-
-    Parameters:
-        scales_dtype: Element type of the scales tensor.
-        scales_layout: Layout of the scales `LayoutTensor`.
-        SF_VECTOR_SIZE: Number of elements each scale factor covers.
-
-    Args:
-        scales_tensor: 5D `LayoutTensor` holding the scale factors.
-        row_idx: Row index in the original (unscaled) tensor coordinates.
-        col_idx: Column index in the original (unscaled) tensor coordinates.
-
-    Returns:
-        The scale factor stored at the translated 5D coordinate.
-    """
-    comptime assert (
-        scales_tensor.rank == 5
-    ), "scales_tensor must be 5D for non-batched scales tensor"
-
-    return rebind[Scalar[scales_dtype]](
-        scales_tensor[
-            row_idx // SF_MN_GROUP_SIZE,
-            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            row_idx % SF_ATOM_M[0],
-            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-        ]
-    )
-
-
-def get_scale_factor[
-    scales_dtype: DType,
-    //,
-    SF_VECTOR_SIZE: Int,
-](
-    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    scales_tensor: TileTensor[scales_dtype, ...],
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
@@ -772,50 +666,6 @@ def get_scale_factor[
             )
         ]
     )
-
-
-def set_batched_scale_factor[
-    scales_dtype: DType,
-    scales_layout: Layout,
-    //,
-    SF_VECTOR_SIZE: Int,
-](
-    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    batch_idx: Int,
-    row_idx: Int,
-    col_idx: Int,
-    scale_value: Scalar[scales_dtype],
-):
-    """Stores a scale factor into a 6D batched `LayoutTensor` at the given batch, row, and column.
-
-    Translates the linear `(batch_idx, row_idx, col_idx)` coordinates into the
-    6D scale-factor layout used by batched MXFP4/NVFP4 block-scaled tensors and
-    stores `scale_value` there.
-
-    Parameters:
-        scales_dtype: Element type of the scales tensor.
-        scales_layout: Layout of the scales `LayoutTensor`.
-        SF_VECTOR_SIZE: Number of elements each scale factor covers.
-
-    Args:
-        scales_tensor: Mutable 6D `LayoutTensor` holding the batched scale factors.
-        batch_idx: Batch index in the original (unscaled) tensor coordinates.
-        row_idx: Row index in the original (unscaled) tensor coordinates.
-        col_idx: Column index in the original (unscaled) tensor coordinates.
-        scale_value: Scale factor value to store.
-    """
-    comptime assert (
-        scales_tensor.rank == 6
-    ), "scales_tensor must be 6D for batched scales tensor"
-
-    scales_tensor[
-        batch_idx,
-        row_idx // SF_MN_GROUP_SIZE,
-        col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-        row_idx % SF_ATOM_M[0],
-        (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-        (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-    ] = scale_value
 
 
 def set_batched_scale_factor[
@@ -863,113 +713,17 @@ def set_batched_scale_factor[
     )
 
 
-def get_batched_scale_factor[
-    scales_dtype: DType,
-    scales_layout: Layout,
-    //,
-    SF_VECTOR_SIZE: Int,
-](
-    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    batch_idx: Int,
-    row_idx: Int,
-    col_idx: Int,
-) -> Scalar[scales_dtype]:
-    """Loads a scale factor from a 6D batched `LayoutTensor` at the given batch, row, and column.
-
-    Translates the linear `(batch_idx, row_idx, col_idx)` coordinates into the
-    6D scale-factor layout used by batched MXFP4/NVFP4 block-scaled tensors and
-    returns the stored scale factor.
-
-    Parameters:
-        scales_dtype: Element type of the scales tensor.
-        scales_layout: Layout of the scales `LayoutTensor`.
-        SF_VECTOR_SIZE: Number of elements each scale factor covers.
-
-    Args:
-        scales_tensor: 6D `LayoutTensor` holding the batched scale factors.
-        batch_idx: Batch index in the original (unscaled) tensor coordinates.
-        row_idx: Row index in the original (unscaled) tensor coordinates.
-        col_idx: Column index in the original (unscaled) tensor coordinates.
-
-    Returns:
-        The scale factor stored at the translated 6D coordinate.
-    """
-    comptime assert (
-        scales_tensor.rank == 6
-    ), "scales_tensor must be 6D for batched scales tensor"
-
-    return rebind[Scalar[scales_dtype]](
-        scales_tensor[
-            batch_idx,
-            row_idx // SF_MN_GROUP_SIZE,
-            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-            row_idx % SF_ATOM_M[0],
-            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-        ]
-    )
-
-
-def get_batched_scale_factor[
-    scales_dtype: DType,
-    //,
-    SF_VECTOR_SIZE: Int,
-](
-    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
-    batch_idx: Int,
-    row_idx: Int,
-    col_idx: Int,
-) -> Scalar[scales_dtype]:
-    """Loads a scale factor from a 6D batched `TileTensor` at the given batch, row, and column.
-
-    TileTensor overload of `get_batched_scale_factor` that translates the
-    linear `(batch_idx, row_idx, col_idx)` coordinates into the 6D scale-factor
-    layout and returns the stored scale factor.
-
-    Parameters:
-        scales_dtype: Element type of the scales tensor.
-        SF_VECTOR_SIZE: Number of elements each scale factor covers.
-
-    Args:
-        scales_tensor: `TileTensor` (flat rank == 6) holding the batched scale factors.
-        batch_idx: Batch index in the original (unscaled) tensor coordinates.
-        row_idx: Row index in the original (unscaled) tensor coordinates.
-        col_idx: Column index in the original (unscaled) tensor coordinates.
-
-    Returns:
-        The scale factor stored at the translated 6D coordinate.
-    """
-    comptime assert (
-        scales_tensor.flat_rank == 6
-    ), "scales_tensor must be 6D for batched scales tensor"
-
-    return rebind[Scalar[scales_dtype]](
-        scales_tensor[
-            Coord(
-                batch_idx,
-                row_idx // SF_MN_GROUP_SIZE,
-                col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-                row_idx % SF_ATOM_M[0],
-                (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-            )
-        ]
-    )
-
-
 def convert_ref_scales_to_mxfp8_format[
     MType: CoordLike,
     NType: CoordLike,
     KType: CoordLike,
+    ref_a_scales_tt_layout: TensorLayout,
+    ref_b_scales_tt_layout: TensorLayout,
+    a_scales_tt_layout: TensorLayout,
+    b_scales_tt_layout: TensorLayout,
     //,
     ref_scales_type: DType,
     scales_type: DType,
-    ref_a_scales_layout: Layout,
-    ref_b_scales_layout: Layout,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_scales_origin: MutOrigin,
-    b_scales_origin: MutOrigin,
     *,
     REF_BLOCK_SIZE: Int,
     SF_VECTOR_SIZE: Int,
@@ -977,10 +731,26 @@ def convert_ref_scales_to_mxfp8_format[
     m: MType,
     n: NType,
     k: KType,
-    ref_a_scales: LayoutTensor[ref_scales_type, ref_a_scales_layout, _],
-    ref_b_scales: LayoutTensor[ref_scales_type, ref_b_scales_layout, _],
-    a_scales: LayoutTensor[scales_type, a_scales_layout, a_scales_origin],
-    b_scales: LayoutTensor[scales_type, b_scales_layout, b_scales_origin],
+    ref_a_scales: TileTensor[
+        mut=False,
+        ref_scales_type,
+        ref_a_scales_tt_layout,
+        address_space=.GENERIC,
+        ...,
+    ],
+    ref_b_scales: TileTensor[
+        mut=False,
+        ref_scales_type,
+        ref_b_scales_tt_layout,
+        address_space=.GENERIC,
+        ...,
+    ],
+    a_scales: TileTensor[
+        mut=True, scales_type, a_scales_tt_layout, address_space=.GENERIC, ...
+    ],
+    b_scales: TileTensor[
+        mut=True, scales_type, b_scales_tt_layout, address_space=.GENERIC, ...
+    ],
 ):
     """Converts reference float32 block scales into the 5D MXFP8 E8M0 scale-factor layout.
 
@@ -993,14 +763,12 @@ def convert_ref_scales_to_mxfp8_format[
         MType: CoordLike type carrying the M dimension size.
         NType: CoordLike type carrying the N dimension size.
         KType: CoordLike type carrying the K dimension size.
+        ref_a_scales_tt_layout: `TensorLayout` of the 2D reference A scales.
+        ref_b_scales_tt_layout: `TensorLayout` of the 2D reference B scales.
+        a_scales_tt_layout: `TensorLayout` of the 5D output A scales.
+        b_scales_tt_layout: `TensorLayout` of the 5D output B scales.
         ref_scales_type: Element type of the reference scales (must be float32).
         scales_type: Element type of the output scales (must be float8_e8m0fnu).
-        ref_a_scales_layout: Layout of the 2D reference A scales tensor.
-        ref_b_scales_layout: Layout of the 2D reference B scales tensor.
-        a_scales_layout: Layout of the 5D output A scales tensor.
-        b_scales_layout: Layout of the 5D output B scales tensor.
-        a_scales_origin: Mutability origin of the output A scales tensor.
-        b_scales_origin: Mutability origin of the output B scales tensor.
         REF_BLOCK_SIZE: Block size (in elements) used by the reference scales.
         SF_VECTOR_SIZE: Number of elements each scale factor covers in the output layout.
 
@@ -1019,10 +787,10 @@ def convert_ref_scales_to_mxfp8_format[
     comptime assert (
         scales_type == .float8_e8m0fnu
     ), "Only support float8_e8m0fnu scales"
-    comptime assert ref_a_scales_layout.rank() == 2, "ref_a_scales must be 2D"
-    comptime assert ref_b_scales_layout.rank() == 2, "ref_b_scales must be 2D"
-    comptime assert a_scales_layout.rank() == 5, "a_scales must be 5D"
-    comptime assert b_scales_layout.rank() == 5, "b_scales must be 5D"
+    comptime assert ref_a_scales.flat_rank == 2, "ref_a_scales must be 2D"
+    comptime assert ref_b_scales.flat_rank == 2, "ref_b_scales must be 2D"
+    comptime assert a_scales.flat_rank == 5, "a_scales must be 5D"
+    comptime assert b_scales.flat_rank == 5, "b_scales must be 5D"
 
     var M = Int(m.value())
     var N = Int(n.value())
@@ -1031,30 +799,34 @@ def convert_ref_scales_to_mxfp8_format[
     # initialize a_scales_tensor and b_scales_tensor based on reference scales
     for m in range(M):
         for k in range(K):
-            a_scales[
-                m // SF_MN_GROUP_SIZE,
-                k // (SF_VECTOR_SIZE * SF_ATOM_K),
-                m % SF_ATOM_M[0],
-                (m % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                k % SF_ATOM_K,
-            ] = rebind[Scalar[scales_type]](
+            a_scales.store[width=1](
+                Coord(
+                    m // SF_MN_GROUP_SIZE,
+                    k // (SF_VECTOR_SIZE * SF_ATOM_K),
+                    m % SF_ATOM_M[0],
+                    (m % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+                    k % SF_ATOM_K,
+                ),
                 _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_a_scales[k // REF_BLOCK_SIZE, m]
-                )
+                    ref_a_scales.load[width=1](Coord(k // REF_BLOCK_SIZE, m))
+                ),
             )
 
     for n in range(N):
         for k in range(K):
-            b_scales[
-                n // SF_MN_GROUP_SIZE,
-                k // (SF_VECTOR_SIZE * SF_ATOM_K),
-                n % SF_ATOM_M[0],
-                (n % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-                k % SF_ATOM_K,
-            ] = rebind[Scalar[scales_type]](
+            b_scales.store[width=1](
+                Coord(
+                    n // SF_MN_GROUP_SIZE,
+                    k // (SF_VECTOR_SIZE * SF_ATOM_K),
+                    n % SF_ATOM_M[0],
+                    (n % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+                    k % SF_ATOM_K,
+                ),
                 _convert_f32_to_float8_ue8m0[scales_type](
-                    ref_b_scales[n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE]
-                )
+                    ref_b_scales.load[width=1](
+                        Coord(n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE)
+                    )
+                ),
             )
 
 

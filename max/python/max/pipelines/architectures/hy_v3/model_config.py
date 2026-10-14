@@ -125,7 +125,7 @@ class HYV3Config(Llama3Config):
         With ``data_parallel_degree=1`` and ``n_devices>1``,
         ``KVCacheParams.__post_init__`` tensor-parallel-shards the paged KV
         cache to ``n_kv_heads_per_device = num_key_value_heads // n_devices``
-        (e.g. 8 // 4 = 2). Hy3 attention is TP-sharded to match: each
+        (such as 8 // 4 = 2). Hy3 attention is TP-sharded to match: each
         device's shard owns ``num_attention_heads // n_devices`` Q heads and
         ``num_key_value_heads // n_devices`` KV heads — exactly the KV heads
         resident in that device's slice of the cache, so

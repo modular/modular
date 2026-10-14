@@ -68,20 +68,6 @@ EX_TEMPFAIL = 75
 TORCH_INCOMPATIBLE_ENCODINGS = frozenset({"float8_e4m3fn", "float4_e2m1fnx2"})
 
 
-def validate_hf_token() -> None:
-    """
-    It's a regular occurrence that people are asked to run logit verification
-    locally, and not everyone has an HF_TOKEN set. Let's help them out
-    """
-    if os.getenv("HF_HUB_OFFLINE", "").lower() in ("1", "t", "true"):
-        return
-    if os.getenv("HF_TOKEN") is None:
-        raise ValueError(
-            "Environment variable `HF_TOKEN` must be set. "
-            "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
-        )
-
-
 class VerificationStatus(str, enum.Enum):
     OK = "ok"
     INVALID = "invalid"
@@ -120,17 +106,6 @@ class V2V3ComparisonResult:
 
     v2_verdict: VerificationVerdict
     v3_verdict: VerificationVerdict
-
-
-def resolve_rlocation(rloc: str) -> Path:
-    from python.runfiles import runfiles
-
-    r = runfiles.Create()
-    assert r
-    resolved = r.Rlocation(rloc)
-    if resolved is None:
-        raise FileNotFoundError(f"Rlocation {rloc!r} could not be resolved")
-    return Path(resolved)
 
 
 def verdict_sorting_key(
@@ -1492,8 +1467,6 @@ def main(
 
 
 if __name__ == "__main__":
-    validate_hf_token()
-
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 

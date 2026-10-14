@@ -125,7 +125,8 @@ def main():
 ```
 """
 
-from std.format._utils import FormatStruct, Named, TypeNames
+from std.format._utils import FormatStruct, Named
+from std.memory import MaybeUninit
 from std.memory.memory import _free, _malloc
 from std.os import abort
 from std.sys import align_of, size_of
@@ -196,7 +197,7 @@ struct Alignment(TrivialRegisterPassable, Writable):
     " `unsafe_leak()` to take ownership of the underlying pointer."
 )
 struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
-    Deinitable where False, RegisterPassable, Writable
+    not Deinitable, RegisterPassable, Sized, Writable
 ):
     """An owning handle to a heap allocation of `T` together with its `Layout`.
 
@@ -351,6 +352,31 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """
         return self._layout
 
+    def __len__(self) -> Int:
+        """Returns the number of elements the storage was allocated for.
+
+        Returns:
+            `layout().count()`, the element count this allocation was created
+            with.
+        """
+        return self._layout.count()
+
+    def storage(
+        ref self,
+    ) -> Span[MaybeUninit[Self.T], origin_of(self._alloc)]:
+        """Returns a span over the allocated storage as possibly uninitialized
+        elements.
+
+        Returns:
+            A span of `MaybeUninit[T]` over the allocated storage.
+        """
+        return {
+            unsafe_ptr = self.unsafe_ptr().unsafe_bitcast[
+                MaybeUninit[Self.T]
+            ](),
+            length = len(self),
+        }
+
     def into_thin(
         deinit self,
     ) -> ThinAllocation[Self.T]:
@@ -367,10 +393,11 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     def into_managed(
         deinit self,
     ) -> ManagedAllocation[Self.T, alignment=Self.alignment] where (
-        IsTriviallyDeinitable[Self.T],
+        IsTriviallyDeinitable[Self.T]
+    ) else (
         "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
         " its storage without ever running T's `__deinit__`, which would"
-        " leak resources owned by any initialized elements",
+        " leak resources owned by any initialized elements"
     ):
         """Consumes the `Allocation` and wraps it in a `ManagedAllocation`.
 
@@ -489,11 +516,10 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         out self,
         var allocation: Allocation[Self.T, alignment=Self.alignment],
         /,
-    ) where (
-        IsTriviallyDeinitable[Self.T],
+    ) where IsTriviallyDeinitable[Self.T] else (
         "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
         " its storage without ever running T's `__deinit__`, which would"
-        " leak resources owned by any initialized elements",
+        " leak resources owned by any initialized elements"
     ):
         """Initializes a `ManagedAllocation` that owns `allocation`.
 
@@ -585,9 +611,7 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     " with its layout: `dealloc(allocation^.unsafe_with_layout(layout))`, or"
     " call `unsafe_leak()` to take ownership of the underlying pointer."
 )
-struct ThinAllocation[T: AnyType](
-    Deinitable where False, RegisterPassable, Writable
-):
+struct ThinAllocation[T: AnyType](not Deinitable, RegisterPassable, Writable):
     """An owning handle to a heap allocation of `T`, without its `Layout`.
 
     A `ThinAllocation` is the minimal owning handle to allocated storage: just
@@ -844,8 +868,7 @@ def alloc[
         An `Allocation` owning the newly allocated, uninitialized storage.
 
     Constraints:
-        `size_of[T]()` must be greater than zero. `layout.count()` must be
-        `>= 0`.
+        `layout.count()` must be `>= 0`.
 
     Example:
 
@@ -862,7 +885,7 @@ def alloc[
     comptime size_of_t = size_of[T]()
 
     if unlikely(layout.count() < 0):
-        abort("alloc: `Layout.count()` must be > 0")
+        abort("alloc: `Layout.count()` must be >= 0")
 
     comptime if size_of_t == 0:
         return ThinAllocation[T](

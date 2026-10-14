@@ -17,7 +17,7 @@ from std.algorithm.functional import tile_and_unswitch
 from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, row_major
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_false
 
@@ -49,9 +49,9 @@ def matmul_sram(
     var M = Int(M_dev)
     var N = Int(N_dev)
     var K = Int(K_dev)
-    var a = TileTensor(a_ptr, row_major(Coord(M, K)))
-    var b = TileTensor(b_ptr, row_major(Coord(K, N)))
-    var c = TileTensor(c_ptr, row_major(Coord(M, N)))
+    var a = TileTensor(a_ptr, row_major(M, K))
+    var b = TileTensor(b_ptr, row_major(K, N))
+    var c = TileTensor(c_ptr, row_major(M, N))
 
     # Allocate A, B tile in shared memory.
     var a_shared = unsafe_stack_allocation[

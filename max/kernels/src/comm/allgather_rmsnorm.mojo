@@ -25,7 +25,7 @@ row's `block.sum` runs parallel across blocks, not `ngpus` serial within one.
 
 from std.collections import Array
 from std.math.uutils import ualign_down
-from std.math import ceildiv, rsqrt
+from std.math import rsqrt
 from std.sys import (
     align_of,
     simd_width_of,
@@ -39,7 +39,7 @@ from max.gpu import (
     grid_dim,
     thread_idx,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from layout import Coord, TensorLayout, TileTensor
 from std.utils import StaticTuple
@@ -120,10 +120,10 @@ def _allgather_rmsnorm_kernel[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var col_idx = tid * simd_width
     var is_valid = col_idx < cols
-    var num_blocks = Int(grid_dim.x)
+    var num_blocks = grid_dim.x
 
     # Preload gamma in f32 before the barrier (local data, latency-hidden).
     var gamma_vec = SIMD[accum_type, simd_width](0)
@@ -147,7 +147,7 @@ def _allgather_rmsnorm_kernel[
         rank_sigs, rank_sigs[my_rank], my_rank
     )
 
-    for grow in range(Int(block_idx.x), rows, num_blocks):
+    for grow in range(block_idx.x, rows, num_blocks):
         # Owning peer = last shard with start <= grow; grow < rows always lands
         # in a non-empty shard (trailing empties skipped).
         var g = 0
@@ -187,8 +187,7 @@ def _allgather_rmsnorm_kernel[
             normed_out.store[width=simd_width](Coord(grow, col_idx), normed)
         # Same bf16 a standalone quantize would read back from `normed_out`, so
         # folding one in is byte-identical.
-        comptime if quant_epilogue:
-            comptime epilogue = quant_epilogue.value()
+        comptime if case .Some(epilogue) = quant_epilogue:
             epilogue[width=simd_width](grow, col_idx, normed)
 
     # End barrier: peers P2P-read this rank's shard, so it must not be reused
@@ -432,7 +431,7 @@ def _allgather_rmsnorm_impl[
     if not is_p2p_enabled():
         raise Error("allgather_rmsnorm requires P2P access between GPUs")
 
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.or_else(Int(ctx.id()))
     if not 0 <= global_rank < ngpus:
         raise Error(
             String(
@@ -472,7 +471,7 @@ def _allgather_rmsnorm_impl[
     # (64*8*16=8192). Assert fit + divisibility below.
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
-    comptime simd_width = simd_width_of[in_dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime max_supported_cols = WARP_SIZE * simd_width * max_warps_per_block
     if cols > max_supported_cols:
         raise Error(
@@ -534,11 +533,11 @@ def _allgather_rmsnorm_impl[
 
     # This device's GROUP's signal pointers, re-indexed to [0, group_size).
     # Byte-identical to `rank_sigs` for a full-world collective.
-    var group_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
+    var group_sigs = Array[_, group_size](
+        fill_with_unrolled=lambda [i: Int]() -> Pointer[
+            Signal, MutAnyOrigin
+        ]: rank_sigs[group_start + i]
     )
-    comptime for i in range(group_size):
-        group_sigs[i] = rank_sigs[group_start + i]
 
     _allgather_rmsnorm_launch[
         simd_width,
@@ -635,8 +634,8 @@ def _dispatch_ag_norm[
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
+    TwoLaunchFnType: def() raises -> None,
     //,
-    two_launch: def() raises capturing -> None,
     group_size: Int = ngpus,
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
@@ -647,6 +646,7 @@ def _dispatch_ag_norm[
     weight_offset: Scalar[in_dtype],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    two_launch: TwoLaunchFnType,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,
 ) raises:
@@ -669,7 +669,7 @@ def _dispatch_ag_norm[
         ngpus: Total number of devices in the world.
         in_layout: Layout of the input shard TileTensors.
         in_origin: Origin of the input shard TileTensors.
-        two_launch: Caller-supplied standalone all-gather + RMSNorm closure.
+        TwoLaunchFnType: Type of the `two_launch` value argument.
         group_size: Number of devices per independent all-gather group. Must
             evenly divide `ngpus`. Defaults to `ngpus` (one full-world group,
             byte-identical to the pre-grouping behavior).
@@ -685,6 +685,7 @@ def _dispatch_ag_norm[
         rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
             device rank.
         ctx: Device context for this GPU.
+        two_launch: Caller-supplied standalone all-gather + RMSNorm closure.
         threshold: Full-`[rows, cols]`-bytes fuse threshold; fuse at/below, else
             `two_launch`. Defaults to `AG_NORM_FUSE_THRESHOLD`.
         my_rank: Optional GLOBAL rank of THIS GPU in `[0, ngpus)`. Defaults to
@@ -719,7 +720,7 @@ def _dispatch_ag_norm[
 
     # Fusing only when every group in the span fuses keeps the threshold's
     # per-group meaning.
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.or_else(Int(ctx.id()))
     comptime gate_groups = 2 if _relay_pairs[ngpus, group_size](
         ctx.default_device_info.version
     ) else 1
@@ -761,8 +762,8 @@ def _dispatch_ag_norm_quant[
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
+    TwoLaunchFnType: def() raises -> None,
     //,
-    two_launch_with_quant: def() raises capturing -> None,
     quant_epilogue: def[width: Int](
         row: Int, col: Int, val: SIMD[in_dtype, width]
     ) capturing -> None,
@@ -776,6 +777,7 @@ def _dispatch_ag_norm_quant[
     weight_offset: Scalar[in_dtype],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    two_launch_with_quant: TwoLaunchFnType,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
     my_rank: Optional[Int] = None,
 ) raises:
@@ -793,8 +795,7 @@ def _dispatch_ag_norm_quant[
         ngpus: Total number of devices in the world.
         in_layout: Layout of the input shard TileTensors.
         in_origin: Origin of the input shard TileTensors.
-        two_launch_with_quant: Standalone all-gather + RMSNorm + quantize
-            closure.
+        TwoLaunchFnType: Type of the `two_launch_with_quant` value argument.
         quant_epilogue: Fused-path normed-value epilogue; see
             `allgather_rmsnorm_quant`.
         group_size: Number of devices per independent all-gather group. Must
@@ -812,6 +813,8 @@ def _dispatch_ag_norm_quant[
         rank_sigs: All `ngpus` devices' Signal pointers, indexed by GLOBAL
             device rank.
         ctx: Device context for this GPU.
+        two_launch_with_quant: Standalone all-gather + RMSNorm + quantize
+            closure.
         threshold: Full-`[rows, cols]`-bytes fuse threshold; fuse at/below, else
             `two_launch_with_quant`. Defaults to `AG_NORM_FUSE_THRESHOLD`. MUST
             be group-uniform -- see the deadlock note below.
@@ -844,7 +847,7 @@ def _dispatch_ag_norm_quant[
 
     # Fusing only when every group in the span fuses keeps the threshold's
     # per-group meaning.
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.or_else(Int(ctx.id()))
     comptime gate_groups = 2 if _relay_pairs[ngpus, group_size](
         ctx.default_device_info.version
     ) else 1

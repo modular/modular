@@ -19,12 +19,10 @@ from std.sys import bit_width_of
 from std.builtin.dtype import _uint_type_of_width
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
-import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import Dim
-from std.sys.info import has_apple_gpu_accelerator
 from std.random import Random
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from std.memory import bitcast, unsafe_stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
@@ -247,21 +245,22 @@ def normalize(
     """
     comptime dtype = value.dtype
 
-    comptime if dtype == .int32:
-        return normalize(rebind[Int32](value)).cast[result.dtype]()
-    elif dtype == .uint32:
-        return normalize(rebind[UInt32](value)).cast[result.dtype]()
-    elif dtype == .float32:
-        return normalize(rebind[Float32](value)).cast[result.dtype]()
-    # TODO: These below don't return uint32 so must generalize and fix
-    elif dtype == .uint16:
-        return normalize(rebind[UInt16](value)).cast[result.dtype]()
-    elif dtype == .float16:
-        return normalize(rebind[Float16](value)).cast[result.dtype]()
-    elif dtype == .bfloat16:
-        return normalize(rebind[BFloat16](value)).cast[result.dtype]()
-    else:
-        comptime assert False, "unhandled normalize type"
+    comptime match dtype:
+        case .int32:
+            return normalize(rebind[Int32](value)).cast[result.dtype]()
+        case .uint32:
+            return normalize(rebind[UInt32](value)).cast[result.dtype]()
+        case .float32:
+            return normalize(rebind[Float32](value)).cast[result.dtype]()
+        # TODO: These below don't return uint32 so must generalize and fix
+        case .uint16:
+            return normalize(rebind[UInt16](value)).cast[result.dtype]()
+        case .float16:
+            return normalize(rebind[Float16](value)).cast[result.dtype]()
+        case .bfloat16:
+            return normalize(rebind[BFloat16](value)).cast[result.dtype]()
+        case _:
+            comptime assert False, "unhandled normalize type"
 
 
 @inline(.always)
@@ -518,10 +517,10 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     @inline(.always)
     def current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        if self._d_buffers[self._selection]:
+        if case .Some(ptr) = self._d_buffers[self._selection]:
             return DeviceBuffer[Self.dtype](
                 ctx,
-                self._d_buffers[self._selection].unsafe_value(),
+                ptr,
                 self._size,
                 owning=False,
             )
@@ -530,10 +529,10 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     @inline(.always)
     def alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        if self._d_buffers[self._selection ^ 1]:
+        if case .Some(ptr) = self._d_buffers[self._selection ^ 1]:
             return DeviceBuffer[Self.dtype](
                 ctx,
-                self._d_buffers[self._selection ^ 1].unsafe_value(),
+                ptr,
                 self._size,
                 owning=False,
             )
@@ -779,7 +778,7 @@ def _topp_minp_sampling_gpu[
         "Unsupported dtype: ", dtype
     )
 
-    comptime BLOCK_SIZE = WARP_SIZE if has_apple_gpu_accelerator() else 256
+    comptime BLOCK_SIZE = WARP_SIZE if ctx.target.is_apple_gpu() else 256
 
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities

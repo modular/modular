@@ -50,8 +50,8 @@ def ordering_guard_kernel(
 ):
     """Block 0 is the producer (~ wait SM); blocks 1.. are consumers (~ reduce
     SMs), one payload slot each."""
-    var tid = Int(thread_idx.x)
-    var nthreads = Int(block_dim.x)
+    var tid = thread_idx.x
+    var nthreads = block_dim.x
 
     if block_idx.x == 0:
         for c in range(N_CONSUMERS):
@@ -64,7 +64,7 @@ def ordering_guard_kernel(
                     flags + c, DATA_READY
                 )
     else:
-        var c = Int(block_idx.x) - 1
+        var c = block_idx.x - 1
         if c >= N_CONSUMERS:
             return
         var base = c * MSG_ELEMS

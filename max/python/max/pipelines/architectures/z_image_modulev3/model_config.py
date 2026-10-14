@@ -73,7 +73,3 @@ class ZImageConfig(MAXModelConfigBase):
             * self.in_channels
         )
         return self.dim, out_dim
-
-
-# Back-compat alias for call sites that refer to the config as a "base" type.
-ZImageConfigBase = ZImageConfig

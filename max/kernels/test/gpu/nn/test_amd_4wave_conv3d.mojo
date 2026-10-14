@@ -249,9 +249,9 @@ def test_4wave_conv3d_vs_miopen[
         ),
     )
 
-    var stride_idx = IndexList[3](stride_d, stride_h, stride_w)
-    var dilation_idx = IndexList[3](1, 1, 1)
-    var pad_idx = IndexList[3](pad_d, pad_h, pad_w)
+    var stride_idx = (stride_d, stride_h, stride_w)
+    var dilation_idx = (1, 1, 1)
+    var pad_idx = (pad_d, pad_h, pad_w)
 
     # -------- MIOpen reference (3D conv, QRSCF filter) --------
     conv_miopen[conv_rank=3, filter_is_fcrs=False](

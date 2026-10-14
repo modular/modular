@@ -115,18 +115,6 @@ public:
   }
 };
 
-template <class DataType, class Storage = bool,
-          class ParserClass = llvm::cl::parser<DataType>>
-class MBitsOpt : public llvm::cl::bits<DataType, Storage, ParserClass> {
-public:
-  using llvm::cl::bits<DataType, Storage, ParserClass>::bits;
-  ~MBitsOpt() {
-    llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &entries =
-        llvm::cl::getRegisteredOptions();
-    entries.erase(this->ArgStr);
-  }
-};
-
 } // namespace cl
 
 } // namespace M

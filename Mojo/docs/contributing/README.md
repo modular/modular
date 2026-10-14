@@ -15,8 +15,9 @@ toward the continued improvement of Mojo.
 
 2. For any non-trivial change, [open an
    issue](https://github.com/modular/modular/issues) to discuss it before you
-   open a pull request. For a significant change, start with the
-   [proposal process](./proposal-process.md) instead.
+   open a pull request. For a significant change to the standard library,
+   start with the
+   [standard library proposal process](./stdlib/proposal-process.md) instead.
 
 3. Read our [issue and PR etiquette](./issue-pr-etiquette.md).
    It sets out what we expect from you when engaging with the

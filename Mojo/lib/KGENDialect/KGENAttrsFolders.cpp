@@ -408,6 +408,89 @@ FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
   return result;
 }
 
+static FailureOr<ArrayAttr>
+resolveAnnotationArray(ResolvedStructHandle resolved, TypedAttr fieldIdx,
+                       ParameterEvaluationContext &context) {
+  std::optional<int> idx = std::nullopt;
+  if (fieldIdx) {
+    if (auto concreteIdx = dyn_cast<SIMDAttr>(fieldIdx))
+      idx = concreteIdx.getValues().front().getIntVal().getSExtValue();
+    else
+      return failure();
+  }
+  return resolved.decl.getAnnotations(idx);
+}
+
+/// Evaluates the `index`-th annotation of the struct (or of one of its fields)
+/// and rebinds the part of it selected by `getPart`.
+template <typename AttrT>
+static FailureOr<TypedAttr>
+evaluateAnnotationPart(AttrT attr, ParameterEvaluationContext &context) {
+  static_assert(std::is_same_v<AttrT, GetAnnotationTypeAttr> ||
+                std::is_same_v<AttrT, GetAnnotationValueAttr>);
+
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(attr.getStructTypeValue(),
+                              /*acceptAsync=*/false);
+  if (failed(resolvedOr)) {
+    context.emitMaterializationError(AttrT::getMnemonic() +
+                                     " requires a struct type");
+    return failure();
+  }
+  auto annotationsOr =
+      resolveAnnotationArray(*resolvedOr, attr.getFieldIndex(), context);
+  if (failed(annotationsOr))
+    return failure();
+
+  auto concreteIdx = dyn_cast<SIMDAttr>(attr.getIndex());
+  if (!concreteIdx)
+    return failure();
+  size_t idx = concreteIdx.getValues().front().getIndexVal();
+  if (idx >= annotationsOr->size())
+    return failure();
+
+  auto annotation = cast<AnnotationAttr>(annotationsOr->getValue()[idx]);
+  FailureOr<TypedAttr> result = failure();
+  context.withEvaluator(
+      resolvedOr->decl.getInputParams(), resolvedOr->paramValues,
+      [&](ParameterEvaluator &evaluator) {
+        if constexpr (std::is_same_v<AttrT, GetAnnotationTypeAttr>)
+          result = evaluator.getReboundAttribute(annotation.getTypeValue());
+        else
+          result = evaluator.getReboundAttribute(annotation.getValue());
+      });
+  return result;
+}
+
+FailureOr<TypedAttr> GetAnnotationTypeAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  return evaluateAnnotationPart(*this, context);
+}
+
+FailureOr<TypedAttr> GetAnnotationValueAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  return evaluateAnnotationPart(*this, context);
+}
+
+FailureOr<TypedAttr> GetNumAnnotationsAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getStructTypeValue(), /*acceptAsync=*/false);
+  if (failed(resolvedOr)) {
+    context.emitMaterializationError(
+        "get_annotation_num requires a struct type");
+    return failure();
+  }
+
+  auto annotationsOr =
+      resolveAnnotationArray(*resolvedOr, getFieldIndex(), context);
+  if (failed(annotationsOr))
+    return failure();
+
+  return TypedAttr(SIMDAttr::get(
+      annotationsOr->size(), SIMDType::get(getContext(), 1, KGENDType::index)));
+}
+
 FailureOr<TypedAttr> StructFieldNamesAttr::evaluateWithContext(
     ParameterEvaluationContext &context) const {
   FailureOr<ResolvedStructHandle> resolvedOr =

@@ -457,15 +457,16 @@ def _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
     - 8 GPUs: 2-stage wins for >= 2 MiB
     """
 
-    comptime if ngpus == 2:
-        return False
-    elif ngpus == 4:
-        return num_bytes >= 6 * 1024 * 1024  # 6 MiB
-    elif ngpus == 8:
-        return num_bytes >= 2 * 1024 * 1024  # 2 MiB
-    else:
-        # For other GPU counts, use 2-stage for large sizes as a reasonable default
-        return num_bytes >= 4 * 1024 * 1024  # 4 MiB
+    comptime match ngpus:
+        case 2:
+            return False
+        case 4:
+            return num_bytes >= 6 * 1024 * 1024  # 6 MiB
+        case 8:
+            return num_bytes >= 2 * 1024 * 1024  # 2 MiB
+        case _:
+            # For other GPU counts, use 2-stage for large sizes as a reasonable default
+            return num_bytes >= 4 * 1024 * 1024  # 4 MiB
 
 
 def broadcast[
@@ -515,7 +516,7 @@ def broadcast[
     var my_rank: Int = rank
 
     var num_elements = output_tensor.num_elements()
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # Do nothing if there are no elements to reduce.
     if num_elements == 0:
@@ -556,7 +557,7 @@ def broadcast[
 
         ctx.enqueue_function[bcast_kernel](
             output_tensor,
-            input_tensor.as_immut(),
+            input_tensor.as_imm(),
             rank_sigs,
             Int32(my_rank),
             Int32(root),
@@ -588,7 +589,7 @@ def broadcast[
 
             ctx.enqueue_function[bcast_kernel](
                 output_tensor,
-                input_tensor.as_immut(),
+                input_tensor.as_imm(),
                 rank_sigs,
                 Int32(my_rank),
                 grid_dim=grid_size,
@@ -655,7 +656,7 @@ def broadcast_2stage[
     var my_rank: Int = rank
 
     var num_elements = output_tensor.num_elements()
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
     # Do nothing if there are no elements.
     if num_elements == 0:

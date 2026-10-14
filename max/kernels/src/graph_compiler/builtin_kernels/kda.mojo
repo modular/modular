@@ -44,8 +44,12 @@ from extensibility import (
 )
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
+from std.math import sqrt
+from kda.amd_chunk_fwd import K_DIM as AMD_HEAD_DIM
+from kda.amd_chunk_launch import kda_amd_chunk_launch
 from kda.recurrent import kda_decode_gpu
 from kda.chunk_launch import kda_chunk_launch
+from kda.kda_helpers import KDA_GATE_LOWER_BOUND
 
 
 @extensibility.register("kda_decode")
@@ -239,18 +243,11 @@ struct KdaDecode:
         var raw_gate_strides = raw_gate.strides()
         var beta_logits_strides = beta_logits.strides()
         var dt_bias_strides = dt_bias.strides()
-        var state_pool_strides = state_pool.strides()
         var output_strides = output.strides()
 
         var gpu_ctx = ctx
         # One CTA per (batch_item, value_head); block has value_head_dim threads.
         var num_blocks = batch_size * num_value_heads
-
-        # The kernel addresses the pool as dim1=outer / dim2=inner regardless
-        # of which physical axis is outer; the caller picks which by building
-        # the pool with the layout matching `state_layout`.
-        var state_dim1_stride = UInt32(state_pool_strides[2])
-        var state_dim2_stride = UInt32(state_pool_strides[3])
 
         # Head-dim instantiations of the SAME kernel body: every use of the pair
         # below is a compile-time parameter, so a new geometry costs one entry
@@ -323,11 +320,6 @@ struct KdaDecode:
                     # dt_bias strides
                     UInt32(dt_bias_strides[0]),
                     UInt32(dt_bias_strides[1]),
-                    # state_pool strides
-                    UInt32(state_pool_strides[0]),
-                    UInt32(state_pool_strides[1]),
-                    state_dim1_stride,
-                    state_dim2_stride,
                     # output strides
                     UInt32(output_strides[1]),
                     UInt32(output_strides[2]),
@@ -374,6 +366,14 @@ struct KdaChunk:
       state_layout = "K_FIRST"   (pool shape [N, HV, K, V])
 
     Tensor shapes: identical to `kda_decode` (see that op's docstring).
+
+    On AMD the op runs a separate gfx950-only pipeline
+    (`kda.amd_chunk_launch`): a fused prologue and a chunk walk over 64-token
+    chunks. Its scope is narrower: key_head_dim == value_head_dim == 128,
+    num_key_heads == num_value_heads, `gate_mode="safe"`, bf16 q/k/v/output,
+    fp32 gates and state, and no compute-bound variant. Both beta modes and
+    both state layouts are supported; anything else is rejected at compile
+    time or raises.
     """
 
     @staticmethod
@@ -386,6 +386,7 @@ struct KdaChunk:
         gate_mode: StaticString = "original",
         beta_mode: StaticString = "logits",
         state_layout: StaticString = "K_FIRST",
+        use_computebound: Bool = False,
     ](
         output: OutputTensor[dtype=output_dtype, rank=4, ...],
         q: InputTensor[dtype=qkv_dtype, rank=4, ...],
@@ -511,53 +512,249 @@ struct KdaChunk:
                 "kda_chunk: V_FIRST state_pool dim 3 must equal key_head_dim",
             )
 
-        # Same (key_head_dim, value_head_dim) instantiations as `kda_decode`;
-        # see that op for the "one entry per geometry" rationale.
-        comptime SUPPORTED_HEAD_DIMS = [(32, 32), (128, 128)]
-        var dispatched = False
-
-        comptime for head_dims in SUPPORTED_HEAD_DIMS:
-            comptime kKD = head_dims[0]
-            comptime kVD = head_dims[1]
-            if key_head_dim == kKD and value_head_dim == kVD:
-                dispatched = True
-                kda_chunk_launch[kKD, kVD, gate_mode, beta_mode, state_layout](
-                    num_key_heads,
-                    num_value_heads,
-                    batch_size,
-                    total_T,
-                    output.to_tile_tensor[DType.int64](),
-                    q.to_tile_tensor[DType.int64](),
-                    k.to_tile_tensor[DType.int64](),
-                    v.to_tile_tensor[DType.int64](),
-                    raw_gate.to_tile_tensor[DType.int64](),
-                    beta_logits.to_tile_tensor[DType.int64](),
-                    a_log.to_tile_tensor[DType.int64](),
-                    dt_bias.to_tile_tensor[DType.int64](),
-                    cu_seqlens.to_device_buffer(ctx),
-                    state_pool.to_tile_tensor[DType.int64](),
-                    state_indices.to_tile_tensor[DType.int64](),
-                    q.to_device_buffer(ctx),
-                    k.to_device_buffer(ctx),
-                    raw_gate.to_device_buffer(ctx),
-                    beta_logits.to_device_buffer(ctx),
-                    dt_bias.to_device_buffer(ctx),
-                    q.strides(),
-                    k.strides(),
-                    v.strides(),
-                    raw_gate.strides(),
-                    beta_logits.strides(),
-                    dt_bias.strides(),
-                    state_pool.strides(),
-                    output.strides(),
-                    ctx,
-                )
-
-        if not dispatched:
-            raise Error(
-                "kda_chunk: unsupported (key_head_dim, value_head_dim) = ("
-                + String(key_head_dim)
-                + ", "
-                + String(value_head_dim)
-                + "). Compiled: (32, 32), (128, 128)."
+        comptime if ctx.target.is_amd_gpu():
+            # The AMD chunk path (`kda.amd_chunk_launch`): its
+            # tile mapping is built for K == V == 128 with one head set, and
+            # the bounded ("safe") gate is what keeps its 16-row exp2 bridging
+            # finite. It issues CDNA4-only MFMA shapes and assumes wave64.
+            comptime assert ctx.target.is_amd_gpu[
+                "gfx950"
+            ](), "kda_chunk on AMD requires gfx950 (CDNA4); use kda_decode"
+            comptime assert gate_mode == "safe", (
+                "kda_chunk on AMD supports gate_mode 'safe' only, got: "
+                + gate_mode
             )
+            comptime assert (
+                not use_computebound
+            ), "kda_chunk on AMD has no compute-bound variant"
+            comptime assert (
+                qkv_dtype == .bfloat16
+                and output_dtype == .bfloat16
+                and gate_dtype == .float32
+                and state_dtype == .float32
+            ), "kda_chunk on AMD takes bf16 q/k/v/output and fp32 gates/state"
+            comptime head_dim = AMD_HEAD_DIM
+            if (
+                key_head_dim != head_dim
+                or value_head_dim != head_dim
+                or num_key_heads != num_value_heads
+            ):
+                raise Error(
+                    "kda_chunk on AMD requires key_head_dim == value_head_dim"
+                    " == 128 and num_key_heads == num_value_heads, got"
+                    " (key_head_dim, value_head_dim, num_key_heads,"
+                    " num_value_heads) = ("
+                    + String(key_head_dim)
+                    + ", "
+                    + String(value_head_dim)
+                    + ", "
+                    + String(num_key_heads)
+                    + ", "
+                    + String(num_value_heads)
+                    + ")"
+                )
+            # The kernels index every tensor with q's extents, so the shape
+            # agreement the generic path only debug-asserts is enforced here.
+            # Pool rows are named by `state_indices`, whose values the host
+            # cannot see; a pool with fewer rows than sequences cannot give
+            # each its own row.
+            if (
+                q.dim_size(0) != 1
+                or k.dim_size(0) != 1
+                or k.dim_size(1) != total_T
+                or k.dim_size(2) != num_key_heads
+                or k.dim_size(3) != head_dim
+                or v.dim_size(0) != 1
+                or v.dim_size(1) != total_T
+                or raw_gate.dim_size(0) != 1
+                or raw_gate.dim_size(1) != total_T
+                or raw_gate.dim_size(2) != num_value_heads
+                or raw_gate.dim_size(3) != head_dim
+                or beta_logits.dim_size(0) != 1
+                or beta_logits.dim_size(1) != total_T
+                or beta_logits.dim_size(2) != num_value_heads
+                or a_log.dim_size(0) != num_value_heads
+                or dt_bias.dim_size(0) != num_value_heads
+                or dt_bias.dim_size(1) != head_dim
+                or cu_seqlens.dim_size(0) != batch_size + 1
+                or state_pool.dim_size(0) < batch_size
+                or state_pool.dim_size(1) != num_value_heads
+                or state_pool.dim_size(2) != head_dim
+                or state_pool.dim_size(3) != head_dim
+                or output.dim_size(0) != 1
+                or output.dim_size(1) != total_T
+                or output.dim_size(2) != num_value_heads
+                or output.dim_size(3) != head_dim
+            ):
+                raise Error(
+                    (
+                        "kda_chunk on AMD: k / v / raw_gate / output extents"
+                        " must match q's [1, T, H, 128], with beta_logits [1,"
+                        " T, H], a_log [H], dt_bias [H, 128], cu_seqlens [N +"
+                        " 1] and state_pool [>= N, H, 128, 128] for N ="
+                        " len(state_indices); got q "
+                    ),
+                    q.shape(),
+                    ", k ",
+                    k.shape(),
+                    ", v ",
+                    v.shape(),
+                    ", raw_gate ",
+                    raw_gate.shape(),
+                    ", beta_logits ",
+                    beta_logits.shape(),
+                    ", a_log ",
+                    a_log.shape(),
+                    ", dt_bias ",
+                    dt_bias.shape(),
+                    ", cu_seqlens ",
+                    cu_seqlens.shape(),
+                    ", state_pool ",
+                    state_pool.shape(),
+                    ", state_indices ",
+                    state_indices.shape(),
+                    ", output ",
+                    output.shape(),
+                )
+            var q_s = q.strides()
+            var k_s = k.strides()
+            var v_s = v.strides()
+            var g_s = raw_gate.strides()
+            var b_s = beta_logits.strides()
+            var o_s = output.strides()
+            var p_s = state_pool.strides()
+            # The kernels issue 16 B loads along the head dim and 8 B stores of
+            # the output, so rows must be contiguous and suitably aligned.
+            if (
+                q_s[3] != 1
+                or k_s[3] != 1
+                or v_s[3] != 1
+                or g_s[3] != 1
+                or o_s[3] != 1
+                or q_s[1] % 8 != 0
+                or q_s[2] % 8 != 0
+                or k_s[1] % 8 != 0
+                or k_s[2] % 8 != 0
+                or v_s[1] % 8 != 0
+                or v_s[2] % 8 != 0
+                or g_s[1] % 8 != 0
+                or g_s[2] % 8 != 0
+                or o_s[1] % 4 != 0
+                or o_s[2] % 4 != 0
+            ):
+                raise Error(
+                    "kda_chunk on AMD needs unit inner strides and head/token"
+                    " strides that are multiples of 8 elements (4 for output)"
+                )
+            if (
+                a_log.strides()[0] != 1
+                or cu_seqlens.strides()[0] != 1
+                or state_indices.strides()[0] != 1
+                or dt_bias.strides()[0] != key_head_dim
+                or dt_bias.strides()[1] != 1
+                or p_s[3] != 1
+                or p_s[2] != head_dim
+                or p_s[1] != head_dim * head_dim
+                or p_s[0] % 4 != 0
+            ):
+                raise Error(
+                    "kda_chunk on AMD needs a dense a_log / dt_bias /"
+                    " cu_seqlens / state_indices and a state_pool whose rows"
+                    " are dense [H][128][128] and 16 B aligned"
+                )
+            comptime scale = Float32(1.0) / sqrt(Float32(head_dim))
+            kda_amd_chunk_launch[
+                state_layout == "K_FIRST", beta_mode == "logits"
+            ](
+                ctx,
+                num_value_heads,
+                total_T,
+                batch_size,
+                scale,
+                KDA_GATE_LOWER_BOUND,
+                q.unsafe_ptr[.bfloat16]().as_imm().as_unsafe_any_origin(),
+                k.unsafe_ptr[.bfloat16]().as_imm().as_unsafe_any_origin(),
+                v.unsafe_ptr[.bfloat16]().as_imm().as_unsafe_any_origin(),
+                raw_gate.unsafe_ptr[.float32]().as_imm().as_unsafe_any_origin(),
+                beta_logits.unsafe_ptr[.float32]()
+                .as_imm()
+                .as_unsafe_any_origin(),
+                a_log.unsafe_ptr[.float32]().as_imm().as_unsafe_any_origin(),
+                dt_bias.unsafe_ptr[.float32]().as_imm().as_unsafe_any_origin(),
+                cu_seqlens.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                state_pool.unsafe_ptr[.float32]().as_unsafe_any_origin(),
+                state_indices.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+                output.unsafe_ptr[.bfloat16]().as_unsafe_any_origin(),
+                q_s[1],
+                q_s[2],
+                k_s[1],
+                k_s[2],
+                v_s[1],
+                v_s[2],
+                g_s[1],
+                g_s[2],
+                b_s[1],
+                b_s[2],
+                o_s[1],
+                o_s[2],
+                p_s[0],
+            )
+        else:
+            # Same (key_head_dim, value_head_dim) instantiations as
+            # `kda_decode`; see that op for the "one entry per geometry"
+            # rationale.
+            comptime SUPPORTED_HEAD_DIMS = [(32, 32), (128, 128)]
+            var dispatched = False
+
+            comptime for head_dims in SUPPORTED_HEAD_DIMS:
+                comptime kKD = head_dims[0]
+                comptime kVD = head_dims[1]
+                if key_head_dim == kKD and value_head_dim == kVD:
+                    dispatched = True
+                    kda_chunk_launch[
+                        kKD,
+                        kVD,
+                        gate_mode,
+                        beta_mode,
+                        state_layout,
+                        use_computebound,
+                    ](
+                        num_key_heads,
+                        num_value_heads,
+                        batch_size,
+                        total_T,
+                        output.to_tile_tensor[DType.int64](),
+                        q.to_tile_tensor[DType.int64](),
+                        k.to_tile_tensor[DType.int64](),
+                        v.to_tile_tensor[DType.int64](),
+                        raw_gate.to_tile_tensor[DType.int64](),
+                        beta_logits.to_tile_tensor[DType.int64](),
+                        a_log.to_tile_tensor[DType.int64](),
+                        dt_bias.to_tile_tensor[DType.int64](),
+                        cu_seqlens.to_device_buffer(ctx),
+                        state_pool.to_tile_tensor[DType.int64](),
+                        state_indices.to_tile_tensor[DType.int64](),
+                        q.to_device_buffer(ctx),
+                        k.to_device_buffer(ctx),
+                        raw_gate.to_device_buffer(ctx),
+                        beta_logits.to_device_buffer(ctx),
+                        dt_bias.to_device_buffer(ctx),
+                        q.strides(),
+                        k.strides(),
+                        v.strides(),
+                        raw_gate.strides(),
+                        beta_logits.strides(),
+                        dt_bias.strides(),
+                        state_pool.strides(),
+                        output.strides(),
+                        ctx,
+                    )
+
+            if not dispatched:
+                raise Error(
+                    "kda_chunk: unsupported (key_head_dim, value_head_dim) = ("
+                    + String(key_head_dim)
+                    + ", "
+                    + String(value_head_dim)
+                    + "). Compiled: (32, 32), (128, 128)."
+                )

@@ -60,7 +60,6 @@ from max.gpu.host import DeviceContext, HostBuffer
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
-from std.utils.numerics import nan
 
 
 def _run_d512_fuse_gqa[

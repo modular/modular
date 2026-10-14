@@ -1,14 +1,17 @@
 // RUN: kgen-opt -verify-parameters -lift-and-fold-apply %s | FileCheck %s
 
 kgen.generator @pass(%arg0: index) -> index {
-  kgen.return %arg0 : index
+  hlcf.return %arg0 : index
 }
 
+// The lifted signature no longer rebuilds the self-contained one, so that is
+// printed too.
 // CHECK-LABEL: kgen.generator @take_and_pass
-// CHECK-SAME: !pop.array<*[[L0:.*]], index>
+// CHECK-SAME: !pop.array<*[[L0:"[^"]*"]], index>
+// CHECK-SAME: attributes {funcTypeGenerator = !kgen.generator<<index>() -> !pop.array<apply(:(index) -> index @pass, *(0,0)), index>>}
 kgen.generator @take_and_pass<N>() -> !pop.array<apply(:(index) -> index @pass, N), index> {
   // CHECK-NEXT: apply *[[L0]] = [(index) -> index: @pass](N)
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: kgen.generator @lift_apply
@@ -34,32 +37,32 @@ kgen.generator @lift_apply() {
     // CHECK: apply *[[L4:.*]] = [(index) -> index: @pass](p2)
     // CHECK: constant = <*[[L4]]>
     kgen.param.constant = <apply(:(index) -> index @pass, p2)>
-    kgen.return
+    hlcf.return
   }
 
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @consume<N>(%arg0: !pop.array<N, index>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @apply_value_crosses
 kgen.generator @apply_value_crosses(%arg0: !pop.array<apply(:(index) -> index @pass, 1), index>) {
   // CHECK-NEXT: apply *[[L0:.*]] = [(index) -> index: @pass](1)
-  // CHECK: kgen.param.if
-  kgen.param.if <false> {
+  // CHECK: hlcf.comptime.if
+  hlcf.comptime.if false {
     // CHECK-NEXT: apply *[[L1:.*]] = [(index) -> index: @pass](2)
     // CHECK: constant = <*[[L1]]>
     kgen.param.constant = <apply(:(index) -> index @pass, 2)>
     // CHECK-NEXT: call @consume<*[[L0]]>(%arg0) : (!pop.array<*[[L0]], index>)
     kgen.call @consume<apply(:(index) -> index @pass, 1)>(%arg0)
       : (!pop.array<apply(:(index) -> index @pass, 1), index>) -> ()
-    kgen.return
+    hlcf.return
   } else {
-    kgen.param.yield
+    hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }
 
 
@@ -71,7 +74,7 @@ kgen.generator @lift_from_bind_params<
   kgen.param.declare fn: () -> () = <bind_params(
     :<() -> !pop.array<apply(:(index) -> index @pass, 1), index>>() -> () dispatch,
     :() -> !pop.array<apply(:(index) -> index @pass, 1), index> @take_and_pass<1>)>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @preserve_gen_attr
@@ -81,11 +84,11 @@ kgen.generator @preserve_gen_attr() {
   kgen.param.constant: !kgen.generator<<index>index> = <
      #kgen.gen<apply(:(index) -> index @pass, *(0,0))>
   >
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @bad() -> index {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: kgen.generator @nohoist_cond
@@ -93,7 +96,33 @@ kgen.generator @nohoist_cond() {
   kgen.param.declare cond: !kgen.scalar<bool> = <false>
   // CHECK-NOT: kgen.param.apply
   kgen.param.declare value = <cond(cond, apply(:() -> index @bad), 1)>
-  kgen.return
+  hlcf.return
+}
+
+kgen.generator @first_cond() -> !kgen.scalar<bool> {
+  hlcf.unreachable
+}
+
+kgen.generator @later_cond() -> !kgen.scalar<bool> {
+  hlcf.unreachable
+}
+
+// CHECK-LABEL: kgen.generator @comptime_if_lifts_only_first_cond
+kgen.generator @comptime_if_lifts_only_first_cond() {
+  // COM: A later comptime.if condition is only evaluated when the earlier
+  // COM: ones are false, so hoisting it would evaluate it unconditionally.
+  // CHECK-NEXT: apply *[[L0:.*]] = [{{.*}}@first_cond]()
+  // CHECK-NOT: kgen.param.apply
+  // CHECK: hlcf.comptime.if *[[L0]] {
+  // CHECK: } elif apply({{.*}}@later_cond) {
+  hlcf.comptime.if apply(:() -> !kgen.scalar<bool> @first_cond) {
+    hlcf.comptime.yield
+  } elif apply(:() -> !kgen.scalar<bool> @later_cond) {
+    hlcf.comptime.yield
+  } else {
+    hlcf.comptime.yield
+  }
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @hlcf_if_apply
@@ -117,7 +146,7 @@ kgen.generator @hlcf_if_apply(%cond: !kgen.scalar<bool>) {
     hlcf.yield
   }
 
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @hlcf_if_in_param_if_apply
@@ -127,8 +156,8 @@ kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !k
   // COME: new parameter decl scopes.
 
   kgen.param.declare p0 = <1>
-  // CHECK: kgen.param.if
-  kgen.param.if <false> {
+  // CHECK: hlcf.comptime.if
+  hlcf.comptime.if false {
     // CHECK: apply *[[L0:.*]] = [(index) -> index: @pass](p0)
     // CHECK: apply *[[L1:.*]] = [(index) -> index: @pass](*[[L0]])
     // CHECK: hlcf.if
@@ -156,9 +185,9 @@ kgen.generator @hlcf_if_in_param_if_apply(%cond0: !kgen.scalar<bool>, %cond1: !k
       hlcf.yield
     }
 
-    kgen.param.yield
+    hlcf.comptime.yield
   } else {
-    kgen.param.yield
+    hlcf.comptime.yield
   }
-  kgen.return
+  hlcf.return
 }

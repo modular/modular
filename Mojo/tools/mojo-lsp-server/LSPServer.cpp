@@ -132,9 +132,8 @@ static std::vector<StringRef> semanticTokenTypes() {
 /// Return the set of supported semantic token modifiers.
 static std::vector<StringRef> semanticTokenModifiers() {
   std::vector<StringRef> modifiers;
-  for (int i : llvm::seq(0, static_cast<int>(SemanticTokenModifier::kCount)))
-    modifiers.push_back(
-        toLspSemanticTokenModifier(static_cast<SemanticTokenModifier>(i)));
+  for (unsigned i : llvm::seq(kNumSemanticTokenModifiers))
+    modifiers.push_back(toLspSemanticTokenModifier(i));
   return modifiers;
 }
 

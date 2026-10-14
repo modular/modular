@@ -9,7 +9,7 @@ modular_cc_binary(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:CAPI.headers",
-        "//max/internal:max",
+        "//max/lib/mcl:max",
     ],
 )
 
@@ -20,7 +20,7 @@ modular_cc_binary(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:CAPI.headers",
-        "//max/internal:max",
+        "//max/lib/mcl:max",
     ],
 )
 
@@ -79,7 +79,7 @@ modular_cc_binary(
     srcs = ["weights_example.c"],
     deps = [
         "//max:CAPI.headers",
-        "//max/internal:max",
+        "//max/lib/mcl:max",
     ],
 )
 
@@ -107,7 +107,7 @@ modular_cc_binary(
     srcs = ["safetensors_example.c"],
     deps = [
         "//max:CAPI.headers",
-        "//max/internal:max",
+        "//max/lib/mcl:max",
     ],
 )
 

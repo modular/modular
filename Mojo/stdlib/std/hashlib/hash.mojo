@@ -16,8 +16,7 @@ There are a few main tools in this module:
 
 - `Hashable` trait for types implementing `__hash__(self, mut hasher)`
 - `hash[T: Hashable](hashable: T) -> UInt64` built-in function.
-- A `hash()` implementation for arbitrary byte strings,
-  `hash(bytes: ImmPointer[UInt8], n: Int) -> UInt64`,
+- `hash_bytes(bytes: ImmSpan[Byte]) -> UInt64` for arbitrary byte strings,
   is the workhorse function, which implements efficient hashing via SIMD
   vectors. See the documentation of this function for more details on the hash
   implementation.
@@ -119,6 +118,32 @@ def hash[
     return value
 
 
+def hash_bytes[
+    HasherType: Hasher = default_hasher
+](bytes: ImmSpan[Byte, _]) -> UInt64:
+    """Hash a sequence of bytes using the specified hasher.
+
+    This hashes `bytes` as a flat byte sequence. It is distinct from
+    `hash()`, which hashes a `Hashable` value: a `Span`, `List` or `Array`
+    is itself `Hashable`, so `hash(collection)` hashes it element-by-element
+    and produces a different value.
+
+    Parameters:
+        HasherType: Type of the hasher to use for hashing (default: `AHasher`).
+
+    Args:
+        bytes: The byte sequence to hash.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
+    var hasher = HasherType()
+    hasher.update(bytes)
+    var value = hasher^.finish()
+    return value
+
+
+@deprecated("Use `hash_bytes()` instead")
 def hash[
     HasherType: Hasher = default_hasher
 ](bytes: ImmPointer[UInt8, _], n: Int) -> UInt64:
@@ -134,7 +159,4 @@ def hash[
     Returns:
         A 64-bit integer hash value.
     """
-    var hasher = HasherType()
-    hasher.update(Span(unsafe_ptr=bytes, length=n))
-    var value = hasher^.finish()
-    return value
+    return hash_bytes[HasherType](Span(unsafe_ptr=bytes, length=n))

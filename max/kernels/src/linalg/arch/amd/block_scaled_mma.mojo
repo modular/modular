@@ -50,18 +50,19 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
         Args:
             mx_format: The MX element format to select.
         """
-        if mx_format == MXFormat.FP8_E4M3:
-            self = Self.FLOAT8_E4M3
-        elif mx_format == MXFormat.FP8_E5M2:
-            self = Self.FLOAT8_E5M2
-        elif mx_format == MXFormat.FP6_E2M3:
-            self = Self.FLOAT6_E2M3
-        elif mx_format == MXFormat.FP6_E3M2:
-            self = Self.FLOAT6_E3M2
-        elif mx_format == MXFormat.FP4_E2M1:
-            self = Self.FLOAT4_E2M1
-        else:
-            abort("invalid MX format")
+        match mx_format:
+            case .FP8_E4M3:
+                self = Self.FLOAT8_E4M3
+            case .FP8_E5M2:
+                self = Self.FLOAT8_E5M2
+            case .FP6_E2M3:
+                self = Self.FLOAT6_E2M3
+            case .FP6_E3M2:
+                self = Self.FLOAT6_E3M2
+            case .FP4_E2M1:
+                self = Self.FLOAT4_E2M1
+            case _:
+                abort("invalid MX format")
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value

@@ -24,12 +24,7 @@ import std.itertools
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.lora import expand_qkv_sm100
@@ -105,7 +100,7 @@ def test[
     )
 
     # Host views (only used to fill P and B and read back).
-    var p_host = TileTensor(p_host_ptr, row_major(Coord(Idx[3], M, Idx[R])))
+    var p_host = TileTensor(p_host_ptr, row_major(Idx[3], M, Idx[R]))
     var b_host = TileTensor(b_host_ptr, row_major[num_experts, D_total, R]())
 
     # Offsets / ids.
@@ -131,18 +126,18 @@ def test[
 
     # The planar P, viewed both as [3, M, R] and as three [M, R] planes for the
     # oracle (planes are contiguous so plane `t` starts at offset t*M*R).
-    var p_dev = TileTensor(p_dev_buffer, row_major(Coord(Idx[3], M, Idx[R])))
+    var p_dev = TileTensor(p_dev_buffer, row_major(Idx[3], M, Idx[R]))
     var p_plane_q = TileTensor(
         p_dev_buffer.unsafe_ptr(),
-        row_major(Coord(M, Idx[R])),
+        row_major(M, Idx[R]),
     )
     var p_plane_k = TileTensor(
         p_dev_buffer.unsafe_ptr() + M * R,
-        row_major(Coord(M, Idx[R])),
+        row_major(M, Idx[R]),
     )
     var p_plane_v = TileTensor(
         p_dev_buffer.unsafe_ptr() + 2 * M * R,
-        row_major(Coord(M, Idx[R])),
+        row_major(M, Idx[R]),
     )
 
     # Fused weight [G, D_total, R]. The oracle runs naive_grouped_matmul three
@@ -157,24 +152,18 @@ def test[
     var ref_q_full_buffer = ctx.enqueue_create_buffer[out_q_type](M * D_total)
     var ref_k_full_buffer = ctx.enqueue_create_buffer[out_kv_type](M * D_total)
     var ref_v_full_buffer = ctx.enqueue_create_buffer[out_kv_type](M * D_total)
-    var ref_q_full = TileTensor(
-        ref_q_full_buffer, row_major(Coord(M, Idx[D_total]))
-    )
-    var ref_k_full = TileTensor(
-        ref_k_full_buffer, row_major(Coord(M, Idx[D_total]))
-    )
-    var ref_v_full = TileTensor(
-        ref_v_full_buffer, row_major(Coord(M, Idx[D_total]))
-    )
+    var ref_q_full = TileTensor(ref_q_full_buffer, row_major(M, Idx[D_total]))
+    var ref_k_full = TileTensor(ref_k_full_buffer, row_major(M, Idx[D_total]))
+    var ref_v_full = TileTensor(ref_v_full_buffer, row_major(M, Idx[D_total]))
 
-    var q_dev = TileTensor(q_dev_buffer, row_major(Coord(M, Idx[q_dim])))
-    var kv_dev = TileTensor(kv_dev_buffer, row_major(Coord(2 * M, Idx[kv_dim])))
+    var q_dev = TileTensor(q_dev_buffer, row_major(M, Idx[q_dim]))
+    var kv_dev = TileTensor(kv_dev_buffer, row_major(2 * M, Idx[kv_dim]))
 
     var a_offsets_dev = TileTensor(
-        a_offsets_dev_buffer, row_major(Coord(num_experts + 1))
+        a_offsets_dev_buffer, row_major(num_experts + 1)
     )
     var expert_ids_dev = TileTensor(
-        expert_ids_dev_buffer, row_major(Coord(num_experts))
+        expert_ids_dev_buffer, row_major(num_experts)
     )
 
     ctx.enqueue_copy(p_dev_buffer, p_host_ptr)
@@ -187,10 +176,10 @@ def test[
     # A = plane 0 -> ref_q_full[m, j] = dot(B[g, j, :], P[0, m, :]).
     naive_grouped_matmul(
         ref_q_full,
-        p_plane_q.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_q.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -198,10 +187,10 @@ def test[
     # A = plane 1.
     naive_grouped_matmul(
         ref_k_full,
-        p_plane_k.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_k.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,
@@ -209,10 +198,10 @@ def test[
     # A = plane 2.
     naive_grouped_matmul(
         ref_v_full,
-        p_plane_v.as_immut(),
-        b_dev.as_immut(),
-        a_offsets_dev.as_immut(),
-        expert_ids_dev.as_immut(),
+        p_plane_v.as_imm(),
+        b_dev.as_imm(),
+        a_offsets_dev.as_imm(),
+        expert_ids_dev.as_imm(),
         max_num_tokens_by_expert,
         num_active_experts,
         ctx,

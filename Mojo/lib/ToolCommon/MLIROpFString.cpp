@@ -48,7 +48,7 @@
 //   type):
 //     kgen.func @__mojo_inline_mlir_op(%arg0: !kgen.scalar<si32>) {
 //       d.op %arg0 {t = 5} : !kgen.scalar<si32>
-//       kgen.return
+//       hlcf.return
 //     }
 //
 //   Resulting op (parsed, operands re-bound to the real SSA values):
@@ -229,7 +229,7 @@ Operation *lowerFStringMLIROp(OpBuilder &builder, Location loc,
       os << "%arg" << i << ": ";
       v.getType().print(os);
     }
-    os << ") {\n  " << body << "\n  kgen.return\n}";
+    os << ") {\n  " << body << "\n  hlcf.return\n}";
   }
 
   // `verifyAfterParse=false`: op verifiers that consult `getDefiningOp()`
@@ -257,7 +257,7 @@ Operation *lowerFStringMLIROp(OpBuilder &builder, Location loc,
     errorMsg = "no op" + inTmpl;
     return nullptr;
   }
-  // Expect exactly one user op plus the synthesized `kgen.return`; reject more
+  // Expect exactly one user op plus the synthesized `hlcf.return`; reject more
   // rather than silently keeping the first.
   size_t numOps = func.getBodyRegion().front().getOperations().size();
   if (numOps < 2) {

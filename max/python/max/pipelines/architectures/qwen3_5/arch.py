@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import dataclasses
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.qwen3vl_moe.context import (
     Qwen3VLTextAndVisionContext,
 )
 from max.pipelines.lib import SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .batch_processor import Qwen3_5BatchProcessor
 from .memory_planner import Qwen3_5MemoryPlanner
@@ -51,4 +53,16 @@ qwen3_5_arch = SupportedArchitecture(
     # A warmup probe's state pages are freed with its KV, so a sweep of probes
     # cannot exhaust them.
     supports_device_graph_capture=True,
+)
+
+
+# Text-only checkpoints saved from the language model alone (model_type
+# "qwen3_5_text", such as the Mapika decision models) put the text config at
+# the top level and have no vision tower. They share the Qwen3.5 layout, so
+# this architecture serves them under their own architectures[0] name.
+qwen3_5_text_arch = dataclasses.replace(
+    qwen3_5_arch,
+    name="Qwen3_5ForCausalLM",
+    example_repo_ids=["Mapika/decider-0.8b", "Mapika/decider-2b"],
+    input_modalities={InputModality.TEXT},
 )

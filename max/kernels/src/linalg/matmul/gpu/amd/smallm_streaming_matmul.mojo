@@ -35,10 +35,9 @@ from max.gpu import (
     global_idx,
     grid_dim,
     lane_id,
-    thread_idx,
+    warp_id,
 )
 from std.memory import unsafe_stack_allocation
-from std.utils import Index
 
 from max.gpu.compute.mma import mma
 from max.gpu.host import DeviceContext
@@ -81,8 +80,7 @@ def _smallm_preshuffle_b_kernel[
     var col = vec // vecs_per_row
     var k = (vec % vecs_per_row) * 8
 
-    var warp = k // k_per_warp
-    var k_in = k % k_per_warp
+    var warp, k_in = divmod(k, k_per_warp)
     var i = k_in // _MFMA_K
     var g = (k_in // 8) % 4
     var l = g * _TILE_N + col % _TILE_N
@@ -131,8 +129,7 @@ def _smallm_shuffle_a_kernel[
     var row = vec // vecs_per_row
     var k = (vec % vecs_per_row) * 8
 
-    var warp = k // k_per_warp
-    var k_in = k % k_per_warp
+    var warp, k_in = divmod(k, k_per_warp)
     var i = k_in // _MFMA_K
     var g = (k_in // 8) % 4
     var l = g * _TILE_N + row % _TILE_N
@@ -200,7 +197,7 @@ def _gemm_smallm_streaming_kernel[
     var _m = Int(m)
     var _n = Int(n)
     var lane = Int(lane_id())
-    var warp_in_block = Int(thread_idx.x) // WARP_SIZE
+    var warp_in_block = warp_id()
 
     # mfma 16x16x32 bf16 lane layout (wave64): lane l serves row/col l%16 and
     # k-group l//16 (4 groups of 8 contiguous k). Fragment-major operands make
@@ -230,7 +227,7 @@ def _gemm_smallm_streaming_kernel[
     # instantiations get a structurally loop-free body, one block per tile.
     var n_tiles = ceildiv(_n, _TILE_N)
     comptime if a_in_regs:
-        for ct in range(Int(block_idx.x), n_tiles, Int(grid_dim.x)):
+        for ct in range(block_idx.x, n_tiles, grid_dim.x):
             var b_ptr = (
                 b_shuffled
                 + (ct * warps_per_block + warp_in_block) * region
@@ -285,12 +282,11 @@ def _gemm_smallm_streaming_kernel[
                         comptime for r4 in range(4):
                             var row = t * _TILE_N + (lane // _TILE_N) * 4 + r4
                             if row < _m:
-                                comptime if elementwise_lambda_fn:
-                                    comptime elementwise_lambda = (
-                                        elementwise_lambda_fn.value()
-                                    )
+                                comptime if case .Some(
+                                    elementwise_lambda
+                                ) = elementwise_lambda_fn:
                                     elementwise_lambda(
-                                        Index(row, out_col),
+                                        (row, out_col),
                                         acc[t][r4].cast[c_type](),
                                     )
                                 else:
@@ -298,7 +294,7 @@ def _gemm_smallm_streaming_kernel[
             # The LDS scratch is reused by the next column tile.
             barrier()
     else:
-        var ct0 = Int(block_idx.x) * col_tiles
+        var ct0 = block_idx.x * col_tiles
         # Read offsets clamp to the last real tile so the tail block's loads
         # stay in bounds; its stores are culled by the out_col guard below.
         var b_offs = Array[Int, col_tiles](fill=0)
@@ -362,12 +358,11 @@ def _gemm_smallm_streaming_kernel[
                         comptime for r4 in range(4):
                             var row = t * _TILE_N + (lane // _TILE_N) * 4 + r4
                             if row < _m:
-                                comptime if elementwise_lambda_fn:
-                                    comptime elementwise_lambda = (
-                                        elementwise_lambda_fn.value()
-                                    )
+                                comptime if case .Some(
+                                    elementwise_lambda
+                                ) = elementwise_lambda_fn:
                                     elementwise_lambda(
-                                        Index(row, out_col),
+                                        (row, out_col),
                                         acc[u * m_tiles + t][r4].cast[c_type](),
                                     )
                                 else:
@@ -445,8 +440,9 @@ def smallm_streaming_matmul[
     if m < 1 or m > 128:
         raise Error("smallm_streaming_matmul serves 1 <= m <= 128")
 
-    @__parameter
-    def _launch[m_tiles: Int, a_in_regs: Bool, col_tiles: Int = 1]() raises:
+    def _launch[
+        m_tiles: Int, a_in_regs: Bool, col_tiles: Int = 1
+    ]() raises {imm}:
         comptime shuffle_kernel = _smallm_shuffle_a_kernel[
             a_type,
             a_layout,

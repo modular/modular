@@ -295,9 +295,8 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   // Add RuntimeLibraryInfoWrapper for libcall lowering decisions.
   // This is required by passes like ExpandFp and PreISelIntrinsicLowering.
   const llvm::TargetOptions &tmOptions = targetMachine.Options;
-  passMgr.add(new RuntimeLibraryInfoWrapper(
-      tmOptions.ExceptionModel, tmOptions.EABIVersion,
-      tmOptions.MCOptions.ABIName, tmOptions.VecLib));
+  passMgr.add(new RuntimeLibraryInfoWrapper(tmOptions.MCOptions.ABIName,
+                                            tmOptions.VecLib));
 
 #ifndef MODULAR_PRODUCTION
   // Verify module immediately to catch problems before doInitialization() is

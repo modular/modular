@@ -188,17 +188,14 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         base: float,
         max_position_embeddings: int,
     ) -> Tensor:
-        max_pos = F.constant(
-            float(max_position_embeddings),
-            dtype=DType.float32,
-            device=CPU(),
-        )
         base_tensor = F.constant(float(base), dtype=DType.float32, device=CPU())
-        dim_tensor = F.constant(float(dim), dtype=DType.float32, device=CPU())
 
-        return (dim_tensor * F.log(max_pos / (num_rotations * 2 * math.pi))) / (
-            2 * F.log(base_tensor)
-        )
+        return (
+            float(dim)
+            * F.log(
+                float(max_position_embeddings) / (num_rotations * 2 * math.pi)
+            )
+        ) / (2 * F.log(base_tensor))
 
     def _yarn_linear_ramp_mask(
         self, min_val: Tensor, max_val: Tensor, dim: Dim
@@ -206,7 +203,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         diff = max_val - min_val
         diff = F.where(
             diff == 0,
-            F.constant(0.001, dtype=DType.float32, device=CPU()),
+            0.001,
             diff,
         )
 

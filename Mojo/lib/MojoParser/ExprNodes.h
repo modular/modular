@@ -84,8 +84,10 @@ struct IntLiteralNode final : public ExprNode {
 
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
+  llvm::StringRef getLiteralSpelling() const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -102,8 +104,10 @@ struct FloatLiteralNode final : public ExprNode {
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
+  llvm::StringRef getLiteralSpelling() const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -122,8 +126,10 @@ struct BoolLiteralNode final : public ExprNode {
   SourceRange getRange() const override { return {getLoc(), getLoc()}; }
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
+  llvm::StringRef getLiteralSpelling() const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -148,8 +154,9 @@ struct SimpleLiteralNode final : public ExprNode {
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -182,8 +189,10 @@ struct StringLiteralNode final : public ExprNode {
   }
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
+  llvm::StringRef getLiteralSpelling() const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -263,8 +272,9 @@ struct DeclRefNode final : public LValueCapableExprNode, Identifier {
   ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -288,8 +298,9 @@ struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
   ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
   /// Emit a reference to a stored field with a base that is known not to be a
@@ -319,8 +330,9 @@ struct InferredAttributeRefNode final : public LValueCapableExprNode,
   ELVIITResult emitLCVIR(ExprDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -384,16 +396,17 @@ struct CallNode final : public ExprNode {
   SourceRange getParenRange() const { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
 private:
-  /// Match `Type.Case(payload...)` against an `EnumLike` subject: check the
-  /// active discriminant, then deep-match payload subpatterns.
-  LogicalResult emitEnumMatch(IREmitter &emitter, CValue subject,
-                              PatternDeclKind patternKind,
-                              llvm::SmallVectorImpl<BoundName> &bindings) const;
+  /// Build commands for `Type.Case(payload...)` against an `EnumLike` subject.
+  LogicalResult
+  buildEnumCheckList(PatternMatchBuilder &builder, CValue subject,
+                     const PatternPath *path,
+                     SmallVectorImpl<const PatternCommand *> &out) const;
 };
 
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
@@ -476,8 +489,9 @@ struct ParenNode final : public ExprNode {
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   ELVIITResult
   emitLValueIfImplicitlyTyped(IREmitter &emitter, PatternDeclKind kind,
                               bool hasInferrableRHS) const override {
@@ -513,20 +527,22 @@ struct TupleNode final : public LValueCapableExprNode {
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
 /// [a, b, c]
 struct ListLiteralNode final : public LValueCapableExprNode {
   ListLiteralNode(SMLoc lsquareLoc, ArrayRef<ExprNode *> exprs,
-                  SMLoc rsquareLoc)
+                  std::optional<size_t> starIndex, SMLoc rsquareLoc)
       : LValueCapableExprNode(kListLiteral), lsquareLoc(lsquareLoc),
-        exprs(exprs), rsquareLoc(rsquareLoc) {}
+        exprs(exprs), starIndex(starIndex), rsquareLoc(rsquareLoc) {}
 
   const SMLoc lsquareLoc;
   ArrayRef<ExprNode *> exprs;
+  const std::optional<size_t> starIndex;
   const SMLoc rsquareLoc;
 
   static bool classof(const ExprNode *node) {
@@ -538,6 +554,10 @@ struct ListLiteralNode final : public LValueCapableExprNode {
                          bool isSpeculative) const override;
   LogicalResult emitDestructuringPValue(PValue value,
                                         IREmitter &emitter) const override;
+  LogicalResult
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -627,6 +647,10 @@ struct SetInitLiteralNode final : public ExprNode {
   SourceRange getRange() const override { return {lbraceLoc, rbraceLoc}; }
 
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
+  LogicalResult
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
@@ -679,8 +703,9 @@ struct BinOpNode final : public ExprNode {
                               bool hasInferrableRHS) const override;
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
 private:
@@ -688,12 +713,14 @@ private:
   AnyValue emitAssign(ExprDest &dest, IREmitter &emitter) const;
   AnyValue emitWalrus(ExprDest &dest, IREmitter &emitter) const;
   AnyValue emitInplace(ExprDest &dest, IREmitter &emitter) const;
-  LogicalResult emitAsMatch(IREmitter &emitter, CValue subject,
-                            PatternDeclKind patternKind,
-                            llvm::SmallVectorImpl<BoundName> &bindings) const;
-  LogicalResult emitOrMatch(IREmitter &emitter, CValue subject,
-                            PatternDeclKind patternKind,
-                            llvm::SmallVectorImpl<BoundName> &bindings) const;
+  LogicalResult
+  buildAsCheckList(PatternMatchBuilder &builder, CValue subject,
+                   const PatternPath *path,
+                   SmallVectorImpl<const PatternCommand *> &out) const;
+  LogicalResult
+  buildOrCheckList(PatternMatchBuilder &builder, CValue subject,
+                   const PatternPath *path,
+                   SmallVectorImpl<const PatternCommand *> &out) const;
 };
 
 struct UnaryOpNode final : public ExprNode {
@@ -714,8 +741,9 @@ struct UnaryOpNode final : public ExprNode {
   }
   AnyValue emitIR(ExprDest &dest, IREmitter &emitter) const override;
   LogicalResult
-  emitMatch(IREmitter &emitter, CValue subject, PatternDeclKind patternKind,
-            llvm::SmallVectorImpl<BoundName> &bindings) const override;
+  buildCheckList(PatternMatchBuilder &builder, CValue subject,
+                 const PatternPath *path,
+                 SmallVectorImpl<const PatternCommand *> &out) const override;
   ELVIITResult
   emitLValueIfImplicitlyTyped(IREmitter &emitter, PatternDeclKind kind,
                               bool hasInferrableRHS) const override;
@@ -761,14 +789,13 @@ struct FunctionTypeNode final : public ExprNode {
   FunctionTypeNode(SMLoc baseLoc, ArrayRef<ParsedArgument> parsedParams,
                    ArrayRef<ParsedArgument> parsedArgs,
                    const ParsedArgument &resultArg, FnEffects effects,
-                   bool isThin, bool isExperimentalParamTrait,
-                   const ExprNode *thrownTypeExpr, const ExprNode *originExpr,
+                   bool isThin, const ExprNode *thrownTypeExpr,
+                   const ExprNode *originExpr,
 
                    ArrayRef<ParsedConstraint> parsedConstraints, SMLoc endLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
-        isThin(isThin), isExperimentalParamTrait(isExperimentalParamTrait),
-        thrownTypeExpr(thrownTypeExpr), originExpr(originExpr),
+        isThin(isThin), thrownTypeExpr(thrownTypeExpr), originExpr(originExpr),
         parsedConstraints(parsedConstraints), endLoc(endLoc) {}
 
   SMLoc baseLoc;
@@ -777,7 +804,6 @@ struct FunctionTypeNode final : public ExprNode {
   const ParsedArgument &resultArg;       // Result argument
   FnEffects effects;
   bool isThin;
-  bool isExperimentalParamTrait;
   const ExprNode *thrownTypeExpr;
   const ExprNode *originExpr;
   ArrayRef<ParsedConstraint> parsedConstraints; // Trailing body constraints

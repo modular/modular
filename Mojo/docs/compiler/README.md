@@ -39,8 +39,6 @@ how a Mojo program becomes an executable.
     - `compiler/arcana/` -- more detailed docs, diving deep into nuanced
       behavior; useful for someone trying to debug the compiler, this has
       the vital hidden clues.
-    - `compiler/attic/` -- older compiler docs, that capture prior thinking and
-      behavior. Occasionally useful to consult when doing code archeology.
   - `lib/` -- C++ sources for the Mojo compiler _libraries_, including parser,
     passes, MLIR dialects, and related tooling (e.g. debugger), etc.
   - `tools/` -- C++ sources for command-line interface _executables_ (CLI),

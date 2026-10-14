@@ -33,25 +33,15 @@ page (`num_keys` not a multiple of `page_size`). Plus ragged (mixed seq lens),
 GQA, NullMask/CausalMask/SlidingWindowCausalMask, fp16/bf16, and depth 64/128.
 """
 
-from std.collections import OptionalReg
 from max.gpu.host import DeviceContext
 from std.math import ceildiv, exp, sqrt
-from std.memory import unsafe_memset_zero
 from std.random import seed, shuffle
-from std.sys import has_apple_gpu_accelerator
+from std.sys import default_accelerator
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 
-from layout import (
-    UNKNOWN_VALUE,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-)
-from layout._utils import ManagedLayoutTensor
-from layout.tile_layout import row_major
+from layout import Coord, Idx, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 
 from nn.attention.gpu.apple.fa_prefill import (
     fa_prefill_apple,
@@ -63,8 +53,6 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
 )
 from nn.attention.mha_operand import KVCacheMHAOperand
-
-from std.utils import Index, IndexList
 
 
 # Inlined from `test/gpu/kv_cache/kv_cache_test_utils.mojo` to keep this Apple
@@ -238,14 +226,10 @@ def _run[
     )
 
     # ---- ragged Q device tensor [total_tokens, num_q_heads, depth] ----- #
-    comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, depth)
-    var q_managed = ManagedLayoutTensor[qkv_type, q_layout](
-        RuntimeLayout[q_layout].row_major(
-            IndexList[3](total_length, num_q_heads, depth)
-        ),
-        ctx,
+    var q_managed = HostDeviceTileTensor[qkv_type](
+        row_major(total_length, num_q_heads, depth), ctx
     )
-    var q_host = q_managed.tensor[update=False]()
+    var q_host = q_managed.host_tensor()
     for t in range(total_length):
         for h in range(num_q_heads):
             for d in range(depth):
@@ -254,32 +238,36 @@ def _run[
                 )
 
     # ---- ragged output tensor ------------------------------------------ #
-    var o_managed = ManagedLayoutTensor[qkv_type, q_layout](
-        RuntimeLayout[q_layout].row_major(
-            IndexList[3](total_length, num_q_heads, depth)
-        ),
-        ctx,
+    var o_managed = HostDeviceTileTensor[qkv_type](
+        row_major(total_length, num_q_heads, depth), ctx
     )
 
     # ---- input_row_offsets [batch+1] ----------------------------------- #
-    comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var ro_managed = ManagedLayoutTensor[.uint32, ro_layout](
-        RuntimeLayout[ro_layout].row_major(IndexList[1](batch_size + 1)),
-        ctx,
+    var ro_managed = HostDeviceTileTensor[.uint32](
+        row_major(batch_size + 1), ctx
     )
-    var ro_host = ro_managed.tensor[update=False]()
+    var ro_host = ro_managed.host_tensor()
     for i in range(batch_size + 1):
         ro_host[i] = UInt32(row_offsets[i])
 
+    comptime Collection = PagedKVCacheCollection[
+        qkv_type,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+
     # ---- per-sequence cache_lengths (all 0: pure prefill) -------------- #
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cl_managed = ManagedLayoutTensor[.uint32, cl_layout](
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    var cl_managed = HostDeviceTileTensor[.uint32](
+        Collection.CacheType.cache_lengths_tt_layout(
+            Coord(Int64(batch_size)), Coord(Idx[1])
+        ),
         ctx,
     )
-    var cl_host = cl_managed.tensor[update=False]()
-    for i in range(batch_size):
-        cl_host[i] = UInt32(0)
+    _ = cl_managed.host_tensor().fill(0)
 
     # ---- paged KV blocks [num_pages, 2, num_layers, page_size, kv_heads,
     #      depth] + LUT [batch, padded_pages] ---------------------------- #
@@ -290,43 +278,38 @@ def _run[
     # Pad block pool so distinct-block sampling has slack.
     var num_paged_blocks = total_pages + batch_size + 2
 
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, kv_heads, depth
+    var s_kvidx = num_layers * page_size * kv_heads * depth
+    var s_block = 2 * s_kvidx
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var kv_shape = Coord[*BlocksLayout.shape_types]()
+    kv_shape[0] = Int64(num_paged_blocks)
+    kv_shape[2] = Int64(num_layers)
+    var kv_stride = Coord[*BlocksLayout.stride_types]()
+    kv_stride[0] = Int64(s_block)
+    kv_stride[1] = Int64(s_kvidx)
+    var kv_block_managed = HostDeviceTileTensor[qkv_type](
+        BlocksLayout(kv_shape, kv_stride), ctx
     )
-    var kv_block_managed = ManagedLayoutTensor[qkv_type, kv_block_layout](
-        RuntimeLayout[kv_block_layout].row_major(kv_block_shape), ctx
-    )
-    var kv_block_host = kv_block_managed.tensor[update=False]()
+    var kv_block_host = kv_block_managed.host_tensor()
     # Zero-fill so OOB tail slots in a partial last page contribute nothing.
-    var kv_block_elems = (
-        num_paged_blocks * 2 * num_layers * page_size * kv_heads * depth
-    )
-    unsafe_memset_zero(kv_block_host.ptr, kv_block_elems)
+    _ = kv_block_host.fill(0)
 
-    comptime lut_layout = Layout.row_major[2]()
     var max_pages = _padded_lut_cols(num_pages_per_batch)
-    var lut_managed = ManagedLayoutTensor[.uint32, lut_layout](
-        RuntimeLayout[lut_layout].row_major(
-            IndexList[2](batch_size, max_pages)
+    var lut_managed = HostDeviceTileTensor[.uint32](
+        Collection.CacheType.lookup_table_tt_layout(
+            Coord(Int64(batch_size), Int64(max_pages)),
+            Coord(Int64(max_pages), Idx[1]),
         ),
         ctx,
     )
-    var lut_host = lut_managed.tensor[update=False]()
-    for i in range(batch_size):
-        for p in range(max_pages):
-            lut_host[i, p] = UInt32(0)
+    var lut_host = lut_managed.host_tensor()
+    _ = lut_host.fill(0)
 
     # Assign distinct physical pages per (batch, page) and scatter the host K/V
     # master data into them. This is the SAME data the fp32 reference saw, just
     # physically permuted across pages -- so a page-indexing bug shows up.
     var pages = _random_distinct(num_paged_blocks, total_pages)
     var page_pos = 0
-    # Per (batch, kv_idx) 6D strides.
-    var s_kvidx = num_layers * page_size * kv_heads * depth
-    var s_layer = page_size * kv_heads * depth
-    var s_block = 2 * num_layers * page_size * kv_heads * depth
-    var s_tok = kv_heads * depth
     for b in range(batch_size):
         var seq_start = row_offsets[b]
         var n_pages_b = ceildiv(seq_lens[b], page_size)
@@ -348,10 +331,15 @@ def _run[
                         ](v_f[src])
 
     # ---- build the paged collection + operands ------------------------- #
-    var kv_collection = PagedKVCacheCollection[qkv_type, kv_params, page_size](
+    q_managed.to_device()
+    ro_managed.to_device()
+    cl_managed.to_device()
+    kv_block_managed.to_device()
+    lut_managed.to_device()
+    var kv_collection = Collection(
         kv_block_managed.device_tensor().as_unsafe_any_origin(),
-        cl_managed.device_tensor(),
-        lut_managed.device_tensor(),
+        cl_managed.device_tensor().as_unsafe_any_origin().as_imm(),
+        lut_managed.device_tensor().as_unsafe_any_origin().as_imm(),
         UInt32(max_prompt_len),
         UInt32(max_full_context),
     )
@@ -386,14 +374,15 @@ def _run[
     ctx.synchronize()
 
     # ---- compare against the independent fp32 reference ---------------- #
-    var o_out = o_managed.tensor()
+    o_managed.to_host()
+    var o_out = o_managed.host_tensor()
     var atol = Float32(2e-2) if qkv_type == DType.bfloat16 else Float32(8e-3)
     var pass_ = True
     var max_err = Float32(0)
     for t in range(total_length):
         for h in range(num_q_heads):
             for d in range(depth):
-                var got = o_out[t, h, d].cast[.float32]()[0]
+                var got = o_out[t, h, d].cast[.float32]()
                 var exp_v = ref_out[(t * num_q_heads + h) * depth + d]
                 var err = abs(got - exp_v)
                 max_err = max(max_err, err)
@@ -478,7 +467,7 @@ def test_apple_fa_prefill_paged(ctx: DeviceContext) raises:
 
 
 def main() raises:
-    comptime if not has_apple_gpu_accelerator():
+    comptime if not default_accelerator().is_apple_gpu():
         print("SKIP: fa_prefill_apple paged targets Apple silicon GPUs only")
         return
     seed(42)

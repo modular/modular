@@ -34,6 +34,7 @@ those short_path vars resolve.
 """
 
 load("@cfg_workaround.bzl", "CFG_WORKAROUND")
+load("//bazel/internal:mojo_targets.bzl", "mojo_targets_from_toolchain")  # buildifier: disable=bzl-visibility
 
 # We need to avoid using `requirement("torch")` in deps shared by both the
 # producer and consumer of the MEF. CFG_WORKAROUND used below causes us to use the exact
@@ -46,20 +47,9 @@ CPU_TORCH = select({
 })
 
 def _precompiled_mefs_impl(ctx):
-    mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
-
-    cpu_target = None
-    target = None
-    for copt in mojo_toolchain.copts:
-        if copt.startswith("--target-accelerator="):
-            target = copt.removeprefix("--target-accelerator=")
-        elif copt.startswith("--target-cpu="):
-            cpu_target = copt.removeprefix("--target-cpu=")
-
-    # not sure what this is about, is there a disconnect between the GC and Mojo?
-    if target:
-        target = target.replace("nvidia", "cuda")
-        target = target.replace("amdgpu", "hip")
+    targets = mojo_targets_from_toolchain(ctx)
+    target = targets.accelerator
+    cpu_target = targets.cpu_target
 
     binary = ctx.attr.producer[DefaultInfo].files_to_run
     env = dict(ctx.attr.producer[RunEnvironmentInfo].environment)

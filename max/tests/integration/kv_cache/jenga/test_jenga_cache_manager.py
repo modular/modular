@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from math import lcm
 
 import numpy as np
 import pytest
@@ -33,22 +34,24 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheGroupId,
     KVCacheInputs,
-    KVCacheInputsInterface,
-    KVCacheParams,
+    KVCacheInputsPerDevice,
+    KVCacheQuantizationConfig,
     MHAKVCacheParams,
-    MultiKVCacheInputs,
     MultiKVCacheParams,
-    RecurrentStateInputs,
+    RecurrentStateInputsPerDevice,
     RecurrentStateParams,
+    RecurrentStateRegion,
 )
 from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVConnectorType,
     SpeculativeMethod,
+    spec_decode_cache_slack,
 )
-from max.nn.kv_cache.input_types import RecurrentStateRegion
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.utils import padded_lut_cols
 from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors import NullConnector
 from max.pipelines.kv_cache.paged_kv_cache import (
@@ -56,6 +59,9 @@ from max.pipelines.kv_cache.paged_kv_cache import (
 )
 from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
     JengaKVCacheManager,
+)
+from max.pipelines.kv_cache.paged_kv_cache.recurrent_coordinator import (
+    RecurrentKVGroupCoordinator,
 )
 from max.pipelines.request.base import RequestID
 
@@ -89,16 +95,22 @@ def make_leaf(
 
 
 def create_manager(
-    params: KVCacheParamInterface, num_huge_blocks: int, max_batch_size: int
+    params: KVCacheParamInterface,
+    num_huge_blocks: int,
+    max_batch_size: int,
+    *,
+    max_seq_len: int = 4,
 ) -> JengaKVCacheManager:
     tp_degree = params.tensor_parallel_degree
-    huge_page_bytes = max(
-        leaf.bytes_per_page // tp_degree for leaf in params.leaves().values()
+    # A huge block is the least common multiple of the leaf page sizes.
+    huge_page_bytes = lcm(
+        *(leaf.bytes_per_page // tp_degree for leaf in params.leaves().values())
     )
     return JengaKVCacheManager.create(
         params=params,
         available_bytes=num_huge_blocks * huge_page_bytes * len(params.devices),
         max_batch_size=max_batch_size,
+        max_seq_len=max_seq_len,
     )
 
 
@@ -115,6 +127,17 @@ def make_multi_leaf_manager(
             SLIDING: make_leaf(n_kv_heads=1, window_size=4),
             FULL: make_leaf(n_kv_heads=3),
         }
+    )
+    return create_manager(params, num_huge_blocks, max_batch_size)
+
+
+def make_three_leaf_manager(
+    num_huge_blocks: int, max_batch_size: int = 64
+) -> JengaKVCacheManager:
+    """Returns a manager with page sizes 6:5:4, so a huge block holds 10, 12
+    and 15 pages of the three leaves."""
+    params = MultiKVCacheParams.from_params(
+        {f"leaf{heads}": make_leaf(n_kv_heads=heads) for heads in (6, 5, 4)}
     )
     return create_manager(params, num_huge_blocks, max_batch_size)
 
@@ -147,7 +170,7 @@ def make_ctx(num_tokens: int) -> TextContext:
 
 
 def get_lut(
-    kv_inputs: KVCacheInputsInterface[Buffer, Buffer],
+    kv_inputs: KVCacheInputs[Buffer, Buffer],
     device_idx: int = 0,
 ) -> list[list[int]]:
     """Returns the assigned block ids in the runtime LUT, trimming the
@@ -158,8 +181,10 @@ def get_lut(
     ``device_idx`` indexes the ``(replica, TP shard)`` devices in
     replica-major order, so with one shard per replica it is the replica.
     """
-    assert isinstance(kv_inputs, KVCacheInputs)
-    raw = kv_inputs.inputs[device_idx].lookup_table.to_numpy().tolist()
+    assert isinstance(kv_inputs, tuple) and kv_inputs
+    device = kv_inputs[device_idx]
+    assert isinstance(device, KVCacheInputsPerDevice)
+    raw = device.lookup_table.to_numpy().tolist()
     return [[b for b in row if b != 0] for row in raw]
 
 
@@ -197,7 +222,11 @@ def test_runtime_inputs_lut_and_cache_lengths() -> None:
     mgr.alloc(ctx_b)
 
     kv_inputs = mgr.runtime_inputs([[ctx_a, ctx_b]])
-    assert isinstance(kv_inputs, KVCacheInputs)
+    assert (
+        isinstance(kv_inputs, tuple)
+        and kv_inputs
+        and isinstance(kv_inputs[0], KVCacheInputsPerDevice)
+    )
 
     # A single-leaf manager, so its one leaf names itself in the rows.
     (leaf_id,) = mgr.get_req_blocks_per_leaf(ctx_a)
@@ -205,7 +234,7 @@ def test_runtime_inputs_lut_and_cache_lengths() -> None:
         mgr.get_req_blocks_per_leaf(ctx_a)[leaf_id],
         mgr.get_req_blocks_per_leaf(ctx_b)[leaf_id],
     ]
-    cache_lengths = kv_inputs.inputs[0].cache_lengths.to_numpy().tolist()
+    cache_lengths = kv_inputs[0].cache_lengths.to_numpy().tolist()
     assert cache_lengths == [
         ctx_a.tokens.processed_length,
         ctx_b.tokens.processed_length,
@@ -254,7 +283,7 @@ def test_num_draft_tokens_per_step_threaded_from_params() -> None:
     property.
     """
     mgr = make_single_leaf_manager(
-        num_huge_blocks=10,
+        num_huge_blocks=20,
         speculative_method="dflash",
         num_draft_tokens=3,
     )
@@ -309,6 +338,64 @@ def test_block_count_is_reported_per_replica() -> None:
     assert mgr.block_count(0).total == mgr.block_count(1).total == 9
 
 
+def test_pressure_reads_the_fullest_leaf_not_the_huge_blocks_touched() -> None:
+    """Checks ``pressure_pct`` tracks the fullest leaf's pages."""
+    mgr = make_three_leaf_manager(num_huge_blocks=12)
+    held = []
+    for _ in range(31):
+        ctx = make_ctx(num_tokens=1)
+        mgr.claim(ctx)
+        mgr.alloc(ctx)
+        held.append(ctx)
+
+    # 31 one-page requests spread over ceil(31/10) + ceil(31/12) +
+    # ceil(31/15) = 10 of the 11 allocable huge blocks.
+    assert mgr.block_count().used == 10
+    assert mgr.block_count().used_pct == pytest.approx(90.9, abs=0.05)
+
+    assert mgr.pressure_pct() == pytest.approx(87.1, abs=0.05)
+    assert all(c.free > 0 for c in mgr.little_block_count().values())
+
+    pressure = mgr.pressure_pct()
+    while True:
+        ctx = make_ctx(num_tokens=1)
+        mgr.claim(ctx)
+        try:
+            mgr.alloc(ctx)
+        except InsufficientBlocksError:
+            mgr.release(ctx)
+            break
+        held.append(ctx)
+        pressure = mgr.pressure_pct()
+
+    assert len(held) == 40
+    assert pressure == 100.0
+
+
+def test_pressure_holds_over_repeated_passes_on_one_pool() -> None:
+    """Checks pressure stays under 90 across repeated passes over one pool.
+
+    Released pages are reused in release order, so later passes touch more
+    huge blocks.
+    """
+    mgr = make_three_leaf_manager(num_huge_blocks=12)
+    for pass_idx in range(4):
+        held = []
+        for _ in range(31):
+            ctx = make_ctx(num_tokens=1)
+            mgr.claim(ctx)
+            mgr.alloc(ctx)
+            held.append(ctx)
+
+        assert mgr.pressure_pct() <= 90.0, f"pass {pass_idx}"
+        assert mgr.block_count().used_pct > 90.0, f"pass {pass_idx}"
+
+        # Interleave each leaf's free pages across its huge blocks.
+        for ctx in held[::2] + held[1::2]:
+            mgr.release(ctx)
+        assert mgr.block_count().free == mgr.block_count().total
+
+
 def test_a_padding_dummy_runs_on_the_null_page() -> None:
     """DP padding equalizes replica batch sizes under graph capture. The
     dummy has to reach the graph like any other request, pointed at a page
@@ -333,7 +420,11 @@ def test_a_padding_dummy_runs_on_the_null_page() -> None:
 
     kv_inputs = mgr.runtime_inputs([[real], [dummy]])
 
-    assert isinstance(kv_inputs, KVCacheInputs)
+    assert (
+        isinstance(kv_inputs, tuple)
+        and kv_inputs
+        and isinstance(kv_inputs[0], KVCacheInputsPerDevice)
+    )
     # Trimmed of its zeros the dummy's row is empty: every column is the null
     # page, which is exactly page 0.
     assert get_lut(kv_inputs, device_idx=1) == [[]]
@@ -352,7 +443,8 @@ def test_metrics_are_reported_and_reset() -> None:
 
     assert mgr.get_metrics_aggregated().input_tokens == 3
 
-    mgr.reset_metrics()
+    # take_metrics_aggregated returns the sampled window and resets in one step.
+    assert mgr.take_metrics_aggregated().input_tokens == 3
 
     assert mgr.get_metrics_aggregated() == KVCacheMetrics()
 
@@ -386,10 +478,16 @@ def make_recurrent_manager(
     max_batch_size: int = 4,
     page_size: int = 4,
     num_layers: int = 1,
+    *,
+    caching: bool = True,
 ) -> JengaKVCacheManager:
-    """An attention leaf beside a state, as a hybrid model declares it."""
+    """Returns a manager with an attention leaf beside a state.
+
+    ``caching`` is set on the attention leaf, which the pool reads its
+    configuration from.
+    """
     attn = make_leaf(n_kv_heads=1, page_size=page_size)
-    attn.enable_prefix_caching = True
+    attn.enable_prefix_caching = caching
     state = RecurrentStateParams(
         devices=attn.devices,
         data_parallel_degree=attn.data_parallel_degree,
@@ -403,7 +501,9 @@ def make_recurrent_manager(
         ),
     )
     params = MultiKVCacheParams.from_params({"attn": attn, "state": state})
-    return create_manager(params, num_huge_blocks, max_batch_size)
+    return create_manager(
+        params, num_huge_blocks, max_batch_size, max_seq_len=64
+    )
 
 
 def test_a_forward_is_handed_state_rows_cut_to_its_own_batch() -> None:
@@ -414,13 +514,14 @@ def test_a_forward_is_handed_state_rows_cut_to_its_own_batch() -> None:
     mgr.alloc(ctx)
 
     inputs = mgr.runtime_inputs([[ctx]])
-    assert isinstance(inputs, MultiKVCacheInputs)
-    state = inputs.children["state"]
-    assert isinstance(state, RecurrentStateInputs)
-    (device,) = state.inputs
-    leaf = device.by_leaf(STATE_LEAF)
+    assert isinstance(inputs, dict)
+    state = inputs["state"]
+    assert isinstance(state, tuple)
+    (device,) = state
+    assert isinstance(device, RecurrentStateInputsPerDevice)
+    (leaf,) = device.leaves
 
-    assert leaf.live_row_ids.shape == (1, 3), "one request, every layer"
+    assert leaf.live_row_ids.shape == (3, 1), "every layer, one request"
     assert leaf.pool.shape[0] > 3, "the whole slab, in rows"
 
 
@@ -434,6 +535,125 @@ def test_a_batch_past_the_staged_capacity_is_refused() -> None:
 
     with pytest.raises(ValueError, match="exceeds preallocated"):
         mgr.runtime_inputs([batch])
+
+
+ROW_LEAF = "ring/scratch"
+
+
+def make_small_row_page_manager(
+    num_huge_blocks: int = 4, max_batch_size: int = 4
+) -> JengaKVCacheManager:
+    """Returns a manager with a wide attention page beside a two-byte
+    row-addressed page."""
+    attn = make_leaf(n_kv_heads=32, page_size=16)
+    scratch = RecurrentStateParams(
+        devices=attn.devices,
+        data_parallel_degree=attn.data_parallel_degree,
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=ROW_LEAF,
+                num_layers=1,
+                row_shape=(1,),
+                dtype=DType.bfloat16,
+                scratch=True,
+            ),
+        ),
+    )
+    params = MultiKVCacheParams.from_params({"attn": attn, "row": scratch})
+    return create_manager(params, num_huge_blocks, max_batch_size)
+
+
+def test_a_small_row_addressed_page_does_not_widen_the_paged_table() -> None:
+    """Checks a tiny row page does not change the logical LUT width."""
+    max_batch_size = 4
+    mgr = make_small_row_page_manager(max_batch_size=max_batch_size)
+    attn_id = next(
+        leaf_id for leaf_id in mgr.params.leaves() if leaf_id != ROW_LEAF
+    )
+
+    paged_blocks = mgr._leaf_infos[attn_id].ratio * mgr._num_huge_blocks
+    row_blocks = mgr._leaf_infos[ROW_LEAF].ratio * mgr._num_huge_blocks
+    assert row_blocks > paged_blocks
+
+    # Replica 0's staged page table, as the stager declares it.
+    declared = mgr._stager._slots[f"0/{attn_id}"].descriptor
+    assert declared.max_shape == (
+        max_batch_size,
+        padded_lut_cols(1),
+    )
+
+
+@pytest.mark.parametrize("max_seq_len", [1024, 1025])
+@pytest.mark.parametrize("speculative_method", [None, "mtp"])
+def test_quantized_lut_staging_uses_logical_sequence_pages(
+    max_seq_len: int, speculative_method: SpeculativeMethod | None
+) -> None:
+    """Bounds target/draft scale LUTs and stages the capture boundary."""
+    params = MultiKVCacheParams.from_params(
+        {
+            name: MHAKVCacheParams(
+                dtype=DType.float8_e4m3fn,
+                num_layers=layers,
+                n_kv_heads=1,
+                head_dim=128,
+                page_size=128,
+                devices=[DeviceRef.CPU()],
+                kvcache_quant_config=KVCacheQuantizationConfig(),
+                speculative_method=speculative_method,
+                num_draft_tokens=5 if speculative_method else 0,
+            )
+            for name, layers in (("target", 8), ("draft", 1))
+        }
+    )
+    manager = JengaKVCacheManager.create(
+        params=params,
+        available_bytes=16 * 1024**2,
+        max_batch_size=32,
+        max_seq_len=max_seq_len,
+    )
+    capture_length = max_seq_len + spec_decode_cache_slack(params)
+    logical_pages = (capture_length + 127) // 128
+    for leaf_id in params.leaves():
+        slot = manager._stager._slots[f"0/{leaf_id}"]
+        assert slot.descriptor.max_shape == (32, padded_lut_cols(logical_pages))
+        assert slot.descriptor.nbytes < 8192
+    # The physical scale-page capacity must be much wider than a logical row.
+    scale_id = next(key for key in params.leaves() if key.endswith("/scales"))
+    assert (
+        manager._leaf_infos[scale_id].ratio * manager._num_huge_blocks
+        > 100 * logical_pages
+    )
+
+    ctx = make_ctx(max_seq_len)
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    manager.runtime_inputs([[ctx]], max_cache_length=capture_length)
+    arenas = {slot.arena for slot in manager._stager._slots.values()}
+    buffers = {arena: arena._device for arena in arenas}
+    manager.runtime_inputs([[ctx]], max_cache_length=capture_length)
+    assert all(arena._device is buffers[arena] for arena in arenas)
+
+
+def test_windowed_lut_staging_can_exceed_physical_page_count() -> None:
+    """Keeps absolute sequence columns even when only a short window is held."""
+    params = make_leaf(n_kv_heads=1, page_size=128, window_size=256)
+    page_bytes = next(iter(params.leaves().values())).bytes_per_page
+    manager = JengaKVCacheManager.create(
+        params=params,
+        available_bytes=8 * page_bytes,
+        max_batch_size=1,
+        max_seq_len=4096,
+    )
+    ctx = make_ctx(4096)
+    manager.claim(ctx)
+    while ctx.tokens.active_length > 256:
+        ctx.tokens.chunk(256)
+        manager.alloc(ctx)
+        manager.runtime_inputs([[ctx]], max_cache_length=4096)
+        ctx.update(42)
+        manager.step(ctx)
+    manager.alloc(ctx)
+    manager.runtime_inputs([[ctx]], max_cache_length=4096)
 
 
 def test_a_connector_keeps_the_sliding_window_group(
@@ -463,14 +683,25 @@ def test_a_connector_keeps_the_sliding_window_group(
         max_batch_size=4,
     )
 
-    assert set(mgr.groups) == {
+    # One coordinator per leaf, so the keys are leaf ids; what this pins is
+    # that the connector did not collapse the windowed leaf into the full one.
+    assert {group.group_id for group in mgr.groups.values()} == {
         KVCacheGroupId("sliding_window", 4),
         KVCacheGroupId.full(),
     }
 
 
-def test_a_connector_beside_a_state_is_refused() -> None:
-    """A connector cannot extend a hit past the state's published num_blocks."""
+def test_a_connector_beside_a_state_is_handed_the_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The connector is handed the state leaf and its pages."""
+    seen: dict[str, object] = {}
+
+    def fake_create_connector(**kwargs: object) -> NullConnector:
+        seen.update(kwargs)
+        return NullConnector()
+
+    monkeypatch.setattr(jenga_mod, "create_connector", fake_create_connector)
     attn = make_leaf(n_kv_heads=1, page_size=4)
     attn.enable_prefix_caching = True
     attn.kv_connector_config = KVConnectorConfig(
@@ -490,8 +721,15 @@ def test_a_connector_beside_a_state_is_refused() -> None:
     )
     params = MultiKVCacheParams.from_params({"attn": attn, "state": state})
 
-    with pytest.raises(ValueError, match="incompatible with KVConnector"):
-        create_manager(params, num_huge_blocks=16, max_batch_size=4)
+    mgr = create_manager(params, num_huge_blocks=16, max_batch_size=4)
+
+    assert mgr._connector is not None
+    leaves = seen["leaves"]
+    assert isinstance(leaves, dict)
+    assert leaves["lin/conv"].is_recurrent()
+    memory = seen["replica_kv_memory"]
+    assert isinstance(memory, list)
+    assert "lin/conv" in memory[0], "the state pool is not offload-ready"
 
 
 def _run_once(mgr: JengaKVCacheManager, ctx: TextContext) -> None:
@@ -534,7 +772,7 @@ def test_a_hybrid_tree_still_serves_a_prefix_hit() -> None:
     no reuse, and nothing in a correctness eval to show for it.
     """
     mgr = make_recurrent_manager(num_huge_blocks=400)
-    assert KVCacheGroupId.recurrent() in mgr.groups
+    assert any(group.group_id.is_recurrent() for group in mgr.groups.values())
 
     first = make_ctx(33)
     _run_until_committed(mgr, first)
@@ -550,16 +788,15 @@ def test_a_hybrid_tree_still_serves_a_prefix_hit() -> None:
 
 def test_the_state_does_not_change_what_attention_reuses() -> None:
     """Same prompt, with and without a state, reuses the same tokens."""
-    plain = MultiKVCacheParams.from_params(
-        {"attn": make_leaf(n_kv_heads=1, page_size=4)}
-    )
-    for child in plain.children.values():
-        assert isinstance(child, KVCacheParams)
-        child.enable_prefix_caching = True
+    leaf = make_leaf(n_kv_heads=1, page_size=4)
+    leaf.enable_prefix_caching = True
+    plain = MultiKVCacheParams.from_params({"attn": leaf})
 
     reused: list[int] = []
     for mgr in (
-        create_manager(plain, num_huge_blocks=400, max_batch_size=4),
+        create_manager(
+            plain, num_huge_blocks=400, max_batch_size=4, max_seq_len=64
+        ),
         make_recurrent_manager(num_huge_blocks=400),
     ):
         _run_until_committed(mgr, make_ctx(33))
@@ -632,6 +869,7 @@ def test_kv_budget_is_split_across_devices(
         params=params,
         available_bytes=total_huge_blocks * huge_page_bytes,
         max_batch_size=8,
+        max_seq_len=1,
     )
     per_device_huge_blocks = total_huge_blocks // 2
     assert mgr._num_huge_blocks == per_device_huge_blocks
@@ -640,17 +878,19 @@ def test_kv_budget_is_split_across_devices(
 
 
 def test_tp_huge_pages_use_per_device_page_size() -> None:
-    """TP inflates ``leaf.bytes_per_page`` to the replica total. Each device
-    slab is one shard, so huge-page count must use the per-device stride.
+    """A leaf reports what one device holds, and a slab is one device's.
+
+    So the budget the pool tiles is that page times the devices sharing it,
+    and the count it reaches is the pages one device was given.
     """
     params = make_leaf(n_kv_heads=2, data_parallel_degree=1, n_devices=2)
     assert params.tensor_parallel_degree == 2
-    replica_page = next(iter(params.leaves().values())).bytes_per_page
-    per_device_page = replica_page // 2
+    per_device_page = next(iter(params.leaves().values())).bytes_per_page
     mgr = JengaKVCacheManager.create(
         params=params,
         available_bytes=8 * per_device_page * 2,
         max_batch_size=8,
+        max_seq_len=1,
     )
     assert mgr._num_huge_blocks == 8
 
@@ -658,11 +898,228 @@ def test_tp_huge_pages_use_per_device_page_size() -> None:
 def test_mixed_dp_tp_splits_budget_and_uses_per_device_pages() -> None:
     params = make_leaf(n_kv_heads=2, data_parallel_degree=2, n_devices=4)
     assert params.tensor_parallel_degree == 2
-    replica_page = next(iter(params.leaves().values())).bytes_per_page
-    per_device_page = replica_page // 2
+    per_device_page = next(iter(params.leaves().values())).bytes_per_page
     mgr = JengaKVCacheManager.create(
         params=params,
         available_bytes=8 * per_device_page * 4,
         max_batch_size=8,
+        max_seq_len=1,
     )
     assert mgr._num_huge_blocks == 8
+
+
+def _state_blocks_held(
+    mgr: JengaKVCacheManager, ctx: TextContext
+) -> dict[str, int]:
+    """Returns the blocks each state leaf holds for this request."""
+    return {
+        group.leaf_id: sum(
+            1
+            for block in group.rows[ctx.request_id][group.leaf_id]
+            if not block.is_null
+        )
+        for group in mgr.groups.values()
+        if isinstance(group, RecurrentKVGroupCoordinator)
+    }
+
+
+def test_no_rotation_is_prepared_when_nothing_can_publish() -> None:
+    """Checks a request holds one block per state leaf with caching off."""
+    mgr = make_recurrent_manager(num_huge_blocks=400, caching=False)
+    ctx = make_ctx(4)
+    _run_until_committed(mgr, ctx, steps=12)
+
+    held = _state_blocks_held(mgr, ctx)
+    assert held, "the manager has no recurrent leaf"
+    assert not mgr.pools[0].prefix_caches[STATE_LEAF], (
+        "a checkpoint was published with prefix caching off"
+    )
+    assert held == dict.fromkeys(held, 1), (
+        f"a request holds more than one block per state leaf, got {held}"
+    )
+
+
+def test_a_rotation_is_still_prepared_when_caching_is_on() -> None:
+    """Checks the caching-on path still publishes a checkpoint."""
+    mgr = make_recurrent_manager(num_huge_blocks=400, caching=True)
+    ctx = make_ctx(4)
+    _run_until_committed(mgr, ctx, steps=12)
+
+    assert mgr.pools[0].prefix_caches[STATE_LEAF], (
+        "no checkpoint was published with prefix caching on"
+    )
+
+
+def test_an_unpublishable_boundary_needs_no_chunk_alignment() -> None:
+    """Checks the chunk alignment is asked for only with caching on."""
+    on = make_recurrent_manager(num_huge_blocks=400, page_size=4)
+    off = make_recurrent_manager(
+        num_huge_blocks=400, page_size=4, caching=False
+    )
+
+    assert on.chunk_alignment_tokens == 4
+    assert off.chunk_alignment_tokens == 0
+
+
+def test_an_attention_only_tree_asks_for_no_alignment_either_way() -> None:
+    """Checks an attention-only tree asks for no alignment either way."""
+    for caching in (True, False):
+        leaf = make_leaf(n_kv_heads=1, page_size=4)
+        leaf.enable_prefix_caching = caching
+        mgr = create_manager(
+            MultiKVCacheParams.from_params({"attn": leaf}),
+            num_huge_blocks=400,
+            max_batch_size=4,
+        )
+        assert mgr.chunk_alignment_tokens == 0
+
+
+# ===--------------------------------------------------------------------=== #
+# Sizing a slab for a full batch
+# ===--------------------------------------------------------------------=== #
+
+PLENTY = 1 << 30
+SCRATCH_LEAF = "lin/ring"
+
+
+def make_budget_params(*, caching: bool) -> MultiKVCacheParams:
+    """An attention leaf beside a state and a scratch leaf."""
+    attn = make_leaf(n_kv_heads=1, page_size=4)
+    attn.enable_prefix_caching = caching
+    state = RecurrentStateParams(
+        devices=attn.devices,
+        data_parallel_degree=attn.data_parallel_degree,
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=STATE_LEAF,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+            ),
+            RecurrentStateRegion(
+                leaf_id=SCRATCH_LEAF,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+                scratch=True,
+            ),
+        ),
+    )
+    return MultiKVCacheParams.from_params({"attn": attn, "state": state})
+
+
+@pytest.mark.parametrize("caching", [True, False])
+def test_a_slab_of_memory_size_admits_the_batch_it_was_sized_for(
+    caching: bool,
+) -> None:
+    """Checks the size holds every leaf of a full batch, states included."""
+    params = make_budget_params(caching=caching)
+    max_batch_size = 4
+    size = JengaKVCacheManager.memory_size(
+        params, PLENTY, max_batch_size=max_batch_size, max_seq_len=16
+    )
+    assert size < PLENTY, "the batch must bind before the budget does"
+
+    mgr = JengaKVCacheManager.create(
+        params=params,
+        available_bytes=size,
+        max_batch_size=max_batch_size,
+        max_seq_len=16,
+    )
+    for _ in range(max_batch_size):
+        ctx = make_ctx(16)
+        mgr.claim(ctx)
+        mgr.alloc(ctx)
+
+
+def test_memory_size_counts_the_states() -> None:
+    """Checks the state and scratch leaves cost the slab more than attention."""
+    params = make_budget_params(caching=True)
+    attn = params.children["attn"]
+    assert isinstance(attn, MHAKVCacheParams)
+
+    def size(p: KVCacheParamInterface) -> int:
+        return JengaKVCacheManager.memory_size(
+            p, PLENTY, max_batch_size=4, max_seq_len=16
+        )
+
+    assert size(params) > size(attn)
+
+
+def test_memory_size_never_exceeds_the_budget() -> None:
+    """Checks a batch too big for the budget gets the whole budget."""
+    params = make_budget_params(caching=True)
+    small = JengaKVCacheManager.memory_size(
+        params, PLENTY, max_batch_size=1, max_seq_len=4
+    )
+
+    assert (
+        JengaKVCacheManager.memory_size(
+            params, small, max_batch_size=64, max_seq_len=4096
+        )
+        == small
+    )
+
+
+def test_memory_size_raises_when_the_budget_holds_no_block() -> None:
+    params = make_budget_params(caching=True)
+
+    with pytest.raises(RuntimeError, match="Insufficient cache memory"):
+        JengaKVCacheManager.memory_size(
+            params, 1, max_batch_size=1, max_seq_len=4
+        )
+
+
+def test_derived_row_state_matches_a_full_walk_of_the_rows() -> None:
+    """The block ids a forward reads and the commit scan start are cached.
+
+    Two requests with the same prompt run side by side, so the second finds
+    each of its blocks already published and swaps in the first's twin. That,
+    the window sliding and the checkpoints moving must all leave the ids the
+    forward reads equal to a fresh walk of the rows, and must leave no
+    committable block behind what the commit scan skips.
+    """
+    full = make_leaf(n_kv_heads=1, page_size=4)
+    sliding = make_leaf(n_kv_heads=1, page_size=4, window_size=8)
+    for leaf in (full, sliding):
+        leaf.enable_prefix_caching = True
+    state = RecurrentStateParams(
+        devices=full.devices,
+        data_parallel_degree=1,
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=STATE_LEAF,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+            ),
+        ),
+    )
+    params = MultiKVCacheParams.from_params(
+        {"full": full, "sliding": sliding, "state": state}
+    )
+    mgr = create_manager(params, 400, 4, max_seq_len=64)
+    ctxs = [make_ctx(num_tokens=18), make_ctx(num_tokens=18)]
+    for ctx in ctxs:
+        mgr.claim(ctx)
+
+    for _ in range(14):
+        for ctx in ctxs:
+            mgr.alloc(ctx)
+        mgr.runtime_inputs([ctxs])
+        for ctx in ctxs:
+            ctx.update(7)
+            mgr.step(ctx)
+
+        for ctx in ctxs:
+            filled = mgr._num_filled_blocks(ctx)
+            for group in mgr._groups.values():
+                row = group.rows[ctx.request_id][group.leaf_id]
+                assert not any(
+                    group._is_committable(ctx.request_id, row, idx)
+                    for idx in range(min(filled, len(row)))
+                ), f"{group.leaf_id} left a block unpublished"
+                if group.group_id.is_recurrent():
+                    continue
+                (plan,) = group.forward_blocks([ctx], [len(row)])[group.leaf_id]
+                assert list(plan) == [block.bid for block in row]

@@ -261,7 +261,7 @@ struct AMDStructuredConfig[
         comptime if Self.token_gen:
             comptime mma_shape = Self.get_mma_shape()
             var lane_in_row = umod(lane_id(), mma_shape[0])
-            return Int(block_idx.y) * Self.heads_per_tile() + lane_in_row
+            return block_idx.y * Self.heads_per_tile() + lane_in_row
         else:
             return block_idx.x
 
@@ -271,16 +271,16 @@ struct AMDStructuredConfig[
         comptime if Self.token_gen:
             # MLA decode tiles queries across block_idx.y; MHA decode keeps
             # all queries of the kv-head in block 0.
-            return Int(block_idx.y) if Self.mla_mode else 0
+            return block_idx.y if Self.mla_mode else 0
         else:
-            return Int(block_idx.y)
+            return block_idx.y
 
     @staticmethod
     @inline(.always)
     def kv_head_idx() -> Int:
         comptime if Self.token_gen:
             # MLA decode: single latent kv head at index 0.
-            return 0 if Self.mla_mode else Int(block_idx.y)
+            return 0 if Self.mla_mode else block_idx.y
         else:
             return ufloordiv(Self.q_head_idx(), Self.group)
 

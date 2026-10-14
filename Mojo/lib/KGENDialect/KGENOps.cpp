@@ -23,7 +23,6 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/Compiler/VerifyUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "Support/STLExtras.h"
@@ -39,9 +38,6 @@
 
 using namespace M;
 using namespace KGEN;
-
-using HLCF::parseLoop;
-using HLCF::printLoop;
 
 //===----------------------------------------------------------------------===//
 // ParamConstantOp
@@ -280,11 +276,11 @@ LogicalResult ParamDeclareRegionOp::verify() {
   if (failed(verifyInlineLevel(*this, getInlineLevelAttr())))
     return failure();
 
-  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
-      !argsArray.empty() && argsArray.size() != getNumArguments())
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+  if (ArrayAttr fnArgAttrs = getFnArgAttrs();
+      !fnArgAttrs.empty() && fnArgAttrs.size() != getNumArguments())
+    return emitOpError("fnArgAttrs size does not equal number of "
                        "arguments, got ")
-           << argsArray.size();
+           << fnArgAttrs.size();
   return success();
 }
 
@@ -359,38 +355,6 @@ void ParamApplyOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 }
 
 //===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-bool ReturnOp::isParentNode(Operation *op) { return isa<FunctionLike>(op); }
-
-void ReturnOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  targets.emplace_back(std::nullopt, getOperands());
-}
-
-LogicalResult ReturnOp::verify() {
-  auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
-  if (!func)
-    return emitOpError("expected to be nested inside a function");
-  return checkOperandTypes(*this, func.getResultTypes());
-}
-
-//===----------------------------------------------------------------------===//
-// UnreachableOp
-//===----------------------------------------------------------------------===//
-
-/// Unreachable can terminate any control flow operation.
-bool UnreachableOp::isParentNode(Operation *op) { return true; }
-
-/// No branch targets.
-void UnreachableOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {}
-
-//===----------------------------------------------------------------------===//
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
 
@@ -429,8 +393,20 @@ parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
 
   if (parseOptionalInline(p, inlineLevel) ||
       parseOptionalDecorators(p, decorators) ||
-      p.parseOptionalAttrDictWithKeyword(attrs) ||
-      p.parseRegion(body, args, /*enableNameShadowing=*/true))
+      p.parseOptionalAttrDictWithKeyword(attrs))
+    return failure();
+
+  // The printer spells out a signature the printed types cannot rebuild.
+  if (Attribute explicitSignature = attrs.erase("funcTypeGenerator")) {
+    auto typeAttr = dyn_cast<TypeAttr>(explicitSignature);
+    if (!typeAttr || !isa<FuncTypeGeneratorType>(typeAttr.getValue()))
+      return p.emitError(p.getCurrentLocation(),
+                         "expected 'funcTypeGenerator' to be a function "
+                         "type generator");
+    signatureAttr = typeAttr;
+  }
+
+  if (p.parseRegion(body, args, /*enableNameShadowing=*/true))
     return failure();
   return success();
 }
@@ -453,15 +429,26 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
 
   auto gen = cast<GeneratorOp>(op);
   SmallVector<StringRef, 10> elidedAttrs{
-      gen.getExportKindAttrName(),        gen.getSymNameAttrName(),
-      gen.getFuncTypeGeneratorAttrName(), gen.getFunctionTypeAttrName(),
-      gen.getInputParamsAttrName(),       gen.getInlineLevelAttrName(),
-      gen.getDecoratorsAttrName()};
+      gen.getExportKindAttrName(),   gen.getSymNameAttrName(),
+      gen.getFunctionTypeAttrName(), gen.getInputParamsAttrName(),
+      gen.getInlineLevelAttrName(),  gen.getDecoratorsAttrName()};
+
+  // The parser rebuilds `funcTypeGenerator` from the printed body-view types,
+  // which only works when they reference nothing but the input parameters. A
+  // signature that names a parameter the body lifts, for example, has to be
+  // printed as well.
+  auto signatureType = cast<FuncTypeGeneratorType>(signature.getValue());
+  FuncType signatureBody = signatureType.getBody();
+  if (FuncTypeGeneratorType::remapToFuncTypeGenerator(
+          inputParams.getValue(), cast<FunctionType>(functionType.getValue()),
+          signatureBody.getArgConventions(),
+          signatureBody.getFnEffects()) == signatureType)
+    elidedAttrs.push_back(gen.getFuncTypeGeneratorAttrName());
   ArrayAttr emptyArray = ArrayAttr::get(op->getContext(), {});
-  if (attrs.get(gen.getLLVMMetadataArrayAttrName()) == emptyArray)
-    elidedAttrs.push_back(gen.getLLVMMetadataArrayAttrName());
-  if (attrs.get(gen.getLLVMArgMetadataArrayAttrName()) == emptyArray)
-    elidedAttrs.push_back(gen.getLLVMArgMetadataArrayAttrName());
+  if (attrs.get(gen.getFnAttrsAttrName()) == emptyArray)
+    elidedAttrs.push_back(gen.getFnAttrsAttrName());
+  if (attrs.get(gen.getFnArgAttrsAttrName()) == emptyArray)
+    elidedAttrs.push_back(gen.getFnArgAttrsAttrName());
   p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
 
   p << ' ';
@@ -472,9 +459,9 @@ LogicalResult GeneratorOp::verify() {
   if (failed(verifyInlineLevel(*this, getInlineLevelAttr())))
     return failure();
 
-  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
+  if (ArrayAttr argsArray = getFnArgAttrs();
       !argsArray.empty() && argsArray.size() != getNumArguments())
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+    return emitOpError("FnArgAttrArray size does not equal number of "
                        "arguments, got ")
            << argsArray.size();
 
@@ -568,12 +555,12 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
       func.getExportKindAttrName(), func.getSymNameAttrName(),
       func.getFuncTypeGeneratorAttrName(), func.getInlineLevelAttrName(),
       func.getDecoratorsAttrName()};
-  if (attrs.get(func.getLLVMMetadataAttrName()) ==
+  if (attrs.get(func.getFnAttrsAttrName()) ==
       DictionaryAttr::get(op->getContext()))
-    elidedAttrs.push_back(func.getLLVMMetadataAttrName());
-  if (attrs.get(func.getLLVMArgMetadataAttrName()) ==
+    elidedAttrs.push_back(func.getFnAttrsAttrName());
+  if (attrs.get(func.getFnArgAttrsAttrName()) ==
       ArrayAttr::get(op->getContext(), {}))
-    elidedAttrs.push_back(func.getLLVMArgMetadataAttrName());
+    elidedAttrs.push_back(func.getFnArgAttrsAttrName());
   if (attrs.get(func.getCrossDeviceCapturesAttrName()) ==
       StringArrayAttr::get(func.getContext(), {}))
     elidedAttrs.push_back(func.getCrossDeviceCapturesAttrName());
@@ -605,11 +592,11 @@ LogicalResult FuncOp::verify() {
              << " but function type expected " << type;
     }
   }
-  if (ArrayAttr argsArray = getLLVMArgMetadata();
-      !argsArray.empty() && argsArray.size() != getNumArguments()) {
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+  if (ArrayAttr fnArgAttrs = getFnArgAttrs();
+      !fnArgAttrs.empty() && fnArgAttrs.size() != getNumArguments()) {
+    return emitOpError("fnArgAttrs size does not equal number of "
                        "arguments, got ")
-           << argsArray.size();
+           << fnArgAttrs.size();
   }
   return success();
 }
@@ -746,6 +733,17 @@ void StructGeneratorOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
   }
 }
 
+FailureOr<ArrayAttr>
+StructGeneratorOp::getAnnotations(std::optional<int> fieldIdx) {
+  if (!fieldIdx.has_value())
+    return getAnnotationsAttr();
+
+  auto structType = cast<StructInstanceType>(getValueDomainType());
+  if (fieldIdx < structType.getFields().size())
+    return structType.getFields()[*fieldIdx].getAnnotations();
+  return failure();
+}
+
 //===----------------------------------------------------------------------===//
 // StructInstanceOp
 //===----------------------------------------------------------------------===//
@@ -862,191 +860,6 @@ FailureOr<InlineResult> CallParamOp::prepInline(mlir::RewriterBase &b) {
 LogicalResult CallParamOp::verify() {
   return verifyCallOp(*this, getOperands(), getCalleeType().getBody());
 }
-
-//===----------------------------------------------------------------------===//
-// ParamForOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ParamForOp::verify() {
-  if (getNumOperands() != getNumResults()) {
-    return emitOpError("has ")
-           << getNumOperands() << " operands but " << getNumResults()
-           << " results; it should be the same";
-  }
-  for (auto [i, argTy, resTy] :
-       llvm::enumerate(getOperandTypes(), getResultTypes())) {
-    if (argTy == resTy)
-      continue;
-    return emitOpError("operand #")
-           << i << " has type " << argTy
-           << " but corresponding result has type " << resTy;
-  }
-  return success();
-}
-
-void ParamForOp::getEntryTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  targets.emplace_back(0, getOperands());
-}
-
-ValueRange ParamForOp::getEntryArguments(std::optional<unsigned> target) {
-  if (!target)
-    return getResults();
-  if (*target == 0)
-    return getBody().getArguments();
-  assert(*target == 1);
-  return getElseRegion().getArguments();
-}
-
-ArrayRef<ParamDeclAttr> ParamForOp::getInputParams() {
-  // HACK: The interface requires an ArrayRef, but we only have a single
-  // element. Returning `getParamDecl` will cause a reference to a temporary to
-  // be formed. Grab the reference directly from the DictionaryAttr. We know
-  // alphabetically it will be last attribute.
-  assert((*this)->getRegisteredInfo()->getAttributeNames().back() ==
-         getParamDeclAttrName());
-  static_assert(sizeof(std::pair<Attribute, ParamDeclAttr>) ==
-                        sizeof(NamedAttribute) &&
-                    alignof(std::pair<Attribute, ParamDeclAttr>) ==
-                        alignof(NamedAttribute),
-                "hack doesn't work");
-  return {&((const std::pair<Attribute, ParamDeclAttr> *)&(*this)
-                ->getAttrs()
-                .back())
-               ->second,
-          1};
-}
-
-void ParamForOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
-
-bool ParamForOp::isImplicitlyParametric() { return true; }
-
-void ParamForOp::collectParameterUsesBelow(
-    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
-}
-
-bool ParamForOp::isIsolatedFromAbove(unsigned regionNum) {
-  if (regionNum == 0)
-    return getBodyIsolated();
-  assert(regionNum == 1);
-  return getElseIsolated();
-}
-
-void ParamForOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
-  if (regionNum == 0)
-    return setBodyIsolated(true);
-  assert(regionNum == 1);
-  return setElseIsolated(true);
-}
-
-bool ParamForBreakOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
-}
-
-void ParamForBreakOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  // Branch to after the loop operation.
-  targets.emplace_back(std::nullopt, getOperands());
-}
-
-bool ParamForContinueOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
-}
-
-void ParamForContinueOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  // Branch to the beginning of the body region only (not the else region).
-  targets.emplace_back(0, getOperands());
-}
-
-bool ParamForGotoElseOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
-}
-
-void ParamForGotoElseOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.empty() && "Shouldn't exist by mem2reg time");
-  // Branch to the beginning of the else region.
-  targets.emplace_back(1, ValueRange());
-}
-
-//===----------------------------------------------------------------------===//
-// ParamIfOp
-//===----------------------------------------------------------------------===//
-
-bool ParamIfOp::isIsolatedFromAbove(unsigned regionNum) {
-  switch (regionNum) {
-  case 0:
-    return getThenIsolated();
-  case 1:
-    return getElseIsolated();
-  default:
-    llvm_unreachable("unknown region number");
-  }
-}
-
-void ParamIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
-  switch (regionNum) {
-  case 0:
-    setThenIsolated(true);
-    break;
-  case 1:
-    setElseIsolated(true);
-    break;
-  default:
-    llvm_unreachable("unknown region number");
-  }
-}
-
-void ParamIfOp::getEntryTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.empty());
-  targets.emplace_back(0);
-  targets.emplace_back(1);
-}
-
-ValueRange ParamIfOp::getEntryArguments(std::optional<unsigned> target) {
-  if (!target)
-    return getResults();
-  assert(*target == 0 || *target == 1);
-  return {};
-}
-
-void ParamIfOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
-
-bool ParamIfOp::isImplicitlyParametric() { return true; }
-
-/// This operation has no uses to collect in the scopes it defines.
-void ParamIfOp::collectParameterUsesBelow(
-    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
-}
-
-//===----------------------------------------------------------------------===//
-// ParamYieldOp
-//===----------------------------------------------------------------------===//
-
-bool ParamYieldOp::isParentNode(Operation *op) {
-  return isa<ParamForOp, ParamIfOp>(op);
-}
-
-void ParamYieldOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  // Branch to after the if operation.
-  targets.emplace_back(std::nullopt, getOperands());
-}
-
 //===----------------------------------------------------------------------===//
 // StageClosureOp
 //===----------------------------------------------------------------------===//

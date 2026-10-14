@@ -37,7 +37,7 @@ from max.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.math import ceildiv
 from std.sys import get_defined_int
@@ -115,15 +115,15 @@ def run_pdl_race_test[
     # Create TileTensors for matmul
     var a_tensor = TileTensor(
         a_device,
-        row_major(Coord(Idx[M], Idx[K])),
+        row_major(Idx[M], Idx[K]),
     )
     var b_tensor = TileTensor(
         b_device,
-        row_major(Coord(Idx[N], Idx[K])),
+        row_major(Idx[N], Idx[K]),
     )
     var c_tensor = TileTensor(
         c_device,
-        row_major(Coord(Idx[M], Idx[N])),
+        row_major(Idx[M], Idx[N]),
     )
 
     # Run multiple iterations to increase chance of catching race
@@ -137,7 +137,7 @@ def run_pdl_race_test[
             use_tensor_core=True,
             transpose_b=True,
             pdl_level=PDLLevel.OVERLAP_AT_END,
-        ](c_tensor, a_tensor.as_immut(), b_tensor.as_immut(), ctx)
+        ](c_tensor, a_tensor.as_imm(), b_tensor.as_imm(), ctx)
         #
         # Launch consumer kernel - waits for matmul via PDL
         var num_threads = 256

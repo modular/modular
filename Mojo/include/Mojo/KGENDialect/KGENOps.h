@@ -18,7 +18,6 @@
 #ifndef KGEN_KGENDIALECT_KGENOPS_H
 #define KGEN_KGENDIALECT_KGENOPS_H
 
-#include "Mojo/HLCFDialect/HLCFInterfaces.h"
 #include "Mojo/Interpreter/InterpreterInterface.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"

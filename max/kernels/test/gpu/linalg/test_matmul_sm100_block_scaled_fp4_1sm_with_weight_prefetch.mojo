@@ -23,7 +23,6 @@
 # ===----------------------------------------------------------------------=== #
 from std.math import align_up, ceildiv
 from std.sys import argv, size_of
-import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.block_scaled_quantization import naive_block_scaled_matmul
 from max.gpu.host import DeviceContext
@@ -114,11 +113,11 @@ def _test_impl[
         t" prefetch_tiles_n={prefetch_tiles_n}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
+    var a_shape = row_major(m, Idx[KType.static_value // 2])
     var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
+        Idx[NType.static_value], Idx[KType.static_value // 2]
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(n.value()) * (KType.static_value // 2)
@@ -143,22 +142,18 @@ def _test_impl[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -182,12 +177,6 @@ def _test_impl[
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var a_scales_lt = a_scales_tensor.to_layout_tensor()
-    var b_scales_lt = b_scales_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
-
     if simple_init():
         for m in range(Int(m.value())):
             for k in range(Int(k.value()) // 2):
@@ -198,11 +187,11 @@ def _test_impl[
                 comptime assert b_host.flat_rank == 2
                 b_host[n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-        rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+        rand(a_host.as_span(), min=0, max=255)
+        rand(b_host.as_span(), min=0, max=255)
 
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
@@ -266,21 +255,18 @@ def _test_impl[
         prefetch_tiles_n=prefetch_tiles_n,
     )
 
-    var c_device_lt = c_tensor.to_layout_tensor()
-
     @__parameter
     @inline(.always)
-    @__copy_capture(c_device_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
         width: SIMDLength,
         *,
         alignment: Int = 1,
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+    ](idx: Coord, val: SIMD[_dtype, width]) capturing -> None:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         var scaled = rebind[SIMD[c_type, width]](val) * Scalar[c_type](2)
-        c_device_lt.store[store_alignment=alignment * size_of[c_type](),](
-            idx, scaled
-        )
+        c_tensor.store[alignment=alignment * size_of[c_type](),](idx, scaled)
 
     comptime epi = Optional[elementwise_epilogue_type](
         epilogue_fn
@@ -308,22 +294,22 @@ def _test_impl[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
         ](
-            c_ref_tensor_lt,
-            a_lt,
-            b_lt,
-            a_scales_lt,
-            b_scales_lt,
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales_tensor,
+            b_scales_tensor,
             ctx,
             alpha,
         )
     else:
         vendor_blas.matmul(
             ctx,
-            c_ref_tensor_lt.as_unsafe_any_origin(),
-            a_lt,
-            b_lt,
-            a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
-            b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales=a_scales_tensor,
+            b_scales=b_scales_tensor,
             transpose_b=transpose_b,
             c_row_major=True,
             alpha=alpha,
@@ -370,7 +356,6 @@ def run_matmul_sm100_block_scaled_fp4_1sm_prefetch_suite[
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @__parameter
         @inline(.always)
         def run[
             MType: CoordLike,

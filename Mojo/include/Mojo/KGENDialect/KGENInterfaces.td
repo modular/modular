@@ -124,6 +124,12 @@ def StructDeclInterface : OpInterface<"StructDeclInterface"> {
       "Get the input parameter declarations for this struct.",
       "ArrayRef<ParamDeclAttr>", "getInputParams"
     >,
+    InterfaceMethod<[{
+      Get the array of annotations, when `fieldIndex` is nullopt, return the
+      annotation on struct, else, returns the annotation of the specified field.
+    }], "FailureOr<ArrayAttr>", "getAnnotations",
+      (ins "std::optional<int>":$fieldIndex)
+    >,
     InterfaceMethod< [{
       Lookup a conformance by trait symbol, when returning non-null, the type
       of the returned Operation must be a ConformanceOp, we declare it as
@@ -316,7 +322,7 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       implicit parameter operator in how it behaves.
 
       Two operations that are implicitly parameter are `kgen.call` and
-      `kgen.param.if`.
+      `hlcf.comptime.if`.
 
       ```mlir
       kgen.call @foobar() : () -> ()
@@ -327,7 +333,7 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       symbol reference `@foobar` to a single concrete function.
 
       ```mlir
-      kgen.param.if <1> {
+      hlcf.comptime.if 1 {
         // ...
       } else {
         // ...
@@ -485,7 +491,7 @@ def FunctionLike : OpInterface<"FunctionLike", [DebugInfo_SubprogramScoped]> {
     - region results are returned via the stack.
 
     This interface specifies the required result types of the region, allowing
-    it to be terminated by a `kgen.return` or `kgen.unreachable`, if the
+    it to be terminated by a `hlcf.return` or `hlcf.unreachable`, if the
     function never returns.
   }];
 

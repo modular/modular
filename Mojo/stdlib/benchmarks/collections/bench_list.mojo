@@ -35,7 +35,7 @@ def bench_append[size: Int](mut b: Bencher) raises:
         var list = List[Int]()
         for i in range(n):
             list.append(i)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 
@@ -50,7 +50,7 @@ def bench_extend_owned[size: Int](mut b: Bencher) raises:
         for i in range(n // 4):
             var chunk: List[Int] = [i, i + 1, i + 2, i + 3]
             list.extend(chunk^)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 
@@ -62,7 +62,7 @@ def bench_insert_front[size: Int](mut b: Bencher) raises:
         var list = List[Int]()
         for i in range(n):
             list.insert(0, i)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 
@@ -102,7 +102,7 @@ def bench_reverse[size: Int](mut b: Bencher) raises:
     @inline(.always)
     def call_fn() {mut list}:
         list.reverse()
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
     _ = list^
@@ -119,7 +119,7 @@ def bench_resize_grow[size: Int](mut b: Bencher) raises:
         var list = List[Int]()
         for length in range(4, n + 1, 4):
             list.resize(length, 0)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 
@@ -129,7 +129,7 @@ def bench_byte_resize_fill[size: Int](mut b: Bencher) raises:
     def call_fn():
         var list = List[Byte]()
         list.resize(black_box(size), 0)
-        keep(list.unsafe_ptr())
+        keep(list)
 
     b.iter(call_fn)
 

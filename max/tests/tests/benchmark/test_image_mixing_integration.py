@@ -135,11 +135,11 @@ def test_image_mixing_pipeline_end_to_end(
 
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=64,
         image_aspect_ratio=1.0,
-        image_turn="first",
+        turn="first",
     )
 
     # The first user turn of every session should carry exactly one image.

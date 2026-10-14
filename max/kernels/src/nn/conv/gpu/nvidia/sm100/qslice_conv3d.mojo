@@ -64,16 +64,14 @@ Gate:
 Declined shapes fall through to `dispatch_im2col_matmul_conv3d`.
 """
 
-from std.collections import OptionalReg
 from std.math import ceildiv, gcd
 from std.math.uutils import udivmod
 from max.gpu import global_idx
-from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from std.sys import align_of, simd_width_of
 from std.utils import IndexList
-from linalg.utils import elementwise_epilogue_type
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 
 from .dispatch import dispatch_sm100_conv2d, test_alignment_sm100_conv2d
@@ -178,7 +176,7 @@ def _fp32_to_dtype_epilogue_kernel[
         width=output_simd_width,
         alignment=align_of[SIMD[.float32, output_simd_width]](),
     ](output_idx).cast[dtype]()
-    epilogue[alignment=output_simd_width](IndexList[5](b, d, h, w, c), val)
+    epilogue[alignment=output_simd_width]((b, d, h, w, c), val)
 
 
 # =========================================================================
@@ -309,7 +307,7 @@ def dispatch_qslice_conv3d_sm100[
     var symmetric_padding_2d = IndexList[2](pad_h, pad_w)
 
     comptime output_simd_width = gcd(
-        simd_width_of[output_type, target=get_gpu_target()](), C_out
+        simd_width_of[output_type, target=ctx.target](), C_out
     )
 
     var per_batch_elems = D_out * H_out * W_out * C_out
@@ -379,8 +377,7 @@ def dispatch_qslice_conv3d_sm100[
     comptime final_block = 256
     var final_grid = ceildiv(output_elems // output_simd_width, final_block)
 
-    comptime if maybe_epilogue_func:
-        comptime epilogue_5d = maybe_epilogue_func.value()
+    comptime if case .Some(epilogue_5d) = maybe_epilogue_func:
         comptime output_kernel = _fp32_to_dtype_epilogue_kernel[
             output_type, C_out, epilogue_5d, output_simd_width
         ]

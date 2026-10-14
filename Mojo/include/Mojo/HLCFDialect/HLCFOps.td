@@ -18,10 +18,14 @@ include "Mojo/HLCFDialect/HLCFAttrs.td"
 include "Mojo/HLCFDialect/HLCFDialect.td"
 include "Mojo/HLCFDialect/HLCFInterfaces.td"
 include "Mojo/Interpreter/InterpreterInterface.td"
+include "Mojo/KGENDialect/KGENAttrs.td"
+include "Mojo/KGENDialect/KGENInterfaces.td"
+include "Mojo/KGENDialect/KGENTypes.td"
 include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/EnumAttr.td"
 
@@ -45,17 +49,6 @@ class HLCFTerminatorOp<string mnemonic, list<Trait> traits = []> :
            [Terminator, DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
   let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
 }
-
-/// The `!kgen.scalar<bool>` type, used for boolean control-flow conditions.
-/// Mirrored to avoid cyclic dependency between HLCF and KGEN dialects.
-///
-/// TODO: maybe we should move `simd`-related entities into a different dialect
-/// that both HLCF and KGEN can depend on.
-def HLCF_BoolScalar :
-    Type<CPred<"::M::KGEN::isScalarOf<::M::KGEN::KGENDType::kBool>($_self)">,
-         "!kgen.scalar<bool>", "::M::KGEN::SIMDType">,
-    BuildableType<"::M::KGEN::SIMDType::get(1, ::M::KGEN::DTypeConstantAttr::get("
-                  "$_builder.getContext(), ::M::KGEN::KGENDType::kBool))">;
 
 //===----------------------------------------------------------------------===//
 // ForOp / ForControlVariableType constraint
@@ -297,97 +290,6 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
 }
 
 //===----------------------------------------------------------------------===//
-// IfOp
-//===----------------------------------------------------------------------===//
-
-def HLCF_IfOp : HLCFParentOp<"if"> {
-  let summary = "if operation";
-  let description = [{
-    The `hlcf.if` operation defines two scoped control-flow regions.
-    Control-flow transfers from the operation to the beginning of one of the
-    regions based on the value of the condition operand. The if operation is the
-    target of the `hlcf.yield` terminator.
-
-    This operation forms a condition construct. The immediate regions of the
-    operation are condition scopes. There are no nested condition scopes; only
-    `hlcf.yield` operations nested immediately under the operation can be used
-    to branch to after the operation.
-
-    Example:
-
-    ```mlir
-    hlcf.if %arg0 {
-      call @do_something()
-      hlcf.yield
-    } else {
-      call @do_something_else()
-      hlcf.yield
-    }
-    ```
-
-    This also means the operation can be used to conditionally execute the
-    nearest surrounding loop.
-
-    Example:
-
-    ```mlir
-    hlcf.loop {
-      hlcf.if %arg0 {
-        hlcf.break
-      } else {
-        hlcf.yield
-      }
-      hlcf.continue
-    }
-    ```
-
-    The operation can have results. Each `hlcf.yield` operation nested under
-    an `hlcf.if` operation must have the same operand types as the latter's
-    result types.
-
-    Example:
-
-    ```mlir
-    %0 = hlcf.if %arg0 -> index {
-      hlcf.yield %arg1 : index
-    } else {
-      hlcf.yield %arg2 : index
-    }
-    ```
-  }];
-
-  let arguments = (ins HLCF_BoolScalar:$cond);
-  let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$thenRegion,
-                        SizedRegion<1>:$elseRegion);
-
-  let assemblyFormat = [{
-    $cond (`->` type($results)^)? $thenRegion `else` $elseRegion
-    attr-dict
-  }];
-
-  let builders = [OpBuilder<(ins "Value":$cond), [{
-    build($_builder, $_state, {}, cond);
-  }]>];
-
-  let extraClassDeclaration = [{
-    /// Return OpBuilder's pointing the end of the then/else block.
-    OpBuilder getThenBodyBuilder();
-    OpBuilder getElseBodyBuilder();
-
-    /// Get 'then' block.
-    Block& getThenBlock();
-    /// Get 'else' block.
-    Block& getElseBlock();
-    /// Get the terminator op from 'then' block.
-    Operation* getThenTerminator();
-    /// Get the terminator op from 'else' block.
-    Operation* getElseTerminator();
-  }];
-  let hasCanonicalizer = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // SwitchOp
 //===----------------------------------------------------------------------===//
 
@@ -410,7 +312,7 @@ def HLCF_SwitchOp : HLCFParentOp<"switch",
       hlcf.break
     }
     case 42 {
-      kgen.return
+      hlcf.return
     }
     ```
 
@@ -534,16 +436,16 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
 //===----------------------------------------------------------------------===//
 
 def HLCF_YieldOp : HLCFTerminatorOp<"yield", [Pure,
-    ParentOneOf<["IfOp", "SwitchOp", "ElifOp", "MatchOp"]>,
+    ParentOneOf<["SwitchOp", "IfOp", "MatchOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "conditional yield operation";
   let description = [{
     The `hlcf.yield` operation is a control-flow terminator that transfers
-    control-flow to after the parent `hlcf.if`, `hlcf.switch`, `hlcf.elif`, or
-    `hlcf.match` operation. For `hlcf.match`, yield is only valid in the else
-    region (case regions use `hlcf.match.next` / `hlcf.match.complete`). The
-    operation expects its operand types to match the types of the results of
-    that operation, if there are any.
+    control-flow to after the parent `hlcf.if`, `hlcf.switch`, or
+    `hlcf.match` operation. For match ops, yield is
+    only valid in the else region (case regions use `hlcf.match.next` /
+    `hlcf.match.complete`). The operation expects its operand types to match
+    the types of the results of that operation, if there are any.
 
     Example:
 
@@ -614,16 +516,16 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
 }
 
 //===----------------------------------------------------------------------===//
-// ElifYieldOp
+// IfElifCondYieldOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
-    ParentOneOf<["ElifOp"]>,
+def HLCF_IfElifCondYieldOp : HLCFTerminatorOp<"if.elifcond.yield", [
+    ParentOneOf<["IfOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "yield operation for additional conditions of elif operations";
+  let summary = "yield operation for additional conditions of if operations";
   let description = [{
-    The `hlcf.elif.yield` operation is a control-flow terminator used only in
-    the *additional* condition regions of a parent `hlcf.elif` (the regions in
+    The `hlcf.if.elifcond.yield` operation is a control-flow terminator used only in
+    the *additional* condition regions of a parent `hlcf.if` (the regions in
     `$elifRegions`). It transfers control either to the paired `then` region
     when the condition is true, or to the next condition region / the `else`
     region when false.
@@ -636,10 +538,10 @@ def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
     Example:
 
     ```mlir
-    %0 = hlcf.elif %cond0 -> index {
+    %0 = hlcf.if %cond0 -> index {
       hlcf.yield %arg0 : index
     } else {
-      hlcf.elif.yield %cond1, %x : i32
+      hlcf.if.elifcond.yield %cond1, %x : i32
     } then (%xThen: i32) {
       hlcf.yield %arg0 : index
     } else (%xElse: i32) {
@@ -647,31 +549,31 @@ def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
     }
     ```
   }];
-  let arguments = (ins HLCF_BoolScalar:$cond, Variadic<AnyType>:$values);
+  let arguments = (ins BoolScalar:$cond, Variadic<AnyType>:$values);
 
   let assemblyFormat = "$cond (`,` $values `:` type($values)^)? attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
-// ElifOp
+// IfOp
 //===----------------------------------------------------------------------===//
 
-def HLCF_ElifOp : HLCFParentOp<"elif"> {
-  let summary = "elif operation";
+def HLCF_IfOp : HLCFParentOp<"if"> {
+  let summary = "if operation";
   let description = [{
-    The `hlcf.elif` operation is a multi-arm conditional. The first condition
+    The `hlcf.if` operation is a multi-arm conditional. The first condition
     is an SSA operand; its matching `then` is `$thenRegion`. Additional arms
     are written as `else { cond } then { then }` pairs in `$elifRegions`, where
-    each condition region is terminated by `hlcf.elif.yield`. The final
+    each condition region is terminated by `hlcf.if.elifcond.yield`. The final
     `$elseRegion` runs when every condition is false.
 
     All `then` / `else` regions are terminated by `hlcf.yield`, whose operand
-    types must match the results of the parent `hlcf.elif`.
+    types must match the results of the parent `hlcf.if`.
 
     Example (single if/else):
 
     ```mlir
-    %0 = hlcf.elif %cond -> index {
+    %0 = hlcf.if %cond -> index {
       hlcf.yield %arg0 : index
     } else {
       hlcf.yield %arg1 : index
@@ -681,10 +583,10 @@ def HLCF_ElifOp : HLCFParentOp<"elif"> {
     Example (if / elif / else):
 
     ```mlir
-    %0 = hlcf.elif %cond0 -> index {
+    %0 = hlcf.if %cond0 -> index {
       hlcf.yield %arg0 : index
     } else {
-      hlcf.elif.yield %cond1
+      hlcf.if.elifcond.yield %cond1
     } then {
       hlcf.yield %arg1 : index
     } else {
@@ -692,7 +594,7 @@ def HLCF_ElifOp : HLCFParentOp<"elif"> {
     }
     ```
   }];
-  let arguments = (ins HLCF_BoolScalar:$cond);
+  let arguments = (ins BoolScalar:$cond);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion,
                         SizedRegion<1>:$elseRegion,
@@ -700,7 +602,7 @@ def HLCF_ElifOp : HLCFParentOp<"elif"> {
 
   let assemblyFormat = [{
     $cond (`->` type($results)^)?
-    custom<Elif>($thenRegion, $elifRegions, $elseRegion) attr-dict
+    custom<If>($thenRegion, $elifRegions, $elseRegion) attr-dict
   }];
 
   let builders = [
@@ -713,13 +615,13 @@ def HLCF_ElifOp : HLCFParentOp<"elif"> {
   ];
 
   let extraClassDeclaration = [{
-    /// Create a 2-arm elif, run `emitThen` / `emitElse` at the start of each
+    /// Create a 2-arm if, run `emitThen` / `emitElse` at the start of each
     /// region (they must terminate the blocks), and leave the insertion point
     /// after the op. Returns null if either callback fails.
-    static ElifOp create(OpBuilder &builder, Location loc,
-                         TypeRange resultTypes, Value cond,
-                         function_ref<LogicalResult()> emitThen,
-                         function_ref<LogicalResult()> emitElse);
+    static IfOp create(OpBuilder &builder, Location loc,
+                       TypeRange resultTypes, Value cond,
+                       function_ref<LogicalResult()> emitThen,
+                       function_ref<LogicalResult()> emitElse);
 
     /// Return OpBuilder's pointing the end of the then/else block.
     OpBuilder getThenBodyBuilder();
@@ -748,14 +650,14 @@ def HLCF_MatchNextOp : HLCFTerminatorOp<"match.next", [
   let summary = "advance to the next match case";
   let description = [{
     The `hlcf.match.next` terminator indicates that the current case of the
-    nearest enclosing `hlcf.match` did not match (or its guard failed). It
-    abandons the current case region and begins executing the next case region.
-    If executed from the final case region, control transfers to the `else`
-    region of that match.
+    nearest enclosing `hlcf.match` did not match (or
+    its guard failed). It abandons the current case region and begins executing
+    the next case region. If executed from the final case region, control
+    transfers to the `else` region of that match.
 
     This terminator may appear nested under structured control flow such as
-    `hlcf.if`, and always targets the nearest enclosing `hlcf.match` for which
-    the terminator sits in a *case* region. The `else` region of a match is
+    `hlcf.if`, and always targets the nearest enclosing match for which the
+    terminator sits in a *case* region. The `else` region of a match is
     outside that match's scope: `hlcf.match.next` inside an `else` targets an
     enclosing match, not the current one.
 
@@ -784,16 +686,17 @@ def HLCF_MatchCompleteOp : HLCFTerminatorOp<"match.complete", [
   let summary = "finish a match after selecting a case";
   let description = [{
     The `hlcf.match.complete` terminator indicates that the current case of the
-    nearest enclosing `hlcf.match` was selected and its body completed normally.
-    It exits that match and transfers control to the operation following it.
-    Operand types must match the result types of the enclosing match, if any.
+    nearest enclosing `hlcf.match` was selected and its
+    body completed normally. It exits that match and transfers control to the
+    operation following it. Operand types must match the result types of the
+    enclosing match, if any.
 
     Case bodies that leave through another nonlocal control-flow operation
-    (such as `kgen.return`) do not need an additional `hlcf.match.complete`.
+    (such as `hlcf.return`) do not need an additional `hlcf.match.complete`.
 
-    Like `hlcf.match.next`, this targets the nearest enclosing `hlcf.match` for
-    which the terminator sits in a *case* region; an occurrence in an `else`
-    region targets an enclosing match instead.
+    Like `hlcf.match.next`, this targets the nearest enclosing match for which
+    the terminator sits in a *case* region; an occurrence in an `else` region
+    targets an enclosing match instead.
   }];
 
   let arguments = (ins Variadic<AnyType>:$operands);
@@ -845,14 +748,14 @@ def HLCF_MatchOp : HLCFParentOp<"match"> {
       }
       // Case regions are ordinary blocks and need a terminator even when
       // every nested path already exits via match.next / match.complete.
-      kgen.unreachable
+      hlcf.unreachable
     }
     case {
       call @handle_other()
       hlcf.match.complete
     }
     else {
-      kgen.unreachable
+      hlcf.unreachable
     }
     ```
   }];
@@ -889,4 +792,339 @@ def HLCF_MatchOp : HLCFParentOp<"match"> {
 
   let hasVerifier = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// ComptimeForOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeForOp : HLCFParentOp<"comptime.for", [
+    DeclInterface,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
+      "collectParameterUsesBelow"]>]>, NoParamDecls {
+  let summary = "compile-time for loop";
+  let description = [{
+    The `hlcf.comptime.for` operation instantiates its body with values according
+    to its iterator. It takes an initial iterator value, a 'hasNext' function
+    that take an iterator and indicates whether more elements exist, and a
+    'getNextIter' function that takes an iterator instance and returns the next
+    iterator value.
+
+    This operation can have loop-carried values - the "operands" inputs and
+    results, which are values promoted within the loop by mem2reg.
+  }];
+
+  let arguments = (ins
+    TypedAttrInterface:$initial,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$hasNext,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$getNextIter,
+    KGEN_ParamDeclAttr:$paramDecl,
+    Variadic<AnyType>:$operands,
+    UnitAttr:$bodyIsolated,
+    UnitAttr:$elseIsolated
+  );
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$body, SizedRegion<1>:$elseRegion);
+
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$initial, "TypedAttr":$hasNext,
+                   "TypedAttr":$getNextIter, "ParamDeclAttr":$paramDecl), [{
+      build($_builder, $_state, {}, initial, hasNext, getNextIter, paramDecl,
+            {}, {}, {});
+    }]>
+  ];
+
+  let assemblyFormat = [{
+    custom<ParamDecl>($paramDecl) `in` custom<ColonTypeParamValue>($initial)`\n`
+    `has_next` custom<ColonTypeParamValue>($hasNext) `\n`
+    `get_next_iter` custom<ColonTypeParamValue>($getNextIter)
+    custom<Loop>($operands, type($operands), type($results), $body)
+    `else` custom<RegionWithArgs>($elseRegion) attr-dict
+  }];
+
+  let extraClassDeclaration = [{
+    bool isIsolatedFromAbove(unsigned regionNum);
+    void notifyKnownIsolatedFromAbove(unsigned regionNum);
+    ArrayRef<KGEN::ParamDeclAttr> getInputParams();
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForBreakOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeForBreakOp : HLCFTerminatorOp<"comptime.for.break", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "param loop exit operation";
+  let description = [{
+    The `hlcf.comptime.for.break` operation represents an exit from a
+    `hlcf.comptime.for`, branching to the end of all generated iterations.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForContinueOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeForContinueOp : HLCFTerminatorOp<"comptime.for.continue", [
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "param loop continue operation";
+  let description = [{
+    The `hlcf.comptime.for.continue` operation branches to the next generated
+    iteration of the loop.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForGotoElseOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeForGotoElseOp : HLCFTerminatorOp<"comptime.for.goto.else"> {
+  let summary = "param loop 'goto else' operation";
+  let description = [{
+    The `hlcf.comptime.for.goto.else` operation jumps to the 'else' block of a
+    `hlcf.comptime.for`.  It only exists to help the interface between the Mojo
+    parser and the LowerSemanticCF pass work more easily.
+  }];
+
+  let arguments = (ins);
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeIfOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeIfOp : HLCFParentOp<"comptime.if", [
+    DeclInterface,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
+      "collectParameterUsesBelow"]>]>, NoParamDecls {
+  let summary = "compile-time constant if";
+  let description = [{
+    The `hlcf.comptime.if` op provides a compile-time guarantee that only one
+    arm is elaborated: the first arm whose condition in `$conds` is true, or
+    the final else region when every condition is false. Whichever block is
+    elaborated is directly inlined into the enclosing scope. This op is fully
+    removed during elaboration.
+
+    `$conds` is a list of compile-time `!kgen.scalar<bool>` attributes. There
+    is one then region per condition (the prefix of `$regions`), followed by
+    a single else region (the last element of `$regions`). Assembly syntax
+    prints each condition next to its arm (`if` / `elif` / `else`). Unlike
+    `hlcf.if`, additional conditions are attributes — not dynamic condition
+    regions.
+
+    All then / else regions are terminated by `hlcf.comptime.yield` (or
+    another function-level terminator such as `hlcf.return`).
+
+    Example (single if/else):
+
+    ```mlir
+    %0 = hlcf.comptime.if condition -> index {
+      %i0 = index.constant 0
+      hlcf.comptime.yield %i0 : index
+    } else {
+      %i1 = index.constant 1
+      hlcf.comptime.yield %i1 : index
+    }
+    ```
+
+    Example (if / elif / else):
+
+    ```mlir
+    %0 = hlcf.comptime.if cond0 -> index {
+      hlcf.comptime.yield %arg0 : index
+    } elif cond1 {
+      hlcf.comptime.yield %arg1 : index
+    } else {
+      hlcf.comptime.yield %arg2 : index
+    }
+    ```
+  }];
+
+  let arguments = (ins
+    ArrayAttr:$conds,
+    UnitAttr:$thenIsolated,
+    UnitAttr:$elseIsolated
+  );
+  let results = (outs Variadic<AnyType>:$results);
+  // One then region per condition, then a single else region.
+  let regions = (region VariadicRegion<SizedRegion<1>>:$regions);
+
+  let extraClassDeclaration = [{
+    /// Create a binary comptime.if, run `emitThen` / `emitElse` at the start
+    /// of each region (they must terminate the blocks), and leave the
+    /// insertion point after the op. Returns null if either callback fails.
+    static ComptimeIfOp create(OpBuilder &builder, Location loc,
+                               TypeRange resultTypes, TypedAttr cond,
+                               function_ref<LogicalResult()> emitThen,
+                               function_ref<LogicalResult()> emitElse);
+
+    bool isIsolatedFromAbove(unsigned regionNum);
+    void notifyKnownIsolatedFromAbove(unsigned regionNum);
+
+    /// Conditions as typed bool attributes; size matches `getThenRegions()`.
+    ArrayRef<Attribute> getCondAttrs() { return getConds().getValue(); }
+
+    MutableArrayRef<Region> getThenRegions() {
+      assert(getNumRegions() >= 2);
+      return MutableArrayRef<Region>(getRegions()).drop_back();
+    }
+    Region &getThenRegion() { return getThenRegions().front(); }
+    Region &getElseRegion() {
+      assert(getNumRegions() >= 2);
+      return getRegion(getNumRegions() - 1);
+    }
+
+    Block::OpListType &getThenOps() {
+      return getThenRegion().front().getOperations();
+    }
+    Block::OpListType &getElseOps() {
+      return getElseRegion().front().getOperations();
+    }
+
+    /// Parametric ifs have no parameters.
+    ArrayRef<KGEN::ParamDeclAttr> getInputParams() { return {}; }
+  }];
+
+  let assemblyFormat = [{
+    custom<ComptimeIf>($conds, type($results), $regions) attr-dict
+  }];
+
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$cond), [{
+      build($_builder, $_state, TypeRange(), $_builder.getArrayAttr(cond),
+            /*thenIsolated=*/{}, /*elseIsolated=*/{}, /*nRegions=*/2);
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "TypedAttr":$cond), [{
+      build($_builder, $_state, results, $_builder.getArrayAttr(cond),
+            /*thenIsolated=*/{}, /*elseIsolated=*/{}, /*nRegions=*/2);
+    }]>,
+    OpBuilder<(ins "TypeRange":$results, "ArrayAttr":$conds), [{
+      assert(conds.size() >= 1 && "comptime.if requires at least one condition");
+      build($_builder, $_state, results, conds, /*thenIsolated=*/{},
+            /*elseIsolated=*/{}, /*nRegions=*/conds.size() + 1);
+    }]>,
+  ];
+
+  let hasVerifier = 1;
+  let hasCanonicalizeMethod = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeYieldOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ComptimeYieldOp : HLCFTerminatorOp<"comptime.yield", [
+    Pure,
+    ParentOneOf<["ComptimeIfOp", "ComptimeForOp"]>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "conditional yield operation";
+  let description = [{
+    The `hlcf.comptime.yield` operation is used to denote the terminator of a
+    block in the `hlcf.comptime.if` op. Conceptually, it branches to the next
+    op after a `hlcf.comptime.if`, but in reality it's to make sure the IR
+    stays in a reasonable state and is possible to inline directly.
+
+    This op defines the parameter that is used as the result parameter on the
+    enclosing `hlcf.comptime.if`.
+
+    Example:
+
+    ```mlir
+    %0 = hlcf.comptime.if condition -> index {
+      hlcf.comptime.yield %arg1 : index
+    } else {
+      hlcf.comptime.yield %arg2 : index
+    }
+    ```
+
+    This operation can always be marked pure because the control-flow edge from
+    this operation leads only to after the parent operation.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ return build($_builder, $_state, {}); }]>
+  ];
+
+  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+}
+
+
+//===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_ReturnOp : HLCFTerminatorOp<"return", [ReturnLike,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  let summary = "return operation for kgen declarations";
+  let description = [{
+    The `hlcf.return` operation specifies the returned values for a `kgen.func`
+    or `kgen.generator`.
+
+    The operation takes variable number of operands and produces no results.
+    The operand number and types must match the signature of the
+    `kgen.generator` (or enclosing region) that contains the operation. For
+    example:
+
+    ```mlir
+      kgen.generator @foo() : i32, f8 {
+        ...
+        hlcf.return %0, %1 : i32, f8
+      }
+    ```
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
+  ];
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// UnreachableOp
+//===----------------------------------------------------------------------===//
+
+def HLCF_UnreachableOp : HLCFTerminatorOp<"unreachable"> {
+  let summary = "Unreachable operation";
+  let description = [{
+    The `hlcf.unreachable` operation is a block terminator that indicates that
+    the previous operations cannot continue control flow.  This is used after
+    infinite loops and no-return functions to simplify dataflow analysis.
+
+    Example:
+
+    ```mlir
+    hlcf.loop () {
+      kgen.call @printHello()
+      hlcf.continue
+    }
+    hlcf.unreachable
+    ```
+  }];
+
+  let arguments =
+   (ins DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall);
+
+  let assemblyFormat = "attr-dict";
+}
+
 #endif // HLCFOPS_TD

@@ -213,9 +213,13 @@ public:
                                                 ASTDecl *declScope,
                                                 bool *scopeDependent = nullptr);
 
-  /// Same, additionally collecting the problematic constraints so a diagnosing
-  /// caller can name them. An upcast to a trait is decided by a conformance
-  /// query, so a rejection reports exactly what that query would have.
+  FailureOr<PValue> emitClosureTraitConversion(ASTExprAnd<CValue> valueExpr,
+                                               TraitType trait);
+
+  /// Same, additionally collecting the problematic constraints so a
+  /// diagnosing caller can name them. An upcast to a trait is decided by a
+  /// conformance query, so a rejection reports exactly what that query
+  /// would have.
   static FailureOr<ConstraintResult>
   canMetaTypeUpCastToWithDetails(SharedState &shared, SMLoc loc,
                                  ASTType fromType, ASTType toType,
@@ -246,15 +250,15 @@ public:
   /// it. Otherwise return null.
   static RefType getCommonRefType(RefType ref1, RefType ref2);
 
-  /// Merge `thenVal`/`elseVal` across an if-like op (`HLCF::ElifOp` or
-  /// `ParamIfOp`) whose then/else regions already contain the branch
+  /// Merge `thenVal`/`elseVal` across an if-like op (`HLCF::IfOp` or
+  /// `HLCF::ComptimeIfOp`) whose then/else regions already contain the branch
   /// computations. Produces a single value into `dest` by:
   ///   1. yielding a unioned MValue when both sides are dominating refs,
   ///   2. otherwise coercing types and yielding a register-passable SSA value,
   ///   3. otherwise storing both sides into a scratch buffer and recreating
   ///      the op without a result.
   ///
-  /// Branch terminators are chosen from the op kind (`ParamYieldOp` vs
+  /// Branch terminators are chosen from the op kind (`HLCF::ComptimeYieldOp` vs
   /// `HLCF::YieldOp`). Regions are assumed to be unterminated when this is
   /// called.
   AnyValue mergeCValuesAcrossIfLikeOp(Operation *ifLikeOp, Location loc,
@@ -308,6 +312,13 @@ public:
   MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context,
                       ASTType resultType = {});
 
+  /// This helper emits the specified value into memory, so that it has an
+  /// origin that can be named and can bind to a `ref` parameter.  Unlike
+  /// emitMBValue it also works in a comptime context, where there is no
+  /// function body to hold a temporary.  This returns null if emission fails.
+  AnyValue emitMemoryValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                           ASTType resultType = {});
+
   /// This helper emits the specified expression as a parameter value,
   /// diagnosing the problem if the expression is only valid as a runtime value.
   /// This returns null if emission fails.
@@ -319,6 +330,10 @@ public:
   /// This emits an error and returns null if emission fails.
   Value emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context);
 
+  /// Warn when `value` is a transfer out of a variable that is about to
+  /// be borrowed rather than consumed.
+  void warnIfTransferIsOnlyBorrowed(ASTExprAnd<AnyValue> value);
+
   //===--------------------------------------------------------------------===//
   // Function Calls
 
@@ -327,12 +342,19 @@ public:
   /// failure.
   CValue emitIndirectCall(CValue callee, CallOperands &&operands);
 
-  /// Emit an indirect call to a resolved value in a try block, invoking a
-  /// callback to generate logic in the 'catch' block that is wrapped around the
-  /// call. This ensures that the ExprDest is updated and live after the try
-  /// block, which only works if the "catch" logic doesn't fall through.
+  /// Emit a call to `callee` in a try block, invoking a callback to generate
+  /// logic in the 'catch' block that is wrapped around the call. This ensures
+  /// that the ExprDest is updated and live after the try block, which only
+  /// works if the "catch" logic doesn't fall through.
   ///
   /// This emits an error and returns null on failure.
+  CValue
+  emitCallInTryBlock(CValue callee, CallOperands &&operands,
+                     function_ref<CValue(CallOperands &&)> emitCall,
+                     std::function<void(VarDeclOp errDecl)> emitCatchLogic);
+
+  /// Emit an indirect call to a resolved value in a try block. See
+  /// `emitCallInTryBlock`.
   CValue emitIndirectCallInTryBlock(
       CValue callee, CallOperands &&operands,
       std::function<void(VarDeclOp errDecl)> emitCatchLogic);
@@ -391,6 +413,12 @@ public:
   /// Bind the universal parametric closure trait's parameters to match the
   /// given function signature, returning the resulting concrete `TraitType`.
   TraitSymbolAttr bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig);
+
+  /// Remove the `_Self` parameter and `mut self` argument that the universal
+  /// parametric closure trait prepends, recovering the closure's own signature.
+  /// This is the inverse of `bindParamsToClosureTraitFromSig`.
+  static FnTypeGeneratorType
+  stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf);
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 
@@ -510,13 +538,18 @@ public:
   /// parameter context.  When the result is computed, evaluate the specified
   /// callback on the result and then discard the result.
   ///
+  /// The callback gets the block the expression was emitted into, which is
+  /// erased once the callback returns: anything declared in it goes away with
+  /// the expression.
+  ///
   /// On failure, an error is emitted and the callback is not invoked.
   ///
   /// This is used for evaluating expressions like `origin_of(x)` and
   /// `type_of(x)` and `ref [x] T`.
   void emitExpressionWithoutEvaluatingIt(
       const ExprNode *expr, ExprContext exprContext,
-      std::function<void(CValue, IREmitter &emitter)> callback);
+      std::function<void(CValue, IREmitter &emitter, Block &exprBlock)>
+          callback);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for specific value types.
@@ -541,27 +574,6 @@ public:
   /// returns null on error.
   RValue emitExprScalarBool(const ExprNode *condExpr, ExprContext context);
 
-  /// Short-circuiting conjunction of match predicates (`lhs && emitRhs()`).
-  ///
-  /// When `lhs` is a known-true constant the rhs is emitted directly; when it
-  /// is known-false the rhs is skipped unless `evaluateRhsEvenIfLhsFalse` is
-  /// set (used by `case` guards so a never-matching pattern still typechecks
-  /// its guard). Otherwise this lowers to a nested `hlcf.elif` that yields the
-  /// rhs only if `lhs` is true.
-  CValue
-  emitAndMatchPredicates(ASTExprAnd<CValue> lhs,
-                         llvm::function_ref<ASTExprAnd<CValue>()> emitRhs,
-                         bool evaluateRhsEvenIfLhsFalse = false);
-
-  /// Short-circuiting disjunction of match predicates (`lhs || emitRhs()`).
-  ///
-  /// When `lhs` is a known-true constant the rhs is skipped; when it is
-  /// known-false the rhs is emitted directly. Otherwise this lowers to a
-  /// nested `hlcf.elif` that yields true if `lhs` matches, else the rhs.
-  CValue
-  emitOrMatchPredicates(ASTExprAnd<CValue> lhs,
-                        llvm::function_ref<ASTExprAnd<CValue>()> emitRhs);
-
   /// Given a value, emit it into an MLIR value by invoking its `__mlir_index__`
   /// method.
   CValue emitIndex(ASTExprAnd<AnyValue> value, ExprContext context);
@@ -577,6 +589,9 @@ public:
   /// Emit a `Int`-typed value from an `index` value.
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprDest &dest);
   CValue emitInt(ASTExprAnd<AnyValue> indexValue, ExprContext context);
+
+  /// Emit an `Int`-typed value from a C++ integer.
+  CValue emitInt(int64_t value, llvm::SMLoc loc, ExprContext context);
 
   /// Given an expression that can be used in `origin_of` or a ref expression,
   /// analyze it to determine which origin it represents.  If it doesn't work,
@@ -596,6 +611,11 @@ public:
 
   /// Verify inferred error types for escaping origins.
   void checkInferredErrorType(ASTType rvalueType, SMLoc loc);
+
+  /// Check that the declarations `origin` is rooted at outlive `block`,
+  /// emitting an error at `expr` and returning failure when one does not.
+  LogicalResult checkRootOriginsOutliveBlock(TypedAttr origin, Block &block,
+                                             const ExprNode *expr);
 
   /// Emit a normal return (not a 'raise' return) out of the function, along
   /// with any special logic that goes with it.  `funcDecl` indicates the

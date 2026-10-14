@@ -765,6 +765,7 @@ def _to_torch(t: Tensor) -> torch.Tensor:
     return torch.from_dlpack(t).cpu()
 
 
+@pytest.mark.compile_on_gpu("the interpreter has no bfloat16 cast on CPU")
 @pytest.mark.parametrize(
     "seq_len",
     [1],

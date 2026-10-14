@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides pooling helpers and sliding-window shape utilities used by image-processing operations."""
 
-from layout import TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor
 
 from std.utils.coord import dyn_coord
 from std.utils.index import IndexList
@@ -62,6 +62,7 @@ struct Image2DLayout(TrivialRegisterPassable):
 
 struct ImageData[
     LayoutType: TensorLayout,
+    Engine: TensorEngine,
     //,
     dtype: DType,
     static_image_layout: Image2DLayout,
@@ -73,6 +74,8 @@ struct ImageData[
     Parameters:
         LayoutType: The `TensorLayout` of the underlying `TileTensor`
             (inferred).
+        Engine: The `TensorEngine` backing the underlying `TileTensor`
+            (inferred).
         dtype: The element type of the stored image or filter data.
         static_image_layout: The compile-time known data layout tag, or
             `Image2DLayout.UNKNOWN` when the layout is only resolved at
@@ -81,12 +84,16 @@ struct ImageData[
             `TileTensor`.
     """
 
-    var data: TileTensor[Self.dtype, Self.LayoutType, Self.origin]
+    var data: TileTensor[
+        Self.dtype, Self.LayoutType, Self.origin, Engine=Self.Engine
+    ]
     var dynamic_image_layout: Image2DLayout
 
     def __init__(
         out self,
-        data: TileTensor[Self.dtype, Self.LayoutType, Self.origin],
+        data: TileTensor[
+            Self.dtype, Self.LayoutType, Self.origin, Engine=Self.Engine
+        ],
         _layout: Image2DLayout,
     ):
         """Construct of an image data instance with dynamic layout param.
@@ -101,7 +108,9 @@ struct ImageData[
 
     def __init__(
         out self,
-        data: TileTensor[Self.dtype, Self.LayoutType, Self.origin],
+        data: TileTensor[
+            Self.dtype, Self.LayoutType, Self.origin, Engine=Self.Engine
+        ],
     ):
         comptime assert Self.static_image_layout != Image2DLayout.UNKNOWN
         self.data = data
@@ -111,6 +120,7 @@ struct ImageData[
         new_static_image_layout: Image2DLayout
     ](self) -> ImageData[
         LayoutType=Self.LayoutType,
+        Engine=Self.Engine,
         Self.dtype,
         new_static_image_layout,
         Self.origin,
@@ -128,6 +138,7 @@ struct ImageData[
         comptime assert Self.static_image_layout == Image2DLayout.UNKNOWN
         return ImageData[
             LayoutType=Self.LayoutType,
+            Engine=Self.Engine,
             Self.dtype,
             new_static_image_layout,
         ](self.data)
@@ -182,9 +193,7 @@ struct ImageData[
         var image_shape = ImageShape(self)
 
         @inline(.always)
-        @__copy_capture(image_shape)
-        @__parameter
-        def _compute_index_nchw() -> Int:
+        def _compute_index_nchw() {var image_shape, imm} -> Int:
             # Index [N,C,H,W]
             var idx = n
             idx = idx * image_shape.C + c
@@ -193,9 +202,7 @@ struct ImageData[
             return idx
 
         @inline(.always)
-        @__copy_capture(image_shape)
-        @__parameter
-        def _compute_index_nhwc() -> Int:
+        def _compute_index_nhwc() {var image_shape, imm} -> Int:
             # Index [N,H,W,C]
             var idx = n
             idx = idx * image_shape.H + h
@@ -225,9 +232,7 @@ struct ImageData[
         var image_shape = ImageShape(self)
 
         @inline(.always)
-        @__copy_capture(image_shape)
-        @__parameter
-        def _compute_index_nchw() -> IndexList[4]:
+        def _compute_index_nchw() {var image_shape, imm} -> IndexList[4]:
             # Index [N,C,H,W]
             var lidx, w_idx = divmod(idx, image_shape.W)
             var lidx2, h_idx = divmod(lidx, image_shape.H)
@@ -235,9 +240,7 @@ struct ImageData[
             return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
         @inline(.always)
-        @__copy_capture(image_shape)
-        @__parameter
-        def _compute_index_nhwc() -> IndexList[4]:
+        def _compute_index_nhwc() {var image_shape, imm} -> IndexList[4]:
             # Index [N,H,W,C]
             var lidx, c_idx = divmod(idx, image_shape.C)
             var lidx2, w_idx = divmod(lidx, image_shape.W)

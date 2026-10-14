@@ -46,7 +46,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout._fillers import random
 from std.random import randn
 
 from nn.attention.gpu.mha import flash_attention
@@ -56,7 +55,7 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
 )
 
-from std.testing import assert_almost_equal, assert_true
+from std.testing import assert_true
 
 
 # ===-----------------------------------------------------------------------===#
@@ -99,7 +98,12 @@ def host_cast_bf16_to_fp8[
 # ===-----------------------------------------------------------------------===#
 
 comptime head_dim = get_defined_int["MHA_FP8_HEAD_DIM", 128]()
-comptime label = "test_mha_sm100_qkv_fp8_d{}_decode".format(head_dim)
+
+
+def _label() -> String:
+    # Built at run time: a comptime `String` holds heap pointers, which trips
+    # the elaborator's cached-interpretation determinism check.
+    return String(t"test_mha_sm100_qkv_fp8_d{head_dim}_decode")
 
 
 def execute_pure_fp8_decode_test[
@@ -125,7 +129,7 @@ def execute_pure_fp8_decode_test[
     comptime cosine_bar = Float64(0.998) if bf16_to_fp8 else Float64(0.9997)
 
     print(
-        label,
+        _label(),
         ": ",
         "mode=",
         mode_name,
@@ -510,4 +514,4 @@ def main() raises:
                     mask_name="SW1024_g8_decode_k4096",
                 ](sw_1024, ctx)
 
-        print(label, ": ALL PASSED")
+        print(_label(), ": ALL PASSED")

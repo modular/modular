@@ -40,14 +40,6 @@ def _linear_index[
     return linear_idx
 
 
-def fill_span[
-    dtype: DType, origin: MutOrigin
-](buf: Span[Scalar[dtype], origin], size: Int):
-    var buf_ptr: Pointer[buf.T, buf.origin] = buf.unsafe_ptr()
-    for j in range(size):
-        buf_ptr[unsafe_offset=j] = Scalar[dtype](j) + 1
-
-
 # TODO: Refactor tests
 # CHECK-LABEL: test_stencil_avg_pool
 def test_stencil_avg_pool() raises:
@@ -74,19 +66,14 @@ def test_stencil_avg_pool() raises:
 
     var input_stack = Array[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
-    ](uninitialized=True)
-    var input = Span(input_stack)
+    ](fill_with=lambda (i: Int) -> Scalar[dtype]: Scalar[dtype](i) + 1)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = Array[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
-    ](uninitialized=True)
+    ](fill=0)
     var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
     var output_ptr: Pointer[output.T, output.origin] = output.unsafe_ptr()
-
-    fill_span(input, Int(input_shape_dims.flattened_length()))
-    for i in range(Int(output_shape_dims.flattened_length())):
-        output_ptr[unsafe_offset=i] = 0
 
     def map_fn(
         point: IndexList[stencil_rank, ...],
@@ -199,20 +186,15 @@ def test_stencil_avg_pool_padded() raises:
     comptime output_shape_dims = IndexList[4](1, output_height, output_width, 1)
 
     var input_stack = Array[Scalar[dtype], input_shape_dims.flattened_length()](
-        fill={}
+        fill_with=lambda (i: Int) -> Scalar[dtype]: Scalar[dtype](i) + 1
     )
-    var input = Span(input_stack)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = Array[
         Scalar[dtype], output_shape_dims.flattened_length()
-    ](uninitialized=True)
+    ](fill=0)
     var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
     var output_ptr: Pointer[output.T, output.origin] = output.unsafe_ptr()
-
-    fill_span(input, input_shape_dims.flattened_length())
-    for i in range(output_shape_dims.flattened_length()):
-        output_ptr[unsafe_offset=i] = 0
 
     def map_fn(
         point: IndexList[stencil_rank, ...],
@@ -324,19 +306,14 @@ def test_stencil_avg_pool_stride_2() raises:
 
     var input_stack = Array[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
-    ](uninitialized=True)
-    var input = Span(input_stack)
+    ](fill_with=lambda (i: Int) -> Scalar[dtype]: Scalar[dtype](i) + 1)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = Array[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
-    ](uninitialized=True)
+    ](fill=0)
     var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
     var output_ptr: Pointer[output.T, output.origin] = output.unsafe_ptr()
-
-    fill_span(input, Int(input_shape_dims.flattened_length()))
-    for i in range(Int(output_shape_dims.flattened_length())):
-        output_ptr[unsafe_offset=i] = 0
 
     def map_fn(
         point: IndexList[stencil_rank, ...],
@@ -451,19 +428,14 @@ def test_stencil_max_pool_dilation_2() raises:
 
     var input_stack = Array[
         Scalar[dtype], Int(input_shape_dims.flattened_length())
-    ](uninitialized=True)
-    var input = Span(input_stack)
+    ](fill_with=lambda (i: Int) -> Scalar[dtype]: Scalar[dtype](i) + 1)
     var input_shape = IndexList[rank](1, input_height, input_width, 1)
     var output_stack = Array[
         Scalar[dtype], Int(output_shape_dims.flattened_length())
-    ](uninitialized=True)
+    ](fill=0)
     var output = Span(output_stack)
     var output_shape = IndexList[rank](1, output_height, output_width, 1)
     var output_ptr: Pointer[output.T, output.origin] = output.unsafe_ptr()
-
-    fill_span(input, Int(input_shape_dims.flattened_length()))
-    for i in range(Int(output_shape_dims.flattened_length())):
-        output_ptr[unsafe_offset=i] = 0
 
     def map_fn(
         point: IndexList[stencil_rank, ...],

@@ -66,13 +66,17 @@ import numpy as np
 import pytest
 import torch
 from huggingface_hub import snapshot_download
+from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import load_weights
 from max.nn.comm import Signals
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.architectures.gemma4.gemma4 import Gemma4TextModel
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
@@ -411,7 +415,7 @@ def _max_layer_output_captures(
             Buffer.zeros(
                 shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=device
             ),
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
         )
     finally:
         for context in contexts:

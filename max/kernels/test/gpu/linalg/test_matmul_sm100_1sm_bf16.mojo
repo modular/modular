@@ -78,14 +78,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             t" swapAB={swapAB} k_group_size={k_group_size}"
         )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -127,8 +125,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             for k_idx in range(K):
                 b_host[n_idx, k_idx] = Float32(n_idx + k_idx).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

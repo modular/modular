@@ -27,18 +27,21 @@ def _layout_row_major[L: TensorLayout]() -> Bool:
     """Returns True if `L` has fully static, gap-free row-major strides.
 
     Checks the flattened dimensions: the layout is row-major when each flat
-    stride equals the product of all trailing flat shapes (rightmost stride 1).
-    Used to decide whether `copy_from` can widen its loads/stores into a
-    contiguous raw-scalar walk.
+    stride equals the product of all trailing flat shapes (rightmost stride 1),
+    so flat index `i` lands at offset `i`. A dimension of extent 1 is skipped,
+    since its stride never contributes to an offset; a `(1, N)` row view of a
+    larger tile is row-major whatever its leading stride. Used to decide
+    whether `copy_from` can widen its loads/stores into a contiguous
+    raw-scalar walk.
     """
     comptime if not L.all_dims_known:
         return False
-    comptime for i in range(L.flat_rank):
-        var expected = 1
-        comptime for j in range(i + 1, L.flat_rank):
-            expected *= L.static_shape[j]
-        if L.static_stride[i] != expected:
-            return False
+    var expected = 1
+    comptime for i in range(L.flat_rank - 1, -1, -1):
+        comptime if L.static_shape[i] != 1:
+            if L.static_stride[i] != expected:
+                return False
+            expected *= L.static_shape[i]
     return True
 
 
@@ -73,15 +76,31 @@ def _copy_widen_factor[
     return 1
 
 
+@inline(.always)
+def _offset_elements(offset_coord: Coord) -> Int:
+    """Sums a flat offset coordinate into one scalar-element count.
+
+    A view hands the engine its offset in one component per provenance: a
+    `ComptimeInt` for the part the type system folded and a `Scalar` for the
+    part only known at runtime. Adding them here, rather than demanding a
+    single component, is what lets a subscript keep the folded part static.
+    """
+    var total = 0
+    comptime for i in range(offset_coord.flat_rank):
+        total += Int(offset_coord[i].value())
+    return total
+
+
 trait TensorEngine:
     """Defines how tile tensor operates on borrowed storage.
 
     A conforming engine names a concrete, register-passable `StorageType`
     handle for storage that is owned elsewhere, and supplies the static
-    operations that act on it: load, store, offset, distance, and
-    reinterpretation. An engine never owns the underlying memory; the handle's
-    `origin` parameter tracks the lifetime and mutability of the borrowed
-    storage.
+    operations that act on it: offset, distance, reinterpretation, and raw
+    pointer access. Element loads and stores go through the raw pointer
+    `unsafe_ptr` returns. An engine never owns the underlying memory; the
+    handle's `origin` parameter tracks the lifetime and mutability of the
+    borrowed storage.
     """
 
     comptime element_size: Int = 1
@@ -135,13 +154,18 @@ trait TensorEngine:
         //,
     ](
         storage: Self.StorageType[dtype, origin, address_space],
-    ) raises -> Pointer[Scalar[dtype], origin, address_space=address_space]:
+    ) -> Pointer[
+        Scalar[dtype], origin, address_space=address_space
+    ]:
         """Returns a raw scalar pointer to the borrowed storage.
 
         Reinterprets the storage handle as a `Pointer` to the scalar
         base of the referenced storage; no conversion of the stored elements
         takes place. The returned pointer borrows the same externally owned
         memory that the handle refers to; the trait still does not own it.
+        Element loads and stores go through this pointer, so it must not
+        carry a runtime failure path: an engine whose storage cannot be
+        viewed as a pointer rejects the call with a `comptime assert`.
 
         Parameters:
             mut: The mutability of the borrowed storage, inferred from `origin`.
@@ -155,10 +179,6 @@ trait TensorEngine:
         Returns:
             A `Pointer` to `Scalar[dtype]` referring to the base of the
             borrowed storage.
-
-        Raises:
-            An error if the backing storage does not support accessing a
-            pointer to the underlying data.
         """
         ...
 
@@ -191,119 +211,6 @@ trait TensorEngine:
         Returns:
             A handle referring to the same storage, viewed with the new type
             parameters.
-        """
-        ...
-
-    @staticmethod
-    def load[
-        dtype: DType,
-        //,
-        width: SIMDLength,
-        alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=False, dtype, ...]) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value from the storage.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            width: The number of elements to load.
-            alignment: The alignment guarantee for the load.
-            invariant: If True, the compiler may assume the memory won't be
-                modified during the kernel, enabling load hoisting and caching.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming loads).
-
-        Args:
-            storage: The storage to load from.
-
-        Returns:
-            The loaded `SIMD` value.
-        """
-        ...
-
-    @staticmethod
-    def load[
-        dtype: DType,
-        //,
-        width: SIMDLength,
-        alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
-    ](
-        storage: Self.StorageType[mut=False, dtype, ...],
-        offset: Some[Indexer],
-    ) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value at a scalar-element offset from the storage.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            width: The number of elements to load.
-            alignment: The alignment guarantee for the load.
-            invariant: If True, the compiler may assume the memory won't be
-                modified during the kernel, enabling load hoisting and caching.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming loads).
-
-        Args:
-            storage: The storage to load from.
-            offset: The scalar-element offset to load at.
-
-        Returns:
-            The loaded `SIMD` value.
-        """
-        ...
-
-    @staticmethod
-    def store[
-        dtype: DType,
-        alignment: Int,
-        *,
-        non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
-        """Stores a `SIMD` value into the storage.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            alignment: The alignment guarantee for the store.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming stores).
-
-        Args:
-            storage: The storage to store into.
-            value: The `SIMD` value to store.
-        """
-        ...
-
-    @staticmethod
-    def store[
-        dtype: DType,
-        alignment: Int,
-        *,
-        non_temporal: Bool = False,
-    ](
-        storage: Self.StorageType[mut=True, dtype, ...],
-        offset: Some[Indexer],
-        value: SIMD[dtype, _],
-    ):
-        """Stores a `SIMD` value at a scalar-element offset in the storage.
-
-        The caller is responsible for ensuring the storage is actually mutable.
-        The `dtype`, `origin`, and `address_space` are inferred from the
-        `storage` argument for concrete engines; callers using the trait
-        through an abstract `TensorEngine` bound must pass them explicitly
-        (before `alignment`).
-
-        Parameters:
-            dtype: The element data type of the storage.
-            alignment: The alignment guarantee for the store.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming stores).
-
-        Args:
-            storage: The storage to store into.
-            offset: The scalar-element offset to store at.
-            value: The `SIMD` value to store.
         """
         ...
 
@@ -345,8 +252,8 @@ trait TensorEngine:
 
         Args:
             storage: The storage to offset from.
-            offset_coord: A rank-1 coordinate holding the number of scalar
-                elements to advance the handle by.
+            offset_coord: A flat coordinate whose components sum to the
+                number of scalar elements to advance the handle by.
 
         Returns:
             A handle of the same type starting the given number of scalar
@@ -390,6 +297,10 @@ trait TensorEngine:
         scalar logical element, the copy widens to SIMD load + cast + SIMD
         store using the narrower of the two dtypes' native SIMD widths.
 
+        `TileTensor.copy_from` reaches this through the source engine's
+        `copy_to`, whose default forwards here; the source is read through
+        `OtherEngine.unsafe_ptr`.
+
         Parameters:
             SelfLayoutType: The layout type of the destination storage.
             self_origin: The origin of the destination storage.
@@ -420,28 +331,59 @@ trait TensorEngine:
         ...
 
     @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
+    @inline(.always)
+    def copy_to[
+        SelfLayoutType: TensorLayout,
+        self_mut: Bool,
+        self_origin: Origin[mut=self_mut],
+        self_address_space: AddressSpace,
+        OtherLayoutType: TensorLayout,
+        other_origin: MutOrigin,
+        other_address_space: AddressSpace,
+        //,
+        src_dtype: DType,
+        dst_dtype: DType,
+        OtherEngine: TensorEngine,
     ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the scalar-element distance from `other` to `storage`.
+        storage: Tuple[
+            Self.StorageType[src_dtype, self_origin, self_address_space],
+            SelfLayoutType,
+        ],
+        other: Tuple[
+            OtherEngine.StorageType[
+                dst_dtype, other_origin, other_address_space
+            ],
+            OtherLayoutType,
+        ],
+    ):
+        """Copies the elements of `storage` into `other`, in place.
+
+        This is the source side of a copy. `TileTensor.copy_from` calls it on
+        the source tensor's engine, and the default forwards to
+        `OtherEngine.copy_from`, so an engine only overrides it when reading
+        its storage takes more than `unsafe_ptr`: an engine with no pointer
+        representation runs its own load loop here and stores through the
+        destination's pointer.
 
         Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' `AddressSpace`.
+            SelfLayoutType: The layout type of the source storage.
+            self_mut: The mutability of the source storage.
+            self_origin: The origin of the source storage.
+            self_address_space: The address space of the source storage.
+            OtherLayoutType: The layout type of the destination storage.
+            other_origin: The origin of the destination storage.
+            other_address_space: The address space of the destination
+                storage.
+            src_dtype: The element data type of the source storage.
+            dst_dtype: The element data type of the destination storage.
+            OtherEngine: The engine of the destination.
 
         Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The number of scalar elements separating the two handles. The
-            value is positive when `storage` is ahead of `other` and negative
-            when it precedes `other`.
+            storage: A tuple of the source storage and its layout.
+            other: A tuple of the destination storage (modified in place)
+                and its layout.
         """
-        ...
+        OtherEngine.copy_from(other, storage)
 
 
 @inline(.always)
@@ -471,11 +413,11 @@ def _copy_from[
     """Shared copy loop backing every `TensorEngine.copy_from` implementation.
 
     Copies each logical element of `other` into `storage`, loading through the
-    source engine (`OtherEngine`) and storing through the destination engine
-    (`DstEngine`). When both operands have fully static, row-major layouts and
-    a scalar logical element, the copy widens to SIMD load + cast + SIMD store
-    using the narrower of the two dtypes' native SIMD widths. Expressed entirely
-    in terms of each engine's `load`, `store`, and `unsafe_cast`.
+    source engine's raw pointer (`OtherEngine.unsafe_ptr`) and storing through
+    the destination engine's (`DstEngine.unsafe_ptr`). When both operands have
+    fully static, row-major layouts and a scalar logical element, the copy
+    widens to SIMD load + cast + SIMD store using the narrower of the two
+    dtypes' native SIMD widths.
 
     Parameters:
         SelfLayoutType: The layout type of the destination storage.
@@ -497,15 +439,8 @@ def _copy_from[
     """
     ref dst_storage = storage[0]
     ref dst_layout = storage[1]
+    ref src_storage = other[0]
     ref src_layout = other[1]
-
-    # An immutable view of the source, needed because `load` requires an
-    # immutable-origin handle while the source may be mutable.
-    var src_engine = OtherEngine.unsafe_cast[
-        src_dtype,
-        other_origin.unsafe_mut_cast[False](),
-        other_address_space,
-    ](other[0])
 
     comptime assert (
         DstEngine.element_size == OtherEngine.element_size
@@ -539,6 +474,9 @@ def _copy_from[
         SIMD[src_dtype, width]
     ]() if is_gpu() else 1
 
+    var dst_ptr = DstEngine.unsafe_ptr(dst_storage)
+    var src_ptr = OtherEngine.unsafe_ptr(src_storage)
+
     comptime if widen > 1:
         # Widening requires both operands to be gap-free with unit inner
         # stride. In that case each side is a `num_elements * element_size`
@@ -548,23 +486,21 @@ def _copy_from[
         comptime num_scalars = num_elements * DstEngine.element_size
         comptime num_chunks = num_scalars // width
         comptime for i in range(num_chunks):
-            DstEngine.store[alignment=dst_alignment](
-                dst_storage,
+            dst_ptr.store[alignment=dst_alignment](
                 i * width,
-                OtherEngine.load[width=width, alignment=src_alignment](
-                    src_engine, i * width
+                src_ptr.load[width=width, alignment=src_alignment](
+                    i * width
                 ).cast[dst_dtype](),
             )
     else:
         comptime for i in range(num_elements):
             var src_offset = src_layout(Idx[i])
             var dst_offset = dst_layout(Idx[i])
-            DstEngine.store[alignment=dst_alignment](
-                dst_storage,
+            dst_ptr.store[alignment=dst_alignment](
                 dst_offset,
-                OtherEngine.load[
+                src_ptr.load[
                     width=DstEngine.element_size, alignment=src_alignment
-                ](src_engine, src_offset).cast[dst_dtype](),
+                ](src_offset).cast[dst_dtype](),
             )
 
 
@@ -608,8 +544,7 @@ def _elementwise_binary_out_with_broadcast[
 
     Applies `func` between elements of `lhs` and `rhs` with limited
     broadcasting support, writing results into `dst`. Each operand is loaded
-    or stored through its own engine. Expressed entirely in terms of
-    each engine's `load`, `store`, and `unsafe_cast`.
+    or stored through its own engine's raw pointer (`unsafe_ptr`).
 
     Parameters:
         DstLayoutType: The layout type of the destination storage.
@@ -649,21 +584,14 @@ def _elementwise_binary_out_with_broadcast[
     """
     ref dst_storage = dst[0]
     ref dst_layout = dst[1]
+    ref lhs_storage = lhs[0]
     ref lhs_layout = lhs[1]
+    ref rhs_storage = rhs[0]
     ref rhs_layout = rhs[1]
 
-    # Immutable views for loading: `load` requires an immutable-origin handle
-    # while operands may be mutable.
-    var lhs_storage = LhsEngine.unsafe_cast[
-        dtype,
-        lhs_origin.unsafe_mut_cast[False](),
-        lhs_address_space,
-    ](lhs[0])
-    var rhs_storage = RhsEngine.unsafe_cast[
-        dtype,
-        rhs_origin.unsafe_mut_cast[False](),
-        rhs_address_space,
-    ](rhs[0])
+    var dst_ptr = DstEngine.unsafe_ptr(dst_storage)
+    var lhs_ptr = LhsEngine.unsafe_ptr(lhs_storage)
+    var rhs_ptr = RhsEngine.unsafe_ptr(rhs_storage)
 
     comptime assert (
         width == DstEngine.element_size
@@ -729,16 +657,11 @@ def _elementwise_binary_out_with_broadcast[
             var lhs_idx = lhs_layout(Idx[i])
             var rhs_idx = rhs_layout(Idx[i % rhs_size])
 
-            DstEngine.store[alignment=alignment](
-                dst_storage,
+            dst_ptr.store[alignment=alignment](
                 dst_idx,
                 func(
-                    LhsEngine.load[width=width, alignment=alignment](
-                        lhs_storage, lhs_idx
-                    ),
-                    RhsEngine.load[width=width, alignment=alignment](
-                        rhs_storage, rhs_idx
-                    ),
+                    lhs_ptr.load[width=width, alignment=alignment](lhs_idx),
+                    rhs_ptr.load[width=width, alignment=alignment](rhs_idx),
                 ),
             )
     else:
@@ -746,16 +669,11 @@ def _elementwise_binary_out_with_broadcast[
             var dst_idx = dst_layout(Idx[i])
             var lhs_idx = lhs_layout(Idx[i])
             var rhs_idx = rhs_layout(Idx[i])
-            DstEngine.store[alignment=alignment](
-                dst_storage,
+            dst_ptr.store[alignment=alignment](
                 dst_idx,
                 func(
-                    LhsEngine.load[width=width, alignment=alignment](
-                        lhs_storage, lhs_idx
-                    ),
-                    RhsEngine.load[width=width, alignment=alignment](
-                        rhs_storage, rhs_idx
-                    ),
+                    lhs_ptr.load[width=width, alignment=alignment](lhs_idx),
+                    rhs_ptr.load[width=width, alignment=alignment](rhs_idx),
                 ),
             )
 
@@ -796,20 +714,11 @@ def _elementwise_binary_with_broadcast[
     """
     ref dst_storage = storage[0]
     ref self_layout = storage[1]
+    ref other_storage = other[0]
     ref other_layout = other[1]
 
-    # Immutable views for loading: `load` requires an immutable-origin handle
-    # while both operands may be mutable.
-    var lhs_storage = DstEngine.unsafe_cast[
-        dtype,
-        self_origin.unsafe_mut_cast[False](),
-        self_address_space,
-    ](storage[0])
-    var rhs_storage = OtherEngine.unsafe_cast[
-        dtype,
-        other_origin.unsafe_mut_cast[False](),
-        other_address_space,
-    ](other[0])
+    var dst_ptr = DstEngine.unsafe_ptr(dst_storage)
+    var other_ptr = OtherEngine.unsafe_ptr(other_storage)
 
     comptime assert (
         width == DstEngine.element_size and width == OtherEngine.element_size
@@ -856,32 +765,22 @@ def _elementwise_binary_with_broadcast[
             var lhs_idx = self_layout(Idx[i])
             var rhs_idx = other_layout(Idx[i % other_size])
 
-            DstEngine.store[alignment=alignment](
-                dst_storage,
+            dst_ptr.store[alignment=alignment](
                 lhs_idx,
                 func(
-                    DstEngine.load[width=width, alignment=alignment](
-                        lhs_storage, lhs_idx
-                    ),
-                    OtherEngine.load[width=width, alignment=alignment](
-                        rhs_storage, rhs_idx
-                    ),
+                    dst_ptr.load[width=width, alignment=alignment](lhs_idx),
+                    other_ptr.load[width=width, alignment=alignment](rhs_idx),
                 ),
             )
     else:
         comptime for i in range(type_of(self_layout).static_product):
             var lhs_idx = self_layout(Idx[i])
             var rhs_idx = other_layout(Idx[i])
-            DstEngine.store[alignment=alignment](
-                dst_storage,
+            dst_ptr.store[alignment=alignment](
                 lhs_idx,
                 func(
-                    DstEngine.load[width=width, alignment=alignment](
-                        lhs_storage, lhs_idx
-                    ),
-                    OtherEngine.load[width=width, alignment=alignment](
-                        rhs_storage, rhs_idx
-                    ),
+                    dst_ptr.load[width=width, alignment=alignment](lhs_idx),
+                    other_ptr.load[width=width, alignment=alignment](rhs_idx),
                 ),
             )
 
@@ -937,13 +836,8 @@ def _elementwise_unary_out[
     """
     ref dst_storage = dst[0]
     ref dst_layout = dst[1]
+    ref src_storage = src[0]
     ref src_layout = src[1]
-
-    var src_engine = SrcEngine.unsafe_cast[
-        dtype,
-        src_origin.unsafe_mut_cast[False](),
-        src_address_space,
-    ](src[0])
 
     comptime assert (
         width == DstEngine.element_size and width == SrcEngine.element_size
@@ -963,17 +857,15 @@ def _elementwise_unary_out[
 
     comptime alignment = align_of[SIMD[dtype, width]]() if is_gpu() else 1
 
+    var dst_ptr = DstEngine.unsafe_ptr(dst_storage)
+    var src_ptr = SrcEngine.unsafe_ptr(src_storage)
+
     comptime for i in range(type_of(dst_layout).static_product):
         var dst_idx = dst_layout(Idx[i])
         var src_idx = src_layout(Idx[i])
-        DstEngine.store[alignment=alignment](
-            dst_storage,
+        dst_ptr.store[alignment=alignment](
             dst_idx,
-            func(
-                SrcEngine.load[width=width, alignment=alignment](
-                    src_engine, src_idx
-                )
-            ),
+            func(src_ptr.load[width=width, alignment=alignment](src_idx)),
         )
 
 
@@ -2025,7 +1917,9 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         //,
     ](
         storage: Self.StorageType[dtype, origin, address_space],
-    ) raises -> Pointer[Scalar[dtype], origin, address_space=address_space]:
+    ) -> Pointer[
+        Scalar[dtype], origin, address_space=address_space
+    ]:
         """Returns a raw scalar pointer to the borrowed storage.
 
         Parameters:
@@ -2082,131 +1976,6 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
             ](storage._get_kgen_pointer())
         }
 
-    @staticmethod
-    @inline(.always)
-    def load[
-        dtype: DType,
-        //,
-        width: SIMDLength,
-        alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=False, dtype, ...]) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value from the storage.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            width: The number of elements to load.
-            alignment: The alignment guarantee for the load.
-            invariant: If True, the compiler may assume the memory won't be
-                modified during the kernel, enabling load hoisting and caching.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming loads).
-
-        Args:
-            storage: The storage to load from.
-
-        Returns:
-            The loaded `SIMD` value.
-        """
-        return storage.bitcast[Scalar[dtype]]().load[
-            width=width,
-            alignment=alignment,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ]()
-
-    @staticmethod
-    @inline(.always)
-    def load[
-        dtype: DType,
-        //,
-        width: SIMDLength,
-        alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
-    ](
-        storage: Self.StorageType[mut=False, dtype, ...],
-        offset: Some[Indexer],
-    ) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value at a scalar-element offset from the storage.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            width: The number of elements to load.
-            alignment: The alignment guarantee for the load.
-            invariant: If True, the compiler may assume the memory won't be
-                modified during the kernel, enabling load hoisting and caching.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming loads).
-
-        Args:
-            storage: The storage to load from.
-            offset: The scalar-element offset to load at.
-
-        Returns:
-            The loaded `SIMD` value.
-        """
-        return storage.bitcast[Scalar[dtype]]().load[
-            width=width,
-            alignment=alignment,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
-
-    @staticmethod
-    @inline(.always)
-    def store[
-        dtype: DType,
-        alignment: Int,
-        *,
-        non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
-        """Stores a `SIMD` value into the storage.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            alignment: The alignment guarantee for the store.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming stores).
-
-        Args:
-            storage: The storage to store into.
-            value: The `SIMD` value to store.
-        """
-        storage.bitcast[Scalar[dtype]]().store[
-            alignment=alignment, non_temporal=non_temporal
-        ](value)
-
-    @staticmethod
-    @inline(.always)
-    def store[
-        dtype: DType,
-        alignment: Int,
-        *,
-        non_temporal: Bool = False,
-    ](
-        storage: Self.StorageType[mut=True, dtype, ...],
-        offset: Some[Indexer],
-        value: SIMD[dtype, _],
-    ):
-        """Stores a `SIMD` value at a scalar-element offset in the storage.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            alignment: The alignment guarantee for the store.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming stores).
-
-        Args:
-            storage: The storage to store into.
-            offset: The scalar-element offset to store at.
-            value: The `SIMD` value to store.
-        """
-        storage.bitcast[Scalar[dtype]]().store[
-            alignment=alignment, non_temporal=non_temporal
-        ](offset, value)
-
     comptime OffsetResultType[
         offset_types: TypeList[Trait=CoordLike, ...],
     ]: TensorEngine = Self
@@ -2241,7 +2010,7 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         advanced by the scalar-element offset in `offset_coord`. The offset is
         measured in scalar elements (not logical SIMD elements) so that it
         matches the scalar-unit offsets produced by a tensor's layout and
-        consumed by `load`/`store`; for a vectorized storage
+        applied to the pointer `unsafe_ptr` returns; for a vectorized storage
         (`element_width > 1`) advancing the raw SIMD-typed handle directly would
         over-advance by `element_width`.
 
@@ -2255,8 +2024,8 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
 
         Args:
             storage: The storage to offset from.
-            offset_coord: A rank-1 coordinate holding the number of scalar
-                elements to advance the handle by.
+            offset_coord: A flat coordinate whose components sum to the
+                number of scalar elements to advance the handle by.
 
         Returns:
             A handle of the same type starting the given number of scalar
@@ -2265,34 +2034,10 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         # `storage` is a `Pointer[SIMD[dtype, element_width]]`. Reinterpret
         # it as a scalar pointer so `+ offset` advances in scalar (not SIMD)
         # units, then `rebind` back to the original handle type.
-        comptime assert offset_coord.flat_rank == 1
         return (
-            storage.bitcast[Scalar[offset_dtype]]() + offset_coord[0].value()
+            storage.bitcast[Scalar[offset_dtype]]()
+            + _offset_elements(offset_coord)
         ).bitcast[SIMD[offset_dtype, Self.element_width]]()
-
-    @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
-    ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the scalar-element distance from `other` to `storage`.
-
-        Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' `AddressSpace`.
-
-        Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The number of scalar elements separating the two handles. The
-            value is positive when `storage` is ahead of `other` and negative
-            when it precedes `other`.
-        """
-        return (Int(storage) - Int(other)) // size_of[dtype]()
 
     @staticmethod
     @inline(.always)
@@ -3574,12 +3319,8 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
 
         ref dst_storage = dst[0]
         ref dst_layout = dst[1]
+        ref src_storage = src[0]
         ref src_layout = src[1]
-        var src_engine = SrcEngine.unsafe_cast[
-            dtype,
-            src_origin.unsafe_mut_cast[False](),
-            src_address_space,
-        ](src[0])
 
         comptime width = Self.element_size
         comptime alignment = align_of[SIMD[dtype, width]]() if is_gpu() else 1
@@ -3588,16 +3329,15 @@ struct DefaultEngine[*, element_width: Int = 1](TensorOps):
         # closure defined in a function with a dependent-typed value
         # parameter (`scale: Scalar[scale_dtype]`) fails parameter resolution
         # during elaboration when passed as a function value.
+        var dst_ptr = Self.unsafe_ptr(dst_storage)
+        var src_ptr = SrcEngine.unsafe_ptr(src_storage)
         comptime for i in range(type_of(dst_layout).static_product):
             var dst_idx = dst_layout(Idx[i])
             var src_idx = src_layout(Idx[i])
-            Self.store[alignment=alignment](
-                dst_storage,
+            dst_ptr.store[alignment=alignment](
                 dst_idx,
                 exp(
-                    SrcEngine.load[width=width, alignment=alignment](
-                        src_engine, src_idx
-                    )
+                    src_ptr.load[width=width, alignment=alignment](src_idx)
                     * scale.cast[dtype]()
                 ),
             )
@@ -3662,12 +3402,14 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
     Because the handle conforms to `DevicePassable`, a host-side
     `DevicePointer` shrinks to a real device address when the enclosing
     `TileTensor` encodes its fields for a kernel launch. The address is written
-    into the first bytes of the handle's slot, so the memory operations here
-    reinterpret those bytes (`_device_leaf_ptr`) on device. They abort on host:
-    device memory is not guaranteed to be host-dereferenceable. The operations
-    that don't dereference storage (`offset`, `distance`, `unsafe_cast`) work
-    on both host and device using `DevicePointer` arithmetic or pure
-    reinterprets.
+    into the first bytes of the handle's slot, so the in-place `TensorOps`
+    here reinterpret those bytes (`_device_leaf_ptr`) on device. They abort on
+    host: device memory is not guaranteed to be host-dereferenceable.
+    `unsafe_ptr`, which `TileTensor` element loads and stores go through,
+    recovers the same device address on device and the raw buffer address
+    through the owning `DeviceBuffer` on host. The operations that don't
+    dereference storage (`offset`, `distance`, `unsafe_cast`) work on both
+    host and device using `DevicePointer` arithmetic or pure reinterprets.
 
     Parameters:
         element_width: Number of scalar elements per logical element. A value
@@ -3806,143 +3548,6 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         """
         result = Pointer(to=storage).bitcast[type_of(result)]()[]
 
-    @staticmethod
-    @inline(.always)
-    def load[
-        dtype: DType,
-        //,
-        width: SIMDLength,
-        alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=False, dtype, ...]) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value from the storage.
-
-        Device-only: reinterprets the encoded device pointer, which aborts on
-        host. Device memory is not guaranteed to be host-dereferenceable.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            width: The number of elements to load.
-            alignment: The alignment guarantee for the load.
-            invariant: If True, the compiler may assume the memory won't be
-                modified during the kernel, enabling load hoisting and caching.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming loads).
-
-        Args:
-            storage: The storage to load from.
-
-        Returns:
-            The loaded `SIMD` value.
-        """
-        return _device_leaf_ptr(storage).load[
-            width=width,
-            alignment=alignment,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ]()
-
-    @staticmethod
-    @inline(.always)
-    def load[
-        dtype: DType,
-        //,
-        width: SIMDLength,
-        alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
-    ](
-        storage: Self.StorageType[mut=False, dtype, ...],
-        offset: Some[Indexer],
-    ) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value at a scalar-element offset from the storage.
-
-        Device-only: reinterprets the encoded device pointer, which aborts on
-        host. Device memory is not guaranteed to be host-dereferenceable.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            width: The number of elements to load.
-            alignment: The alignment guarantee for the load.
-            invariant: If True, the compiler may assume the memory won't be
-                modified during the kernel, enabling load hoisting and caching.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming loads).
-
-        Args:
-            storage: The storage to load from.
-            offset: The scalar-element offset to load at.
-
-        Returns:
-            The loaded `SIMD` value.
-        """
-        return _device_leaf_ptr(storage).load[
-            width=width,
-            alignment=alignment,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
-
-    @staticmethod
-    @inline(.always)
-    def store[
-        dtype: DType,
-        alignment: Int,
-        *,
-        non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
-        """Stores a `SIMD` value into the storage.
-
-        Device-only: reinterprets the encoded device pointer, which aborts on
-        host. Device memory is not guaranteed to be host-dereferenceable.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            alignment: The alignment guarantee for the store.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming stores).
-
-        Args:
-            storage: The storage to store into.
-            value: The `SIMD` value to store.
-        """
-        _device_leaf_ptr(storage).store[
-            alignment=alignment, non_temporal=non_temporal
-        ](value)
-
-    @staticmethod
-    @inline(.always)
-    def store[
-        dtype: DType,
-        alignment: Int,
-        *,
-        non_temporal: Bool = False,
-    ](
-        storage: Self.StorageType[mut=True, dtype, ...],
-        offset: Some[Indexer],
-        value: SIMD[dtype, _],
-    ):
-        """Stores a `SIMD` value at a scalar-element offset in the storage.
-
-        Device-only: reinterprets the encoded device pointer, which aborts on
-        host. Device memory is not guaranteed to be host-dereferenceable.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            alignment: The alignment guarantee for the store.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming stores).
-
-        Args:
-            storage: The storage to store into.
-            offset: The scalar-element offset to store at.
-            value: The `SIMD` value to store.
-        """
-        _device_leaf_ptr(storage).store[
-            alignment=alignment, non_temporal=non_temporal
-        ](offset, value)
-
     comptime OffsetResultType[
         offset_types: TypeList[Trait=CoordLike, ...],
     ]: TensorEngine = Self
@@ -3988,60 +3593,28 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
 
         Args:
             storage: The storage to offset from.
-            offset_coord: A rank-1 coordinate holding the number of scalar
-                elements to advance the handle by.
+            offset_coord: A flat coordinate whose components sum to the
+                number of scalar elements to advance the handle by.
 
         Returns:
             A handle of the same type starting the given number of scalar
             elements into the referenced storage.
         """
-        comptime assert offset_coord.flat_rank == 1
         comptime if is_gpu():
             var result = storage
             var leaf = Pointer(to=result).bitcast[
                 MutPointer[Scalar[type_of(storage).dtype], MutAnyOrigin]
             ]()
-            leaf[] = leaf[] + offset_coord[0].value()
+            leaf[] = leaf[] + _offset_elements(offset_coord)
             return result
         else:
             # Keep this non-raising (matching the pointer-backed engine and
             # `TileTensor`'s `DeviceBuffer` constructor) by aborting on the
             # out-of-bounds case `DevicePointer` arithmetic raises on.
             try:
-                return storage + Int(offset_coord[0].value())
+                return storage + _offset_elements(offset_coord)
             except e:
                 abort(String("DevicePointerEngine.offset: ", e))
-
-    @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
-    ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the scalar-element distance from `other` to `storage`.
-
-        Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' `AddressSpace`.
-
-        Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The number of scalar elements separating the two handles. The
-            value is positive when `storage` is ahead of `other` and negative
-            when it precedes `other`.
-        """
-        comptime if is_gpu():
-            return (
-                Int(_device_leaf_ptr(storage)) - Int(_device_leaf_ptr(other))
-            ) // size_of[dtype]()
-        else:
-            # The element offsets are available on host without dereferencing;
-            # their difference is the scalar-element distance (element_size 1).
-            return storage.offset() - other.offset()
 
     @staticmethod
     @inline(.always)
@@ -5339,12 +4912,8 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
 
         ref dst_storage = dst[0]
         ref dst_layout = dst[1]
+        ref src_storage = src[0]
         ref src_layout = src[1]
-        var src_engine = SrcEngine.unsafe_cast[
-            dtype,
-            src_origin.unsafe_mut_cast[False](),
-            src_address_space,
-        ](src[0])
 
         comptime width = Self.element_size
         comptime alignment = align_of[SIMD[dtype, width]]() if is_gpu() else 1
@@ -5353,18 +4922,15 @@ struct DevicePointerEngine[*, element_width: Int = 1](TensorOps):
         # closure defined in a function with a dependent-typed value
         # parameter (`scale: Scalar[scale_dtype]`) fails parameter resolution
         # during elaboration when passed as a function value.
+        var src_ptr = SrcEngine.unsafe_ptr(src_storage)
         comptime for i in range(type_of(dst_layout).static_product):
             var dst_idx = dst_layout(Idx[i])
             var src_idx = src_layout(Idx[i])
-            # Store through the device leaf pointer, matching `iexp`. Calling
-            # `Self.store` here fails to infer `address_space` from the
-            # tuple-projected destination handle.
+            # Store through the device leaf pointer, matching `iexp`.
             _device_leaf_ptr(dst_storage).store(
                 dst_idx,
                 exp(
-                    SrcEngine.load[width=width, alignment=alignment](
-                        src_engine, src_idx
-                    )
+                    src_ptr.load[width=width, alignment=alignment](src_idx)
                     * scale.cast[dtype]()
                 ),
             )
@@ -5426,7 +4992,9 @@ struct StaticOffsetEngine[*, static_offset: Int, element_width: Int = 1](
         //,
     ](
         storage: Self.StorageType[dtype, origin, address_space],
-    ) raises -> Pointer[Scalar[dtype], origin, address_space=address_space]:
+    ) -> Pointer[
+        Scalar[dtype], origin, address_space=address_space
+    ]:
         """Returns a raw scalar pointer to the start of the viewed region.
 
         Parameters:
@@ -5483,133 +5051,6 @@ struct StaticOffsetEngine[*, static_offset: Int, element_width: Int = 1](
             ](storage._get_kgen_pointer())
         }
 
-    @staticmethod
-    @inline(.always)
-    def load[
-        dtype: DType,
-        //,
-        width: SIMDLength,
-        alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=False, dtype, ...]) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value from the start of the viewed region.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            width: The number of elements to load.
-            alignment: The alignment guarantee for the load.
-            invariant: If True, the compiler may assume the memory won't be
-                modified during the kernel, enabling load hoisting and caching.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming loads).
-
-        Args:
-            storage: The storage to load from.
-
-        Returns:
-            The loaded `SIMD` value.
-        """
-        return (storage.bitcast[Scalar[dtype]]() + Self.static_offset).load[
-            width=width,
-            alignment=alignment,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ]()
-
-    @staticmethod
-    @inline(.always)
-    def load[
-        dtype: DType,
-        //,
-        width: SIMDLength,
-        alignment: Int,
-        invariant: Bool = False,
-        non_temporal: Bool = False,
-    ](
-        storage: Self.StorageType[mut=False, dtype, ...],
-        offset: Some[Indexer],
-    ) -> SIMD[dtype, width]:
-        """Loads a `SIMD` value at a scalar-element offset into the region.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            width: The number of elements to load.
-            alignment: The alignment guarantee for the load.
-            invariant: If True, the compiler may assume the memory won't be
-                modified during the kernel, enabling load hoisting and caching.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming loads).
-
-        Args:
-            storage: The storage to load from.
-            offset: The scalar-element offset to load at, relative to the
-                start of the viewed region.
-
-        Returns:
-            The loaded `SIMD` value.
-        """
-        return (storage.bitcast[Scalar[dtype]]() + Self.static_offset).load[
-            width=width,
-            alignment=alignment,
-            invariant=invariant,
-            non_temporal=non_temporal,
-        ](offset)
-
-    @staticmethod
-    @inline(.always)
-    def store[
-        dtype: DType,
-        alignment: Int,
-        *,
-        non_temporal: Bool = False,
-    ](storage: Self.StorageType[mut=True, dtype, ...], value: SIMD[dtype, _]):
-        """Stores a `SIMD` value at the start of the viewed region.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            alignment: The alignment guarantee for the store.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming stores).
-
-        Args:
-            storage: The storage to store into.
-            value: The `SIMD` value to store.
-        """
-        (storage.bitcast[Scalar[dtype]]() + Self.static_offset).store[
-            alignment=alignment, non_temporal=non_temporal
-        ](value)
-
-    @staticmethod
-    @inline(.always)
-    def store[
-        dtype: DType,
-        alignment: Int,
-        *,
-        non_temporal: Bool = False,
-    ](
-        storage: Self.StorageType[mut=True, dtype, ...],
-        offset: Some[Indexer],
-        value: SIMD[dtype, _],
-    ):
-        """Stores a `SIMD` value at a scalar-element offset into the region.
-
-        Parameters:
-            dtype: The element data type of the storage.
-            alignment: The alignment guarantee for the store.
-            non_temporal: If True, indicates the data will not be reused soon,
-                allowing the hardware to bypass caches (e.g., streaming stores).
-
-        Args:
-            storage: The storage to store into.
-            offset: The scalar-element offset to store at, relative to the
-                start of the viewed region.
-            value: The `SIMD` value to store.
-        """
-        (storage.bitcast[Scalar[dtype]]() + Self.static_offset).store[
-            alignment=alignment, non_temporal=non_temporal
-        ](offset, value)
-
     comptime OffsetResultType[
         offset_types: TypeList[Trait=CoordLike, ...],
     ]: TensorEngine = Self
@@ -5654,44 +5095,18 @@ struct StaticOffsetEngine[*, static_offset: Int, element_width: Int = 1](
 
         Args:
             storage: The storage to offset from.
-            offset_coord: A rank-1 coordinate holding the number of scalar
-                elements to advance the handle by.
+            offset_coord: A flat coordinate whose components sum to the
+                number of scalar elements to advance the handle by.
 
         Returns:
             A handle of the same type starting the given number of scalar
             elements into the referenced storage.
         """
-        comptime assert offset_coord.flat_rank == 1
         return (
-            storage.bitcast[Scalar[offset_dtype]]() + offset_coord[0].value()
-        ).bitcast[SIMD[offset_dtype, Self.element_width]]()
-
-    @staticmethod
-    def distance[
-        dtype: DType, address_space: AddressSpace, //
-    ](
-        storage: Self.StorageType[mut=False, dtype, _, address_space],
-        other: Self.StorageType[mut=False, dtype, _, address_space],
-    ) -> Int:
-        """Returns the scalar-element distance from `other` to `storage`.
-
-        Both handles carry the same static offset, so it cancels out of the
-        distance.
-
-        Parameters:
-            dtype: The storages' `DType`.
-            address_space: The storages' `AddressSpace`.
-
-        Args:
-            storage: The storage to measure the distance to.
-            other: The storage to measure the distance from.
-
-        Returns:
-            The number of scalar elements separating the two handles. The
-            value is positive when `storage` is ahead of `other` and negative
-            when it precedes `other`.
-        """
-        return (Int(storage) - Int(other)) // size_of[dtype]()
+            storage.unsafe_bitcast[Scalar[offset_dtype]]().unsafe_offset(
+                _offset_elements(offset_coord)
+            )
+        ).unsafe_bitcast[SIMD[offset_dtype, Self.element_width]]()
 
     @staticmethod
     @inline(.always)
@@ -5722,7 +5137,7 @@ struct StaticOffsetEngine[*, static_offset: Int, element_width: Int = 1](
         """Copies the elements of `other` into `storage`, in place.
 
         Delegates to the shared `_copy_from` loop; destination accesses go
-        through this engine's `load`/`store`, so the static offset applies.
+        through this engine's `unsafe_ptr`, so the static offset applies.
 
         Parameters:
             SelfLayoutType: The layout type of the destination storage.

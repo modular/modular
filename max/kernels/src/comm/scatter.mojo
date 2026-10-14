@@ -178,7 +178,7 @@ def scatter[
             max_elems = chunk_num_elems_int[i]
 
     comptime BLOCK_SIZE = 256
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     var grid_size = ceildiv(ceildiv(max_elems, simd_width), BLOCK_SIZE)
 
     comptime kernel = scatter_pull_kernel[

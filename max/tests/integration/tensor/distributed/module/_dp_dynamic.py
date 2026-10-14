@@ -41,7 +41,6 @@ from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
     TensorLayout,
@@ -61,11 +60,11 @@ def _sym_dp_input(mesh: DeviceMesh) -> TensorLayout:
 
 
 def _replicated_w(mesh: DeviceMesh, data: np.ndarray) -> Tensor:
-    return transfer_to(Tensor(data), PlacementMapping(mesh, (Replicated(),)))
+    return transfer_to(Tensor(data), DeviceMapping(mesh, (Replicated(),)))
 
 
 def _presharded_input(mesh: DeviceMesh, batch_np: np.ndarray) -> Tensor:
-    return transfer_to(Tensor(batch_np), PlacementMapping(mesh, (Sharded(0),)))
+    return transfer_to(Tensor(batch_np), DeviceMapping(mesh, (Sharded(0),)))
 
 
 class DPDynamicTests:
@@ -150,7 +149,7 @@ class DPDynamicTests:
             W: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dp = transfer_to(x, PlacementMapping(mesh, (Sharded(0),)))
+                x_dp = transfer_to(x, DeviceMapping(mesh, (Sharded(0),)))
                 return matmul(x_dp, self.W)
 
         rng = np.random.default_rng(3)
@@ -175,10 +174,10 @@ class DPDynamicTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dp = transfer_to(x, PlacementMapping(mesh, (Sharded(0),)))
+                x_dp = transfer_to(x, DeviceMapping(mesh, (Sharded(0),)))
                 h = relu(matmul(x_dp, self.W1))
                 out = matmul(h, self.W2)
-                return transfer_to(out, PlacementMapping(mesh, (Replicated(),)))
+                return transfer_to(out, DeviceMapping(mesh, (Replicated(),)))
 
         rng = np.random.default_rng(4)
         w1_np = rng.standard_normal((H, H)).astype(np.float32) * 0.1
@@ -205,13 +204,13 @@ class DPDynamicTests:
         w1_np = rng.standard_normal((H, H)).astype(np.float32) * 0.1
         w2_np = rng.standard_normal((H, H)).astype(np.float32) * 0.1
 
-        x = transfer_to(Tensor(x_np), PlacementMapping(mesh, (Sharded(0),)))
+        x = transfer_to(Tensor(x_np), DeviceMapping(mesh, (Sharded(0),)))
         w1 = _replicated_w(mesh, w1_np)
         w2 = _replicated_w(mesh, w2_np)
 
         h = relu(matmul(x, w1))
         out = matmul(h, w2)
-        result = transfer_to(out, PlacementMapping(mesh, (Replicated(),)))
+        result = transfer_to(out, DeviceMapping(mesh, (Replicated(),)))
 
         expected = np.maximum(x_np @ w1_np, 0.0) @ w2_np
         np.testing.assert_allclose(

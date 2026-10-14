@@ -76,14 +76,13 @@ from std.math import ceildiv, min
 from std.sys import size_of, simd_width_of
 from max.gpu import WARP_SIZE
 from max.gpu.intrinsics import AMDBufferResource
-from std.memory import AddressSpace
 from std.sys.intrinsics import readfirstlane
 from std.collections import Optional
 
 from layout import TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 
-from structured_kernels.amd_tile_io import GMemTile, SMemTile, TileLoader
+from structured_kernels.amd_tile_io import SMemTile, TileLoader
 
 
 # ===----------------------------------------------------------------------=== #

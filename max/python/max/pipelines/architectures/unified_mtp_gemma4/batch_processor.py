@@ -18,10 +18,13 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Usage,
+)
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessor,
@@ -79,7 +82,7 @@ class UnifiedMTPGemma4BatchProcessor(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Gemma4Context]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> UnifiedMTPGemma4Inputs:
         """Prepare batch inputs for a UnifiedMTPGemma4 forward pass.
@@ -106,14 +109,18 @@ class UnifiedMTPGemma4BatchProcessor(
         batch_size = len(context_batch)
         total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
 
-        buffer_type = DevicePinnedBuffer if pinned else Buffer
-        host_tokens = buffer_type(
-            dtype=DType.int64, shape=(total_seq_len,), device=device0
+        usage = Usage.STAGING | Usage.UNTRACKED if pinned else Usage.DEFAULT
+        host_tokens = Buffer(
+            dtype=DType.int64,
+            shape=(total_seq_len,),
+            device=device0,
+            usage=usage,
         )
-        host_row_offsets = buffer_type(
+        host_row_offsets = Buffer(
             dtype=DType.uint32,
             shape=(batch_size + 1,),
             device=device0,
+            usage=usage,
         )
 
         np.concatenate(

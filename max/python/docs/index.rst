@@ -38,3 +38,4 @@ Modules
    profiler
    serve.media
    support.image
+   tree

@@ -11,14 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std._plugin._trait import PluginHooks
+from std._plugin._trait import PluginHooks, StdPlugin
+from std.sys.info import CompilationTarget
 from std.collections.string.string_span import _get_kgen_string
 
 
-struct CUDAPlugin(PluginHooks):
+struct CUDAPlugin(StdPlugin):
     """`PluginHooks` implementation for NVIDIA CUDA backends.
 
     Every hook is left at its `PluginHooks` default.
     """
 
     comptime name: __mlir_type.`!kgen.string` = _get_kgen_string["cuda"]()
+    comptime HookFor[target: CompilationTarget] = CUDAPluginHooks[target]
+
+
+struct CUDAPluginHooks[target: CompilationTarget](PluginHooks):
+    pass

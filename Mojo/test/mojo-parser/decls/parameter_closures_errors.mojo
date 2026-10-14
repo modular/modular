@@ -82,11 +82,11 @@ def bad_capture(x: Int):
     # expected-error @below {{cannot capture unknown value 'not_a_thing'}}
     @__copy_capture(not_a_thing)
     @__parameter
-    async def closure_1():
+    __async def closure_1():
         pass
 
     # expected-error @below {{cannot capture unknown value 'not_a_thing'}}
     @__move_capture(not_a_thing)
     @__parameter
-    async def closure_2():
+    __async def closure_2():
         pass

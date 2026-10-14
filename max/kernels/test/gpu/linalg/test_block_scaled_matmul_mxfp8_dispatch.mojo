@@ -33,7 +33,12 @@ from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 from internal_utils import assert_almost_equal
-from layout import CoordLike, Coord, Idx, TileTensor, row_major
+from layout import (
+    CoordLike,
+    Idx,
+    TileTensor,
+    row_major,
+)
 
 from linalg.block_scaled_quantization import (
     block_scaled_matmul,
@@ -71,29 +76,23 @@ def test_mxfp8_dispatch[
         t" shape=(M={M}, N={N}, K={K})"
     )
 
-    var a_shape = row_major(Coord(M, Idx[KType.static_value]))
-    var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
-    )
-    var c_shape = row_major(Coord(M, Idx[NType.static_value]))
+    var a_shape = row_major(M, Idx[KType.static_value])
+    var b_shape = row_major(Idx[NType.static_value], Idx[KType.static_value])
+    var c_shape = row_major(M, Idx[NType.static_value])
 
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(M, SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(M, SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_size = M * K
@@ -187,11 +186,11 @@ def test_mxfp8_dispatch[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,
     ](
-        c_ref.to_layout_tensor(),
-        a.to_layout_tensor(),
-        b.to_layout_tensor(),
-        a_scales.to_layout_tensor(),
-        b_scales.to_layout_tensor(),
+        c_ref,
+        a,
+        b,
+        a_scales,
+        b_scales,
         ctx,
     )
 

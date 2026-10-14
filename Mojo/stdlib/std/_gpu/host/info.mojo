@@ -22,23 +22,20 @@ memory specifications, thread organization, and performance characteristics.
 # the MLIR target configuration, the `data_layout` string format, and the
 # locations in this file that need to be updated.
 
-from std.math import ceildiv, floor
 from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
     _TargetType,
 )
 
-from std._plugin._overlay import ADDITIONAL_TARGETS
-
-from ._builtin_targets import BuiltinTargets, _a100_target
+from std._plugin._overlay import TARGETS
 
 
-@inline(.always)
+@always_inline("builtin")
 def get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = _accelerator_arch(),
-]() -> CompilationTarget[_mlir_value=_get_gpu_target[target_arch]()]:
+]() -> CompilationTarget[_mlir_value=_gpu_mlir_target[target_arch]()]:
     """Gets the GPU target information for the specified architecture.
 
     Parameters:
@@ -50,16 +47,90 @@ def get_gpu_target[
     return {}
 
 
-@inline(.always)
-def _get_gpu_target[
-    # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
-    target_arch: StaticString = _accelerator_arch(),
-]() -> _TargetType:
-    comptime assert (
-        target_arch != ""
-    ), "target_arch must be a valid GPU architecture."
-    comptime info = GPUInfo.from_name[target_arch]()
-    return GPUInfo._mlir_target[info.name]()
+# Must stay an ordinary (not builtin-inlined) function. The default
+# `accelerator_arch` is only resolved at elaboration time, so the table lookup
+# can't fold while types are parsed; inlining it would embed the whole
+# accelerator table in every type and symbol name that mentions the target.
+def _gpu_mlir_target[target_arch: StaticString]() -> _TargetType:
+    return TargetAccelerator.from_arch[target_arch].mlir_target
+
+
+# ===----------------------------------------------------------------------=== #
+# _LookupTargetAccelerator
+# ===----------------------------------------------------------------------=== #
+
+comptime _matches_target_arch[
+    target_arch: StaticString,
+    C: TargetAcceleratorCollection,
+    Elt: TargetAcceleratorType,
+    Idx: Int,
+]: Bool = Elt.target_accelerator_values.__contains__(
+    C.normalize_target_arch(target_arch)
+)
+
+comptime _matches_gpu_name[
+    gpu_name: StaticString,
+    __unused: TargetAcceleratorCollection,
+    Elt: TargetAcceleratorType,
+    Idx: Int,
+]: Bool = Elt.gpu_info.name == gpu_name
+
+
+struct _LookupTargetAccelerator[
+    filter_pred: __generator_type[
+        C: TargetAcceleratorCollection,
+        Elt: TargetAcceleratorType,
+        Idx: Int,
+    ] Bool,
+    Collections: TypeList[Trait=TargetAcceleratorCollection, ...] = TARGETS,
+]:
+    comptime by_target_arch[target_arch: StaticString] = (
+        _LookupTargetAccelerator[
+            _matches_target_arch[
+                target_arch,
+                _,
+                _,
+                _,
+            ],
+            Self.Collections,
+        ]
+    )
+
+    comptime by_gpu_name[gpu_name: StaticString] = (
+        _LookupTargetAccelerator[
+            _matches_gpu_name[gpu_name, _, _, _], Self.Collections
+        ]
+    )
+
+    comptime _matching_target_values[C: TargetAcceleratorCollection] = (
+        C.TARGETS.filter_idx[Self.filter_pred[C, _, _]]().values
+    )
+
+    comptime results = TypeList._concat[
+        *Self.Collections.map_to_values[Self._matching_target_values]()
+    ]()
+
+    comptime single_result = (
+        Self.results[0] if Self.results.length
+        == 1 else Self._error_non_single_result()
+    )
+
+    @staticmethod
+    def _error_non_single_result() -> (
+        TargetAcceleratorType
+    ) where Self.results.length != 1:
+        comptime if Self.results.length == 0:
+            # No matching target could be found, so issue a descriptive error.
+            # FIXME(MSTDL-3207): This error is not applicable to all the queries
+            #       where `single_result` is used.
+            comptime assert False, _build_unsupported_arch_error[
+                Self.Collections, _accelerator_arch()
+            ]()
+        else:
+            comptime assert False, String(
+                t"target lookup must match exactly one target entry, got"
+                t" {Self.results.length}"
+            )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -69,26 +140,72 @@ def _get_gpu_target[
 
 # TODO: This trait wouldn't be needed if `type_of(TargetAccelerator)` worked as
 #       the `TypeList` metatype.
-trait TargetAcceleratorType:
+trait TargetAcceleratorType(Defaultable):
     comptime gpu_info: GPUInfo
     comptime mlir_target: _TargetType
     comptime target_accelerator_values: List[String]
 
+    comptime target = CompilationTarget[_mlir_value=Self.mlir_target]()
+
 
 struct TargetAccelerator[
     gpu_info_: GPUInfo,
-    target: CompilationTarget,
+    target_: CompilationTarget,
     # TODO: Should be the same as either GPUInfo.arch_name or GPUInfo.version,
     #       however that field is currently used inconsistently.
-    target_accelerator_values_: List[String],
+    target_accelerator_values_: List[String] = [],
 ](TargetAcceleratorType):
+    # TargetAcceleratorType conformance
     comptime gpu_info = Self.gpu_info_
-    comptime mlir_target = Self.target._mlir_value
+    comptime mlir_target = Self.target_._mlir_value
     comptime target_accelerator_values = Self.target_accelerator_values_
+
+    # Used when constructing a `TargetAcceleratorCollection` table to add
+    # accepted `--target-accelerator` values to a `TargetAccelerator` instance
+    # that has the default `[]` list.
+    #
+    # We could declare these ahead of time on the target constants (e.g. `B200`)
+    # but that makes it harder to how where the current ambiguities and
+    # conflicts are (e.g. GTX1060 and GTX1060Ti could arguably both match
+    # "sm_61", but only is declared with as matching that `--target-accelerator`
+    # value).
+    comptime _with_cli_values[values: List[String]] = TargetAccelerator[
+        Self.gpu_info_, Self.target_, values
+    ]
+
+    def __init__(out self):
+        pass
+
+    comptime default_accelerator = Self.from_arch[_accelerator_arch()]
+
+    # Note:
+    #   These parametric aliases can't instead be a static methods like:
+    #       `TargetAccelerator.from_arch[..]()`
+    #   because the compiler requires the `Self` type be concrete, otherwise the
+    #   call fails due to an 'unbound struct type parameters' error.
+
+    comptime from_arch[name: StaticString] = (
+        _LookupTargetAccelerator[].by_target_arch[name].single_result
+    )
+
+    comptime from_gpu_name[name: StaticString] = (
+        _LookupTargetAccelerator[].by_gpu_name[name].single_result
+    )
+
+    # Forwarded for backwards compatibility. Enables e.g. `B200.sm_count` to
+    # work, instead of the more verbose `B200.gpu_info.sm_count`.
+    # Other fields could be forwarded, but these are the commonly accessed ones.
+    # fmt: off
+    comptime sm_count                         = Self.gpu_info_.sm_count
+    comptime shared_memory_per_multiprocessor = Self.gpu_info_.shared_memory_per_multiprocessor
+    comptime compute                          = Self.gpu_info_.compute
+    # fmt: on
 
 
 trait TargetAcceleratorCollection:
     comptime vendor_name: String
+
+    comptime encode_device_types_with_host_layout: Bool = False
 
     comptime RAW_TARGETS: TypeList[Trait=TargetAcceleratorType]._mlir_type
 
@@ -99,61 +216,23 @@ trait TargetAcceleratorCollection:
         ...
 
     @staticmethod
-    def _provides_mlir_target_for_name(name: StaticString) -> Bool:
-        comptime for idx in range(Self.TARGETS.length):
-            comptime entry = Self.TARGETS[idx]
-            if name == entry.gpu_info.name:
-                return True
-        return False
+    def supported_archs_message() -> String:
+        """Describes this collection's targets for the unsupported-arch error.
 
-    @staticmethod
-    def _get_mlir_target_from_name(name: StaticString) -> _TargetType:
-        """Gets the MLIR target for a registered target name.
-
-        `name` must match the `gpu_info.name` of an entry in
-        `Self.TARGETS`. Callers must verify membership with
-        `_provides_mlir_target_for_name()` before calling.
+        Returns:
+            One indented paragraph naming the collection's architectures.
         """
-        comptime for idx in range(Self.TARGETS.length):
-            comptime entry = Self.TARGETS[idx]
-            if name == entry.gpu_info.name:
-                return entry.mlir_target
-
-        __mlir_op.`llvm.intr.trap`()
-        while True:
-            pass
-
-    @staticmethod
-    def _lookup_info_from_target_arch[
-        normalized_target_arch: StaticString
-    ]() -> Optional[GPUInfo]:
-        comptime _matches[
-            entry: TargetAcceleratorType, _idx: Int
-        ]: Bool = entry.target_accelerator_values.__contains__(
-            normalized_target_arch
-        )
-
-        comptime matching_targets = Self.TARGETS.filter_idx[_matches]()
-
-        comptime if matching_targets.length > 0:
-            comptime assert matching_targets.length == 1, (
-                "specified target accelerator unexpectedly matched more than"
-                " one target entry"
-            )
-            comptime entry = matching_targets[0]
-            return materialize[entry.gpu_info]()
-
-        return None
+        return String("  ", _supported_archs_line[Self](), "\n\n")
 
 
-struct EmptyTargetCollection(TargetAcceleratorCollection):
-    comptime vendor_name: String = "<empty>"
+comptime _encodes_with_host_layout[C: TargetAcceleratorCollection]: Bool = (
+    C.encode_device_types_with_host_layout
+)
 
-    comptime RAW_TARGETS = TypeList.of[Trait=TargetAcceleratorType]().values
-
-    @staticmethod
-    def normalize_target_arch(target_arch0: StaticString) -> String:
-        return target_arch0
+# TODO(DRIV-154): Decide this per target rather than for the whole build.
+comptime _encode_device_types_with_host_layout: Bool = TARGETS.any[
+    _encodes_with_host_layout
+]()
 
 
 def _target_accelerator_values[
@@ -172,9 +251,7 @@ def _target_accelerator_values[
     return list^
 
 
-def _unsupported_arch_error_additions[
-    C: TargetAcceleratorCollection
-]() -> String:
+def _supported_archs_line[C: TargetAcceleratorCollection]() -> String:
     var string = String(t"{C.vendor_name}: ")
 
     comptime for idx in range(C.TARGETS.length):
@@ -194,6 +271,9 @@ def _unsupported_arch_error_additions[
 # ===-----------------------------------------------------------------------===#
 # AcceleratorArchitectureFamily
 # ===-----------------------------------------------------------------------===#
+
+comptime _KB = 1024
+comptime _K = 1024
 
 
 @fieldwise_init
@@ -309,20 +389,6 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
     """Maximum number of threads allowed in a thread block."""
 
     @staticmethod
-    def _mlir_target[name: StaticString]() -> _TargetType:
-        if name == "":
-            return _empty_target._mlir_value
-
-        if BuiltinTargets._provides_mlir_target_for_name(name):
-            return BuiltinTargets._get_mlir_target_from_name(name)
-
-        if ADDITIONAL_TARGETS._provides_mlir_target_for_name(name):
-            return ADDITIONAL_TARGETS._get_mlir_target_from_name(name)
-
-        # TODO: Don't return a default, instead issue an error.
-        return _a100_target._mlir_value
-
-    @staticmethod
     def from_target[target: CompilationTarget]() -> Self:
         """Creates a `GPUInfo` instance from an MLIR target.
 
@@ -332,19 +398,34 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         Returns:
             GPU info corresponding to the target.
         """
-        return _get_info_from_target[target._arch()]()
+        return Self.from_name[target._arch()]()
 
     @staticmethod
-    def from_name[name: StaticString]() -> Self:
-        """Creates a `GPUInfo` instance from a GPU architecture name.
-
-        Parameters:
-            name: GPU architecture name (e.g., "sm_80", "gfx942").
+    def default_accelerator() -> Self:
+        """Gets `GPUInfo` for the default target accelerator.
 
         Returns:
-            GPU info corresponding to the architecture name.
+            `GPUInfo` instance for the default target accelerator.
         """
-        return _get_info_from_target[name]()
+        return GPUInfo.from_name[_accelerator_arch()]()
+
+    @staticmethod
+    def from_name[target_arch0: StaticString, /]() -> Self:
+        """Gets `GPUInfo` for a specific target architecture.
+
+        Maps target architecture strings to corresponding `GPUInfo` instances.
+
+        Parameters:
+            target_arch0: Target architecture name (e.g., "sm_80", "gfx942").
+
+        Returns:
+            `GPUInfo` instance for the specified target architecture.
+        """
+        comptime result = _LookupTargetAccelerator[].by_target_arch[
+            target_arch0
+        ].single_result
+
+        return materialize[result.gpu_info]()
 
     @staticmethod
     def from_family(
@@ -399,6 +480,28 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         """
         return self.name == other.name
 
+    def __eq__(self, other: TargetAccelerator[_, _, _]) -> Bool:
+        """Compares this GPU information with a target accelerator.
+
+        Compares against the accelerator's associated `GPUInfo`, allowing
+        device information to be checked directly against a built-in target
+        constant.
+
+        Args:
+            other: The target accelerator to compare.
+
+        Returns:
+            True if both represent the same GPU model.
+
+        Examples:
+
+        ```mojo
+        var device_info = materialize[H100.gpu_info]()
+        print(device_info == H100)  # True
+        ```
+        """
+        return self == materialize[other.gpu_info]()
+
     @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """Writes GPU information to a writer.
@@ -439,36 +542,22 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
 # ===-----------------------------------------------------------------------===#
 
 
-def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
+def _build_unsupported_arch_error[
+    Collections: TypeList[Trait=TargetAcceleratorCollection, ...],
+    target_arch: StaticString,
+]() -> String:
     """Builds a helpful error message for unsupported GPU architectures.
 
     Provides a comprehensive list of all supported GPU architectures across
     all vendors with documentation links.
 
     Parameters:
+        Collections: The target collections whose architectures to list.
         target_arch: The unsupported target architecture string.
 
     Returns:
         A detailed error message with supported architectures and doc links.
     """
-    comptime nvidia_archs = (
-        "sm_52 (Maxwell), sm_60/sm_61 (Pascal), sm_75 (Turing), sm_80 (Ampere"
-        " A100), sm_86 (Ampere A10), sm_87 (Orin), sm_89 (Ada L4/RTX4090),"
-        " sm_90/sm_90a (Hopper H100), sm_100/sm_100a (Blackwell B100/B200),"
-        " sm_110 (Jetson Thor), sm_120/sm_120a (Blackwell RTX5090), sm_121 (DGX"
-        " Spark)"
-    )
-    comptime amd_archs = (
-        "gfx90a (MI250X), gfx942 (MI300X/MI300A), gfx950 (MI355X), gfx1030"
-        " (Radeon 6900), gfx1033 (Van Gogh), gfx1100 (Radeon 7900), gfx1101"
-        " (Radeon 7800), gfx1102 (Radeon 7600), gfx1103 (Radeon 780M),"
-        " gfx1150/gfx1151/gfx1152 (Radeon 8xx), gfx1200 (Radeon 9060), gfx1201"
-        " (Radeon 9070)"
-    )
-    comptime apple_archs = (
-        "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
-    )
-
     var prefix: String
 
     comptime if target_arch == "":
@@ -478,33 +567,11 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
             "GPU architecture '", target_arch, "' is not supported."
         )
 
-    return String(
-        prefix,
-        "\n\nSupported GPU architectures:\n\n",
-        "  NVIDIA: ",
-        nvidia_archs,
-        "\n  See: https://developer.nvidia.com/cuda-gpus\n\n",
-        "  AMD: ",
-        amd_archs,
-        (
-            "\n  See:"
-            " https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html"
-            "\n\n"
-        ),
-        "  Apple: ",
-        apple_archs,
-        (
-            "\n  See:"
-            " https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf"
-            "\n\n"
-        ),
-        comptime (_unsupported_arch_error_additions[ADDITIONAL_TARGETS]()),
-    )
+    var message = String(prefix, "\n\nSupported GPU architectures:\n\n")
+    comptime for idx in range(Collections.length):
+        message.write(Collections[idx].supported_archs_message())
+    return message^
 
-
-# ===-----------------------------------------------------------------------===#
-# _get_info_from_target
-# ===-----------------------------------------------------------------------===#
 
 # All supported target architectures in canonical form.
 #
@@ -515,48 +582,12 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 # SYNC: This list must stay in sync with the TargetTraits accelerator tables
 #       in Mojo/lib/Target/. Run the following test to verify:
 #       bazel test //Mojo/test/mojo-tool:build/internal/verify_supported_accelerators_sync.mojo.test
-comptime _all_target_accelerator_values: List[String] = (
-    _target_accelerator_values[BuiltinTargets]()
-    + ["cuda"]
-    + _target_accelerator_values[ADDITIONAL_TARGETS]()
-)
-
-
-@inline(.always)
-def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
-    """Gets `GPUInfo` for a specific target architecture.
-
-    Maps target architecture strings to corresponding `GPUInfo` instances.
-
-    Parameters:
-        target_arch0: Target architecture string (e.g., "sm_80", "gfx942").
-
-    Returns:
-        `GPUInfo` instance for the specified target architecture.
-    """
-    comptime target_arch1 = BuiltinTargets.normalize_target_arch(target_arch0)
-    comptime target_arch = ADDITIONAL_TARGETS.normalize_target_arch(
-        target_arch1
-    )
-
-    # "cuda" means generic CUDA — use runtime GPU detection.
-    comptime if target_arch == "cuda":
-        return _get_info_from_target[_accelerator_arch()]()
-
-    comptime builtin_info = BuiltinTargets._lookup_info_from_target_arch[
-        target_arch
-    ]()
-    comptime if builtin_info:
-        return materialize[builtin_info.value()]()
-
-    comptime vendor_info = ADDITIONAL_TARGETS._lookup_info_from_target_arch[
-        target_arch
-    ]()
-    comptime if vendor_info:
-        return materialize[vendor_info.value()]()
-    else:
-        # No matching target could be found, so issue a descriptive error.
-        comptime assert False, _build_unsupported_arch_error[target_arch0]()
+def _all_target_accelerators() -> List[String]:
+    var list = List[String]()
+    comptime for idx in range(TARGETS.length):
+        list.extend(_target_accelerator_values[TARGETS[idx]]())
+    list.append("cuda")
+    return list^
 
 
 # ===-----------------------------------------------------------------------===#

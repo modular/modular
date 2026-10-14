@@ -27,7 +27,7 @@ here only by a guard that it keeps omitting the triple.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from max.dtype import DType
@@ -36,8 +36,12 @@ from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.unified_dflash_kimi_k25.model import (
     UnifiedDflashKimiK25Inputs,
 )
+from max.pipelines.architectures.unified_dflash_kimi_k25.spec_adapters import (
+    DFlashKimiK25Target,
+)
 from max.pipelines.architectures.unified_dflash_kimi_k25.unified_dflash_kimi_k25 import (
     UnifiedDflashKimiK25,
+    dflash_kimi_k25_input_spec,
 )
 from max.pipelines.architectures.unified_dflash_llama3.model import (
     UnifiedDflashLlama3Inputs,
@@ -92,13 +96,24 @@ def test_dflash_kimi_k25_input_types_bitmask_triple(
                 hidden_size=128,
             )
         ),
-        target=SimpleNamespace(ep_manager=None),
+        _target=DFlashKimiK25Target(
+            cast(Any, SimpleNamespace(ep_manager=None))
+        ),
         enable_structured_output=enable_structured_output,
     )
     kv_params = MultiKVCacheParams.from_params(
         {"target": _kv_params(), "draft": _kv_params()}
     )
-    types = UnifiedDflashKimiK25.input_types(stub, kv_params)
+    # Built from the config alone: ``input_types`` reads ``self.input_spec``,
+    # which a duck-typed stand-in cannot supply. The driver forwards
+    # ``ep_input_types`` on, so the stand-in carries a real adapter.
+    types = build_spec_decode_input_types(
+        dflash_kimi_k25_input_spec(
+            stub.config, enable_structured_output=enable_structured_output
+        ),
+        kv_params=kv_params,
+        ep_input_types=UnifiedDflashKimiK25.ep_input_types(stub),
+    )
     assert _is_bitmask_triple(types) == enable_structured_output
 
 
@@ -179,11 +194,11 @@ def test_tail_buffers_match_input_types_lockstep(
     kv_params = _kv_params()
     types = build_spec_decode_input_types(
         SpecDecodeInputTypeSpec(
+            devices=[DeviceRef.GPU()],
             distributed=False,
             include_in_thinking_phase=include_in_thinking_phase,
             enable_structured_output=enable_structured_output,
         ),
-        devices=[DeviceRef.GPU()],
         kv_params=kv_params,
     )
     tail_types = types[3 + len(kv_params.flattened_kv_inputs()) :]

@@ -24,6 +24,7 @@ from std.sys.defines import get_defined_int
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.normalization import *
+from builtin_kernels.rowwise_normalization import layer_norm
 from std.utils.index import Index
 
 from _fuzz import boundary_int, collect_args, flag, flag_int, numeric_check

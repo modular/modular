@@ -23,7 +23,6 @@ include "Mojo/KGENDialect/KGENDialect.td"
 include "Mojo/KGENDialect/KGENEnums.td"
 include "Mojo/KGENDialect/KGENInterfaces.td"
 include "Mojo/KGENDialect/KGENTypes.td"
-include "Mojo/HLCFDialect/HLCFInterfaces.td"
 include "Mojo/Interpreter/InterpreterInterface.td"
 include "Support/MDialect/MAttrs.td"
 include "mlir/IR/BuiltinAttributes.td"
@@ -56,14 +55,14 @@ def KGEN_FuncOp : KGENOp<"func", [
     be lowered and compiled to an executable.
 
     The body of a `kgen.func` is a single block region terminated by a
-    `kgen.return` whose operands represent the return values of the function.
+    `hlcf.return` whose operands represent the return values of the function.
 
     Example:
 
     ```mlir
     kgen.func @kernel(%arg0: index, %arg1: index) -> index {
       %0 = index.add %arg0, %arg1
-      kgen.return %0 : index
+      hlcf.return %0 : index
     }
     ```
 
@@ -81,10 +80,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     The presence of this attribute means that the function was already compiled
     all the way to an object file once, so we should avoid doing it again.
 
-    The function can contain opaque metadata to pass onto LLVM in its
-    `llvmMetadata` dictionary attribute. Note that this is not the same as LLVM
-    function attributes, which is contained in the `llvmAttrs` dictionary
-    attribute.
+    The function can be provided opaque attributes to pass onto LLVM, either on
+    the function itself (fnAttrs) or on its arguments (fnArgAttrs).
   }];
 
   let arguments = (ins
@@ -95,8 +92,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     TypedAttrInterface:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
     UnitAttr:$external, UnitAttr:$convergent,
-    DefaultValuedAttr<DictionaryAttr, "{}">:$LLVMMetadata,
-    DefaultValuedAttr<DictArrayAttr, "{}">:$LLVMArgMetadata,
+    DefaultValuedAttr<DictionaryAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<DictArrayAttr, "{}">:$fnArgAttrs,
     DefaultValuedAttr<StringArrayAttr, "ArrayRef<StringAttr>{}">:$crossDeviceCaptures,
     OptionalAttr<TypeAttr>:$coroutineType,
     OptionalAttr<KGEN_LinkageNameAttr>:$linkageName
@@ -138,16 +135,16 @@ def KGEN_FuncOp : KGENOp<"func", [
                    CArg<"bool", "false">:$convergent,
                    CArg<"LinkageNameAttr", "{}">:$linkageName,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
-                   CArg<"DictionaryAttr", "{}">:$llvmMetadata,
-                   CArg<"ArrayAttr", "{}">:$llvmArgMetadata), [{
-      if (!llvmMetadata)
-        llvmMetadata = DictionaryAttr::get(name.getContext());
-      if (!llvmArgMetadata)
-        llvmArgMetadata = ArrayAttr::get(name.getContext(), {});
+                   CArg<"DictionaryAttr", "{}">:$fnAttrs,
+                   CArg<"ArrayAttr", "{}">:$fnArgAttrs), [{
+      if (!fnAttrs)
+        fnAttrs = DictionaryAttr::get(name.getContext());
+      if (!fnArgAttrs)
+        fnArgAttrs = ArrayAttr::get(name.getContext(), {});
       auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
       build($_builder, $_state, name, /*sym_visibility=*/nullptr, sigGen,
             decorators, KGEN::getInlineLevelAttr($_builder.getContext(), inlineLevel),
-            exportKind, external, convergent, llvmMetadata, llvmArgMetadata,
+            exportKind, external, convergent, fnAttrs, fnArgAttrs,
             /*crossDeviceCaptures=*/{}, /*coroutineType=*/{}, linkageName);
     }]>,
   ];
@@ -180,7 +177,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     kgen.generator @add<rhs>(%lhs: index) -> index {
       %0 = kgen.param.constant = <rhs>
       %1 = index.add %lhs, %0
-      kgen.return %1 : index
+      hlcf.return %1 : index
     }
     ```
   }];
@@ -189,6 +186,15 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     SymbolNameAttr:$sym_name,
     OptionalAttr<StrAttr>:$sym_visibility,
     OptionalAttr<StrAttr>:$sourceName,
+    // The op keeps the signature in two forms.
+    // `funcTypeGenerator` is the form for use outside the generator. It
+    // refers to input parameters by index and writes each expression in full.
+    // `functionType` is the form that the body uses. The entry block
+    // arguments have its types. It can refer to a parameter that the body
+    // declares, for example a lifted `kgen.param.apply`.
+    // The printer writes only `functionType`, and the parser makes
+    // `funcTypeGenerator` from it. If the result is not correct, the printer
+    // also writes `funcTypeGenerator`.
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
@@ -205,8 +211,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     // Source-declared parameter list (names + passing kinds + variadic
     // kinds). Captured during `LowerLIT` from the source
     // `FuncTypeGeneratorType`'s `PogListAttr` metadata, with default values
@@ -223,7 +229,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     OptionalAttr<KGEN_PogListAttr>:$sourceParamList,
     // Stable snapshot of the source `FuncTypeGeneratorType` (parameter types +
     // body func type), captured during `LowerLIT` wrapped in a `TypeParamAttr`
-    // (`#kgen.type<...>`) so `LowerLITTypes` lowers it in the value domain: the
+    // (`#kgen.type<...>`) so its type lowering takes it in the value domain: the
     // snapshot's argument/result types (the generator body) come out in the
     // value domain, which reflection clients need. Its POG metadata is stripped
     // along with the live signature's; `sourceParamList` carries the
@@ -262,20 +268,20 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"TypedAttr", "{}">:$inlinedForm,
                    CArg<"LinkageNameAttr", "{}">:$linkageNameAttr,
-                   CArg<"ArrayAttr", "{}">:$llvmMetadataArray,
-                   CArg<"ArrayAttr", "{}">:$llvmArgMetadataArray), [{
-      if (!llvmMetadataArray)
-        llvmMetadataArray = ArrayAttr::get(symName.getContext(), {});
-      if (!llvmArgMetadataArray)
-        llvmArgMetadataArray = ArrayAttr::get(symName.getContext(), {});
+                   CArg<"ArrayAttr", "{}">:$fnAttrs,
+                   CArg<"ArrayAttr", "{}">:$fnArgAttrs), [{
+      if (!fnAttrs)
+        fnAttrs = ArrayAttr::get(symName.getContext(), {});
+      if (!fnArgAttrs)
+        fnArgAttrs = ArrayAttr::get(symName.getContext(), {});
       build($_builder, $_state,
             symName, /*sym_visibility=*/nullptr, sourceName, type,
             functionType, inputParams,
             /*decorators=*/{},
             KGEN::getInlineLevelAttr($_builder.getContext(), inlineLevel),
             ExportKind::NotExported,
-            /*external=*/false, inlinedForm, linkageNameAttr, llvmMetadataArray,
-            llvmArgMetadataArray, /*sourceParamList=*/PogListAttr(),
+            /*external=*/false, inlinedForm, linkageNameAttr, fnAttrs,
+            fnArgAttrs, /*sourceParamList=*/PogListAttr(),
             /*sourceFuncTypeGenerator=*/TypedAttr());
     }]>,
     OpBuilder<(ins "StringAttr":$symName, "FuncTypeGeneratorType":$type), [{
@@ -367,7 +373,9 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [SymbolName, SymbolVisib
                        OptionalAttr<StrAttr>:$sym_visibility,
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        TypeAttr:$valueDomainType,
-                       TypeAttr:$metaType);
+                       TypeAttr:$metaType,
+                       // `@__annotation` on the struct decl.
+                       OptionalAttr<ArrayAttr>:$annotations);
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
@@ -575,7 +583,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
     ```mlir
     kgen.func @foo(%arg0: index) {
-      kgen.return %arg0 : index
+      hlcf.return %arg0 : index
     }
 
     %0 = kgen.call @foo(%arg0) : (index) -> index
@@ -590,7 +598,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
     ```mlir
     kgen.generator @add2<N -> index>() {
       kgem.param.result_bind<add(N, 2)>
-      kgen.return
+      hlcf.return
     }
 
     kgen.call @add2<N = 2 -> NPlus2>() : () -> ()
@@ -863,13 +871,13 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     kgen.param.declare.region AddIt[my_add] = <N>(%arg0: index) -> index {
       %0 = kgen.param.constant = <N>
       %1 = index.add %0, %arg0
-      kgen.return %1 : index
+      hlcf.return %1 : index
     }
 
     kgen.param.declare.region SubtractIt = <N>(%arg0: index) -> index {
       %0 = kgen.param.constant = <N>
       %1 = index.sub %0, %arg0
-      kgen.return %1 : index
+      hlcf.return %1 : index
     }
     ```
 
@@ -893,8 +901,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     UnitAttr:$isolated
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -1003,69 +1011,6 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
 }
 
 //===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ReturnOp : KGENOp<"return", [Terminator, ReturnLike,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
-  let summary = "return operation for kgen declarations";
-  let description = [{
-    The `kgen.return` operation specifies the returned values for a `kgen.func`
-    or `kgen.generator`.
-
-    The operation takes variable number of operands and produces no results.
-    The operand number and types must match the signature of the
-    `kgen.generator` (or enclosing region) that contains the operation. For
-    example:
-
-    ```mlir
-      kgen.generator @foo() : i32, f8 {
-        ...
-        kgen.return %0, %1 : i32, f8
-      }
-    ```
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
-
-  let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
-  ];
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// UnreachableOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_UnreachableOp : KGENOp<"unreachable", [Terminator,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
-  let summary = "Unreachable operation";
-  let description = [{
-    The `kgen.unreachable` operation is a block terminator that indicates that
-    the previous operations cannot continue control flow.  This is used after
-    infinite loops and no-return functions to simplify dataflow analysis.
-
-    Example:
-
-    ```mlir
-    hlcf.loop () {
-      kgen.call @printHello()
-      hlcf.continue
-    }
-    kgen.unreachable
-    ```
-  }];
-
-  let arguments =
-   (ins DefaultValuedOptionalAttr<BoolAttr, "false">:$isAfterUnreachableCall);
-
-  let assemblyFormat = "attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
 
@@ -1088,241 +1033,6 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert",
 
   let hasCanonicalizeMethod = 1;
 }
-
-//===----------------------------------------------------------------------===//
-// ParamForOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
-    DeclareOpInterfaceMethods<ControlFlowNode>,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
-      "collectParameterUsesBelow"]>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]>, NoParamDecls {
-  let summary = "compile-time for loop";
-  let description = [{
-    The `kgen.param.for` operation instantiates its body with values according
-    to its iterator. It takes an initial iterator value, a 'hasNext' function
-    that take an iterator and indicates whether more elements exist, and a
-    'getNextIter' function that takes an iterator instance and returns the next
-    iterator value.
-
-    This operation can have loop-carried values - the "operands" inputs and
-    results, which are values promoted within the loop by mem2reg.
-  }];
-
-  let arguments = (ins
-    TypedAttrInterface:$initial,
-    AttrOfType<KGEN_FuncTypeGeneratorType>:$hasNext,
-    AttrOfType<KGEN_FuncTypeGeneratorType>:$getNextIter,
-    KGEN_ParamDeclAttr:$paramDecl,
-    Variadic<AnyType>:$operands,
-    UnitAttr:$bodyIsolated,
-    UnitAttr:$elseIsolated
-  );
-  let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$body, SizedRegion<1>:$elseRegion);
-
-  let builders = [
-    OpBuilder<(ins "TypedAttr":$initial, "TypedAttr":$hasNext,
-                   "TypedAttr":$getNextIter, "ParamDeclAttr":$paramDecl), [{
-      build($_builder, $_state, {}, initial, hasNext, getNextIter, paramDecl,
-            {}, {}, {});
-    }]>
-  ];
-
-  let assemblyFormat = [{
-    custom<ParamDecl>($paramDecl) `in` custom<ColonTypeParamValue>($initial)`\n`
-    `has_next` custom<ColonTypeParamValue>($hasNext) `\n`
-    `get_next_iter` custom<ColonTypeParamValue>($getNextIter)
-    custom<Loop>($operands, type($operands), type($results), $body)
-    `else` custom<RegionWithArgs>($elseRegion) attr-dict
-  }];
-
-  let extraClassDeclaration = [{
-    bool isIsolatedFromAbove(unsigned regionNum);
-    void notifyKnownIsolatedFromAbove(unsigned regionNum);
-    ArrayRef<ParamDeclAttr> getInputParams();
-  }];
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ParamForBreakOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamForBreakOp : KGENOp<"param.for.break", [Terminator,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "param loop exit operation";
-  let description = [{
-    The `kgen.param.for.break` operation represents an exit from a
-    `kgen.param.for`, branching to the end of all generated iterations.
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-
-  let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
-  ];
-
-  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
-}
-
-//===----------------------------------------------------------------------===//
-// ParamForContinueOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamForContinueOp : KGENOp<"param.for.continue", [Terminator,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "param loop continue operation";
-  let description = [{
-    The `kgen.param.for.continue` operation branches to the next generated
-    iteration of the loop.
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-
-  let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange()); }]>,
-  ];
-
-  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
-}
-
-//===----------------------------------------------------------------------===//
-// ParamForGotoElseOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamForGotoElseOp : KGENOp<"param.for.goto.else", [Terminator,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
-  let summary = "param loop 'goto else' operation";
-  let description = [{
-    The `kgen.param.for.goto.else` operation jumps to the 'else' block of a
-    `kgen.param.for`.  It only exists to help the interface between the Mojo
-    parser and the LowerSemanticCF pass work more easily.
-  }];
-
-  let arguments = (ins);
-
-  let assemblyFormat = "attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// ParamIfOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamIfOp : KGENOp<"param.if", [DeclInterface,
-    DeclareOpInterfaceMethods<ControlFlowNode>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric",
-      "collectParameterUsesBelow"]>]>, NoParamDecls {
-  let summary = "compile-time constant if";
-  let description = [{
-    The `kgen.param.if` op provides a compile-time guarantee that if `cond`
-    is false, only the `else` block will be elaborated, and if `cond` is true,
-    only the `then` block will be elaborated. Whichever block is elaborated
-    will be directly inlined into the scope. This op is fully removed
-    during elaboration.
-
-    The result parameter will be resolved by the parameter on the
-    `param.yield` in the branch that is actually elaborated.
-
-    ```mlir
-    %0 = kgen.param.if <condition> -> index {
-      %i0 = index.constant 0
-      kgen.param.yield %i0
-    } else {
-      %i1 = index.constant 1
-      kgen.param.yield %i1
-    }
-
-    kgen.param.if <condition -> result> {
-      kgen.param.yield<1>
-    } else {
-      kgen.param.yield<0>
-    }
-    %0 = kgen.param.constant = <result> // == <condition ? 1 : 0>
-    ```
-  }];
-
-  let arguments = (ins
-    AttrOfType<BoolScalar>:$cond,
-    UnitAttr:$thenIsolated,
-    UnitAttr:$elseIsolated
-  );
-  let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
-
-  let extraClassDeclaration = [{
-    bool isIsolatedFromAbove(unsigned regionNum);
-    void notifyKnownIsolatedFromAbove(unsigned regionNum);
-
-    Block::OpListType &getThenOps() {
-      return getThenRegion().front().getOperations();
-    }
-    Block::OpListType &getElseOps() {
-      return getElseRegion().front().getOperations();
-    }
-
-    /// Parametric ifs have no parameters.
-    ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
-  }];
-
-  let assemblyFormat = [{
-    ` ` `<` custom<ScalarBoolParamValue>($cond) `` `>`
-    (`->` type($results)^)?  $thenRegion `else` $elseRegion attr-dict
-  }];
-
-  let builders = [OpBuilder<(ins "TypedAttr":$cond), [{
-    build($_builder, $_state, {}, cond, {});
-  }]>];
-
-  let hasCanonicalizeMethod = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ParamYieldOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamYieldOp : KGENOp<"param.yield", [Pure, Terminator,
-    ParentOneOf<["ParamIfOp", "ParamForOp"]>,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
-  let summary = "conditional yield operation";
-  let description = [{
-    The `kgen.param.yield` operation is used to denote the terminator of a
-    block in the `kgen.param.if` op. Conceptually, it branches to the next
-    op after a `kgen.param.if`, but in reality it's to make sure the IR
-    stays in a reasonable state and is possible to inline directly.
-
-    This op defines the parameter that is used as the result parameter on the
-    enclosing `kgen.param.if`.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.param.if <condition> -> index {
-      kgen.param.yield %arg1 : index
-    } else {
-      kgen.param.yield %arg2 : index
-    }
-    ```
-
-    This operation can always be marked pure because the control-flow edge from
-    this operation leads only to after the parent operation.
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-
-  let builders = [
-    OpBuilder<(ins), [{ return build($_builder, $_state, {}); }]>
-  ];
-
-  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
-}
-
 //===----------------------------------------------------------------------===//
 // RebindOp
 //===----------------------------------------------------------------------===//
@@ -1423,7 +1133,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
 
     ```mlir
     %0 = kgen.stage_closure = () capturing -> index {
-      kgen.return %arg0 : index
+      hlcf.return %arg0 : index
     }
     ```
   }];
@@ -1660,7 +1370,7 @@ def KGEN_StructExtractOp : KGENOp<"struct.extract", [Pure,
     // Extract an element at a parametric index.
     kgen.generator @example<I: index>(%struct: !kgen.struct<(i32, f32)>) {
       %0 = kgen.struct.extract %struct[I] : !kgen.struct<(i32, f32)>
-      kgen.return
+      hlcf.return
     }
     ```
   }];
@@ -1922,6 +1632,14 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
      where multiple functions of the same target are bundled together for
      compilation.
 
+     `target_attrs` is an optional dictionary of backend-interpreted launch
+     metadata, keyed by target-prefixed names. Core KGEN treats it as opaque: the elaborator concretizes the values, folds
+     the dictionary into the offload bundling key, exports any function
+     symbols it references, and forwards it verbatim onto the compiled kernel
+     function as the `kgen.target_attrs` discardable attribute. Only the
+     `TargetBackend` that owns the target's offload lowering assigns meaning
+     to individual keys.
+
      Example:
 
      ```mlir
@@ -1934,7 +1652,8 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
                         AttrOfType<KGEN_StringType>:$emission_option,
                         AttrOfType<KGEN_StringType>:$emission_link_option,
                         AttrOfType<AnyType>:$func,
-                        OptionalAttr<AttrOfType<Index>>:$kernelID);
+                        OptionalAttr<AttrOfType<Index>>:$kernelID,
+                        OptionalAttr<DictionaryAttr>:$target_attrs);
 
    let results = (outs AnyType:$result);
 
@@ -1946,8 +1665,13 @@ def KGEN_CompileOffloadOp: KGENOp<"compile_offload">  {
                                  $func) attr-dict `>` `:` type($result)
    }];
 
-
-
+   let extraClassDeclaration = [{
+    /// Name of the discardable attribute carrying the concretized
+    /// `target_attrs` dictionary on the compiled kernel function.
+    static constexpr llvm::StringLiteral getTargetAttrsForwardedAttrName() {
+      return "kgen.target_attrs";
+    }
+   }];
 }
 
 //===----------------------------------------------------------------------===//

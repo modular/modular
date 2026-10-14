@@ -156,7 +156,7 @@ class Gemma4Attention(Module[..., Tensor]):
             layer_idx=layer_idx,
             n_heads=per_device_n_heads,
             interleaved=rope.interleaved,
-        )
+        ).rebind_mapping(qkv.mapping)
         xq = xq.reshape((-1, self.n_heads, head_dim))
 
         mask_variant = (
@@ -173,6 +173,6 @@ class Gemma4Attention(Module[..., Tensor]):
             mask_variant=mask_variant,
             scale=self.scale,
             local_window_size=self.local_window_size if self.use_local else -1,
-        )
+        ).rebind_mapping(xq.mapping)
         attn_out = attn_out.reshape((-1, self.n_heads * head_dim))
         return self.o_proj(attn_out)

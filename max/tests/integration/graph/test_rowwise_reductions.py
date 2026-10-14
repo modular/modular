@@ -33,17 +33,15 @@ These are small, fast CI shapes. The bandwidth-oriented perf grid for the same
 ops lives in the manual benchmark at
 ``//utils/benchmarking/kepler/graph:reductions`` and is not run here.
 
-The graphs are compiled to MEFs by CPU-only build actions
-(``:rowwise_reduction_mefs`` via ``mef_precompile.bzl``); this test does NOT
-compile. It initializes one symbolic-dimension MEF per parametrization and
-feeds several concrete shapes as data, so the GPU worker only ever initializes
-and executes.
+Each parametrization compiles one symbolic-dimension graph and feeds several
+concrete shapes as data. The compiles are recorded by CPU build actions
+(``precompile_mefs = True`` in the BUILD file), so the GPU worker initializes
+the artifacts rather than compiling them.
 """
 
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -55,11 +53,11 @@ from _rowwise_reduction_specs import (
     NONINNER_SPECS,
     WIDE_CPU_SPECS,
     RowwiseSpec,
+    build_graph,
 )
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from test_common.mef_precompile import init_from_mef, mefs_from_env
 from test_common.reduction_graphs import LAYER_NORM_EPS, RMS_NORM_EPS
 
 # Ops whose output is integer indices.
@@ -72,17 +70,6 @@ _INNER_ROWS = 8
 # even + odd cols, and short reduce axes crossed with SIMD-divisible and
 # non-SIMD-divisible cols at small and large output counts.
 _NONINNER_SHAPES = [(33, 16), (64, 33), (8, 8192), (8, 8193), (8, 9)]
-
-
-@pytest.fixture(scope="module")
-def mefs() -> dict[str, Path]:
-    return mefs_from_env("ROWWISE_MEF_RLOCATIONS")
-
-
-def _load(
-    session: InferenceSession, mefs: dict[str, Path], spec: RowwiseSpec
-) -> Model:
-    return init_from_mef(session, mefs[f"{spec.name}.mef"])
 
 
 def _torch_dtype(dtype: DType) -> torch.dtype:
@@ -271,10 +258,8 @@ def _reference_and_check(
 
 
 @pytest.mark.parametrize("spec", INNER_SPECS, ids=lambda s: s.name)
-def test_rowwise_inner(
-    session: InferenceSession, mefs: dict[str, Path], spec: RowwiseSpec
-) -> None:
-    model = _load(session, mefs, spec)
+def test_rowwise_inner(session: InferenceSession, spec: RowwiseSpec) -> None:
+    model = session.load(build_graph(spec))
     for cols in _INNER_COLS:
         x = _make_input(spec.op, _INNER_ROWS, cols, spec.dtype)
         weights: list[torch.Tensor] = []
@@ -291,10 +276,8 @@ def test_rowwise_inner(
 
 
 @pytest.mark.parametrize("spec", NONINNER_SPECS, ids=lambda s: s.name)
-def test_rowwise_noninner(
-    session: InferenceSession, mefs: dict[str, Path], spec: RowwiseSpec
-) -> None:
-    model = _load(session, mefs, spec)
+def test_rowwise_noninner(session: InferenceSession, spec: RowwiseSpec) -> None:
+    model = session.load(build_graph(spec))
     for rows, cols in _NONINNER_SHAPES:
         x = _make_input(spec.op, rows, cols, spec.dtype)
         _reference_and_check(
@@ -304,9 +287,9 @@ def test_rowwise_noninner(
 
 @pytest.mark.parametrize("spec", WIDE_CPU_SPECS, ids=lambda s: s.name)
 def test_rowwise_wide_element_cpu(
-    session: InferenceSession, mefs: dict[str, Path], spec: RowwiseSpec
+    session: InferenceSession, spec: RowwiseSpec
 ) -> None:
-    model = _load(session, mefs, spec)
+    model = session.load(build_graph(spec))
     shapes = (
         [(_INNER_ROWS, cols) for cols in _INNER_COLS]
         if spec.axis == -1
@@ -327,9 +310,9 @@ def test_rowwise_wide_element_cpu(
 
 @pytest.mark.parametrize("spec", GPU_SUBWORD_SPECS, ids=lambda s: s.name)
 def test_rowwise_inner_gpu_subword_state(
-    session: InferenceSession, mefs: dict[str, Path], spec: RowwiseSpec
+    session: InferenceSession, spec: RowwiseSpec
 ) -> None:
-    model = _load(session, mefs, spec)
+    model = session.load(build_graph(spec))
     for cols in _INNER_COLS:
         x = _make_input(spec.op, _INNER_ROWS, cols, spec.dtype)
         _reference_and_check(
@@ -349,9 +332,9 @@ _SPLITK_COLS = 40960
 
 @pytest.mark.parametrize("spec", GPU_SPLITK_SPECS, ids=lambda s: s.name)
 def test_rowwise_inner_gpu_splitk(
-    session: InferenceSession, mefs: dict[str, Path], spec: RowwiseSpec
+    session: InferenceSession, spec: RowwiseSpec
 ) -> None:
-    model = _load(session, mefs, spec)
+    model = session.load(build_graph(spec))
     x = _make_input(spec.op, _SPLITK_ROWS, _SPLITK_COLS, spec.dtype)
     _reference_and_check(
         spec.op, spec.dtype, model, x, -1, [], f"cols={_SPLITK_COLS}"

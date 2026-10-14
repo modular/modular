@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import BitSet, Array
-from std.math import align_up, ceildiv
+from std.math import align_up
 
 
 def _compute_unshareable[

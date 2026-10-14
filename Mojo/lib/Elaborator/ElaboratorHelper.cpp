@@ -156,6 +156,19 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
   replaceSymNames(theModule, symToRename);
 }
 
+std::string KGEN::makeOffloadGroupKey(CompileOffloadOp op) {
+  std::string key;
+  llvm::raw_string_ostream os(key);
+  // Separated, so that ("ab", "") and ("a", "b") do not collide.
+  os << cast<StringAttr>(op.getEmissionOptionAttr()).getValue() << ';'
+     << cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
+  // An empty dictionary means what absent means, so it must key the same.
+  if (DictionaryAttr targetAttrs = op.getTargetAttrsAttr();
+      targetAttrs && !targetAttrs.empty())
+    os << ';' << targetAttrs;
+  return key;
+}
+
 ErrorTreeOrSuccess KGEN::sortAndBundleOffloadOps(
     const llvm::SetVector<CompileOffloadOp> &offloadOps,
     mlir::SymbolTable &symTab,
@@ -189,6 +202,11 @@ ErrorTreeOrSuccess KGEN::sortAndBundleOffloadOps(
     llvm::raw_string_ostream os(key);
     os << op.getTargetTypeAttr() << ';' << op.getEmissionKindAttr() << ';'
        << op.getEmissionOptionAttr() << ';' << op.getEmissionLinkOptionAttr();
+    // Keyed the same way as makeOffloadGroupKey: an empty dictionary means
+    // what absent means, so the two must not disagree.
+    if (DictionaryAttr targetAttrs = op.getTargetAttrsAttr();
+        targetAttrs && !targetAttrs.empty())
+      os << ';' << targetAttrs;
     return key;
   };
   llvm::sort(items, [&](const BundleItem &lhs, const BundleItem &rhs) {

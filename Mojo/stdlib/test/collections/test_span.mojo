@@ -12,8 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import TestSuite
-from std.testing import assert_equal, assert_raises, assert_true, assert_false
-from test_utils import MoveOnly, check_write_to
+from std.testing import assert_equal, assert_raises, assert_true
+from test_utils import (
+    CopyCounter,
+    DelCounter,
+    MoveCounter,
+    MoveOnly,
+    check_write_to,
+)
+from std.memory import MaybeUninit, forget_deinit
 from std.math import iota
 from std.hashlib import Hasher
 
@@ -435,21 +442,21 @@ def test_binary_search() raises:
         assert_true(view._binary_search_index(0) is None)
         view = Span(data)[:1]
         assert_true(view._binary_search_index(0))
-        assert_equal(view._binary_search_index(0).value(), 0)
+        assert_equal(view._binary_search_index(0), Optional(0))
         view = Span(data)[: len(data) - 1]
         assert_true(view._binary_search_index(1))
-        assert_equal(view._binary_search_index(1).value(), 1)
+        assert_equal(view._binary_search_index(1), Optional(1))
         view = Span(data)
         assert_true(view._binary_search_index(Scalar[dtype](max_val)))
         assert_equal(
-            view._binary_search_index(Scalar[dtype](max_val)).value(),
-            max_val,
+            view._binary_search_index(Scalar[dtype](max_val)),
+            Optional(max_val),
         )
         view = Span(data)[: len(data) - 1]
         assert_true(view._binary_search_index(Scalar[dtype](max_val - 1)))
         assert_equal(
-            view._binary_search_index(Scalar[dtype](max_val - 1)).value(),
-            max_val - 1,
+            view._binary_search_index(Scalar[dtype](max_val - 1)),
+            Optional(max_val - 1),
         )
 
     _test[.uint8]()
@@ -462,29 +469,17 @@ def test_binary_search_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
-    def cmp_7(x: Int) -> Int:
-        return x - 7
+    var result = span.binary_search_by[lambda (x: Int) -> Int: x - 7]()
+    assert_equal(Optional(3), result)
 
-    var result = span.binary_search_by[cmp_7]()
-    assert_equal(3, result.value())
-
-    def cmp_6(x: Int) -> Int:
-        return x - 6
-
-    var result2 = span.binary_search_by[cmp_6]()
+    var result2 = span.binary_search_by[lambda (x: Int) -> Int: x - 6]()
     assert_true(not result2)
 
-    def cmp_1(x: Int) -> Int:
-        return x - 1
+    var result3 = span.binary_search_by[lambda (x: Int) -> Int: x - 1]()
+    assert_equal(Optional(0), result3)
 
-    var result3 = span.binary_search_by[cmp_1]()
-    assert_equal(0, result3.value())
-
-    def cmp_13(x: Int) -> Int:
-        return x - 13
-
-    var result4 = span.binary_search_by[cmp_13]()
-    assert_equal(6, result4.value())
+    var result4 = span.binary_search_by[lambda (x: Int) -> Int: x - 13]()
+    assert_equal(Optional(6), result4)
 
 
 def test_binary_search_by_unified() raises:
@@ -497,7 +492,7 @@ def test_binary_search_by_unified() raises:
         return x - seven
 
     var result = span.binary_search_by(cmp_7)
-    assert_equal(3, result.value())
+    assert_equal(Optional(3), result)
 
     var six = 6
 
@@ -513,7 +508,7 @@ def test_binary_search_by_unified() raises:
         return x - one
 
     var result3 = span.binary_search_by(cmp_1)
-    assert_equal(0, result3.value())
+    assert_equal(Optional(0), result3)
 
     var thirteen = 13
 
@@ -521,7 +516,7 @@ def test_binary_search_by_unified() raises:
         return x - thirteen
 
     var result4 = span.binary_search_by(cmp_13)
-    assert_equal(6, result4.value())
+    assert_equal(Optional(6), result4)
 
 
 def test_iter() raises:
@@ -669,6 +664,118 @@ def test_span_iter_owned() raises:
     assert_equal(result[2], 30)
     # Original list is still intact (Span doesn't own data).
     assert_equal(len(list), 3)
+
+
+def test_unsafe_deinit_elements() raises:
+    var count = 0
+    var array = [
+        DelCounter(Pointer(to=count)),
+        DelCounter(Pointer(to=count)),
+    ]
+    Span(array).unsafe_deinit_elements()
+
+    forget_deinit(array^)
+
+    # Both elements ran their deinitializer exactly once.
+    assert_equal(count, 2)
+
+
+def test_unsafe_deinit_elements_trivial() raises:
+    var count = 0
+    var array = [DelCounter[_, trivial_del=True](Pointer(to=count))]
+
+    Span(array).unsafe_deinit_elements()
+    assert_equal(count, 0)
+
+
+def test_unsafe_assume_init() raises:
+    var array = Array[MaybeUninit[Int], 3]()
+    var uninit = Span(array)
+    for i in range(len(uninit)):
+        uninit[i].write(i + 1)
+
+    assert_equal(uninit.unsafe_assume_init(), Span([1, 2, 3]))
+
+
+def test_unsafe_init_with() raises:
+    var array = Array[MaybeUninit[Int], 5]()
+    var initialized = Span(array).unsafe_init_with(
+        lambda (i: Int) -> Int: i * i
+    )
+
+    assert_equal(initialized, Span([0, 1, 4, 9, 16]))
+
+
+def test_unsafe_init_with_empty() raises:
+    var array = Array[MaybeUninit[Int], 4]()
+    var initialized = Span(array)[:0].unsafe_init_with(
+        lambda (i: Int) -> Int: i
+    )
+
+    assert_equal(len(initialized), 0)
+
+
+def test_unsafe_init_copy_from() raises:
+    var source: Array[Int, 3] = [1, 2, 3]
+    var array = Array[MaybeUninit[Int], 3]()
+    var copied = Span(array).unsafe_init_copy_from(source)
+
+    assert_equal(copied, Span(source))
+
+
+def test_unsafe_init_copy_from_empty() raises:
+    var source: Array[Int, 3] = [1, 2, 3]
+    var array = Array[MaybeUninit[Int], 3]()
+    var copied = Span(array)[:0].unsafe_init_copy_from(Span(source)[:0])
+
+    assert_equal(len(copied), 0)
+
+
+def test_unsafe_init_copy_from_non_trivial() raises:
+    var source: Array[CopyCounter[Int], 2] = [CopyCounter(1), CopyCounter(2)]
+    var uninit = Array[MaybeUninit[CopyCounter[Int]], 2]()
+    var copied = Span(uninit).unsafe_init_copy_from(source)
+
+    assert_equal(len(copied), 2)
+    assert_equal(copied[0].value, 1)
+    assert_equal(copied[1].value, 2)
+
+    # Each element went through `CopyCounter.__init__(copy=)` exactly once.
+    assert_equal(copied[0].copy_count, 1)
+    assert_equal(copied[1].copy_count, 1)
+
+    # The source is untouched by a copy.
+    assert_equal(source[0].copy_count, 0)
+
+
+def test_unsafe_init_move_from() raises:
+    var source: Array[Int, 3] = [1, 2, 3]
+    var uninit = Array[MaybeUninit[Int], 3]()
+    var moved = Span(uninit).unsafe_init_move_from(source)
+
+    assert_equal(moved, Span([1, 2, 3]))
+
+
+def test_unsafe_init_move_from_empty() raises:
+    var source: Array[Int, 3] = [1, 2, 3]
+    var uninit = Array[MaybeUninit[Int], 3]()
+    var moved = Span(uninit)[:0].unsafe_init_move_from(Span(source)[:0])
+
+    assert_equal(len(moved), 0)
+
+
+def test_unsafe_init_move_from_non_trivial() raises:
+    var source: Array[MoveCounter[Int], 2] = [MoveCounter(1), MoveCounter(2)]
+    var uninit = Array[MaybeUninit[MoveCounter[Int]], 2]()
+    var moved = Span(uninit).unsafe_init_move_from(source)
+
+    assert_equal(len(moved), 2)
+    assert_equal(moved[0].value, 1)
+    assert_equal(moved[1].value, 2)
+
+    # Every element of `source` was moved out of, so its deinitializer must
+    # not run over the uninitialized storage left behind.
+    forget_deinit(source^)
 
 
 def main() raises:

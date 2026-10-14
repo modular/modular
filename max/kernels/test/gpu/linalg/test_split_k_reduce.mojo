@@ -15,16 +15,9 @@ from std.math import isclose
 from std.random import rand
 
 from max.gpu.host import DeviceContext
-from layout import (
-    TileTensor,
-    Coord,
-    Idx,
-    row_major,
-)
+from layout import TileTensor, Coord, row_major
 from linalg.matmul.gpu import split_k_reduce
 from std.testing import assert_almost_equal
-
-from std.utils import IndexList
 
 
 def test_split_k_reduce_rank3[
@@ -75,32 +68,28 @@ def test_split_k_reduce_rank3[
     # Create TileTensors
     var c = TileTensor(
         c_device,
-        row_major(Coord(Int(M), Int(N))),
+        row_major(M, N),
     )
     var work_space = TileTensor(
         work_space_device,
-        row_major(Coord(Int(num_partitions), Int(M), Int(N))),
+        row_major(num_partitions, M, N),
     )
     var epilogue_buffer = TileTensor(
         epilogue_data_device,
-        row_major(Coord(Int(M), Int(N))),
+        row_major(M, N),
     )
 
-    @__parameter
-    @inline(.always)
-    @__copy_capture(c, epilogue_buffer)
-    def epilogue_fn[
-        _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, _width]) capturing -> None:
-        var another_val = rebind[SIMD[_dtype, _width]](
-            epilogue_buffer.load[width=_width](Coord(idx[0], idx[1]))
-        )
-        c.store(
-            Coord(idx[0], idx[1]),
-            rebind[SIMD[c_type, _width]](val + another_val),
+    def add_epilogue_data[
+        _dtype: DType, _width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[_dtype, _width]) {var epilogue_buffer} -> SIMD[
+        _dtype, _width
+    ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val + rebind[SIMD[_dtype, _width]](
+            epilogue_buffer.load[width=_width](idx)
         )
 
-    split_k_reduce[elementwise_lambda_fn=epilogue_fn](c, work_space, ctx)
+    split_k_reduce(c, work_space, add_epilogue_data, ctx)
 
     ctx.enqueue_copy(c_host, c_device)
     ctx.synchronize()

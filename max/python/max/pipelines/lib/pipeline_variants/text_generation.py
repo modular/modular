@@ -28,7 +28,6 @@ from max.driver import (
     CPU,
     Buffer,
     Device,
-    DevicePinnedBuffer,
     Usage,
     is_virtual_device_mode,
     load_devices,
@@ -60,6 +59,9 @@ from max.pipelines.lib.vision_encoder_cache import (
     VisionEncoderCache,
     as_vision_context_batches,
 )
+from max.pipelines.modeling.eager_validation import (
+    eager_usage_validator,
+)
 from max.pipelines.modeling.types import (
     Pipeline,
     PipelineOutputsDict,
@@ -71,6 +73,7 @@ from max.pipelines.modeling.types import (
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 
+from ._label_scoring import BatchLabelScorer
 from .utils import StructuredOutputHelper, update_context_and_prepare_responses
 
 if TYPE_CHECKING:
@@ -88,7 +91,6 @@ from ..interfaces import (
     PipelineModel,
     PipelineModelWithKVCache,
 )
-from ..interfaces.generate import GenerateMixin
 from ..memory_estimation import MemoryPlan
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
@@ -111,7 +113,6 @@ class TextGenerationPipelineInterface(
     Pipeline[
         TextGenerationInputs[TextGenerationContextType], TextGenerationOutput
     ],
-    GenerateMixin[TextGenerationContextType, TextGenerationRequest],
     Generic[TextGenerationContextType],
 ):
     """Interface for text generation pipelines."""
@@ -124,6 +125,24 @@ class TextGenerationPipelineInterface(
     @abstractmethod
     def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
+        ...
+
+    @property
+    @abstractmethod
+    def pipeline_config(self) -> PipelineConfig:
+        """Returns the pipeline configuration."""
+        ...
+
+    @property
+    @abstractmethod
+    def tokenizer(
+        self,
+    ) -> PipelineTokenizer[
+        TextGenerationContextType,
+        npt.NDArray[np.integer[Any]],
+        TextGenerationRequest,
+    ]:
+        """Returns the tokenizer for this pipeline."""
         ...
 
 
@@ -206,6 +225,12 @@ class TextGenerationPipeline(
             export_mefs=pipeline_config.runtime.export_mefs,
         )
         self.session = session
+        self._label_scorer = BatchLabelScorer(
+            session,
+            self._devices[0],
+            pipeline_config.sampling.in_dtype,
+            self.vocab_size,
+        )
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
@@ -218,19 +243,25 @@ class TextGenerationPipeline(
             raise ValueError(
                 f"TextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
             )
-        self._pipeline_model = pipeline_model(
-            pipeline_config=self._pipeline_config,
-            session=session,
-            devices=self._devices,
-            kv_cache_config=model_config.kv_cache,
-            weights=load_weights(weight_paths),
-            adapter=weight_adapters.get(weights_format(weight_paths)),
-            return_logits=ReturnLogits.ALL
-            if self._pipeline_config.model.enable_echo
-            else ReturnLogits.LAST_TOKEN,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
+        self._request_validator = eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "execution"
         )
+        with eager_usage_validator(
+            pipeline_config.runtime.eager_usage_validator, "initialization"
+        ):
+            self._pipeline_model = pipeline_model(
+                pipeline_config=self._pipeline_config,
+                session=session,
+                devices=self._devices,
+                kv_cache_config=model_config.kv_cache,
+                weights=load_weights(weight_paths),
+                adapter=weight_adapters.get(weights_format(weight_paths)),
+                return_logits=ReturnLogits.ALL
+                if self._pipeline_config.model.enable_echo
+                else ReturnLogits.LAST_TOKEN,
+                max_batch_size=max_batch_size,
+                memory_plan=memory_plan,
+            )
 
         available_cache_memory = memory_plan.available_cache_memory
         kv_params = self._pipeline_model.kv_params
@@ -242,6 +273,7 @@ class TextGenerationPipeline(
             available_cache_memory=available_cache_memory,
             is_di_enabled=pipeline_config.runtime.is_disaggregated,
             model_name=pipeline_config.model.model_name,
+            max_num_input_tokens=pipeline_config.runtime.max_num_input_tokens,
         )
 
         self._encoder_cache: VisionEncoderCache[TextAndVisionContext] | None = (
@@ -273,11 +305,13 @@ class TextGenerationPipeline(
                     pipeline_config.sampling,
                     device=sampler_device_ref,
                     needs_bitmask_input=True,
+                    unpadded_vocab_size=self.vocab_size,
                 )
             without_bitmask_graph = token_sampler(
                 pipeline_config.sampling,
                 device=sampler_device_ref,
                 needs_bitmask_input=False,
+                unpadded_vocab_size=self.vocab_size,
             )
             sampler_timer.mark_build_complete()
             if with_bitmask_graph is not None:
@@ -295,10 +329,11 @@ class TextGenerationPipeline(
             and not self._sampler_device.is_host
             and not is_virtual_device_mode()
         ):
-            self._pinned_new_tokens = DevicePinnedBuffer(
+            self._pinned_new_tokens = Buffer(
                 shape=(max_batch_size,),
                 dtype=DType.int64,
                 device=self._sampler_device,
+                usage=Usage.STAGING | Usage.UNTRACKED,
             )
 
         self._identity_logit_offsets = (
@@ -361,9 +396,17 @@ class TextGenerationPipeline(
             batch: The generation contexts for the batch.
 
         Returns:
-            A bitmask array of shape [batch_size, vocab_size] if structured
-            output is enabled; otherwise ``None``.
+            A bitmask array of shape [batch_size, vocab_size] if constrained
+            decoding can fire for this worker; otherwise ``None``.
         """
+        # The helper is enabled whenever the tokenizer can build an FSM, but
+        # the bitmask-aware sampler is only compiled when constrained decoding
+        # can actually fire. Allocating a bitmask without it would bind an
+        # input the graph does not have, and would push a request the worker
+        # cannot honor into ``update_context``.
+        if not self._pipeline_config.needs_bitmask_constraints:
+            return None
+
         if not self._structured_output.enabled:
             return None
 
@@ -501,6 +544,13 @@ class TextGenerationPipeline(
         Executes the graph for a single decode step, samples the next token,
         then decodes and returns the generated tokens.
         """
+        with self._request_validator:
+            return self._execute(inputs)
+
+    def _execute(
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
         # Prepare the batch.
         model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
 
@@ -549,7 +599,13 @@ class TextGenerationPipeline(
             )
 
         # Execute the single step if the batch is not empty.
+        label_log_probabilities: dict[RequestID, list[float]] = {}
         if len(flat_batch) > 0:
+            # Scoring precedes sampling: the sampler's penalty and min-token
+            # processors edit the logits buffer in place.
+            label_log_probabilities = self._label_scorer.score(
+                model_outputs, flat_batch
+            )
             # Sample next token.
             with Tracer("sample_next_token"):
                 sample_logits, sample_offsets = (
@@ -601,7 +657,7 @@ class TextGenerationPipeline(
         with Tracer("d2h_generated_tokens"):
             generated_tokens_device = sampling_processor.generated_tokens
             # Staging memory keeps the d2h transfer async on accelerators.
-            # Note that we do not want to use `DevicePinnedBuffer` here.
+            # Left tracked (no UNTRACKED) so to_numpy() waits for the copy.
             generated_tokens_host = Buffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,
@@ -609,9 +665,6 @@ class TextGenerationPipeline(
                 usage=Usage.STAGING,
             )
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
-            # Staging buffers do not synchronize on host reads, so the copy
-            # above is still in flight here.
-            sampler_device.synchronize()
             generated_tokens_np = generated_tokens_host.to_numpy()
 
         res = update_context_and_prepare_responses(
@@ -620,6 +673,11 @@ class TextGenerationPipeline(
             batch_log_probabilities=batch_log_probabilities,
             enable_log_probs=inputs.enable_log_probs,
         )
+        # A chunked-prefill step emits no output for its request, so its
+        # scores wait for the step that finishes the prompt.
+        for request_id, scores in label_log_probabilities.items():
+            if request_id in res:
+                res[request_id].label_log_probabilities = scores
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
@@ -675,7 +733,7 @@ class TextGenerationPipeline(
         """Returns vision encoder metrics for the most recent batch.
 
         Returns ``None`` for text-only models and for batches that did no
-        vision encoding (e.g. decode steps). The metrics come from the
+        vision encoding (such as decode steps). The metrics come from the
         pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
         otherwise, for a model that owns its encoder cache internally, from
         :class:`SupportsPooledVisionMetrics`.

@@ -37,13 +37,17 @@ import functools
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferValue, DeviceRef, Graph, TensorType, TensorValue
 from max.nn.comm import Signals
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+)
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
@@ -201,7 +205,7 @@ def compiled():  # noqa: ANN201
             hidden_type,
             row_offsets_type,
             *signals.input_types(),
-            *kv_inputs.flatten(),
+            *tree.leaves(kv_inputs),
         ),
     ) as graph:
         tokens, hidden, row_offsets, *rest = graph.inputs
@@ -209,7 +213,7 @@ def compiled():  # noqa: ANN201
             rest[i].buffer for i in range(len(signals.input_types()))
         ]
         kv_rest = iter(rest[len(signals.input_types()) :])
-        kv_collections = kv_params.unflatten_kv_inputs(kv_rest).inputs
+        kv_collections = kv_params.unflatten_kv_inputs(kv_rest)
         assert isinstance(tokens, TensorValue)
         assert isinstance(hidden, TensorValue)
         assert isinstance(row_offsets, TensorValue)
@@ -271,7 +275,7 @@ def _run(
                 accelerator
             ),
             *signal_buffers,
-            *kv_runtime.flatten(),
+            *tree.leaves(kv_runtime),
         )
         assert isinstance(outputs[0], Buffer)
         return _from_bf16(outputs[0])

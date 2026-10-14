@@ -6,7 +6,7 @@ synchronization](https://max.modular.com/gpu/block-and-warp/)
 section of the [MAX documentation](https://max.modular.com/).
 
 **Note:** These examples require a [supported
-GPU](https://max.modular.com/faq/#gpu-requirements) to compile and run the
+GPU](https://max.modular.com/packages/#gpu-compatibility) to compile and run the
 kernels. If your system doesn't have a supported GPU, you can compile the
 programs but the only output you'll see when you run them is the message:
 

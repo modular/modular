@@ -6,8 +6,8 @@ kgen.func @useAGlobalForNoReason() -> index {
   %idx0 = index.constant 0
   pop.compiler.global_store "aGlobal", %idx0 : index
   %0 = pop.compiler.global_load "aGlobal" : index
-  // CHECK-NEXT: kgen.return
-  kgen.return %0 : index
+  // CHECK-NEXT: hlcf.return
+  hlcf.return %0 : index
 }
 
 // CHECK-LABEL: @multiLoad
@@ -17,8 +17,8 @@ kgen.func @multiLoad() -> (index, index) {
   pop.compiler.global_store "aGlobal", %idx0 : index
   %0 = pop.compiler.global_load "aGlobal" : index
   %1 = pop.compiler.global_load "aGlobal" : index
-  // CHECK-NEXT: kgen.return
-  kgen.return %0, %1 : index, index
+  // CHECK-NEXT: hlcf.return
+  hlcf.return %0, %1 : index, index
 }
 
 // CHECK-LABEL: @multiLoadNested
@@ -36,8 +36,8 @@ kgen.func @multiLoadNested(%pred : !kgen.scalar<bool>) -> index {
   } else {
     hlcf.yield
   }
-  // CHECK: kgen.return
-  kgen.return %0: index
+  // CHECK: hlcf.return
+  hlcf.return %0: index
 }
 
 // CHECK-LABEL: kgen.func @store_twice
@@ -47,5 +47,5 @@ kgen.func @store_twice(%arg0: i32, %arg1: i64) -> (i32, i64) {
   %0 = pop.compiler.global_load "foo" : i32
   pop.compiler.global_store "foo", %arg1: i64
   %1 = pop.compiler.global_load "foo" : i64
-  kgen.return %0, %1 : i32, i64
+  hlcf.return %0, %1 : i32, i64
 }

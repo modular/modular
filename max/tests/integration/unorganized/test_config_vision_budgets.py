@@ -66,7 +66,7 @@ def _clamp_budgets(
     model = _model_stub()
     arch = _stub_arch(entry_bytes=1 if has_vision_tower else 0)
 
-    with patch(f"{_CONFIG}._host_memory_limit", return_value=host_bytes):
+    with patch(f"{_CONFIG}.host_memory_limit", return_value=host_bytes):
         return _resolve_preprocess_cache_budgets(runtime, model, arch)
 
 

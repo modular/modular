@@ -21,7 +21,7 @@ Note: Scatter pattern has poor parallelism for few atoms and requires
 atomic operations which can be a performance bottleneck.
 """
 
-from std.math import sqrt
+from std.math import ceildiv, sqrt
 from std.atomic import Atomic
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
@@ -160,7 +160,7 @@ def main() raises:
 
     # Launch config: one thread per atom
     var block_size = 256
-    var num_blocks = (numatoms + block_size - 1) // block_size
+    var num_blocks = ceildiv(numatoms, block_size)
 
     ctx.enqueue_function[cenergy_scatter_kernel](
         d_energygrid,

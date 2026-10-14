@@ -10,14 +10,14 @@ kgen.func @lower_args_mem_2_reg(
     !kgen.pointer<index> owned_in_mem,
     !kgen.pointer<struct<(index, index)>> imm_mem
   ) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @baz() -> index
 kgen.func @baz(%__result__: !kgen.pointer<index> byref_result) -> !kgen.none {
   // CHECK-NEXT: %[[RES:.*]] = kgen.call @baz() : () -> index
-  // CHECK-NEXT: kgen.return %[[RES]] : index
+  // CHECK-NEXT: hlcf.return %[[RES]] : index
   %none = kgen.call @baz(%__result__) : (
     !kgen.pointer<index> byref_result) -> !kgen.none
-  kgen.return %none : !kgen.none
+  hlcf.return %none : !kgen.none
 }

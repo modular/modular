@@ -1,5 +1,6 @@
 # Debug Information Dialect
 
-This library defines an MLIR dialect for debug information. See the [generated
-documentation](https://engineering.modular.com/Support/DebugInfoDialect.html)
-about the dialect for more details.
+This library defines an MLIR dialect for debug information. The dialect
+reference is generated from the TableGen definitions in
+[`include/Support/DebugInfoDialect/IR`](../include/Support/DebugInfoDialect/IR);
+build `//Support:DEBUGINFODialect.doc` to render it.

@@ -42,8 +42,8 @@ using namespace LIT;
 
 ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     State &state, llvm::SourceMgr &sourceManager, MLIRContext &ctx,
-    const llvm::opt::PrecomputedOptTable &optTable,
-    const CommonOptionIDs &optionIDs, const CommonParseConfig &config) {
+    const llvm::opt::OptTable &optTable, const CommonOptionIDs &optionIDs,
+    const CommonParseConfig &config) {
   CommonParseResult result;
 
   // Parse arguments based on the configuration.

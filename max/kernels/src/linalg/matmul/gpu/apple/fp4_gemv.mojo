@@ -62,10 +62,8 @@ from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 import max.gpu.primitives.warp as warp
-from std.utils import IndexList
 
 from layout import Coord, TensorEngine, TileTensor, TensorLayout
-from layout.tile_layout import row_major
 
 from linalg.fp4_utils import decode_e2m1_to_f16, NVFP4_SF_VECTOR_SIZE
 from linalg.utils import elementwise_epilogue_type
@@ -170,9 +168,8 @@ def fp4_gemv_kernel[
     if lid == 0:
         var y = dot.cast[c_type]()
 
-        comptime if elementwise_lambda_fn:
-            comptime epilogue = elementwise_lambda_fn.value()
-            epilogue[c_type, 1](IndexList[2](0, n_idx), y)
+        comptime if case .Some(epilogue) = elementwise_lambda_fn:
+            epilogue[c_type, 1]((0, n_idx), y)
         else:
             c.store[width=1](Coord(0, n_idx), y)
 

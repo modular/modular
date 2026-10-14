@@ -23,5 +23,5 @@ types, computing checksums, or building custom hash algorithms. Types that
 implement `Hashable` can be used as dictionary keys or in sets.
 """
 
-from .hash import Hashable, hash
+from .hash import Hashable, hash, hash_bytes
 from .hasher import Hasher, default_comp_time_hasher, default_hasher

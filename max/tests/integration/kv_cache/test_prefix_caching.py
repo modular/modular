@@ -21,7 +21,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheInputs, MHAKVCacheParams
+from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
@@ -40,15 +40,16 @@ def gen_prompt(length: int) -> np.ndarray:
 
 
 def get_blocks_from_kv_tuple(
-    kv_tuple: KVCacheInputs[Buffer, Buffer],
+    kv_tuple: tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...],
 ) -> list[list[int]]:
-    return kv_tuple.inputs[0].lookup_table.to_numpy().tolist()
+    return kv_tuple[0].lookup_table.to_numpy().tolist()
 
 
 # Runtime lookup tables are padded with sentinel `total_num_pages` in any
 # unused columns, so tests should compare only assigned block ids.
 def assigned_blocks(
-    kv_tuple: KVCacheInputs[Buffer, Buffer], total_num_pages: int
+    kv_tuple: tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...],
+    total_num_pages: int,
 ) -> list[list[int]]:
     return [
         [block for block in row if block != total_num_pages]
@@ -57,18 +58,18 @@ def assigned_blocks(
 
 
 def get_uncommitted_and_committed_block_counts(
-    kv_tuple: KVCacheInputs[Buffer, Buffer],
+    kv_tuple: tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...],
 ) -> list[list[int]]:
-    per_device = kv_tuple.inputs[0]
+    per_device = kv_tuple[0]
     max_prompt = per_device.max_prompt_length.to_numpy().tolist()
     max_cache = per_device.max_cache_length.to_numpy().tolist()
     return [[max_prompt[0], max_cache[0]]]
 
 
 def get_cache_lengths_from_kv_tuple(
-    kv_tuple: KVCacheInputs[Buffer, Buffer],
+    kv_tuple: tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...],
 ) -> list[int]:
-    return kv_tuple.inputs[0].cache_lengths.to_numpy().tolist()
+    return kv_tuple[0].cache_lengths.to_numpy().tolist()
 
 
 def create_kv_cache(
@@ -428,7 +429,7 @@ class FakeModel:
     def run(
         self,
         request_ids_and_prompts: dict[RequestID, np.ndarray],
-        kv_inputs: KVCacheInputs[Buffer, Buffer],
+        kv_inputs: tuple[KVCacheInputsPerDevice[Buffer, Buffer], ...],
         request_ids_and_new_tokens: dict[RequestID, np.ndarray] | None = None,
     ) -> dict[RequestID, np.ndarray]:
         """Given a batch and the kv_inputs, we `run` the model and check that
@@ -713,7 +714,7 @@ async def test_prefix_caching_chunked_prefill() -> None:
     # block 2 holds projections for [..., 16, 17, 18]
     # seq_id_2 needs projections for [..., 16, 17, 16]
     run_forward(model, kv_manager, ctx_2, prompt_2_part_2, 42)
-    blocks = kv_manager.get_req_blocks(ctx_2)
+    (blocks,) = kv_manager.get_req_blocks_per_leaf(ctx_2).values()
     assert 2 not in blocks
 
     metrics = kv_manager.get_metrics_aggregated()
@@ -726,8 +727,8 @@ def run_and_check_num_cached_tokens(
     ctx: TextAndVisionContext,
     do_step: bool = True,
 ) -> int:
-    # reset cache_tokens to 0
-    kv_manager.reset_metrics()
+    # take (and discard) metrics to reset cache_tokens to 0
+    kv_manager.take_metrics_aggregated()
     kv_manager.claim(ctx)
     kv_manager.alloc(ctx)
     kv_manager.runtime_inputs([[ctx]])

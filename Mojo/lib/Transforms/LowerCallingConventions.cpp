@@ -22,6 +22,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERCALLINGCONVENTIONS
@@ -160,7 +162,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
        llvm::zip(callOp->getResults(), outsPointers))
     POP::StoreOp::create(b, loc, resultVal, resultPtr);
 
-  // Add the terminator (KGEN::ReturnOp).
+  // Add the terminator (HLCF::ReturnOp).
   ReturnOp::create(b, loc);
 
   b.replaceOp(op, closureWrapper);
@@ -189,12 +191,12 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     return;
   }
 
-  // Handle `hlcf.if`/`hlcf.elif`, `hlcf.loop`, `kgen.call`,
+  // Handle `hlcf.if`, `hlcf.loop`, `kgen.call`,
   // `kgen.call_indirect`, and `co.get_results`. Yields already drop none
-  // operands above; result-bearing if/elif ops must drop matching none
+  // operands above; result-bearing elif ops must drop matching none
   // results or CF verify sees yield/result arity mismatches.
-  if (isa<HLCF::IfOp, HLCF::ElifOp, HLCF::LoopOp, CallOp, CallIndirectOp,
-          CO::GetResultsOp, CO::AwaitOp, CO::InvokeOp, CO::HotInvokeOp>(op)) {
+  if (isa<HLCF::IfOp, HLCF::LoopOp, CallOp, CallIndirectOp, CO::GetResultsOp,
+          CO::AwaitOp, CO::InvokeOp, CO::HotInvokeOp>(op)) {
     auto [anyNone, newResults] = removeNoneTypes(op->getResultTypes());
     // Exit early if there are no none results.
     if (!anyNone)

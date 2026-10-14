@@ -38,7 +38,7 @@ from std.collections import Array
 
 from max.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -89,7 +89,7 @@ def _allreduce_lamport_rmsnorm_kernel[
     ), "Lamport pack must be exactly 16 bytes (the 128-bit atomic width)."
     comptime alignment = align_of[SIMD[dtype, atomic_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var col = tid * atomic_width
     var is_valid = col < cols
     var packs_per_row = cols // atomic_width
@@ -118,10 +118,10 @@ def _allreduce_lamport_rmsnorm_kernel[
     # Generation geometry (read the device-resident counter once per call).
     var state = rank_sigs[my_rank][].lamport_state_ptr()
     var flag = Int(state.load[width=1, volatile=True](Lamport.STATE_FLAG))
-    var clear_size = Int(
-        state.load[width=1, volatile=True](Lamport.STATE_PREV_ELEMS)
+    # Previous call's written extent in dtype-independent 16-byte packs.
+    var clear_packs = Int(
+        state.load[width=1, volatile=True](Lamport.STATE_PREV_PACKS)
     )
-    var clear_packs = clear_size // atomic_width
     comptime gen_stride_packs = ngpus * Lamport.MAX_PACKS
     var data_gen_off = LamportGeneration.data_index(flag) * gen_stride_packs
     var clear_gen_off = LamportGeneration.clear_index(flag) * gen_stride_packs
@@ -133,7 +133,7 @@ def _allreduce_lamport_rmsnorm_kernel[
             col
         ).cast[accum_type]()
 
-    for row in range(Int(block_idx.x), rows, Int(grid_dim.x)):
+    for row in range(block_idx.x, rows, grid_dim.x):
         var base = row * cols + col
         var global_pack = row * packs_per_row + tid
 
@@ -219,8 +219,8 @@ def _allreduce_lamport_rmsnorm_kernel[
     # (f-tail) If the previous call was LARGER, clear the leftover packs of the
     # reused generation here (empty in the common same-size case).
     var cur_packs = rows * packs_per_row
-    var gtid = Int(block_idx.x) * BLOCK_SIZE + tid
-    var nthreads = Int(grid_dim.x) * BLOCK_SIZE
+    var gtid = block_idx.x * BLOCK_SIZE + tid
+    var nthreads = grid_dim.x * BLOCK_SIZE
     for cp in range(cur_packs + gtid, clear_packs, nthreads):
         comptime for i in range(1, ngpus):
             var peer = circular_add[ngpus](my_rank, i)
@@ -234,10 +234,12 @@ def _allreduce_lamport_rmsnorm_kernel[
     barrier()
     if tid == 0:
         var arrived = Atomic.fetch_add(state + Lamport.STATE_ARRIVAL, UInt32(1))
-        if Int(arrived) == Int(grid_dim.x) - 1:
-            (state + Lamport.STATE_FLAG).store[volatile=True](UInt32(flag + 1))
-            (state + Lamport.STATE_PREV_ELEMS).store[volatile=True](
-                UInt32(rows * cols)
+        if Int(arrived) == grid_dim.x - 1:
+            (state + Lamport.STATE_FLAG).store[volatile=True](
+                UInt32(LamportGeneration.advance(flag))
+            )
+            (state + Lamport.STATE_PREV_PACKS).store[volatile=True](
+                UInt32(cur_packs)
             )
             (state + Lamport.STATE_ARRIVAL).store[volatile=True](UInt32(0))
 
@@ -284,6 +286,12 @@ def lamport_allreduce_rmsnorm[
     comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
     comptime max_tpb = ctx.default_device_info.max_thread_block_size
     comptime BLOCK_SIZE = align_down(max_tpb, WARP_SIZE)
+
+    # A zero grid is rejected by `enqueue_function`. Every rank sees the same
+    # `rows`, and the generation flag only advances in-kernel, so skipping
+    # the launch on all ranks leaves the rotation in step.
+    if rows == 0:
+        return
 
     if cols % atomic_width != 0:
         raise Error(

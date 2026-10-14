@@ -27,7 +27,6 @@ from max.gpu.host import DeviceContext
 
 from layout import (
     Coord,
-    Idx,
     DefaultEngine,
     TileTensor,
     coord_to_index_list,
@@ -116,7 +115,7 @@ def test_case_batched[
         out_idxs_shape.flattened_length()
     )
 
-    # Create LayoutTensor for fill_fn (required by function signature)
+    # Create TileTensor for fill_fn (required by function signature)
     var in_tensor = TileTensor(in_host_ptr, row_major(Coord(in_shape)))
 
     # Fill the buffer with consecutive values
@@ -133,9 +132,9 @@ def test_case_batched[
         out_idxs_shape.flattened_length()
     )
 
-    var num_blocks_per_input_: Int = ceildiv(
-        N, block_size
-    ) if not num_blocks_per_input else num_blocks_per_input.value()
+    var num_blocks_per_input_: Int = num_blocks_per_input.or_else(
+        ceildiv(N, block_size)
+    )
     var local_topk_shape = IndexList[2](batch_size, num_blocks_per_input_ * K)
     var device_local_topk_vals = ctx.enqueue_create_buffer[dtype](
         local_topk_shape.flattened_length()
@@ -206,7 +205,7 @@ def test_case_batched[
                 device_local_topk_idxs_tt,
                 device_out_vals_tt,
                 device_out_idxs_tt,
-                k=k_tt.as_unsafe_any_origin().as_immut(),
+                k=k_tt.as_unsafe_any_origin().as_imm(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -225,7 +224,7 @@ def test_case_batched[
         device_local_topk_idxs_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_unsafe_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_imm(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -289,7 +288,7 @@ def test_case_batched[
                     topk_idxs_cpu_tt,
                     1,
                     True,
-                    k=k_host_tt.as_unsafe_any_origin().as_immut(),
+                    k=k_host_tt.as_unsafe_any_origin().as_imm(),
                 )
 
             time_kernel(m, ctx, "topk-cpu", run_func_cpu)
@@ -302,7 +301,7 @@ def test_case_batched[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_unsafe_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_imm(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -371,7 +370,7 @@ def test_case_multi_rank[
         out_idxs_shape.flattened_length()
     )
 
-    # Create LayoutTensor for fill_fn (required by function signature)
+    # Create TileTensor for fill_fn (required by function signature)
     var in_tensor = TileTensor(in_host_ptr, row_major(Coord(input_shape)))
 
     # Fill the buffer with consecutive values
@@ -442,7 +441,7 @@ def test_case_multi_rank[
         device_in_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_unsafe_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_imm(),
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -479,7 +478,7 @@ def test_case_multi_rank[
             topk_idxs_cpu_tt,
             1,
             True,
-            k=k_host_tt.as_unsafe_any_origin().as_immut(),
+            k=k_host_tt.as_unsafe_any_origin().as_imm(),
         )
 
         for i in range(out_vals_shape.flattened_length()):
@@ -607,8 +606,8 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
 
 def print_test_case(test_case: TestCase):
     var num_blocks_per_in_msg = "auto"
-    if test_case.num_blocks_per_input:
-        num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
+    if case .Some(num_blocks_per_input) = test_case.num_blocks_per_input:
+        num_blocks_per_in_msg = String(num_blocks_per_input)
     print(
         "==== Running Top-K "
         + (test_case.name + " " if test_case.name else "")
@@ -629,11 +628,11 @@ def print_test_case(test_case: TestCase):
 
 def print_test_case(test_case: TestCaseMultiRank):
     var num_blocks_per_in_msg = "auto"
-    if test_case.num_blocks_per_input:
-        num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
+    if case .Some(num_blocks_per_input) = test_case.num_blocks_per_input:
+        num_blocks_per_in_msg = String(num_blocks_per_input)
     var block_size_msg = "auto"
-    if test_case.block_size:
-        block_size_msg = String(test_case.block_size.value())
+    if case .Some(block_size) = test_case.block_size:
+        block_size_msg = String(block_size)
     print(
         "==== Running Top-K sampling=",
         test_case.sampling,
@@ -693,7 +692,7 @@ def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     comptime test_case_multi_rank1 = TestCaseMultiRank[
         _sampling=sampling, rank=1, _largest=True
     ](
-        input_shape=IndexList[1](4096),
+        input_shape=(4096,),
         K=10,
         block_size=256,
     )
@@ -751,9 +750,9 @@ def test_gumbel_zero_temperature[dtype: DType](ctx: DeviceContext) raises:
 
     gumbel_sampling_gpu(
         ctx,
-        in_tt.as_unsafe_any_origin().as_immut(),
+        in_tt.as_unsafe_any_origin().as_imm(),
         out_tt,
-        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+        temperature=temp_tt.as_unsafe_any_origin().as_imm(),
     )
 
     with device_out.map_to_host() as out_host:
@@ -810,17 +809,17 @@ def test_gumbel_fused_matches_two_kernel[
 
     gumbel_sampling_gpu(
         ctx,
-        in_tt.as_unsafe_any_origin().as_immut(),
+        in_tt.as_unsafe_any_origin().as_imm(),
         ref_tt,
-        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
-        seed=seed_tt.as_unsafe_any_origin().as_immut(),
+        temperature=temp_tt.as_unsafe_any_origin().as_imm(),
+        seed=seed_tt.as_unsafe_any_origin().as_imm(),
     )
     gumbel_sampling_fused_gpu(
         ctx,
-        in_tt.as_unsafe_any_origin().as_immut(),
+        in_tt.as_unsafe_any_origin().as_imm(),
         fused_tt,
-        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
-        seed=seed_tt.as_unsafe_any_origin().as_immut(),
+        temperature=temp_tt.as_unsafe_any_origin().as_imm(),
+        seed=seed_tt.as_unsafe_any_origin().as_imm(),
     )
     ctx.synchronize()
 
@@ -920,7 +919,7 @@ def test_topk_zero_k_row[dtype: DType](ctx: DeviceContext) raises:
         device_local_topk_idxs_tt,
         device_out_vals_tt,
         device_out_idxs_tt,
-        k=k_tt.as_unsafe_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_imm(),
         block_size=block_size,
     )
 

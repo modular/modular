@@ -429,7 +429,7 @@ Mojo captures this abstraction with a built-in `EnumLike` trait:
 
 ```mojo
 trait EnumLike:
-    comptime _enum_case_length: Int
+    # These lists must have the same length.
     comptime _enum_case_names: _MLIR.KGENParamListType[KGENString]
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType]
 
@@ -458,7 +458,8 @@ cases:
 ```mojo
 struct Optional[T: Movable](Copyable, EnumLike):
     ...
-    comptime _enum_case_length = 2
+    # These lists must have the same length, and all discriminators must be
+    # within the range.
     comptime _enum_case_names = ParameterList.of[
         "None".value, "Some".value
     ].values

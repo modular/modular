@@ -365,8 +365,8 @@ private:
 /// Determine whether an assumption proves or disproves a proposition.
 ///
 /// An internally inconsistent assumption proves the proposition vacuously.
-/// Top-level `eq` facts in the assumption are closed under symmetry and
-/// transitivity via union-find, so e.g. `(A == C) ∧ (B == C)` proves `A == B`.
+/// Canonicalization folds identity, conformance, and negation, so
+/// `(A == C) ∧ (B == C)` proves `A == B`.
 TriBool isPropositionImplied(TypedAttr proposition, TypedAttr assumption);
 
 /// Returns true if `assumption` implies `proposition`.

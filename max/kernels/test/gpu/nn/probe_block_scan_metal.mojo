@@ -31,7 +31,7 @@
 from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
-from std.testing import assert_equal, assert_almost_equal, TestSuite
+from std.testing import assert_almost_equal, TestSuite
 
 
 def block_scan_kernel[

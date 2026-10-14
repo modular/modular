@@ -65,12 +65,11 @@ from std.collections import Set
 from max.gpu import block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import max, min
-from std.random import rand, random_ui64, seed as set_seed
+from std.random import random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
-from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
-from layout import TensorLayout, TileTensor, row_major
+from layout import Coord, TensorLayout, TileTensor, row_major
 
 from nn.attention.gpu.sparse_indexer_common import block_select_topk
 
@@ -253,14 +252,8 @@ def _select_test_kernel[
     var num_blocks = Int(num_blocks_dev)
     var k = Int(k_dev)
     var row = block_idx.x
-    var s_lt = scores.to_layout_tensor()
-    var o_lt = out_idxs.to_layout_tensor()
-    var scores_row = rebind[MutPointer[Scalar[score_type], MutAnyOrigin]](
-        s_lt.ptr_at_offset(Index(row, 0))
-    )
-    var out_row = rebind[MutPointer[Scalar[out_idx_type], MutAnyOrigin]](
-        o_lt.ptr_at_offset(Index(row, 0))
-    )
+    var scores_row = scores.ptr_at_offset(Coord(row, 0))
+    var out_row = out_idxs.ptr_at_offset(Coord(row, 0))
     block_select_topk[score_type, out_idx_type](
         scores_row, num_blocks, k, out_row
     )
@@ -546,8 +539,7 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
         else:
             for i in range(n_out):
                 if out_host[i] != ref_out[i]:
-                    var row = i // k
-                    var pos = i % k
+                    var row, pos = divmod(i, k)
                     print(
                         "FUZZ_NUMERIC_FAIL kind=width_nondeterminism width=",
                         bd,

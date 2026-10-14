@@ -23,6 +23,7 @@ from std._plugin import CurrentPlugin
 
 
 struct AddressSpace(
+    EnumLike,
     Equatable,
     ImplicitlyCopyable,
     Intable,
@@ -51,6 +52,7 @@ struct AddressSpace(
     comptime GLOBAL = AddressSpace(
         __mlir_attr[`#lit.struct<{_mlir_value = 1}> : `, SIMDLength]
     )
+    # Address space numbers are required to align with LLVM IR.
     """Global GPU memory address space."""
     comptime SHARED = AddressSpace(3)
     """Shared GPU memory address space (per thread block/workgroup)."""
@@ -62,6 +64,46 @@ struct AddressSpace(
     """Shared cluster GPU memory address space (NVIDIA-specific)."""
     comptime BUFFER_RESOURCE = AddressSpace(8)
     """Buffer resource GPU memory address space (AMD-specific)."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "GENERIC".value,
+        "GLOBAL".value,
+        "SHARED".value,
+        "CONSTANT".value,
+        "LOCAL".value,
+        "SHARED_CLUSTER".value,
+        "BUFFER_RESOURCE".value,
+    ].values
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+    comptime _enum_is_exhaustive = False
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        match Int(self._value):
+            case 0:
+                return 0
+            case 1:
+                return 1
+            case 3:
+                return 2
+            case 4:
+                return 3
+            case 5:
+                return 4
+            case 7:
+                return 5
+            case 8:
+                return 6
+            case _:
+                return -1
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        comptime assert False, "AddressSpace does not have a payload"
 
     @inline(.nodebug)
     @staticmethod
@@ -85,8 +127,8 @@ struct AddressSpace(
             `name` must be defined by the active `PluginHooks` backend;
             otherwise this is a compile-time error.
         """
-        comptime if CurrentPlugin.address_space_fn[name]:
-            return CurrentPlugin.address_space_fn[name].value()
+        comptime if case .Some(space) = CurrentPlugin.address_space_fn[name]:
+            return space
         else:
             comptime assert False, "unknown address space: '" + name + "'"
 
@@ -136,20 +178,21 @@ struct AddressSpace(
         Args:
             writer: The object to write to.
         """
-        if self == .GENERIC:
-            writer.write("AddressSpace.GENERIC")
-        elif self == .GLOBAL:
-            writer.write("AddressSpace.GLOBAL")
-        elif self == .SHARED:
-            writer.write("AddressSpace.SHARED")
-        elif self == .CONSTANT:
-            writer.write("AddressSpace.CONSTANT")
-        elif self == .LOCAL:
-            writer.write("AddressSpace.LOCAL")
-        elif self == .SHARED_CLUSTER:
-            writer.write("AddressSpace.SHARED_CLUSTER")
-        else:
-            writer.write("AddressSpace(", Int(self.value()), ")")
+        match self:
+            case .GENERIC:
+                writer.write("AddressSpace.GENERIC")
+            case .GLOBAL:
+                writer.write("AddressSpace.GLOBAL")
+            case .SHARED:
+                writer.write("AddressSpace.SHARED")
+            case .CONSTANT:
+                writer.write("AddressSpace.CONSTANT")
+            case .LOCAL:
+                writer.write("AddressSpace.LOCAL")
+            case .SHARED_CLUSTER:
+                writer.write("AddressSpace.SHARED_CLUSTER")
+            case _:
+                writer.write("AddressSpace(", Int(self.value()), ")")
 
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the string representation of the AddressSpace.

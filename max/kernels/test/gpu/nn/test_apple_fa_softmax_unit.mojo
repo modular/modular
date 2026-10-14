@@ -71,10 +71,9 @@ def _softmax_unit_kernel(
 
     var output = OutMma.zero_accum()
 
-    @__parameter
     def load_scores(
         src: MutPointer[Float32, MutAnyOrigin],
-    ) -> ScoreMma.AccumType:
+    ) {imm} -> ScoreMma.AccumType:
         var acc = ScoreMma.zero_accum()
         comptime for ni in range(NUM_N_MMAS):
             var frag = SIMD[.float32, 8](0)
@@ -85,11 +84,10 @@ def _softmax_unit_kernel(
             acc[ni] = frag
         return acc.copy()
 
-    @__parameter
     def add_output(
         mut acc: OutMma.AccumType,
         src: MutPointer[Float32, MutAnyOrigin],
-    ):
+    ) {imm}:
         comptime for ni in range(DEPTH_MMAS):
             var frag = acc[ni]
             comptime for el in range(8):

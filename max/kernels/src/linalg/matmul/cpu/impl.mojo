@@ -19,17 +19,13 @@ Accelerate and GEMV fast paths.
 """
 from std.collections import Optional
 from std.math import align_up, ceildiv
-from std.sys.info import align_of, simd_width_of
+from std.sys.info import simd_width_of
 
 from std.algorithm import tile, vectorize
 
 from max.algorithm import sync_parallelize
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-)
+from layout import Coord, TensorEngine, TileTensor
 from layout.tile_layout import TensorLayout, row_major
 from std.memory import alloc, dealloc, Allocation
 from std.memory.alloc import Alignment, Layout as AllocLayout
@@ -115,7 +111,7 @@ def elementwise_epilogue_c_tile[
     simd_width: Int,
     c_type: DType,
     func: def[dtype: DType, width: SIMDLength, *, alignment: Int = 1](
-        IndexList[2], SIMD[dtype, width]
+        Coord, SIMD[dtype, width]
     ) capturing -> None,
 ](
     offset: GemmShape,
@@ -143,10 +139,8 @@ def elementwise_epilogue_c_tile[
         var n_coord = idx_n + offset.N
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M
-            var c_coord = Index(m_coord, n_coord)
-            var c_val = c.load_linear[width=col_chunk_size, alignment=1](
-                c_coord
-            )
+            var c_coord = Coord(m_coord, n_coord)
+            var c_val = c.load[width=col_chunk_size, alignment=1](c_coord)
             func[c_type, col_chunk_size](c_coord, c_val)
 
     vectorize[simd_width](tile_len.N, activation_on_col_chunk)
@@ -253,6 +247,7 @@ struct TiledMatmul[
     b_type: DType,
     b_layout: TensorLayout,
     b_origin: ImmOrigin,
+    b_engine: TensorEngine,
     c_type: DType,
     c_layout: TensorLayout,
     c_origin: MutOrigin,
@@ -282,6 +277,7 @@ struct TiledMatmul[
         b_type: Element type of the B operand.
         b_layout: Memory layout of the B operand.
         b_origin: Memory origin provenance of the B operand.
+        b_engine: Engine of the B operand.
         c_type: Element type of the C output.
         c_layout: Memory layout of the C output.
         c_origin: Memory origin provenance of the mutable C output.
@@ -319,6 +315,7 @@ struct TiledMatmul[
         Self.transpose_b,
         Self.b_packed,
         Self.b_origin,
+        Self.b_engine,
     ]
     """Generator that packs `B` sub-tiles for the inner kernel."""
 
@@ -391,7 +388,7 @@ struct TiledMatmul[
                     GemmShape(
                         tile_kernel_rows, sub_tile_n_k[0], sub_tile_n_k[1]
                     ),
-                    self.c.as_immut(),
+                    self.c.as_imm(),
                 )
 
         comptime if Self.kernel_id == InnerKernelID.I8MM:
@@ -508,7 +505,7 @@ def _matmul_cpu_impl[
     a: TileTensor[mut=False, address_space=.GENERIC, ...],
     b: TileTensor[mut=False, address_space=.GENERIC, ...],
     num_threads: Int = -1,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
@@ -520,8 +517,8 @@ def _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = TileTensor(c.ptr, row_major(Coord(Int(c.dim[0]()))))
-        var rhs = TileTensor(b.ptr, row_major(Coord(Int(b.dim[0]()))))
+        var out = TileTensor(c.ptr, row_major(Int(c.dim[0]())))
+        var rhs = TileTensor(b.ptr, row_major(Int(b.dim[0]())))
         gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
             out, a, rhs
         )
@@ -629,7 +626,7 @@ def _matmul_cpu_impl[
                     c,
                     TileTensor(
                         a_packed_alloc.unsafe_value().unsafe_ptr(),
-                        row_major(Coord(mh, kh)),
+                        row_major(mh, kh),
                     ),
                     b,
                     GemmShape(sub_matmul_config.shape),
@@ -680,7 +677,7 @@ def matmul[
     b: TileTensor[mut=False, address_space=.GENERIC, ...],
     kernel_type_m: Int,
     num_threads: Int = -1,
-    ctx: Optional[DeviceContext] = None,
+    ctx: Optional[DeviceContext.CPU] = None,
 ) raises:
     """TileTensor matmul dispatcher. Selects kernel type and delegates to
     `_matmul_cpu_impl`.
@@ -736,23 +733,21 @@ def matmul[
         var scratch_ptr: UnsafePointer[
             Scalar[scratch_type], origin_of(scratch_alloc)
         ] = scratch_alloc.unsafe_ptr()
-        var scratch = TileTensor(
-            scratch_ptr, row_major(Coord(scratch_m, scratch_n))
-        )
+        var scratch = TileTensor(scratch_ptr, row_major(scratch_m, scratch_n))
 
         @__parameter
         @inline(.always)
         def cast_epilogue[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
-        ](coord: IndexList[2], val: SIMD[dtype, width]):
+        ](coord: Coord, val: SIMD[dtype, width]):
+            comptime assert (
+                coord.rank == 2
+            ), "the matmul epilogue contract is rank 2"
             var cast_val = val.cast[c.dtype]()
-            comptime if elementwise_lambda_fn:
-                comptime user_fn = elementwise_lambda_fn.value()
+            comptime if case .Some(user_fn) = elementwise_lambda_fn:
                 user_fn[c.dtype, width, alignment=alignment](coord, cast_val)
             else:
-                c.store_linear[width=width, alignment=alignment](
-                    coord, cast_val
-                )
+                c.store[width=width, alignment=alignment](coord, cast_val)
 
         matmul[
             transpose_b=transpose_b,
@@ -776,68 +771,69 @@ def matmul[
             kernel_type=kernel_type,
         ]()
 
-        comptime if kernel_id == InnerKernelID.DEFAULT:
-            _matmul_cpu_impl[
-                config,
-                transpose_b,
-                b_packed,
-                elementwise_lambda_fn,
-                kernel_id,
-            ](
-                Inner_matmul_default(),
-                c,
-                a,
-                b,
-                num_threads,
-                ctx,
-            )
-        elif kernel_id == InnerKernelID.VNNI:
-            _matmul_cpu_impl[
-                config,
-                transpose_b,
-                b_packed,
-                elementwise_lambda_fn,
-                kernel_id,
-            ](
-                Inner_matmul_vnni[saturated_vnni](),
-                c,
-                a,
-                b,
-                num_threads,
-                ctx,
-            )
-        elif kernel_id == InnerKernelID.NEON:
-            _matmul_cpu_impl[
-                config,
-                transpose_b,
-                b_packed,
-                elementwise_lambda_fn,
-                kernel_id,
-            ](
-                Inner_matmul_neon(),
-                c,
-                a,
-                b,
-                num_threads,
-                ctx,
-            )
-        elif kernel_id == InnerKernelID.I8MM:
-            _matmul_cpu_impl[
-                config,
-                transpose_b,
-                b_packed,
-                elementwise_lambda_fn,
-                kernel_id,
-            ](
-                Inner_matmul_i8mm(),
-                c,
-                a,
-                b,
-                num_threads,
-                ctx,
-            )
-        else:
-            comptime assert False, "no _run_inner_loop implementation"
+        comptime match kernel_id:
+            case .DEFAULT:
+                _matmul_cpu_impl[
+                    config,
+                    transpose_b,
+                    b_packed,
+                    elementwise_lambda_fn,
+                    kernel_id,
+                ](
+                    Inner_matmul_default(),
+                    c,
+                    a,
+                    b,
+                    num_threads,
+                    ctx,
+                )
+            case .VNNI:
+                _matmul_cpu_impl[
+                    config,
+                    transpose_b,
+                    b_packed,
+                    elementwise_lambda_fn,
+                    kernel_id,
+                ](
+                    Inner_matmul_vnni[saturated_vnni](),
+                    c,
+                    a,
+                    b,
+                    num_threads,
+                    ctx,
+                )
+            case .NEON:
+                _matmul_cpu_impl[
+                    config,
+                    transpose_b,
+                    b_packed,
+                    elementwise_lambda_fn,
+                    kernel_id,
+                ](
+                    Inner_matmul_neon(),
+                    c,
+                    a,
+                    b,
+                    num_threads,
+                    ctx,
+                )
+            case .I8MM:
+                _matmul_cpu_impl[
+                    config,
+                    transpose_b,
+                    b_packed,
+                    elementwise_lambda_fn,
+                    kernel_id,
+                ](
+                    Inner_matmul_i8mm(),
+                    c,
+                    a,
+                    b,
+                    num_threads,
+                    ctx,
+                )
+            case _:
+                comptime assert False, "no _run_inner_loop implementation"
 
     var shape = GemmShape.get[transpose_b](c, a, b)
     var n = shape.N
@@ -867,8 +863,7 @@ def _submatmul_sequential_sync[
         shape: GemmShape,
         c_read: TileTensor[mut=False, address_space=.GENERIC, ...],
     ):
-        comptime if elementwise_lambda_fn:
-            comptime func = elementwise_lambda_fn.value()
+        comptime if case .Some(func) = elementwise_lambda_fn:
             elementwise_epilogue_c_tile[
                 simd_size,
                 c_read.dtype,
@@ -914,65 +909,66 @@ def _submatmul_sequential_sync[
 ):
     comptime kernel_id = select_inner_kernel[a.dtype, b.dtype, c.dtype]()
 
-    comptime if kernel_id == InnerKernelID.DEFAULT:
-        _submatmul_sequential_sync[
-            config,
-            transpose_b,
-            b_packed,
-            elementwise_lambda_fn,
-            kernel_id,
-        ](
-            Inner_matmul_default(),
-            c,
-            a,
-            b,
-            sub_matrix_shape,
-            sub_matrix_offset,
-        )
-    elif kernel_id == InnerKernelID.VNNI:
-        _submatmul_sequential_sync[
-            config,
-            transpose_b,
-            b_packed,
-            elementwise_lambda_fn,
-            kernel_id,
-        ](
-            Inner_matmul_vnni[saturated_vnni](),
-            c,
-            a,
-            b,
-            sub_matrix_shape,
-            sub_matrix_offset,
-        )
-    elif kernel_id == InnerKernelID.NEON:
-        _submatmul_sequential_sync[
-            config,
-            transpose_b,
-            b_packed,
-            elementwise_lambda_fn,
-            kernel_id,
-        ](
-            Inner_matmul_neon(),
-            c,
-            a,
-            b,
-            sub_matrix_shape,
-            sub_matrix_offset,
-        )
-    elif kernel_id == InnerKernelID.I8MM:
-        _submatmul_sequential_sync[
-            config,
-            transpose_b,
-            b_packed,
-            elementwise_lambda_fn,
-            kernel_id,
-        ](
-            Inner_matmul_i8mm(),
-            c,
-            a,
-            b,
-            sub_matrix_shape,
-            sub_matrix_offset,
-        )
-    else:
-        comptime assert False, "no _run_inner_loop implementation"
+    comptime match kernel_id:
+        case .DEFAULT:
+            _submatmul_sequential_sync[
+                config,
+                transpose_b,
+                b_packed,
+                elementwise_lambda_fn,
+                kernel_id,
+            ](
+                Inner_matmul_default(),
+                c,
+                a,
+                b,
+                sub_matrix_shape,
+                sub_matrix_offset,
+            )
+        case .VNNI:
+            _submatmul_sequential_sync[
+                config,
+                transpose_b,
+                b_packed,
+                elementwise_lambda_fn,
+                kernel_id,
+            ](
+                Inner_matmul_vnni[saturated_vnni](),
+                c,
+                a,
+                b,
+                sub_matrix_shape,
+                sub_matrix_offset,
+            )
+        case .NEON:
+            _submatmul_sequential_sync[
+                config,
+                transpose_b,
+                b_packed,
+                elementwise_lambda_fn,
+                kernel_id,
+            ](
+                Inner_matmul_neon(),
+                c,
+                a,
+                b,
+                sub_matrix_shape,
+                sub_matrix_offset,
+            )
+        case .I8MM:
+            _submatmul_sequential_sync[
+                config,
+                transpose_b,
+                b_packed,
+                elementwise_lambda_fn,
+                kernel_id,
+            ](
+                Inner_matmul_i8mm(),
+                c,
+                a,
+                b,
+                sub_matrix_shape,
+                sub_matrix_offset,
+            )
+        case _:
+            comptime assert False, "no _run_inner_loop implementation"

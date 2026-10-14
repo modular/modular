@@ -28,6 +28,7 @@ from typing import ClassVar
 
 import numpy as np
 import pytest
+from _test_helpers import assert_no_shadowed_tests
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental.functional import (
@@ -62,11 +63,12 @@ from max.experimental.functional import (
     where,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 
@@ -85,7 +87,7 @@ class _Transpose:
         """transpose(0,1) with Sharded(0) -> Sharded(1), values correct."""
         t_np = np.arange(32, dtype=np.float32).reshape(4, 8)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         out = transpose(t, 0, 1)
         assert out.placements == (Sharded(1),)
@@ -96,7 +98,7 @@ class _Transpose:
         """Transpose axes that don't touch sharded dim — placement unchanged."""
         t_np = np.arange(96, dtype=np.float32).reshape(4, 8, 3)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         out = transpose(t, 1, 2)
         assert out.placements == (Sharded(0),)
@@ -119,7 +121,7 @@ class _Reshape:
         """Reshape keeps sharded dim size -> placement preserved, values correct."""
         t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         out = reshape(t, (8, 2, 2))
         assert out.placements == (Sharded(0),)
@@ -143,7 +145,7 @@ class _Reshape:
         """
         t_np = np.arange(128, dtype=np.float32).reshape(4, 8, 4)
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         out = reshape(dt, (4, 4, 8))
         assert out.placements == (Sharded(0),)
@@ -160,7 +162,7 @@ class _Reshape:
         B, S, H, D = 4, 8, 4, 16
         t_np = np.arange(B * S * H * D, dtype=np.float32).reshape(B, S, H * D)
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),))
         )
         out = reshape(dt, (B, S, H, D))
         assert out.placements == (Sharded(0),)
@@ -177,7 +179,7 @@ class _Reshape:
         T = 5  # MESH_2 has 2 devices; mesh size N=2 divides new axis 1 (size 8).
         t_np = np.arange(T * 2048, dtype=np.float32).reshape(T, 2048)
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),))
         )
         out = reshape(dt, (-1, 8, 256))
         assert out.placements == (Sharded(1),)
@@ -192,7 +194,7 @@ class _Reshape:
         N=4 (MESH_1D). Sharding lands on new axis 1."""
         t_np = np.arange(8 * 32, dtype=np.float32).reshape(8, 32)
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(1),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(1),))
         )
         out = reshape(dt, (8, 4, 8))
         assert out.placements == (Sharded(1),)
@@ -206,7 +208,7 @@ class _Reshape:
         the sharded axis 1 (size 8) shifts to new axis 2."""
         t_np = np.arange(32, dtype=np.float32).reshape(4, 8)
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(1),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(1),))
         )
         out = reshape(dt, (2, 2, 8))
         assert out.placements == (Sharded(2),)
@@ -222,7 +224,7 @@ class _Reshape:
         t_np = np.arange(2 * 4 * 8, dtype=np.float32).reshape(2, 4, 8)
         dt = transfer_to(
             Tensor(t_np),
-            PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1))),
+            DeviceMapping(self.MESH_2D, (Replicated(), Sharded(1))),
         )
         out = reshape(dt, (2, 32))
         assert out.placements == (Replicated(), Sharded(1))
@@ -235,7 +237,7 @@ class _Reshape:
         """Reshape rejects targets with more than one ``-1`` sentinel."""
         t = transfer_to(
             Tensor(np.arange(32, dtype=np.float32).reshape(4, 8)),
-            PlacementMapping(self.MESH_1D, (Sharded(0),)),
+            DeviceMapping(self.MESH_1D, (Sharded(0),)),
         )
         with pytest.raises(ValueError, match=r"-1"):
             reshape(t, (-1, -1, 2))
@@ -262,7 +264,7 @@ class _Reshape:
         q_dim = n_heads * head_dim
         t_np = np.arange(T * q_dim, dtype=np.float32).reshape(T, q_dim)
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),))
         )
         out = reshape(dt, (-1, n_heads, head_dim))
         assert out.placements == (Sharded(1),)
@@ -279,7 +281,7 @@ class _Reshape:
             T, n_heads, head_dim
         )
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),))
         )
         out = reshape(dt, (-1, q_dim))
         assert out.placements == (Sharded(1),)
@@ -289,15 +291,14 @@ class _Reshape:
         )
 
     def test_gemma_qkv_merge_per_shard_shape(self) -> None:
-        """Merge using ``shape[1] * shape[2]`` — exercises the wrapper-landing
-        path on a merged target axis."""
+        """Merge using ``shape[1] * shape[2]``, sizes given per device."""
         T, n_heads, head_dim = 6, 8, 16
         q_dim = n_heads * head_dim
         t_np = np.arange(T * q_dim, dtype=np.float32).reshape(
             T, n_heads, head_dim
         )
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),))
         )
         out = reshape(
             dt,
@@ -317,7 +318,7 @@ class _Reshape:
         over 4 devices → per-shard sizes [2, 2, 2, 1], shard preserved."""
         t_np = np.arange(56, dtype=np.float32).reshape(7, 8)
         dt = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         out = reshape(dt, (7, 8))
         assert out.placements == (Sharded(0),)
@@ -338,7 +339,7 @@ class _Permute:
         """Permute remaps sharded axis, values match numpy."""
         t_np = np.arange(96, dtype=np.float32).reshape(4, 8, 3)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         out = permute(t, [2, 0, 1])
         assert out.placements == (Sharded(1),)
@@ -361,12 +362,8 @@ class _Concat:
         """Concat along sharded axis — placement preserved, global shape doubles."""
         a_np = np.ones((4, 2), dtype=np.float32)
         b_np = np.zeros((4, 2), dtype=np.float32)
-        a = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        a = transfer_to(Tensor(a_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        b = transfer_to(Tensor(b_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = concat((a, b), axis=0)
         assert result.placements == (Sharded(0),)
         assert list(result.shape) == [8, 2]
@@ -378,12 +375,8 @@ class _Concat:
         """Concat along non-sharded axis — placement unchanged, values correct."""
         a_np = np.ones((2, 4), dtype=np.float32)
         b_np = np.zeros((2, 4), dtype=np.float32)
-        a = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
-        b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
+        a = transfer_to(Tensor(a_np), DeviceMapping(self.MESH_2, (Sharded(1),)))
+        b = transfer_to(Tensor(b_np), DeviceMapping(self.MESH_2, (Sharded(1),)))
         result = concat((a, b), axis=0)
         assert result.placements == (Sharded(1),)
         expected = np.concatenate([a_np, b_np], axis=0)
@@ -407,9 +400,7 @@ class _Split:
     def test_non_sharded_axis(self) -> None:
         """Split along non-sharded axis — each chunk preserves placement + values."""
         t_np = np.arange(24, dtype=np.float32).reshape(4, 6)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         parts = self._split(t, [3, 3], axis=1)
         assert len(parts) == 2
         for p in parts:
@@ -418,23 +409,34 @@ class _Split:
         np.testing.assert_allclose(parts[0].to_numpy(), t_np[:, :3], rtol=1e-5)
         np.testing.assert_allclose(parts[1].to_numpy(), t_np[:, 3:], rtol=1e-5)
 
-    def test_along_sharded(self) -> None:
+    def test_split_along_sharded(self) -> None:
         """Split along sharded axis — per-device shard sizes correct."""
         t_np = np.arange(16, dtype=np.float32).reshape(4, 4)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),)))
         parts = self._split(t, [2, 2], axis=1)
         assert len(parts) == 2
         for p in parts:
             assert p.placements == (Sharded(1),)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="MXF-836: split along a sharded axis splits each device's "
+        "piece, so the parts hold permuted columns",
+    )
+    def test_split_along_sharded_values(self) -> None:
+        """Split along a sharded axis gives the same values as a local split."""
+        t_np = np.arange(16, dtype=np.float32).reshape(4, 4)
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),)))
+        parts = self._split(t, [2, 2], axis=1)
+        np.testing.assert_allclose(parts[0].to_numpy(), t_np[:, :2])
+        np.testing.assert_allclose(parts[1].to_numpy(), t_np[:, 2:])
 
     def test_2d_split_along_sharded(self) -> None:
         """2D mesh split along sharded axis — both mesh-axis placements correct."""
         t_np = np.arange(32, dtype=np.float32).reshape(4, 8)
         t = transfer_to(
             Tensor(t_np),
-            PlacementMapping(
+            DeviceMapping(
                 self.MESH_2D,
                 (
                     Replicated(),
@@ -462,9 +464,7 @@ class _Unsqueeze:
     def test_shifts_sharded(self) -> None:
         """Unsqueeze before sharded axis shifts it up, values preserved."""
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = unsqueeze(t, 0)
         assert result.placements == (Sharded(1),)
         assert list(result.shape) == [1, 4, 2]
@@ -482,12 +482,10 @@ class _Squeeze:
     MESH_2: ClassVar[DeviceMesh]
     partial_fn: ClassVar[Callable[..., Tensor]]
 
-    def test_shifts_sharded(self) -> None:
+    def test_squeeze_shifts_sharded(self) -> None:
         """Squeeze before sharded axis shifts it down, values preserved."""
         t_np = np.arange(8, dtype=np.float32).reshape(1, 4, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(1),)))
         result = squeeze(t, 0)
         assert result.placements == (Sharded(0),)
         assert list(result.shape) == [4, 2]
@@ -509,11 +507,11 @@ class _Gather:
         """Gather along non-sharded axis — placement preserved, values correct."""
         w_np = np.arange(20, dtype=np.float32).reshape(5, 4)
         weight = transfer_to(
-            Tensor(w_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+            Tensor(w_np), DeviceMapping(self.MESH_2, (Sharded(1),))
         )
         indices = transfer_to(
             Tensor(np.array([0, 3], dtype=np.int64)),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         result = gather(weight, indices, axis=0)
         assert result.placements == (Sharded(1),)
@@ -534,7 +532,7 @@ class _BroadcastTo:
         """Broadcast a replicated tensor — placement preserved, values correct."""
         t_np = np.ones((1, 4), dtype=np.float32)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = broadcast_to(t, shape=(3, 4))
         assert result.placements == (Replicated(),)
@@ -546,9 +544,7 @@ class _BroadcastTo:
     def test_sharded_non_broadcast_dim(self) -> None:
         """Broadcast doesn't touch sharded dim — placement preserved."""
         t_np = np.arange(8, dtype=np.float32).reshape(4, 1, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = broadcast_to(t, shape=(4, 3, 2))
         assert result.placements == (Sharded(0),)
         assert list(result.shape) == [4, 3, 2]
@@ -556,19 +552,25 @@ class _BroadcastTo:
             result.to_numpy(), np.broadcast_to(t_np, (4, 3, 2)), rtol=1e-5
         )
 
-    def test_partial_passthrough(self) -> None:
+    def test_broadcast_to_partial_passthrough(self) -> None:
         """Partial placement preserved through broadcast."""
-        data = np.ones((1, 4), dtype=np.float32)
+        data = np.arange(1, 5, dtype=np.float32).reshape(1, 4)
         dt = self.partial_fn(data, self.MESH_1D, (Partial(),))
         result = broadcast_to(dt, shape=(3, 4))
         assert any(isinstance(p, Partial) for p in result.placements)
         assert list(result.shape) == [3, 4]
+        # partial_fn gives every device a copy, so the Partial sums to
+        # num_devices * data.
+        n = self.MESH_1D.num_devices
+        np.testing.assert_allclose(
+            result.to_numpy(), np.broadcast_to(data, (3, 4)) * n
+        )
 
     def test_size_mismatch_raises(self) -> None:
         """Input dim that's neither 1 nor equal to the target — rejected."""
         t = transfer_to(
             Tensor(np.arange(8, dtype=np.float32).reshape(2, 4)),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         with pytest.raises(ValueError, match="must be either 1 or equal"):
             broadcast_to(t, shape=(3, 4))
@@ -587,7 +589,7 @@ class _Flatten:
         """Flatten a replicated tensor — placement preserved, values correct."""
         t_np = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = flatten(t, start_dim=1, end_dim=2)
         assert result.placements == (Replicated(),)
@@ -599,9 +601,7 @@ class _Flatten:
     def test_sharded_outside_range(self) -> None:
         """Sharded axis outside flatten range — shifts down correctly."""
         t_np = np.arange(48, dtype=np.float32).reshape(4, 3, 2, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = flatten(t, start_dim=1, end_dim=2)
         assert result.placements == (Sharded(0),)
         assert list(result.shape) == [4, 6, 2]
@@ -609,12 +609,14 @@ class _Flatten:
             result.to_numpy(), t_np.reshape(4, 6, 2), rtol=1e-5
         )
 
-    def test_partial_passthrough(self) -> None:
+    def test_flatten_partial_passthrough(self) -> None:
         """Partial placement preserved through flatten."""
-        data = np.ones((2, 3, 4), dtype=np.float32)
+        data = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         dt = self.partial_fn(data, self.MESH_1D, (Partial(),))
         result = flatten(dt, start_dim=0, end_dim=-1)
         assert any(isinstance(p, Partial) for p in result.placements)
+        n = self.MESH_1D.num_devices
+        np.testing.assert_allclose(result.to_numpy(), data.reshape(-1) * n)
 
 
 # ── Combined base class ─────────────────────────────────────────────
@@ -630,10 +632,10 @@ class _Stack:
         a_np = np.ones((2, 3), dtype=np.float32)
         b_np = np.zeros((2, 3), dtype=np.float32)
         a = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(a_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(b_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = stack((a, b), axis=0)
         assert result.placements == (Replicated(),)
@@ -646,12 +648,8 @@ class _Stack:
         """Stacking before sharded axis shifts it up."""
         a_np = np.arange(8, dtype=np.float32).reshape(4, 2)
         b_np = np.arange(8, 16, dtype=np.float32).reshape(4, 2)
-        a = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        a = transfer_to(Tensor(a_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        b = transfer_to(Tensor(b_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = stack((a, b), axis=0)
         # Sharded(0) shifts to Sharded(1) because new axis inserted at 0
         assert result.placements == (Sharded(1),)
@@ -664,11 +662,14 @@ class _Stack:
 class _Argsort:
     MESH_2: ClassVar[DeviceMesh]
 
+    @pytest.mark.compile_on_gpu(
+        "mx.argsort is staged as an undeclared custom op the interpreter can't bind"
+    )
     def test_argsort_replicated(self) -> None:
         """Argsort on replicated 1D tensor — placement preserved."""
         t_np = np.array([3, 1, 2, 0], dtype=np.float32)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = argsort(t)
         assert result.placements == (Replicated(),)
@@ -685,9 +686,7 @@ class _TopKBottomK:
     def test_top_k_non_sharded(self) -> None:
         """top_k along non-sharded axis — placement preserved."""
         t_np = np.array([[5, 1, 3, 2, 4], [10, 8, 6, 9, 7]], dtype=np.float32)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         values, indices = top_k(t, k=2, axis=1)
         assert values.placements == (Sharded(0),)
         assert indices.placements == (Sharded(0),)
@@ -695,9 +694,7 @@ class _TopKBottomK:
     def test_bottom_k_non_sharded(self) -> None:
         """bottom_k along non-sharded axis — placement preserved."""
         t_np = np.array([[5, 1, 3, 2, 4], [10, 8, 6, 9, 7]], dtype=np.float32)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         values, indices = bottom_k(t, k=2, axis=1)
         assert values.placements == (Sharded(0),)
         assert indices.placements == (Sharded(0),)
@@ -712,9 +709,7 @@ class _Chunk:
     def test_chunk_non_sharded(self) -> None:
         """Chunk along non-sharded axis — each chunk preserves placement."""
         t_np = np.arange(24, dtype=np.float32).reshape(4, 6)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         parts = chunk(t, chunks=3, axis=1)
         assert len(parts) == 3
         for p in parts:
@@ -733,9 +728,7 @@ class _RepeatInterleave:
         if not isinstance(self.MESH_2.devices[0], CPU):
             pytest.skip("repeat_interleave not supported on GPU")
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = repeat_interleave(t, repeats=3, axis=1)
         assert result.placements == (Sharded(0),)
         assert list(result.shape) == [4, 6]
@@ -750,16 +743,11 @@ class _RepeatInterleave:
 class _Tile:
     MESH_2: ClassVar[DeviceMesh]
 
-    def _skip_if_gpu(self) -> None:
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("Tile Mojo kernel is MO_HostOnly (CPU-only)")
-
     def test_tile_replicated(self) -> None:
         """Tile a replicated tensor — placement preserved."""
-        self._skip_if_gpu()
         t_np = np.arange(6, dtype=np.float32).reshape(2, 3)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = tile(t, [2, 1])
         assert result.placements == (Replicated(),)
@@ -770,11 +758,8 @@ class _Tile:
 
     def test_tile_sharded(self) -> None:
         """Tile on batch-sharded tensor — placement preserved."""
-        self._skip_if_gpu()
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = tile(t, [1, 3])
         assert result.placements == (Sharded(0),)
         assert list(result.shape) == [4, 6]
@@ -786,16 +771,16 @@ class _Tile:
 class _Pad:
     MESH_2: ClassVar[DeviceMesh]
 
-    def _skip_if_gpu(self) -> None:
+    def _skip_pad_if_gpu(self) -> None:
         if not isinstance(self.MESH_2.devices[0], CPU):
             pytest.skip("PadConstant Mojo kernel GPU has Array capture bug")
 
     def test_pad_replicated(self) -> None:
         """Pad a replicated tensor — placement preserved."""
-        self._skip_if_gpu()
+        self._skip_pad_if_gpu()
         t_np = np.arange(6, dtype=np.float32).reshape(2, 3)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         # Flat paddings: [before_dim0, after_dim0, before_dim1, after_dim1]
         result = pad(t, [0, 0, 1, 1])
@@ -804,11 +789,9 @@ class _Pad:
 
     def test_pad_sharded_non_padded(self) -> None:
         """Pad non-sharded dim on a sharded tensor."""
-        self._skip_if_gpu()
+        self._skip_pad_if_gpu()
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         # Pad dim 1 only
         result = pad(t, [0, 0, 1, 1])
         assert result.placements == (Sharded(0),)
@@ -825,7 +808,7 @@ class _SliceTensor:
         """Slice a replicated tensor — placement preserved."""
         t_np = np.arange(20, dtype=np.float32).reshape(4, 5)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = slice_tensor(t, [slice(1, 3)])
         assert result.placements == (Replicated(),)
@@ -838,9 +821,7 @@ class _SliceTensor:
         if not isinstance(self.MESH_2.devices[0], CPU):
             pytest.skip("slice_tensor graph op crashes on GPU")
         t_np = np.arange(24, dtype=np.float32).reshape(4, 6)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = slice_tensor(t, [slice(None), slice(0, 3)])
         assert result.placements == (Sharded(0),)
         assert list(result.shape) == [4, 3]
@@ -857,24 +838,17 @@ class _Scatter:
         """Scatter along non-sharded axis — placement preserved.
 
         ops.scatter(input, updates, indices, axis).
-        scatter/scatter_add are CPU-only Mojo kernels.
         """
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter is CPU-only")
-
         x_np = np.zeros((4, 4), dtype=np.float32)
         updates_np = np.ones((4, 2), dtype=np.float32)
         idx_np = np.array([[0, 1], [2, 3], [0, 1], [2, 3]], dtype=np.int32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         updates = transfer_to(
             Tensor(updates_np),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
+            DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
         idx = transfer_to(
-            Tensor(idx_np), PlacementMapping(self.MESH_2, (Sharded(0),))
+            Tensor(idx_np), DeviceMapping(self.MESH_2, (Sharded(0),))
         )
         result = scatter(x, updates, idx, axis=1)
         assert result.placements == (Sharded(0),)
@@ -892,38 +866,33 @@ class _Scatter:
         x = TensorLayout(
             DType.float32,
             Shape((4, 4)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
+            DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
         updates = TensorLayout(
             DType.float32,
             Shape((4, 2)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
+            DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
         idx = TensorLayout(
             DType.int32,
             Shape((4, 2)),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
+            DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
-        menu = scatter_rule(x, updates, idx, axis=0)
-        assert any(row.output == Replicated() for row in menu.axis_assignments)
+        rows = scatter_rule(x, updates, idx, axis=0)
+        assert any(row.outputs == (Replicated(),) for row in rows)
 
     def test_scatter_add_non_sharded_axis(self) -> None:
         """scatter_add along non-sharded axis — placement preserved."""
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter_add is CPU-only")
         x_np = np.zeros((4, 4), dtype=np.float32)
         updates_np = np.ones((4, 2), dtype=np.float32)
         idx_np = np.array([[0, 1], [2, 3], [0, 1], [2, 3]], dtype=np.int32)
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         updates = transfer_to(
             Tensor(updates_np),
-            PlacementMapping(self.MESH_2, (Sharded(0),)),
+            DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
         idx = transfer_to(
-            Tensor(idx_np), PlacementMapping(self.MESH_2, (Sharded(0),))
+            Tensor(idx_np), DeviceMapping(self.MESH_2, (Sharded(0),))
         )
         result = scatter_add(x, updates, idx, axis=1)
         assert result.placements == (Sharded(0),)
@@ -940,10 +909,10 @@ class _Outer:
         a_np = np.array([1, 2, 3], dtype=np.float32)
         b_np = np.array([4, 5], dtype=np.float32)
         a = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(a_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         b = transfer_to(
-            Tensor(b_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(b_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = outer(a, b)
         assert result.placements == (Replicated(),)
@@ -965,13 +934,13 @@ class _Where:
         y_np = np.zeros((2, 2), dtype=np.float32)
         cond = transfer_to(
             Tensor(cond_np),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         y = transfer_to(
-            Tensor(y_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(y_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = where(cond, x, y)
         assert result.placements == (Replicated(),)
@@ -985,14 +954,10 @@ class _Where:
         x_np = np.ones((2, 2), dtype=np.float32)
         y_np = np.zeros((2, 2), dtype=np.float32)
         cond = transfer_to(
-            Tensor(cond_np), PlacementMapping(self.MESH_2, (Sharded(0),))
+            Tensor(cond_np), DeviceMapping(self.MESH_2, (Sharded(0),))
         )
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        y = transfer_to(
-            Tensor(y_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        y = transfer_to(Tensor(y_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = where(cond, x, y)
         assert result.placements == (Sharded(0),)
         np.testing.assert_allclose(
@@ -1014,15 +979,12 @@ class _Where:
         y_np = np.zeros((4, 2), dtype=np.float32)
         cond = transfer_to(
             Tensor(cond_np),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
-        x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        y = transfer_to(
-            Tensor(y_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
-        result = where(cond, x, y)
+        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        y = transfer_to(Tensor(y_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        with auto_reshard(mode="silent"):
+            result = where(cond, x, y)
         assert result.placements == (Sharded(0),)
         assert tuple(result.shape) == (4, 2)
         np.testing.assert_allclose(
@@ -1041,11 +1003,11 @@ class _GatherNd:
         x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
         idx_np = np.array([[0], [2]], dtype=np.int32)
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         idx = transfer_to(
             Tensor(idx_np),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         result = gather_nd(x, idx)
         assert result.placements == (Replicated(),)
@@ -1066,40 +1028,34 @@ class _ScatterNd:
         updates_np = np.array([[1, 1, 1, 1], [2, 2, 2, 2]], dtype=np.float32)
         idx_np = np.array([[0], [2]], dtype=np.int32)
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         updates = transfer_to(
             Tensor(updates_np),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         idx = transfer_to(
             Tensor(idx_np),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         result = scatter_nd(x, updates, idx)
         assert result.placements == (Replicated(),)
 
     def test_scatter_nd_add_replicated(self) -> None:
-        """scatter_nd_add on replicated tensor — placement preserved.
-
-        scatter_nd_add is CPU-only (the Mojo kernel does not support GPU).
-        """
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter_nd_add is CPU-only")
+        """scatter_nd_add on replicated tensor — placement preserved."""
         x_np = np.ones((4, 4), dtype=np.float32)
         updates_np = np.array([[1, 1, 1, 1], [2, 2, 2, 2]], dtype=np.float32)
         idx_np = np.array([[0], [2]], dtype=np.int32)
         x = transfer_to(
-            Tensor(x_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         updates = transfer_to(
             Tensor(updates_np),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         idx = transfer_to(
             Tensor(idx_np),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         result = scatter_nd_add(x, updates, idx)
         assert result.placements == (Replicated(),)
@@ -1118,11 +1074,11 @@ class _BufferStore:
         src_np = np.ones((4, 4), dtype=np.float32) * 5.0
         dest = transfer_to(
             Tensor(dest_np),
-            PlacementMapping(self.MESH_1D, (Replicated(),)),
+            DeviceMapping(self.MESH_1D, (Replicated(),)),
         )
         src = transfer_to(
             Tensor(src_np),
-            PlacementMapping(self.MESH_1D, (Replicated(),)),
+            DeviceMapping(self.MESH_1D, (Replicated(),)),
         )
         buffer_store(dest, src)
         np.testing.assert_allclose(dest.to_numpy(), src_np)
@@ -1132,10 +1088,10 @@ class _BufferStore:
         dest_np = np.zeros((4, 6), dtype=np.float32)
         src_np = np.arange(24, dtype=np.float32).reshape(4, 6)
         dest = transfer_to(
-            Tensor(dest_np), PlacementMapping(self.MESH_2, (Sharded(0),))
+            Tensor(dest_np), DeviceMapping(self.MESH_2, (Sharded(0),))
         )
         src = transfer_to(
-            Tensor(src_np), PlacementMapping(self.MESH_2, (Sharded(0),))
+            Tensor(src_np), DeviceMapping(self.MESH_2, (Sharded(0),))
         )
         buffer_store(dest, src)
         np.testing.assert_allclose(dest.to_numpy(), src_np)
@@ -1163,11 +1119,11 @@ class _SliceStore:
         src_np = np.ones((2, 4), dtype=np.float32) * 7.0
         dest = transfer_to(
             Tensor(dest_np),
-            PlacementMapping(self.MESH_1D, (Replicated(),)),
+            DeviceMapping(self.MESH_1D, (Replicated(),)),
         )
         src = transfer_to(
             Tensor(src_np),
-            PlacementMapping(self.MESH_1D, (Replicated(),)),
+            DeviceMapping(self.MESH_1D, (Replicated(),)),
         )
         buffer_store_slice(dest, src, (slice(2, 4), slice(None)))
         expected = dest_np.copy()
@@ -1179,11 +1135,11 @@ class _SliceStore:
         dest_np = np.zeros((8, 4), dtype=np.float32)
         src_np = np.ones((1, 4), dtype=np.float32) * 3.0
         dest = transfer_to(
-            Tensor(dest_np), PlacementMapping(self.MESH_2, (Sharded(0),))
+            Tensor(dest_np), DeviceMapping(self.MESH_2, (Sharded(0),))
         )
         src = transfer_to(
             Tensor(src_np),
-            PlacementMapping(self.MESH_2, (Replicated(),)),
+            DeviceMapping(self.MESH_2, (Replicated(),)),
         )
         # Each shard is (4, 4); update row 0 of each shard.
         buffer_store_slice(dest, src, (slice(0, 1), slice(None)))
@@ -1233,3 +1189,6 @@ class ShapeTests(
     _SliceStore,
 ):
     """Aggregates all shape test classes for thin subclassing."""
+
+
+assert_no_shadowed_tests(ShapeTests)

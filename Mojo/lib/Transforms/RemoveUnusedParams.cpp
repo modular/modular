@@ -186,7 +186,7 @@ private:
       // Don't scan the input parameters on the function since they obviously
       // will include a hit.
       if (op == oldFunction) {
-        walker.walk(oldFunction.getLLVMMetadataArray());
+        walker.walk(oldFunction.getFnAttrs());
 
         // The linkage name might contain parameter references.
         if (auto linkageName = oldFunction.getLinkageNameAttr())
@@ -572,16 +572,14 @@ void RemoveUnusedParams::runOnOperation() {
     newFunc.setSymName((Twine(newFunc.getSymName()) + "_REMOVED_ARG").str());
     symTab.insert(newFunc);
 
-    // Update LLVM per-arg metadata.
-    if (ArrayRef<Attribute> oldLLVMArgMetadata =
-            newFunc.getLLVMArgMetadataArray().getValue();
-        !oldLLVMArgMetadata.empty()) {
-      SmallVector<Attribute> llvmArgMetadata;
-      for (unsigned i = 0, e = oldLLVMArgMetadata.size(); i < e; ++i)
+    // Update LLVM per-arg attributes.
+    if (ArrayRef<Attribute> oldFnArgAttrs = newFunc.getFnArgAttrs().getValue();
+        !oldFnArgAttrs.empty()) {
+      SmallVector<Attribute> fnArgAttrs;
+      for (unsigned i = 0, e = oldFnArgAttrs.size(); i < e; ++i)
         if (!unusedArgs[i])
-          llvmArgMetadata.emplace_back(oldLLVMArgMetadata[i]);
-      newFunc.setLLVMArgMetadataArrayAttr(
-          mlir::ArrayAttr::get(ctx, llvmArgMetadata));
+          fnArgAttrs.emplace_back(oldFnArgAttrs[i]);
+      newFunc.setFnArgAttrsAttr(mlir::ArrayAttr::get(ctx, fnArgAttrs));
     }
 
     // The DISubroutineType of the function may reference unused parameters.

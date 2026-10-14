@@ -130,7 +130,21 @@ public:
                               bool onlyAdjustIndexRef = false)
       : adjustDepth(adjustDepth), onlyAdjustIndexRef(onlyAdjustIndexRef) {}
 
+  using IndexParameterReplacer<IndexDepthAdjuster>::replace;
+
+  /// Cached: the result depends only on the value and the adjuster's
+  /// settings.
+  template <typename T>
+  T replace(T value) {
+    using Base =
+        std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
+    return llvm::cast_if_present<T>(replaceCached(Base(value)));
+  }
+
 private:
+  template <typename BaseT>
+  BaseT replaceCached(BaseT value);
+
   // CRTP methods.
   Attribute tryReplace(Attribute attr, size_t depth);
   Type tryReplace(Type, size_t) { return {}; }

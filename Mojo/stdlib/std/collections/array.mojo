@@ -33,7 +33,7 @@ var filled = Array[Int, 5](fill=42)
 """
 
 
-import std.math
+from std.math import max, min, align_down
 import std.memory
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
@@ -41,7 +41,7 @@ from std.collections import check_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
 from std.hashlib.hasher import Hasher
-from std.sys import is_gpu, size_of
+from std.sys import size_of
 from std.memory import (
     MaybeUninit,
     forget_deinit,
@@ -269,6 +269,12 @@ struct Array[T: AnyType, length: Int](
         pair decides the result.
     """
 
+    # Exposes the generic parameters so `test_utils.cabi_check` can recover
+    # an array field's element type and length from a reflected field type,
+    # see `_ArrayMarker` there.
+    comptime _cabi_element_type: AnyType = Self.T
+    comptime _cabi_length: Int = Self.length
+
     comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
     comptime __copy_ctor_is_trivial: Bool = IsTriviallyCopyable[Self.T]
     comptime __move_ctor_is_trivial: Bool = IsTriviallyMovable[Self.T]
@@ -425,18 +431,9 @@ struct Array[T: AnyType, length: Int](
             )
 
     @inline(.always)
-    def __init__[
-        batch_size: Int = 64
-    ](out self, *, fill: Self.T) where conforms_to(Self.T, Copyable):
+    def __init__(out self, *, fill: Self.T) where conforms_to(Self.T, Copyable):
         """Constructs an array where each element is initialized to the supplied
         value.
-
-        Parameters:
-            batch_size: The number of elements to unroll for filling the array.
-                Default is 64, which optimizes for AVX512 operations on modern
-                CPUs. For large arrays (>2k elements), this batched approach
-                significantly improves compile times compared to full unrolling
-                while maintaining good runtime performance.
 
         Args:
             fill: The element value to fill each index with.
@@ -445,25 +442,9 @@ struct Array[T: AnyType, length: Int](
 
         ```mojo
         var filled = Array[Int, 5](fill=42)  # [42, 42, 42, 42, 42]
-
-        # For large arrays, consider adjusting batch_size to balance
-        # compile time and runtime performance:
-        var large = Array[Int, 10000].__init__[batch_size=32](fill=0)
         ```
-
-        Notes:
-
-        - Full unrolling with large arrays (>2k elements) can cause significant
-            compiler slowdowns.
-        - Using batch_size=64 balances AVX512 efficiency and instruction cache
-            usage.
-        - For very large arrays, using smaller batch sizes (e.g., 32 or 16) can
-            further improve compilation speed while still maintaining good
-            runtime performance.
         """
-        self = Self.__init__[batch_size=batch_size](
-            fill_with=lambda (_i: Int) -> Self.T: fill.copy()
-        )
+        self = Self(fill_with=lambda (_i: Int) -> Self.T: fill.copy())
 
     @inline(.always)
     def __init__(out self, *, fill_with_unrolled: Some[def[Int]() -> Self.T]):
@@ -497,13 +478,8 @@ struct Array[T: AnyType, length: Int](
             )
 
     @inline(.always)
-    def __init__[
-        batch_size: Int = 64
-    ](out self, *, fill_with: Some[def(Int) -> Self.T]):
+    def __init__(out self, *, fill_with: Some[def(Int) -> Self.T]):
         """Constructs an array by calling `fill_with(i)` for each index `i`.
-
-        Parameters:
-            batch_size: The number of elements to unroll for filling the array.
 
         Args:
             fill_with: A function called with each index in `[0, length)`,
@@ -516,21 +492,36 @@ struct Array[T: AnyType, length: Int](
         # [0, 1, 4, 9, 16]
         ```
         """
-        comptime if batch_size >= Self.length:
+        comptime elem_bytes = max(1, size_of[Self.T]())
+
+        # Unrolled stores stop buying throughput past ~256 bytes per batch
+        # Sizing in bytes stops a fixed element count from over-unrolling wide
+        # elements into LLVM's superlinear loop passes for no gain.
+        # The element cap bounds compile time, which scales with count rather
+        # than bytes.
+        comptime UNROLL_BYTES = 256
+        comptime MAX_UNROLL_ELEMENTS = 64
+        comptime batch_size = min(
+            MAX_UNROLL_ELEMENTS, max(1, UNROLL_BYTES // elem_bytes)
+        )
+        # A 1 or 2 iteration loop does not earn its setup.
+        comptime full_unroll_max = min(MAX_UNROLL_ELEMENTS, 2 * batch_size)
+
+        comptime if Self.length <= full_unroll_max:
             self = {
                 fill_with_unrolled = lambda [i: Int]() {
                     ref
                 } -> Self.T: fill_with(i)
             }
         else:
-            comptime unroll_end = std.math.align_down(Self.length, batch_size)
+            comptime unroll_end = align_down(Self.length, batch_size)
 
             self = {uninitialized = True}
             var ptr = self.unsafe_ptr()
 
-            # Skip the batched loop entirely when it cannot run. Emitting it for
-            # `unroll_end == 0` leaves the inlined iterator's line-table marker
-            # behind as an irremovable barrier, even though the loop is dead.
+            # Emitting the loop for `unroll_end == 0` leaves the inlined
+            # iterator's line-table marker behind as an irremovable barrier,
+            # even though the loop is dead.
             comptime if unroll_end > 0:
                 for batch_start in range(0, unroll_end, batch_size):
                     comptime for i in range(batch_size):
@@ -658,7 +649,7 @@ struct Array[T: AnyType, length: Int](
         deinit self,
     ) where conforms_to(Self.T, Deinitable):
         """Destroys the array's elements."""
-        unsafe_destroy_n(self.unsafe_ptr(), Self.length)
+        Span(self).unsafe_deinit_elements()
 
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
         """Consumes this array and deinitializes its elements using the provided
@@ -1198,9 +1189,8 @@ struct Array[T: AnyType, length: Int](
         deinit self,
         out result: Array[Self.T, Self.length * n],
     ) where (
-        conforms_to(Self.T, Copyable) and (n > 0),
-        "`Array * n` requires n > 0",
-    ):
+        conforms_to(Self.T, Copyable) and (n > 0)
+    ) else "`Array * n` requires n > 0":
         """Repeats this array's elements the given number of times.
 
 

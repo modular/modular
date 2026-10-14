@@ -28,7 +28,6 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -80,11 +79,11 @@ def test_block_scaled_prefetch[
     )
 
     # NVFP4: each uint8 stores 2 FP4 values; halve K for buffer sizing
-    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
+    var a_shape = row_major(m, Idx[KType.static_value // 2])
     var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value // 2])
+        Idx[NType.static_value], Idx[KType.static_value // 2]
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(n.value()) * (KType.static_value // 2)
@@ -109,22 +108,18 @@ def test_block_scaled_prefetch[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -148,10 +143,10 @@ def test_block_scaled_prefetch[
     )
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
-    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
-    rand(a_scales_host._storage, a_scales_host.num_elements())
-    rand(b_scales_host._storage, b_scales_host.num_elements())
+    rand(a_host.as_span(), min=0, max=255)
+    rand(b_host.as_span(), min=0, max=255)
+    rand(a_scales_host.as_span())
+    rand(b_scales_host.as_span())
 
     # Zero out unused scale entries to avoid accuracy issues
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):

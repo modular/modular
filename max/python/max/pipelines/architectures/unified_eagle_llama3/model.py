@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -72,7 +73,11 @@ class UnifiedEagleLlama3Inputs(UnifiedSpecDecodeInputs):
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
-            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
+            *(
+                tree.leaves(self.kv_cache_inputs)
+                if self.kv_cache_inputs
+                else ()
+            ),
         )
         return prefix + self._spec_decode_tail_buffers(
             include_in_thinking_phase=False
@@ -81,7 +86,7 @@ class UnifiedEagleLlama3Inputs(UnifiedSpecDecodeInputs):
 
 class UnifiedEagleLlama3Model(
     _UnifiedSpecDecodeModelMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedEagleLlama3Config],
 ):
     """Unified EAGLE Llama3: target + draft in one compiled graph."""
 
@@ -221,10 +226,9 @@ class UnifiedEagleLlama3Model(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedEagleLlama3Config,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedEagleLlama3Config)
 
         nn_model = UnifiedEagleLlama3Module(model_config)
 
@@ -255,8 +259,24 @@ class UnifiedEagleLlama3Model(
             "unified_eagle_llama3",
             input_types=nn_model.input_types(),
         ) as graph:
-            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-            outputs = nn_model(inputs)
+            graph_inputs = nn_model.decode_inputs(graph.inputs)
+            outputs = nn_model(
+                tokens=graph_inputs.tokens,
+                input_row_offsets=graph_inputs.input_row_offsets,
+                draft_tokens=graph_inputs.draft_tokens,
+                kv_collections=graph_inputs.kv("target"),
+                draft_kv_collections=graph_inputs.kv("draft"),
+                return_n_logits=graph_inputs.return_n_logits,
+                seed=graph_inputs.seed,
+                temperature=graph_inputs.temperature,
+                top_k=graph_inputs.top_k,
+                max_k=graph_inputs.max_k,
+                top_p=graph_inputs.top_p,
+                min_top_p=graph_inputs.min_top_p,
+                pinned_bitmask=graph_inputs.pinned_bitmask,
+                wait_payload=graph_inputs.wait_payload,
+                device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            )
             graph.output(*outputs)
 
         return graph, weights_registry

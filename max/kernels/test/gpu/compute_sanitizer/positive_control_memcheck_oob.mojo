@@ -34,7 +34,7 @@ from max.gpu.host import DeviceContext
 def oob_global_write(dst: MutPointer[Float32, MutAnyOrigin], n_dev: Int32):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
-    var thread_id = Int(thread_idx.x)
+    var thread_id = thread_idx.x
     # In-bounds write first: an observable side effect that guarantees the
     # kernel is launched and not elided.
     dst[thread_id] = Float32(thread_id)

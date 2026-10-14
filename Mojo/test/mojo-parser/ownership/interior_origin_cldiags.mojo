@@ -152,7 +152,7 @@ def test_dominance_lifetime2(cond: Bool):
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt_ref += 4
 
-# This verifies we're handling hlcf.elif dominance correctly.
+# This verifies we're handling hlcf.if dominance correctly.
 def test_rederive_in_controlled_block(list: MyList[Int]) -> Int:
     if list[] > 0:
         return list[]

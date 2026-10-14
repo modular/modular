@@ -25,8 +25,6 @@ from std.math import ceil, ceildiv, fma
 from std.sys.info import size_of
 from std.sys.intrinsics import unlikely
 
-from std.python import PythonObject
-
 from std.utils._select import _select_register_value as select
 
 # ===----------------------------------------------------------------------=== #

@@ -15,7 +15,7 @@
 Mach's spec-step executor binds this signature positionally, so a reordering
 or an added slot is an ABI break that the engine can only report as an arity
 mismatch (or, worse, cannot report at all when the count happens to match).
-The MTP graph is asserted from Mach's side at 223 slots; this asserts the
+The MTP graph is asserted from Mach's side; this asserts the
 DFlash2 graph from MAX's side, and asserts that the two agree slot for slot
 apart from the draft leaf's geometry, which is the one thing that differs.
 
@@ -26,13 +26,32 @@ Mach's executors still pin six, so the two disagree until they are updated.
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
+from typing import cast
 
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    recurrent_leaf,
+)
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
-from max.pipelines.architectures.qwen3_5.state_cache import attn_cache
+from max.pipelines.architectures.qwen3_5.state_cache import (
+    ATTN_CACHE_KEY,
+    RING_LEAF_ID,
+    STATE_CACHE_KEY,
+    attn_cache,
+    linear_state_regions,
+    ring_len_for_window,
+)
+from max.pipelines.architectures.unified_dflash2_qwen3_5.memory_planner import (
+    UnifiedDflash2Qwen3_5MemoryPlanner,
+)
 from max.pipelines.architectures.unified_dflash2_qwen3_5.model_config import (
     DRAFT_SLIDING_WINDOW,
     UnifiedDflash2Qwen3_5Config,
@@ -40,9 +59,16 @@ from max.pipelines.architectures.unified_dflash2_qwen3_5.model_config import (
 from max.pipelines.architectures.unified_dflash2_qwen3_5.unified_dflash2_qwen3_5 import (
     UnifiedDflash2Qwen3_5,
 )
+from max.pipelines.architectures.unified_mtp_qwen3_5.inputs import (
+    UnifiedMTPQwen3_5Inputs,
+)
+from max.pipelines.architectures.unified_mtp_qwen3_5.spec_state import (
+    graph_kv_params,
+)
 from max.pipelines.architectures.unified_mtp_qwen3_5.unified_mtp_qwen3_5 import (
     UnifiedMTPQwen3_5,
 )
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.speculative.config import SpeculativeConfig
 
 HIDDEN = 64
@@ -59,6 +85,33 @@ NUM_LINEAR = 3
 
 
 def _target_config() -> Qwen3_5Config:
+    """Returns a target whose cache holds its state and a block-long ring."""
+    config = _target_config_without_state()
+    attn = attn_cache(config.kv_params)
+    config.kv_params = MultiKVCacheParams.from_params(
+        {
+            ATTN_CACHE_KEY: attn,
+            STATE_CACHE_KEY: RecurrentStateParams(
+                devices=attn.devices,
+                data_parallel_degree=attn.data_parallel_degree,
+                regions=linear_state_regions(
+                    num_linear_layers=NUM_LINEAR,
+                    key_head_dim=config.linear_key_head_dim,
+                    num_key_heads=config.linear_num_key_heads,
+                    value_head_dim=config.linear_value_head_dim,
+                    num_value_heads=config.linear_num_value_heads,
+                    conv_kernel_dim=config.linear_conv_kernel_dim,
+                    dtype=config.state_dtype,
+                    num_devices=1,
+                    ring_len=ring_len_for_window(BLOCK),
+                ),
+            ),
+        }
+    )
+    return config
+
+
+def _target_config_without_state() -> Qwen3_5Config:
     device = DeviceRef.CPU()
     return Qwen3_5Config(
         hidden_size=HIDDEN,
@@ -160,7 +213,23 @@ def _signature(
     module = UnifiedDflash2Qwen3_5(
         config, enable_structured_output=enable_structured_output
     )
-    return module.input_types(config.get_kv_params())
+    return module.input_types(graph_kv_params(config.get_kv_params()))
+
+
+def test_the_served_cache_holds_the_state_and_its_ring() -> None:
+    """Checks the allocated cache carries the state child, ring included.
+
+    MAX serves this graph from that cache, and the signature drops the child
+    because the tail declares the state instead.
+    """
+    tree = _fused_config().get_kv_params()
+    assert isinstance(tree, MultiKVCacheParams)
+    assert set(tree.children) == {"target", "draft", STATE_CACHE_KEY}
+    state = recurrent_leaf(tree)
+    assert state is not None
+    (ring,) = (r for r in state.regions if r.leaf_id == RING_LEAF_ID)
+    assert ring.scratch and ring.row_shape[1] == BLOCK
+    assert set(graph_kv_params(tree).children) == {"target", "draft"}
 
 
 def test_slot_count_matches_the_declared_formula() -> None:
@@ -168,10 +237,9 @@ def test_slot_count_matches_the_declared_formula() -> None:
 
     The same formula the Qwen3.5 MTP graph satisfies: five ragged/host inputs,
     signals, two 7-slot KV leaves, batch_context_lengths, the eight-entry
-    sampling tail, the bitmask triple, then three slots for each of the two
-    state leaves -- its pool, the rows addressing it, and its shadow pool.
-    The layer count no longer enters: a leaf is one pool however many layers
-    index it.
+    sampling tail, the bitmask triple, then a pool and a row table for each
+    of the three state leaves, the ring included. The layer count does not
+    enter.
     """
     types = _signature()
     assert len(types) == 15 + 23 * 1
@@ -259,8 +327,15 @@ def test_a_quantized_target_leaf_does_not_quantize_the_draft_leaf() -> None:
     dtype is not a precision trade -- it is a reinterpretation of the bytes.
     """
     config = _fused_config()
-    config.target.kv_params = replace(
-        attn_cache(config.target.kv_params), dtype=DType.float8_e4m3fn
+    state = recurrent_leaf(config.target.kv_params)
+    assert state is not None
+    config.target.kv_params = MultiKVCacheParams.from_params(
+        {
+            ATTN_CACHE_KEY: replace(
+                attn_cache(config.target.kv_params), dtype=DType.float8_e4m3fn
+            ),
+            STATE_CACHE_KEY: state,
+        }
     )
     tree = config.get_kv_params()
     assert isinstance(tree, MultiKVCacheParams)
@@ -272,14 +347,13 @@ def test_a_quantized_target_leaf_does_not_quantize_the_draft_leaf() -> None:
 
 
 def test_the_state_pool_tail_matches_the_mtp_graphs() -> None:
-    """Each state leaf's live pool, the rows addressing it, then its shadow
-    pool -- the order Mach's Qwen slot layout already binds."""
+    """Checks the state tail matches the MTP graph's, slot for slot."""
     config = _fused_config()
     module = UnifiedDflash2Qwen3_5(config, enable_structured_output=True)
-    fused = module.input_types(config.get_kv_params())
+    fused = module.input_types(graph_kv_params(config.get_kv_params()))
     mtp_kv = MultiKVCacheParams.from_params(
         {
-            "target": config.target.kv_params,
+            "target": attn_cache(config.target.kv_params),
             "draft": replace(attn_cache(config.target.kv_params), num_layers=1),
         }
     )
@@ -293,9 +367,8 @@ def test_the_state_pool_tail_matches_the_mtp_graphs() -> None:
         "the two graphs must present the same slot count, so Mach's Qwen"
         " layout binds both"
     )
-    # A leaf contributes its pool, its rows and its shadow pool, per device,
-    # so the tail is sized by the state leaves rather than by the layers.
-    tail_start = len(fused) - 3 * len(module.state_regions)
+    # A pool and a row table per state leaf, the ring included.
+    tail_start = len(fused) - 2 * len(module.state_regions)
     for a, b in zip(fused[tail_start:], mtp[tail_start:], strict=True):
         assert a.dtype == b.dtype
         assert [str(d) for d in a.shape] == [str(d) for d in b.shape]
@@ -303,3 +376,67 @@ def test_the_state_pool_tail_matches_the_mtp_graphs() -> None:
 
 def test_structured_output_off_drops_exactly_the_bitmask_triple() -> None:
     assert len(_signature(False)) == len(_signature(True)) - 3
+
+
+def test_the_shared_batch_fills_every_slot_the_graph_declares() -> None:
+    """Checks the MTP graph's inputs pack one buffer per DFlash2 slot.
+
+    MAX batches this graph with the MTP graph's processor, which never
+    declares M-RoPE positions here.
+    """
+    config = _fused_config()
+    view = graph_kv_params(config.get_kv_params())
+
+    def dummy() -> Buffer:
+        return Buffer.zeros(shape=[1], dtype=DType.int64)
+
+    inputs = UnifiedMTPQwen3_5Inputs(
+        tokens=dummy(),
+        input_row_offsets=dummy(),
+        host_input_row_offsets=dummy(),
+        return_n_logits=dummy(),
+        data_parallel_splits=dummy(),
+        signal_buffers=[dummy()],
+        batch_context_lengths=[dummy()],
+        # Only the leaf count matters.
+        kv_cache_inputs=cast(
+            "KVCacheInputs[Buffer, Buffer]",
+            {"kv": [dummy() for _ in view.flattened_kv_inputs()]},
+        ),
+        live_conv_pools=[dummy()],
+        live_recurrent_pools=[dummy()],
+        live_conv_row_ids=[dummy()],
+        live_recurrent_row_ids=[dummy()],
+        ring_pools=[dummy()],
+        ring_row_ids=[dummy()],
+        draft_tokens=dummy(),
+        seed=dummy(),
+        temperature=dummy(),
+        top_k=dummy(),
+        max_k=dummy(),
+        top_p=dummy(),
+        min_top_p=dummy(),
+        in_thinking_phase=dummy(),
+        pinned_bitmask=dummy(),
+        wait_payload=dummy(),
+        device_bitmask_scratch=dummy(),
+        structured_output=True,
+    )
+
+    assert len(inputs.buffers) == len(_signature())
+
+
+def test_a_request_is_priced_its_block_long_ring() -> None:
+    """Checks the planner prices the ring the served cache holds."""
+    config = _fused_config()
+    planner = UnifiedDflash2Qwen3_5MemoryPlanner(config)
+    pipeline_config = cast(
+        "PipelineConfig",
+        SimpleNamespace(speculative=config.speculative_config),
+    )
+
+    ring_bytes = config.target._per_request_ring_bytes(
+        ring_len_for_window(BLOCK)
+    )
+    assert ring_bytes > 0
+    assert planner.spec_state_bytes(pipeline_config) == ring_bytes

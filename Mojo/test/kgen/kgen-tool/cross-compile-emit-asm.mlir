@@ -3,5 +3,5 @@
 kgen.func export @return_zero() -> index {
   // CHECK: %eax
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }

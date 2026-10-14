@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from nn.attention.mha_mask import (
     MASK_VALUE,
     CausalPaddingMask,
@@ -30,7 +30,7 @@ def test_causal_padding_mask_status() raises:
     causal diagonal AND the per-sequence padding boundary.
     """
     var storage: Array[UInt32, _] = [6, 4]  # valid_length per sequence
-    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(2)](storage)
+    var valid_lengths = TileTensor(storage, row_major[2]())
     var mask = CausalPaddingMask(valid_lengths)
 
     # ---- Causal FULL_MASK cases (independent of padding). ----
@@ -95,7 +95,7 @@ def test_causal_padding_mask_set_split() raises:
     `masked_set_ends` / `nonfull_sets` / `mask_strategies`.
     """
     var storage: Array[UInt32, _] = [10, 6]  # valid_length per sequence
-    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(2)](storage)
+    var valid_lengths = TileTensor(storage, row_major[2]())
     var mask = CausalPaddingMask(valid_lengths)
 
     # count_nonfull_sets = 2 (no more UNKNOWN_MASK).
@@ -149,7 +149,7 @@ def test_causal_padding_mask_set_split() raises:
 def test_causal_padding_mask_apply() raises:
     """Test per-element masking for CausalPaddingMask."""
     var storage: Array[UInt32, _] = [3]  # valid_length for seq 0
-    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(1)](storage)
+    var valid_lengths = TileTensor(storage, row_major[1]())
     var mask = CausalPaddingMask(valid_lengths)
 
     var score_vec = SIMD[.float32, 4](0.0)
@@ -201,7 +201,7 @@ def test_causal_padding_mask_bits() raises:
     `col < valid_lengths[seq_id]`.
     """
     var storage: Array[UInt32, _] = [10, 3]  # valid_length per sequence
-    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(2)](storage)
+    var valid_lengths = TileTensor(storage, row_major[2]())
     var mask = CausalPaddingMask(valid_lengths)
 
     # ---- seq 0 (valid_len=10) ----
@@ -242,7 +242,7 @@ def test_causal_padding_mask_bits() raises:
 def test_causal_padding_mask_multi_seq() raises:
     """Test masking with multiple sequences having different valid lengths."""
     var storage: Array[UInt32, _] = [2, 5]  # valid_length per sequence
-    var valid_lengths = LayoutTensor[.uint32, Layout.row_major(2)](storage)
+    var valid_lengths = TileTensor(storage, row_major[2]())
     var mask = CausalPaddingMask(valid_lengths)
 
     comptime SIMD_T = SIMD[.float32, 4]

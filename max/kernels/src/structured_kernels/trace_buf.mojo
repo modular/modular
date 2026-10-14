@@ -33,7 +33,7 @@ SwiGLU+NVFP4 kernel):
         comptime if enable_trace:
             if thread_idx.x == 0:
                 trace_buf.store(
-                    Int(block_idx.x) * EVENTS_PER_BLOCK + role,
+                    block_idx.x * EVENTS_PER_BLOCK + role,
                     UInt64(global_perf_counter_ns()),
                 )
 

@@ -13,7 +13,7 @@
 """Implements the temporal-pool patch-merger kernel that reduces vision token sequences via average pooling."""
 
 from std.math import ceildiv, divmod
-from std.sys.info import CompilationTarget, simd_width_of
+from std.sys.info import simd_width_of
 
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
@@ -224,7 +224,7 @@ def tpool_patch_merger[
 
     comptime simd_width = simd_width_of[
         dtype,
-        target=CompilationTarget.from[DeviceContext.default_device_info](),
+        target=DeviceContext.target,
     ]()
     comptime num_threads = 256
 
@@ -245,9 +245,9 @@ def tpool_patch_merger[
             num_threads,
         ]
         ctx.enqueue_function[kernel](
-            x.as_immut(),
+            x.as_imm(),
             output,
-            bounds.as_immut(),
+            bounds.as_imm(),
             Int32(kH),
             Int32(kW),
             Int32(D),
@@ -272,9 +272,9 @@ def tpool_patch_merger[
             num_threads,
         ]
         ctx.enqueue_function[kernel](
-            x.as_immut(),
+            x.as_imm(),
             output,
-            bounds.as_immut(),
+            bounds.as_imm(),
             Int32(kH),
             Int32(kW),
             Int32(D),

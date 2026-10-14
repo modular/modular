@@ -114,18 +114,21 @@ struct DataType(Equatable, TrivialRegisterPassable):
         self._value = Int32(value)
 
     def __init__(out self, dtype: DType) raises:
-        if dtype == .float16:
-            self = Self.F16_R
-        elif dtype == .bfloat16:
-            self = Self.BF16_R
-        elif dtype == .float32:
-            self = Self.F32_R
-        elif dtype == .float64:
-            self = Self.F64_R
-        else:
-            raise Error(
-                "the dtype '", dtype, "' is not currently handled by rocBLAS"
-            )
+        match dtype:
+            case .float16:
+                self = Self.F16_R
+            case .bfloat16:
+                self = Self.BF16_R
+            case .float32:
+                self = Self.F32_R
+            case .float64:
+                self = Self.F64_R
+            case _:
+                raise Error(
+                    "the dtype '",
+                    dtype,
+                    "' is not currently handled by rocBLAS",
+                )
 
     def __int__(self) -> Int:
         return Int(self._value)

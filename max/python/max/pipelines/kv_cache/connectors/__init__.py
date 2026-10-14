@@ -14,7 +14,7 @@
 """KV cache connectors for external cache tiers.
 
 - `NullConnector`: No-op connector when external caching is disabled
-- `RustTierConnector`: GPU <-> CPU <-> Disk offloading, backed by the Rust
+- `TierConnector`: GPU <-> CPU <-> Disk offloading, backed by the Rust
   ``kv_tier_connector`` extension. Also serves the ``tiered`` alias, whose
   Python implementation it replaced.
 - `create_connector()`: Factory function
@@ -83,12 +83,6 @@ def create_connector(
     if connector == KVConnectorType.dkv:
         from .dkv import DKVConnector
 
-        if not all(group_id.is_full() for group_id in leaves.values()):
-            raise ValueError(
-                "DKV KVConnector requires all leaves to be full attention groups. "
-                f"Found: {leaves}"
-            )
-
         if not cfg.block_store_endpoint:
             raise ValueError(
                 "kv_connector_config must include 'block_store_endpoint' "
@@ -98,15 +92,9 @@ def create_connector(
             "Creating DKVConnector: endpoint=%s",
             cfg.block_store_endpoint,
         )
-        # The Rust block store addresses units by position, so fix the order
-        # from the declared leaves rather than from however the mapping
-        # happens to iterate.
-        replica_kv_memory_list = [
-            [memory[leaf_id] for leaf_id in leaves]
-            for memory in replica_kv_memory
-        ]
         return DKVConnector(
-            replica_kv_memory=replica_kv_memory_list,
+            leaves=leaves,
+            replica_kv_memory=replica_kv_memory,
             local_block_store_endpoint=cfg.block_store_endpoint,
             devices=devices,
             params=params,
@@ -114,10 +102,14 @@ def create_connector(
 
     # ``tiered`` is a backward-compatible alias for ``rust_tiered``, kept after
     # its Python implementation was deleted.
-    if connector in (KVConnectorType.tiered, KVConnectorType.rust_tiered):
-        from .rust_tier_connector import RustTierConnector
+    if connector in (
+        KVConnectorType.tiered,
+        KVConnectorType.rust_tiered,
+        KVConnectorType.mojo_tiered,
+    ):
+        from .tier_connector import TierConnector
 
-        return RustTierConnector.create(
+        return TierConnector.create(
             leaves=leaves,
             replica_kv_memory=replica_kv_memory,
             params=params,

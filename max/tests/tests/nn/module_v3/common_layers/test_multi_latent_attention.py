@@ -18,6 +18,7 @@ from collections.abc import Iterator, Sequence
 from unittest.mock import MagicMock, patch
 
 import pytest
+from max import tree
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
@@ -28,12 +29,14 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
     tensor_parallel_latent_attention_with_rope,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
+    Partial,
     Replicated,
     Sharded,
+    Unknown,
 )
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_device
 from max.graph import (
     BufferType,
     BufferValue,
@@ -42,7 +45,10 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
-from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MLAKVCacheParams,
+)
 
 # Small model dimensions for fast graph-trace tests.
 _N_HEADS = 8
@@ -90,7 +96,7 @@ def _build_kv_collection(
     kv_params: KVCacheParams,
     batch_size: int | str,
     n_pages: int,
-    devices: Sequence[Device],
+    mesh: DeviceMesh,
 ) -> PagedCacheValues:
     kv_inputs = kv_params.get_symbolic_inputs()
 
@@ -112,8 +118,8 @@ def _build_kv_collection(
         return result
 
     graph_values: list[BufferValue | TensorValue] = []
-    for per_device_types in kv_inputs.inputs:
-        for field_type in per_device_types.flatten():
+    for per_device_types in kv_inputs:
+        for field_type in tree.leaves(per_device_types):
             t = Tensor.zeros(
                 resolve_shape(field_type.shape),
                 dtype=field_type.dtype,
@@ -124,11 +130,9 @@ def _build_kv_collection(
             else:
                 graph_values.append(TensorValue(t))
 
-    kv_concrete = kv_inputs.unflatten(iter(graph_values))
-    mapping = PlacementMapping(
-        DeviceMesh(tuple(devices), (len(devices),), ("axis",)), (Replicated(),)
-    )
-    return PagedCacheValues.from_upstream(kv_concrete.inputs, mapping)
+    kv_concrete = kv_params.unflatten_kv_inputs(iter(graph_values))
+    mapping = DeviceMapping(mesh, (Replicated(),) * mesh.ndim)
+    return PagedCacheValues.from_upstream(kv_concrete, mapping)
 
 
 def _make_fake_gpu(id: int = 0) -> MagicMock:
@@ -172,7 +176,7 @@ def test_layer(mock_accelerator: MagicMock, q_lora_rank: int | None) -> None:
         )
         input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
         kv_collection = _build_kv_collection(
-            kv_params, batch_size, n_pages, devices
+            kv_params, batch_size, n_pages, DeviceMesh.single(devices[0])
         )
 
         out = layer(x, kv_collection, freqs_cis, input_row_offsets)
@@ -194,11 +198,12 @@ def test_tensor_parallel_layer(
         kv_params = _make_kv_params(devices)
 
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
-        layer = tensor_parallel_latent_attention_with_rope(
-            _make_layer(kv_params, q_lora_rank=q_lora_rank)
-        ).to(mesh)
+        with default_device(mesh):
+            layer = tensor_parallel_latent_attention_with_rope(
+                _make_layer(kv_params, q_lora_rank=q_lora_rank)
+            )
 
         x = Tensor.zeros(
             [total_seq_len, _HIDDEN_SIZE], device=replicated_mapping
@@ -210,13 +215,14 @@ def test_tensor_parallel_layer(
             [batch_size + 1], dtype=DType.uint32, device=replicated_mapping
         )
         kv_collection = _build_kv_collection(
-            kv_params, batch_size, n_pages, devices
+            kv_params, batch_size, n_pages, mesh
         )
 
         out = layer(x, kv_collection, freqs_cis, input_row_offsets)
 
     assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
     assert out.mapping.mesh == mesh
+    assert out.placements == (Partial(),)
 
 
 @pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
@@ -234,10 +240,11 @@ def test_data_parallel_layer(
         kv_params = _make_kv_params(devices)
 
         mesh = DeviceMesh(tuple(devices), (len(devices),), (DP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
-        data_parallel_mapping = PlacementMapping(mesh, (Sharded(0),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
+        data_parallel_mapping = DeviceMapping(mesh, (Sharded(0),))
 
-        layer = _make_layer(kv_params, q_lora_rank=q_lora_rank).to(mesh)
+        with default_device(mesh):
+            layer = _make_layer(kv_params, q_lora_rank=q_lora_rank)
 
         x = Tensor.zeros(
             [total_seq_len, _HIDDEN_SIZE], device=data_parallel_mapping
@@ -249,13 +256,20 @@ def test_data_parallel_layer(
             [batch_size + 1], dtype=DType.uint32, device=data_parallel_mapping
         )
         kv_collection = _build_kv_collection(
-            kv_params, batch_size, n_pages, devices
+            kv_params, batch_size, n_pages, mesh
         )
 
-        out = layer(x, kv_collection, freqs_cis, input_row_offsets)
+        # Each replica's row offsets index its own rows.
+        per_replica = DeviceMapping(mesh, (Unknown(),))
+        out = layer(
+            x,
+            kv_collection,
+            freqs_cis,
+            input_row_offsets.rebind_mapping(per_replica),
+        )
 
     assert list(out.shape) == [total_seq_len, _HIDDEN_SIZE]
-    assert out.mapping.mesh == mesh
+    assert out.mapping == data_parallel_mapping
 
 
 @pytest.mark.parametrize("q_lora_rank", [None, _Q_LORA_RANK])
@@ -271,10 +285,11 @@ def test_data_parallel_layer_symbolic(
         kv_params = _make_kv_params(devices)
 
         mesh = DeviceMesh(tuple(devices), (len(devices),), (DP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
-        data_parallel_mapping = PlacementMapping(mesh, (Sharded(0),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
+        data_parallel_mapping = DeviceMapping(mesh, (Sharded(0),))
 
-        layer = _make_layer(kv_params, q_lora_rank=q_lora_rank)
+        with default_device(mesh):
+            layer = _make_layer(kv_params, q_lora_rank=q_lora_rank)
 
         x = Tensor.zeros(
             ["dynamic_size", _HIDDEN_SIZE], device=data_parallel_mapping
@@ -286,10 +301,17 @@ def test_data_parallel_layer_symbolic(
             ["dynamic_batch"], dtype=DType.uint32, device=data_parallel_mapping
         )
         kv_collection = _build_kv_collection(
-            kv_params, "dynamic_batch", n_pages, devices
+            kv_params, "dynamic_batch", n_pages, mesh
         )
 
-        out = layer(x, kv_collection, freqs_cis, input_row_offsets)
+        # Each replica's row offsets index its own rows.
+        per_replica = DeviceMapping(mesh, (Unknown(),))
+        out = layer(
+            x,
+            kv_collection,
+            freqs_cis,
+            input_row_offsets.rebind_mapping(per_replica),
+        )
 
     assert out.shape == x.shape
-    assert out.mapping.mesh == mesh
+    assert out.mapping == data_parallel_mapping

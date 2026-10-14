@@ -15,8 +15,6 @@ from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from layout import (
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -26,8 +24,6 @@ from state_space.selective_scan import (
     mamba_split_conv1d_scan_combined_cpu,
 )
 from std.testing import TestSuite, assert_almost_equal
-
-from std.utils.index import Index
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
@@ -433,6 +429,28 @@ def test_mamba_combined_basic() raises:
         dim=4,
         nheads=2,
         headdim=2,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+    )
+
+
+def test_mamba_combined_headdim1_multi_head_D() raises:
+    """With headdim == 1, D is (nheads, 0); each head needs its own D."""
+    run_mamba_split_conv1d_scan_combined[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=4,
+        headdim=1,
         ngroups=1,
         width=4,
         chunk_size=4,

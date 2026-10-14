@@ -29,10 +29,14 @@ from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
-from layout import TileTensor, Coord, CoordLike, row_major, Idx
+from layout import (
+    TileTensor,
+    CoordLike,
+    row_major,
+    Idx,
+)
 
 # Direct import of structured kernel (same name, different module)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
@@ -90,14 +94,12 @@ def test_structured[
         sep="",
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -128,8 +130,8 @@ def test_structured[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Initialize with random data
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)

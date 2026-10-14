@@ -16,14 +16,14 @@
 kgen.func @leaf_0(%1 : index, %2 : index) {
   %sum = index.add %1, %2
   "sink"(%sum) : (index) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-NOT: @leaf_1
 kgen.func @leaf_1(%1 : index, %2 : index) {
   %sum = index.add %1, %2
   "sink"(%sum) : (index) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // Level 1: only become duplicates after the leaf callsite is redirected.
@@ -34,7 +34,7 @@ kgen.func @mid_0() {
   %1 = kgen.param.constant = <0>
   %2 = kgen.param.constant = <1>
   kgen.call @leaf_0(%1, %2) : (index, index) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-NOT: @mid_1
@@ -42,7 +42,7 @@ kgen.func @mid_1() {
   %1 = kgen.param.constant = <0>
   %2 = kgen.param.constant = <1>
   kgen.call @leaf_1(%1, %2) : (index, index) -> ()
-  kgen.return
+  hlcf.return
 }
 
 // Level 2: only become duplicates after the mid callsite is redirected.
@@ -51,13 +51,13 @@ kgen.func @mid_1() {
 // CHECK: kgen.call @mid_0
 kgen.func @upper_0() {
   kgen.call @mid_0() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-NOT: @upper_1
 kgen.func @upper_1() {
   kgen.call @mid_1() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // Exported roots are kept, but their callsites are redirected to the surviving
@@ -66,12 +66,12 @@ kgen.func @upper_1() {
 // CHECK-NEXT: kgen.call @upper_0
 kgen.func export @root_0() {
   kgen.call @upper_0() : () -> ()
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @root_1
 // CHECK-NEXT: kgen.call @upper_0
 kgen.func export @root_1() {
   kgen.call @upper_1() : () -> ()
-  kgen.return
+  hlcf.return
 }

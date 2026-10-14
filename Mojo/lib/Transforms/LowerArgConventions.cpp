@@ -39,6 +39,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERARGCONVENTIONS
@@ -221,12 +223,13 @@ public:
   Block &block;
   Value newResPtr;
   Value newErrPtr;
-  SmallVector<Attribute> LLVMArgMetadata;
+  SmallVector<Attribute> fnArgAttrs;
   bool hasError = false;
 
 private:
   void applyOneToOneTransform(unsigned operandIndex, Type newType,
                               llvm::function_ref<Value(Location, Value)> apply);
+  void eraseFnArgAttr(unsigned operandIndex);
 };
 } // namespace
 
@@ -334,7 +337,7 @@ FuncTransform::FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp,
                              TargetInfoAttr target, unsigned maxInlineSize)
     : Transform(target, funcOp.getSubprogramScope(), maxInlineSize), b(b),
       block(funcOp.getBodyRegion().front()),
-      LLVMArgMetadata(funcOp.getLLVMArgMetadata().getValue()) {}
+      fnArgAttrs(funcOp.getFnArgAttrs().getValue()) {}
 
 Location Transform::addDI(Location loc) {
   if (!spAttr)
@@ -354,6 +357,7 @@ void FuncTransform::performResultTransform(unsigned operandIndex,
                                               argVal.getType());
   argVal.replaceAllUsesWith(alloc);
   block.eraseArgument(operandIndex);
+  eraseFnArgAttr(operandIndex);
   if (convention == ArgConvention::ByRefError)
     newErrPtr = alloc;
   else if (convention == ArgConvention::ByRefResult)
@@ -363,6 +367,12 @@ void FuncTransform::performResultTransform(unsigned operandIndex,
 void FuncTransform::performThrowNeverElimination(unsigned operandIndex) {
   replaceUsesWithDummy(block.getArgument(operandIndex), b);
   block.eraseArgument(operandIndex);
+  eraseFnArgAttr(operandIndex);
+}
+
+void FuncTransform::eraseFnArgAttr(unsigned operandIndex) {
+  if (operandIndex < fnArgAttrs.size())
+    fnArgAttrs.erase(fnArgAttrs.begin() + operandIndex);
 }
 
 void FuncTransform::applyOneToOneTransform(
@@ -415,16 +425,15 @@ void FuncTransform::applyPackTransform(unsigned operandIndex,
                          originalLocation);
   block.eraseArgument(operandIndex);
 
-  // Update the per-argument LLVM metadata to remain aligned with the updated
+  // Update the per-argument LLVM attributes to remain aligned with the updated
   // argument list.
-  if (LLVMArgMetadata.empty())
+  if (fnArgAttrs.empty())
     return;
 
-  auto dict = cast<DictionaryAttr>(LLVMArgMetadata[operandIndex]);
+  auto dict = cast<DictionaryAttr>(fnArgAttrs[operandIndex]);
   if (!dict.empty()) {
     block.getParentOp()->emitError()
-        << "cannot unpack argument " << operandIndex
-        << " that has LLVMArgMetadata";
+        << "cannot unpack argument " << operandIndex << " that has fnArgAttrs";
     hasError = true;
     return;
   }
@@ -433,9 +442,8 @@ void FuncTransform::applyPackTransform(unsigned operandIndex,
     // Insert (types.size() - 1) empty entries after operandIndex, preserving
     // the existing empty entry at operandIndex to correspond to the first
     // unpacked arg since it's already known to be an empty DictionaryAttr.
-    LLVMArgMetadata.insert(LLVMArgMetadata.begin() + operandIndex + 1,
-                           types.size() - 1,
-                           DictionaryAttr::get(type.getContext()));
+    fnArgAttrs.insert(fnArgAttrs.begin() + operandIndex + 1, types.size() - 1,
+                      DictionaryAttr::get(type.getContext()));
   }
 }
 
@@ -788,10 +796,10 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
   }
 
   // We can't guarantee what the result is, so we emit conditional variant
-  // repacking. We create an HCLF::IfOp, with a condition checking if there is
+  // repacking. We create an HLCF::IfOp, with a condition checking if there is
   // no error (i.e. the then branch will handle normal return). The result of
   // this IfOp is what we will return.
-  auto ifOp = HLCF::IfOp::create(b, newVariantTy, oldRetVal);
+  auto ifOp = HLCF::IfOp::create(b, TypeRange{newVariantTy}, oldRetVal);
 
   // Populate the then branch (normal return).
   Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
@@ -824,8 +832,8 @@ static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
       sig.getArgListAttrs());
   funcOp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, newSig));
-  funcOp.setLLVMArgMetadataAttr(
-      ArrayAttr::get(funcOp.getContext(), transform.LLVMArgMetadata));
+  funcOp.setFnArgAttrsAttr(
+      ArrayAttr::get(funcOp.getContext(), transform.fnArgAttrs));
   if (result.abiLowering != DontPromote) {
     Block &body = funcOp.getBodyRegion().front();
     // Find all return sites in the function and rewrite them.

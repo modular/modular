@@ -46,6 +46,12 @@ def _rebuild_wheel(rctx):
     )
 
     rctx.execute(["bash", "-c", "mv */platlib/max/_core.*.so max/"])
+
+    # One stable-ABI module serves every Python version, so each wheel above
+    # extracts the same file. Wheels built before max._kv_core shipped lack it;
+    # tolerate that so the tree still analyzes against them (presubmit's OSS
+    # smoke test pins the last nightly), though importing max.nn needs it.
+    rctx.execute(["bash", "-c", "mv */platlib/max/_kv_core.so max/ 2>/dev/null || true"])
     rctx.execute(["mkdir", "-p", "max/_mlir/_mlir_libs"])
     rctx.execute(["bash", "-c", "mv */platlib/max/_mlir/_mlir_libs/_mlir.*.so max/_mlir/_mlir_libs/"])
 
@@ -59,9 +65,7 @@ load("@rules_cc//cc:defs.bzl", "cc_import")
 load("@rules_mojo//mojo:mojo_import.bzl", "mojo_import")
 load("@@//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 
-# Subdirectories of the wheel that are part of this repo and therefore should
-# be removed so that they're not accidentally used when testing changes that
-# depend on some closed-source portions of the wheel.
+# Only pull the parts of the wheels that are not included in this repo.
 py_library(
     name = "max",
     data = glob([
@@ -70,10 +74,7 @@ py_library(
         "modular/**",
     ], exclude = [
         "modular/lib/mojo/*",
-    ]),
-    pyi_srcs = glob([
-        "max/**/*.pyi",
-    ]),
+    ]) + glob(["max/_kv_core.so"], allow_empty = True),
     visibility = ["//visibility:public"],
     imports = ["."],
 )

@@ -337,22 +337,22 @@ def bork() -> Int:
 
 ```mlir
 lit.fn @"bork()"() -> !Int attributes {sourceName = "bork", specialFnKind = 0 : i8} {
-  hlcf.elif {
+  hlcf.if {
     %0 = kgen.param.constant: i1 = <1>
-    hlcf.elif.yield %0
+    hlcf.if.elifcond.yield %0
   } then {
     %0 = kgen.param.constant: !Int = <{5}>
     lit.return %0 : !Int
     hlcf.yield
   } else {
-    kgen.unreachable
+    hlcf.unreachable
   }
   lit.end_fn
 }
 ```
 
 To do this in the parser, use ParserStmts.cpp's `emitIfClause` or follow its
-example (use an `IREmitter` to create an `HLCF::ElifOp` and then insert
+example (use an `IREmitter` to create an `HLCF::IfOp` and then insert
 into its various regions).
 
 ## Operators

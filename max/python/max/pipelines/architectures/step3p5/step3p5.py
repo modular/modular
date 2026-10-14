@@ -28,6 +28,7 @@ from collections.abc import Callable, Iterable, Sequence
 from enum import Enum, auto
 from typing import Any
 
+from max import tree
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -52,9 +53,13 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, SubgraphInput
+from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import MoE, make_concatenated_gated_activation_fn
+from max.nn.moe import (
+    GatedActivation,
+    MoE,
+    make_concatenated_gated_activation_fn,
+)
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
@@ -66,6 +71,7 @@ from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
+from max.tree import Tree
 
 from .layers.attention import Step3p5Attention
 from .layers.moe_gate import Step3p5MoEGate
@@ -472,11 +478,13 @@ class Step3p5MoEWithSharedExpert(Module):
                 norm_topk_prob=config.norm_expert_weight,
             ),
             dtype=config.dtype,
-            gated_activation_fn=make_concatenated_gated_activation_fn(
-                ops.silu, swiglu_limit
-            )
-            if swiglu_limit > 0
-            else None,
+            activation=GatedActivation(
+                gated_activation_fn=make_concatenated_gated_activation_fn(
+                    ops.silu, swiglu_limit
+                )
+                if swiglu_limit > 0
+                else None
+            ),
             ep_size=ep_size,
             ep_batch_manager=ep_batch_manager,
         )
@@ -545,7 +553,9 @@ class Step3p5MoEWithSharedExpert(Module):
         expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
         estimated_total_m: TensorValue,
-    ) -> TensorValue:
+    ) -> TensorValue | None:
+        # Pure delegation, so it inherits the wrapped layer's contract:
+        # `None` means that layer already sent its output to the peers.
         return self.moe._local_ep_compute(expert_inputs, x, estimated_total_m)
 
     @property
@@ -810,7 +820,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
 
         def inputs_for_layer(
             idx: int, hs: list[TensorValue]
-        ) -> list[SubgraphInput]:
+        ) -> list[Tree[Any]]:
             layer = self.layers[idx]
             assert isinstance(layer, Step3p5TransformerBlock)
             kv_collections = (
@@ -818,7 +828,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
                 if layer.is_sliding
                 else global_kv_collections
             )
-            values: list[SubgraphInput] = [
+            values: list[Tree[Any]] = [
                 ops.constant(
                     layer.self_attn.layer_idx,
                     DType.uint32,
@@ -946,7 +956,7 @@ class Step3p5(DistributedLogitsPostprocessMixin, Module):
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
 
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         # EP communication buffers are appended at the very end so the
         # graph-builder can split off ``len(ep_manager.input_types())``

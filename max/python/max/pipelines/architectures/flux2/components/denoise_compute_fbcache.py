@@ -112,10 +112,7 @@ class DenoiseComputeFBCacheStep(Module):
         # flattened tensor.
         mean_diff = ops.mean(mean_diff_rows.reshape([-1]), axis=0)  # (1,)
         mean_prev = ops.mean(mean_prev_rows.reshape([-1]), axis=0)  # (1,)
-        eps = ops.constant(
-            _FBCACHE_EPS, mean_prev.dtype, device=mean_prev.device
-        )
-        relative_diff = mean_diff / (mean_prev + eps)
+        relative_diff = mean_diff / (mean_prev + _FBCACHE_EPS)
         rdt = residual_threshold.cast(relative_diff.dtype)
         pred = relative_diff < rdt  # (1,) bool
         return ops.squeeze(pred, 0)  # scalar bool

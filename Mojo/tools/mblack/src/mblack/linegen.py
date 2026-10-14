@@ -13,6 +13,8 @@
 
 # ===----------------------------------------------------------------------=== #
 #
+# Portions Copyright (c) 2018 Łukasz Langa, licensed under the MIT License.
+#
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
@@ -271,28 +273,37 @@ class LineGenerator(Visitor[Line]):
                 yield from self.visit(child)
 
     def visit_match_stmt(self, node: Node) -> Iterator[Line]:
-        """Visit a match / __match statement.
+        """Visits a match statement, including the deprecated __match spelling.
 
-        In Mojo mode, cases share the match indent (no extra indent around the
-        case blocks). Skip the Python-style INDENT/DEDENT wrapper when present.
+        Cases are indented under the header. Input written with cases at the
+        header's own indent is reindented on the way out.
         """
         normalize_invisible_parens(
             node, parens_after=set(), preview=self.mode.preview
         )
 
         yield from self.line()
+        yield from self._visit_match_children(node)
+
+    def _visit_match_children(self, node: Node) -> Iterator[Line]:
+        """Emit a match statement's children, indenting flat case lists."""
+        has_indent = any(
+            isinstance(child, Leaf) and child.type == token.INDENT
+            for child in node.children
+        )
+        opened = False
         for child in node.children:
             if (
-                self.mode.is_mojo
-                and isinstance(child, Leaf)
-                and child.type in (token.INDENT, token.DEDENT)
+                not has_indent
+                and not opened
+                and isinstance(child, Node)
+                and child.type == syms.case_block
             ):
-                # Preserve any comments carried on DEDENT without changing depth.
-                if child.type == token.DEDENT and child.prefix:
-                    yield from self.line()
-                    yield from self.visit_default(child)
-                continue
+                yield from self.line(+1)
+                opened = True
             yield from self.visit(child)
+        if opened:
+            yield from self.line(-1)
 
     def visit_case_block(self, node: Node) -> Iterator[Line]:
         """Visit a case block."""
@@ -349,7 +360,7 @@ class LineGenerator(Visitor[Line]):
             yield from self.line()
 
     def visit_comptime_stmt(self, node: Node) -> Iterator[Line]:
-        """Visit `comptime if`, `comptime for`, `comptime assert`, `comptime x = ...`."""
+        """Visit `comptime if/for/match`, `comptime assert`, `comptime x = ...`."""
         yield from self.line()
 
         children = iter(node.children)
@@ -360,9 +371,15 @@ class LineGenerator(Visitor[Line]):
                 break
 
         internal_stmt = next(children)
-        if internal_stmt.type in (syms.if_stmt, syms.for_stmt):
+        assert isinstance(internal_stmt, Node)
+        if internal_stmt.type == syms.match_stmt:
+            # Visit the match children directly to avoid the initial line
+            # break that visit_match_stmt adds. Cases are indented under the
+            # header, including input that was written flat.
+            yield from self._visit_match_children(internal_stmt)
+        elif internal_stmt.type in (syms.if_stmt, syms.for_stmt):
             # Visit child statement's children directly to avoid the
-            # initial line break that visit_if_stmt/visit_for_stmt add.
+            # initial line break that visit_if_stmt/for_stmt add.
             for child in internal_stmt.children:
                 yield from self.visit(child)
         else:
@@ -615,12 +632,12 @@ class LineGenerator(Visitor[Line]):
         parens: set[str],
         nodeTypes: set[int] | None = None,
     ):
-        # Only sort for struct/trait, not regular class
+        # Only sort for struct/enum/trait, not regular class
         from mblib2to3.pgen2 import token as mtoken
 
         if nodeTypes is None:
             nodeTypes = set()
-        if node.children[0].type in (mtoken.STRUCT, mtoken.TRAIT):
+        if node.children[0].type in (mtoken.STRUCT, mtoken.ENUM, mtoken.TRAIT):
             self._sort_struct_trait_conformances(node)
         # Fallback to original logic
         yield from self.visit_stmt(node, keywords, parens, nodeTypes)
@@ -670,7 +687,12 @@ class LineGenerator(Visitor[Line]):
             self.visit_classdef_sorted,
             keywords={"class"},
             parens=Ø,
-            nodeTypes={mtoken.STRUCT, mtoken.TRAIT, mtoken.EXTENSION},
+            nodeTypes={
+                mtoken.STRUCT,
+                mtoken.ENUM,
+                mtoken.TRAIT,
+                mtoken.EXTENSION,
+            },
         )
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(
@@ -901,6 +923,28 @@ def left_hand_split(
             yield result
 
 
+def _closes_where_condition_with_message(closing_bracket: Leaf) -> bool:
+    """Does `closing_bracket` close a `where ... else` clause's condition?
+
+    A `where` message trails its condition rather than sitting inside a bracket
+    with it, so omitting these parens leaves the last bracket *within* the
+    condition as the only split point, stranding the operands before it up on
+    the head line. Keeping them splits the whole condition out instead.
+    """
+    atom = closing_bracket.parent
+    if atom is None or atom.type != syms.atom:
+        return False
+    clause = atom.parent
+    if clause is None or clause.type != syms.where_clause:
+        return False
+    return any(
+        isinstance(child, Leaf)
+        and child.type == token.NAME
+        and child.value == "else"
+        for child in clause.children
+    )
+
+
 def right_hand_split(
     line: Line,
     line_length: int,
@@ -974,6 +1018,7 @@ def right_hand_split(
         and not body.contains_standalone_comments(0)
         # and we can actually remove the parens
         and can_omit_invisible_parens(body, line_length)
+        and not _closes_where_condition_with_message(closing_bracket)
     ):
         omit = {id(closing_bracket), *omit}
         try:

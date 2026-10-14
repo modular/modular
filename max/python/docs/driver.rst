@@ -36,10 +36,12 @@ Buffers
    :template: autosummary/class.rst
 
    Buffer
-   DevicePinnedBuffer
    DLPackArray
    HostHazardError
    Usage
+
+Buffer operations
+-----------------
 
 .. autosummary::
    :nosignatures:
@@ -74,6 +76,9 @@ Launch tracing
    :template: autosummary/class.rst
 
    LaunchTraceEntry
+
+Launch tracing functions
+------------------------
 
 .. autosummary::
    :nosignatures:

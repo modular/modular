@@ -50,7 +50,7 @@ def test_single_tool_call_translation() -> None:
         ],
     )
 
-    result = generator._tool_response_to_choices(parsed)
+    result = generator._tool_response_to_choices(parsed, "tool_calls")
 
     assert len(result) == 1
     choice = result[0]
@@ -106,7 +106,7 @@ def test_multiple_tool_calls_translation() -> None:
         ],
     )
 
-    result = generator._tool_response_to_choices(parsed)
+    result = generator._tool_response_to_choices(parsed, "tool_calls")
 
     assert len(result) == 1
     choice = result[0]
@@ -142,7 +142,7 @@ def test_tool_call_with_content_translation() -> None:
         ],
     )
 
-    result = generator._tool_response_to_choices(parsed)
+    result = generator._tool_response_to_choices(parsed, "tool_calls")
 
     assert len(result) == 1
     choice = result[0]
@@ -165,7 +165,7 @@ def test_empty_tool_calls_translation() -> None:
         tool_calls=[],
     )
 
-    result = generator._tool_response_to_choices(parsed)
+    result = generator._tool_response_to_choices(parsed, "tool_calls")
 
     assert len(result) == 1
     choice = result[0]
@@ -198,7 +198,7 @@ def test_complex_parameters_translation() -> None:
         ],
     )
 
-    result = generator._tool_response_to_choices(parsed)
+    result = generator._tool_response_to_choices(parsed, "tool_calls")
 
     assert len(result) == 1
     tool_calls = result[0].message.tool_calls
@@ -233,7 +233,7 @@ def test_custom_logprobs_translation() -> None:
     )
 
     result = generator._tool_response_to_choices(
-        parsed, logprobs=custom_logprobs
+        parsed, "tool_calls", logprobs=custom_logprobs
     )
 
     assert len(result) == 1
@@ -260,7 +260,7 @@ def test_tool_call_type_is_function() -> None:
         ],
     )
 
-    result = generator._tool_response_to_choices(parsed)
+    result = generator._tool_response_to_choices(parsed, "tool_calls")
 
     tool_calls = result[0].message.tool_calls
     assert tool_calls is not None
@@ -283,7 +283,7 @@ def test_response_structure_matches_openai_spec() -> None:
         ],
     )
 
-    result = generator._tool_response_to_choices(parsed)
+    result = generator._tool_response_to_choices(parsed, "tool_calls")
 
     assert isinstance(result, list)
     assert len(result) == 1

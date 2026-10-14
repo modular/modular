@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 import torch
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     TEXT_ATTENTION_K_EQ_V,
     TEXT_FINAL_LOGIT_SOFTCAPPING,
     TEXT_GLOBAL_HEAD_DIM,

@@ -158,6 +158,8 @@ modular_multi_py_version_test(
     }),
     deps = [
         "//max/python/max/_entrypoints:pipelines",
+        "//max/python/max/experimental/cascade/serve:main_lib",
+        "//max/python/max/pipelines/lib",
         requirement("click"),
     ],
 )
@@ -195,33 +197,5 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max/_entrypoints:pipelines",
-    ],
-)
-
-modular_py_test(
-    name = "test_pipelines_multi_gpu_smoke",
-    size = "enormous",
-    srcs = ["test_pipelines_multi_gpu_smoke.py"],
-    exec_properties = {
-        "test.resources:gpu-memory": "23",
-    },
-    gpu_constraints = ["//:has_4_gpus"],
-    tags = [
-        # TODO(PAQ-1096): These are moved to the HF pipeline for now but it
-        # should still run under a new generic pipeline that isn't presubmit
-        # due to compilation times.
-        "run-in-hf-workflow",
-        "no-pydeps",  # TODO: Fix and re-enable
-        "gpu",
-        "manual",
-        "no-sandbox",
-        "requires-network",
-    ],
-    deps = [
-        "//max/python/max/_entrypoints:pipelines",
-        requirement("transformers"),
-        requirement("gguf"),
-        requirement("safetensors"),
-        requirement("torch"),
     ],
 )

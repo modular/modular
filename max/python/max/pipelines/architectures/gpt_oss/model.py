@@ -19,6 +19,7 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 import numpy.typing as npt
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -178,7 +179,7 @@ class GptOssModel(
         weights_registry = nn_model.state_dict(auto_initialize=False)
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = kv_inputs.flatten()
+        flattened_kv_types = tree.leaves(kv_inputs)
 
         with Graph(
             getattr(self.huggingface_config, "model_type", "GptOss"),
@@ -258,7 +259,7 @@ class GptOssModel(
             model_inputs.return_n_logits,
             *input_row_offsets_list,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs.flatten(),
+            *tree.leaves(curr_kv_cache_inputs),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(

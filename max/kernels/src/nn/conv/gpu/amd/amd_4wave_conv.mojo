@@ -149,7 +149,7 @@ def amd_4wave_conv[
     # `c_type` MMA output BEFORE the residual FMA. Use for bias /
     # ReLU / SiLU / GELU fusion. Matches the SM100 reference
     # `D = lambda(Conv(A,B)) + beta * C` semantics. Signature
-    # `(IndexList[2], SIMD) capturing -> SIMD`.
+    # `(Coord, SIMD) capturing -> SIMD`.
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -357,8 +357,7 @@ def amd_4wave_conv[
     )
 
     @inline(.always)
-    @__parameter
-    def run_kernel[config: MatmulKernelConfig]() raises:
+    def run_kernel[config: MatmulKernelConfig]() raises {imm}:
         # Dispatch via `AMD4WaveMatmul.run_conv2d` — the unified entry
         # point that hosts the 4-wave conv2d body alongside the matmul.
         # `has_residual` carries through to the kernel's epilogue;

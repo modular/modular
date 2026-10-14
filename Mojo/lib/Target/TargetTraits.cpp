@@ -107,6 +107,22 @@ void printSupportedEmissionKinds(llvm::raw_ostream &os, unsigned indent) {
        << "- " << row.description << "\n";
 }
 
+llvm::StringRef TargetTraits::extensionFor(EmitAs kind) const {
+  switch (kind) {
+  case EmitAs::ASM:
+    return getAsmExtension();
+  case EmitAs::LLVM:
+  case EmitAs::LLVM_OPT:
+    return getLLVMExtension();
+  case EmitAs::LLVM_BITCODE:
+  case EmitAs::LLVM_OPT_BITCODE:
+    return getBitcodeExtension();
+  case EmitAs::OBJECT:
+    return getObjectExtension();
+  }
+  llvm_unreachable("unhandled EmitAs");
+}
+
 bool TargetTraits::supportsEmissionKind(llvm::StringRef kind) const {
   return llvm::any_of(supportedEmissionKinds(),
                       [&](const EmissionKind &emissionKind) {
@@ -185,6 +201,22 @@ TargetTraitsRegistry::lookup(const llvm::Triple &triple) const {
   if (ErrorOrSuccess e = requireMaxForAccelerator(!result->isBaseTarget()))
     return Error(e.getError());
   return result;
+}
+
+void TargetTraitsRegistry::registerAllDialects(
+    mlir::DialectRegistry &registry) const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    traits->registerDialects(registry);
+}
+
+void TargetTraitsRegistry::loadAllDialects(mlir::MLIRContext *ctx) const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    traits->loadDialects(ctx);
+}
+
+void TargetTraitsRegistry::registerAllPasses() const {
+  for (const std::unique_ptr<TargetTraits> &traits : Targets)
+    traits->registerPasses();
 }
 
 } // namespace M::KGEN

@@ -90,9 +90,12 @@ static bool requiresDocString(StructDeclOp op) {
 /// string:
 /// 1. It's a "public" function, meaning its name does not start with an
 ///    underscore, unless it's a special function such as `__init__`.
-/// 2. It's defined at the top level of a module, or as a (not-synthesized)
-///    method on a struct that itself requires a doc string.
-static bool requiresDocString(FnOp op) {
+/// 2. It's defined at the top level of a module, or as a source method on a
+///    struct or trait that itself requires a doc string.
+static bool requiresDocString(ASTDecl &decl, FnOp op) {
+  if (decl.getCursor().isInvalid())
+    return false;
+
   StringRef name = *op.getSourceName();
   if (isPrivateMemberName(name))
     return false;
@@ -112,18 +115,10 @@ static bool requiresDocString(FnOp op) {
   if (isa<FileModuleOp>(parent))
     return true;
 
-  if (auto parentStruct = dyn_cast<StructDeclOp>(parent)) {
-    // We rely on an assumption here that only synthesized methods have the same
-    // location as their parent struct.
-    return requiresDocString(parentStruct) &&
-           op.getLoc() != parentStruct.getLoc();
-  }
-  if (auto parentTrait = dyn_cast<TraitDeclOp>(parent)) {
-    // We rely on an assumption here that only synthesized methods have the same
-    // location as their parent struct.
-    return requiresDocString(parentTrait) &&
-           op.getLoc() != parentTrait.getLoc();
-  }
+  if (auto parentStruct = dyn_cast<StructDeclOp>(parent))
+    return requiresDocString(parentStruct);
+  if (auto parentTrait = dyn_cast<TraitDeclOp>(parent))
+    return requiresDocString(parentTrait);
   return false;
 }
 
@@ -486,25 +481,29 @@ public:
 
     if (!decl.getIfOperation())
       return;
+    auto validateOperation = [&](auto op, bool requiresDoc) {
+      ValidationKind validation =
+          requiresDoc ? ValidationKind::Strict : ValidationKind::Normal;
+      if (!docStr) {
+        if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
+            !isOpInPrivateModule(op))
+          emitDiag(op.getLoc(), "public symbol ")
+              << op.getDeclName() << " is missing a doc string";
+        return;
+      }
+
+      if (validation == ValidationKind::Strict)
+        validateSummary();
+
+      validateDecl(decl, op, validation);
+    };
+
     TypeSwitch<Operation *>(decl.getIfOperation())
-        .Case<FnOp, StructDeclOp, StructFieldOp, TraitDeclOp, AliasDeclOp>(
-            [&](auto op) {
-              ValidationKind validation = requiresDocString(op)
-                                              ? ValidationKind::Strict
-                                              : ValidationKind::Normal;
-              if (!docStr) {
-                if (validation == ValidationKind::Strict &&
-                    diagnoseMissingDocStrings && !isOpInPrivateModule(op))
-                  emitDiag(op.getLoc(), "public symbol ")
-                      << op.getDeclName() << " is missing a doc string";
-                return;
-              }
-
-              if (validation == ValidationKind::Strict)
-                validateSummary();
-
-              validateDecl(decl, op, validation);
-            })
+        .Case<FnOp>([&](FnOp op) {
+          validateOperation(op, requiresDocString(decl, op));
+        })
+        .Case<StructDeclOp, StructFieldOp, TraitDeclOp, AliasDeclOp>(
+            [&](auto op) { validateOperation(op, requiresDocString(op)); })
         .Case<FileModuleOp>([&](FileModuleOp moduleOp) {
           if (!requiresDocString(moduleOp) || isOpInPrivateModule(moduleOp))
             return;

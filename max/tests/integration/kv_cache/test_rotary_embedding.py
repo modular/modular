@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 import torch
 from hypothesis import assume, settings
+from max import tree
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -623,7 +624,7 @@ def test_kv_cache_ragged_rope(
 
             kv_collection = kv_params.unflatten_kv_inputs(
                 iter(g.inputs[kv_start:])
-            ).inputs[0]
+            )[0]
 
             position_ids = g.inputs[3].tensor if use_position_ids else None
 
@@ -664,7 +665,7 @@ def test_kv_cache_ragged_rope(
         # The KV inputs follow, in the order `flatten` emits them.
         **{
             3 + offset + i: buf
-            for i, buf in enumerate(kv_runtime_inputs.flatten())
+            for i, buf in enumerate(tree.leaves(kv_runtime_inputs))
         },
     }
 
@@ -766,7 +767,7 @@ def test_rope_split_store_ragged(
 
             kv_collection = kv_params.unflatten_kv_inputs(
                 iter(g.inputs[kv_start:])
-            ).inputs[0]
+            )[0]
 
             position_ids = g.inputs[3].tensor if use_position_ids else None
 
@@ -807,7 +808,7 @@ def test_rope_split_store_ragged(
         # The KV inputs follow, in the order `flatten` emits them.
         **{
             3 + offset + i: buf
-            for i, buf in enumerate(kv_runtime_inputs.flatten())
+            for i, buf in enumerate(tree.leaves(kv_runtime_inputs))
         },
     }
 

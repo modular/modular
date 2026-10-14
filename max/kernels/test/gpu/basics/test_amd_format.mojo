@@ -16,7 +16,6 @@ from std.os import abort
 from std.builtin._format_float import _write_float
 from std.simd import Float8_e4m3fn, Float8_e5m2
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_memcmp, unsafe_memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):

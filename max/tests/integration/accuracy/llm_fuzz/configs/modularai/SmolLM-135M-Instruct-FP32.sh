@@ -27,8 +27,8 @@ extra_pipelines_args=(
   # sampling-graph bitmask, not a server-side check -- a grammar backend masks
   # logits each decode step, which needs the GPU path. It gates only
   # user-supplied `response_format` schemas; tool-call grammars are separate
-  # (enable_tool_call_constrained_decode, on by default) and irrelevant to a
-  # model that never emits a tool call.
+  # (controlled by `tool_call_policy`) and irrelevant to a model that never
+  # emits a tool call.
 )
 
 # llm-fuzz knobs. Empty scenarios runs the tool's full default suite.

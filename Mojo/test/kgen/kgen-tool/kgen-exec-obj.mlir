@@ -6,11 +6,11 @@
 // RUN: kgen %s -emit=header | FileCheck %s -check-prefix=HDR
 
 kgen.func export @my_exported_kernel(%arg0: f32) cabi -> f32 {
-  kgen.return %arg0 : f32
+  hlcf.return %arg0 : f32
 }
 
 kgen.func @noop() {
-  kgen.return
+  hlcf.return
 }
 
 

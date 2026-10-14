@@ -19,6 +19,7 @@
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 
 static std::atomic<M::ProfilingDetail::GlobalProfilerContext *>
@@ -57,4 +58,9 @@ MODULAR_CXX_EXPORT M::Globals::ProfilingRangeGlobals &
 M::Globals::getProfilingRangeGlobals() {
   static ProfilingRangeGlobals globals;
   return globals;
+}
+
+MODULAR_CXX_EXPORT std::optional<int64_t> &M::Globals::getRequestBatchId() {
+  static thread_local std::optional<int64_t> batchId;
+  return batchId;
 }

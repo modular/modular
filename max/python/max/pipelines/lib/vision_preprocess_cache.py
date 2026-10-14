@@ -23,6 +23,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from typing import Generic, TypedDict, TypeVar
 
 import numpy as np
+from max.pipelines.modeling.types import VisionPreprocessCacheStats
 
 from .pipeline_runtime_config import PipelineRuntimeConfig
 
@@ -187,6 +188,7 @@ class VisionPreprocessCache(Generic[_T]):
         self._lock = threading.Lock()
         self._hits = 0
         self._misses = 0
+        self._evictions = 0
 
     @classmethod
     def for_images(
@@ -229,6 +231,11 @@ class VisionPreprocessCache(Generic[_T]):
         return self._total_bytes
 
     @property
+    def max_bytes(self) -> int:
+        """The byte budget (``0``: caching disabled)."""
+        return self._max_bytes
+
+    @property
     def hits(self) -> int:
         """Lookups served from the cache."""
         return self._hits
@@ -237,6 +244,35 @@ class VisionPreprocessCache(Generic[_T]):
     def misses(self) -> int:
         """Lookups that had to preprocess."""
         return self._misses
+
+    @property
+    def evictions(self) -> int:
+        """Entries dropped to make room for a new one.
+
+        Budget pressure only: an idle-sweep reclaim and a reinsert
+        displacing its own key are not evictions, because this exists to say
+        whether the budget is the binding constraint on the hit rate.
+        """
+        return self._evictions
+
+    def stats(self) -> VisionPreprocessCacheStats:
+        """A snapshot of the counters, read without the lock.
+
+        The serve layer calls this from the asyncio event loop once per media
+        request. Taking the mutex there would let N worker threads inside an
+        eviction run stall every in-flight request on the server, including
+        text-only ones, for the sake of a metric. A torn read costs at most
+        one skewed sample: the counters are differenced against a prior
+        snapshot, and that differencing already tolerates them moving
+        backwards.
+        """
+        return VisionPreprocessCacheStats(
+            hits=self._hits,
+            misses=self._misses,
+            evictions=self._evictions,
+            size_bytes=self._total_bytes,
+            capacity_bytes=self._max_bytes,
+        )
 
     def __len__(self) -> int:
         return len(self._cache)
@@ -270,6 +306,7 @@ class VisionPreprocessCache(Generic[_T]):
         self._lock = threading.Lock()
         self._hits = 0
         self._misses = 0
+        self._evictions = 0
 
     def contains(self, key: int) -> bool:
         """Whether ``key`` is cached right now, without disturbing the cache.
@@ -339,6 +376,7 @@ class VisionPreprocessCache(Generic[_T]):
             while self._cache and self._total_bytes + nbytes > self._max_bytes:
                 _, evicted = self._cache.popitem(last=False)
                 self._total_bytes -= evicted.nbytes
+                self._evictions += 1
                 dropped.append(evicted)
             self._cache[key] = _Entry(
                 value=value, nbytes=nbytes, last_used=self._clock()

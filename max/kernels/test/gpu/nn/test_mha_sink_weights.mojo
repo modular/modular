@@ -26,16 +26,12 @@ from max.gpu import *
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
-    UNKNOWN_VALUE,
 )
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.gpu.nvidia.common import immut_tile_tensor_1d
 from nn.attention.mha_mask import CausalMask
-from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
 
@@ -94,19 +90,15 @@ def test[
     rand(v_ptr.as_span())
 
     # Initialize causal mask.
-    comptime layout_4d = Layout.row_major[4]()
-    var mask = LayoutTensor[mask_type, layout_4d](
-        mask_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
+    var mask = TileTensor(
+        mask_ptr, row_major((batch_size, num_heads, seq_len, num_keys))
     )
     for b in range(batch_size):
         for h in range(num_heads):
             for q_idx in range(seq_len):
                 for k_idx in range(num_keys):
                     mask.store(
-                        Index(b, h, q_idx, k_idx),
+                        (b, h, q_idx, k_idx),
                         0 if q_idx + num_keys - seq_len
                         >= k_idx else min_or_neg_inf[mask_type](),
                     )
@@ -148,10 +140,8 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
-    var sink_device = LayoutTensor[qkv_type, sink_layout, ImmutAnyOrigin](
-        sink_device_ptr,
-        RuntimeLayout[sink_layout].row_major(Index(num_heads)),
+    var sink_device = immut_tile_tensor_1d(
+        sink_device_ptr.unsafe_ptr(), num_heads
     )
 
     # Run flash_attention with sink=True.

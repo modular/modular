@@ -55,7 +55,7 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
 )
 
-from std.testing import assert_almost_equal, assert_true
+from std.testing import assert_true
 
 
 # ===-----------------------------------------------------------------------===#

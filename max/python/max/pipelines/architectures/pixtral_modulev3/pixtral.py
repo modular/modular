@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from max import tree
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.attention import AttentionWithRope
@@ -23,7 +24,11 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    KVCacheParams,
+)
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
@@ -186,8 +191,9 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
         assert self.kv_params is not None
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(symbolic_inputs, KVCacheInputs)
-        kv_collections = symbolic_inputs.inputs
+        kv_collections = tree.leaves(
+            symbolic_inputs, leaf=KVCacheInputsPerDevice
+        )
 
         inputs_embeds = self.language_model.embed_tokens(input_ids)
 

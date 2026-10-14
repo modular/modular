@@ -11,10 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import inspect
 import json
 
 from click.testing import CliRunner
 from smoke_tests import smoke_test, smoke_test_github_matrix
+
+
+def _is_valid_matrix_entry(line: str) -> bool:
+    """Checks a line like `"org/model": NIGHTLY | _1xB200,`."""
+    code = line.split("#")[0].rstrip()
+    if not (code.startswith('    "') and code.endswith(",") and '": ' in code):
+        return False
+    tags = code.split('": ', 1)[1].removesuffix(",").split(" | ")
+    return "NIGHTLY" not in tags[1:]
 
 
 def test_custom_model_keys_have_dunder() -> None:
@@ -22,6 +32,24 @@ def test_custom_model_keys_have_dunder() -> None:
     assert not bad, (
         f"CUSTOM_MODELS keys must contain '__' to separate the base model "
         f"from the alias suffix: {bad}"
+    )
+
+
+def test_matrix_entries_are_one_line_with_nightly_first() -> None:
+    source = inspect.getsource(smoke_test_github_matrix).splitlines()
+    bad = []
+    for name in ("HF_MODELS", "CUSTOM_MODELS"):
+        start = next(
+            i for i, line in enumerate(source) if line.startswith(f"{name}:")
+        )
+        for line in source[start + 1 :]:
+            if line == "}":
+                break
+            if not _is_valid_matrix_entry(line):
+                bad.append(line)
+    assert not bad, (
+        "Matrix entries must be exactly one line, with NIGHTLY, if present, "
+        "as the first tag:\n" + "\n".join(bad)
     )
 
 
@@ -50,14 +78,15 @@ def test_model_aliases_in_custom_models() -> None:
     )
 
 
-def test_nightly_models_are_known_models() -> None:
-    unknown = sorted(
-        smoke_test_github_matrix.NIGHTLY_MODELS
-        - set(smoke_test_github_matrix.MODELS)
+def test_nightly_models_list_hw() -> None:
+    """NIGHTLY is a schedule tag, not HW: alone it runs the model nowhere."""
+    bare = sorted(
+        model
+        for model, tags in smoke_test_github_matrix.MODELS.items()
+        if not tags & set(smoke_test_github_matrix.RUNNERS)
+        and "NIGHTLY" in tags
     )
-    assert not unknown, (
-        f"NIGHTLY_MODELS entries must also appear in MODELS: {unknown}"
-    )
+    assert not bare, f"NIGHTLY models must also list the HW they run on: {bare}"
 
 
 def test_nightly_tier_is_a_subset_of_all() -> None:
@@ -89,26 +118,19 @@ def test_nightly_8xb200_pinned() -> None:
         "MiniMaxAI/MiniMax-M3-MXFP8__mtp",
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         "nvidia/Kimi-K2.7-Code-NVFP4",
+        "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
+        "zai-org/GLM-5.3-Flash__tpep",
     }
 
 
 def test_8xmi355_stays_opt_in() -> None:
     """8xMI355 nodes are scarce, so landing there must be a deliberate choice.
 
-    Pinning the schedule means a model added without an 8xMI355 exclusion fails
+    Pinning the schedule means a model that lists 8xMI355 in its HW tags fails
     here instead of quietly consuming the runner. Widen the expectation only
     when a model is meant to run on it.
     """
-    expected = {
-        "max-ci": {
-            "MiniMaxAI/MiniMax-M3-MXFP8",
-            "modularai/MiniMax-M3-MXFP6",
-        },
-        "max": set(),
-        "vllm": set(),
-        "sglang": set(),
-    }
-    for framework, models in expected.items():
+    for framework in ("max-ci", "max", "vllm", "sglang"):
         result = CliRunner().invoke(
             smoke_test_github_matrix.main,
             ["--framework", framework, "--run-on-8xmi355"],
@@ -117,7 +139,10 @@ def test_8xmi355_stays_opt_in() -> None:
         scheduled = {
             job["model"] for job in json.loads(result.output)["include"]
         }
-        assert scheduled == models, f"{framework} on 8xMI355"
+        assert scheduled == {
+            "MiniMaxAI/MiniMax-M3-MXFP8",
+            "modularai/MiniMax-M3-MXFP6",
+        }, f"{framework} on 8xMI355"
 
 
 def test_smoke_test_github_matrix_b200_max_ci() -> None:

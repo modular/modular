@@ -47,6 +47,16 @@ modular_py_library(
 )
 
 modular_py_library(
+    name = "hyper_connection_reference",
+    testonly = True,
+    srcs = ["hyper_connection_reference.py"],
+    imports = [".."],
+    deps = [
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
     name = "distance_metrics",
     testonly = True,
     srcs = ["distance_metrics.py"],
@@ -150,7 +160,6 @@ modular_py_library(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/graph",
-        requirement("nvitop"),
     ],
 )
 
@@ -159,15 +168,19 @@ modular_py_library(
     testonly = True,
     srcs = ["mef_precompile.py"],
     imports = [".."],
-    # Package default plus two consumers that live outside //max/tests but use
-    # the same CPU/GPU compile split: //max/python/layer_benchmarks' harness
-    # tests, and the GPT-2 device-conformance suites, which sit under
-    # //max/internal because they reach into the closed-source driver plugins.
+    # Package default plus four consumers that live outside //max/tests but
+    # use the same CPU/GPU compile split: //max/python/layer_benchmarks'
+    # harness tests, the GPT-2 device-conformance suites, which sit under
+    # //max/internal because they reach into the closed-source driver plugins,
+    # and the Qwen4-Exp and Kimi K3 arch packages, whose QSA indexer and EP
+    # local-compute tests precompile their graphs.
     visibility = [
         "//:__pkg__",
         "//max/internal/driver/test:__pkg__",
         "//max/python/layer_benchmarks:__pkg__",
         "//max/tests:__subpackages__",
+        "//max_private/kimi_k3:__pkg__",
+        "//max_private/qwen4_exp:__pkg__",
         "//oss/modular/max/tests:__subpackages__",
     ],
     deps = [
@@ -354,6 +367,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("typing-extensions"),
         requirement("transformers"),
+        "//max/python/max:tree",
     ],
 )
 

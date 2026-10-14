@@ -16,6 +16,7 @@ from spmv_utils import COOMatrix, generate_sparse_matrix, spmv_cpu, verify
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
+from std.math import ceildiv
 
 
 def spmv_coo_kernel(
@@ -107,7 +108,7 @@ def main() raises:
     )
 
     var blockSize = 256
-    var numBlocks = (numNonzeros + blockSize - 1) // blockSize
+    var numBlocks = ceildiv(numNonzeros, blockSize)
 
     ctx.enqueue_function[spmv_coo_kernel](
         d_cooMatrix,

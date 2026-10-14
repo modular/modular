@@ -17,7 +17,7 @@ from __future__ import annotations
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.gemma4.context import Gemma4Context
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -66,7 +66,7 @@ class Gemma4ModuleV3BatchProcessor(
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     ) -> Gemma4Inputs:
         return Gemma4Inputs(
             tokens=tokens,

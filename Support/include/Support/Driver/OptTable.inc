@@ -1,7 +1,14 @@
 //===----------------------------------------------------------------------===//
+// Copyright (c) 2026, Modular Inc. All rights reserved.
 //
-// This file is Modular Inc proprietary.
+// Licensed under the Apache License v2.0 with LLVM Exceptions:
+// https://llvm.org/LICENSE.txt
 //
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //===----------------------------------------------------------------------===//
 //
 // This file uses x-macros to define an options enum and `llvm::opt::OptTable`
@@ -29,42 +36,21 @@ enum ID {
 } // namespace options
 } // namespace
 
-#define OPTTABLE_STR_TABLE_CODE
-#include DRIVER_OPTIONS_PATH
-#undef OPTTABLE_STR_TABLE_CODE
+// `optionTables()` is static, so a TU that includes this for the enum alone
+// trips -Wunused-function. Those define DRIVER_OPTIONS_ENUM_ONLY.
+#ifndef DRIVER_OPTIONS_ENUM_ONLY
 
-#define OPTTABLE_PREFIXES_TABLE_CODE
-#include DRIVER_OPTIONS_PATH
-#undef OPTTABLE_PREFIXES_TABLE_CODE
-
-#define OPTTABLE_PREFIXES_UNION_CODE
-#include DRIVER_OPTIONS_PATH
-#undef OPTTABLE_PREFIXES_UNION_CODE
-
+// The generated block references these unqualified.
 using llvm::opt::DefaultVis;
 using llvm::opt::HelpHidden;
-static constexpr llvm::opt::OptTable::Info InfoTable[] = {
-#define OPTION(PREFIX, NAME, ID, KIND, GROUP, ALIAS, ALIASARGS, FLAGS,         \
-               VISIBILITY, PARAM, HELPTEXT, HELPTEXTFORVARIANTS, METAVAR,      \
-               VALUES, SUBCOMMANDIDSOFFSET)                                    \
-  {PREFIX,                                                                     \
-   NAME,                                                                       \
-   HELPTEXT,                                                                   \
-   HELPTEXTFORVARIANTS,                                                        \
-   METAVAR,                                                                    \
-   options::OPT_##ID,                                                          \
-   llvm::opt::Option::KIND##Class,                                             \
-   PARAM,                                                                      \
-   FLAGS,                                                                      \
-   VISIBILITY,                                                                 \
-   options::OPT_##GROUP,                                                       \
-   options::OPT_##ALIAS,                                                       \
-   ALIASARGS,                                                                  \
-   VALUES,                                                                     \
-   SUBCOMMANDIDSOFFSET},
-#include DRIVER_OPTIONS_PATH
-#undef OPTION
-};
 
+// Defines `optionTables()`, returning the `llvm::opt::OptTable::Tables`
+// aggregate. The generated block undefines the macro itself.
+#define OPTTABLE_CODE
+#include DRIVER_OPTIONS_PATH
+
+#endif // DRIVER_OPTIONS_ENUM_ONLY
+
+#undef DRIVER_OPTIONS_ENUM_ONLY
 #undef DRIVER_INCLUDE
 #undef DRIVER_OPTIONS_PATH

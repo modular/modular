@@ -99,6 +99,7 @@ class InklingMTPDepthLayer(Module):
             quant_config=None,
             is_local=is_local,
             force_dense_mlp=True,
+            commit_conv_state=False,
         )
 
     def __call__(
@@ -107,10 +108,11 @@ class InklingMTPDepthLayer(Module):
         hidden: Sequence[TensorValue],
         kv_collections: Sequence[PagedCacheValues],
         input_row_offsets: Sequence[TensorValue],
+        positions: Sequence[TensorValue],
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
-        slot_idx: Sequence[TensorValue],
-        has_initial_state: Sequence[TensorValue],
+        conv_rows: Sequence[Sequence[TensorValue]],
+        layer_rows: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
         hidden_states_first: bool,
     ) -> list[TensorValue]:
@@ -129,14 +131,15 @@ class InklingMTPDepthLayer(Module):
         cache_idx = ops.constant(
             self.cache_layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
-        return self.decoder_layer(
+        return self.decoder_layer.forward_standalone(
             hs,
             kv_collections,
             input_row_offsets,
+            positions,
             log_scaling,
             conv_pools,
-            slot_idx,
-            has_initial_state,
+            conv_rows,
+            layer_rows,
             cache_idx,
             signal_buffers,
         )
@@ -248,28 +251,30 @@ class InklingMultiTokenPredictor(Module):
         input_row_offsets: Sequence[TensorValue],
         positions: TensorValue,
         conv_pools: Sequence[Sequence[BufferValue]],
-        slot_idx: Sequence[TensorValue],
-        has_initial_state: Sequence[TensorValue],
+        conv_rows: Sequence[Sequence[TensorValue]],
+        layer_rows: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
         """Runs MTP depth ``depth_idx`` and optionally applies chain_norm."""
         depth = self.layers[depth_idx]
         assert isinstance(depth, InklingMTPDepthLayer)
         if self.num_devices > 1:
-            log_scaling = ops.distributed_broadcast(
-                self.log_scaling(positions), signal_buffers
+            positions_per_rank = ops.distributed_broadcast(
+                positions, signal_buffers
             )
         else:
-            log_scaling = [self.log_scaling(positions)]
+            positions_per_rank = [positions]
+        log_scaling = [self.log_scaling(p) for p in positions_per_rank]
         hs = depth(
             token_embeds,
             hidden,
             kv_collections[depth.kv_key],
             input_row_offsets,
+            positions_per_rank,
             log_scaling,
             self.depth_conv_pools(conv_pools, depth_idx),
-            slot_idx,
-            has_initial_state,
+            conv_rows,
+            layer_rows,
             signal_buffers,
             self.hidden_states_first,
         )

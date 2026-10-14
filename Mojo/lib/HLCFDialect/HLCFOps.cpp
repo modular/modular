@@ -14,11 +14,14 @@
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/HLCFDialect/HLCFUtils.h"
 #include "Mojo/Interpreter/ParametricInterpreterState.h"
+#include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
+#include "Support/Compiler/VerifyUtils.h"
 #include "mlir/IR/Matchers.h"
 
 using namespace M;
+using namespace M::KGEN;
 using namespace HLCF;
 
 //===----------------------------------------------------------------------===//
@@ -343,62 +346,6 @@ HLCF::UnrollLevel LoopOp::getUnrollLevelValue() {
 }
 
 //===----------------------------------------------------------------------===//
-// IfOp
-//===----------------------------------------------------------------------===//
-
-void IfOp::getEntryTargets(ArrayRef<Attribute> operands,
-                           SmallVectorImpl<ControlFlowTarget> &targets) {
-  assert(operands.size() == 1);
-  if (auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands.front())) {
-    targets.emplace_back(cond.getAsBool() ? 0 : 1);
-  } else {
-    targets.emplace_back(0);
-    targets.emplace_back(1);
-  }
-}
-
-ValueRange IfOp::getEntryArguments(std::optional<unsigned> target) {
-  if (!target)
-    return getResults();
-  assert(*target == 0 || *target == 1);
-  return {};
-}
-
-ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
-                                   InterpreterState &state) {
-  auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0]);
-  if (!cond)
-    return ErrorTree(getLoc(), "non-constant condition");
-
-  return state.transferControlFlowTo(
-      cond.getAsBool() ? getThenRegion() : getElseRegion(), {});
-}
-
-ErrorTreeOrSuccess
-IfOp::parametric_interpret(ArrayRef<Attribute> operands,
-                           ParametricInterpreterState &state) {
-  return interpret(operands, state);
-}
-
-OpBuilder IfOp::getThenBodyBuilder() {
-  assert(!getThenRegion().empty() && "Need a then block");
-  return OpBuilder::atBlockEnd(&getThenRegion().front());
-}
-
-OpBuilder IfOp::getElseBodyBuilder() {
-  assert(!getElseRegion().empty() && "Need an else block");
-  return OpBuilder::atBlockEnd(&getElseRegion().front());
-}
-
-Block &IfOp::getThenBlock() { return getThenRegion().front(); }
-
-Block &IfOp::getElseBlock() { return getElseRegion().front(); }
-
-Operation *IfOp::getThenTerminator() { return getThenBlock().getTerminator(); }
-
-Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
-
-//===----------------------------------------------------------------------===//
 // SwitchOp
 //===----------------------------------------------------------------------===//
 
@@ -559,12 +506,13 @@ BreakOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 bool YieldOp::isParentNode(Operation *op) {
-  if (isa<IfOp, SwitchOp, ElifOp>(op))
+  if (isa<SwitchOp, IfOp>(op))
     return true;
   // Yield in a match targets only the else region; case regions use
   // match.next / match.complete instead.
-  auto match = dyn_cast<MatchOp>(op);
-  return match && !match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<MatchOp>(op))
+    return !match.containsInCaseRegion(*this);
+  return false;
 }
 
 void YieldOp::getBranchTargets(ArrayRef<Attribute> operands,
@@ -661,13 +609,13 @@ LogicalResult ForYieldOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// ElifOp
+// IfOp
 //===----------------------------------------------------------------------===//
 
 static ParseResult
-parseElif(OpAsmParser &parser, Region &thenRegion,
-          SmallVectorImpl<std::unique_ptr<Region>> &elifRegionsRegions,
-          Region &elseRegion) {
+parseIf(OpAsmParser &parser, Region &thenRegion,
+        SmallVectorImpl<std::unique_ptr<Region>> &elifRegionsRegions,
+        Region &elseRegion) {
   // First then region (condition is an SSA operand parsed by ODS).
   if (failed(parser.parseRegion(thenRegion)))
     return failure();
@@ -707,10 +655,9 @@ parseElif(OpAsmParser &parser, Region &thenRegion,
   }
 }
 
-static void printElif(OpAsmPrinter &printer, Operation *elifOp,
-                      Region &thenRegion,
-                      MutableArrayRef<Region> conditionalRegions,
-                      Region &elseRegion) {
+static void printIf(OpAsmPrinter &printer, Operation *ifOp, Region &thenRegion,
+                    MutableArrayRef<Region> conditionalRegions,
+                    Region &elseRegion) {
   auto printArgumentList = [&](ArrayRef<BlockArgument> args) {
     if (args.empty())
       return;
@@ -740,7 +687,7 @@ static void printElif(OpAsmPrinter &printer, Operation *elifOp,
   printer.printRegion(elseRegion, /*printEntryBlockArgs=*/false);
 }
 
-LogicalResult ElifOp::verify() {
+LogicalResult IfOp::verify() {
   if (getElifRegions().size() % 2 != 0) {
     return emitOpError(
         "operator elif conditions do not match the number of elif regions.");
@@ -748,9 +695,8 @@ LogicalResult ElifOp::verify() {
   return success();
 }
 
-void ElifOp::getEntryTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+void IfOp::getEntryTargets(ArrayRef<Attribute> operands,
+                           SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == 1);
   // Region layout: 0 = then, 1 = else, 2+ = additional (cond, then) pairs.
   unsigned nextOnFalse = getElifRegions().empty() ? 1 : 2;
@@ -762,15 +708,15 @@ void ElifOp::getEntryTargets(
   }
 }
 
-ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
+ValueRange IfOp::getEntryArguments(std::optional<unsigned int> target) {
   if (!target)
     return getResults();
   assert(*target < getNumRegions());
   return getRegion(target.value()).getArguments();
 }
 
-ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
-                                     InterpreterState &state) {
+ErrorTreeOrSuccess IfOp::interpret(ArrayRef<Attribute> operands,
+                                   InterpreterState &state) {
   auto cond = dyn_cast_if_present<KGEN::SIMDAttr>(operands[0]);
   if (!cond)
     return ErrorTree(getLoc(), "non-constant condition");
@@ -783,57 +729,53 @@ ErrorTreeOrSuccess ElifOp::interpret(ArrayRef<Attribute> operands,
 }
 
 ErrorTreeOrSuccess
-ElifOp::parametric_interpret(ArrayRef<Attribute> operands,
-                             ParametricInterpreterState &state) {
+IfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                           ParametricInterpreterState &state) {
   return interpret(operands, state);
 }
 
-ElifOp ElifOp::create(OpBuilder &builder, Location loc, TypeRange resultTypes,
-                      Value cond, function_ref<LogicalResult()> emitThen,
-                      function_ref<LogicalResult()> emitElse) {
-  ElifOp elifOp = ElifOp::create(builder, loc, resultTypes, cond);
+IfOp IfOp::create(OpBuilder &builder, Location loc, TypeRange resultTypes,
+                  Value cond, function_ref<LogicalResult()> emitThen,
+                  function_ref<LogicalResult()> emitElse) {
+  IfOp ifOp = IfOp::create(builder, loc, resultTypes, cond);
 
-  builder.setInsertionPointToStart(&elifOp.getThenRegion().emplaceBlock());
+  builder.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
   if (failed(emitThen()))
     return {};
 
-  builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
+  builder.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
   if (failed(emitElse()))
     return {};
 
-  builder.setInsertionPointAfter(elifOp);
-  return elifOp;
+  builder.setInsertionPointAfter(ifOp);
+  return ifOp;
 }
 
-OpBuilder ElifOp::getThenBodyBuilder() {
+OpBuilder IfOp::getThenBodyBuilder() {
   assert(!getThenRegion().empty() && "Need a then block");
   return OpBuilder::atBlockEnd(&getThenRegion().front());
 }
 
-OpBuilder ElifOp::getElseBodyBuilder() {
+OpBuilder IfOp::getElseBodyBuilder() {
   assert(!getElseRegion().empty() && "Need an else block");
   return OpBuilder::atBlockEnd(&getElseRegion().front());
 }
 
-Block &ElifOp::getThenBlock() { return getThenRegion().front(); }
+Block &IfOp::getThenBlock() { return getThenRegion().front(); }
 
-Block &ElifOp::getElseBlock() { return getElseRegion().front(); }
+Block &IfOp::getElseBlock() { return getElseRegion().front(); }
 
-Operation *ElifOp::getThenTerminator() {
-  return getThenBlock().getTerminator();
-}
+Operation *IfOp::getThenTerminator() { return getThenBlock().getTerminator(); }
 
-Operation *ElifOp::getElseTerminator() {
-  return getElseBlock().getTerminator();
-}
+Operation *IfOp::getElseTerminator() { return getElseBlock().getTerminator(); }
 
 //===----------------------------------------------------------------------===//
-// ElifYieldOp
+// IfElifCondYieldOp
 //===----------------------------------------------------------------------===//
 
-bool ElifYieldOp::isParentNode(Operation *op) { return isa<ElifOp>(op); }
+bool IfElifCondYieldOp::isParentNode(Operation *op) { return isa<IfOp>(op); }
 
-void ElifYieldOp::getBranchTargets(
+void IfElifCondYieldOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   // The first operand is the condition and the subsequent operands are likely
@@ -842,7 +784,8 @@ void ElifYieldOp::getBranchTargets(
   assert(!operands.empty());
   // Region layout: 0 = then, 1 = else, 2+ = elifRegions.
   unsigned myIndex = getOperation()->getParentRegion()->getRegionNumber();
-  assert(myIndex >= 2 && "elif.yield only belongs in additional cond regions");
+  assert(myIndex >= 2 &&
+         "if.elifcond.yield only belongs in additional cond regions");
   unsigned nextValueRegion = myIndex + 1;
   unsigned nextConditionRegion = myIndex + 2;
   unsigned numRegions =
@@ -863,9 +806,9 @@ void ElifYieldOp::getBranchTargets(
   targets.emplace_back(nextConditionRegionOrElse, carryOver);
 }
 
-ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
-                                          InterpreterState &state) {
-  auto parent = cast<ElifOp>(getOperation()->getParentOp());
+ErrorTreeOrSuccess IfElifCondYieldOp::interpret(ArrayRef<Attribute> operands,
+                                                InterpreterState &state) {
+  auto parent = cast<IfOp>(getOperation()->getParentOp());
   // Region layout: 0 = then, 1 = else, 2+ = elifRegions.
   unsigned myRegionNumber =
       getOperation()->getParentRegion()->getRegionNumber();
@@ -888,8 +831,8 @@ ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
 }
 
 ErrorTreeOrSuccess
-ElifYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                  ParametricInterpreterState &state) {
+IfElifCondYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                        ParametricInterpreterState &state) {
   return interpret(operands, state);
 }
 
@@ -988,8 +931,9 @@ MatchOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 bool MatchNextOp::isParentNode(Operation *op) {
-  auto match = dyn_cast<MatchOp>(op);
-  return match && match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<MatchOp>(op))
+    return match.containsInCaseRegion(*this);
+  return false;
 }
 
 void MatchNextOp::getBranchTargets(
@@ -1027,8 +971,9 @@ MatchNextOp::parametric_interpret(ArrayRef<Attribute> operands,
 //===----------------------------------------------------------------------===//
 
 bool MatchCompleteOp::isParentNode(Operation *op) {
-  auto match = dyn_cast<MatchOp>(op);
-  return match && match.containsInCaseRegion(*this);
+  if (auto match = dyn_cast<MatchOp>(op))
+    return match.containsInCaseRegion(*this);
+  return false;
 }
 
 void MatchCompleteOp::getBranchTargets(
@@ -1039,14 +984,531 @@ void MatchCompleteOp::getBranchTargets(
 
 ErrorTreeOrSuccess MatchCompleteOp::interpret(ArrayRef<Attribute> operands,
                                               InterpreterState &state) {
-  auto match = cast<MatchOp>(getParentNode(*this));
-  return state.transferControlFlowTo(match, operands);
+  return state.transferControlFlowTo(getParentNode(*this), operands);
 }
 
 ErrorTreeOrSuccess
 MatchCompleteOp::parametric_interpret(ArrayRef<Attribute> operands,
                                       ParametricInterpreterState &state) {
   return interpret(operands, state);
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ComptimeForOp::verify() {
+  if (getNumOperands() != getNumResults()) {
+    return emitOpError("has ")
+           << getNumOperands() << " operands but " << getNumResults()
+           << " results; it should be the same";
+  }
+  for (auto [i, argTy, resTy] :
+       llvm::enumerate(getOperandTypes(), getResultTypes())) {
+    if (argTy == resTy)
+      continue;
+    return emitOpError("operand #")
+           << i << " has type " << argTy
+           << " but corresponding result has type " << resTy;
+  }
+  return success();
+}
+
+void ComptimeForOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(0, getOperands());
+}
+
+ValueRange ComptimeForOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  if (*target == 0)
+    return getBody().getArguments();
+  assert(*target == 1);
+  return getElseRegion().getArguments();
+}
+
+ArrayRef<ParamDeclAttr> ComptimeForOp::getInputParams() {
+  // DeclInterface requires ArrayRef; point at the inherent property storage
+  // (not getAttrs().back(), which is wrong once attrs live in Properties).
+  return {&getProperties().paramDecl, 1};
+}
+
+void ComptimeForOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
+
+bool ComptimeForOp::isImplicitlyParametric() { return true; }
+
+void ComptimeForOp::collectParameterUsesBelow(
+    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
+}
+
+bool ComptimeForOp::isIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0)
+    return getBodyIsolated();
+  assert(regionNum == 1);
+  return getElseIsolated();
+}
+
+void ComptimeForOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0)
+    return setBodyIsolated(true);
+  assert(regionNum == 1);
+  return setElseIsolated(true);
+}
+
+bool ComptimeForBreakOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
+}
+
+void ComptimeForBreakOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the loop operation.
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+bool ComptimeForContinueOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
+}
+
+void ComptimeForContinueOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to the beginning of the body region only (not the else region).
+  targets.emplace_back(0, getOperands());
+}
+
+bool ComptimeForGotoElseOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp>(op);
+}
+
+void ComptimeForGotoElseOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.empty() && "Shouldn't exist by mem2reg time");
+  // Branch to the beginning of the else region.
+  targets.emplace_back(1, ValueRange());
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeIfOp
+//===----------------------------------------------------------------------===//
+
+/// comptime-if ::= cond (`->` type-list)? then-region
+///                 (`elif` cond then-region)* `else` else-region
+static ParseResult
+parseComptimeIf(OpAsmParser &parser, ArrayAttr &conds,
+                SmallVectorImpl<Type> &resultTypes,
+                SmallVectorImpl<std::unique_ptr<Region>> &regions) {
+  SmallVector<Attribute> condValues;
+  auto parseCond = [&]() -> ParseResult {
+    TypedAttr value;
+    if (failed(KGEN::parseScalarBoolParamValue(parser, value)))
+      return failure();
+    condValues.push_back(value);
+    return success();
+  };
+
+  // First condition, optional result types, then region.
+  if (failed(parseCond()) ||
+      failed(parser.parseOptionalArrowTypeList(resultTypes)))
+    return failure();
+  if (failed(parser.parseRegion(
+          *regions.emplace_back(std::make_unique<Region>()))))
+    return failure();
+
+  // Zero or more `elif cond { ... }` arms.
+  while (succeeded(parser.parseOptionalKeyword("elif"))) {
+    if (failed(parseCond()) || failed(parser.parseRegion(*regions.emplace_back(
+                                   std::make_unique<Region>()))))
+      return failure();
+  }
+
+  // Required `else { ... }`.
+  if (failed(parser.parseKeyword("else")) ||
+      failed(parser.parseRegion(
+          *regions.emplace_back(std::make_unique<Region>()))))
+    return failure();
+
+  conds = parser.getBuilder().getArrayAttr(condValues);
+  return success();
+}
+
+static void printComptimeIf(OpAsmPrinter &printer, Operation *op,
+                            ArrayAttr conds, TypeRange resultTypes,
+                            MutableArrayRef<Region> regions) {
+  assert(conds.size() >= 1 && regions.size() == conds.size() + 1 &&
+         "comptime.if requires one then per condition plus else");
+  KGEN::printScalarBoolParamValue(printer, conds[0]);
+  printer.printOptionalArrowTypeList(resultTypes);
+  printer << ' ';
+  printer.printRegion(regions[0]);
+  for (unsigned i = 1, e = conds.size(); i != e; ++i) {
+    printer << " elif ";
+    KGEN::printScalarBoolParamValue(printer, conds[i]);
+    printer << ' ';
+    printer.printRegion(regions[i]);
+  }
+  printer << " else ";
+  printer.printRegion(regions.back());
+}
+
+LogicalResult ComptimeIfOp::verify() {
+  if (getConds().empty())
+    return emitOpError("requires at least one condition");
+  if (getNumRegions() != getConds().size() + 1)
+    return emitOpError("expected ")
+           << (getConds().size() + 1) << " regions (one then per condition "
+           << "plus else), but got " << getNumRegions();
+  for (Attribute attr : getConds()) {
+    auto typed = dyn_cast<TypedAttr>(attr);
+    auto simdTy = typed ? dyn_cast<SIMDType>(typed.getType()) : SIMDType();
+    auto dtype = simdTy ? simdTy.getResolvedDType() : std::nullopt;
+    if (!dtype || !dtype->isBool())
+      return emitOpError(
+          "conditions must be !kgen.scalar<bool> typed attributes");
+  }
+  return success();
+}
+
+bool ComptimeIfOp::isIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0)
+    return getThenIsolated();
+  if (regionNum + 1 == getNumRegions())
+    return getElseIsolated();
+  // Additional then regions do not carry isolation bits today.
+  return false;
+}
+
+void ComptimeIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
+  if (regionNum == 0) {
+    setThenIsolated(true);
+    return;
+  }
+  if (regionNum + 1 == getNumRegions()) {
+    setElseIsolated(true);
+    return;
+  }
+}
+
+void ComptimeIfOp::getEntryTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.empty());
+  for (auto [idx, attr] : llvm::enumerate(getConds())) {
+    if (auto cond = sugarDynCast<SIMDAttr>(cast<TypedAttr>(attr))) {
+      if (cond.getAsBool()) {
+        targets.emplace_back(idx);
+        return;
+      }
+      continue;
+    }
+    // Non-constant condition: either this then or later arms may run.
+    targets.emplace_back(idx);
+    targets.emplace_back(getNumRegions() - 1);
+    return;
+  }
+  // Every condition was a constant false — take else.
+  targets.emplace_back(getNumRegions() - 1);
+}
+
+ValueRange ComptimeIfOp::getEntryArguments(std::optional<unsigned> target) {
+  if (!target)
+    return getResults();
+  assert(*target < getNumRegions());
+  return getRegion(*target).getArguments();
+}
+
+void ComptimeIfOp::walkDefinitions(
+    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
+
+bool ComptimeIfOp::isImplicitlyParametric() { return true; }
+
+/// This operation has no uses to collect in the scopes it defines.
+void ComptimeIfOp::collectParameterUsesBelow(
+    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
+}
+
+ComptimeIfOp ComptimeIfOp::create(OpBuilder &builder, Location loc,
+                                  TypeRange resultTypes, TypedAttr cond,
+                                  function_ref<LogicalResult()> emitThen,
+                                  function_ref<LogicalResult()> emitElse) {
+  ComptimeIfOp ifOp = ComptimeIfOp::create(builder, loc, resultTypes, cond);
+
+  builder.setInsertionPointToStart(&ifOp.getThenRegion().emplaceBlock());
+  if (failed(emitThen()))
+    return {};
+
+  builder.setInsertionPointToStart(&ifOp.getElseRegion().emplaceBlock());
+  if (failed(emitElse()))
+    return {};
+
+  builder.setInsertionPointAfter(ifOp);
+  return ifOp;
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeYieldOp
+//===----------------------------------------------------------------------===//
+
+bool ComptimeYieldOp::isParentNode(Operation *op) {
+  return isa<ComptimeForOp, ComptimeIfOp>(op);
+}
+
+void ComptimeYieldOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  // Branch to after the if operation.
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ComptimeForOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.for interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeForOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                    ParametricInterpreterState &state) {
+  SmallVector<Type> resultTypes;
+  Attribute hasNext = state.getReboundAttribute(getHasNext());
+  Attribute getNext = state.getReboundAttribute(getGetNextIter());
+  for (Type type : getResultTypes()) {
+    resultTypes.push_back(state.getReboundType(type));
+  }
+
+  auto hasNextCall = cast<SymbolConstantAttr>(hasNext);
+  auto iter = state.currOpSideEffectState().find(this->getOperation());
+  bool firstIteration =
+      (iter == state.currOpSideEffectState().end() || !iter->second.iterator);
+
+  // Can probably cache this for each iteration.
+  SmallVector<TypedAttr> paramValues;
+  for (auto pv : hasNextCall.getParamValues()) {
+    paramValues.push_back(state.getReboundAttribute(pv));
+  }
+
+  ErrorOr<Type> hasNextTypeResult =
+      state.lookupFuncTypeGenerator(hasNextCall.getSymbol());
+  if (hasNextTypeResult.isError()) {
+    return ErrorTree(getLoc(), hasNextTypeResult.takeError());
+  }
+
+  FuncType hasNextType =
+      cast<FuncTypeGeneratorType>(*hasNextTypeResult).getBody();
+
+  // Push an empty slot to paramValues count to mark this is the boundary
+  // of a ComptimeFor so that we know how much to pop once hitting
+  // hlcf.comptime.for.break or hlcf.comptime.for.continue
+  // state.pushParamValues({}, false, this->getOperation());
+  Attribute initial = state.getReboundAttribute(getInitial());
+  TypedAttr iterator =
+      cast<TypedAttr>(firstIteration ? initial : iter->second.iterator);
+
+  TypedAttr hasNextInput = iterator;
+  if (hasAddress(hasNextType.getArgConvention(0)))
+    hasNextInput = StoreToMemAttr::get(iterator, hasNextType.getArguments()[0]);
+
+  ErrorTreeOr<TypedAttr> hasNextResult =
+      state.interpretGenerator(hasNextCall, paramValues, iterator, getLoc());
+  if (hasNextResult.isError()) {
+    return hasNextResult.takeError();
+  }
+
+  if (!cast<BoolAttr>(*hasNextResult).getValue()) {
+    // Go to else region
+    ArrayRef<Attribute> arguments =
+        firstIteration ? operands : iter->second.operands;
+    state.currOpSideEffectState().erase(this->getOperation());
+    (void)state.transferControlFlowTo(this->getOperation(), arguments);
+
+  } else {
+    state.overwriteDeclBinding(getParamDecl(), iterator);
+    iterator =
+        StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
+
+    auto getNextCall = cast<SymbolConstantAttr>(getNext);
+    paramValues.clear();
+    for (auto pv : getNextCall.getParamValues()) {
+      paramValues.push_back(state.getReboundAttribute(pv));
+    }
+
+    ErrorTreeOr<TypedAttr> getNextResult =
+        state.interpretGeneratorWithResultSlot(getNextCall, paramValues,
+                                               iterator, getLoc());
+    if (getNextResult.isError())
+      return getNextResult.takeError();
+
+    if (firstIteration) {
+      state.currOpSideEffectState()[this->getOperation()] = {
+          {}, {}, *getNextResult};
+    } else {
+      // Clear up iterator in case function returns in the body of the
+      // ComptimeFor so that the iterator value doesn't carry over to another
+      // round of interpreting this ComptimeFor by mistake.
+      iter->second.iterator = {};
+      // Set nextIterator value so that hlcf.comptime.for.continue can set the
+      // iterator value correctly for the next iteration.
+      iter->second.nextIterator = *getNextResult;
+    }
+
+    ArrayRef<Attribute> arguments =
+        firstIteration ? operands : iter->second.operands;
+
+    state.pushParamValues({iterator}, false, this->getOperation());
+    state.pushEvalFrame(getOperation(), &getBody(), {}, 5);
+    return state.transferControlFlowTo(getBody(), arguments);
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForBreakOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ComptimeForBreakOp::interpret(ArrayRef<Attribute> operands,
+                                                 InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.for.break interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeForBreakOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                         ParametricInterpreterState &state) {
+  auto parent = this->getOperation()->getParentOfType<ComptimeForOp>();
+  state.popEvalFrame();
+  state.popParamValues(false, this->getOperation(), parent);
+  return state.transferControlFlowTo(parent, operands);
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeForContinueOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess
+ComptimeForContinueOp::interpret(ArrayRef<Attribute> operands,
+                                 InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.for.continue interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeForContinueOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                            ParametricInterpreterState &state) {
+  if (auto parent =
+          this->getOperation()->getParentOfType<HLCF::ComptimeForOp>()) {
+    state.popEvalFrame();
+    state.popParamValues(false, this->getOperation(), parent);
+    (void)state.transferControlFlowToParent(parent, operands);
+    auto iter = state.currOpSideEffectState().find(parent.getOperation());
+    assert(iter != state.currOpSideEffectState().end() &&
+           "hlcf.comptime.for.continue has broken state");
+    iter->second.operands = SmallVector<Attribute>(operands);
+    iter->second.iterator = iter->second.nextIterator;
+    return success();
+  }
+  return ErrorTree(getLoc(),
+                   "INTERNAL ERROR: cannot find parent ComptimeForOp");
+}
+
+//===----------------------------------------------------------------------===
+// ComptimeIfOp
+//===----------------------------------------------------------------------===
+
+ErrorTreeOrSuccess ComptimeIfOp::interpret(ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.if interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeIfOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                   ParametricInterpreterState &state) {
+  unsigned regionId = getNumRegions() - 1; // else by default
+  for (auto [idx, attr] : llvm::enumerate(getConds())) {
+    Attribute cond = state.getReboundAttribute(cast<TypedAttr>(attr));
+    auto result = sugarDynCast<SIMDAttr>(cond);
+    if (!result)
+      return ErrorTree(getLoc(), "wrong param if condition");
+    if (result.getAsBool()) {
+      regionId = idx;
+      break;
+    }
+  }
+
+  Region &target = getRegion(regionId);
+  state.pushParamValues({}, false);
+  state.pushEvalFrame(getOperation(), &target, {}, 6);
+  return state.transferControlFlowTo(target, {});
+}
+
+//===----------------------------------------------------------------------===//
+// ComptimeYieldOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess ComptimeYieldOp::interpret(ArrayRef<Attribute> operands,
+                                              InterpreterState &state) {
+  llvm_unreachable("hlcf.comptime.yield interpret undefined");
+}
+
+ErrorTreeOrSuccess
+ComptimeYieldOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                      ParametricInterpreterState &state) {
+  state.popEvalFrame();
+  state.popParamValues(false, this->getOperation());
+  return state.transferControlFlowTo((*this)->getParentOp(), operands);
+}
+
+//===----------------------------------------------------------------------===//
+// ReturnOp
+//===----------------------------------------------------------------------===//
+
+bool ReturnOp::isParentNode(Operation *op) {
+  return isa<KGEN::FunctionLike>(op);
+}
+
+void ReturnOp::getBranchTargets(ArrayRef<Attribute> operands,
+                                SmallVectorImpl<ControlFlowTarget> &targets) {
+  assert(operands.size() == getNumOperands());
+  targets.emplace_back(std::nullopt, getOperands());
+}
+
+LogicalResult ReturnOp::verify() {
+  auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
+  if (!func)
+    return emitOpError("expected to be nested inside a function");
+  return checkOperandTypes(*this, func.getResultTypes());
+}
+
+ErrorTreeOrSuccess ReturnOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
+  return state.returnFromFunction(operands);
+}
+
+ErrorTreeOrSuccess
+ReturnOp::parametric_interpret(ArrayRef<Attribute> operands,
+                               ParametricInterpreterState &state) {
+  return state.returnFromFunction(operands);
+}
+
+//===----------------------------------------------------------------------===//
+// UnreachableOp
+//===----------------------------------------------------------------------===//
+
+/// Unreachable can terminate any control flow operation.
+bool UnreachableOp::isParentNode(Operation *op) { return true; }
+
+/// No branch targets.
+void UnreachableOp::getBranchTargets(
+    ArrayRef<Attribute> operands, SmallVectorImpl<ControlFlowTarget> &targets) {
 }
 
 //===----------------------------------------------------------------------===//

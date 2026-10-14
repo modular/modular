@@ -37,8 +37,8 @@ supported by `LayoutTensor`. Here are some guidelines for when to use each type:
   The `Coord`-based layout system minimizes the memory footprint of the
   layout struct, which can help reduce register pressure on GPUs.
 
-- Use `LayoutTensor` when you need established operations like `copy_dma()`,
-  `collective_load()`, or compatibility with existing code using
+- Use `LayoutTensor` when you need established operations like
+  `tiled_iterator()` or `simd_tile()`, or compatibility with existing code using
   `IntTuple`-based layouts.
 
 You can convert a `TileTensor` into a `LayoutTensor`, so you can

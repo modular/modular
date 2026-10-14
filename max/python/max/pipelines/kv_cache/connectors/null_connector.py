@@ -27,6 +27,7 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,
     KVConnectorTransfer,
+    KVTransfer,
 )
 
 
@@ -41,22 +42,31 @@ class NullConnector(KVConnector):
     def name(self) -> str:
         return "NullConnector"
 
-    def load(
+    def lookup(
         self,
-        block_ids: Mapping[str, Sequence[int]],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
-    ) -> KVConnectorTransfer:
-        return CompletedTransfer.load()
+    ) -> Mapping[str, Sequence[bool]]:
+        """Holds nothing, so every block is absent."""
+        return {leaf_id: [False] * len(block_hashes) for leaf_id in self.leaves}
+
+    def load(
+        self,
+        block_ids: Mapping[str, Sequence[int]],
+        block_hashes: Mapping[str, Sequence[bytes]],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> KVTransfer:
+        return CompletedTransfer()
 
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        return CompletedTransfer.offload()
+        return CompletedTransfer()
 
     @property
     def metrics(self) -> KVCacheMetrics:

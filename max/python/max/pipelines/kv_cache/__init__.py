@@ -19,6 +19,7 @@ from .config import (
     KVCacheConfig,
     KVConnectorConfig,
     cache_dtype_for_encoding,
+    is_fp4_kv_cache_format,
 )
 from .memory_planner import (
     MemoryPlanner,
@@ -39,7 +40,11 @@ from .paged_kv_cache import (
     TransferReqData,
     available_port,
 )
-from .registry import load_kv_manager
+from .registry import (
+    kv_cache_memory_size,
+    load_kv_manager,
+    max_seq_len_fitting_in_cache,
+)
 
 __all__ = [
     "BlockCount",
@@ -60,5 +65,8 @@ __all__ = [
     "TransferReqData",
     "available_port",
     "cache_dtype_for_encoding",
+    "is_fp4_kv_cache_format",
+    "kv_cache_memory_size",
     "load_kv_manager",
+    "max_seq_len_fitting_in_cache",
 ]

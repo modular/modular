@@ -18,13 +18,13 @@
 
 // CHECK-LABEL: kgen.func @foo_async_closure_0()
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i1> = <[]> loc(#[[FOO_ASYNC_CL_CONST_LOC:.*]])
-// CHECK:         kgen.return %array {{.*}} loc(#[[FOO_ASYNC_CL_LOC:.*]])
+// CHECK:         hlcf.return %array {{.*}} loc(#[[FOO_ASYNC_CL_LOC:.*]])
 // CHECK-NEXT:  } loc(#[[FOO_ASYNC_CL_LOC]])
 
 // CHECK-LABEL: kgen.func @foo_closure_1()
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i1> = <[]> loc(#[[FOO_CL_CONST_LOC:.*]])
 // CHECK-NEXT:    kgen.param.constant: array<2, i1> = <[1, 1]> loc(#[[FOO_CL_LOC:.*]])
-// CHECK-NEXT:    kgen.return %array : !pop.array<0, i1> loc(#[[FOO_CL_LOC]])
+// CHECK-NEXT:    hlcf.return %array : !pop.array<0, i1> loc(#[[FOO_CL_LOC]])
 // CHECK-NEXT:  } loc(#[[FOO_CL_LOC]])
 
 // CHECK-LABEL: kgen.func @foo()
@@ -35,17 +35,17 @@ kgen.func @foo() {
   // CHECK-NEXT: co.invoke[{{.*}}: @foo_async_closure_0]() loc(#[[LOC_CALLSITE]])
   %0 = co.execute : !pop.array<0, i1> {
     %array_1 = kgen.param.constant: array<1, i1> = <[1]> loc(#loc7)
-    kgen.return %array : !pop.array<0, i1> loc(#loc7)
+    hlcf.return %array : !pop.array<0, i1> loc(#loc7)
   } loc(#loc9)
 
   // CHECK-NEXT: kgen.create_closure[() capturing -> !pop.array<0, i1>: @foo_closure_1]()  loc(#[[LOC_CALLSITE]])
   %1 = kgen.stage_closure = () capturing -> !pop.array<0, i1> {
     %array_1 = kgen.param.constant: array<2, i1> = <[1, 1]> loc(#loc8)
-    kgen.return %array : !pop.array<0, i1> loc(#loc8)
+    hlcf.return %array : !pop.array<0, i1> loc(#loc8)
   } loc(#loc10)
 
-  // CHECK-NEXT: kgen.return
-  kgen.return loc(#loc5)
+  // CHECK-NEXT: hlcf.return
+  hlcf.return loc(#loc5)
 } loc(#loc5)
 
 // CHECK-DAG: #[[SP_ASYNC_CL:.*]] = #debuginfo.subprogram<sourceName = <"async_closure.0" from <"SomeClosure">>, linkageName = "foo_async_closure_0"

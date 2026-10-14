@@ -241,8 +241,7 @@ __extension Attention:
         ]
 
         @inline(.always)
-        @__parameter
-        def mma_qk():
+        def mma_qk() {imm}:
             self.zero_p_buffer[0]()
             # ceildiv (not floor): when depth % BK != 0 (Kimi MLA: 576 %
             # 128 == 64) we must still process the partial K-tile.  Q's
@@ -259,8 +258,7 @@ __extension Attention:
                     )
 
         @inline(.always)
-        @__parameter
-        def mma_pv():
+        def mma_pv() {imm}:
             # Each warp's v_buffer holds only depth_per_warp tiles
             # (loaded from the warp's LDS depth offset), so mma_subtile
             # directly gives the warp's depth range.
@@ -281,8 +279,7 @@ __extension Attention:
         )
 
         @inline(.always)
-        @__parameter
-        def prefetch_next():
+        def prefetch_next() {mut k_buffer}:
             """Prefetch next K after current LDS reads have drained.
 
             MLA: V is aliased onto K's SMEM, so there's no separate V DMA;
@@ -294,8 +291,7 @@ __extension Attention:
             _ = k_buffer.load_from_dram[0]()
 
         @inline(.always)
-        @__parameter
-        def process_tile[has_next: Bool]():
+        def process_tile[has_next: Bool]() {mut self, imm}:
             """Process one KV tile.
 
             K is already in LDS when called.  V is loaded from the same
@@ -376,8 +372,8 @@ __extension Attention:
         if num_tiles > 0:
             process_tile[False]()
 
-        self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
-        )
+        self.out_reg_buffer.apply_softmax_denominator[
+            p_scale_log2=type_of(self.p_reg_buffer).p_scale_log2
+        ](self.softmax.rowsum_tensor)
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)
         self.store_output()

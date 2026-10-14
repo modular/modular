@@ -35,7 +35,9 @@ def warp_prefix_sum_kernel[
     var tid = global_idx.x
     if tid >= size:
         return
-    output[tid] = warp.prefix_sum[exclusive=exclusive](input[tid])
+    output.unsafe_store(
+        tid, warp.prefix_sum[exclusive=exclusive](input.unsafe_load(tid))
+    )
 
 
 def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
@@ -96,8 +98,11 @@ def block_prefix_sum_kernel[
     var tid = global_idx.x
     if tid >= size:
         return
-    output[tid] = block.prefix_sum[exclusive=exclusive, block_size=block_size](
-        input[tid]
+    output.unsafe_store(
+        tid,
+        block.prefix_sum[exclusive=exclusive, block_size=block_size](
+            input.unsafe_load(tid)
+        ),
     )
 
 

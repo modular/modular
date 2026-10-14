@@ -30,9 +30,9 @@ from std.sys._assembly import inlined_assembly
 from std.sys.info import CompilationTarget, _is_amd_cdna
 from std.sys.defines import get_defined_bool
 
-from std._gpu.intrinsics import Scope
+from max.gpu.intrinsics import Scope
 
-from std._gpu._utils import to_i32, to_llvm_shared_mem_ptr
+from max.gpu._utils import to_i32, to_llvm_shared_mem_ptr
 
 # ===-----------------------------------------------------------------------===#
 # barrier
@@ -222,32 +222,33 @@ struct AMDScheduleBarrierMask(
         Args:
             writer: The object to write to.
         """
-        if self == Self.NONE:
-            return writer.write_string("NONE")
-        elif self == Self.ALL_ALU:
-            return writer.write_string("ALL_ALU")
-        elif self == Self.VALU:
-            return writer.write_string("VALU")
-        elif self == Self.SALU:
-            return writer.write_string("SALU")
-        elif self == Self.MFMA:
-            return writer.write_string("MFMA")
-        elif self == Self.ALL_VMEM:
-            return writer.write_string("ALL_VMEM")
-        elif self == Self.VMEM_READ:
-            return writer.write_string("VMEM_READ")
-        elif self == Self.VMEM_WRITE:
-            return writer.write_string("VMEM_WRITE")
-        elif self == Self.ALL_DS:
-            return writer.write_string("ALL_DS")
-        elif self == Self.DS_READ:
-            return writer.write_string("DS_READ")
-        elif self == Self.DS_WRITE:
-            return writer.write_string("DS_WRITE")
-        elif self == Self.TRANS:
-            return writer.write_string("TRANS")
-        else:
-            abort("invalid AMDScheduleBarrierMask value")
+        match self:
+            case .NONE:
+                return writer.write_string("NONE")
+            case .ALL_ALU:
+                return writer.write_string("ALL_ALU")
+            case .VALU:
+                return writer.write_string("VALU")
+            case .SALU:
+                return writer.write_string("SALU")
+            case .MFMA:
+                return writer.write_string("MFMA")
+            case .ALL_VMEM:
+                return writer.write_string("ALL_VMEM")
+            case .VMEM_READ:
+                return writer.write_string("VMEM_READ")
+            case .VMEM_WRITE:
+                return writer.write_string("VMEM_WRITE")
+            case .ALL_DS:
+                return writer.write_string("ALL_DS")
+            case .DS_READ:
+                return writer.write_string("DS_READ")
+            case .DS_WRITE:
+                return writer.write_string("DS_WRITE")
+            case .TRANS:
+                return writer.write_string("TRANS")
+            case _:
+                abort("invalid AMDScheduleBarrierMask value")
 
     def __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.
@@ -497,16 +498,19 @@ def _mbarrier_impl[
         address: Pointer to the memory barrier object location.
     """
 
-    comptime if address_space == .SHARED:
-        llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType](
-            address
-        )
-    elif (address_space == .GLOBAL or address_space == .GENERIC):
-        llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
-            address.unsafe_address_space_cast[.GENERIC]()._get_kgen_pointer()
-        )
-    else:
-        comptime assert False, "invalid address space"
+    comptime match address_space:
+        case .SHARED:
+            llvm_intrinsic[
+                "llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType
+            ](address)
+        case .GLOBAL | .GENERIC:
+            llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
+                address.unsafe_address_space_cast[
+                    .GENERIC
+                ]()._get_kgen_pointer()
+            )
+        case _:
+            comptime assert False, "invalid address space"
 
 
 @inline(.nodebug)
@@ -588,8 +592,9 @@ def mbarrier_init[
     """
 
     comptime if is_nvidia_gpu():
-        llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
-            shared_mem, num_threads
+        # Layout 0 is the default in-memory layout.
+        llvm_intrinsic["llvm.nvvm.mbarrier.init", NoneType](
+            shared_mem, num_threads, Int32(0)
         )
     else:
         CompilationTarget.unsupported_target_error[
@@ -893,7 +898,6 @@ def cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
         ```
     """
 
-    @__parameter
     def get_asm() -> String:
         comptime base = "llvm.nvvm.cp.async.bulk.wait.group"
         if read:

@@ -34,5 +34,6 @@ modular_py_library(
         "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
         "//max/python/max:_core",
+        "//max/python/max:tree",
     ],
 )

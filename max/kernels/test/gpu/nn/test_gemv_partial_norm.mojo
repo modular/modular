@@ -19,13 +19,17 @@
 # reference.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import rsqrt, sqrt
-from std.memory import alloc
+from std.math import sqrt
 from std.random import rand
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
-from layout import TileTensor, Coord, CoordLike, Idx, row_major
+from layout import (
+    TileTensor,
+    CoordLike,
+    Idx,
+    row_major,
+)
 
 from internal_utils import assert_almost_equal
 from nn.gemv_partial_norm import gemv_and_partial_norm
@@ -82,15 +86,13 @@ def test_gemv_partial_norm[
         t" shape=(M=1, N={N}, K={K}, N_normed={N_NORMED})"
     )
 
-    comptime ak_shape = row_major(Coord(Idx[1], Idx[KType.static_value]))
+    comptime ak_shape = row_major(Idx[1], Idx[KType.static_value])
     comptime b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
+        Idx[NType.static_value], Idx[KType.static_value]
     )
-    comptime c_shape = row_major(Coord(Idx[1], Idx[NType.static_value]))
-    comptime normed_shape = row_major(
-        Coord(Idx[1], Idx[NNormedType.static_value])
-    )
-    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime c_shape = row_major(Idx[1], Idx[NType.static_value])
+    comptime normed_shape = row_major(Idx[1], Idx[NNormedType.static_value])
+    var unnormed_shape = row_major(Idx[1], N_UNNORMED)
     comptime gamma_shape = row_major(Idx[NNormedType.static_value])
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)

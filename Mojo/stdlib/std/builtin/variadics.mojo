@@ -75,15 +75,18 @@ struct TypeList[
     comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
     """The low-level MLIR type of the type list."""
 
-    comptime length = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param_list.size<:`,
-            Self._mlir_type,
-            ` `,
-            +Self.values,
-            `> : index`,
-        ]
-    )
+    # Raw MLIR value for stdlib bootstrap users that cannot construct `Int` or
+    # `SIMDLength` yet.
+    comptime _raw_length: __mlir_type.index = __mlir_attr[
+        `#kgen.param_list.size<:`,
+        Self._mlir_type,
+        ` `,
+        +Self.values,
+        `> : index`,
+    ]
+    """The number of types as a raw `!kgen.index`."""
+
+    comptime length = Int(mlir_value=Self._raw_length)
     """The number of types in the list."""
 
     comptime __getitem_param__[idx: SIMDLength] = __mlir_attr[
@@ -1201,9 +1204,8 @@ struct VariadicList[
         deinit self,
         elt_handler: Some[def(idx: Int, var elt: Self.element_type)],
     ) where (
-        Self.is_owned,
-        "consume_elements may only be called on owned variadic lists",
-    ):
+        Self.is_owned
+    ) else "consume_elements may only be called on owned variadic lists":
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic lists.
@@ -1350,7 +1352,7 @@ struct VariadicPack[
     is_owned: Bool,
     *Ts: element_trait,
 ](
-    Copyable where (not is_owned, "Cannot copy an owned variadic pack."),
+    Copyable where not is_owned else "Cannot copy an owned variadic pack.",
     RegisterPassable,
     Sized,
 ):
@@ -1443,7 +1445,7 @@ struct VariadicPack[
     @inline(.nodebug)
     def __init__(
         out self, *, copy: Self
-    ) where (not Self.is_owned, "Cannot copy an owned variadic pack."):
+    ) where not Self.is_owned else "Cannot copy an owned variadic pack.":
         """Copy construct the variadic pack.
 
         Args:
@@ -1479,16 +1481,18 @@ struct VariadicPack[
                 ]().unsafe_deinit_pointee()
 
     def consume_elements[
-        elt_handler: def[idx: Int](var elt: Self.Ts[idx]) capturing
-    ](deinit self) where (
-        Self.is_owned,
-        "consume_elements may only be called on owned variadic packs",
-    ):
+        F: def[idx: Int](var elt: Self.Ts[idx])
+    ](deinit self, elt_handler: F, /) where (
+        Self.is_owned
+    ) else "consume_elements may only be called on owned variadic packs":
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic packs.
 
         Parameters:
+            F: The type of the element handler closure.
+
+        Args:
             elt_handler: A function that will be called for each element of the
                          pack.
         """

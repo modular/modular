@@ -30,10 +30,10 @@ def test_long_running_process_wait() raises:
     print("Waiting for process to finish...")
     var status = process.wait()
 
-    if status.exit_code:
-        print("Process finished with exit code:", status.exit_code.value())
-    elif status.term_signal:
-        print("Process terminated by signal:", status.term_signal.value())
+    if case .Some(exit_code) = status.exit_code:
+        print("Process finished with exit code:", exit_code)
+    elif case .Some(term_signal) = status.term_signal:
+        print("Process terminated by signal:", term_signal)
 
 
 def test_long_running_process_poll() raises:
@@ -53,10 +53,10 @@ def test_long_running_process_poll() raises:
 
     var status = process.status.value()
     print("Process has exited.")
-    if status.exit_code:
-        print("Process finished with exit code:", status.exit_code.value())
-    elif status.term_signal:
-        print("Process terminated by signal:", status.term_signal.value())
+    if case .Some(exit_code) = status.exit_code:
+        print("Process finished with exit code:", exit_code)
+    elif case .Some(term_signal) = status.term_signal:
+        print("Process terminated by signal:", term_signal)
 
 
 def test_interrupt_process() raises:
@@ -79,12 +79,12 @@ def test_interrupt_process() raises:
 
     var status = process.wait()
 
-    if status.term_signal:
-        print("Process terminated by signal:", status.term_signal.value())
-        if status.term_signal.value() == SignalCodes.INT:
+    if case .Some(term_signal) = status.term_signal:
+        print("Process terminated by signal:", term_signal)
+        if term_signal == SignalCodes.INT:
             print("Termination signal was SIGINT, as expected.")
-    elif status.exit_code:
-        print("Process finished with exit code:", status.exit_code.value())
+    elif case .Some(exit_code) = status.exit_code:
+        print("Process finished with exit code:", exit_code)
 
 
 def test_kill_process() raises:
@@ -107,12 +107,12 @@ def test_kill_process() raises:
 
     var status = process.wait()
 
-    if status.term_signal:
-        print("Process terminated by signal:", status.term_signal.value())
-        if status.term_signal.value() == SignalCodes.KILL:
+    if case .Some(term_signal) = status.term_signal:
+        print("Process terminated by signal:", term_signal)
+        if term_signal == SignalCodes.KILL:
             print("Termination signal was SIGKILL, as expected.")
-    elif status.exit_code:
-        print("Process finished with exit code:", status.exit_code.value())
+    elif case .Some(exit_code) = status.exit_code:
+        print("Process finished with exit code:", exit_code)
 
 
 def main() raises:

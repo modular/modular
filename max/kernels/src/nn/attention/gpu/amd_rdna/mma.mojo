@@ -18,7 +18,6 @@ per lane (16x16x16, group_size=1).
 """
 
 from max.gpu.compute.mma import mma as _mma_intrinsic
-from std.memory import AddressSpace
 from layout import TileTensor
 
 from .buffers import RDNA_AB_FRAG_SIZE, RDNA_CD_FRAG_SIZE

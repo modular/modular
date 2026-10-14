@@ -21,11 +21,10 @@ from max.gpu.host import DeviceContext
 from max.gpu.memory import async_copy
 from max.gpu.sync import async_copy_arrive
 from layout.tma_async import PipelineState, SharedMemBarrier
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import TileTensor, row_major
 from layout._fillers import random
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
-from std.utils import IndexList
 
 
 def producer_consumer_kernel[NUM_THREADS: Int]():
@@ -231,29 +230,18 @@ def test_cpasync_producer_consumer_pipeline[
 ](ctx: DeviceContext) raises:
     comptime size_per_stage = 128 * (16 // size_of[DType.float32]())
     comptime size = num_stages * size_per_stage
-    comptime shape1d = IndexList[1](size)
-
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
     var src_device_buffer = ctx.enqueue_create_buffer[.float32](size)
-    var src_device = LayoutTensor[.float32, layout_1d](
-        src_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
-    )
     with src_device_buffer.map_to_host() as src_host_buffer:
-        random(
-            LayoutTensor[.float32, layout_1d](
-                src_host_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
-            )
-        )
+        random(TileTensor(src_host_buffer, row_major[size]()))
 
     var dst_device_buffer = ctx.enqueue_create_buffer[.float32](size)
-    var dst_device = LayoutTensor[.float32, layout_1d](
-        dst_device_buffer, RuntimeLayout[layout_1d].row_major(shape1d)
-    )
 
     comptime kernel = cpaysnc_producer_consumer_pipeline_kernel[num_stages]
     ctx.enqueue_function[kernel](
-        Span[Float32](unsafe_ptr=src_device.ptr, length=size).as_imm(),
-        Span[Float32](unsafe_ptr=dst_device.ptr, length=size),
+        Span[Float32](
+            unsafe_ptr=src_device_buffer.unsafe_ptr(), length=size
+        ).as_imm(),
+        Span[Float32](unsafe_ptr=dst_device_buffer.unsafe_ptr(), length=size),
         grid_dim=(1),
         block_dim=(256),
     )

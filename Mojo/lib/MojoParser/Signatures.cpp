@@ -151,7 +151,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     TypedAttr thisOrigin;
     bool isError = false;
     emitter.emitExpressionWithoutEvaluatingIt(
-        expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+        expr, EC_Origin,
+        [&](CValue result, IREmitter &emitter, Block &exprBlock) {
           // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
             if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
@@ -167,7 +168,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
           }
           // Otherwise it must be a !lit.origin and Origin struct.
           thisOrigin = emitter.extractOriginOf(expr, result);
-          isError = !thisOrigin;
+          isError = !thisOrigin || failed(emitter.checkRootOriginsOutliveBlock(
+                                       thisOrigin, exprBlock, expr));
         });
 
     if (isError)
@@ -878,9 +880,22 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     for (ConstraintAttr bodyConstraint : srcParamList.getBodyConstraints()) {
       TypedAttr remappedProp =
           evaluator.getReboundAttribute(bodyConstraint.getProposition());
-      paramList.emittedBodyConstraints.push_back(ConstraintAttr::get(
-          remappedProp, bodyConstraint.getLoc(), bodyConstraint.getMessage()));
+      auto remapped = ConstraintAttr::get(remappedProp, bodyConstraint.getLoc(),
+                                          bodyConstraint.getMessage());
+      paramList.emittedBodyConstraints.push_back(remapped);
+      paramList.declScope.insertKnownAssumptions({remapped});
     }
+  };
+
+  auto isDeclaredParam = [](ASTDecl *scope, ParamDeclRefAttr paramRef) -> bool {
+    auto userName = StringAttr::get(
+        scope->getContext(), KGEN::demangleParameterName(paramRef.getName()));
+    if (ArrayRef<ASTDecl *> decls = scope->lookup(userName); !decls.empty()) {
+      for (auto decl : decls)
+        if (CValue cv = decl->getIfIRValue())
+          return cv.getIfPValue() && isEqualCanon(cv.getIfPValue(), paramRef);
+    }
+    return false;
   };
 
   // This functor adds a single parameter to the parameter list.
@@ -919,9 +934,14 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
         }
         // If we didn't find it, check to see if it is on the enclosing struct.
         if (!passingKind.has_value()) {
-          auto [curDecl, paramDecls, paramIdx] =
-              paramList.declScope.lookupParamReference(paramUse);
-          if (curDecl) // Any parameters from it are fine.
+          // We can not reuse ASTDecl::lookupParamReference here, as the parent
+          // decl might not have been fully resolved yet. E.g.,
+          // def [T : AnyType, F : def [Param[T, _]]() ]()
+          // when auto parameterized `[Param[T, _]`, `T` has not been put into
+          // the parameter list of the holding function yet.
+          //
+          // Any parameters from it are fine.
+          if (isDeclaredParam(&paramList.declScope, paramUse))
             passingKind = PassingKind::Inferred;
         }
 
@@ -1093,15 +1113,9 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
                UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
                StringAttr::get(emitter.getContext(), "values"));
 
-  TypeSignatureType sig = structDeclOp.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, listDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-
-  if (!verifiedBindings)
+  ASTType result = specializeStruct(bindings, structDeclOp, listDecl);
+  if (!result)
     return emitter.shared.getTypeCheckErrorType();
-  ASTType result = verifiedBindings.specializeStructType(structDeclOp);
 
   // Add the !kgen.param_list parameter to the parameter list.  It is possible
   // the element type is a non-inferred parameter, so "append" this.
@@ -1129,17 +1143,6 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     ASTType type;
     if (arg.typeExpr) {
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
-
-      auto fnType = dyn_cast<FnTypeGeneratorType>(type);
-      auto *fnTypeExpr = dyn_cast<FunctionTypeNode>(arg.typeExpr);
-      if (fnType && fnTypeExpr && !fnTypeExpr->isThin &&
-          !fnTypeExpr->effects.isCapturing()) {
-        ASTDecl *closureTrait = result.shared.getOrCreateClosureTrait(
-            declScope.getLoc(), *declScope.getNearestDeclOfType<FileModuleOp>(),
-            fnType);
-        type = TraitType::get(getFullyResolvedSymbolRef(
-            cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
-      }
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -1574,10 +1577,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     return spelling == "raises" || spelling == "capturing" ||
            spelling == "escaping" || spelling == "thin" ||
            spelling == "register_passable" || spelling == "abi" ||
-           spelling == "where" ||
-           // TODO: remove this after the parametric closure trait become
-           // default.
-           spelling == "__param_trait__";
+           spelling == "where";
   };
 
   // If the client supports function effects, parse them as well.
@@ -1653,11 +1653,6 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
                          "the duplicate");
       }
       isThin = true;
-    } else if (spelling == "__param_trait__") {
-      assert((kind == ArgListKind::kFnTypeArgList ||
-              kind == ArgListKind::kArgList) &&
-             "__param_trait__ must only be used on function types");
-      isExperimentalParamTrait = true;
     } else if (spelling == "register_passable") {
       p.emitWarning(loc)
           << "the 'register_passable' function effect is no longer supported; "
@@ -1879,14 +1874,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr,
                UnpackedAttr::get(param, /*kwOnly=*/false, elementType));
 
-  TypeSignatureType sig = packStruct.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, packDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-  if (!verifiedBindings)
-    return {};
-  return verifiedBindings.specializeStructType(packStruct);
+  return specializeStruct(bindings, packStruct, packDecl);
 }
 
 // If this argument is a homogenous vararg like "*args: SomeType" then the
@@ -1946,15 +1934,7 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   bindings.add(arg.typeExpr,
                SIMDAttr::getScalarBool(emitter.getContext(), isVar));
 
-  TypeSignatureType sig = structDeclOp.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, listDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-
-  if (!verifiedBindings)
-    return {};
-  return verifiedBindings.specializeStructType(structDeclOp);
+  return specializeStruct(bindings, structDeclOp, listDecl);
 }
 
 /// Type check each argument in turn, resolving their type and default
@@ -2143,12 +2123,6 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   }
   case ParsedArgument::kConventionImm: {
     arg.kgenConvention = ArgConvention::ImmMem;
-    // For parametric closure traits, we don't care about register passability.
-    // All arguments will be parsed as if they are mem type, such that we can
-    // match `def (T)` with both `def (Int)` and `def (MemType)`.
-    if (tcSignature.argList.isExperimentalParamTrait)
-      break;
-
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
     // FIXME(MOCO-725): Borrows of non-trivial register-passable values don't
     // have origins and can't be correctly tracked if captured in an async

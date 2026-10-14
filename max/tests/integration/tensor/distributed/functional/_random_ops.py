@@ -29,8 +29,8 @@ import numpy as np
 from max.dtype import DType
 from max.experimental.functional import gaussian, uniform
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -47,7 +47,7 @@ class _Uniform:
     MESH_2D: ClassVar[DeviceMesh]
 
     def test_uniform_replicated(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Replicated()))
         t = uniform([4, 8], range=(0.0, 1.0), dtype=_F32, device=mapping)
         assert t.is_distributed
         assert t.placements == (Replicated(), Replicated())
@@ -57,7 +57,7 @@ class _Uniform:
         assert np.all(result >= 0.0) and np.all(result <= 1.0)
 
     def test_uniform_sharded(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(1)))
         t = uniform([4, 8], range=(2.0, 5.0), dtype=_F32, device=mapping)
         assert t.placements == (Replicated(), Sharded(1))
         assert tuple(t.shape) == (4, 8)
@@ -66,7 +66,7 @@ class _Uniform:
         assert np.all(result >= 2.0) and np.all(result <= 5.0)
 
     def test_uniform_custom_range(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Sharded(0), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Sharded(0), Replicated()))
         t = uniform([8, 4], range=(-1.0, 1.0), dtype=_F32, device=mapping)
         assert t.placements == (Sharded(0), Replicated())
         assert tuple(t.shape) == (8, 4)
@@ -85,7 +85,7 @@ class _Gaussian:
     MESH_2D: ClassVar[DeviceMesh]
 
     def test_gaussian_replicated(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Replicated()))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Replicated()))
         t = gaussian([8, 8], mean=0.0, std=1.0, dtype=_F32, device=mapping)
         assert t.is_distributed
         assert t.placements == (Replicated(), Replicated())
@@ -96,7 +96,7 @@ class _Gaussian:
         np.testing.assert_allclose(np.mean(result), 0.0, atol=2.0)
 
     def test_gaussian_sharded(self) -> None:
-        mapping = PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1)))
+        mapping = DeviceMapping(self.MESH_2D, (Replicated(), Sharded(1)))
         t = gaussian([4, 8], mean=5.0, std=0.01, dtype=_F32, device=mapping)
         assert t.placements == (Replicated(), Sharded(1))
         assert tuple(t.shape) == (4, 8)

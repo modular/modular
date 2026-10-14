@@ -15,10 +15,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import CompilationTarget, is_big_endian, is_little_endian
+from std.sys import CompilationTarget, Endian
 from std.sys.info import _macos_version
 
-from std.testing import assert_false, assert_true
+from std.testing import assert_equal, assert_false, assert_true
 from std.testing import TestSuite
 
 
@@ -29,8 +29,7 @@ def test_os_query() raises:
     # The mac systems are either arm64 or intel, so they are always little
     # endian at the moment.
 
-    assert_true(is_little_endian())
-    assert_false(is_big_endian())
+    assert_equal(Endian.native(), Endian.little)
 
 
 def test_os_version() raises:

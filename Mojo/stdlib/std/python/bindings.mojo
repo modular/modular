@@ -21,7 +21,7 @@ and Python code.
 """
 
 from . import ConvertibleFromPython
-from std.ffi import _Global, c_int, c_char
+from std.ffi import _Global, c_int
 from std.sys.info import size_of
 from std.collections import StringDict
 
@@ -31,10 +31,9 @@ from std.builtin.variadics import (
     _create_dynamic_pack,
 )
 from std.reflection import reflect
-from std.memory import OpaquePointer, unsafe_stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.python import Python, PythonObject
 from std.python._cpython import (
-    GILAcquired,
     Py_TPFLAGS_DEFAULT,
     Py_ssize_t,
     PyCFunction,
@@ -462,9 +461,8 @@ struct PythonModuleBuilder:
             * args: * PyArgs, var ** kwargs: PythonObject
         ) raises thin -> RetType,
     ](mut self, func_name: StaticString, docstring: StaticString = "") where (
-        RetType == PythonObject or RetType == type_of(None),
-        "function return type must be PythonObject or None",
-    ):
+        RetType == PythonObject or RetType == type_of(None)
+    ) else "function return type must be PythonObject or None":
         """Declare a binding for a module-level function.
 
         Accepts functions with PythonObject arguments, can optionally
@@ -511,9 +509,8 @@ struct PythonModuleBuilder:
         //,
         func: def(* args: * PyArgs) raises thin -> RetType,
     ](mut self, func_name: StaticString, docstring: StaticString = "") where (
-        RetType == PythonObject or RetType == type_of(None),
-        "function return type must be PythonObject or None",
-    ):
+        RetType == PythonObject or RetType == type_of(None)
+    ) else "function return type must be PythonObject or None":
         self.def_py_c_function(
             _py_function_fastcall_wrapper[func],
             func_name,
@@ -972,9 +969,8 @@ struct PythonTypeBuilder(Copyable):
         method_name: StaticString,
         docstring: StaticString = "",
     ) -> ref[self] Self where (
-        RetType == PythonObject or RetType == type_of(None),
-        "function return type must be PythonObject or None",
-    ):
+        RetType == PythonObject or RetType == type_of(None)
+    ) else "function return type must be PythonObject or None":
         """Declares a binding for a method with an automatically downcast self.
 
         The method receives a pointer to the wrapped Mojo value. Methods that
@@ -1029,9 +1025,8 @@ struct PythonTypeBuilder(Copyable):
         method_name: StaticString,
         docstring: StaticString = "",
     ) -> ref[self] Self where (
-        RetType == PythonObject or RetType == type_of(None),
-        "function return type must be PythonObject or None",
-    ):
+        RetType == PythonObject or RetType == type_of(None)
+    ) else "function return type must be PythonObject or None":
         return self._generic_def_py_method[
             _py_kwargs_method_wrapper[method](),
             static_method=False,
@@ -1053,9 +1048,8 @@ struct PythonTypeBuilder(Copyable):
         method_name: StaticString,
         docstring: StaticString = "",
     ) -> ref[self] Self where (
-        RetType == PythonObject or RetType == type_of(None),
-        "function return type must be PythonObject or None",
-    ):
+        RetType == PythonObject or RetType == type_of(None)
+    ) else "function return type must be PythonObject or None":
         return self.def_py_c_method[static_method=False](
             _py_method_typed_fastcall_wrapper[method],
             method_name,
@@ -1077,9 +1071,8 @@ struct PythonTypeBuilder(Copyable):
         method_name: StaticString,
         docstring: StaticString = "",
     ) -> ref[self] Self where (
-        RetType == PythonObject or RetType == type_of(None),
-        "function return type must be PythonObject or None",
-    ):
+        RetType == PythonObject or RetType == type_of(None)
+    ) else "function return type must be PythonObject or None":
         return self.def_py_c_method[static_method=False](
             _py_method_fastcall_wrapper[method],
             method_name,
@@ -1098,9 +1091,8 @@ struct PythonTypeBuilder(Copyable):
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref[self] Self where (
-        RetType == PythonObject or RetType == type_of(None),
-        "function return type must be PythonObject or None",
-    ):
+        RetType == PythonObject or RetType == type_of(None)
+    ) else "function return type must be PythonObject or None":
         """Declares a binding for a static method with optional keyword arguments.
 
         Accepts methods with `PythonObject` positional and keyword arguments.
@@ -1149,9 +1141,8 @@ struct PythonTypeBuilder(Copyable):
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref[self] Self where (
-        RetType == PythonObject or RetType == type_of(None),
-        "function return type must be PythonObject or None",
-    ):
+        RetType == PythonObject or RetType == type_of(None)
+    ) else "function return type must be PythonObject or None":
         return self.def_py_c_method[static_method=True](
             _py_function_fastcall_wrapper[method],
             method_name,

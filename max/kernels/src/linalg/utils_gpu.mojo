@@ -19,7 +19,6 @@ from std.math.uutils import uceildiv
 from std.sys import (
     get_defined_int,
     get_defined_bool,
-    has_nvidia_gpu_accelerator,
     size_of,
 )
 from std.ffi import external_call, _get_global_or_null
@@ -457,7 +456,7 @@ def select_config[
     comptime gpu_info = ctx.default_device_info
 
     # TODO(KERN-1310): This disables split-k for AMD, enable it after fixing KERN-1310.
-    comptime max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1
+    comptime max_num_k_partitions = 8 if ctx.target.is_nvidia_gpu() else 1
     comptime min_k_partition = 1024
 
     # Initial values overwritten in loop
@@ -652,8 +651,8 @@ def get_hilbert_lut_with_cache(
     # use runtime lookup since key is computed at runtime
     var cached_ptr = _get_global_or_null(key_str)
 
-    if cached_ptr:
-        var device_ptr = cached_ptr.unsafe_value().unsafe_bitcast[UInt32]()
+    if case .Some(cached_ptr) = cached_ptr:
+        var device_ptr = cached_ptr.unsafe_bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
         return DeviceBuffer[.uint32](ctx, device_ptr, num_blocks, owning=False)

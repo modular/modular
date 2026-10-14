@@ -53,9 +53,6 @@ unified_dspark_gemma4_31b_arch = SupportedArchitecture(
     batching=UnifiedDSparkGemma4_31BBatchProcessor,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
-    # Backend resolution runs after the speculative arch rewrite, so the
-    # base gemma4 arch's declaration never applies here.
-    default_structured_output_backend="xgrammar",
     checkpoint_draft_width=speculators_dspark_width,
 )
 

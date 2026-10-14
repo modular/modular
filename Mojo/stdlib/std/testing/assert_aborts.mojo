@@ -17,9 +17,9 @@ can't be caught with `try`/`except`. This runs the code under test in a
 re-exec'd child and checks that the child crashed with the expected message.
 """
 
+from std.ffi import _Global
 from std.os import abort, remove
 from std.os.env import getenv, setenv, unsetenv
-from std.os.path import exists
 from std.os.process import Process, ProcessStatus
 from std.reflection import call_location, SourceLocation
 from std.sys import argv
@@ -29,14 +29,30 @@ from std.sys.compile import SanitizeAddress
 from std.tempfile import NamedTemporaryFile
 from std.time import perf_counter, sleep
 
-# Which call site (file:line:col) the re-exec'd child should run.
+# Which visit (file:line:col#n) of a call site the re-exec'd child should run.
 comptime _LOCATION_ENV = "__MOJO_TEST_EXPECT_ABORT_LOCATION_TARGET"
 # Path the child's stdout/stderr get redirected to before running.
 comptime _OUTPUT_ENV = "__MOJO_TEST_EXPECT_ABORT_OUTPUT"
 # How long to wait for the child to abort before killing it.
-comptime _DEFAULT_TIMEOUT = 30.0
+comptime _DEFAULT_TIMEOUT = 60.0
 # How often to check on the child while waiting for it.
 comptime _POLL_INTERVAL = 0.01
+
+# How many times this process has reached each call site.
+comptime _VISITS = _Global["assert_aborts_visits", _init_visits]
+
+
+def _init_visits() -> Dict[String, Int]:
+    return Dict[String, Int]()
+
+
+def _next_visit(location: SourceLocation) raises -> String:
+    """Returns the key for this process's next visit to `location`."""
+    var visits = _VISITS.get_or_create_ptr()
+    var loc = String(location)
+    var n = visits[].get(loc, 0)
+    visits[][loc] = n + 1
+    return String(t"{loc}#{n}")
 
 
 @inline(.always)
@@ -103,18 +119,25 @@ def _assert_aborts_impl(
 ) raises:
     var target = getenv(_LOCATION_ENV)
 
-    # We're the re-exec'd child for this exact call site, run it.
-    if target == String(location):
+    # A loop body is a single call site executed many times, so the location on
+    # its own can't tell those executions apart and every child would re-run the
+    # first one. Number the visits instead: the parent and the child run the
+    # same code in the same order, so this process's Nth visit to a location is
+    # the same assertion as the other process's Nth visit to it.
+    var key = _next_visit(location)
+
+    # We're the re-exec'd child for this exact visit, run it.
+    if target == key:
         _run(f)
         return
 
-    # No location set: this is the original, top-level call.
+    # No target set: this is the original, top-level call.
     if not target:
-        _spawn_and_check(location, contains, timeout)
+        _spawn_and_check(key, contains, timeout)
         return
 
-    # A different (sibling) call site, so we should skip.
-    # The child spawned for that call site will check it.
+    # A different (sibling) visit, so we should skip.
+    # The child spawned for that visit will check it.
     return
 
 
@@ -123,15 +146,15 @@ def _run(f: Some[def() raises]) raises:
     with open(getenv(_OUTPUT_ENV), "w") as out_file:
         var fd = Int32(out_file._get_raw_fd())
         # redirect stdout/stderr to the output file
-        _ = dup2(fd, Int32(stdout.value))
-        _ = dup2(fd, Int32(stderr.value))
+        _ = dup2(fd, stdout.value)
+        _ = dup2(fd, stderr.value)
     f()
 
 
 def _spawn_and_check(
-    location: SourceLocation, contains: Optional[String], timeout: Float64
+    key: String, contains: Optional[String], timeout: Float64
 ) raises:
-    """Re-execs this binary scoped to `location`, then checks how it died."""
+    """Re-execs this binary scoped to `key`, then checks how it died."""
     var self_argv = argv()
     if self_argv[0].endswith(".mojo"):
         raise Error(
@@ -153,7 +176,7 @@ def _spawn_and_check(
 
     # `setenv` mutates our own environment, which `Process.run` inherits
     # into the child.
-    _ = setenv(_LOCATION_ENV, String(location))
+    _ = setenv(_LOCATION_ENV, key)
     _ = setenv(_OUTPUT_ENV, out_path)
 
     def unsetenvs():
@@ -209,8 +232,7 @@ def _spawn_and_check(
             t"assert_aborts: expected the process to abort, but it exited"
             t" normally{note}.\nCaptured output:\n{captured}"
         )
-    if contains:
-        var message = contains.value()
+    if case .Some(message) = contains:
         if message not in captured:
             raise Error(
                 t"assert_aborts: the process aborted, but the captured output"

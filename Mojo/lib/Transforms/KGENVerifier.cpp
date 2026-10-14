@@ -60,6 +60,11 @@ static LogicalResult verifySIMDLengths(Operation *op,
   constexpr int64_t maxSIMDLength = 1LL << 15;
   SIMDType invalid;
   auto checkType = [&](Type type) {
+    if (!type) {
+      llvm::reportFatalInternalError(
+          Twine("'") + op->getName().getStringRef() +
+          "' has a null operand, result or block argument type");
+    }
     if (!checkedTypes.insert(type).second)
       return;
     type.walk([&](SIMDType simd) {

@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -100,7 +101,6 @@ class PixtralModel(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        self._max_batch_size = max_batch_size
         super().__init__(
             pipeline_config,
             session,
@@ -110,6 +110,7 @@ class PixtralModel(
             adapter=adapter,
             return_logits=return_logits,
             memory_plan=memory_plan,
+            max_batch_size=max_batch_size,
         )
 
         if self.pipeline_config.model.enable_echo:
@@ -117,7 +118,7 @@ class PixtralModel(
                 "Pixtral model does not currently implement enable echo."
             )
 
-        assert self._max_batch_size, "Expected max_batch_size to be set"
+        assert self.max_batch_size, "Expected max_batch_size to be set"
 
         if len(self.devices) > 1:
             raise NotImplementedError(
@@ -160,7 +161,7 @@ class PixtralModel(
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *tree.leaves(model_inputs.kv_cache_inputs),
         )
 
         if len(model_outputs) == 3:

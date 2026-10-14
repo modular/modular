@@ -31,7 +31,9 @@ from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
+struct RasterOrder(
+    EnumLike, Equatable, Hashable, TrivialRegisterPassable, Writable
+):
     """Rasterization order for mapping thread blocks to output tiles.
 
     Controls the traversal direction of the 2D output tile grid. `AlongN`
@@ -44,6 +46,27 @@ struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
     comptime AlongN = Self(0)
     comptime AlongM = Self(1)
+
+    comptime _enum_case_names = ParameterList.of[
+        "AlongN".value,
+        "AlongM".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "RasterOrder has no payload"
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:
@@ -121,7 +144,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct MatmulSchedule(TrivialRegisterPassable):
+struct MatmulSchedule(EnumLike, TrivialRegisterPassable):
     """Tile scheduling strategy for GPU matmul kernels.
 
     Selects how thread blocks are mapped to output tiles across the grid.
@@ -137,6 +160,29 @@ struct MatmulSchedule(TrivialRegisterPassable):
     comptime TILE1D = Self(1)
     comptime TILE2D = Self(2)
     comptime DS_SCHEDULER = Self(3)
+
+    comptime _enum_case_names = ParameterList.of[
+        "NONE".value,
+        "TILE1D".value,
+        "TILE2D".value,
+        "DS_SCHEDULER".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "MatmulSchedule has no payload"
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:

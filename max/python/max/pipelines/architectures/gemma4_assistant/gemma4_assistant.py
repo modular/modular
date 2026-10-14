@@ -177,7 +177,12 @@ class Gemma4AssistantAttention(Module, Shardable):
             output_dtype=DType.bfloat16,
         )
 
-        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+        # The width is spelled out because a skippable draft step sizes the
+        # rows as ``num_draft_offsets - 1``, and shape inference cannot
+        # cancel that expression out of a ``-1``.
+        attn_out = ops.reshape(
+            attn_out, shape=[total_seq_len, self.q_weight_dim]
+        )
         return self.o_proj(attn_out)
 
     @property

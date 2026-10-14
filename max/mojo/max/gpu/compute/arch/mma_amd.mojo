@@ -19,7 +19,7 @@ Reference: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-re
 """
 
 from std.sys import llvm_intrinsic
-from std.sys.info import _cdna_4_or_newer, _is_amd_rdna
+from std.sys.info import _cdna_4_or_newer, _cdna_5_or_newer, _is_amd_rdna
 from std.memory import bitcast
 
 # Import helper functions from parent module
@@ -33,6 +33,138 @@ from ..mma import (
 
 # Import RDNA implementation for consumer GPUs
 from .mma_amd_rdna import _mma_wmma_rdna
+
+
+@inline(.always)
+def _mma_wmma_cdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    comptime fp8_dtypes = (DType.float8_e4m3fn, DType.float8_e5m2)
+
+    def _wmma_type_name[dtype: DType]() -> StaticString:
+        comptime match dtype:
+            case .float32:
+                return ".f32"
+            case .float16:
+                return ".f16"
+            case .bfloat16:
+                return ".bf16"
+            case .float8_e4m3fn:
+                return ".fp8"
+            case .float8_e5m2:
+                return ".bf8"
+            case _:
+                comptime assert False, "unsupported dtype"
+
+    def _wmma_intrinsic_base[
+        intrinsic_name: StaticString
+    ](a: SIMD, b: SIMD) {imm} -> SIMD[d.dtype, d.length]:
+        return llvm_intrinsic[intrinsic_name, SIMD[d.dtype, d.length]](
+            a,
+            b,
+            UInt16(0),
+            c,
+            False,
+            False,
+        )
+
+    def _wmma_intrinsic[
+        shape_name: StaticString,
+        *,
+        d_type: StaticString = _wmma_type_name[d.dtype](),
+    ]() {imm} -> SIMD[d.dtype, d.length]:
+        comptime a_type = _wmma_type_name[a.dtype]()
+        comptime intrinsic_name = "llvm.amdgcn.wmma" + d_type + shape_name + a_type
+
+        return _wmma_intrinsic_base[intrinsic_name](a, b)
+
+    def _wmma_intrinsic_float8[
+        shape_name: StaticString
+    ]() {imm} -> SIMD[d.dtype, d.length]:
+        comptime a_type = _wmma_type_name[a.dtype]()
+        comptime b_type = _wmma_type_name[b.dtype]()
+        comptime d_type = _wmma_type_name[d.dtype]()
+        comptime intrinsic_name = "llvm.amdgcn.wmma" + d_type + shape_name + a_type + b_type
+
+        return _wmma_intrinsic_base[intrinsic_name](
+            bitcast[.int32, a.length // 4](a), bitcast[.int32, b.length // 4](b)
+        )
+
+    # ===------------------------------------------------------------------===#
+    # F16 = [F8 or BF8] * [F8 or BF8] + F16
+    # F32 = [F8 or BF8] * [F8 or BF8] + F32
+    # ===------------------------------------------------------------------===#
+    comptime if (
+        a.dtype in fp8_dtypes
+        and b.dtype in fp8_dtypes
+        and c.dtype == d.dtype
+        and d.dtype
+        in (
+            DType.float16,
+            DType.float32,
+        )
+    ):
+        comptime if _has_shape[(32, 32, 8, 8)](
+            a.length, b.length, c.length, d.length
+        ):
+            d = _wmma_intrinsic_float8[".16x16x64"]()
+        elif _has_shape[(64, 64, 8, 8)](a.length, b.length, c.length, d.length):
+            d = _wmma_intrinsic_float8[".16x16x128"]()
+        else:
+            _unsupported_mma_op[
+                d.dtype,
+                d.length,
+                a.dtype,
+                a.length,
+                b.dtype,
+                b.length,
+                c.dtype,
+                c.length,
+            ]()
+
+    # ===------------------------------------------------------------------===#
+    # F16 = F16 * F16 + F16
+    # F32 = F16 * F16 + F32
+    # BF16 = BF16 * BF16 + BF16
+    # F32 = BF16 * BF16 + F32
+    # ===------------------------------------------------------------------===#
+    elif (
+        a.dtype == b.dtype
+        and a.dtype.is_half_float()
+        and c.dtype == d.dtype
+        and (d.dtype in (a.dtype, DType.float32))
+        and _has_shape[(16, 16, 8, 8)](a.length, b.length, c.length, d.length)
+    ):
+        d = _wmma_intrinsic[".16x16x32"]()
+
+    # ===------------------------------------------------------------------===#
+    # BF16 = BF16 * BF16 + F32
+    # ===------------------------------------------------------------------===#
+    elif (
+        _has_type[
+            (DType.bfloat16, DType.bfloat16, DType.float32, DType.bfloat16)
+        ](a.dtype, b.dtype, c.dtype, d.dtype)
+        and _has_shape[(16, 16, 8, 8)](a.length, b.length, c.length, d.length)
+    ):
+        d = _wmma_intrinsic[".16x16x32", d_type=".bf16f32"]()
+
+    # ===------------------------------------------------------------------===#
+    # F32 = F32 * F32 + F32
+    # ===------------------------------------------------------------------===#
+    elif _has_type[DType.float32](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(2, 2, 8, 8)](a.length, b.length, c.length, d.length):
+        d = _wmma_intrinsic[".16x16x4"]()
+
+    else:
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()
 
 
 @fieldwise_init
@@ -53,23 +185,15 @@ struct _AMD_F8F6F4_MATRIX_FORMAT(TrivialRegisterPassable):
 
 
 @inline(.always)
-def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    comptime if _is_amd_rdna():
-        # Use WMMA instructions for RDNA3+ consumer GPUs.
-        _mma_wmma_rdna(d, a, b, c)
-        return
-
+def _mma_mfma_cdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime zero: UInt32 = 0
 
     # CDNA3 supports the FNUZ float8 dtypes, and CDNA4 supports the Open
-    # Compute Project (OCP) float8 dtypes. RDNA has no native FP8/BF8 support,
-    # but this code path is unreachable on RDNA (see the early return above),
-    # so the dtypes are guaranteed present here.
+    # Compute Project (OCP) float8 dtypes.
     comptime fp8_dtype = get_amd_fp8_dtype().value()
     comptime bf8_dtype = get_amd_bf8_dtype().value()
 
-    @__parameter
-    def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.length]:
+    def _f8f6f4_intrinsic() {imm} -> SIMD[d.dtype, d.length]:
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
 
         comptime intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
@@ -78,7 +202,6 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             a.length, b.length, c.length, d.length
         ) else "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4"
 
-        @__parameter
         def _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
             return (
                 _AMD_F8F6F4_MATRIX_FORMAT.float8_e4m3 if dtype
@@ -112,15 +235,9 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.length, b.length, c.length, d.length
     ):
-        comptime if block_size == 16:
-            # Note: 4x4x4_16B (i.e., 16 blocks).
-            d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[d.dtype, d.length]
-            ](a, b, c, zero, zero, zero)
-        else:
-            d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[d.dtype, d.length]
-            ](a, b, c, zero, zero, zero)
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[d.dtype, d.length]
+        ](a, b, c, zero, zero, zero)
     elif _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
@@ -156,29 +273,16 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.length, b.length, c.length, d.length
     ):
-        comptime if block_size == 16:
-            # Note: 4x4x4_16B (i.e., 16 blocks)
-            d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[d.dtype, d.length]
-            ](
-                bitcast[.int16, 4](a),
-                bitcast[.int16, 4](b),
-                c,
-                zero,
-                zero,
-                zero,
-            )
-        else:
-            d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[d.dtype, d.length]
-            ](
-                bitcast[.int16, 4](a),
-                bitcast[.int16, 4](b),
-                c,
-                zero,
-                zero,
-                zero,
-            )
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[d.dtype, d.length]
+        ](
+            bitcast[.int16, 4](a),
+            bitcast[.int16, 4](b),
+            c,
+            zero,
+            zero,
+            zero,
+        )
     elif _has_type[
         (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
@@ -274,4 +378,23 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = _f8f6f4_intrinsic()
 
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()
+
+
+@inline(.always)
+def _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    comptime if _is_amd_rdna():
+        _mma_wmma_rdna(d, a, b, c)
+    elif _cdna_5_or_newer():
+        _mma_wmma_cdna(d, a, b, c)
+    else:
+        _mma_mfma_cdna(d, a, b, c)

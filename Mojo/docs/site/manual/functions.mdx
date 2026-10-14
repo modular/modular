@@ -60,15 +60,15 @@ familiar from many other languages: they are run-time values passed into the
 function.
 
 ```mojo
-def add(a: Int, b: Int) -> Int:
-    return a+b
+def max(a: Int, b: Int) -> Int:
+    return a if a > b else b
 ```
 
 On the other hand, you can think of a parameter as a compile-time variable that
 becomes a run-time constant. For example, consider the following function with a
 parameter:
 
-```mojo
+```mojo no-test
 def add_tensors[rank: Int](a: MyTensor[rank], b: MyTensor[rank]) -> MyTensor[rank]:
     # ...
 ```
@@ -91,11 +91,11 @@ by keyword. These forms can also be mixed in the same function call.
 
 ```mojo
 # positional
-var x = add(5, 7)    # Positionally, a=5 and b=7
+var x = max(5, 7)  # Positionally, a=5 and b=7
 # keyword
-var y = add(b=3, a=9)
+var y = max(b=3, a=9)
 # mixed
-var z = add(5, b=7)  # Positionally, a=5
+var z = max(5, b=7)  # Positionally, a=5
 ```
 
 For more information on arguments, see [Function arguments](#function-arguments)
@@ -111,7 +111,7 @@ A function has the following requirements:
 - If a function doesn't return a value, you can either omit the return type or
   declare `None` as the return type.
 
-  ```mojo
+  ```mojo no-test
   # The following function definitions are equivalent
 
   def greet(name: String):
@@ -125,7 +125,7 @@ A function has the following requirements:
   the <code><strong>-></strong> <var>type</var></code> syntax or provide a
   [named result](#named-results) in the argument list.
 
-  ```mojo
+  ```mojo no-test
   # The following function definitions are equivalent
 
   def incr(a: Int) -> Int:
@@ -145,7 +145,7 @@ A function has the following requirements:
 You might see the following characters in
 place of arguments: slash (`/`) and/or star (`*`). For example:
 
-```mojo
+```mojo no-test
 def myfunc(pos_only, /, pos_or_keyword, *, keyword_only):
 ```
 
@@ -155,7 +155,7 @@ the `*` can be passed only by keyword. For details, see
 
 You may also see argument names prefixed with one or two stars (`*`):
 
-```mojo
+```mojo no-test
 def myfunc2(*names, var **attributes):
 ```
 
@@ -173,7 +173,7 @@ argument here:
 
 ```mojo
 def my_pow(base: Int, exp: Int = 2) -> Int:
-    return base ** exp
+    return base**exp
 
 def use_defaults():
     # Uses the default value for `exp`
@@ -196,9 +196,15 @@ are specified using the format
 <code><var>argument_name</var> = <var>argument_value</var></code>.
 You can pass keyword arguments in any order:
 
-```mojo
+<!-- The `my_pow()` declaration below is repeated from "Optional arguments"
+     on purpose, so this example reads on its own. The test code defines it
+     once, in the `optional-args` region of tests.mojo, which is why this
+     block is tagged `duplicate-of` instead of being matched line for line.
+     Don't "fix" the duplication. -->
+
+```mojo duplicate-of=optional-args
 def my_pow(base: Int, exp: Int = 2) -> Int:
-    return base ** exp
+    return base**exp
 
 def use_keywords():
     # Uses keyword argument names (with order reversed)
@@ -214,10 +220,10 @@ syntax <code>*<var>argument_name</var></code>:
 
 ```mojo
 def sum(*values: Int) -> Int:
-  var sum: Int = 0
-  for value in values:
-    sum = sum + value
-  return sum
+    var sum: Int = 0
+    for value in values:
+        sum = sum + value
+    return sum
 ```
 
 The variadic argument `values` here is a placeholder that accepts any number of
@@ -264,10 +270,10 @@ simple example:
 
 ```mojo
 def sum(*values: Int) -> Int:
-  var sum: Int = 0
-  for value in values:
-    sum = sum+value
-  return sum
+    var sum: Int = 0
+    for value in values:
+        sum = sum + value
+    return sum
 ```
 
 Iterating over this list directly with a `for..in` loop currently produces a
@@ -284,7 +290,7 @@ def make_worldly(mut *strs: String):
 You can also directly index the list with integers as well:
 
 ```mojo
-def make_worldly(mut *strs: String):
+def make_worldly2(mut *strs: String):
     for i in range(len(strs)):
         strs[i] += " world"
 ```
@@ -302,7 +308,7 @@ features.
 The signature for a function with a heterogeneous variadic argument looks like
 this:
 
-```mojo
+```mojo no-test
 def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
     ...
 ```
@@ -358,7 +364,11 @@ variadic keyword argument syntax <code>var **<var>kw_argument_name</var></code>:
 def print_nicely(var **kwargs: Int):
     for item in kwargs.items():
         print(item.key, "=", item.value)
+```
 
+Calling it with any number of keyword arguments prints each one:
+
+```mojo
 # prints:
 # `a = 7`
 # `y = 8`
@@ -378,7 +388,7 @@ There are currently a few limitations:
   function owns the argument dictionary and may mutate it); no other
   convention is supported:
 
-  ```mojo
+  ```mojo no-test
   # Not supported.
   def imm_kwargs(imm **kwargs: Int): ...
   ```
@@ -393,14 +403,14 @@ There are currently a few limitations:
 
 - Dictionary unpacking isn't supported yet:
 
-  ```mojo
+  ```mojo no-test
   def takes_dict(d: Dict[String, Int]):
     print_nicely(**d)  # Not supported yet.
   ```
 
 - Variadic keyword _parameters_ aren't supported yet:
 
-  ```mojo
+  ```mojo no-test
   # Not supported yet.
   def var_kwparams[**kwparams: Int](): ...
   ```
@@ -442,7 +452,8 @@ arguments defined _after_ the variadic arguments are treated as keyword-only.
 For example:
 
 ```mojo
-def sort(*values: Float64, ascending: Bool = True): ...
+def sort(*values: Float64, ascending: Bool = True):
+    ...
 ```
 
 In this example, you can pass any number of
@@ -450,7 +461,7 @@ In this example, you can pass any number of
 followed by the keyword `ascending` argument:
 
 ```mojo
-var a = sort(1.1, 6.5, 4.3, ascending=False)
+sort(1.1, 6.5, 4.3, ascending=False)
 ```
 
 If the function doesn't accept variadic arguments, you can add a single star
@@ -645,7 +656,7 @@ value, that value is returned to the caller, as usual.
 The fact that a function uses a named result is transparent to the caller. That
 is, these two signatures are interchangeable to the caller:
 
-```mojo
+```mojo no-test
 def get_name_tag(var name: String) -> NameTag:
     ...
 def get_name_tag(var name: String, out name_tag: NameTag):
@@ -674,14 +685,17 @@ def create_immovable_object(var name: String, out obj: ImmovableObject):
     obj = ImmovableObject(name^)
     obj.name += "!"
     # obj is implicitly returned
+```
 
-def main():
-    var my_obj = create_immovable_object("Blob")
+To the caller, it's an ordinary function call:
+
+```mojo
+var my_obj = create_immovable_object("Blob")
 ```
 
 By contrast, the following function with a standard return value doesn't work:
 
-```mojo
+```mojo no-test
 def create_immovable_object2(var name: String) -> ImmovableObject:
     var obj = ImmovableObject(name^)
     obj.name += "!"
@@ -695,7 +709,7 @@ returned immediately:
 
 ```mojo
 def create_immovable_object3(var name: String) -> ImmovableObject:
-    return ImmovableObject(name^) # OK
+    return ImmovableObject(name^)  # OK
 ```
 
 ## Raising and non-raising functions
@@ -714,7 +728,7 @@ propagate an error to its caller, add the `raises` keyword to the function
 signature. A non-raising function that calls a raising function **must handle
 any possible errors**.
 
-```mojo
+```mojo no-test
 # This function will not compile
 def unhandled_error():
     raises_error()   # Error: can't call raising function in a non-raising context
@@ -735,7 +749,7 @@ All of the examples above use the built-in
 [`Error`](/docs/std/builtin/error/Error/) type. Mojo also supports
 _typed errors_, where you specify a custom error type a function can raise:
 
-```mojo
+```mojo no-test
 def validate(value: Int) raises ValidationError -> Int:
     ...
 ```

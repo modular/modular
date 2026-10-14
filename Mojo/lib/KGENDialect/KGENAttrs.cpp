@@ -13,6 +13,7 @@
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/Interpreter/InterpreterAttrs.h"
+#include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/FoldUtils.h"
 #include "Mojo/KGENDialect/KGENDType.h"
 #include "Mojo/KGENDialect/KGENDialect.h"
@@ -20,6 +21,7 @@
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
+#include "Mojo/KGENDialect/PropositionFold.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Support/AssertStream.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -366,16 +368,13 @@ TypedAttr ParamListGetAttr::get(TypedAttr variadic, TypedAttr index) {
     if (idxAttr && size_t(idxAttr.getInt()) < vaAttr.getValues().size())
       return vaAttr.getValues()[size_t(idxAttr.getInt())];
 
-    // TODO(MOCO-4505): temporarily disabled for closure migration, re-enable
-    // later.
-    //
-    // // Fold if all elements are the same (e.g. if there is only one element!)
-    // if (!vaAttr.getValues().empty()) {
-    //   auto first = vaAttr.getValues()[0];
-    //   if (llvm::all_of(vaAttr.getValues().drop_front(),
-    //                    [&](auto elt) { return elt == first; }))
-    //     return first;
-    // }
+    // Fold if all elements are the same (e.g. if there is only one element!).
+    if (!vaAttr.getValues().empty()) {
+      auto first = vaAttr.getValues()[0];
+      if (llvm::all_of(vaAttr.getValues().drop_front(),
+                       [&](auto elt) { return elt == first; }))
+        return first;
+    }
   }
 
   auto resultType = cast<ParamListType>(variadic.getType()).getElementType();
@@ -739,10 +738,14 @@ Type TypeConformsToTraitAttr::getType() const {
 
 TypedAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
                                        TypedAttr traitType) {
+  // An upcast only widens the metatype, so dropping it keeps the narrower
+  // metatype that conformance checking reads as evidence. Downcast, rebind and
+  // extension stay: their metatype can be what proves the conformance.
+  typeValue = UpcastAttr::strip(typeValue);
   SmallVector<TypedAttr> inputs;
-  if (auto lst = sugarDynCast<ParamListAttr>(UpcastAttr::strip(typeValue))) {
+  if (auto lst = sugarDynCast<ParamListAttr>(typeValue)) {
     for (TypedAttr input : lst.getValues())
-      inputs.push_back(input);
+      inputs.push_back(UpcastAttr::strip(input));
   } else {
     inputs.push_back(typeValue);
   }
@@ -751,12 +754,14 @@ TypedAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
   if (inputs.empty())
     return {SIMDAttr::getScalarBool(typeValue.getContext(), true)};
 
-  TypedAttr ret = Base::get(typeValue.getContext(), inputs.front(), traitType);
-  for (TypedAttr input : ArrayRef<TypedAttr>(inputs).drop_front())
-    ret = ParamOperatorAttr::get(
-        POC::And, ret, Base::get(typeValue.getContext(), input, traitType));
+  SmallVector<TypedAttr> conjuncts;
+  conjuncts.reserve(inputs.size());
+  for (TypedAttr input : inputs)
+    conjuncts.push_back(Base::get(typeValue.getContext(), input, traitType));
+  if (conjuncts.size() == 1)
+    return conjuncts.front();
 
-  return ret;
+  return ParamOperatorAttr::get(POC::And, conjuncts);
 }
 
 TypedAttr TypeConformsToTraitAttr::getChecked(
@@ -1012,6 +1017,34 @@ bool StructFieldTypesAttr::isConstant() const { return false; }
 //===----------------------------------------------------------------------===//
 
 bool StructFieldNamesAttr::isConstant() const { return false; }
+
+//===----------------------------------------------------------------------===//
+// Annotation-related attrs.
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+AnnotationAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                       TypedAttr value, TypedAttr typeValue) {
+  if (!isEqualCanon(value.getType(), ParamType::get(typeValue)))
+    return emitError() << "annotation value has type " << value.getType()
+                       << " but its type value describes "
+                       << ParamType::get(typeValue);
+  return success();
+}
+
+Type GetNumAnnotationsAttr::getType() const {
+  return SIMDType::get(getContext(), 1, KGENDType(KGENDType::index));
+}
+
+Type GetAnnotationValueAttr::getType() const {
+  return ParamType::get(GetAnnotationTypeAttr::get(
+      getContext(), getMetaType(), getStructTypeValue(), getIndex(),
+      getFieldIndex()));
+}
+
+bool GetNumAnnotationsAttr::isConstant() const { return false; }
+bool GetAnnotationTypeAttr::isConstant() const { return false; }
+bool GetAnnotationValueAttr::isConstant() const { return false; }
 
 //===----------------------------------------------------------------------===//
 // StructFieldIndexByNameAttr
@@ -1676,8 +1709,38 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   }
 
   FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
-  declSignature = declSignature.getSpecializedGenerator(
-      getParamValues(), &evaluationContext, [&] { return emitError(loc); });
+  if (getParamValues().empty() ||
+      !llvm::all_of(getParamValues(), llvm::IsaPred<UnboundAttr>)) {
+    // If all the provided bindings are unbound, use the original generator.
+    //
+    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
+    // type dependencies, which results in `getSpecializedGenerator` being
+    // computed in a wrong way.
+    //
+    // E.g.,
+    //
+    // def takeClosure[
+    //     origins: OriginSet,
+    //     //,
+    //     f: def() capturing[origins] -> None,
+    // ]():
+    //     pass
+    //
+    // where
+    //
+    // `f: def() capturing[origins]` will be replaced to
+    // `f: def() capturing[  ?    ]`. This will make the type dependency on
+    // `origins` unrecoverable.
+    declSignature = declSignature.getSpecializedGenerator(
+        getParamValues(), &evaluationContext, [&] { return emitError(loc); });
+  } else if (getParamValues().size() !=
+             declSignature.getInputParamTypes().size()) {
+    return mlir::emitError(loc)
+           << "generator type expects "
+           << declSignature.getInputParamTypes().size()
+           << " parameters but got bindings for " << getParamValues().size();
+  }
+
   if (!declSignature)
     return failure();
 
@@ -1783,20 +1846,39 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
     }
   }
 
-  // We are pulling out the index ref and evaluated it under a different scope,
-  // -1 depth to compensate the extra depth pushed by getSpecializedGenerator.
-  IndexDepthAdjuster adjuster(-1);
-  SmallVector<TypedAttr> adjustedParam = adjuster.replace(getParamValues());
-  FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
-  declSignature = declSignature.getSpecializedGenerator(
-      adjustedParam, &evaluationContext, [&] { return emitError(loc); });
+  struct UnboundIdxRefRemapper
+      : public IndexParameterReplacer<UnboundIdxRefRemapper> {
+    using Base = IndexParameterReplacer<UnboundIdxRefRemapper>;
+    UnboundIdxRefRemapper() = default;
+
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
+      if (!indexRef || indexRef.getDepth() < depth)
+        return nullptr;
+      // This is a escaped ref. bind it!
+      Type mappedType = Base::replace(indexRef.getType());
+      return ParamDeclRefAttr::get("#" + std::to_string(indexRef.getIndex()),
+                                   mappedType);
+    }
+    Type tryReplace(Type t, size_t) { return {}; }
+  };
+
+  // The function symbol attr itself might be the body of an generator, bind any
+  // existing free parameters here otherwise `getSpecializedGenerator` won't be
+  // able to handle free reference correctly.
+  UnboundIdxRefRemapper remapper;
+  SmallVector<TypedAttr> boundParams = remapper.replace(getParamValues());
+  auto declSignature =
+      getSymbolSignature(func, symbolOps)
+          .getSpecializedGenerator(boundParams, &evaluationContext,
+                                   [&] { return emitError(loc); });
 
   if (!declSignature)
     return failure();
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.
-  return verifyFuncTypesMatch("symbol use", getType(), loc,
+  return verifyFuncTypesMatch("symbol use", remapper.replace(getType()), loc,
                               symbol.getLeafReference(),
                               declSignature.getBody(), func->getLoc());
 }
@@ -1993,15 +2075,87 @@ Type TargetParamAttr::getType() const { return TargetType::get(getContext()); }
 // GetTargetPluginAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr GetTargetPluginAttr::get(TypedAttr target, Type type) {
+LogicalResult
+GetTargetPluginAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                            TypedAttr target, TypedAttr fallback, Type type) {
+  if (!isa<TargetType>(target.getType()))
+    return emitError() << "target must have !kgen.target type";
+  if (fallback.getType() != type)
+    return emitError() << "fallback type " << fallback.getType()
+                       << " does not match result type " << type;
+  return success();
+}
+
+TypedAttr GetTargetPluginAttr::get(TypedAttr target, TypedAttr fallback,
+                                   Type type) {
+  assert(fallback.getType() == type &&
+         "target plugin fallback must have the result type");
   if (auto targetAttr = dyn_cast<TargetParamAttr>(target)) {
-    if (auto plugin = dyn_cast_if_present<TypedAttr>(
-            targetAttr.getTarget().getOpaquePlugin()))
-      if (plugin.getType() == type)
-        return plugin;
+    TypedAttr plugin = targetAttr.getTarget().getOpaquePlugin();
+    if (!plugin)
+      return fallback;
+    if (plugin.getType() == type)
+      return plugin;
   }
 
-  return Base::get(target.getContext(), target, type);
+  return Base::get(target.getContext(), target, fallback, type);
+}
+
+/// Describe why a literal target's payload can never satisfy the requested
+/// type, or return nullopt if it might. Types that still mention parameters are
+/// left alone: substitution may yet make them agree, which is what keeps the
+/// expression unresolved.
+static std::optional<std::string> describePluginTypeMismatch(TypedAttr target,
+                                                             Type type) {
+  auto targetAttr = dyn_cast<TargetParamAttr>(target);
+  if (!targetAttr)
+    return std::nullopt;
+  TypedAttr plugin = targetAttr.getTarget().getOpaquePlugin();
+  if (!plugin)
+    return std::nullopt;
+
+  Type pluginType = plugin.getType();
+  if (pluginType == type || isParameterizedType(pluginType) ||
+      isParameterizedType(type))
+    return std::nullopt;
+  return "target 'opaque_plugin' has type '" + mlir::debugString(pluginType) +
+         "'; expected a value of type '" + mlir::debugString(type) + "'";
+}
+
+TypedAttr
+GetTargetPluginAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                TypedAttr target, TypedAttr fallback,
+                                Type type) {
+  if (failed(verify(emitError, target, fallback, type)))
+    return {};
+  if (std::optional<std::string> mismatch =
+          describePluginTypeMismatch(target, type)) {
+    emitError() << *mismatch;
+    return {};
+  }
+  return get(target, fallback, type);
+}
+
+/// A target parameter only becomes a literal after substitution, which cannot
+/// report through `getChecked`, so the mismatch is diagnosed here instead.
+FailureOr<TypedAttr> GetTargetPluginAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  if (std::optional<std::string> mismatch =
+          describePluginTypeMismatch(getTarget(), getType()))
+    context.emitMaterializationError(*mismatch);
+  return failure();
+}
+
+TypedAttr GetTargetPluginAttr::get(MLIRContext *ctx, TypedAttr target,
+                                   TypedAttr fallback, Type type) {
+  return get(target, fallback, type);
+}
+
+TypedAttr
+GetTargetPluginAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
+                                MLIRContext *ctx, TypedAttr target,
+                                TypedAttr fallback, Type type) {
+  return getChecked(emitError, target, fallback, type);
 }
 
 bool GetTargetPluginAttr::isConstant() const { return false; }
@@ -2738,14 +2892,17 @@ simplifyAssocOp(POC opcode, SmallVectorImpl<TypedAttr> &operands,
   // `(add x, (add y, z))` => `(add x, y, z)`.
   for (size_t i = 0, e = operands.size(); i != e; ++i) {
     if (auto subexpr = dyn_castPE(opcode, operands[i])) {
-      operands[i] = operands.back();
-      operands.pop_back();
+      operands[i] = operands[e - 1];
+      operands[e - 1] = nullptr;
       --e;
       --i;
       operands.append(subexpr.getOperands().begin(),
                       subexpr.getOperands().end());
     }
   }
+
+  auto it = llvm::remove_if(operands, [](TypedAttr attr) { return !attr; });
+  operands.erase(it, operands.end());
 
   // If allowed, deduplicate operands after flattening
   if (shouldDeduplicateOperands)
@@ -2954,11 +3111,12 @@ static Attribute simplifyGenericMul(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
-// FIXME(MOCO-4577): merge identity conjuncts sharing an operand into one n-ary
-// proposition, so `and(identical(a, b), identical(b, c))` becomes
-// `identical(a, b, c)`. Until then a source-level `T == U == V`, which lowers
-// to exactly that conjunction, never reaches the n-ary form.
-static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands,
+                             SIMDType resultType) {
+  // The fold covers the flatten, dedup, sort and True/False handling below for
+  // a scalar-bool AND, and also merges identity classes.
+  if (isScalarOf<KGENDType::kBool>(resultType))
+    return foldBoolConjunction(operands, resultType);
   return simplifyAssocOp(
       POC::And, operands, true,
       std::make_tuple(
@@ -3420,21 +3578,19 @@ struct DivOperandInfo {
       for (auto [n, d] : llvm::zip_equal(numerator.constant.getValues(),
                                          denominator.constant.getValues())) {
 
-        bool isSigned = n.getDType().isSInt();
-        APInt gcdTerm = llvm::APIntOps::GreatestCommonDivisor(
-            isSigned ? n.getData().abs() : n.getData(),
-            isSigned ? d.getData().abs() : d.getData());
+        const APSInt &nData = n.getData();
+        const APSInt &dData = d.getData();
+        APSInt gcdTerm(llvm::APIntOps::GreatestCommonDivisor(
+                           nData.isNegative() ? -nData : nData,
+                           dData.isNegative() ? -dData : dData),
+                       nData.isUnsigned());
 
-        if (isSigned && n.getData().isNegative() && d.getData().isNegative())
+        // A negative divisor for two negative terms cancels both signs.
+        if (nData.isNegative() && dData.isNegative())
           gcdTerm = -gcdTerm;
 
-        APInt nLane =
-            isSigned ? n.getData().sdiv(gcdTerm) : n.getData().udiv(gcdTerm);
-        APInt dLane =
-            isSigned ? d.getData().sdiv(gcdTerm) : d.getData().udiv(gcdTerm);
-
-        nC.push_back(DTypeValue(nLane, n.getDType()));
-        dC.push_back(DTypeValue(dLane, d.getDType()));
+        nC.push_back(DTypeValue(nData / gcdTerm, n.getDType()));
+        dC.push_back(DTypeValue(dData / gcdTerm, d.getDType()));
       }
 
       numerator.constant = SIMDAttr::get(nC, numerator.constant.getType());
@@ -4182,6 +4338,25 @@ constexpr POC migratedPOCs[] = {
     POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod,      POC::EQ,
     POC::LT,        POC::LE};
 
+TypedAttr KGEN::foldBoolConjunction(ArrayRef<TypedAttr> conjuncts,
+                                    Type boolType) {
+  SmallVector<TypedAttr> clauses;
+  for (TypedAttr conjunct : conjuncts) {
+    if (insertClause(clauses, getCanonicalAttr(conjunct)) ==
+        ClauseInsertResult::Contradiction)
+      return SIMDAttr::getScalarBool(boolType.getContext(), false);
+  }
+  if (clauses.empty())
+    return SIMDAttr::getScalarBool(boolType.getContext(), true);
+  if (clauses.size() == 1)
+    return clauses[0];
+  llvm::stable_sort(clauses, ParameterAttr::compare);
+  // `Base::get`, not `get`: the latter folds through `simplifyAnd`, which
+  // calls back here on the same clauses.
+  return ParamOperatorAttr::Base::get(boolType.getContext(), POC::And, clauses,
+                                      boolType);
+}
+
 /// Construct a arithmetic parameter operator attribute, folding it (in the form
 /// of SIMD) if possible. Return nullptr if the opcode is not an arithmetic
 /// POC.
@@ -4239,7 +4414,7 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
       result = simplifyGenericMul(operands, opcode);
       break;
     case POC::And:
-      result = simplifyAnd(operands);
+      result = simplifyAnd(operands, resultSIMDType);
       break;
     case POC::Or:
       result = simplifyOr(operands);
@@ -4665,9 +4840,15 @@ TypedAttr ParamIdenticalAttr::get(ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "identity needs an operand for its context");
   MLIRContext *ctx = operandsIn.front().getContext();
 
-  // Sorting first is what uniques `identical(t2, t1)` with `identical(t1, t2)`,
-  // and it makes the merge below independent of the order given.
-  SmallVector<TypedAttr> operands(operandsIn);
+  // Identity wrappers do not change which value an operand denotes, so members
+  // are compared bare. Sorting is what uniques `identical(t2, t1)` with
+  // `identical(t1, t2)`, and it makes the merge below independent of the order
+  // given. Equal attributes are not deduplicated here: two `?` need not be the
+  // same value, so only `decideIdenticalOperands` may merge members.
+  SmallVector<TypedAttr> operands;
+  operands.reserve(operandsIn.size());
+  for (TypedAttr operand : operandsIn)
+    operands.push_back(stripIdentityWrappers(operand));
   llvm::stable_sort(operands, ParameterAttr::compare);
 
   SmallVector<TypedAttr> representatives;
@@ -4675,6 +4856,11 @@ TypedAttr ParamIdenticalAttr::get(ArrayRef<TypedAttr> operandsIn) {
           decideIdenticalOperands(operands, representatives))
     return SIMDAttr::getScalarBool(ctx, *decided);
 
+  // Bare members of mixed metatypes are rebound to one type to satisfy the
+  // verifier.
+  Type reprType = representatives.front().getType();
+  for (TypedAttr &member : representatives)
+    member = ParamOperatorAttr::getRebind(member, reprType);
   return Base::get(ctx, representatives);
 }
 
@@ -5236,7 +5422,7 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
 }
 
 Type SugarAttr::getMemberAliasType() const {
-  return cast<TypeParamAttr>(getSugared()).getMlirType();
+  return ParamType::get(getSugared());
 }
 
 TypedAttr SugarAttr::getMemberAlias(Type type, StringAttr memberName,
@@ -5321,6 +5507,15 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     if (auto can = getLocalCanonical(value))
       return can;
 
+    // Walking is repeated for the same value many times; cache across calls.
+    using Base =
+        std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
+    CanonicalCache<const void *> *cache = getCache(value.getContext());
+    if (cache) {
+      if (const void *hit = cache->lookup(value.getAsOpaquePointer()))
+        return Base::getFromOpaquePointer(hit);
+    }
+
     // Otherwise, recursively walk and rebuild the attribute with
     // canonicalized subelements.
     SmallVector<Attribute, 16> newAttrs;
@@ -5334,9 +5529,20 @@ class Canonicalizer : public ParameterReplacer<Canonicalizer> {
     value.walkImmediateSubElements(
         [&](Attribute attr) { walkFn(attr, newAttrs); },
         [&](Type type) { walkFn(type, newTypes); });
-    if (!changed)
-      return value;
-    return value.replaceImmediateSubElements(newAttrs, newTypes);
+    Base result =
+        changed ? Base(value.replaceImmediateSubElements(newAttrs, newTypes))
+                : Base(value);
+    if (cache && result) {
+      cache->insert(value.getAsOpaquePointer(), result.getAsOpaquePointer());
+      if (changed)
+        cache->insert(result.getAsOpaquePointer(), result.getAsOpaquePointer());
+    }
+    return result;
+  }
+
+  static CanonicalCache<const void *> *getCache(MLIRContext *context) {
+    CompilerCaches *caches = CompilerCaches::get(context);
+    return caches ? &caches->canonical : nullptr;
   }
 
   friend class ParameterReplacer<Canonicalizer>;
@@ -5395,14 +5601,15 @@ TypedAttr KGEN::stripIdentityWrappers(TypedAttr attr) {
 // DTypeValue
 //===----------------------------------------------------------------------===//
 
-DTypeValue::DTypeValue(APInt data, KGENDType dtype)
-    : data(std::move(data)), dtype(dtype) {
+DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
+    : data(std::move(value)), dtype(dtype) {
+  data.setIsUnsigned(dtype.isUInt());
   assert(dtype.isAddress() || dtype.isIndex() || dtype.isUIndex() ||
-         this->data.getBitWidth() == dtype.getWidthInBits());
+         data.getBitWidth() == dtype.getWidthInBits());
 }
 
-DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
-    : DTypeValue(APInt(std::move(value)), dtype) {}
+DTypeValue::DTypeValue(APInt data, KGENDType dtype)
+    : DTypeValue(APSInt(std::move(data), dtype.isUInt()), dtype) {}
 
 DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
     : DTypeValue(value.bitcastToAPInt(), dtype) {
@@ -5419,7 +5626,7 @@ DTypeValue::DTypeValue(int64_t value, KGENDType dtype)
 
 APSInt DTypeValue::getIntVal() const {
   assert(dtype.isIntLike());
-  return APSInt(data, /*isUnsigned=*/dtype.isUInt());
+  return data;
 }
 
 APFloat DTypeValue::getFloatVal() const {
@@ -5441,18 +5648,12 @@ int64_t DTypeValue::getIndexVal() const {
 namespace M::KGEN {
 /// Provide the ability to hash values for attribute uniquing.
 inline llvm::hash_code hash_value(const DTypeValue &value) {
-  // This must be consistent with `DTypeValue::operator==`, which compares the
-  // data with `APInt::isSameValue` (ignoring bit width) so that the same
-  // logical value stored with different bit widths compares equal. This happens
-  // for index values, whose bit width differs across targets (e.g. a 64-bit
-  // host vs. a 32-bit offload target). `llvm::hash_value(APInt)` folds in the
-  // bit width, so hashing the raw data would give two equal values different
-  // hashes, breaking the storage uniquer's invariant and yielding two distinct
-  // attribute instances for the same value. Normalize to the minimal-width
-  // unsigned representation (matching `isSameValue`'s zero-extension semantics)
-  // so equal values always hash equally regardless of their stored width.
-  const APInt &data = value.getData();
-  APInt normalized = data.zextOrTrunc(std::max(data.getActiveBits(), 1u));
+  // operator== ignores bit width, so equal values of different widths must
+  // hash equally.
+  const APSInt &data = value.getData();
+  APInt normalized = data.isSigned()
+                         ? data.sextOrTrunc(64)
+                         : data.zextOrTrunc(std::max(data.getActiveBits(), 1u));
   return hash_combine(normalized, value.getDType().getValue());
 }
 } // namespace M::KGEN

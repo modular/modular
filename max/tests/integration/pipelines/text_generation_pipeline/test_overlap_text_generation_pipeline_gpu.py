@@ -25,7 +25,6 @@ from max.config import ConfigFileModel
 from max.driver import (
     Accelerator,
     Buffer,
-    DevicePinnedBuffer,
     DeviceSpec,
     Usage,
 )
@@ -41,7 +40,7 @@ from max.graph import (
     ops,
 )
 from max.nn import kernels
-from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.context import (
     EOSTracker,
     SamplingParams,
@@ -155,6 +154,7 @@ class FakeSamplingConfig(ConfigFileModel):
     structured_output_backend: str | None = None
     sample_on_host: bool = False
     enable_min_tokens: bool = False
+    structured_output_any_whitespace: bool = False
 
 
 class FakeModelConfig(ConfigFileModel):
@@ -165,6 +165,7 @@ class FakeModelConfig(ConfigFileModel):
     quantization_encoding: SupportedEncoding = "float32"
     enable_echo: bool = False
     data_parallel_degree: int = 1
+    model_name: str = "test_model"
 
     def resolved_weight_paths(self) -> list[Path]:
         return []
@@ -173,11 +174,18 @@ class FakeModelConfig(ConfigFileModel):
 class FakeRuntimeConfig(ConfigFileModel):
     execute_empty_batches: bool = False
     enable_overlap_scheduler: bool = False
+    disable_overlap: bool = False
     device_graph_capture: bool = False
     max_batch_size: int = 999
     pipeline_role: str = "prefill_and_decode"
     reasoning_parser: str | None = None
     tool_parser: str | None = None
+    precompiled_mefs: str | None = None
+    export_mefs: str | None = None
+    eager_usage_validator: str = "disabled"
+    enable_spec_decode_mixed_batches: bool = False
+    is_disaggregated: bool = False
+    max_num_input_tokens: int | None = None
 
 
 class FakeSpeculativeConfig(ConfigFileModel):
@@ -306,7 +314,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         del kv_cache_inputs, return_n_logits  # Unused args
@@ -320,28 +328,31 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         )
         active_lengths = [ctx.tokens.active_length for ctx in batch]
         total_seq_len = sum(active_lengths)
-        tokens = DevicePinnedBuffer(
+        tokens = Buffer(
             shape=[total_seq_len],
             dtype=DType.int64,
             device=self.device,
+            usage=Usage.STAGING,
         )
         np.concatenate(
             [ctx.tokens.active for ctx in batch], out=tokens.to_numpy()
         )
-        input_row_offsets = DevicePinnedBuffer(
+        input_row_offsets = Buffer(
             shape=[len(batch) + 1],
             dtype=DType.uint32,
             device=self.device,
+            usage=Usage.STAGING,
         )
         np.cumsum(
             [0] + active_lengths,
             dtype=np.int64,
             out=input_row_offsets.to_numpy(),
         )
-        arange = DevicePinnedBuffer(
+        arange = Buffer(
             dtype=DType.int64,
             shape=[batch_size],
             device=self.device,
+            usage=Usage.STAGING,
         )
         arange.to_numpy()[:] = np.arange(
             start=0, stop=batch_size, dtype=np.int64
@@ -422,6 +433,7 @@ def create_overlap_pipeline(
     )
     runtime = FakeRuntimeConfig(
         enable_overlap_scheduler=enable_overlap_scheduler,
+        disable_overlap=disable_overlap,
         pipeline_role=pipeline_role,
     )
     pipeline_config = FakePipelineConfig(
@@ -441,7 +453,6 @@ def create_overlap_pipeline(
             planned_max_length=None,
             device_specs=tuple(model_config.device_specs),
         ),
-        disable_overlap=disable_overlap,
     )
     return pipeline
 
@@ -450,6 +461,8 @@ def fake_cpu_pre_or_post_processing() -> None:
     time.sleep(CPU_SECONDS)
 
 
+# Call after building the pipeline: its graphs are compiled in a CPU build
+# action (`precompile_mefs`), which stops at the first device allocation.
 def prime_host_buffer_cache() -> None:
     t = Buffer(
         shape=[1024 * 1024],
@@ -494,11 +507,10 @@ def test_overlap_execution(
     expected_duration: float,
 ) -> None:
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
-    prime_host_buffer_cache()
-
     pipeline = create_overlap_pipeline(
         enable_overlap_scheduler=enable_overlap_scheduler
     )
+    prime_host_buffer_cache()
 
     num_trials = 3
     for _trial in range(num_trials):
@@ -597,9 +609,8 @@ def test_overlap_execution_with_preemption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
-    prime_host_buffer_cache()
-
     pipeline = create_overlap_pipeline(enable_overlap_scheduler=True)
+    prime_host_buffer_cache()
     context = create_context(isl=17, offset=100)
     req_id = context.request_id
 
@@ -631,15 +642,15 @@ def test_overlap_execution_with_preemption(
 def test_disable_overlap_returns_outputs_immediately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify disable_overlap=True returns current-batch outputs in the same
-    execute() call, never deferring them to the next iteration."""
+    """Verify runtime.disable_overlap=True returns current-batch outputs in the
+    same execute() call, never deferring them to the next iteration."""
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
-    prime_host_buffer_cache()
-
     pipeline = create_overlap_pipeline(
         enable_overlap_scheduler=True,
         disable_overlap=True,
     )
+    prime_host_buffer_cache()
+    assert not pipeline.overlap_active
 
     def create_inputs(
         contexts: list[TextContext],
@@ -684,9 +695,8 @@ def test_overlap_reuses_generated_tokens_pinned_buffer(
     written. If that ordering broke, the token sequences below would corrupt.
     """
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
-    prime_host_buffer_cache()
-
     pipeline = create_overlap_pipeline(enable_overlap_scheduler=True)
+    prime_host_buffer_cache()
 
     # Two requests of different output lengths so the decode batch shrinks
     # (2 -> 1) mid-run, exercising the ``[:batch_size]`` slice of the reused

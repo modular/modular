@@ -391,10 +391,10 @@ struct Shuffler[E: Int]:
         across the wave) and writes coalesced into `dst`'s column-major
         tile.
         """
-        var tid = Int(thread_idx.x)
-        var e = Int(block_idx.z)
-        var n0 = Int(block_idx.y)
-        var k0 = Int(block_idx.x)
+        var tid = thread_idx.x
+        var e = block_idx.z
+        var n0 = block_idx.y
+        var k0 = block_idx.x
 
         # raw: per-CTA [1, 16, 4] atom tile from the row-major 3D view.
         var raw_tile = raw.tile[1, Self.MFMA_MN_LANES, Self.MFMA_K_BYTES](

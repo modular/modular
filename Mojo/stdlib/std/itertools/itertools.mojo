@@ -1215,8 +1215,8 @@ struct _TakeIterator[InnerIteratorType: Iterator](
         var remaining = max(0, self._remaining)
         var lower, upper = self._inner.bounds()
         lower = min(lower, remaining)
-        if upper:
-            return (lower, min(upper.value(), remaining))
+        if case .Some(upper) = upper:
+            return (lower, min(upper, remaining))
         return (lower, remaining)
 
 
@@ -1360,8 +1360,8 @@ struct _DropIterator[InnerIteratorType: Iterator](
         var to_drop = max(0, self._to_drop)
         var lower, upper = self._inner.bounds()
         lower = max(0, lower - to_drop)
-        if upper:
-            return (lower, max(0, upper.value() - to_drop))
+        if case .Some(upper) = upper:
+            return (lower, max(0, upper - to_drop))
         return (lower, None)
 
 

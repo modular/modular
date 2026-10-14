@@ -473,17 +473,17 @@ struct IntervalTree[
 
     def __deinit__(deinit self):
         """Destructor that frees the interval tree's memory."""
-        if self._root:
-            Self._del_helper(self._root.value())
+        if case .Some(root) = self._root:
+            Self._del_helper(root)
 
     @staticmethod
     def _del_helper(
         node: Pointer[_IntervalNode[Self.T, Self.U], MutUntrackedOrigin],
     ):
-        if node[].left():
-            Self._del_helper(node[].left().value())
-        if node[].right():
-            Self._del_helper(node[].right().value())
+        if case .Some(left) = node[].left():
+            Self._del_helper(left)
+        if case .Some(right) = node[].right():
+            Self._del_helper(right)
         node.unsafe_deinit_pointee()
         dealloc(
             ThinAllocation(unsafe_owned_ptr=node).unsafe_with_layout(
@@ -519,8 +519,8 @@ struct IntervalTree[
         var rotation_right_child_nn = rotation_right_child.value()
         rotation_node_nn[].right() = rotation_right_child_nn[].left()
 
-        if rotation_right_child_nn[].left():
-            rotation_right_child_nn[].left().value()[].parent() = rotation_node
+        if case .Some(left) = rotation_right_child_nn[].left():
+            left[].parent() = rotation_node
 
         rotation_right_child_nn[].parent() = rotation_node_nn[].parent()
 
@@ -535,29 +535,29 @@ struct IntervalTree[
         rotation_node_nn[].parent() = rotation_right_child
 
         rotation_node_nn[].max_end = rotation_node_nn[].interval.end.copy()
-        if rotation_node_nn[].left():
+        if case .Some(left) = rotation_node_nn[].left():
             rotation_node_nn[].max_end = max(
                 rotation_node_nn[].max_end,
-                rotation_node_nn[].left().value()[].max_end,
+                left[].max_end,
             )
-        if rotation_node_nn[].right():
+        if case .Some(right) = rotation_node_nn[].right():
             rotation_node_nn[].max_end = max(
                 rotation_node_nn[].max_end,
-                rotation_node_nn[].right().value()[].max_end,
+                right[].max_end,
             )
 
         rotation_right_child_nn[].max_end = (
             rotation_right_child_nn[].interval.end.copy()
         )
-        if rotation_right_child_nn[].left():
+        if case .Some(left) = rotation_right_child_nn[].left():
             rotation_right_child_nn[].max_end = max(
                 rotation_right_child_nn[].max_end,
-                rotation_right_child_nn[].left().value()[].max_end,
+                left[].max_end,
             )
-        if rotation_right_child_nn[].right():
+        if case .Some(right) = rotation_right_child_nn[].right():
             rotation_right_child_nn[].max_end = max(
                 rotation_right_child_nn[].max_end,
-                rotation_right_child_nn[].right().value()[].max_end,
+                right[].max_end,
             )
 
     def _right_rotate(mut self, rotation_node: Self._IntervalNodePointer):
@@ -588,8 +588,8 @@ struct IntervalTree[
         var rotation_left_child_nn = rotation_left_child.value()
         rotation_node_nn[].left() = rotation_left_child_nn[].right()
 
-        if rotation_left_child_nn[].right():
-            rotation_left_child_nn[].right().value()[].parent() = rotation_node
+        if case .Some(right) = rotation_left_child_nn[].right():
+            right[].parent() = rotation_node
 
         rotation_left_child_nn[].parent() = rotation_node_nn[].parent()
 
@@ -604,24 +604,24 @@ struct IntervalTree[
         rotation_node_nn[].parent() = rotation_left_child
 
         rotation_node_nn[].max_end = rotation_node_nn[].interval.end.copy()
-        if rotation_node_nn[].left():
+        if case .Some(left) = rotation_node_nn[].left():
             rotation_node_nn[].max_end = max(
                 rotation_node_nn[].max_end,
-                rotation_node_nn[].left().value()[].max_end,
+                left[].max_end,
             )
-        if rotation_node_nn[].right():
+        if case .Some(right) = rotation_node_nn[].right():
             rotation_node_nn[].max_end = max(
                 rotation_node_nn[].max_end,
-                rotation_node_nn[].right().value()[].max_end,
+                right[].max_end,
             )
 
         rotation_left_child_nn[].max_end = (
             rotation_left_child_nn[].interval.end.copy()
         )
-        if rotation_left_child_nn[].left():
+        if case .Some(left) = rotation_left_child_nn[].left():
             rotation_left_child_nn[].max_end = max(
                 rotation_left_child_nn[].max_end,
-                rotation_left_child_nn[].left().value()[].max_end,
+                left[].max_end,
             )
 
     def insert(mut self, interval: Tuple[Self.T, Self.T], data: Self.U):
@@ -655,7 +655,7 @@ struct IntervalTree[
         # If the tree is empty, set the root to the new node and color it black.
         if not self._root:
             self._root = new_node
-            self._root.value()[]._is_red = False
+            new_node[]._is_red = False
             return
 
         # Find the insertion point by traversing down the tree
@@ -663,14 +663,14 @@ struct IntervalTree[
         var parent_node = Self._IntervalNodePointer()
         # current_node traverses down the tree until we find an empty spot
         var current_node = self._root
-        while current_node:
+        while case .Some(var cur) = current_node:
             parent_node = current_node
-            if new_node[] < current_node.value()[]:
-                current_node = current_node.value()[].left()
+            if new_node[] < cur[]:
+                current_node = cur[].left()
             else:
-                current_node = current_node.value()[].right()
-            parent_node.value()[].max_end = max(
-                parent_node.value()[].max_end,
+                current_node = cur[].right()
+            cur[].max_end = max(
+                cur[].max_end,
                 new_node[].interval.end,
             )
 
@@ -973,8 +973,8 @@ struct IntervalTree[
         else:
             u.value()[].parent().value()[].right() = v
 
-        if v:
-            v.value()[].parent() = u.value()[].parent()
+        if case .Some(v) = v:
+            v[].parent() = u.value()[].parent()
 
     def search(self, interval: Tuple[Self.T, Self.T]) raises -> List[Self.U]:
         """Searches for intervals overlapping with the given tuple.

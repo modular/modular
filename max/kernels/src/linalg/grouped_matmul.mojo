@@ -14,21 +14,18 @@
 """Provides grouped matrix multiplication kernels for CPU, AMD, and NVIDIA GPU targets."""
 
 from std.collections import Optional
+from std.bit import count_trailing_zeros
 from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import (
-    has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
-    has_apple_gpu_accelerator,
 )
 
-from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
-from max.gpu.sync import barrier
-from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100, _is_sm10x_gpu, is_gpu
-from max.gpu import block_idx, global_idx, warp_id, lane_id, thread_idx
-from max.gpu.memory import external_memory
+from max.gpu import WARP_SIZE, block_idx, global_idx, lane_id, thread_idx
+import max.gpu.primitives.warp as warp
 from max.gpu.primitives.grid_controls import PDLLevel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_span import get_static_string
@@ -38,33 +35,27 @@ from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
     Idx,
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    LTToTTLayout,
-    row_major,
-    RuntimeLayout,
-    TensorLayout,
     TensorEngine,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-)
-from layout.tensor_core_async import tile_layout_k_major
-from layout.tma_async import (
-    SharedMemBarrier,
-    TMATensorTile,
-    create_tensor_tile,
+    row_major,
 )
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
-from std.utils.static_tuple import StaticTuple
 
-from .arch.sm100 import MmaOpSM100_SS
 from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
 from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
-from .utils import elementwise_epilogue_type, lora_qkv_plane_row_offset
+from .utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    elementwise_epilogue_type,
+    no_compute_fn,
+    lora_qkv_plane_row_offset,
+    no_epilogue_fn,
+)
 from .utils_gpu import MatmulConfig, _bk_base
 from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
@@ -74,6 +65,9 @@ from .matmul.gpu import (
 )
 from .matmul.gpu.amd import AMDMatmul
 from .matmul.gpu.apple.matmul2d_fp8 import enqueue_grouped_matmul2d_fp8
+from .matmul.gpu.apple.grouped_matmul import (
+    enqueue_apple_grouped_matmul,
+)
 from std.algorithm import vectorize
 
 
@@ -97,15 +91,37 @@ def naive_grouped_matmul_kernel[
     BLayout: TensorLayout,
     AOffsetsLayout: TensorLayout,
     ExpertIdsLayout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    a_offsets_engine: TensorEngine,
+    expert_ids_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
     *,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
-    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
-    a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin],
-    b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin],
-    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
-    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
+    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[mut=False, a_type, ALayout, MutAnyOrigin, Engine=a_engine],
+    b: TileTensor[mut=False, b_type, BLayout, MutAnyOrigin, Engine=b_engine],
+    a_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        AOffsetsLayout,
+        MutAnyOrigin,
+        Engine=a_offsets_engine,
+    ],
+    expert_ids: TileTensor[
+        mut=False,
+        .int32,
+        ExpertIdsLayout,
+        MutAnyOrigin,
+        Engine=expert_ids_engine,
+    ],
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """Computes one element per thread of the grouped matmul product ``C[a_offsets[z]:a_offsets[z+1], :] = A[...] @ B[expert_ids[z], :, :].T`` for each active expert ``z``, with an optional elementwise epilogue.
 
@@ -122,9 +138,9 @@ def naive_grouped_matmul_kernel[
     var N = Int(b.dim[1]())
     var K = Int(b.dim[2]())
 
-    var a_start_row = a_offsets[block_idx.z]
+    var a_start_row = rebind[UInt32](a_offsets[block_idx.z])
 
-    var expert = expert_ids[block_idx.z]
+    var expert = rebind[Int32](expert_ids[block_idx.z])
     var b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul
@@ -159,442 +175,78 @@ def naive_grouped_matmul_kernel[
                 * b_by_expert[n * K + k].cast[accum_type]()
             )
 
-    comptime if elementwise_lambda_fn:
-        comptime elementwise_lambda = elementwise_lambda_fn.value()
-        elementwise_lambda[c_type, 1](
-            Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
-        )
+    var idx = Coord(Int(a_start_row) + m, n)
+    var out = accum.cast[c_type]()
+    comptime if has_epilogue_fn:
+        epilogue_fn[c_type, 1, alignment=1](idx, out)
     else:
+        comptime if has_compute_fn:
+            out = compute_fn[c_type, 1, alignment=1](idx, out)
         var c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
-        c_by_expert[m * N + n] = accum.cast[c_type]()
+        c_by_expert[m * N + n] = out
 
 
-# ===----------------------------------------------------------------------=== #
-# H100 grouped matmul
-# ===----------------------------------------------------------------------=== #
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads)),
-)
-@__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
-@__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
-@__name(
-    t"grouped_matmul_kernel_sm100_{a_type}_{b_type}_{c_type}_t{num_threads}",
-)
-def grouped_matmul_kernel_sm100[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    static_K: Int,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    CLayout: TensorLayout,
+@always_inline
+def _find_tile_group[
+    BM: Int,
     AOffsetsLayout: TensorLayout,
-    ExpertIdsLayout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    transpose_b: Bool = True,
-    num_threads: Int = 128,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    a_offsets_engine: TensorEngine,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
-    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
-    c: TileTensor[mut=True, c_type, CLayout, MutAnyOrigin],
-    num_iters: Int32,
-):
-    var _num_iters = Int(num_iters)
-    comptime assert transpose_b, "Only support transposed B in layout"
-    comptime assert num_threads == 128 or num_threads == 256
-    comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
-    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
-
-    var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
-    comptime N = c.static_shape[1]
-    comptime K = static_K
-
-    comptime BM = block_tile_shape[0]
-    comptime BN = block_tile_shape[1]
-    comptime BK = block_tile_shape[2]
-    comptime MMA_M = mma_shape[0]  # BM
-    comptime MMA_N = mma_shape[1]  # BN
-    comptime MMA_K = mma_shape[2]  # 16
-    comptime num_m_mmas = BM // MMA_M
-    comptime num_n_mmas = BN // MMA_N
-    comptime num_k_mmas = BK // MMA_K
-
-    var a_start_row = a_offsets[block_idx.z]
-    var expert = expert_ids[block_idx.z]
-    var b_start_row = expert * Int32(N)
-
-    var m_start = block_idx.y * BM
-    var n_start = block_idx.x * BN
-    var a_m_start = Int(a_start_row) + m_start
-    var b_n_start = Int(b_start_row) + n_start
-    if m_start >= Int(M) or n_start >= N:
-        return
-
-    # we don't do the whole mma_shape_A vibes, rather, we directly declare it
-    # tile_layout_k_major is cutlass equiv of tile_to_mma_shape
-    # and sA_layout gets computed directly, by hand
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
-    comptime sub_a_smem_layout = tile_layout_k_major[
-        a_type, BM, 64, swizzle_mode=a_swizzle
-    ]()
-    comptime sub_b_smem_layout = tile_layout_k_major[
-        b_type, BN, 64, swizzle_mode=b_swizzle
-    ]()
-
-    var a_smem = rebind[
-        UnsafePointer[
-            Scalar[a_type], UntrackedOrigin[mut=True], address_space=.SHARED
-        ]
-    ](
-        external_memory[
-            Scalar[a_type],
-            address_space=.SHARED,
-            alignment=128,
-            name="tmem_test_dynamic_shared_memory",
-        ]()
-    )
-
-    # a_smem_layout is a description of how tile is arranged in memory, and LayoutTensor is a pointer to memory + a layout, taking in a_smem as its pointer
-    comptime sub_a_smem_tile_t = LayoutTensor[
-        a_type,
-        sub_a_smem_layout,
-        MutUntrackedOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ]
-    comptime sub_b_smem_tile_t = LayoutTensor[
-        b_type,
-        sub_b_smem_layout,
-        MutUntrackedOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ]
-    comptime a_size = a_smem_layout.size()
-    comptime b_size = b_smem_layout.size()
-
-    comptime assert (
-        (a_size * size_of[a_type]()) % 128
-    ) == 0, "preserve alignment"
-    comptime assert (
-        (b_size * size_of[b_type]()) % 16
-    ) == 0, "preserve alignment"
-    var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
-
-    var a_smem_tile = TileTensor(a_smem, LTToTTLayout[a_smem_layout]())
-    var b_smem_tile = TileTensor(b_smem, LTToTTLayout[b_smem_layout]())
-
-    # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
-    var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
-
-    comptime accum_type = get_accum_type[a_type]()
-
-    comptime c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
-    var c_frag: Array[
-        Scalar[accum_type], c_frag_size
-    ]  # array of accumulator elements
-
-    comptime a_expected_bytes = a_size * size_of[a_type]()
-    comptime b_expected_bytes = b_size * size_of[b_type]()
-    comptime expected_bytes = a_expected_bytes + b_expected_bytes
-
-    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    var mma_mbar = tma_mbar + 1
-
-    if thread_idx.x == 0:
-        tma_mbar[0].init()
-        mma_mbar[0].init()
-
-    var tma_phase: UInt32 = 0
-    var mma_phase: UInt32 = 0
-
-    var elect_one_warp = warp_id() == 0
-    var elect_one_thread = thread_idx.x == 0
-    comptime max_tmem_cols = 512
-
-    # allocate all 2^18 bytes of smem for tcgen05, all 512 cols allocated
-    if elect_one_warp:
-        tcgen05_alloc[1](ptr_tmem_addr, max_tmem_cols)
-
-    # Ensure all threads sees initialized mbarrier and
-    # tensor memory allocation
-    barrier()
-
-    var tmem_addr = ptr_tmem_addr[0]
-
-    # Create MmaOpSM100_SS instance to handle MMA operations
-    var mma_op = MmaOpSM100_SS[
-        c_type,
-        a_type,
-        b_type,
-        block_tile_shape,
-        mma_shape,
-        accum_type=accum_type,
-        cta_group=1,
-        a_swizzle=a_swizzle,
-        b_swizzle=b_swizzle,
-        transpose_b=transpose_b,
-    ]()
-
-    for i in range(
-        _num_iters
-    ):  # K // BK, which is K // 64 or K // 128 depending on BK
-        # so only one thread per CTA does the copy
-        if elect_one_thread:
-            tma_mbar[0].expect_bytes(Int32(expected_bytes))
-
-            comptime for j in range(
-                BK // 64
-            ):  # so we do the copy in 64 chunks or 64 elements at a time (BK // 64). but hmm, we said that the K atom can only be 32 bytes (16 elements)
-                comptime k = 64 * j
-                comptime a_offset = a_smem_layout(IntTuple(0, k))
-                comptime b_offset = b_smem_layout(IntTuple(0, k))
-                comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
-                comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
-                var sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
-                # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
-                # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
-                # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
-                # so the async_copy takes care of that. TMA engine will copy the data from global tensor into smem tile A
-                var k_start: Int = i * BK + k
-                a_tma_op.async_copy(
-                    sub_a_smem_tile,
-                    tma_mbar[0],
-                    (k_start, a_m_start),
-                )
-                var sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
-                b_tma_op.async_copy(
-                    sub_b_smem_tile,
-                    tma_mbar[0],
-                    (k_start, b_n_start),
-                )
-        # wait for the copy to finish
-        tma_mbar[0].wait(tma_phase)
-        tma_phase ^= 1
-
-        # now we do the mma, again only one thread issues the instruction
-        if elect_one_thread:
-            # Use MmaOpSM100_SS to perform the MMA operation
-            mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
-                tmem_addr,
-                init_c=(i == 0),  # Initialize C on first iteration
-            )
-
-            mma_op.commit(mma_mbar)
-
-        mma_mbar[0].wait(mma_phase)
-        mma_phase ^= 1
-
-    # eventually all of c has been accumulated, so we load it from tmem_addr into c_frag registers using tcgen05_ld
-    c_frag = tcgen05_ld[
-        datapaths=16,
-        bits=256,
-        repeat=BN // 8,
-        dtype=accum_type,
-        pack=False,
-        width=c_frag_size,
-    ](tmem_addr)
-
-    tcgen05_load_wait()  # wait for the load to finish
-
-    if elect_one_warp:
-        tcgen05_release_allocation_lock[1]()
-        tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
-
-    comptime num_warps = num_threads // WARP_SIZE
-    var warp_id = warp_id()
-
-    comptime c_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
-    comptime c_gmem_type = LayoutTensor[
-        c_type,
-        c_gmem_layout,
+    a_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        AOffsetsLayout,
         MutAnyOrigin,
-        layout_int_type=.int32,
-        address_space=.GENERIC,
-    ]
+        Engine=a_offsets_engine,
+    ],
+    num_groups: Int,
+    tile: Int,
+) -> Tuple[UInt32, Int]:
+    """Finds the group that owns a flat tile index.
 
-    # FIXME: A list literal initializer should be enough here, but somehow Mojo fails to infer that.
-    var c_gmem_runtime_layout = RuntimeLayout[c_gmem_layout](
-        Index(M, N), Index(N, 1)
-    )
+    Group ``g`` owns ``ceildiv(M_g, BM)`` consecutive tiles, so the tiles of
+    all groups form one list. Returns the owning group and the tile's index
+    within it, or ``(num_groups, 0)`` if ``tile`` is past the last group.
 
-    var c_by_expert = c_gmem_type(
-        c.ptr + a_start_row * UInt32(N), c_gmem_runtime_layout
-    )
+    Each step covers ``WARP_SIZE`` groups at once, one per lane, so empty
+    groups cost nothing extra. Must be called by every lane of a warp.
 
-    var ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
-        block_idx.y, block_idx.x
-    )
-    comptime c_coord_type = type_of(ctile_coords)
+    Args:
+        a_offsets: Row offsets of the groups, ``num_groups + 1`` entries.
+        num_groups: Number of groups.
+        tile: Flat tile index.
 
-    comptime for m_mma in range(num_m_mmas):
-        comptime for n_mma in range(num_n_mmas):
-            comptime mma_id = n_mma * num_m_mmas + m_mma
-
-            var c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
-                ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
-                    4 * m_mma + warp_id, n_mma
-                )
-            )
-            var c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
-                _c_gmem_warp_tile_coords
-            )
-
-            var c_gmem_frag, _c_gmem_frag_coords, _ = (
-                c_gmem_warp_tile.vectorize[1, 2]().distribute_with_offset[
-                    Layout.row_major(8, 4)
-                ](lane_id())
-            )
-            var new_c_gmem_frag_coords = rebind[c_coord_type](
-                _c_gmem_frag_coords
-            )
-            new_c_gmem_frag_coords[1] *= 2
-            var c_gmem_frag_coords = (
-                c_gmem_warp_tile_coords + new_c_gmem_frag_coords
-            )
-
-            comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
-            comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
-
-            comptime for n_vec in range(num_vecs_n):
-                comptime for m_vec in range(num_vecs_m):
-                    comptime i_vec = n_vec * num_vecs_m + m_vec
-                    comptime dst_idx = type_of(c_gmem_frag).layout(
-                        IntTuple(m_vec, n_vec)
-                    )
-                    comptime dst_m_offset, dst_n_offset = divmod(dst_idx, N)
-                    var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
-                    var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
-
-                    if m < M and n < UInt32(N):
-                        var c_mn = SIMD[accum_type, 2](
-                            c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
-                        ).cast[c_type]()
-
-                        comptime if elementwise_lambda_fn:
-                            comptime alignment = align_of[SIMD[c_type, 2]]()
-                            comptime epilogue = elementwise_lambda_fn.value()
-                            epilogue[alignment=alignment](
-                                (Int(a_start_row + m), Int(n)), c_mn
-                            )
-                        else:
-                            c_gmem_frag[m_vec, n_vec] = rebind[
-                                c_gmem_frag.element_type
-                            ](c_mn)
-
-
-def grouped_matmul_sm100[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    //,
-    *,
-    transpose_b: Bool = True,
-    mma_shape: IndexList[3] = Index(64, 128, 16),
-    block_tile_shape: IndexList[3] = Index(64, 128, 64),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-](
-    c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
-    a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
-    a_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
-    max_num_tokens_per_expert: Int,
-    b: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
-    expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
-    num_active_experts: Int,
-    ctx: DeviceContext,
-) raises:
-    """Launches the SM100 grouped matmul kernel with TMA descriptors for ragged MoE matrix multiplication on Blackwell GPUs.
+    Returns:
+        The owning group and the tile's index within it.
     """
-    comptime num_experts = b.static_shape[0]
-    comptime N = b.static_shape[1]
-    comptime K = b.static_shape[2]
-
-    comptime BM = block_tile_shape[0]
-    comptime BN = block_tile_shape[1]
-    comptime BK = block_tile_shape[2]
-    comptime assert K % BK == 0
-    comptime assert BK == 64
-
-    # hard coded 64 for BK
-
-    comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
-    comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
-    # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
-        ctx, a
-    )
-    var b_2d = TileTensor(b.ptr, row_major[num_experts * N, K]())
-    var b_tma_op = create_tensor_tile[
-        Index(BN, BK) if transpose_b else Index(BK, BN),
-        swizzle_mode=b_swizzle,
-    ](ctx, b_2d)
-    comptime block_dim = 128
-    comptime smem_use = (
-        BM * size_of[a_type]() + BN * size_of[b_type]()
-    ) * BK + 24
-
-    comptime kernel = grouped_matmul_kernel_sm100[
-        a_type,
-        b_type,
-        c_type,
-        K,
-        type_of(a_tma_op).rank,
-        type_of(a_tma_op).tile_shape,
-        type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
-        type_of(b_tma_op).tile_shape,
-        type_of(b_tma_op).desc_shape,
-        type_of(c).LayoutType,
-        type_of(a_offsets).LayoutType,
-        type_of(expert_ids).LayoutType,
-        block_tile_shape,
-        mma_shape,
-        a_swizzle,
-        b_swizzle,
-        c_swizzle,
-        transpose_b=transpose_b,
-        num_threads=block_dim,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ]
-
-    ctx.enqueue_function[kernel](
-        a_tma_op,
-        b_tma_op,
-        a_offsets,
-        expert_ids,
-        c,
-        Int32(ceildiv(K, BK)),
-        grid_dim=(
-            ceildiv(N, BN),
-            ceildiv(max_num_tokens_per_expert, BM),
-            num_active_experts,
-        ),
-        block_dim=(block_dim),
-        shared_mem_bytes=smem_use,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_use)
-        ),
-    )
+    var target = UInt32(tile)
+    # Tiles owned by the groups before the current step.
+    var tiles_seen = UInt32(0)
+    for base in range(0, num_groups, WARP_SIZE):
+        var g = base + lane_id()
+        var group_tiles = UInt32(0)
+        if g < num_groups:
+            group_tiles = ceildiv(
+                UInt32(a_offsets[g + 1]) - UInt32(a_offsets[g]), UInt32(BM)
+            )
+        # Inclusive prefix sum: tiles owned by this lane's group and all
+        # groups before it.
+        var tiles_through_group = tiles_seen + warp.prefix_sum(group_tiles)
+        # The first lane that passes `target` owns it; empty groups cannot
+        # be that lane.
+        var passed = warp.vote[.uint64](tiles_through_group > target)
+        if passed != 0:
+            var owner_lane = UInt32(count_trailing_zeros(passed))
+            # Inclusive sum, so subtract the owner's own tiles to get where
+            # its tiles start.
+            var first_tile = warp.shuffle_idx(
+                tiles_through_group - group_tiles, owner_lane
+            )
+            return (UInt32(base) + owner_lane, Int(target - first_tile))
+        tiles_seen = warp.shuffle_idx(
+            tiles_through_group, UInt32(WARP_SIZE - 1)
+        )
+    return (UInt32(num_groups), 0)
 
 
 @__name(t"grouped_matmul_amd_{a_type}_{b_type}_{c_type}")
@@ -609,89 +261,128 @@ def grouped_matmul_amd_kernel_launcher[
     ExpertIdsLayout: TensorLayout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    a_offsets_engine: TensorEngine,
+    expert_ids_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    ComputeFnType: ElementwiseComputeFn,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
-    c_tensor: TileTensor[mut=True, c_type, LayoutC, MutAnyOrigin],
-    a_tensor: TileTensor[a_type, LayoutA, MutAnyOrigin],
-    b_tensor: TileTensor[b_type, LayoutB, MutAnyOrigin],
-    a_offsets: TileTensor[mut=False, .uint32, AOffsetsLayout, MutAnyOrigin],
-    expert_ids: TileTensor[mut=False, .int32, ExpertIdsLayout, MutAnyOrigin],
+    c_tensor: TileTensor[
+        mut=True, c_type, LayoutC, MutAnyOrigin, Engine=c_engine
+    ],
+    a_tensor: TileTensor[a_type, LayoutA, MutAnyOrigin, Engine=a_engine],
+    b_tensor: TileTensor[b_type, LayoutB, MutAnyOrigin, Engine=b_engine],
+    a_offsets: TileTensor[
+        mut=False,
+        .uint32,
+        AOffsetsLayout,
+        MutAnyOrigin,
+        Engine=a_offsets_engine,
+    ],
+    expert_ids: TileTensor[
+        mut=False,
+        .int32,
+        ExpertIdsLayout,
+        MutAnyOrigin,
+        Engine=expert_ids_engine,
+    ],
     num_active_experts: Int32,
+    epilogue_fn: EpilogueFnType,
+    compute_fn: ComputeFnType,
 ):
     """Computes the AMD GPU grouped matmul by dispatching per-expert tiles through ``AMDMatmul``, with separate zero-fill handling for inactive (``expert_id == -1``) blocks.
 
     For active experts, delegates the per-tile matmul (and optional
     elementwise epilogue) to ``AMDMatmul``. For inactive experts, zeroes the
-    output row range and invokes the epilogue with zero values so that
+    output row range, or invokes the epilogue with zero values, so that
     LoRA-style inactive blocks still produce a defined output.
     """
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert transpose_b, "Only support transposed B in grouped matmul."
 
-    var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
+    comptime BM = config.block_tile_shape[0]
+
+    # `block_idx.y` is a flat BM-row tile index over all groups; the host
+    # sizes it with an upper bound in `grouped_matmul_amd`.
+    var group, tile_m = _find_tile_group[BM](
+        a_offsets, Int(num_active_experts), block_idx.y
+    )
+    if group == UInt32(num_active_experts):
+        return
+    var M = UInt32(a_offsets[group + 1]) - UInt32(a_offsets[group])
+
     comptime N = c_tensor.static_shape[1]
     comptime K = b_tensor.static_shape[1]
 
-    var expert_id = expert_ids[block_idx.z]
-    var a_start_row = a_offsets[block_idx.z]
+    var expert_id = rebind[Int32](expert_ids[group])
+    var a_start_row = rebind[UInt32](a_offsets[group])
 
-    var a_ptr = a_tensor.ptr + a_start_row * UInt32(K)
-    var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K)
-    var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+    # 64-bit offsets. B passes Int32 once the bf16 expert stack exceeds 4 GiB
+    # (Kimi K3 gate/up at 8 devices), and the wrapped pointer reads out of
+    # bounds without erroring. A and C scale with token rows and fit today,
+    # but a large `max_batch_input_tokens` would wrap them too.
+    var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(K)
+    var b_ptr = b_tensor.ptr + Int(expert_id) * Int(N) * Int(K)
+    var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
 
+    comptime has_any_epilogue = has_epilogue_fn or has_compute_fn
+
+    # Takes this group's rows from 0; the epilogues take rows of all of `c`.
     @inline(.always)
-    @__parameter
-    def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
-        comptime if elementwise_lambda_fn:
-            comptime elementwise_epilogue = elementwise_lambda_fn.value()
-            var batch_idx = IndexList[2](
-                Int(a_start_row + UInt32(idx[0])), idx[1]
+    def group_epilogue_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {
+        var epilogue_fn, var compute_fn, var c_ptr, var a_start_row
+    }:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row = Int(idx[0].value())
+        var col = Int(idx[1].value())
+        var row_idx = Coord(Int(a_start_row) + row, col)
+        comptime if has_compute_fn:
+            (c_ptr + row * N + col).store[alignment=alignment](
+                rebind[SIMD[c_type, width]](
+                    compute_fn[dtype, width, alignment=alignment](row_idx, val)
+                )
             )
-            elementwise_epilogue(batch_idx, val)
+        else:
+            epilogue_fn[dtype, width, alignment=alignment](row_idx, val)
 
     # Only perform matmul if expert_id is not -1
     # AMD matmul kernel performs the epilogue function
     if expert_id != -1:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K])))
+        var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+        var a_tile = TileTensor(a_ptr, row_major(M, Idx[K]))
         var b_tile = TileTensor(b_ptr, row_major[N, K]())
-        AMDMatmul[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b,
-            config,
-            Optional[elementwise_epilogue_type](
-                elementwise_epilogue_fn_wrapper
-            ) if elementwise_lambda_fn else None,
-        ].run[
-            type_of(c_tile).LayoutType,
-            type_of(a_tile).LayoutType,
-            type_of(b_tile).LayoutType,
-            type_of(c_tile).Engine,
-            type_of(a_tile).Engine,
-            type_of(b_tile).Engine,
-        ](
-            c_tile, a_tile, b_tile
-        )
+        comptime matmul = AMDMatmul[a_type, b_type, c_type, transpose_b, config]
+        comptime if has_any_epilogue:
+            matmul._run_at_tile_impl[
+                has_epilogue_fn=True, has_compute_fn=False
+            ](
+                c_tile,
+                a_tile,
+                b_tile,
+                tile_m,
+                block_idx.x,
+                group_epilogue_fn,
+                no_compute_fn,
+            )
+        else:
+            matmul.run_at_tile(c_tile, a_tile, b_tile, tile_m, block_idx.x)
 
     # Perform the epilogue function separately if expert_id is -1
     else:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-        _ = c_tile.fill(0.0)
-
-        comptime if elementwise_lambda_fn:
-            comptime epilogue = elementwise_lambda_fn.value()
-
+        comptime if has_any_epilogue:
             comptime BM = config.block_tile_shape[0]
             comptime BN = config.block_tile_shape[1]
             comptime vec_width = simd_width_of[c_type]()
             comptime alignment = align_of[SIMD[c_type, vec_width]]()
 
-            var block_m = block_idx.y
+            var block_m = tile_m
             var block_n = block_idx.x
 
             # Early exit if this block is completely outside the matrix bounds
@@ -725,25 +416,29 @@ def grouped_matmul_amd_kernel_launcher[
                     if actual_width == width and local_col + UInt32(
                         width
                     ) <= UInt32(N):
-                        var zero_vec = SIMD[c_type, width](0.0)
-                        epilogue[
-                            dtype=c_type,
-                            width=width,
+                        group_epilogue_fn[
+                            c_type,
+                            width,
                             alignment=align_of[SIMD[c_type, width]](),
-                        ]((Int(local_row), Int(local_col)), zero_vec)
+                        ](
+                            (Int(local_row), Int(local_col)),
+                            SIMD[c_type, width](0.0),
+                        )
                     else:
                         for i in range(actual_width):
                             if local_col + UInt32(i) < UInt32(N):
-                                var zero_scalar = SIMD[c_type, 1](0.0)
-                                epilogue[dtype=c_type, width=1, alignment=1](
+                                group_epilogue_fn[c_type, 1, alignment=1](
                                     (
                                         Int(local_row),
                                         Int(local_col + UInt32(i)),
                                     ),
-                                    zero_scalar,
+                                    SIMD[c_type, 1](0.0),
                                 )
 
             vectorize[vec_width](elements_to_process, process_elements)
+        else:
+            var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+            _ = c_tile.fill(0.0)
 
 
 @inline(.always)
@@ -806,12 +501,11 @@ def dispatch_amd_matmul_by_block_shape[
 
     # Fallback to default config
     @inline(.always)
-    @__parameter
     def default_config_launcher[
         block_m: Int,
         block_n: Int,
         block_k: Int,
-    ]() raises:
+    ]() raises {imm}:
         comptime default_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
@@ -827,28 +521,33 @@ def dispatch_amd_matmul_by_block_shape[
         launcher_fn[default_config]()
 
     # auto-tuned sizes
-    if M == 128 and N == 256 and K == 256:
-        default_config_launcher[32, 32, 128]()
-    elif M == 256 and N == 512 and K == 1024:
-        default_config_launcher[32, 32, 128]()
-    elif M == 384 and N == 768 and K == 1024:
-        default_config_launcher[32, 64, 128]()
-    elif M == 1977 and N == 192 and K == 1024:
-        default_config_launcher[64, 96, 128]()
-    elif M == 1977 and N == 1280 and K == 1024:
-        default_config_launcher[96, 96, 64]()
-    else:
-        default_config_launcher[64, 64, 64]()
+    match (M, N, K):
+        case (128, 256, 256):
+            default_config_launcher[32, 32, 128]()
+        case (256, 512, 1024):
+            default_config_launcher[32, 32, 128]()
+        case (384, 768, 1024):
+            default_config_launcher[32, 64, 128]()
+        case (1977, 192, 1024):
+            default_config_launcher[64, 96, 128]()
+        case (1977, 1280, 1024):
+            default_config_launcher[96, 96, 64]()
+        case _:
+            default_config_launcher[64, 64, 64]()
 
 
 def grouped_matmul_amd[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     *,
     transpose_b: Bool = True,
     block_tile_shape: IndexList[3] = Index(128, 128, 64),
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[a_type, address_space=.GENERIC, ...],
@@ -858,8 +557,12 @@ def grouped_matmul_amd[
     expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Launches the AMD grouped matmul kernel, selecting the best block-tile configuration for the runtime M dimension via ``dispatch_amd_matmul_by_block_shape``.
+
+    The epilogues are as in `grouped_matmul`.
     """
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
@@ -872,9 +575,9 @@ def grouped_matmul_amd[
     comptime N = b.static_shape[1]
     comptime K = b.static_shape[2]
 
-    var total_M = 0
-    for i in range(num_active_experts):
-        total_M += Int(a_offsets[i + 1] - a_offsets[i])
+    # `a_offsets` lives on the device (stale during graph capture); `a` holds
+    # exactly the routed rows.
+    var total_M = Int(a.dim(0))
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -882,7 +585,7 @@ def grouped_matmul_amd[
     comptime assert K % BK == 0
 
     # Reshape b from (num_experts, N, K) to (num_experts*N, K) for 2D view
-    var b_2d = TileTensor(b.ptr, row_major[num_experts * N, K]())
+    var b_2d = b.reshape(row_major[num_experts * N, K]())
 
     comptime block_dim = 256
 
@@ -897,6 +600,8 @@ def grouped_matmul_amd[
         expert_ids,
         num_active_experts,
         max_num_tokens_per_expert,
+        epilogue_fn,
+        compute_fn,
         ctx,
     }:
         comptime kernel = grouped_matmul_amd_kernel_launcher[
@@ -910,8 +615,28 @@ def grouped_matmul_amd[
             type_of(expert_ids).LayoutType,
             transpose_b,
             config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
+            type_of(c).Engine,
+            type_of(a).Engine,
+            type_of(b_2d).Engine,
+            type_of(a_offsets).Engine,
+            type_of(expert_ids).Engine,
+            EpilogueFnType,
+            ComputeFnType,
+            has_epilogue_fn=has_epilogue_fn,
+            has_compute_fn=has_compute_fn,
         ]
+        # Flat tile grid; sum_g ceildiv(M_g, BM) is bounded both by
+        # ceildiv(total rows, BM) + nonempty groups and by nonempty groups *
+        # ceildiv(max M, BM). Empty groups own no tiles, and at most one group
+        # per routed row is nonempty, which keeps small-batch decode from
+        # launching a tile per expert.
+        var nonempty_groups = min(num_active_experts, Int(a.dim(0)))
+        var grid_y = min(
+            ceildiv(Int(a.dim(0)), config.block_tile_shape[0])
+            + nonempty_groups,
+            nonempty_groups
+            * ceildiv(max_num_tokens_per_expert, config.block_tile_shape[0]),
+        )
         ctx.enqueue_function[kernel](
             c,
             a,
@@ -919,11 +644,9 @@ def grouped_matmul_amd[
             a_offsets,
             expert_ids,
             Int32(num_active_experts),
-            grid_dim=(
-                ceildiv(N, config.block_tile_shape[1]),
-                ceildiv(max_num_tokens_per_expert, config.block_tile_shape[0]),
-                num_active_experts,
-            ),
+            host_arg=epilogue_fn,
+            host_arg2=compute_fn,
+            grid_dim=(ceildiv(N, config.block_tile_shape[1]), grid_y, 1),
             block_dim=(block_dim),
         )
 
@@ -946,8 +669,12 @@ def grouped_matmul_amd[
 
 @inline(.always)
 def grouped_matmul[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     *,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -960,6 +687,8 @@ def grouped_matmul[
     ],
     ctx: DeviceContext,
     host_stats: Optional[Tuple[Int, Int]] = None,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """TileTensor implementation of `grouped_matmul`.
 
@@ -973,6 +702,11 @@ def grouped_matmul[
     pair already known on the host. When set, the SM90/AMD/naive paths use it
     directly instead of copying `expert_usage_stats` back from the device; the
     host-scalar overload passes it so those callers skip the copy.
+
+    With `has_epilogue_fn`, `epilogue_fn` stores each output at its
+    `(row, col)` in `c`, and groups whose expert id is -1 pass it zeros.
+    With `has_compute_fn`, `compute_fn` maps each value before the kernel's
+    own store; SM100 applies it in registers and keeps its TMA store.
     """
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
@@ -983,6 +717,10 @@ def grouped_matmul[
     comptime c_type = c.dtype
     comptime a_type = a.dtype
     comptime b_type = b.dtype
+
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue and a compute epilogue are mutually exclusive"
 
     comptime is_expert_shape_static = (
         b.static_shape[0] != UNKNOWN_VALUE
@@ -1023,7 +761,7 @@ def grouped_matmul[
     comptime amd_bk = _bk_base[a_type, amd_kernel=True]()
     comptime static_K = b.static_shape[2]
     comptime is_amd_kernel_applicable = (
-        has_amd_gpu_accelerator()
+        ctx.target.is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         and is_expert_shape_static
         and static_K >= 2 * amd_bk
@@ -1034,16 +772,26 @@ def grouped_matmul[
     # Apple weight-only FP8 (W8A16) MoE: bf16 activation x float8_e4m3fn weight.
     # Routes to the tiled simdgroup-MMA grouped kernel (the FP8 analog of the
     # dense Apple FP8 Linear) instead of the scalar-cast `naive_grouped_matmul`.
-    # A fused epilogue is not applied by the tiled interior store, so shapes with
-    # one fall through to naive (the MoE decode path passes none). Pre-M5 Apple
-    # also falls through (the M5 native-fp8 MMA is unvalidated pre-M5). CUDA/AMD
-    # builds compile this branch out (`has_apple_gpu_accelerator()` is comptime).
+    # The tiled store applies an epilogue passed as a value; the plane select
+    # falls through to naive. Pre-M5 Apple also falls through (the M5 native-fp8
+    # MMA is unvalidated pre-M5). CUDA/AMD builds compile this branch out
+    # (`ctx.target.is_apple_gpu()` is comptime).
     comptime is_apple_fp8_moe_applicable = (
-        has_apple_gpu_accelerator()
+        ctx.target.is_apple_gpu()
         and a_type == .bfloat16
         and b_type == .float8_e4m3fn
         and is_expert_shape_static
-        and not elementwise_lambda_fn
+        and not a_plane_select_on
+    )
+    # Apple bf16 x bf16 or fp16 x fp16: grouped GEMV at decode, grouped
+    # simdgroup MMA at prefill. The plane select is only implemented by the
+    # naive kernel. Compiled out off Apple.
+    comptime is_apple_grouped_matmul_applicable = (
+        ctx.target.is_apple_gpu()
+        and a_type == b_type
+        and (a_type == .bfloat16 or a_type == .float16)
+        and is_expert_shape_static
+        and not a_plane_select_on
     )
 
     @inline(.always)
@@ -1062,7 +810,7 @@ def grouped_matmul[
         get_static_string[
             "grouped_matmul_",
             String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
-            "_has_epilogue" if elementwise_lambda_fn else "",
+            "_has_epilogue" if has_epilogue_fn or has_compute_fn else "",
         ](),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
@@ -1072,10 +820,16 @@ def grouped_matmul[
         # `expert_usage_stats` (device->host + sync). The SM100 persistent path
         # reads the device tensor directly and never calls this.
         @inline(.always)
-        @__parameter
-        def resolve_usage_stats() raises -> Tuple[Int, Int]:
-            if host_stats:
-                return host_stats.value()
+        def resolve_usage_stats() raises {imm} -> Tuple[Int, Int]:
+            if case .Some(host_stats) = host_stats:
+                return host_stats
+            # The sync below aborts an in-flight device-graph capture. On AMD
+            # use host-known upper bounds instead: no group has more rows than
+            # `a`, and `moe_create_indices` always reports every expert active.
+            comptime if (
+                ctx.target.is_amd_gpu() and not has_amd_rdna_gpu_accelerator()
+            ):
+                return (Int(a.dim(0)), Int(expert_ids.dim(0)))
             var host_buf = ctx.enqueue_create_host_buffer[.uint32](2)
             var dev_buf = DeviceBuffer[.uint32](
                 ctx,
@@ -1099,7 +853,8 @@ def grouped_matmul[
 
             grouped_matmul_sm90[
                 wgmma_shape=wgmma_shape,
-                elementwise_lambda_fn=elementwise_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
             ](
                 c,
                 a,
@@ -1109,6 +864,8 @@ def grouped_matmul[
                 expert_ids,
                 num_active_experts,
                 ctx,
+                epilogue_fn,
+                compute_fn,
             )
         elif is_sm100_kernel_applicable:
             comptime N = b.static_shape[1]
@@ -1156,7 +913,8 @@ def grouped_matmul[
                 cta_group=cta_group,
                 a_swizzle=a_swizzle,
                 b_swizzle=b_swizzle,
-                elementwise_lambda_fn=elementwise_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 a_plane_splits=a_plane_splits,
             ](
                 c,
@@ -1166,12 +924,17 @@ def grouped_matmul[
                 expert_ids,
                 expert_usage_stats,
                 ctx,
+                epilogue_fn,
+                compute_fn,
             )
         elif is_amd_kernel_applicable:
             var stats = resolve_usage_stats()
             var max_num_tokens_per_expert = stats[0]
             var num_active_experts = stats[1]
-            grouped_matmul_amd[elementwise_lambda_fn=elementwise_lambda_fn](
+            grouped_matmul_amd[
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
+            ](
                 c,
                 a,
                 a_offsets,
@@ -1180,6 +943,8 @@ def grouped_matmul[
                 expert_ids,
                 num_active_experts,
                 ctx,
+                epilogue_fn,
+                compute_fn,
             )
         elif is_apple_fp8_moe_applicable:
             var stats = resolve_usage_stats()
@@ -1208,7 +973,11 @@ def grouped_matmul[
                     linear_idx_type=type_of(b).linear_idx_type,
                     Engine=type_of(b).Engine,
                 ]
-                enqueue_grouped_matmul2d_fp8[c_type=c_type](
+                enqueue_grouped_matmul2d_fp8[
+                    c_type=c_type,
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](
                     c,
                     rebind[ABf16](a),
                     rebind[BFp8](b),
@@ -1217,10 +986,14 @@ def grouped_matmul[
                     max_num_tokens_per_expert,
                     num_active_experts,
                     ctx,
+                    epilogue_fn,
+                    compute_fn,
                 )
             else:
                 naive_grouped_matmul[
-                    elementwise_lambda_fn=elementwise_lambda_fn
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                    a_plane_splits=a_plane_splits,
                 ](
                     c,
                     a,
@@ -1230,13 +1003,53 @@ def grouped_matmul[
                     max_num_tokens_per_expert,
                     num_active_experts,
                     ctx,
+                    epilogue_fn,
+                    compute_fn,
+                )
+        elif is_apple_grouped_matmul_applicable:
+            var stats = resolve_usage_stats()
+            var max_num_tokens_per_expert = stats[0]
+            var num_active_experts = stats[1]
+            if ctx.compute_capability() == 5:
+                enqueue_apple_grouped_matmul[
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                    epilogue_fn,
+                    compute_fn,
+                )
+            else:
+                naive_grouped_matmul[
+                    has_epilogue_fn=has_epilogue_fn,
+                    has_compute_fn=has_compute_fn,
+                    a_plane_splits=a_plane_splits,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                    epilogue_fn,
+                    compute_fn,
                 )
         else:
             var stats = resolve_usage_stats()
             var max_num_tokens_per_expert = stats[0]
             var num_active_experts = stats[1]
             naive_grouped_matmul[
-                elementwise_lambda_fn=elementwise_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
+                has_compute_fn=has_compute_fn,
                 a_plane_splits=a_plane_splits,
             ](
                 c,
@@ -1247,13 +1060,19 @@ def grouped_matmul[
                 max_num_tokens_per_expert,
                 num_active_experts,
                 ctx,
+                epilogue_fn,
+                compute_fn,
             )
 
 
 @inline(.always)
 def grouped_matmul[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     *,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1264,6 +1083,8 @@ def grouped_matmul[
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Host-scalar overload for callers (LoRA SGMV, tests, benchmarks) that hold
     the usage stats as scalars rather than a `moe_create_indices` device tensor.
@@ -1279,9 +1100,10 @@ def grouped_matmul[
     with usage_stats_buf.map_to_host() as host:
         host[0] = UInt32(max_num_tokens_per_expert)
         host[1] = UInt32(num_active_experts)
-    var expert_usage_stats = TileTensor(usage_stats_buf, row_major(Coord(2)))
+    var expert_usage_stats = TileTensor(usage_stats_buf, row_major(2))
     grouped_matmul[
-        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
         a_plane_splits=a_plane_splits,
     ](
         c,
@@ -1292,15 +1114,21 @@ def grouped_matmul[
         expert_usage_stats,
         ctx,
         host_stats=(max_num_tokens_per_expert, num_active_experts),
+        epilogue_fn=epilogue_fn,
+        compute_fn=compute_fn,
     )
     _ = usage_stats_buf^
 
 
 @inline(.always)
 def naive_grouped_matmul[
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
+    //,
     *,
     transpose_b: Bool = True,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
@@ -1311,6 +1139,8 @@ def naive_grouped_matmul[
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """TileTensor primary implementation of `naive_grouped_matmul`."""
     comptime assert c.rank == 2 and c.flat_rank == 2
@@ -1329,15 +1159,25 @@ def naive_grouped_matmul[
         type_of(b).LayoutType,
         type_of(a_offsets).LayoutType,
         type_of(expert_ids).LayoutType,
-        elementwise_lambda_fn=elementwise_lambda_fn,
+        type_of(c).Engine,
+        type_of(a).Engine,
+        type_of(b).Engine,
+        type_of(a_offsets).Engine,
+        type_of(expert_ids).Engine,
+        EpilogueFnType,
+        ComputeFnType,
+        has_epilogue_fn=has_epilogue_fn,
+        has_compute_fn=has_compute_fn,
         a_plane_splits=a_plane_splits,
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        b.as_immut(),
+        a.as_imm(),
+        b.as_imm(),
         a_offsets,
         expert_ids,
+        host_arg=epilogue_fn,
+        host_arg2=compute_fn,
         grid_dim=(
             ceildiv(Int(c.dim[1]()), 32),
             ceildiv(max_num_tokens_per_expert, 16),
@@ -1503,11 +1343,8 @@ def grouped_matmul_rowwise_scaled_fp8_kernel[
         ).cast[accum_type]()
         accum = accum * a_scale * b_scale
 
-    comptime if elementwise_lambda_fn:
-        comptime elementwise_lambda = elementwise_lambda_fn.value()
-        elementwise_lambda[c_type, 1](
-            Index(Int(m_global), n), accum.cast[c_type]()
-        )
+    comptime if case .Some(elementwise_lambda) = elementwise_lambda_fn:
+        elementwise_lambda[c_type, 1]((Int(m_global), n), accum.cast[c_type]())
     else:
         var c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
         c_by_expert[m * N + n] = accum.cast[c_type]()
@@ -1649,10 +1486,10 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     ):
         ctx.enqueue_function[kernel](
             c,
-            a.as_immut(),
-            b.as_immut(),
-            a_scales.as_immut(),
-            b_scales.as_immut(),
+            a.as_imm(),
+            b.as_imm(),
+            a_scales.as_imm(),
+            b_scales.as_imm(),
             a_offsets,
             expert_ids,
             grid_dim=(
@@ -1694,14 +1531,8 @@ def grouped_matmul_vendor[
     comptime a_type = a.dtype
     comptime b_type = b.dtype
 
-    def _ri(v: Int) -> Int64:
-        return Int64(v)
-
-    # Extract dimensions from TileTensors directly.
+    # Extract the output width from the tensor directly.
     var c_N = Int(c.dim[1]())
-    var a_K = Int(a.dim[1]())
-    var b_N = Int(b.dim[1]())
-    var b_K = Int(b.dim[2]())
 
     @inline(.always)
     def vendor_description_fn() {var c, var a, var b, imm} -> String:
@@ -1739,7 +1570,7 @@ def grouped_matmul_vendor[
 
             # Handle experts with expert_id = -1 by writing zeros
             if expert_id < 0:
-                var c_ptr = c.ptr + token_start * UInt32(c_N)
+                var c_ptr = c.ptr + Int(token_start) * Int(c_N)
                 var buff = DeviceBuffer(
                     ctx, c_ptr, num_tokens * c_N, owning=False
                 )
@@ -1747,18 +1578,9 @@ def grouped_matmul_vendor[
                 continue
 
             # Create TileTensor views into the tensors for this expert
-            var a_slice = TileTensor(
-                a.ptr + token_start * UInt32(a_K),
-                row_major(Coord(_ri(num_tokens), _ri(a_K))),
-            )
-            var b_slice = TileTensor(
-                b.ptr + expert_id * Int32(b_N) * Int32(b_K),
-                row_major(Coord(_ri(b_N), _ri(b_K))),
-            )
-            var c_slice = TileTensor(
-                c.ptr + token_start * UInt32(c_N),
-                row_major(Coord(_ri(num_tokens), _ri(c_N))),
-            )
+            var a_slice = a[Int(token_start) : Int(token_start) + num_tokens, :]
+            var b_slice = b[Int(expert_id), :, :]
+            var c_slice = c[Int(token_start) : Int(token_start) + num_tokens, :]
 
             vendor_matmul[use_tf32](
                 ctx,

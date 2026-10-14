@@ -16,6 +16,7 @@
 #include "Mojo/Support/CompilerProfiling.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/IRMapping.h"
 
 using namespace M;
@@ -135,7 +136,15 @@ M::produceStandaloneModule(const SymbolTable &symtab,
 
   for (auto [sym, exportValKind] : exportedSymbols) {
     auto func = symtab.lookup<ExportInterface>(sym);
-    assert(func && "Unknown exported symbol");
+    // Absence is reachable rather than an invariant violation: the offload path
+    // exports names taken from a kernel's parameter values, and a kernel
+    // selected at run time never binds to a symbol the elaborator emitted.
+    if (!func) {
+      mlir::emitError(module->getLoc())
+          << "cannot slice out exported symbol '" << sym.getValue()
+          << "': it is not defined in this module";
+      return {};
+    }
 
     // Traverse the call graph and clone all the callees into this module.
     sliceDependencies(func, sliceSymtab, symtab, reusedMapping, visited);

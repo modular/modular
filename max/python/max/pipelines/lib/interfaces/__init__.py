@@ -35,7 +35,6 @@ from .arch_config import (
     ArchVLConfigWithTextSubconfig,
     arch_has_vision_tower,
 )
-from .generate import GenerateMixin
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
     GraphPipelineModel,
@@ -43,6 +42,7 @@ from .pipeline_model import (
     ModelInputs,
     ModelOutputs,
     ModuleV3MultiGraphPipelineModelWithKVCache,
+    ModuleV3Outputs,
     ModuleV3PipelineModel,
     ModuleV3PipelineModelWithKVCache,
     MultiGraphPipelineModelWithKVCache,
@@ -64,12 +64,12 @@ __all__ = [
     "ArchVLConfigWithTextSubconfig",
     "BatchProcessor",
     "BatchProcessorRuntime",
-    "GenerateMixin",
     "GraphPipelineModel",
     "GraphPipelineModelWithKVCache",
     "ModelInputs",
     "ModelOutputs",
     "ModuleV3MultiGraphPipelineModelWithKVCache",
+    "ModuleV3Outputs",
     "ModuleV3PipelineModel",
     "ModuleV3PipelineModelWithKVCache",
     "ModuleV3SingleReplicaBatchProcessor",

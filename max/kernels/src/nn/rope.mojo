@@ -17,20 +17,18 @@ from std.sys.info import CompilationTarget, simd_width_of
 
 from max.algorithm.functional import elementwise
 from std.complex import ComplexSIMD
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
     CoordLike,
+    DefaultEngine,
     RowMajorLayout,
+    TensorEngine,
     TensorLayout,
     TileTensor,
-    coord,
-    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
-
-from std.utils import IndexList
 
 
 @inline(.always)
@@ -74,41 +72,44 @@ def apply_rope[
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength, alignment: Int](
-        idx: IndexList[3], val: SIMD[dtype, width]
+        idx: Coord, val: SIMD[dtype, width]
     ) -> None,
 ](
     x: TileTensor[dtype, ...],
-    idx: IndexList[3],
+    idx: Coord,
     freq_val: SIMD[freq_dtype, width],
     output_fn: OutputFn,
 ):
     comptime rank = 3
+    comptime assert idx.rank == rank
     comptime assert rank - 1 >= 0
-    var indices = get_safetensors_idx(idx[rank - 1], x.static_shape[rank - 1])
-    var pos_re = idx
-    var pos_im = idx
-    pos_re[rank - 1] = indices[0]
-    pos_im[rank - 1] = indices[1]
+    # Normalize to all-dynamic elements: the last element is reassigned at
+    # runtime below, which static (`ComptimeInt`) elements forbid.
+    var idx_dyn = idx.make_dynamic[.int64]()
+    var indices = get_safetensors_idx(
+        Int(idx[rank - 1].value()), x.static_shape[rank - 1]
+    )
+    var pos_re = idx_dyn
+    var pos_im = idx_dyn
+    pos_re.replace_dynamic[rank - 1](Int64(indices[0]))
+    pos_im.replace_dynamic[rank - 1](Int64(indices[1]))
     comptime width_2 = width // 2
 
     var val: SIMD[dtype, width]
 
     comptime if interleaved:
-        var coord = Coord(idx)
-        val = x.load[width=width, alignment=1](coord)
+        val = x.load[width=width, alignment=1](idx_dyn)
     else:
-        var re_coord = Coord(pos_re)
-        var im_coord = Coord(pos_im)
         val = rebind[SIMD[dtype, width]](
-            x.load[width=width_2, alignment=1](re_coord).interleave(
-                x.load[width=width_2, alignment=1](im_coord)
+            x.load[width=width_2, alignment=1](pos_re).interleave(
+                x.load[width=width_2, alignment=1](pos_im)
             )
         )
 
     var res = _rope(val, freq_val)
 
     comptime if interleaved:
-        output_fn[alignment=alignment](idx, res)
+        output_fn[alignment=alignment](idx_dyn, res)
     else:
         var output_re, output_im = res.deinterleave()
         output_fn[alignment=alignment](pos_re, output_re)
@@ -125,7 +126,7 @@ def rope_ragged[
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength, alignment: Int](
-        idx: IndexList[3], val: SIMD[dtype, width]
+        idx: Coord, val: SIMD[dtype, width]
     ) -> None,
     rope_first: Bool = False,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
@@ -135,6 +136,8 @@ def rope_ragged[
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
         *Coord[Int64, Int64].element_types
     ],
+    # `position_ids` is optional, so its engine cannot be inferred.
+    PositionIdsEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     x: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[.uint32, ...],
@@ -143,7 +146,12 @@ def rope_ragged[
     context: DeviceContext,
     output_fn: OutputFn,
     position_ids: OptionalReg[
-        TileTensor[.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            .uint32,
+            PositionIdsLayoutType,
+            ImmutAnyOrigin,
+            Engine=PositionIdsEngine,
+        ]
     ] = None,
 ) raises where (
     input_row_offsets.flat_rank == 1
@@ -186,13 +194,13 @@ def rope_ragged[
     comptime PtrType = type_of(position_ids.value().ptr.as_imm())
     var pos_ids_ptr: PtrType
     var pos_ids_stride: Int
-    if has_position_ids:
-        pos_ids_ptr = rebind[PtrType](position_ids.value().ptr.as_imm())
+    if case .Some(pos_ids) = position_ids:
+        pos_ids_ptr = rebind[PtrType](pos_ids.ptr.as_imm())
         # Row stride from the layout, not `dim[1]()`: the kernel steps whole
         # position_ids rows (`section_idx * pos_ids_stride`), so use the actual
         # dim-0 stride rather than assuming a row-major-contiguous layout where
         # it happens to equal `dim[1]`.
-        pos_ids_stride = Int(position_ids.value().layout.stride[0]().value())
+        pos_ids_stride = Int(pos_ids.layout.stride[0]().value())
     else:
         pos_ids_ptr = rebind[PtrType](start_pos.ptr.as_imm())
         pos_ids_stride = 0
@@ -211,9 +219,7 @@ def rope_ragged[
             )
             return
         else:
-            var idx = rebind[IndexList[3]](coord_to_index_list(idx_arg))
-
-            var global_token_idx = idx[0]
+            var global_token_idx = Int(idx_arg[0].value())
 
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -221,18 +227,18 @@ def rope_ragged[
             var token_idx = Int(
                 UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
-            var head_dim_idx = idx[2]
+            var head_dim_idx = Int(idx_arg[2].value())
 
             # Use position_ids if provided, otherwise fall back to cache calculation
             var post_seq_idx = start_pos[batch_idx] + UInt32(token_idx)
 
             var position_ids_idx = Int(post_seq_idx)
             if has_position_ids:
-                comptime if mrope_section:
+                comptime if case .Some(sections) = mrope_section:
                     var section_idx = 0
 
-                    comptime for i in range(len(mrope_section.value())):
-                        comptime val = Int(mrope_section.value()[i].value())
+                    comptime for i in range(len(sections)):
+                        comptime val = Int(sections[i].value())
                         if head_dim_idx < val:
                             section_idx = i
                             break
@@ -276,19 +282,19 @@ def rope_ragged[
             apply_rope[
                 interleaved=interleaved,
                 alignment=alignment,
-            ](x, idx, f_c_temp, output_fn)
+            ](x, idx_arg, f_c_temp, output_fn)
 
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[
             target
-        ]() else simd_width_of[dtype, target=get_gpu_target()]()
+        ]() else simd_width_of[dtype, target=context.target]()
     )
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    comptime if mrope_section:
-        comptime for i in range(len(mrope_section.value())):
+    comptime if case .Some(sections) = mrope_section:
+        comptime for i in range(len(sections)):
             comptime assert (
-                mrope_section.value()[i].static_value % kernel_simd_width == 0
+                sections[i].static_value % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     comptime assert (

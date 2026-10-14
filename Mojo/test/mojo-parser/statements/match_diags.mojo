@@ -15,7 +15,7 @@
 
 def match_bad_subject_skips_same_indent_cases():
     # expected-error @+1 {{use of unknown declaration 'no_such_subject'}}
-    __match no_such_subject:
+    match no_such_subject:
     case 0:
         pass
     case 1 if True:
@@ -27,7 +27,7 @@ def match_bad_subject_skips_same_indent_cases():
 
 def match_bad_subject_skips_indented_cases():
     # expected-error @+1 {{use of unknown declaration 'no_such_subject'}}
-    __match no_such_subject:
+    match no_such_subject:
         case 0:
             pass
         case _:
@@ -37,72 +37,73 @@ def match_bad_subject_skips_indented_cases():
 
 
 def match_missing_cases(x: Int):
-    # expected-error @+1 {{'__match' statement must have at least one 'case' block}}
-    __match x:
+    # expected-error @+1 {{'match' statement must have at least one 'case' block}}
+    match x:
 
-    __match x:
+    match x:
     case foo(): # expected-error {{use of unknown declaration 'foo'}}
         pass
 
-# expected-error @+1 {{'__match' must be contained in a function}}
-__match 1:
+# expected-error @+1 {{'match' must be contained in a function}}
+match 1:
     case 0:
         pass
 
 def various_match_issues(a: Int, point: Tuple[Int, Int], value: String):
-    __match a:
+    match a:
     case 0:
         var x = 42
     case _:
         # expected-error @+1 {{use of unknown declaration 'x'}}
         _ = x
 
-    __match point:
+    match point:
     # expected-error @+1 {{cannot match value of 'Tuple[Int, Int]' of 2 elements against a pattern with 3 elements}}
     case (0, 0, 0):
         pass
     case _:
         pass
 
-    __match point:
+    match point:
     # expected-error @+2 {{invalid redefinition of 'x'}}
     # expected-note @+1 {{previous definition here}}
     case (var x, var x):
         pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         pass
 
     # Nested var/ref patterns should warn.
-    __match value:
+    match value:
     # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
     case var ref x:
         _ = x.byte_length()
-    # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
+
+    match value:
+    # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant}}
     case ref var y:
         _ = y.byte_length()
-    case _:
-        pass
 
-    __match a:
+    match a:
     # expected-error @+1 {{expected a name after 'as'}}
     case 0 as 1:
         pass
     case _:
         pass
 
-    __match point:
+    match point:
     # expected-error @+1 {{expected a name after 'as'}}
     case (0 as 1, 2):
         pass
     case _:
         pass
 
-    __match Int():
+    match Int():
     # expected-error @+1 {{value of type 'Int' doesn't have a memory origin in 'ref' binding}}
     case ref z:
         pass
 
-    __match a:
+    match a:
     # expected-error @+1 {{expected a tuple type to match against, got 'Int'}}
     case 0 | (1, 2):
         pass
@@ -113,7 +114,7 @@ def various_match_issues(a: Int, point: Tuple[Int, Int], value: String):
 def match_or_pattern_binding_diags(var point: Tuple[Int, Int],
                                    mixed: Tuple[Int, String]):
     # Binding only on the left alternative.
-    __match point:
+    match point:
     # expected-error @+1 {{or-pattern alternatives must bind the same names; 'x' is bound in one alternative but not the other}}
     case (0, var x) | (1, 2):
         pass
@@ -121,7 +122,7 @@ def match_or_pattern_binding_diags(var point: Tuple[Int, Int],
         pass
 
     # Binding only on the right alternative.
-    __match point:
+    match point:
     # expected-error @+1 {{or-pattern alternatives must bind the same names; 'x' is bound in one alternative but not the other}}
     case (0, 1) | (var x, 2):
         pass
@@ -129,7 +130,7 @@ def match_or_pattern_binding_diags(var point: Tuple[Int, Int],
         pass
 
     # Same name, but `var` vs `ref`.
-    __match point:
+    match point:
     # expected-error @+1 {{or-pattern binding 'x' must use the same 'var'/'ref' kind in each alternative}}
     case (0, var x) | (ref x, 1):
         pass
@@ -137,7 +138,7 @@ def match_or_pattern_binding_diags(var point: Tuple[Int, Int],
         pass
 
     # Different binding names across alternatives.
-    __match point:
+    match point:
     # expected-error @+1 {{or-pattern alternatives must bind the same names; 'x' is bound in one alternative but not the other}}
     case (var x, 0) | (var y, 1):
         pass
@@ -145,20 +146,24 @@ def match_or_pattern_binding_diags(var point: Tuple[Int, Int],
         pass
 
     # Different number of bindings. Leading literals keep both arms live so
-    # the or does not constant-fold away the RHS.
-    __match point:
+    # the or does not constant-fold away the RHS. The RHS is irrefutable, so
+    # the trailing `_` is unreachable.
+    match point:
     # expected-error @+1 {{or-pattern alternatives must bind the same names}}
     case (0, var x) | (var x, var y):
         pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         pass
 
     # Same name and kind, but incompatible types (String vs Int).
-    __match mixed:
+    # `(var x, _)` is irrefutable, so the trailing `_` is unreachable.
+    match mixed:
     # expected-error @+2 {{or-pattern binding 'x' has incompatible types across alternatives}}
     # expected-note @+1 {{first alternative has type 'String', this alternative has type 'Int'}}
     case (0, var x) | (var x, _):
         pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
     case _:
         pass
 
@@ -171,21 +176,21 @@ struct Vec3:
 
 
 def match_struct_pattern_diags(v: Vec3):
-    __match v:
+    match v:
     # expected-error @+1 {{cannot match value of type 'Vec3' against pattern type 'Int'}}
     case Int(x=0):
         pass
     case _:
         pass
 
-    __match v:
+    match v:
     # expected-error @+1 {{'w' is not a field of 'Vec3'}}
     case Vec3(w=0):
         pass
     case _:
         pass
 
-    __match v:
+    match v:
     # expected-error @+2 {{keyword argument 'x' was already used; remove the duplicate}}
     # expected-note @+1 {{previously specified here}}
     case Vec3(x=0, x=1):
@@ -193,21 +198,21 @@ def match_struct_pattern_diags(v: Vec3):
     case _:
         pass
 
-    __match v:
+    match v:
     # expected-error @+1 {{struct patterns do not support positional or unpacked arguments}}
     case Vec3(0, y=1):
         pass
     case _:
         pass
 
-    __match v:
+    match v:
     # expected-error @+1 {{struct patterns do not support positional or unpacked arguments}}
     case Vec3(x=0, *y):
         pass
     case _:
         pass
 
-    __match v:
+    match v:
     # expected-error @+1 {{struct patterns do not support positional or unpacked arguments}}
     case Vec3(x=0, **y):
         pass
@@ -215,9 +220,16 @@ def match_struct_pattern_diags(v: Vec3):
         pass
 
 
+def match_empty_struct_pattern(s: String):
+    match s:
+    # expected-warning @+1 {{struct pattern without subpatterns does not test anything; replace it with '_'}}
+    case String():
+        pass
+
+
 def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
     # No-payload cases must be written without parentheses.
-    __match opt:
+    match opt:
     # expected-error @+1 {{enum case 'None' has no associated value}}
     case Optional.None():
         pass
@@ -225,7 +237,7 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
         pass
 
     # Cannot destructure a case whose payload is NoneType.
-    __match opt:
+    match opt:
     # expected-error @+1 {{enum case 'None' has no associated value}}
     case Optional.None(value):
         pass
@@ -233,7 +245,7 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
         pass
 
     # Payload cases require a subpattern inside the parentheses.
-    __match opt:
+    match opt:
     # expected-error @+1 {{enum case 'Some' requires a payload pattern inside the parentheses}}
     case Optional.Some():
         pass
@@ -241,7 +253,7 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
         pass
 
     # Unknown case name (attribute form).
-    __match opt:
+    match opt:
     # expected-error @+1 {{'Nope' is not a case of 'Optional[Int]'}}
     case Optional.Nope:
         pass
@@ -249,7 +261,7 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
         pass
 
     # Unknown case name (call form).
-    __match opt:
+    match opt:
     # expected-error @+1 {{'Nope' is not a case of 'Optional[Int]'}}
     case Optional.Nope(ref x):
         pass
@@ -257,6 +269,444 @@ def match_enum_pattern_diags(opt: Optional[Int], someEnum: Some[EnumLike]):
         pass
 
     # Can only pattern match on concrete types.
-    __match someEnum:
+    match someEnum:
     case .What: # expected-error {{cannot match on a parametric enum type}}
+        pass
+
+
+@fieldwise_init
+struct BoolPair:
+    var a: Bool
+    var b: Bool
+
+
+struct OpenColor(ImplicitlyCopyable, EnumLike):
+    comptime _enum_case_names = ParameterList.of[
+        "red".value, "green".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, NoneType, NoneType
+    ].values
+    comptime _enum_is_exhaustive = False
+
+    def __init__(out self):
+        pass
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        while True:
+            pass
+
+
+struct ParametricExhaustivityColor[
+    is_exhaustive: Bool
+](ImplicitlyCopyable, EnumLike):
+    comptime _enum_case_names = ParameterList.of[
+        "red".value, "green".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, NoneType, NoneType
+    ].values
+    comptime _enum_is_exhaustive = Self.is_exhaustive
+
+    def __init__(out self):
+        pass
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        while True:
+            pass
+
+
+def match_open_enum_duplicate(color: OpenColor):
+    match color:
+    case .red:
+        pass
+    # expected-warning @+1 {{case is unreachable; 'red' is already covered by a previous case}}
+    case .red:
+        pass
+
+
+def match_parametric_exhaustivity[is_exhaustive: Bool](
+    color: ParametricExhaustivityColor[is_exhaustive]
+):
+    # expected-error @+1 {{'_enum_is_exhaustive' must be statically known when matching an EnumLike type}}
+    match color:
+    case .red:
+        pass
+
+
+def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
+    # Bool is EnumLike: True/False must both be covered (or a catch-all used).
+    match flag: # expected-warning {{'match' is not exhaustive; missing case for 'False'}}
+    case True: pass
+
+    # Duplicate Bool case after the type is fully covered.
+    match flag:
+    case True: pass
+    case False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # Unreachable arms are still type-checked (body IR is emitted, then
+    # discarded and replaced with `hlcf.unreachable`).
+    match flag:
+    case True: pass
+    case False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        # expected-error @+1 {{use of unknown declaration 'not_a_real_name'}}
+        _ = not_a_real_name
+
+    # Exhaustive Bool×Bool via correlated wildcards.
+    match flag, flag:
+    case True, True:  pass
+    case False, True: pass
+    case _, False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # Non-exhaustive product: (False, False) is missing.
+    match flag, flag: # expected-warning {{'match' is not exhaustive; missing case for 'False, False'}}
+    case True, True: pass
+    case False, True: pass
+    case True, False: pass
+
+    # Parenthesized tuple subject is the same product space of course.
+    match (flag, ((((flag))))):
+    case (True, _): pass
+    case (False, True): pass
+    case (False, False): pass
+
+    # Struct of EnumLike fields: same flattened product; omitted fields are
+    # wildcards (`b=False` covers both values of `a`).
+    match pair:
+    case BoolPair(a=True, b=True): pass
+    case BoolPair(a=False, b=True): pass
+    case BoolPair(b=False): pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # Or of root constructors covers each alternative (union).
+    match flag:
+    case True | False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # Or that only covers one ctor is not exhaustive.
+    match flag: # expected-warning {{'match' is not exhaustive; missing case for 'False'}}
+    case True | True: pass
+
+    # Or in a product: each alternative covers its cells.
+    match flag, flag:
+    case (True, _) | (False, False): pass
+    case (False, True): pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        pass
+
+    # Or with a catch-all arm closes the space.
+    match flag:
+    case True | _: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case False:
+        pass
+
+    # Redundant Or after the subject is already covered.
+    match flag:
+    case True: pass
+    case False: pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case True | False:
+        pass
+
+    # Various enum cases.
+    match opt: # expected-warning {{'match' is not exhaustive; missing case for 'None'}}
+    case Optional.Some(_):
+        pass
+
+    match opt: # expected-warning {{'match' is not exhaustive; missing case for 'Some'}}
+    case Optional.None:
+        pass
+
+    # Duplicate Optional case while another constructor is still open.
+    match opt:
+    case Optional.Some(_):
+        pass
+    # expected-warning @+1 {{'Some' is already covered by a previous case}}
+    case Optional.Some(x):
+        _ = x
+    case Optional.None:
+        pass
+
+    # A payload refinement does not cover the whole enum case.
+    match opt: # expected-warning {{'match' is not exhaustive; missing case for 'Some'}}
+    case Optional.Some(0):
+        pass
+    case Optional.None:
+        pass
+
+    # A later irrefutable payload pattern covers the rest of `Some`.
+    match opt:
+    case Optional.Some(0):
+        pass
+    case Optional.Some(_):
+        pass
+    case Optional.None:
+        pass
+
+    # Products larger than kMaxProductCells (1024) cannot be tracked cell-by-cell
+    # (Bool^11 == 2048); require a catch-all instead of silent Opaque.
+    # expected-warning @+1 {{'match' is too complex to check for exhaustivity; add a '_' case}}
+    match (
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+    ):
+    case True, True, True, True, True, True, True, True, True, True, True:
+        pass
+
+    # A catch-all satisfies the TooComplex requirement.
+    match (
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+        flag,
+    ):
+    case True, True, True, True, True, True, True, True, True, True, True:
+        pass
+    case _:
+        pass
+
+def match_exhaustivity_literal_subjects(n: Int, s: String):
+    # Int/String are open universes: covering literals never proves exhaustivity,
+    # but duplicate / already-covered literal cases are diagnosed.
+    match n:
+    case 0:
+        pass
+    case 1:
+        pass
+
+    match s:
+    case "a":
+        pass
+    case "b":
+        pass
+
+    match s:
+    case "a":
+        pass
+    # expected-warning @+1 {{case is unreachable; '"a"' is already covered by a previous case}}
+    case "a":
+        pass
+
+    match n:
+    case 0:
+        pass
+    # expected-warning @+1 {{case is unreachable; '0' is already covered by a previous case}}
+    case 0:
+        pass
+    case 1:
+        pass
+
+    # Or of literals covers each alternative; a later duplicate is unreachable.
+    match n:
+    case 0 | 1 | 2:
+        pass
+    # expected-warning @+1 {{case is unreachable; '1' is already covered by a previous case}}
+    case 1:
+        pass
+
+    # After a catch-all, everything else is unreachable (still no exhaustivity
+    # warning when only literals are present).
+    match n:
+    case 0:
+        pass
+    case _:
+        pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case 1:
+        pass
+
+
+def match_exhaustivity_names_every_missing_case(flag: Bool, pair: BoolPair):
+    # Guarded cases never count, so both `Bool` cases are still open.
+    # expected-warning @+1 {{'match' is not exhaustive; missing cases for 'False' and 'True'}}
+    match flag:
+    case True if flag: pass
+
+    # A product subject lists every open combination.
+    # expected-warning @+1 {{'match' is not exhaustive; missing cases for 'False, True' and 'True, False'}}
+    match pair:
+    case BoolPair(a=True, b=True): pass
+    case BoolPair(a=False, b=False): pass
+
+    # Three or more missing values are listed with a serial comma.
+    # expected-warning @+1 {{'match' is not exhaustive; missing cases for 'False, False', 'False, True', and 'True, False'}}
+    match pair:
+    case BoolPair(a=True, b=True): pass
+
+
+def match_exhaustivity_summarizes_many_missing_cases(
+    flags: Tuple[Bool, Bool, Bool, Bool],
+):
+    # expected-warning @+1 {{, and 7 more}}
+    match flags:
+    case (True, True, True, True): pass
+
+
+def comptime_match_or_binding_name_mismatch[x: Tuple[Int, Int]]():
+    comptime match x:
+    # expected-error @+1 {{or-pattern alternatives must bind the same names; 'y' is bound in one alternative but not the other}}
+    case (0, y) | (1, 2):
+        pass
+
+
+def comptime_match_var_binding_rejected[x: Int]():
+    comptime match x:
+    case var y: # expected-error {{'var' bindings are not supported in 'comptime match'}}
+        pass
+
+
+def comptime_match_ref_binding_rejected[x: Int]():
+    comptime match x:
+    case ref y: # expected-error {{'ref' bindings are not supported in 'comptime match'}}
+        pass
+
+
+def comptime_match_unreachable_body_still_diagnosed[flag: Bool]():
+    # Unreachable arms are still parsed so body errors are reported.
+    comptime match flag:
+    case True:
+        pass
+    case False:
+        pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case _:
+        # expected-error @+1 {{use of unknown declaration 'no_such_name'}}
+        _ = no_such_name
+
+
+def comptime_match_unreachable_after_catchall[x: Int]():
+    comptime match x:
+    case _:
+        pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case 1:
+        # expected-error @+1 {{use of unknown declaration 'also_missing'}}
+        _ = also_missing
+
+# MOCO-4946: execution crashed with match
+def match_enum_with_payload_not_cover(a: Optional[Int]):
+    match a:
+    case .Some(0):
+        pass
+    case .Some(_):
+        pass
+    case .None:
+        pass
+
+    match a:
+    case .Some(_):
+        pass
+    # expected-warning @+1 {{case is unreachable; 'Some' is already covered by a previous case}}
+    case .Some(0):
+        pass
+    case .None:
+        pass
+
+def match_product_enum_payload_coverage(a: Tuple[Optional[Int], Bool]):
+    match a:
+    case (.Some(_), True):
+        pass
+    # expected-warning @+1 {{case is unreachable; previous cases cover every value of the match subject}}
+    case (.Some(0), True):
+        pass
+    case _:
+        pass
+
+    match a:
+    case (.Some(0), True):
+        pass
+    case (.Some(_), True):
+        pass
+    case _:
+        pass
+
+def match_redundant_explicit_literal_patterns(
+    value: Int, pair: Tuple[Int, String]
+):
+    match value:
+    # expected-warning @+1 {{'==' is redundant when matching a literal; remove it}}
+    case == 0:
+        pass
+    case _:
+        pass
+
+    match pair:
+    # expected-warning @+1 {{'==' is redundant when matching a literal; remove it}}
+    case (_, == "expected"):
+        pass
+    case _:
+        pass
+
+
+def match_expression_patterns_require_explicit_equality(
+    value: Int, pair: Tuple[Int, Int]
+):
+    match value:
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case pair[0]:
+        pass
+    case _:
+        pass
+
+    match pair:
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case (_, pair[1] + 1):
+        pass
+    case _:
+        pass
+
+
+def match_list_requires_sized(value: Int):
+    match value:
+    # expected-error @+1 {{value of type 'Int' does not conform to 'Sized'}}
+    case [element]:
+        _ = element
+    case _:
+        pass
+
+
+def deprecated_dunder_match(value: Int):
+    # expected-warning @+1 {{'__match' is deprecated; use 'match'}}
+    __match value:
+    case _:
         pass

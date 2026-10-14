@@ -412,6 +412,7 @@ struct ConvertPOPToLLVMPattern : public mlir::ConvertOpToLLVMPattern<OpT> {
         /*asm_string=*/asmStr,
         /*constraints=*/asmConstraints, /*has_side_effects=*/false,
         /*is_align_stack=*/false, mlir::LLVM::TailCallKind::None,
+        /*convergent=*/false,
         /*asm_dialect=*/asmDialectAttr,
         /*operand_attrs=*/mlir::ArrayAttr());
   }

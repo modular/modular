@@ -20,6 +20,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <cstddef>
+#include <string>
 
 namespace M::KGEN {
 enum class ArgConvention : uint32_t;
@@ -36,6 +37,8 @@ class ExprNode;
 class FnTypeGeneratorType;
 class IREmitter;
 class MojoInflightDiag;
+class ParamBindings;
+class StructDeclOp;
 class StructMetaType;
 class ASTType;
 class OriginSetAttr;
@@ -83,6 +86,12 @@ FunctionType
 replaceIndexRefsWithNamedRefs(FunctionType functionType,
                               ArrayRef<ParamDeclAttr> explicitParamDecls);
 
+/// Specialize `structOp` using `bindings`; any parameter the caller left out
+/// is inferred.  `declIfKnown` only points diagnostics at the declaration.
+/// Returns a null type, with the diagnostic already emitted, on failure.
+ASTType specializeStruct(const ParamBindings &bindings, StructDeclOp structOp,
+                         ASTDecl *declIfKnown);
+
 /// The results of calls to async functions are always bound to a `Coroutine`
 /// type, or `RaisingCoroutine` type in the case of a raising function. This
 /// function looks up the corresponding coroutine type and binds its result
@@ -102,6 +111,12 @@ void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);
+
+/// Generate the mangled name identifying the thunk that converts a value of
+/// signature `actual` into one of signature `expected`. The AST-level spelling
+/// of both types keeps the name readable, and a hash of the full signatures
+/// disambiguates types that share a spelling but differ in parameters.
+void generateConversionThunkName(llvm::raw_ostream &os, ArrayRef<Type> keys);
 
 } // namespace M::KGEN::LIT
 

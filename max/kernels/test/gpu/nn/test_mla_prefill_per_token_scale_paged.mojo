@@ -30,7 +30,7 @@ Why this test exists
 ====================
 
 The existing ``test_mla_prefill_per_token_scale_fp8.mojo`` covers only
-the contiguous K_rope path (``LayoutTensorMHAOperand``) and so does
+the contiguous K_rope path (``TileTensorMHAOperand``) and so does
 not exercise the kernel's paged sub-tile TMA loops at lines
 684/817/968/1117 (K_rope) and 709/838/994/1136 (k_scale). The
 kernel-side ``debug_assert`` placed in those loops fires whenever a
@@ -61,29 +61,19 @@ from std.sys import get_defined_int
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from std.memory import alloc
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 
 from _paged_prefill_test_utils import (
     CACHE_DEPTH,
     KV_NUM_HEADS,
     NUM_LAYERS,
-    ROPE_DEPTH,
     fill_uniform_lookup_table,
     lut_max_pages_per_batch,
     num_keys_to_test,
@@ -386,8 +376,7 @@ def run_test_paged_prefill_per_token_scale[
     for b in range(batch_size):
         for j in range(num_keys):
             var ks = k_scale_ptr[b * num_keys + j].cast[.bfloat16]()
-            var page_in_batch = j // page_size
-            var slot_in_page = j % page_size
+            var page_in_batch, slot_in_page = divmod(j, page_size)
             # Uniform LUT: each batch's pages are contiguous in the
             # global block array.
             var global_page = b * num_pages_per_batch + page_in_batch
@@ -509,56 +498,41 @@ def run_test_paged_prefill_per_token_scale[
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
-        total_pages,
-        1,  # kv_dim2 = 1 for is_mla
-        NUM_LAYERS,
+
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
+    )
+
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
+        rope_type,
+        kv_params,
         page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
-
-    var blocks_lt = LayoutTensor[rope_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[rope_type, kv_params, page_size](
-        LayoutTensor[rope_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len_padded),  # max_seq_length
         UInt32(num_keys_padded),  # max_cache_length
     )
@@ -752,26 +726,24 @@ def run_test_paged_prefill_per_token_scale[
         ),
     )
 
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
-        k_ref_device.as_immut().as_unsafe_any_origin()
+    var k_ref_operand = TileTensorMHAOperand(
+        k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
-        v_ref_device.as_immut().as_unsafe_any_origin()
+    var v_ref_operand = TileTensorMHAOperand(
+        v_ref_device.as_imm().as_unsafe_any_origin()
     )
 
     mha_gpu_naive[_is_cache_length_accurate=True](
-        q_ref_4d_device.to_layout_tensor(),
+        q_ref_4d_device,
         k_ref_operand,
         v_ref_operand,
         CausalMask(),
-        output_ref_device.to_layout_tensor(),
+        output_ref_device,
         null_valid_length,
         scale,
         batch_size,

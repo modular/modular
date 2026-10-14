@@ -26,7 +26,7 @@ def randomize_list[
     dt: DType
 ](mut list: List[Scalar[dt]], size: Int, max: Scalar[dt] = Scalar[dt].MAX):
     comptime if dt.is_integral():
-        randint(list.unsafe_ptr(), size, 0, Int(max))
+        randint(list, 0, Int(max))
     else:
         for i in range(size):
             var res = random_float64()
@@ -36,26 +36,26 @@ def randomize_list[
 
 @inline(.always)
 def insertion_sort[dtype: DType](mut list: List[Scalar[dtype]]):
-    def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
-        return lhs < rhs
-
-    _insertion_sort(list, _less_than)
+    _insertion_sort(
+        list,
+        lambda (lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool: lhs < rhs,
+    )
 
 
 @inline(.always)
 def small_sort[size: Int, dtype: DType](mut list: List[Scalar[dtype]]):
-    def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
-        return lhs < rhs
-
-    _small_sort[size](list, _less_than)
+    _small_sort[size](
+        list,
+        lambda (lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool: lhs < rhs,
+    )
 
 
 @inline(.always)
 def heap_sort[dtype: DType](mut list: List[Scalar[dtype]]):
-    def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
-        return lhs < rhs
-
-    _heap_sort(list, _less_than)
+    _heap_sort(
+        list,
+        lambda (lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool: lhs < rhs,
+    )
 
 
 # ===-----------------------------------------------------------------------===#

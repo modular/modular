@@ -216,21 +216,19 @@ def run_one_case(
     var out_dev = ctx.enqueue_create_buffer[out_dtype](m * N)
     ctx.enqueue_copy(in_dev, in_host)
 
-    var input_tt = TileTensor(in_dev, row_major(Coord(m, Idx[N])))
-    var output_tt = TileTensor(out_dev, row_major(Coord(m, Idx[N])))
+    var input_tt = TileTensor(in_dev, row_major(m, Idx[N]))
+    var output_tt = TileTensor(out_dev, row_major(m, Idx[N]))
 
     # Scale-factor layout is vendor-specific: SM100 (B200) needs the 5D
     # TCGEN-interleaved atom layout; AMD CDNA4 (MI355X) uses plain rank-2
     # row-major scales.
     comptime if _is_sm10x_gpu(ctx.default_device_info):
         var scales_shape = row_major(
-            Coord(
-                ceildiv(m, SF_MN_GROUP_SIZE),
-                Idx[ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            ceildiv(m, SF_MN_GROUP_SIZE),
+            Idx[ceildiv(N, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
         var scales_total = scales_shape.product()
         var scales_dev = ctx.enqueue_create_buffer[scales_dtype](scales_total)
@@ -276,7 +274,7 @@ def run_one_case(
         _ = out_dev
         _ = scales_dev
     else:
-        var scales_shape = row_major(Coord(m, Idx[N // SF_VECTOR_SIZE]))
+        var scales_shape = row_major(m, Idx[N // SF_VECTOR_SIZE])
         var scales_total = scales_shape.product()
         var scales_dev = ctx.enqueue_create_buffer[scales_dtype](scales_total)
         var scales_tt = TileTensor(scales_dev, scales_shape)

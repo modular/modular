@@ -42,11 +42,11 @@ INTERNAL_PACKAGES = [
     "//Kernels/lib/attn_res",
     "//Kernels/lib/kda",
     "//Kernels/lib/matmul_rs",
+    "//Kernels/lib/mega_ffn",
     "//Kernels/lib/msa",
     "//Kernels/lib/qsa",
-    "//Kernels/src/mega_ffn",
-    "//max/internal/driver/src/_hal",
-    "//max/internal/driver/src/machine",
+    "//max/driver/src/mcl/_hal",
+    "//max/driver/src/mcl/machine",
 ]
 
 # Packages that are marked testonly and cannot be used by production targets

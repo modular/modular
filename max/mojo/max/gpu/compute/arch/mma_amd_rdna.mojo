@@ -368,7 +368,6 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
           - Section 7.5 (8-bit Math) for FP8/BF8 details
     """
 
-    @__parameter
     def get_intrinsic_name() -> String:
         # ===------------------------------------------------------------------===#
         # F32 = F16 * F16 + F32 (16x16x16)
@@ -388,7 +387,16 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 comptime type_name = "f16" if a.dtype == DType.float16 else "bf16"
                 return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         elif (
             a.dtype.is_float8()
@@ -424,10 +432,28 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 elif a_is_e5m2 and b_is_e4m3:
                     return "llvm.amdgcn.wmma.f32.16x16x16.bf8.fp8"
                 else:
-                    _unsupported_mma_op(d, a, b, c)
+                    _unsupported_mma_op[
+                        d.dtype,
+                        d.length,
+                        a.dtype,
+                        a.length,
+                        b.dtype,
+                        b.length,
+                        c.dtype,
+                        c.length,
+                    ]()
                     return ""
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         elif (
             _is_amd_rdna3()
@@ -446,7 +472,16 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             ):
                 return "llvm.amdgcn.wmma.f32.16x16x16.f16"
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         elif (
             (a.dtype == .int8 or a.dtype == .uint8)
@@ -460,10 +495,29 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 ):
                     return "llvm.amdgcn.wmma.i32.16x16x16.iu8"
                 else:
-                    _unsupported_mma_op(d, a, b, c)
+                    _unsupported_mma_op[
+                        d.dtype,
+                        d.length,
+                        a.dtype,
+                        a.length,
+                        b.dtype,
+                        b.length,
+                        c.dtype,
+                        c.length,
+                    ]()
+
                     return ""
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         elif (
             a.dtype == ._uint4
@@ -477,13 +531,40 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 ):
                     return "llvm.amdgcn.wmma.i32.16x16x16.iu4"
                 else:
-                    _unsupported_mma_op(d, a, b, c)
+                    _unsupported_mma_op[
+                        d.dtype,
+                        d.length,
+                        a.dtype,
+                        a.length,
+                        b.dtype,
+                        b.length,
+                        c.dtype,
+                        c.length,
+                    ]()
                     return ""
             else:
-                _unsupported_mma_op(d, a, b, c)
+                _unsupported_mma_op[
+                    d.dtype,
+                    d.length,
+                    a.dtype,
+                    a.length,
+                    b.dtype,
+                    b.length,
+                    c.dtype,
+                    c.length,
+                ]()
                 return ""
         else:
-            _unsupported_mma_op(d, a, b, c)
+            _unsupported_mma_op[
+                d.dtype,
+                d.length,
+                a.dtype,
+                a.length,
+                b.dtype,
+                b.length,
+                c.dtype,
+                c.length,
+            ]()
             return ""
 
     comptime if _is_amd_rdna3() and a.dtype.is_float8():
@@ -641,4 +722,13 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 )
                 d = rebind[type_of(d)](r)
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()

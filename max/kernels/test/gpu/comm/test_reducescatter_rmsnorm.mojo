@@ -27,14 +27,10 @@ against host references (full-H divisor, multiply-before-cast, bf16 last):
     rotation `(my_rank+i)%ngpus == circular_add`.
 """
 
-from std.sys import (
-    has_amd_gpu_accelerator,
-    simd_width_of,
-    size_of,
-)
+from std.sys import simd_width_of, size_of
 
 from std.math.uutils import ualign_down
-from std.math import align_down, rsqrt
+from std.math import rsqrt
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
@@ -91,7 +87,7 @@ def _run_case[
             comptime assert (
                 circular_add[ngpus](_r, _i) == (_r + _i) % ngpus
             ), "kernel peer rotation must equal RS circular_add"
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         comptime assert (
             simd_width == 8
         ), "sum_out bit-identity assumes simd=8 on AMD"
@@ -111,9 +107,6 @@ def _run_case[
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var rs_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     # Shared gamma values (replicated per device so each rank reads locally).
     var gamma_host = List(
@@ -154,12 +147,12 @@ def _run_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -223,9 +216,8 @@ def _run_case[
             # Production two-launch fallback (== the op's closure): standalone
             # reduce-scatter into `sum_view`, then `rms_norm_gpu` into
             # `normed_view`. Writing both outputs lets it hit the same oracles.
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
                     in_bufs, world_sum, rank_sigs, list_of_ctx[i], my_rank=i
                 )
@@ -239,7 +231,7 @@ def _run_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[two_launch=two_launch, pdl_level=pdl_level](
+            _dispatch_rs_norm[pdl_level=pdl_level](
                 in_bufs,
                 normed_view,
                 sum_view,
@@ -248,6 +240,7 @@ def _run_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 threshold=dispatch_threshold,
             )
         else:
@@ -433,7 +426,7 @@ def _run_case[
         )
     # sum_out: bit-identical on AMD non-multimem; 1-ULP tolerance on NVIDIA
     # (RS may take the multimem path, undefined reduction order).
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -579,9 +572,6 @@ def _run_prod_oracle_case[
     var rs_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -617,12 +607,12 @@ def _run_prod_oracle_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -694,9 +684,8 @@ def _run_prod_oracle_case[
             # Mirror the graph op's fallback (distributed.mojo): standalone
             # reduce-scatter into `sum_view`, then `rms_norm_gpu` into
             # `normed_view`.
-            @__parameter
             @inline(.always)
-            def two_launch() raises:
+            def two_launch() raises {imm}:
                 reducescatter[
                     dtype=in_dtype,
                     ngpus=ngpus,
@@ -714,7 +703,6 @@ def _run_prod_oracle_case[
                 )
 
             _dispatch_rs_norm[
-                two_launch=two_launch,
                 group_size=group_size,
                 pdl_level=pdl_level,
             ](
@@ -726,6 +714,7 @@ def _run_prod_oracle_case[
                 weight_offset,
                 rank_sigs,
                 list_of_ctx[i],
+                two_launch,
                 my_rank=i,
             )
         else:
@@ -867,7 +856,7 @@ def _run_prod_oracle_case[
 
     # sum_out must be bit-identical to the standalone RS shard on AMD at every M
     # (residual stream is plain reduce-scatter on either branch).
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -883,7 +872,7 @@ def _run_prod_oracle_case[
     # Routing invariant: the dispatched op must be bit-identical to production at
     # EVERY M (fused below the threshold, two-launch above); a wrong sense would
     # fuse a diverging shape and fail here. AMD-scoped (gfx950-calibrated).
-    comptime if use_dispatch and has_amd_gpu_accelerator():
+    comptime if use_dispatch and list_of_ctx.T.target.is_amd_gpu():
         if normed_mismatch != 0:
             raise Error(
                 String(
@@ -968,9 +957,6 @@ def _run_residual_case[
     var normed_b = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var sum_b = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -1042,12 +1028,12 @@ def _run_residual_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     for i in range(ngpus):
         init_signal_buffer(signal_buffers[i], list_of_ctx[i])
@@ -1431,9 +1417,6 @@ def _run_interleaved_barrier_case[
     var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var world_out = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     var gamma_host = List(
         length=num_cols,
@@ -1473,12 +1456,12 @@ def _run_interleaved_barrier_case[
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        rank_sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # ONE init for the whole run: continuously advancing shared counters are
     # exactly what desyncs when both collectives sit in domain 0.
@@ -1543,13 +1526,13 @@ def _run_interleaved_barrier_case[
 
         # Full-world collective on the SAME buffers, barrier domain 0.
         group_start()
-        for i in range(ngpus):
-            var w_view = OutShardType(
-                world_out[i].unsafe_ptr().as_unsafe_any_origin(),
-                row_major(Coord(Index(world_cfg.rank_units(i), num_cols))),
+        var world_w = Array[_, ngpus](
+            fill_with=lambda (d: Int) {ref} -> OutShardType: OutShardType(
+                world_out[d].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(Coord(Index(world_cfg.rank_units(d), num_cols))),
             )
-            var world_w = Array[OutShardType, ngpus](uninitialized=True)
-            world_w[i] = w_view
+        )
+        for i in range(ngpus):
             reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
                 world_bufs, world_w, rank_sigs, list_of_ctx[i], my_rank=i
             )
@@ -1676,20 +1659,18 @@ def _run_rank_validation_case[
 
     var in_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=group_size)
-    var sigs = Array[MutPointer[Signal, MutAnyOrigin], group_size](
-        uninitialized=True
-    )
     for i in range(group_size):
         in_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](length))
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
         )
-        sigs[i] = (
-            signal_buffers[i]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var sigs = Array[_, group_size](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
     var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
     var normed = list_of_ctx[0].enqueue_create_buffer[in_dtype](max_shard)
     var sum_shard = list_of_ctx[0].enqueue_create_buffer[in_dtype](max_shard)
@@ -1803,18 +1784,13 @@ def _run_rank_validation_case[
         row_major(Coord(Index(rank0_rows, num_cols))),
     )
 
-    @__parameter
-    @inline(.always)
     def two_launch_marker() raises:
         raise Error("two_launch ran with an unvalidated residual")
 
     # threshold=0 forces the two-launch arm; the default fuses at this M.
     for threshold in [0, RS_NORM_FUSE_THRESHOLD]:
         with assert_raises(contains="residual holds"):
-            _dispatch_rs_norm[
-                two_launch=two_launch_marker,
-                has_residual=True,
-            ](
+            _dispatch_rs_norm[has_residual=True,](
                 bufs,
                 normed_ok,
                 sum_ok,
@@ -1823,6 +1799,7 @@ def _run_rank_validation_case[
                 weight_offset,
                 sigs,
                 list_of_ctx[0],
+                two_launch_marker,
                 threshold=threshold,
                 my_rank=0,
                 residual=res_shard,
@@ -1960,7 +1937,7 @@ def _run_suite[
         # to production. AMD-scoped (gfx950-calibrated); NVIDIA's `rms_norm_gpu`
         # has a different reduction geometry and may cross over elsewhere
         # (reported, not gated).
-        comptime if has_amd_gpu_accelerator():
+        comptime if list_of_ctx.T.target.is_amd_gpu():
             var cfg = ReduceScatterConfig[in_dtype, ngpus](
                 axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
             )

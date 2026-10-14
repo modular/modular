@@ -13,13 +13,9 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 # RUN: %mojo-no-debug -D USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM=True %s | FileCheck --check-prefix=CHECK-BLOCK-SYNC %s
 
-from std.sys import CompilationTarget
-
 from max.gpu.sync import barrier
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.info import MI355X
-
-comptime MI355X_TARGET = CompilationTarget.from[MI355X]()
 
 
 # CHECK-LABEL: test_barrier
@@ -37,7 +33,7 @@ def test_barrier() raises:
     # CHECK-BLOCK-SYNC: tail call void @llvm.amdgcn.s.barrier()
     print(
         _compile_code[
-            barrier_kernel, target=MI355X_TARGET, emission_kind="llvm-opt"
+            barrier_kernel, target=MI355X.target, emission_kind="llvm-opt"
         ]()
     )
 

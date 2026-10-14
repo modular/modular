@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from max.experimental.nn import Module
 from max.experimental.nn.norm.rms_norm import rms_norm
-from max.experimental.sharding import PlacementMapping
+from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 
 
@@ -48,7 +48,7 @@ class Gemma4RMSNorm(Module[[Tensor], Tensor]):
             w = Tensor.ones(
                 [self.dim],
                 dtype=x.dtype,
-                device=PlacementMapping.replicated(x.mesh),
+                device=DeviceMapping.replicated(x.mesh),
             )
         return rms_norm(
             x, w, self.eps, weight_offset=0.0, multiply_before_cast=True

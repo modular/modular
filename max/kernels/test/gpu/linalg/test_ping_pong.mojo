@@ -19,7 +19,7 @@ Supports both BF16 and FP8 via compile-time flag:
 
 from std.sys import get_defined_bool, get_defined_int
 
-from layout import Idx, Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal

@@ -21,7 +21,7 @@ Focus is on small sizes typical of row_offsets distribution.
 
 from std.collections import Array
 from std.math import ceildiv
-from std.sys import size_of, simd_width_of
+from std.sys import size_of
 from std.sys.defines import get_defined_bool, get_defined_dtype, get_defined_int
 
 from std.benchmark import (
@@ -37,7 +37,7 @@ from max.benchmark import (
 )
 from comm.sync import enable_p2p
 from comm.scatter import scatter
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from comm import Signal
 from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
@@ -46,7 +46,6 @@ from std.testing import assert_true
 
 
 @inline(.always)
-@__parameter
 def _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based value that includes the DP replica index.
 
@@ -138,21 +137,18 @@ def bench_scatter[
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
-    var rank_sigs = Array[MutPointer[Signal, MutAnyOrigin], ngpus](
-        uninitialized=True
-    )
 
     for gpu_idx in range(ngpus):
         signal_buffers.append(
             list_of_ctx[gpu_idx].create_buffer_sync[.uint8](size_of[Signal]())
         )
         list_of_ctx[gpu_idx].enqueue_memset[.uint8](signal_buffers[gpu_idx], 0)
-        rank_sigs[gpu_idx] = (
-            signal_buffers[gpu_idx]
-            .unsafe_ptr()
-            .bitcast[Signal]()
-            .as_unsafe_any_origin()
-        )
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
 
     # Build TileTensor arrays for the scatter API.
     comptime InputTileType = TileTensor[
@@ -161,7 +157,7 @@ def bench_scatter[
     var tt_in_bufs = Array[InputTileType, dp_size](
         fill_with=lambda (dp_idx: Int) -> InputTileType: TileTensor(
             cb_inputs[dp_idx].device_buffer(), row_major(num_elems)
-        ).as_immut()
+        ).as_imm()
     )
 
     comptime OutputTileType = TileTensor[
@@ -187,7 +183,7 @@ def bench_scatter[
                 tt_in_bufs[dp_idx] = TileTensor(
                     cb_inputs[dp_idx].offset_ptr(cache_iter),
                     row_major(num_elems),
-                ).as_immut()
+                ).as_imm()
 
             scatter[ngpus=ngpus, dp_size=dp_size](
                 tt_in_bufs,

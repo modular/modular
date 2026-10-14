@@ -74,6 +74,7 @@ from .interfaces import (
     ModelInputs,
     ModelOutputs,
     ModuleV3MultiGraphPipelineModelWithKVCache,
+    ModuleV3Outputs,
     ModuleV3PipelineModel,
     ModuleV3PipelineModelWithKVCache,
     MultiGraphPipelineModelWithKVCache,
@@ -107,6 +108,7 @@ from .tokenizer import (
     TextTokenizer,
     build_eos_tracker_for_request,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from .utils import CompilationTimer, upper_bounded_default
 from .vision_preprocess_cache import VisionPreprocessCache
@@ -138,6 +140,7 @@ __all__ = [
     "ModelManifest",
     "ModelOutputs",
     "ModuleV3MultiGraphPipelineModelWithKVCache",
+    "ModuleV3Outputs",
     "ModuleV3PipelineModel",
     "ModuleV3PipelineModelWithKVCache",
     "MultiGraphPipelineModelWithKVCache",
@@ -185,6 +188,7 @@ __all__ = [
     "ragged_kv_symbolic_inputs",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
+    "resolve_eos_token_ids",
     "resolve_max_config_inheritance",
     "supported_encoding_dtype",
     "supported_encoding_quantization",

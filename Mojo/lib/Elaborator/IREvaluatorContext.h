@@ -211,6 +211,7 @@ public:
   ///     sub-dependency is still being elaborated); the caller should
   ///     skip/retry.
   ///   - non-null `SymbolConstantAttr`: the fully resolved wrapped callee.
+  ///     Nested thunks are peeled, so this is never itself a thunk.
   std::optional<ErrorTreeOr<SymbolConstantAttr>>
   resolveTransparentThunkCallee(GeneratorOp generator,
                                 SymbolConstantAttr symbol, Location loc);

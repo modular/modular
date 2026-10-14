@@ -101,8 +101,8 @@ def LIT_FnOp : LITOp<"fn", [
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
     // each odd corresponds to its value (zero index based)
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnAttrs,
+    DefaultValuedAttr<ArrayAttr, "{}">:$fnArgAttrs,
     OptionalAttr<AnyAttr>:$thunkKey,
     UnitAttr:$noDocRequired
   );
@@ -422,7 +422,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     IsolatedFromAbove, SymbolName, SymbolVisibility, Symbol, SymbolTable,
     DeclInterface, SingleBlock,
     ASTDeclInterface, NoTerminator,
-    DeclareOpInterfaceMethods<StructDeclInterface>,
+    DeclareOpInterfaceMethods<StructDeclInterface,
+                              ["getAnnotationValues", "getAnnotationTypes"]>,
     DeclareOpInterfaceMethods<DebugInfo_ScopedLocation>,
     StabilityDecoratorInterface
   ]> {
@@ -467,7 +468,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
-    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
+    // Mark the struct as a thunk struct for closures, see also FnOp::thunkKey
+    OptionalAttr<AnyAttr>:$closureThunkKey,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
@@ -479,14 +481,17 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // Explicit minimum alignment specified via @align(N) decorator.
     OptionalAttr<AttrOfType<Index>>:$minAlignment,
     EnumProp<LIT_TypeConvention>:$convention,
-    // If definesClosure attribute is present,
-    // then this is a compiler generated structure
-    // used to wrap a function as a closure.
-    UnitAttr:$definesClosure,
     // Present when the struct has a conditional RegisterPassable conformance.
     // Stores the ConstraintAttr whose proposition governs whether the struct
     // is register-passable for a given instantiation.
-    OptionalAttr<KGEN_ConstraintAttr>:$registerPassableConstraint
+    OptionalAttr<KGEN_ConstraintAttr>:$registerPassableConstraint,
+    // Comptime values attached with `@__annotation(...)`, in source order.
+    // Read back through `#kgen.get_annotation_value`, which the reflection
+    // library wraps as `reflect[T].annotation[index]`.
+    DefaultValuedAttr<ArrayAttr, "{}">:$annotations,
+    // Present if the struct is declared with `__enum`. Its cases are the
+    // `lit.enum.case` ops in its body.
+    UnitAttr:$isEnum
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -521,11 +526,17 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     /// Return the struct name as it appears in the source code (not mangled).
     StringAttr getDeclName() { return getSymNameAttr(); }
 
+    /// Return the `@__annotation` values selected by `fieldIndex`.
+    ArrayAttr getSelectedAnnotations(int64_t fieldIndex);
+
     /// Get a bound reference to the struct type.
     StructType bindReference(ArrayRef<TypedAttr> paramValues = {});
 
     /// Get whether this struct is compiler generated.
     bool isSynthetic();
+
+    /// Return true if this struct is declared with `__enum`.
+    bool isEnum() { return getIsEnum(); }
   }];
 
   let builders = [
@@ -564,7 +575,11 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     // Set if the field has an @doc_hidden decorator on it.
     UnitAttr:$isDocHidden,
     // Set if the field allows legacy AnyOrigin usage.
-    UnitAttr:$allowLegacyAnyOrigin
+    UnitAttr:$allowLegacyAnyOrigin,
+    // Comptime values attached with `@__annotation(...)`, in source order.
+    // Read back through `#kgen.get_annotation_value`, which the reflection
+    // library wraps as `reflect[T].field_annotation[field, index]`.
+    DefaultValuedAttr<ArrayAttr, "{}">:$annotations
   );
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 
@@ -579,6 +594,41 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     Type getReboundType(StructType structSelfType,
                         ParameterEvaluationContext *ctx = nullptr);
   }];
+}
+
+//===----------------------------------------------------------------------===//
+// EnumCaseOp
+//===----------------------------------------------------------------------===//
+
+def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
+  let summary = "Enum case declaration.";
+  let description = [{
+    The `lit.enum.case` operation declares a case of the enum whose
+    `lit.struct.decl` contains it. The cases of an enum are its
+    `lit.enum.case` ops, in declaration order. `payloadTypes` lists the
+    case's payload types as written, empty for a case without a payload; it
+    is absent until the payload is resolved.
+
+    Example:
+
+    ```mlir
+    lit.struct.decl @Color {
+      lit.enum.case red : []
+      lit.enum.case rgb : [!alias_Int1, !alias_Int1, !alias_Int1]
+    } {isEnum}
+    ```
+  }];
+
+  let arguments = (ins
+    StrAttr:$name,
+    OptionalAttr<TypeArrayAttr>:$payloadTypes,
+    OptionalAttr<LIT_DocStringAttr>:$docString
+  );
+  let assemblyFormat = [{
+    custom<KeywordAsString>($name) (`:` $payloadTypes^)? attr-dict
+  }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -747,7 +797,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     ```mlir
     lit.trait.decl @Trait<T: !Trait> {
       lit.fn @f() -> !kgen.none {
-        kgen.unreachable
+        hlcf.unreachable
       }
     }
     ```
@@ -761,10 +811,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     DefaultValuedAttr<KGEN_TraitSymbolArrayAttr,
                       "ArrayRef<TraitSymbolAttr>{}">:$immediateParents,
     EnumProp<LIT_TypeConvention>:$convention,
-    // If definesClosure attribute is present,
-    // then this is a compiler generated trait
-    // used to implement a closure
-    UnitAttr:$definesClosure,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
@@ -775,7 +821,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
-    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
     OptionalAttr<SourceNameAttr>:$sourceName
   );
 

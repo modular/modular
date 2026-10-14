@@ -1,0 +1,86 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "decision_eval",
+    testonly = True,
+    srcs = [
+        "cases.py",
+        "metrics.py",
+        "predictions.py",
+    ],
+    imports = ["."],
+)
+
+modular_py_binary(
+    name = "run_jevbench",
+    testonly = True,
+    srcs = ["run_jevbench.py"],
+    imports = ["."],
+    main = "run_jevbench.py",
+    deps = [
+        ":decision_eval",
+        requirement("aiohttp"),
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "score_published",
+    testonly = True,
+    srcs = ["score_published.py"],
+    imports = ["."],
+    main = "score_published.py",
+    deps = [
+        ":decision_eval",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "decision_index_calibration",
+    testonly = True,
+    srcs = ["decision_index_calibration.py"],
+    imports = ["."],
+    main = "decision_index_calibration.py",
+    deps = [
+        ":decision_eval",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "parity",
+    testonly = True,
+    srcs = ["parity.py"],
+    imports = ["."],
+    main = "parity.py",
+    deps = [
+        ":decision_eval",
+        requirement("click"),
+        requirement("numpy"),
+    ],
+)
+
+# Needs torch and a recent transformers, so it is run from a separate
+# environment (see the module docstring) rather than through Bazel.
+exports_files(["reference_decider.py"])
+
+modular_py_test(
+    name = "test_decision_eval",
+    size = "small",
+    srcs = ["test_decision_eval.py"],
+    imports = ["."],
+    deps = [
+        ":decision_eval",
+        ":parity",
+        ":run_jevbench",
+        ":score_published",
+        requirement("click"),
+    ],
+)

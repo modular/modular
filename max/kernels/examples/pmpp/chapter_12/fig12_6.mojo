@@ -16,6 +16,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
+from std.math import ceildiv
 
 
 # ========================== CONFIGURATION ==========================
@@ -119,7 +120,7 @@ def main() raises:
             h_size[0] = UInt32(0)
 
         # Launch kernel
-        var num_blocks = (N + BLOCK_DIM - 1) // BLOCK_DIM
+        var num_blocks = ceildiv(N, BLOCK_DIM)
         print(
             (
                 "Launching unstable filter kernel with privatization (Fig 12.6)"

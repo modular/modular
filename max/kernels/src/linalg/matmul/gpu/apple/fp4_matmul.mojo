@@ -52,7 +52,6 @@ from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.memory import unsafe_stack_allocation
 from std.sys import align_of
-from std.utils import IndexList
 
 from layout import TensorEngine, TileTensor, Idx
 from layout.tile_layout import Layout, TensorLayout, row_major
@@ -264,8 +263,7 @@ struct AppleM5Fp4MatMul[
 
         var tid = Int32(thread_idx.x)
         var sg_id = tid // Int32(WARP_SIZE)
-        var sg_m_idx = sg_id // NUM_SG_N_i32
-        var sg_n_idx = sg_id % NUM_SG_N_i32
+        var sg_m_idx, sg_n_idx = divmod(sg_id, NUM_SG_N_i32)
 
         var tile_mn = Self._Sched.morton_decode_2d_rect(
             UInt32(block_idx.x), log2_grid_m, log2_grid_n
@@ -351,14 +349,13 @@ struct AppleM5Fp4MatMul[
         # the one block scale the run shares (`COLS_PER_THREAD <= 16`). Shared by
         # the interior path and the bounded path's in-bounds run.
         @inline(.always)
-        @__parameter
         def _decode_run(
             n_abs: Int,
             k0: Int,
             col0: Int,
             col_in_row: Int,
             scale_abs: Float32,
-        ) -> SIMD[Self.in_type, COLS_PER_THREAD]:
+        ) {imm} -> SIMD[Self.in_type, COLS_PER_THREAD]:
             var byte0 = col_in_row * BYTES_PER_THREAD
             # This thread's contiguous packed byte-run: one TileTensor width-load
             # (coalesced K; adjacent threads read adjacent bytes) -- no raw ptr.
@@ -386,11 +383,11 @@ struct AppleM5Fp4MatMul[
         # and a clean zero elsewhere. `k_valid` is the in-bounds K width of this
         # strip (used only on the bounded path).
         @inline(.always)
-        @__parameter
-        def _stage_dequant[bounded: Bool](k0: Int32, k_valid: Int32, buf: Int):
+        def _stage_dequant[
+            bounded: Bool
+        ](k0: Int32, k_valid: Int32, buf: Int) {imm}:
             var t = Int(tid)
-            var nrow = t // THREADS_PER_ROW
-            var col_in_row = t % THREADS_PER_ROW
+            var nrow, col_in_row = divmod(t, THREADS_PER_ROW)
             var col0 = col_in_row * COLS_PER_THREAD  # first bf16 col in strip
             var n_abs = Int(tg_col) + nrow
 
@@ -471,13 +468,11 @@ struct AppleM5Fp4MatMul[
         # scattered 1-byte DRAM load. The caller barriers after this before the
         # decode reads it. Only emitted when `coalesce_scales`.
         @inline(.always)
-        @__parameter
-        def _stage_scales(k0: Int32, buf: Int):
+        def _stage_scales(k0: Int32, buf: Int) {imm}:
             comptime NSCALE = BN * NBLK
             var t = Int(tid)
             if t < NSCALE:
-                var srow = t // NBLK
-                var sblk = t % NBLK
+                var srow, sblk = divmod(t, NBLK)
                 s_smem_view.store[width=1](
                     Coord(buf, srow, sblk),
                     Float32(
@@ -490,10 +485,9 @@ struct AppleM5Fp4MatMul[
                 )
 
         @inline(.always)
-        @__parameter
         def _mma_from_smem[
             bounded: Bool
-        ](buf: Int, k_strip_local: Int32, valid_rows: Int32):
+        ](buf: Int, k_strip_local: Int32, valid_rows: Int32) {mut accum, imm}:
             # Select this buffer's (BN, BK) plane from the double-buffered view,
             # then descend to the simdgroup's (SG_N, BK) B sub-tile -- all
             # TileTensor tile addressing (the legitimate structured-tiling win;
@@ -528,8 +522,7 @@ struct AppleM5Fp4MatMul[
         var valid_rows = max(Int32(0), min(SG_M_i32, m_i32 - row_base))
 
         @inline(.always)
-        @__parameter
-        def _run_strips[bounded: Bool]():
+        def _run_strips[bounded: Bool]() {imm}:
             comptime use_coalesced = Self.coalesce_scales and not bounded
             comptime if use_coalesced:
                 # Lever 1c (interior only): per strip, coalesced scale-stage ->
@@ -585,25 +578,23 @@ struct AppleM5Fp4MatMul[
             var tile_col_base = Int(col_base)
 
             @inline(.always)
-            @__parameter
             def _write4(
                 lrow: Int,
                 lcol: Int,
                 arow: Int,
                 acol: Int,
                 v_fp32: SIMD[.float32, 4],
-            ):
+            ) {imm}:
                 var y = v_fp32.cast[Self.c_type]()
-                comptime if Self.elementwise_lambda_fn:
-                    comptime epilogue = Self.elementwise_lambda_fn.value()
+                comptime if case .Some(epilogue) = Self.elementwise_lambda_fn:
                     if acol + 3 < n:
                         epilogue[Self.c_type, 4, alignment=elem_align](
-                            IndexList[2](arow, acol), y
+                            (arow, acol), y
                         )
                     else:
                         for e in range(min(4, n - acol)):
                             epilogue[Self.c_type, 1](
-                                IndexList[2](arow, acol + e),
+                                (arow, acol + e),
                                 SIMD[Self.c_type, 1](y[e]),
                             )
                 else:
@@ -799,7 +790,7 @@ def _enqueue_apple_fp4_materialize_dense[
             c_type=c_type,
             transpose_b=True,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, wdense_tt.as_immut(), ctx)
+        ](c, a, wdense_tt.as_imm(), ctx)
     else:
         comptime apple_kernel = gemm_kernel_apple_8x8[
             c_type,
@@ -821,7 +812,7 @@ def _enqueue_apple_fp4_materialize_dense[
         ctx.enqueue_function[apple_kernel](
             c,
             a,
-            wdense_tt.as_immut(),
+            wdense_tt.as_imm(),
             Int32(m),
             Int32(n),
             Int32(k),
@@ -895,9 +886,9 @@ def _launch_apple_fp4_matmul[
     ]
     ctx.enqueue_function[kernel](
         c,
-        a.as_immut(),
-        packed.as_immut(),
-        scales.as_immut(),
+        a.as_imm(),
+        packed.as_imm(),
+        scales.as_imm(),
         log2_m,
         log2_n,
         grid_dim=(grid_dim),

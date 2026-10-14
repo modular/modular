@@ -293,6 +293,20 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
           *expectedKwVarArgIndex + 1 == expectedArgTypes.size()) &&
          "kwargs must be the last user argument");
 
+  // Allow promote a non capturing function to a capturing one. We are 1.
+  // removing capturing effect anyway and 2. the promotion should be allowed
+  // regardless since non-capturing is also a capturing function that captures
+  // nothing.
+  //
+  // TODO: remove the if/else branch after capturing is removed!!!
+  if (!actualEffects.isCapturing() && expectedEffects.isCapturing())
+    actualEffects.setCapturing(true);
+  // FIXME: Penalize non-throws more than non-capturing conversion to make
+  // overload selection works. We don't need this once we remove capturing
+  // effect.
+  if (!actualEffects.isThrows() && expectedEffects.isThrows())
+    state.numImplicitConversions++;
+
   // If the actual function is not throwing, and the expected function is,
   // then we can infer the Error type to be Never.
   if (!actualEffects.isThrows() && expectedEffects.isThrows()) {
@@ -336,22 +350,6 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
         !actualResultType.isCopyable(expr->getLoc(), shared,
                                      /*isImplicit=*/false, state.declScope))
       return error(MatchFailure::Unclassified{});
-  }
-
-  // Match the result. When implicit conversions are allowed we allow them here.
-  {
-    FailableScope failableScope(*this);
-    if (failed(matchTypes(actualResultType, expectedResultType))) {
-      if (!allowImplicitConversions)
-        return failure();
-
-      // TODO: Do this the right ParamMatcher way.
-      if (!IREmitter::canImplicitlyConvertToType(
-              {UnknownAttr::get(actualResultType), expr}, expectedResultType,
-              state.declScope))
-        return failure();
-      failableScope.revert();
-    }
   }
 
   if (actualEffects != expectedEffects)
@@ -497,6 +495,28 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     typeListType = IndexDepthAdjuster(/*adjustDepth=*/-1).replace(typeListType);
     typeListType = state.evaluator.getReboundType(typeListType);
     PROP(matchParams(LIT::getEmptyStructValue(typeListType), typeListParam));
+  }
+
+  // Match the result. When implicit conversions are allowed we allow them here.
+  {
+    FailableScope failableScope(*this);
+    if (failed(matchTypes(actualResultType, expectedResultType))) {
+      if (!allowImplicitConversions)
+        return failure();
+
+      // TODO: Do this the right ParamMatcher way.
+      //
+      // FIXME: we should not allow implicit conversion here, but we need it at
+      // the moment largely to bridge origin mismatch, the conversion below is
+      // the source of parser cycle to allow default implementation on __init__
+      // for trait like `Defaultable`, we do this at the last step s.t. we can
+      // filter out more candidates before testing result mismatch.
+      if (!IREmitter::canImplicitlyConvertToType(
+              {UnknownAttr::get(actualResultType), expr}, expectedResultType,
+              state.declScope))
+        return failure();
+      failableScope.revert();
+    }
   }
 
   // The function types are convertible.
@@ -696,6 +716,43 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
     }
   }
 
+  if (auto expectedTrait = dyn_cast<TraitType>(expectedType)) {
+    if (auto expected = extractClosureSymbol(shared, expectedTrait)) {
+      // We can infer from a parametric closure trait and a fn literal type.
+      FnTypeGeneratorType fnSigActual = [&]() {
+        if (auto actual = extractClosureSymbol(
+                shared, ASTType(actualType).getProvidedTrait(shared))) {
+          return shared.getClosureFnSigWithoutSelf(actual);
+        } else if (auto actual =
+                       dyn_cast<FnLiteralTypeGeneratorMetaType>(actualType)) {
+          return cast<FnTypeGeneratorType>(
+              actual.getType().getSymbolConstantAttr().getType());
+        }
+        return FnTypeGeneratorType();
+      }();
+      if (fnSigActual) {
+        FnTypeGeneratorType fnSigExpected =
+            shared.getClosureFnSigWithoutSelf(expected);
+        // TODO: Be more specific about the matching failure!
+        if (failed(matchFunctionTypes(fnSigActual, fnSigExpected)))
+          return error(MatchFailure::Unclassified{});
+
+        if (paramIndexRefDepth) {
+          // We might be at a non-zero depth, adjust it here such that rebind
+          // below works.
+          IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
+          expectedType = adjuster.replace(expectedType);
+        }
+        // The expected trait type might be refined.
+        expectedType = state.evaluator.getReboundType(expectedType);
+        // If at this point, we still can not infer a concrete closure trait,
+        // then it is a hard error.
+        if (auto paramIdx = state.paramFinder.findOneReference(expectedType))
+          return error(MatchFailure::DependsOnUnresolved{*paramIdx});
+      }
+    }
+  }
+
   // Handle meta type upcasting.
   // Assumptions needed: overload resolution for e.g.
   // repr[T: Writable](Tuple[*Ts]) inside a fn with `where AllWritable[*Ts]`.
@@ -794,8 +851,20 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       // values that want index-based ones.  matchFunctionTypes should convert
       // the former to the latter and we should remove this redundant check for
       // implicit convertibility.
-      expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
+
       auto expectedType = getCanonicalType(expectedAttr.getType());
+      if (paramIndexRefDepth) {
+        // The match above might have inferred new value, to get a more refined
+        // type, we need to adjust the depth here.
+        //
+        // TODO: should we push it to the a new `matcher.reboundWithDepth()`,
+        // that is, every rebind should make sure the initial depth set to be
+        // paramIndexRefDepth (instead of doing this ad hoc on the callsite).
+        IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
+        expectedType = adjuster.replace(expectedType);
+      }
+      expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
+      expectedType = state.evaluator.getReboundType(expectedType);
       if (IREmitter::canImplicitlyConvertToType(
               {actualAttr, expr}, expectedType, emitter.getDeclScope())) {
         actualAttr = emitter.emitPValue({actualAttr, expr}, EC_TypeParamValue,

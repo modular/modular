@@ -6,7 +6,7 @@
 
 kgen.generator @call(%arg0: !kgen.struct<(index)>) -> index {
   %c = kgen.param.constant : index = <1>
-  kgen.return %c : index
+  hlcf.return %c : index
 }
 
 // The source closure struct: conforms to `def() -> T` with `T = index`.
@@ -32,18 +32,18 @@ kgen.struct.generator @extension1<A: type> = struct_inst<"extension1"[A]<:type A
 kgen.generator @sink<V: type, F: type>(%arg: !kgen.param<F>) -> !kgen.param<V> {
   kgen.param.declare callFn : (!kgen.param<F>) -> !kgen.param<V> = <#kgen.get_witness<F, @"def() -> V", "__call__">>
   %result = kgen.call_param[(!kgen.param<F>) -> !kgen.param<V> : callFn](%arg)
-  kgen.return %result : !kgen.param<V>
+  hlcf.return %result : !kgen.param<V>
 }
 
 // `forward` augments `G`'s trait view with an extension supplying `def() -> V`
 // CHECK-LABEL: kgen.func @"forward
 // CHECK-NEXT: kgen.call @"sink
-// CHECK-NEXT: kgen.return
+// CHECK-NEXT: hlcf.return
 kgen.generator @forward<T: type, G: type>(%arg: !kgen.param<G>) -> !kgen.param<T> {
   kgen.param.declare P1 : type = <#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@extension1<:type G>>>, struct<()>> : !kgen.type]> : !kgen.type>
   %arg1 = kgen.rebind %arg : !kgen.param<G> to !kgen.param<P1>
   %result = kgen.call @sink<:type T, :type P1>(%arg1) : (!kgen.param<P1>) -> !kgen.param<T>
-  kgen.return %result : !kgen.param<T>
+  hlcf.return %result : !kgen.param<T>
 }
 
 #make = #kgen.type<typevalue<:!kgen.type #kgen.genref<@make>>, struct<(index)>> : !kgen.type
@@ -51,5 +51,5 @@ kgen.generator @forward<T: type, G: type>(%arg: !kgen.param<G>) -> !kgen.param<T
 // CHECK-LABEL: kgen.func @foo
 kgen.generator @foo(%arg0: !kgen.struct<(index)>) -> index {
   %0 = kgen.call @forward<:type index, :type #make>(%arg0) : (!kgen.struct<(index)>) -> index
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }

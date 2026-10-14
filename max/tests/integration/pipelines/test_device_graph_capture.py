@@ -21,8 +21,10 @@ captured graph; ``replay`` copies inputs into the captured buffers and replays.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -30,11 +32,15 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
+from max.experimental.compilation import CompiledCallable
 from max.graph import DeviceRef
 from max.nn.kv_cache import AttnKeyInterface, BatchCharacteristics, MHAAttnKey
 from max.nn.kv_cache.utils import MultiAttnKey
 from max.pipelines.lib import MemoryPlan, ModelInputs, ModelOutputs
-from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
+from max.pipelines.lib.graph_capture import (
+    _HOST_INPUT_GUARD_ENV,
+    ServeGraphCaptureRunner,
+)
 from max.pipelines.lib.interfaces import UnifiedEagleOutputs
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
@@ -47,6 +53,10 @@ class DummyModel:
     def __init__(self, output_buffer: Buffer) -> None:
         self.output_buffer = output_buffer
         self.input_devices = [CPU()]
+        self.input_metadata = [
+            SimpleNamespace(name=name)
+            for name in ("tokens", "input_row_offsets", "return_n_logits")
+        ]
         self.capture_calls: list[tuple[int, list[Buffer]]] = []
         self.replay_calls: list[tuple[int, list[Buffer]]] = []
         self.debug_verify_replay_calls: list[tuple[int, list[Buffer]]] = []
@@ -60,6 +70,9 @@ class DummyModel:
 
     def debug_verify_replay(self, graph_key: int, *buffers: Buffer) -> None:
         self.debug_verify_replay_calls.append((graph_key, list(buffers)))
+
+    def _await_device_graphs(self) -> None:
+        pass
 
 
 class EagleDummyModel(DummyModel):
@@ -126,8 +139,7 @@ def _make_runner(
     num_speculative_tokens: int = 0,
     kv_params: MagicMock | None = None,
     warmup_model_inputs: Any = None,
-    verify_widths: Sequence[int] | None = None,
-    width_lookup: Sequence[int] | None = None,
+    widths_by_batch_size: Sequence[Sequence[int]] | None = None,
 ) -> ServeGraphCaptureRunner:
     return ServeGraphCaptureRunner(
         model=cast(Model, model),
@@ -136,8 +148,7 @@ def _make_runner(
         max_cache_length_upper_bound=10,
         max_batch_size=max_batch_size,
         num_speculative_tokens=num_speculative_tokens,
-        verify_widths=verify_widths,
-        width_lookup=width_lookup,
+        widths_by_batch_size=widths_by_batch_size,
     )
 
 
@@ -240,6 +251,75 @@ def test_replay_miss_raises(capture_model: CapturePipelineModel) -> None:
     assert not capture_model.model.replay_calls
 
 
+def _runner_with_captured_host_input(
+    model: DummyModel,
+) -> tuple[ServeGraphCaptureRunner, Buffer]:
+    """Returns a runner holding one graph captured with ``return_n_logits=1``.
+
+    On CPU every captured input is host-resident, so ``replay`` sends each one
+    through the host-input guard.
+    """
+    runner = _make_runner(model)
+    key = _gk(num_partitions=1, q_max_seq_len=1)
+    runner._records[_bc(1, 1, 1)] = key
+    captured = MockModelInputs(
+        active_batch_size=1, eos_prob=0.0, return_n_logits=1
+    )
+    runner.graph_entries[key] = (
+        captured.buffers,
+        ModelOutputs(logits=model.output_buffer),
+    )
+    return runner, captured.return_n_logits
+
+
+def test_replay_guard_abort_reads_the_captured_value_before_refresh(
+    capture_model: CapturePipelineModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Abort mode raises on a changed host input and leaves the graph unrun.
+
+    The guard only works while the captured buffer still holds its captured
+    value; if the refresh copy ran first, it would compare the live value with
+    itself and stay silent.
+    """
+    monkeypatch.setenv(_HOST_INPUT_GUARD_ENV, "abort")
+    runner, captured = _runner_with_captured_host_input(capture_model.model)
+    live = MockModelInputs(active_batch_size=1, eos_prob=0.0, return_n_logits=4)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"'return_n_logits' \(index 2\) changed since capture",
+    ):
+        runner.replay(model_inputs=live, batch_characteristics=_bc(1, 1, 1))
+    assert captured.to_numpy()[0] == 1
+    assert not capture_model.model.replay_calls
+
+
+def test_replay_guard_report_warns_once_and_keeps_replaying(
+    capture_model: CapturePipelineModel,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv(_HOST_INPUT_GUARD_ENV, "report")
+    runner, captured = _runner_with_captured_host_input(capture_model.model)
+
+    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
+        for return_n_logits in (4, 8):
+            live = MockModelInputs(
+                active_batch_size=1,
+                eos_prob=0.0,
+                return_n_logits=return_n_logits,
+            )
+            runner.replay(model_inputs=live, batch_characteristics=_bc(1, 1, 1))
+
+    reports = [
+        r for r in caplog.records if "changed since capture" in r.message
+    ]
+    assert len(reports) == 1
+    # Replay does not refresh host inputs, so the captured value stays.
+    assert captured.to_numpy()[0] == 1
+    assert len(capture_model.model.replay_calls) == 2
+
+
 def test_replay_debug_verify_uses_verify_inputs(
     capture_model: CapturePipelineModel,
 ) -> None:
@@ -334,6 +414,23 @@ def test_align_q_mismatch_raises() -> None:
         runner.align(_bc(1, 2, 5))
 
 
+def test_align_rejects_a_width_not_captured_at_that_batch_size() -> None:
+    """A width captured only at other batch sizes has no graph here."""
+    runner = _make_runner(
+        EagleDummyModel(Buffer.zeros((4,), dtype=DType.float32)),
+        max_batch_size=2,
+        num_speculative_tokens=3,
+        widths_by_batch_size=[[3], [3], [1, 3]],
+    )
+    runner._recorded_cache_lengths = [10]
+
+    assert runner.align(_bc(2, 2, 5)) == _bc(2, 2, 10)
+    with pytest.raises(
+        RuntimeError, match=r"not captured at batch size 1; captured widths"
+    ):
+        runner.align(_bc(1, 2, 5))
+
+
 # ---------------------------------------------------------------------------
 # warmup_pre_ready()
 # ---------------------------------------------------------------------------
@@ -398,7 +495,8 @@ def test_warmup_dedups_shared_keys() -> None:
 
     @contextmanager
     def _warmup_ctx(
-        batch_size: int, batch_characteristics: BatchCharacteristics
+        batch_size: int,
+        batch_characteristics: BatchCharacteristics,
     ) -> Iterator[MockModelInputs]:
         yield mock_inputs
 
@@ -423,3 +521,91 @@ def test_warmup_dedups_shared_keys() -> None:
         key == _gk(num_partitions=3, q_max_seq_len=1)
         for key in runner._records.values()
     )
+
+
+def test_release_graph_reaches_the_engine_model_of_a_compiled_callable() -> (
+    None
+):
+    compiled = MagicMock(spec=CompiledCallable)
+    runner = ServeGraphCaptureRunner(
+        model=cast(Model, compiled),
+        kv_params=_mock_kv_params(),
+        warmup_model_inputs=MagicMock(),
+        max_cache_length_upper_bound=10,
+        max_batch_size=1,
+    )
+    runner.release_graph(_gk(num_partitions=1, q_max_seq_len=1))
+    compiled.engine_model.release_captured_graph.assert_called_once()
+
+
+def test_replay_appends_the_signal_buffers_of_a_compiled_callable() -> None:
+    compiled = MagicMock(spec=CompiledCallable)
+    signal = Buffer.zeros((1,), dtype=DType.float32)
+    compiled.signal_buffers = [signal]
+    runner = ServeGraphCaptureRunner(
+        model=compiled,
+        kv_params=_mock_kv_params(),
+        warmup_model_inputs=MagicMock(),
+        max_cache_length_upper_bound=10,
+        max_batch_size=1,
+    )
+    inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+    key = _gk(num_partitions=1, q_max_seq_len=1)
+    runner._records[_bc(1, 1, 1)] = key
+    runner.graph_entries[key] = (
+        inputs.buffers,
+        ModelOutputs(logits=signal),
+    )
+
+    runner.replay(
+        model_inputs=inputs,
+        batch_characteristics=_bc(1, 1, 1),
+        debug_verify_replay=True,
+    )
+
+    engine_model = compiled.engine_model
+    verify_args = engine_model.debug_verify_replay.call_args.args
+    replay_args = engine_model.replay.call_args.args
+    assert verify_args[-1] is signal
+    assert replay_args[-1] is signal
+    assert len(replay_args) == 1 + len(inputs.buffers) + 1
+
+
+@pytest.mark.parametrize(
+    ("widths_by_batch_size", "expected_widths_by_batch_size"),
+    [
+        (None, {1: {3}, 2: {3}, 3: {3}}),
+        ([[1, 3]] * 4, {1: {1, 3}, 2: {1, 3}, 3: {1, 3}}),
+        ([[0], [1], [3], [3]], {1: {1}, 2: {3}, 3: {3}}),
+        ([[3], [3], [1, 3], [1, 3]], {1: {3}, 2: {1, 3}, 3: {1, 3}}),
+    ],
+    ids=["unset", "same-rows", "one-per-row", "mixed-rows"],
+)
+def test_warmup_probes_widths_per_batch_size(
+    widths_by_batch_size: list[list[int]] | None,
+    expected_widths_by_batch_size: dict[int, set[int]],
+) -> None:
+    """Each batch size probes exactly its own row of the table."""
+    model = EagleDummyModel(Buffer.zeros((4,), dtype=DType.float32))
+    mock_inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+
+    @contextmanager
+    def _warmup_ctx(
+        batch_size: int, batch_characteristics: BatchCharacteristics
+    ) -> Iterator[MockModelInputs]:
+        yield mock_inputs
+
+    runner = _make_runner(
+        model,
+        max_batch_size=3,
+        num_speculative_tokens=3,
+        kv_params=_mock_kv_params(probe_lengths=[10]),
+        warmup_model_inputs=_warmup_ctx,
+        widths_by_batch_size=widths_by_batch_size,
+    )
+    runner.warmup_pre_ready()
+
+    probed: dict[int, set[int]] = {}
+    for bc in runner._records:
+        probed.setdefault(bc.batch_size, set()).add(bc.max_prompt_length - 1)
+    assert probed == expected_widths_by_batch_size

@@ -21,10 +21,12 @@ from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
 from max.nn.kernels import (
     apply_packed_bitmask,
     gumbel_argmax_from_probs,
+    keyed_uniform,
     topk_fused_sampling,
     topk_topp_masked_probs,
 )
 from max.nn.layer import Module
+from max.nn.sampling.penalties import LogitPenalties
 
 logger = logging.getLogger("max.pipelines")
 
@@ -57,6 +59,12 @@ _SEED_DOMAIN_VERDICT = 0x94D049BB133111EB
 # the committed bonus token and the very next proposal reselect the same
 # quantile off two near-identical distributions, and adjacent tokens correlate.
 _SEED_DOMAIN_BONUS = 0xC4CEB9FE1A85EC53
+
+# xxHash64's second prime, tagging the accept coin. The coin used to come
+# from the implicit graph-level stream, which ``set_seed`` keys off row 0
+# alone, so one request's token count drove every co-resident request's
+# accept decisions. An explicitly keyed draw needs its own domain.
+_SEED_DOMAIN_COIN = 0xC2B2AE3D27D4EB4F
 
 # MurmurHash3 fmix64's first constant, tagging the synthetic sampler's
 # implicit RNG stream. Synthetic acceptance never reads the drafted token, so
@@ -96,7 +104,12 @@ def _draft_step_seed(seed: TensorValue, step: int) -> TensorValue:
 
 
 def _recovery_row_offset(row: int) -> int:
-    """Returns the seed offset the residual-recovery stream uses for ``row``."""
+    """Returns the seed offset the residual-recovery stream uses for ``row``.
+
+    The row term applies only to a batch sharing one seed. A per-row seed is
+    already distinct per request, so its recovery key spends the domain tag
+    alone -- this function at ``row=0``.
+    """
     return _seed_offset(row, _SEED_DOMAIN_RECOVERY)
 
 
@@ -107,9 +120,7 @@ def _set_domain_seed(seed: TensorValue, domain: int) -> None:
     per-row seed contributes only its row-0 value.
     """
     scalar = seed[0] if seed.rank == 1 else seed
-    ops.random.set_seed(
-        scalar + ops.constant(domain, DType.uint64, scalar.device)
-    )
+    ops.random.set_seed(scalar + domain)
 
 
 def _multinomial(
@@ -118,12 +129,7 @@ def _multinomial(
     """Samples from a categorical distribution using the Gumbel-max trick."""
     if residual_rand is not None:
         eps = float(np.finfo(probs.dtype.to_numpy()).eps)
-        clamped_uniform = ops.max(
-            residual_rand,
-            ops.constant(
-                eps, dtype=residual_rand.dtype, device=residual_rand.device
-            ),
-        )
+        clamped_uniform = ops.max(residual_rand, eps)
         q = -ops.log(clamped_uniform)
     else:
         eps = float(np.finfo(probs.dtype.to_numpy()).eps)
@@ -160,6 +166,113 @@ def repeat_per_draft_step(
     )
 
 
+def _gamma_iota(count: Dim, device: DeviceRef) -> TensorValue:
+    """Returns ``[0, gamma, 2 * gamma, ...]``, ``count`` entries long."""
+    return (
+        ops.range(0, count, 1, out_dim=count, device=device, dtype=DType.uint64)
+        * _SEED_GOLDEN_GAMMA
+    )
+
+
+def _is_shared_seed(seed: TensorValue) -> bool:
+    """Whether ``seed`` is one key for the whole batch rather than one per row.
+
+    A rank-1 ``[1]`` tensor is the graph-level
+    :func:`~max.graph.ops.random.SeedType` input, not a batch of one.
+    """
+    return seed.rank == 0 or (seed.rank == 1 and seed.shape[0] == 1)
+
+
+def _shared_scalar(seed: TensorValue) -> TensorValue:
+    """Returns the single key a shared seed carries."""
+    return seed[0] if seed.rank == 1 else seed
+
+
+def _keyed_seed_rows(
+    seed: TensorValue, rows: Dim, device: DeviceRef, domain: int
+) -> TensorValue:
+    """Returns one RNG key per row, in the family tagged ``domain``.
+
+    A per-row seed already carries the request's own key in every entry, so
+    the rows need nothing but the tag: adding the row index back would key the
+    draw on the physical batch slot, which is exactly what the per-request key
+    exists to remove. A shared seed has no per-request identity to spread the
+    rows apart, so there the index is spent -- without it every row would draw
+    the same token, since the sampling kernel's RNG counter no longer varies
+    with the slot.
+    """
+    if _is_shared_seed(seed):
+        return _shared_scalar(seed) + domain + _gamma_iota(rows, device)
+    # The caller's seed input may carry a static or differently-named batch
+    # dim; rebind so it unifies with everything else derived from ``rows``.
+    return ops.rebind(seed, [rows]) + domain
+
+
+def _keyed_step_seeds(
+    seed: TensorValue,
+    batch_size: Dim,
+    num_steps: Dim,
+    device: DeviceRef,
+    domain: int,
+) -> TensorValue:
+    """Returns one RNG key per (request, position), in the ``domain`` family.
+
+    Unlike :func:`_keyed_seed_rows` every position consumes a draw of its own,
+    so the keys within a request must differ. A per-row seed spaces them by
+    the position *within* the request -- an offset that travels with the
+    request rather than with its slot -- while a shared seed spaces them by
+    the flattened row, the only index it has.
+    """
+    flat_rows = batch_size * num_steps
+    if _is_shared_seed(seed):
+        return _shared_scalar(seed) + domain + _gamma_iota(flat_rows, device)
+    per_row = repeat_per_draft_step(
+        ops.rebind(seed, [batch_size]), batch_size, num_steps
+    )
+    step_offsets = ops.reshape(
+        ops.broadcast_to(
+            ops.unsqueeze(_gamma_iota(num_steps, device), axis=0),
+            [batch_size, num_steps],
+        ),
+        [flat_rows],
+    )
+    return per_row + domain + step_offsets
+
+
+def _bonus_seed_rows(
+    seed: TensorValue, batch_size: Dim, device: DeviceRef
+) -> TensorValue:
+    """Returns the bonus-token seeds, one per request.
+
+    The domain tag keeps the draw off the next proposal's key; the per-row
+    keying keeps one request's bonus token out of another's stream.
+    """
+    return _keyed_seed_rows(seed, batch_size, device, _SEED_DOMAIN_BONUS)
+
+
+def _coin_seed_rows(
+    seed: TensorValue,
+    batch_size: Dim,
+    num_steps: Dim,
+    device: DeviceRef,
+) -> TensorValue:
+    """Returns the accept-coin seeds, one per (request, draft position).
+
+    :func:`_recovery_seed_rows` shares one noise row across a request's draft
+    positions because at most one recovered token -- the first rejection -- is
+    ever committed. Every position's coin is consumed, so each needs a key.
+    Shaped per (request, position), the shape the verdict works in, so the
+    coin draw does not have to reshape around it; :func:`_keyed_step_seeds`
+    itself stays flat for the argmax verdict, which samples per flat row.
+    """
+    return ops.reshape(
+        _keyed_step_seeds(
+            seed, batch_size, num_steps, device, _SEED_DOMAIN_COIN
+        ),
+        [batch_size, num_steps],
+    )
+
+
 def _recovery_seed_rows(
     seed: TensorValue,
     batch_size: Dim,
@@ -172,23 +285,15 @@ def _recovery_seed_rows(
     times less RNG. Sharing is sound because at most one recovered token per
     request (the first rejection) is ever committed.
 
-    The vectorized form of :func:`_recovery_row_offset`: plain ``seed + b``
-    would put row ``b`` on the same key as draft step ``b``, which walks the
-    same small integers off the same base, so a row's recovery draw and one of
-    its own proposal draws would share randomness -- the coupling
-    :func:`_argmax_draft_verdict` already spaces its rows to avoid.
+    The domain tag is what keeps a row's recovery draw off its own proposal
+    draws: both families hang off the same base, so untagged they would meet
+    wherever the row index and the draft step agreed.
     """
-    row_offsets = ops.constant(
-        _SEED_DOMAIN_RECOVERY, DType.uint64, device
-    ) + ops.range(
-        0,
+    return repeat_per_draft_step(
+        _keyed_seed_rows(seed, batch_size, device, _SEED_DOMAIN_RECOVERY),
         batch_size,
-        1,
-        out_dim=Dim("batch_size"),
-        device=device,
-        dtype=DType.uint64,
-    ) * ops.constant(_SEED_GOLDEN_GAMMA, DType.uint64, device)
-    return repeat_per_draft_step(seed + row_offsets, batch_size, num_steps)
+        num_steps,
+    )
 
 
 def _find_first_rejected(
@@ -309,7 +414,12 @@ class RejectionSampler(Module):
         ) + ops.squeeze(first_rejected_token, axis=1)
 
         batch_size = draft_tokens.shape[0]
-        seed_per_batch = ops.broadcast_to(seed, [batch_size])
+        # This graph's seed is the one shared graph-level key, so the rows are
+        # spaced by index; a broadcast alone would hand every request the same
+        # recovered token.
+        seed_per_batch = _keyed_seed_rows(
+            seed, batch_size, self.device, _SEED_DOMAIN_RECOVERY
+        )
         sampled_target_tokens = topk_fused_sampling(
             logits=ops.gather(target_logits, rejected_offsets, axis=0),
             top_k=self.top_k,
@@ -424,28 +534,56 @@ def synthetic_acceptance_sampler(
     base_acceptance_rate: float,
     num_draft_steps: int,
     seed: TensorValue,
+    *,
+    temperature: TensorValue | None = None,
+    top_k: TensorValue | None = None,
+    max_k: TensorValue | None = None,
+    top_p: TensorValue | None = None,
+    min_top_p: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Synthetic sampler for speculative decoding benchmarking.
 
     Accepts each draft position independently with probability
     ``base_acceptance_rate``. Once a position is rejected all subsequent
-    positions are also rejected. Recovered tokens and bonus tokens are
-    taken from the target argmax — generated text is not a faithful
-    speculative decode; intended for throughput benchmarking only.
+    positions are also rejected. Accepted positions commit the draft token,
+    so generated text is not a faithful speculative decode.
+
+    With sampling params, recovered and bonus tokens are the draws of
+    :func:`stochastic_acceptance_sampler`, whose position 0 uses the same
+    kernel and seed as plain decoding: at rate 0 the output matches decoding
+    without speculation. Without them, they are the target argmax.
 
     Args:
         draft_tokens: Draft token ids ``[batch, num_steps]``.
         target_logits: Verified target logits.
         base_acceptance_rate: Per-position acceptance probability.
         num_draft_steps: Number of speculative draft steps.
-        seed: Per-execute seed tensor. A rank-1 per-row seed uses its row-0
-            value: synthetic acceptance is batch-level benchmarking noise.
+        seed: Per-execute seed tensor. The accept draws use its row-0 value.
+        temperature, top_k, max_k, top_p, min_top_p: Per-row sampling
+            params, all or none.
 
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
-    target_tokens_draft, bonus_tokens, device = _compute_target_tokens(
-        draft_tokens, target_logits
-    )
+    if temperature is None:
+        target_tokens_draft, bonus_tokens, device = _compute_target_tokens(
+            draft_tokens, target_logits
+        )
+    else:
+        assert top_k is not None
+        assert max_k is not None
+        assert top_p is not None
+        assert min_top_p is not None
+        device = draft_tokens.device
+        _, target_tokens_draft, bonus_tokens = stochastic_acceptance_sampler(
+            draft_tokens,
+            target_logits,
+            temperature=temperature,
+            top_k=top_k,
+            max_k=max_k,
+            top_p=top_p,
+            min_top_p=min_top_p,
+            seed=seed,
+        )
 
     _set_domain_seed(seed, _SEED_DOMAIN_SYNTHETIC)
 
@@ -454,14 +592,18 @@ def synthetic_acceptance_sampler(
     )
     random_values = ops.random.uniform(like=float_type, range=(0.0, 1.0))
 
-    threshold = ops.constant(
-        base_acceptance_rate, dtype=DType.float32, device=device
-    )
-    synthetic_rejected = random_values >= threshold
+    synthetic_rejected = random_values >= float(base_acceptance_rate)
     first_rejected_idx = ops.squeeze(
         _find_first_rejected(synthetic_rejected, device), axis=-1
     )
-    return first_rejected_idx, target_tokens_draft, bonus_tokens
+    # Callers feed ``recovered`` back to the draft as the committed tokens.
+    shape = [Dim("batch_size"), Dim("num_steps")]
+    recovered = ops.where(
+        ops.rebind(synthetic_rejected, shape),
+        ops.rebind(target_tokens_draft, shape),
+        ops.rebind(draft_tokens, shape).cast(target_tokens_draft.dtype),
+    )
+    return first_rejected_idx, recovered, bonus_tokens
 
 
 def greedy_acceptance_sampler(
@@ -517,7 +659,7 @@ class AcceptanceSampler:
     - Otherwise → greedy (accept iff draft token == target argmax).
 
     Synthetic mode takes priority over stochastic when both are
-    configured; the stochastic params are ignored in that case.
+    configured, but still samples with the stochastic params.
 
     ``relaxed_topk`` / ``relaxed_delta`` require ``draft_proposal="argmax"``;
     the relaxed rule assumes the drafted token is the draft's own argmax, so
@@ -570,11 +712,7 @@ class AcceptanceSampler:
 
     @property
     def acceptance_rule(self) -> Literal["synthetic", "stochastic", "greedy"]:
-        """The rule :meth:`__call__` dispatches to, in its precedence order.
-
-        This is the only place the acceptance rule in effect is decided:
-        ``SpeculativeConfig.rejection_sampling_strategy`` is read by nothing.
-        """
+        """The rule :meth:`__call__` dispatches to, in its precedence order."""
         if self._base_rate is not None:
             return "synthetic"
         if self._use_stochastic:
@@ -595,6 +733,7 @@ class AcceptanceSampler:
         in_thinking_phase: TensorValue | None = None,
         token_bitmasks: TensorValue | None = None,
         draft_probs_full: TensorValue | None = None,
+        penalties: LogitPenalties | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
 
@@ -603,17 +742,18 @@ class AcceptanceSampler:
             target_logits: Verified target logits.
             seed: Per-execute seed tensor. Required by the synthetic and
                 stochastic paths; ignored by greedy. Rank-0, or a rank-1
-                ``[batch_size]`` per-row seed tensor in stochastic argmax
-                mode -- each row's sampling is then keyed off its own seed
-                and never coupled to co-residents' draws (which member of
-                the seed family is drawn can still vary with batch position
-                and kernel route; the distribution cannot). A rank-1 ``[1]``
-                tensor is the graph-level :func:`~max.graph.ops.random.SeedType`
-                input and keeps its shared-seed (scalar) semantics.
+                ``[batch_size]`` per-row seed tensor in either stochastic
+                draft proposal, ``argmax`` or ``sampled`` -- every draw is
+                then keyed off the row's own seed and its position within the
+                request, never off a co-resident's seed or the row's batch
+                slot. A rank-1 ``[1]`` tensor is the graph-level
+                :func:`~max.graph.ops.random.SeedType` input and keeps its
+                shared-seed (scalar) semantics, where the rows have no
+                per-request key and are spread by batch index instead.
             temperature, top_k, max_k, top_p, min_top_p: Per-row
                 sampling params. Required when the sampler was built
                 with ``use_stochastic=True`` and synthetic mode is off;
-                ignored otherwise.
+                optional in synthetic mode, ignored in greedy mode.
             in_thinking_phase: Optional ``[batch_size]`` bool tensor
                 marking rows currently inside a ``<think>...</think>``
                 span. Required when the sampler was built with
@@ -628,7 +768,17 @@ class AcceptanceSampler:
             draft_probs_full: ``[batch, num_steps, vocab_size]`` distributions
                 the draft sampled from. Required when the sampler was built
                 with ``draft_proposal="sampled"``; forbidden otherwise.
+            penalties: Presence/frequency penalties, one CSR row per row of
+                ``target_logits``, subtracted before anything is sampled.
         """
+        if penalties is not None and (
+            not self._use_stochastic
+            or self._base_rate is not None
+            or token_bitmasks is None
+        ):
+            # Only the stochastic path's mask pass can carry them for free.
+            target_logits = penalties.apply(target_logits)
+            penalties = None
         if self._base_rate is not None:
             assert seed is not None, "synthetic acceptance requires a seed"
             return synthetic_acceptance_sampler(
@@ -637,6 +787,11 @@ class AcceptanceSampler:
                 base_acceptance_rate=self._base_rate,
                 num_draft_steps=self._num_draft_steps,
                 seed=seed,
+                temperature=temperature,
+                top_k=top_k,
+                max_k=max_k,
+                top_p=top_p,
+                min_top_p=min_top_p,
             )
         if self._use_stochastic:
             assert seed is not None, "stochastic acceptance requires a seed"
@@ -661,6 +816,7 @@ class AcceptanceSampler:
                 draft_proposal=self._draft_proposal,
                 draft_probs_full=draft_probs_full,
                 vocab_size=self._vocab_size,
+                penalties=penalties,
             )
         return greedy_acceptance_sampler(
             draft_tokens, target_logits, token_bitmasks
@@ -761,7 +917,9 @@ def _sampled_draft_verdict(
         has_dist, q_draft, ops.constant(1.0, DType.float32, device)
     )
 
-    coins = ops.random.uniform(p_target.type)
+    # One key per (request, draft position), rather than the implicit stream
+    # that ``set_seed`` keys off row 0 of the seed tensor alone.
+    coins = keyed_uniform(_coin_seed_rows(seed, batch_size, num_steps, device))
     # ``coin >= min(1, p_target / q)`` without dividing, so a q that
     # underflows to 0 degrades toward reject rather than accept.
     rejected = (coins * q_eff) >= p_target
@@ -834,54 +992,12 @@ def _argmax_draft_verdict(
         ),
         shape=[flat_all_rows, Dim("vocab_size")],
     )
-    # The fused sampling kernel depends on the seed to give different randomness
-    # to different rows. If two rows share randomness, then there would be a
-    # correlation between their accept/reject decisions.
-    # Here we use the golden seed gamma to ensure that each row gets a distinct
-    # seed value.
-    if seed.rank == 1:
-        # Per-row seeds: position p of row b keys off `seed[b] + p * gamma`,
-        # so a row's samples never depend on co-residents' seeds or draws.
-        # The sampling kernel may still mix the batch position into its RNG
-        # offset (route-dependent), so the drawn member of the seed family is
-        # position-variant; the distribution is not. At batch size 1 the keys
-        # reduce exactly to the rank-0 derivation.
-        #
-        # Rebind to the canonical batch dim first: the caller's seed input may
-        # carry a static or differently-named batch dim, and every other input
-        # here is rebound the same way (the flat reshape below cannot unify
-        # otherwise).
-        seed = ops.rebind(seed, [batch])
-        pos_iota = ops.range(
-            0,
-            all_positions,
-            1,
-            out_dim=all_positions,
-            device=device,
-            dtype=DType.uint64,
-        )
-        row_seeds = ops.reshape(
-            ops.unsqueeze(seed, axis=-1)
-            + ops.unsqueeze(pos_iota, axis=0)
-            * ops.constant(
-                _SEED_GOLDEN_GAMMA, dtype=DType.uint64, device=device
-            ),
-            shape=[flat_all_rows],
-        )
-    else:
-        row_iota = ops.range(
-            0,
-            flat_all_rows,
-            1,
-            out_dim=flat_all_rows,
-            device=device,
-            dtype=DType.uint64,
-        )
-        row_seeds = ops.broadcast_to(
-            seed, [flat_all_rows]
-        ) + row_iota * ops.constant(
-            _SEED_GOLDEN_GAMMA, dtype=DType.uint64, device=device
-        )
+    # Every position draws its own sample, so each needs a key of its own: two
+    # positions sharing one would correlate their accept/reject decisions.
+    # This verdict is the untagged family, the one a sampled draft proposal
+    # also walks -- the two never co-occur, since the proposal mode picks
+    # which verdict runs.
+    row_seeds = _keyed_step_seeds(seed, batch, all_positions, device, 0)
     sampled_flat = topk_fused_sampling(
         logits=flat_target_logits,
         top_k=repeat_per_draft_step(top_k, batch, all_positions),
@@ -960,13 +1076,8 @@ def _relaxed_thinking_verdict(
     )
 
     # Threshold = top1_prob - delta (broadcast over the N dim).
-    delta_const = ops.constant(
-        relaxed_delta,
-        dtype=target_probs_relaxed.dtype,
-        device=target_probs_relaxed.device,
-    )
     top1_prob = top_probs[:, :, 0:1]  # [B, K, 1]
-    threshold = top1_prob - delta_const
+    threshold = top1_prob - float(relaxed_delta)
     valid = top_probs >= threshold  # [B, K, N] bool
 
     # Compare each top-N index against the draft token at that slot.
@@ -1004,6 +1115,7 @@ def stochastic_acceptance_sampler(
     draft_proposal: Literal["argmax", "sampled"] = "argmax",
     draft_probs_full: TensorValue | None = None,
     vocab_size: int | None = None,
+    penalties: LogitPenalties | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Verifies speculative draft tokens against the target model.
 
@@ -1041,7 +1153,9 @@ def stochastic_acceptance_sampler(
 
     When ``token_bitmasks`` is provided, grammar constraints mask the
     target logits before anything is sampled, so recovered and bonus tokens
-    always satisfy structured-output constraints.
+    always satisfy structured-output constraints. ``penalties`` are
+    subtracted from the target logits before sampling too, in the mask's
+    pass when there is one.
 
     Returns:
         Tuple of ``(first_rejected_idx, recovered_tokens, bonus_tokens)``:
@@ -1074,29 +1188,16 @@ def stochastic_acceptance_sampler(
         # per-row seed tensor. Normalize to the scalar path; at batch size 1
         # the two interpretations coincide bit-for-bit.
         seed = seed[0]
-    if seed.rank == 1 and draft_proposal == "sampled":
-        # The sampled verdict draws implicit stream uniforms seeded once for
-        # the whole batch; only the argmax verdict derives per-row keys.
-        raise ValueError(
-            "per-row seeds require draft_proposal='argmax'; the sampled "
-            "verdict consumes a single batch-level random stream"
-        )
-    # The argmax verdict is explicitly keyed per flat row and never reads this
-    # stream.
+    # Both verdicts key every draw per row, so a rank-1 seed reaches the draw
+    # that consumes it. This stream is what remains for callers that still
+    # reach the implicit RNG, and its domain tag keeps it off a proposal's key.
     _set_domain_seed(seed, _SEED_DOMAIN_VERDICT)
 
     device = draft_tokens.device
 
-    is_greedy_row = temperature < ops.constant(
-        _GREEDY_TEMPERATURE_EPS,
-        dtype=temperature.dtype,
-        device=temperature.device,
-    )
+    is_greedy_row = temperature < _GREEDY_TEMPERATURE_EPS
 
-    temperature = ops.max(
-        temperature,
-        ops.constant(1e-6, dtype=temperature.dtype, device=temperature.device),
-    )
+    temperature = ops.max(temperature, 1e-6)
 
     target_logits_3d = _reshape_target_logits(target_logits)
 
@@ -1116,8 +1217,17 @@ def stochastic_acceptance_sampler(
         # The fill is finite so a fully-masked row degrades to a uniform draw
         # instead of NaN; ``apply_packed_bitmask`` carries the model's own -inf
         # positions through it, so masking can only ever narrow the support.
-        target_logits_3d = apply_packed_bitmask(
-            target_logits_3d, bitmask_rebound, fill_val=_MASKED_LOGIT_VALUE
+        if penalties is not None:
+            target_logits_3d = penalties.apply_with_bitmask(
+                target_logits_3d, bitmask_rebound, _MASKED_LOGIT_VALUE
+            )
+        else:
+            target_logits_3d = apply_packed_bitmask(
+                target_logits_3d, bitmask_rebound, fill_val=_MASKED_LOGIT_VALUE
+            )
+    elif penalties is not None:
+        target_logits_3d = ops.reshape(
+            penalties.apply(target_logits), target_logits_3d.shape
         )
 
     draft_verification_logits = target_logits_3d[:, :-1]
@@ -1239,12 +1349,10 @@ def stochastic_acceptance_sampler(
             target_logits_3d[:, -1],
             shape=[Dim("batch_size"), Dim("vocab_size")],
         )
-        # Tag the draw so it cannot share a key with the next sampled draft
-        # proposal, whose step 0 uses the bare seed.
-        seed_per_batch = ops.broadcast_to(
-            seed + ops.constant(_SEED_DOMAIN_BONUS, DType.uint64, device),
-            [batch_size],
-        )
+        # Tagged so the draw cannot share a key with the next sampled draft
+        # proposal, whose step 0 uses the bare seed, and spaced by row so
+        # co-resident requests do not share a quantile.
+        seed_per_batch = _bonus_seed_rows(seed, batch_size, device)
         bonus_token_tensor = topk_fused_sampling(
             logits=bonus_logits,
             top_k=top_k,
@@ -1407,12 +1515,7 @@ class RejectionSamplerWithResiduals(Module):
     ) -> TensorValue:
         difference = target_probs - draft_probs
         float_tiny = float(np.finfo(difference.dtype.to_numpy()).tiny)
-        f = ops.max(
-            difference,
-            ops.constant(
-                float_tiny, dtype=difference.dtype, device=self.device
-            ),
-        )
+        f = ops.max(difference, float_tiny)
 
         recovered_probs = f / ops.reshape(
             ops.sum(f), shape=[-1, Dim("num_steps"), 1]
@@ -1427,9 +1530,22 @@ class RejectionSamplerWithResiduals(Module):
         target_logits: TensorValue,
         target_logit_offsets: TensorValue,
         all_draft_logits: TensorValue,
+        seed: TensorValue,
         rejection_rand: TensorValue | None = None,
         residual_rand: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
+
+        Args:
+            draft_tokens: Draft token ids from the draft model.
+            draft_logits_for_sampled_tokens: Draft logits at the drafted tokens.
+            target_logits: Verified target logits.
+            target_logit_offsets: Row offsets into ``target_logits``.
+            all_draft_logits: Full draft logits, ``[num_steps, batch, vocab]``.
+            seed: Per-execute seed tensor, the shared graph-level key.
+            rejection_rand: Debug-only fixed acceptance noise.
+            residual_rand: Debug-only fixed residual noise.
+        """
         batch_draft_logits = ops.permute(
             all_draft_logits,
             [1, 0, 2],
@@ -1458,6 +1574,9 @@ class RejectionSamplerWithResiduals(Module):
             top_k=self.top_k,
             max_k=self.top_k,
             temperature=self.temperature,
+            seed=_keyed_seed_rows(
+                seed, Dim("batch_size"), self.device, _SEED_DOMAIN_BONUS
+            ),
         )
         return (
             first_rejected_token_idx,

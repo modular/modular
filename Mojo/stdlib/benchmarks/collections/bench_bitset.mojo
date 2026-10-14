@@ -155,63 +155,63 @@ def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
 
     comptime for i in range(len(sizes)):
-        comptime size = rebind[Int](sizes[i])
+        comptime size = sizes[i]
         m.bench_function(
             bench_empty_bitset_init[size],
             BenchId(String("bench_empty_bitset_init[", size, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
-        comptime width = rebind[Int](widths[width_idx])
+        comptime width = widths[width_idx]
         m.bench_function(
             bench_bitset_init_from[width],
             BenchId(String("bench_bitset_init_from[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
-        comptime width = rebind[Int](widths[width_idx])
+        comptime width = widths[width_idx]
         m.bench_function(
             bench_bitset_set[width],
             BenchId(String("bench_bitset_set[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
-        comptime width = rebind[Int](widths[width_idx])
+        comptime width = widths[width_idx]
         m.bench_function(
             bench_bitset_clear[width],
             BenchId(String("bench_bitset_clear[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
-        comptime width = rebind[Int](widths[width_idx])
+        comptime width = widths[width_idx]
         m.bench_function(
             bench_bitset_test[width],
             BenchId(String("bench_bitset_test[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
-        comptime width = rebind[Int](widths[width_idx])
+        comptime width = widths[width_idx]
         m.bench_function(
             bench_bitset_toggle[width],
             BenchId(String("bench_bitset_toggle[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
-        comptime width = rebind[Int](widths[width_idx])
+        comptime width = widths[width_idx]
         m.bench_function(
             bench_bitset_union[width],
             BenchId(String("bench_bitset_union[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
-        comptime width = rebind[Int](widths[width_idx])
+        comptime width = widths[width_idx]
         m.bench_function(
             bench_bitset_intersection[width],
             BenchId(String("bench_bitset_intersection[", width, "]")),
         )
 
     comptime for width_idx in range(0, len(widths)):
-        comptime width = rebind[Int](widths[width_idx])
+        comptime width = widths[width_idx]
         m.bench_function(
             bench_bitset_difference[width],
             BenchId(String("bench_bitset_difference[", width, "]")),

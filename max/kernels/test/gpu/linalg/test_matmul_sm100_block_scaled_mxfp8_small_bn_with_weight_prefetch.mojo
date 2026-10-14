@@ -27,7 +27,6 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
     TileTensor,
-    Coord,
     CoordLike,
     row_major,
     Idx,
@@ -94,14 +93,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         t" prefetch_tiles_n={prefetch_tiles_n}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     comptime assert (
         transpose_b
     ), "TileTensor migration only supports transpose_b=True for now"
-    var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
-    )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var b_shape = row_major(Idx[NType.static_value], Idx[KType.static_value])
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
@@ -126,22 +123,18 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -176,8 +169,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 comptime assert b_host.flat_rank == 2
                 b_host[n, k] = random_ui64(0, 1).cast[b_type]()
     else:
-        rand(a_host._storage, a_host.num_elements())
-        rand(b_host._storage, b_host.num_elements())
+        rand(a_host.as_span())
+        rand(b_host.as_span())
 
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
@@ -266,8 +259,8 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         c_ref_tensor,
         a_tensor,
         b_tensor,
-        a_scales=a_scales_tensor.as_immut(),
-        b_scales=b_scales_tensor.as_immut(),
+        a_scales=a_scales_tensor.as_imm(),
+        b_scales=b_scales_tensor.as_imm(),
         transpose_b=transpose_b,
         c_row_major=True,
     )

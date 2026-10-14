@@ -41,6 +41,8 @@ from typing import (
     TypedDict,
 )
 
+from typing_extensions import NotRequired
+
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
@@ -65,6 +67,14 @@ class TextGenerationRequestFunction(TypedDict):
 
     parameters: dict[str, Any]
     """A dictionary describing the function's parameters, typically following a JSON schema."""
+
+    strict: NotRequired[bool | None]
+    """Whether constrained decoding enforces ``parameters`` for this tool.
+
+    ``False`` constrains only the tool-call envelope and leaves the arguments
+    free-form; ``True`` enforces the full argument schema. The default value,
+    and any potential override, depends on the server's tool-call policy.
+    """
 
 
 class TextGenerationRequestTool(TypedDict):
@@ -147,6 +157,7 @@ class VideoContentPart(_MessageContentPart):
 
 
 MessageContent = TextContentPart | ImageContentPart | VideoContentPart
+"""One part of a chat message: text, an image, or a video."""
 
 # ``root`` is a vendor role; supporting chat templates order it above ``system``.
 _MessageRole = Literal[
@@ -372,6 +383,17 @@ class TextGenerationRequest:
     because the tokenizer already holds that image's preprocessed tensor --
     the same per-index fallback to :attr:`images` applies.
     """
+    max_decoded_bytes: int | None = None
+    """
+    Decoded (in-memory) bytes each of this request's videos may retain: an
+    equal share of the ``Settings.max_media_bytes`` budget left after every
+    encoded image and video and every decoded image is accounted for. A video
+    is decoded later, in the tokenizer, so the allowance travels with the
+    request to bound how many frames that decode may keep. Because the shares
+    sum to what remains, the videos cannot jointly exceed the budget.
+    API-process-only, like :attr:`decoded_images`.
+    ``None`` means unbounded (offline/test callers, or the limit disabled).
+    """
     tools: list[TextGenerationRequestTool] | None = None
     """
     A list of tools that can be invoked during the generation process. This
@@ -435,8 +457,9 @@ class TextGenerationRequest:
 
     Combined with ``kv_cache_hash_seed`` via XOR to seed the block hash.
     Works under any ``kv_cache_hash_algo``: a cryptographic guarantee
-    under ``sha256``/``sha256_64``, best-effort under ``ahash64``. Capped
-    at 512 chars at the OpenAI schema layer.
+    under ``sha256`` (64-bit key separation on the dKV external tier),
+    best-effort under ``ahash64``. Capped at 512 chars at the OpenAI
+    schema layer.
     """
 
     def __str__(self) -> str:
