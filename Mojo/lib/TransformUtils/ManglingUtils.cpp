@@ -212,6 +212,47 @@ void collectTypeForMangling(Type type, SmallVectorImpl<Fragment> &out) {
     return;
   }
 
+  if (auto structType = dyn_cast<StructType>(type)) {
+    // Mangle concrete struct types (including parameter packs) structurally
+    // instead of going through the asm printer: StructType::print folds each
+    // element through ParamType::get, which erases the typeValue of
+    // non-trivial type constants (e.g. Pointer[mut=true] vs Pointer[mut=false]
+    // both print as their shared mlirType `pointer<none>`), producing
+    // colliding symbol names for distinct instantiations.
+    auto elements =
+        dyn_cast<ParamListAttr>(structType.getElementTypesVariadic());
+    bool hasSimpleMeta =
+        elements &&
+        isa<TypeType>(cast<ParamListType>(elements.getType()).getElementType());
+    auto isFalse = [](TypedAttr attr) {
+      auto boolAttr = dyn_cast<BoolAttr>(attr);
+      return boolAttr && !boolAttr.getValue();
+    };
+    auto isDefaultAlign = [](TypedAttr attr) {
+      auto intAttr = dyn_cast<IntegerAttr>(attr);
+      return intAttr && intAttr.getInt() == 1;
+    };
+    if (hasSimpleMeta && isFalse(structType.getIsMemoryOnly()) &&
+        isDefaultAlign(structType.getMinAlignment())) {
+      // Mirror StructType::print's punctuation so that elements whose
+      // typeValue and mlirType coincide mangle exactly as before.
+      out.push_back({FragmentKind::NotEscaped, "struct<("});
+      llvm::interleave(
+          elements.getValues(),
+          [&](TypedAttr element) { collectParameterFragments(element, out); },
+          [&] { out.push_back({FragmentKind::NotEscaped, ", "}); });
+      out.push_back({FragmentKind::NotEscaped, ")"});
+      if (structType.getIsParamPack())
+        out.push_back({FragmentKind::NotEscaped, " isParamPack"});
+      out.push_back({FragmentKind::NotEscaped, ">"});
+      return;
+    }
+    // Parametric or annotated struct: fall back to the asm printer below.
+    // Known limitation: memoryOnly / non-default-alignment structs are
+    // excluded here, so distinct instantiations of those that differ only
+    // in element typeValue can still mangle identically.
+  }
+
   // Fallback to asm printer; we have special cased all the types that introduce
   // escaped characters that can result in escape character bloat due to
   // nesting.

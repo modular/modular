@@ -163,3 +163,47 @@ TEST_F(MangleParameterValuesTest, QuoteInNotEscapedStringParamIsSanitized) {
   EXPECT_EQ(show(mangleParameterValues(getGenerator(), {stringParam("a\"b")})),
             "gen,p=~Qa\\22b~Q");
 }
+
+// Two pack instantiations whose elements share an mlirType but differ in
+// typeValue must not collide: StructType's asm printer folds each element
+// through ParamType::get (dropping the typeValue), so the mangler prints
+// concrete struct types structurally instead.
+TEST_F(MangleParameterValuesTest,
+       PackElementsWithDistinctTypeValuesDoNotCollide) {
+  Type meta = TypeType::get(&ctx);
+  Type sharedMlirType = KGEN::NoneType::get(&ctx);
+  Type i32 = IntegerType::get(&ctx, 32);
+  Type i64 = IntegerType::get(&ctx, 64);
+  auto listType = ParamListType::get(meta);
+
+  auto makePackParam = [&](Type elementTypeValue) {
+    TypedAttr element =
+        TypeParamAttr::get(elementTypeValue, sharedMlirType, meta);
+    TypedAttr variadic = ParamListAttr::get({element}, listType);
+    Type pack = StructType::get(&ctx, variadic, /*isMemoryOnly=*/false,
+                                /*minAlignment=*/TypedAttr{},
+                                /*isParamPack=*/true);
+    return cast<TypedAttr>(TypeParamAttr::get(pack, pack, meta));
+  };
+
+  std::string mangledA =
+      mangleParameterValues(getGenerator(), {makePackParam(i32)});
+  std::string mangledB =
+      mangleParameterValues(getGenerator(), {makePackParam(i64)});
+  EXPECT_NE(mangledA, mangledB);
+}
+
+// Pack elements whose typeValue and mlirType coincide mangle exactly as the
+// asm printer spells them, keeping existing symbol names stable.
+TEST_F(MangleParameterValuesTest, PackWithTrivialElementsKeepsAsmSpelling) {
+  Type meta = TypeType::get(&ctx);
+  Type i32 = IntegerType::get(&ctx, 32);
+  TypedAttr element = TypeParamAttr::get(i32, i32, meta);
+  TypedAttr variadic = ParamListAttr::get({element}, ParamListType::get(meta));
+  Type pack = StructType::get(&ctx, variadic, /*isMemoryOnly=*/false,
+                              /*minAlignment=*/TypedAttr{},
+                              /*isParamPack=*/true);
+  TypedAttr value = TypeParamAttr::get(pack, pack, meta);
+  EXPECT_EQ(mangleParameterValues(getGenerator(), {value}),
+            "gen,p=struct<(i32) isParamPack>");
+}
